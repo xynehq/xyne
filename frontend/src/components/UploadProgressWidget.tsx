@@ -1,23 +1,26 @@
-import React, { useState } from 'react'
-import { useUploadProgress } from '@/contexts/UploadProgressContext'
-import { Button } from '@/components/ui/button'
-import { X, ChevronUp, ChevronDown } from 'lucide-react'
-import { ConfirmModal } from '@/components/ui/confirmModal'
+import React, { useState } from "react"
+import { useUploadProgress } from "@/contexts/UploadProgressContext"
+import { Button } from "@/components/ui/button"
+import { X, ChevronUp, ChevronDown } from "lucide-react"
+import { ConfirmModal } from "@/components/ui/confirmModal"
 
-type TabType = 'all' | 'uploaded' | 'failed'
+type TabType = "all" | "uploaded" | "failed"
 
 export const UploadProgressWidget: React.FC = () => {
   const { currentUpload, cancelUpload } = useUploadProgress()
   const [isExpanded, setIsExpanded] = useState(false)
   const [showCancelModal, setShowCancelModal] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabType>('all')
+  const [activeTab, setActiveTab] = useState<TabType>("all")
 
   if (!currentUpload || !currentUpload.isUploading) {
     return null
   }
 
   const { collectionName, batchProgress } = currentUpload
-  const progressPercentage = batchProgress.total > 0 ? Math.round((batchProgress.current / batchProgress.total) * 100) : 0
+  const progressPercentage =
+    batchProgress.total > 0
+      ? Math.round((batchProgress.current / batchProgress.total) * 100)
+      : 0
 
   const handleCancel = () => {
     setShowCancelModal(true)
@@ -38,7 +41,8 @@ export const UploadProgressWidget: React.FC = () => {
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <h3 className="font-medium font-mono text-gray-500 dark:text-gray-100 text-sm">
-                  UPLOADING FILES ({batchProgress.current}/{batchProgress.total})
+                  UPLOADING FILES ({batchProgress.current}/{batchProgress.total}
+                  )
                 </h3>
               </div>
             </div>
@@ -65,7 +69,7 @@ export const UploadProgressWidget: React.FC = () => {
               </Button>
             </div>
           </div>
-          
+
           {/* Progress Bar in Header */}
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-3">
             <div
@@ -73,7 +77,7 @@ export const UploadProgressWidget: React.FC = () => {
               style={{ width: `${progressPercentage}%` }}
             />
           </div>
-          
+
           {/* Collection name and percentage - Always visible below progress bar */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -97,31 +101,31 @@ export const UploadProgressWidget: React.FC = () => {
               <div className="px-4 pt-4 pb-2">
                 <div className="flex space-x-6">
                   <button
-                    onClick={() => setActiveTab('all')}
+                    onClick={() => setActiveTab("all")}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                      activeTab === 'all'
-                        ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                      activeTab === "all"
+                        ? "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                     }`}
                   >
                     All files
                   </button>
                   <button
-                    onClick={() => setActiveTab('uploaded')}
+                    onClick={() => setActiveTab("uploaded")}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                      activeTab === 'uploaded'
-                        ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                      activeTab === "uploaded"
+                        ? "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                     }`}
                   >
                     Uploaded
                   </button>
                   <button
-                    onClick={() => setActiveTab('failed')}
+                    onClick={() => setActiveTab("failed")}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                      activeTab === 'failed'
-                        ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                      activeTab === "failed"
+                        ? "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                     }`}
                   >
                     Failed
@@ -132,18 +136,19 @@ export const UploadProgressWidget: React.FC = () => {
               {/* File List */}
               <div className="flex-1 overflow-y-auto px-4 pb-4 h-52">
                 {(() => {
-                  const filteredFiles = currentUpload.files.filter(file => {
-                    if (activeTab === 'uploaded') return file.status === 'uploaded'
-                    if (activeTab === 'failed') return file.status === 'failed'
+                  const filteredFiles = currentUpload.files.filter((file) => {
+                    if (activeTab === "uploaded")
+                      return file.status === "uploaded"
+                    if (activeTab === "failed") return file.status === "failed"
                     return true // 'all' shows everything
                   })
 
                   if (filteredFiles.length === 0) {
                     return (
                       <div className="text-center text-gray-500 dark:text-gray-400 text-sm py-4">
-                        {activeTab === 'uploaded' && 'No files uploaded yet'}
-                        {activeTab === 'failed' && 'No failed files'}
-                        {activeTab === 'all' && 'No files'}
+                        {activeTab === "uploaded" && "No files uploaded yet"}
+                        {activeTab === "failed" && "No failed files"}
+                        {activeTab === "all" && "No files"}
                       </div>
                     )
                   }
@@ -153,17 +158,42 @@ export const UploadProgressWidget: React.FC = () => {
                       {/* Status Icon */}
                       <div className="flex-shrink-0">
                         <div className="w-6 h-6 bg-gray-200 dark:bg-gray-600 rounded-sm flex items-center justify-center">
-                          {(file.status === 'pending' || file.status === 'uploading') && (
+                          {(file.status === "pending" ||
+                            file.status === "uploading") && (
                             <div className="w-3 h-3 bg-gray-400 rounded-full animate-pulse"></div>
                           )}
-                          {file.status === 'uploaded' && (
-                            <svg width="14" height="10" viewBox="0 0 14 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M1 5L5 9L13 1" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          {file.status === "uploaded" && (
+                            <svg
+                              width="14"
+                              height="10"
+                              viewBox="0 0 14 10"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M1 5L5 9L13 1"
+                                stroke="#10B981"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
                             </svg>
                           )}
-                          {file.status === 'failed' && (
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M3 3L11 11M11 3L3 11" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          {file.status === "failed" && (
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 14 14"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M3 3L11 11M11 3L3 11"
+                                stroke="#EF4444"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
                             </svg>
                           )}
                         </div>
@@ -177,7 +207,7 @@ export const UploadProgressWidget: React.FC = () => {
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           {(file.size / 1024 / 1024).toFixed(2)} MB
                         </p>
-                        {file.status === 'failed' && file.error && (
+                        {file.status === "failed" && file.error && (
                           <p className="text-xs text-red-500 dark:text-red-400 truncate">
                             {file.error}
                           </p>

@@ -2434,4 +2434,3 @@ Without these connections, I can only provide general assistance and cannot acce
 
 Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 I'm still here to help with general questions, explanations, and tasks that don't require access to your personal workspace data. How can I assist you today?`
-

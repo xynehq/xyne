@@ -951,14 +951,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         e.preventDefault()
         const files = Array.from(e.dataTransfer.files)
         if (files.length > 0) {
-                        // Check attachment limit before processing
-                        if (selectedFiles.length >= MAX_ATTACHMENTS) {
-                          toast.error({
-                            title: "Attachment limit reached",
-                            description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-                          })
-                          return
-                        }
+          // Check attachment limit before processing
+          if (selectedFiles.length >= MAX_ATTACHMENTS) {
+            toast.error({
+              title: "Attachment limit reached",
+              description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+            })
+            return
+          }
           processFiles(files)
         }
       },
@@ -2419,7 +2419,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           <div className="relative flex items-center">
             {isPlaceholderVisible && (
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">
-                Ask a question {hideButtons ? "" : "or type @ to search your apps"}
+                Ask a question{" "}
+                {hideButtons ? "" : "or type @ to search your apps"}
               </div>
             )}
             <div
@@ -2680,7 +2681,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault() // Always prevent default for Enter (unless Shift+Enter)
-                  
+
                   if (
                     query.trim().length > 0 &&
                     !isStreaming &&

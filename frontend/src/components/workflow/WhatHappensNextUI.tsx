@@ -48,8 +48,6 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
     pythonCode: toolData?.value || "",
   })
 
-
-
   const [, setSelectedAction] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -238,9 +236,8 @@ print('Hello, World!')"
                 className="w-full h-96 font-mono text-sm dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               />
             </div>
-
           </div>
-          
+
           {/* Save Button - Sticky to bottom */}
           <div className="pt-6 px-0">
             <Button

@@ -36,9 +36,9 @@ const ActionBar: React.FC<ActionBarProps> = ({
         onClick={disabled ? undefined : onExecute}
         disabled={disabled}
         className={`px-4 py-2 border-none rounded-full text-sm font-medium flex items-center gap-1.5 transition-all duration-200 ${
-          disabled 
-            ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-            : 'bg-slate-800 hover:bg-slate-700 text-white cursor-pointer'
+          disabled
+            ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+            : "bg-slate-800 hover:bg-slate-700 text-white cursor-pointer"
         }`}
       >
         <Play className="w-4 h-4" fill="currentColor" />
@@ -53,11 +53,11 @@ const ActionBar: React.FC<ActionBarProps> = ({
         >
           <Minus className="w-3 h-3 text-slate-600" />
         </button>
-        
+
         <span className="text-sm font-medium text-slate-700 px-2 min-w-[45px] text-center">
           {zoomLevel}%
         </span>
-        
+
         <button
           onClick={handleZoomIn}
           disabled={zoomLevel >= 200}

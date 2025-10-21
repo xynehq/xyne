@@ -3,10 +3,6 @@
 #!/bin/sh
 set -e
 
-if [ -f ../.env ]; then
-  . ../.env
-fi
-
 mkdir -p models
 TOKENIZER_URL=""
 MODEL_URL=""

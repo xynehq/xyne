@@ -2,8 +2,8 @@ import { MIME_TYPE_MAPPINGS, EXTENSION_MAPPINGS, FileType } from "./types"
 
 // Check if file is an image
 export const isImageFile = (fileType: string): boolean => {
-  return (
-    (MIME_TYPE_MAPPINGS[FileType.IMAGE] as readonly string[]).includes(fileType)
+  return (MIME_TYPE_MAPPINGS[FileType.IMAGE] as readonly string[]).includes(
+    fileType,
   )
 }
 
@@ -33,8 +33,10 @@ export const isValidFile = (file: File) => {
   ] as readonly string[]
 
   // Check if file is an image using the centralized mapping
-  const isImage = (MIME_TYPE_MAPPINGS[FileType.IMAGE] as readonly string[]).includes(file.type)
-  
+  const isImage = (
+    MIME_TYPE_MAPPINGS[FileType.IMAGE] as readonly string[]
+  ).includes(file.type)
+
   // Check if file type is allowed by MIME type or extension
   const isAllowedType =
     allowedMimeTypes.includes(file.type) ||

@@ -65,11 +65,17 @@ const constructFileContext = (
     maxSummaryChunks = fields.chunks_summary?.length
   }
   // Handle metadata that might already be an object or a string that needs parsing
-  const parsedMetadata =
-    typeof fields.metadata === "string"
+  // const parsedMetadata =
+  //   typeof fields.metadata === "string"
+  //     ? JSON.parse(fields.metadata)
+  //     : fields.metadata
+  // const folderName = parsedMetadata.parents?.[0]?.folderName || ""
+  const parsedMetadata = fields.metadata
+    ? typeof fields.metadata === "string"
       ? JSON.parse(fields.metadata)
       : fields.metadata
-  const folderName = parsedMetadata.parents?.[0]?.folderName || ""
+    : null
+  const folderName = parsedMetadata?.parents?.[0]?.folderName || ""
   let chunks: ScoredChunk[] = []
   if (fields.matchfeatures) {
     chunks = getSortedScoredChunks(
@@ -103,7 +109,7 @@ const constructFileContext = (
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
-Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}
+Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.parentId ? `parent FolderId: ${fields.parentId}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
@@ -170,7 +176,7 @@ const constructMailContext = (
   }
 
   return `App: ${fields.app}
-Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
 ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
@@ -202,7 +208,7 @@ const constructSlackMessageContext = (
     Username: ${fields.username}
     Message: ${fields.text}
     ${fields.threadId ? "it's a message thread" : ""}
-    ${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}
+    ${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
 }
@@ -234,7 +240,7 @@ ${
   typeof fields.createdAt === "number" && isFinite(fields.createdAt)
     ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(
         fields.createdAt,
-      ).toLocaleString("en-US", {timeZone: userTimezone})})`
+      ).toLocaleString("en-US", { timeZone: userTimezone })})`
     : ""
 }
 vespa relevance score: ${relevance}`
@@ -286,7 +292,7 @@ const constructMailAttachmentContext = (
 Entity: ${fields.entity}
 ${
   typeof fields.timestamp === "number" && isFinite(fields.timestamp)
-    ? `\nSent: ${getRelativeTime(fields.timestamp)} (${new Date(fields.timestamp).toLocaleString("en-US", {timeZone: userTimeZone})})`
+    ? `\nSent: ${getRelativeTime(fields.timestamp)} (${new Date(fields.timestamp).toLocaleString("en-US", { timeZone: userTimeZone })})`
     : ""
 }
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
@@ -314,7 +320,7 @@ ${
     ? `\nStart Time: ${
         !fields.defaultStartTime
           ? new Date(fields.startTime).toUTCString() +
-            `(${new Date(fields.startTime).toLocaleString("en-US", {timeZone: userTimeZone})})`
+            `(${new Date(fields.startTime).toLocaleString("en-US", { timeZone: userTimeZone })})`
           : `No start time specified but date is ${new Date(fields.startTime)}`
       }`
     : ""
@@ -324,7 +330,7 @@ ${
     ? `\nEnd Time: ${
         !fields.defaultStartTime
           ? new Date(fields.endTime).toUTCString() +
-            `(${new Date(fields.endTime).toLocaleString("en-US", {timeZone: userTimeZone})})`
+            `(${new Date(fields.endTime).toLocaleString("en-US", { timeZone: userTimeZone })})`
           : `No end time specified but date is ${new Date(fields.endTime)}`
       }`
     : ""
@@ -551,12 +557,12 @@ const constructDataSourceFileContext = (
   ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}
   ${
     typeof fields.createdAt === "number" && isFinite(fields.createdAt)
-      ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", {timeZone: userTimeZone})})`
+      ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", { timeZone: userTimeZone })})`
       : ""
   }
   ${
     typeof fields.updatedAt === "number" && isFinite(fields.updatedAt)
-      ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", {timeZone: userTimeZone})})`
+      ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", { timeZone: userTimeZone })})`
       : ""
   }
   ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
@@ -662,7 +668,12 @@ export const answerMetadataContextMap = (
       searchResult.relevance,
     )
   } else if (searchResult.fields.sddocname === eventSchema) {
-    return constructEventContext(searchResult.fields, searchResult.relevance, dateForAI, userTimeZone)
+    return constructEventContext(
+      searchResult.fields,
+      searchResult.relevance,
+      dateForAI,
+      userTimeZone,
+    )
   } else {
     throw new Error(
       `Invalid search result type: ${searchResult.fields.sddocname}`,
@@ -722,7 +733,12 @@ export const answerContextMap = (
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === eventSchema) {
-    return constructEventContext(searchResult.fields, searchResult.relevance, userMetadata.dateForAI, userMetadata.userTimezone)
+    return constructEventContext(
+      searchResult.fields,
+      searchResult.relevance,
+      userMetadata.dateForAI,
+      userMetadata.userTimezone,
+    )
   } else if (searchResult.fields.sddocname === mailAttachmentSchema) {
     return constructMailAttachmentContext(
       searchResult.fields,

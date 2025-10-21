@@ -862,7 +862,7 @@ export async function extractTextAndImagesWithChunksFromPptx(
                     `Reusing description for repeated image ${imagePath} in slide ${slideNumber}`,
                   )
                 } else {
-                  if(describeImages) {
+                  if (describeImages) {
                     description = await describeImageWithllm(imageBuffer)
                   } else {
                     description = "This is an image."

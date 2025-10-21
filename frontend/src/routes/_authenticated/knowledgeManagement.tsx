@@ -83,7 +83,6 @@ interface Collection {
   isPrivate?: boolean
 }
 
-
 // Memoized Document Viewer Container to prevent re-renders on sidebar resize
 const DocumentViewerContainer = memo(
   ({
@@ -247,15 +246,20 @@ const DocumentViewerContainer = memo(
       selectedDocument?.content,
     ])
 
-    const { highlightText, clearHighlights, scrollToMatch } =
-      useScopedFind(containerRef, {
+    const { highlightText, clearHighlights, scrollToMatch } = useScopedFind(
+      containerRef,
+      {
         documentId: selectedDocument?.file.id,
-      })
+      },
+    )
 
     // Expose the highlight functions via the document operations ref
     useEffect(() => {
       if (documentOperationsRef?.current) {
-        documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number) => {
+        documentOperationsRef.current.highlightText = async (
+          text: string,
+          chunkIndex: number,
+        ) => {
           if (!containerRef.current) {
             const container = document.querySelector(
               '[data-container-ref="true"]',
@@ -383,20 +387,29 @@ function KnowledgeManagementContent() {
   // Chat overlay state - only used when isChatHidden is true
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false)
 
-   
   // Vespa data modal state
   const [isVespaModalOpen, setIsVespaModalOpen] = useState(false)
-        
+
   // Use global upload progress context
-  const { currentUpload, startUpload, updateProgress, updateFileStatus, finishUpload } = useUploadProgress()
-  
+  const {
+    currentUpload,
+    startUpload,
+    updateProgress,
+    updateFileStatus,
+    finishUpload,
+  } = useUploadProgress()
+
   // Derived state from global context
   const isUploading = currentUpload?.isUploading || false
-  const batchProgress = currentUpload?.batchProgress || { total: 0, current: 0, batch: 0, totalBatches: 0 }
+  const batchProgress = currentUpload?.batchProgress || {
+    total: 0,
+    current: 0,
+    batch: 0,
+    totalBatches: 0,
+  }
   const uploadingCollectionName = currentUpload?.collectionName || ""
   const isNewCollectionUpload = currentUpload?.isNewCollection || false
   const targetCollectionId = currentUpload?.targetCollectionId
-
 
   // Zoom detection for chat component
   useEffect(() => {
@@ -445,8 +458,6 @@ function KnowledgeManagementContent() {
   }, [])
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
-
-
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -542,8 +553,13 @@ function KnowledgeManagementContent() {
 
     // Start the global upload progress
     const batches = createBatches(selectedFiles, collectionName.trim())
-    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
-    const { uploadId, abortController } = startUpload(collectionName.trim(), files, batches.length, true)
+    const files = selectedFiles.map((f) => ({ file: f.file, id: f.id }))
+    const { uploadId, abortController } = startUpload(
+      collectionName.trim(),
+      files,
+      batches.length,
+      true,
+    )
 
     // Close the modal immediately after starting upload
     handleCloseModal()
@@ -561,26 +577,37 @@ function KnowledgeManagementContent() {
         const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
 
         // Mark batch files as uploading
-        batchFiles.forEach(file => {
-          updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
+        batchFiles.forEach((file) => {
+          updateFileStatus(uploadId, file.file.name, file.id, "uploading")
         })
 
-        const uploadResult = await uploadFileBatch(batchFiles.map((f) => f.file), cl.id, null, abortController.signal)
+        const uploadResult = await uploadFileBatch(
+          batchFiles.map((f) => f.file),
+          cl.id,
+          null,
+          abortController.signal,
+        )
 
         // Update individual file statuses based on results
         if (uploadResult.results) {
           uploadResult.results.forEach((result: any, index: number) => {
             const file = batchFiles[index]
             if (result.success) {
-              updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+              updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
             } else {
-              updateFileStatus(uploadId, file.file.name, file.id, 'failed', result.error || 'Upload failed')
+              updateFileStatus(
+                uploadId,
+                file.file.name,
+                file.id,
+                "failed",
+                result.error || "Upload failed",
+              )
             }
           })
         } else {
           // Fallback: mark all as uploaded if no individual results available
-          batchFiles.forEach(file => {
-            updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+          batchFiles.forEach((file) => {
+            updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
           })
         }
 
@@ -677,9 +704,9 @@ function KnowledgeManagementContent() {
       })
     } catch (error) {
       console.error("Upload failed:", error)
-      
+
       // Check if the error is due to cancellation
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         toast({
           title: "Upload Cancelled",
           description: "File upload was cancelled by user.",
@@ -735,8 +762,14 @@ function KnowledgeManagementContent() {
 
     // Start the global upload progress
     const batches = createBatches(selectedFiles, addingToCollection.name)
-    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
-    const { uploadId, abortController } = startUpload(addingToCollection.name, files, batches.length, false, addingToCollection.id)
+    const files = selectedFiles.map((f) => ({ file: f.file, id: f.id }))
+    const { uploadId, abortController } = startUpload(
+      addingToCollection.name,
+      files,
+      batches.length,
+      false,
+      addingToCollection.id,
+    )
 
     // Close the modal immediately after starting upload
     handleCloseModal()
@@ -752,12 +785,12 @@ function KnowledgeManagementContent() {
         const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
 
         // Mark batch files as uploading
-        batchFiles.forEach(file => {
-          updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
+        batchFiles.forEach((file) => {
+          updateFileStatus(uploadId, file.file.name, file.id, "uploading")
         })
-        
+
         const uploadedResult = await uploadFileBatch(
-          batchFiles.map(f => f.file),
+          batchFiles.map((f) => f.file),
           addingToCollection.id,
           targetFolder?.id,
           abortController.signal,
@@ -768,15 +801,21 @@ function KnowledgeManagementContent() {
           uploadedResult.results.forEach((result: any, index: number) => {
             const file = batchFiles[index]
             if (result.success) {
-              updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+              updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
             } else {
-              updateFileStatus(uploadId, file.file.name, file.id, 'failed', result.error || 'Upload failed')
+              updateFileStatus(
+                uploadId,
+                file.file.name,
+                file.id,
+                "failed",
+                result.error || "Upload failed",
+              )
             }
           })
         } else {
           // Fallback: mark all as uploaded if no individual results available
-          batchFiles.forEach(file => {
-            updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+          batchFiles.forEach((file) => {
+            updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
           })
         }
 
@@ -874,9 +913,9 @@ function KnowledgeManagementContent() {
       handleCloseModal()
     } catch (error) {
       console.error("Add files failed:", error)
-      
+
       // Check if the error is due to cancellation
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         toast({
           title: "Upload Cancelled",
           description: "File upload was cancelled by user.",
@@ -1299,7 +1338,7 @@ function KnowledgeManagementContent() {
             try {
               await documentOperationsRef.current.highlightText(
                 chunkContent.chunkContent,
-                newChunkIndex
+                newChunkIndex,
               )
             } catch (error) {
               console.error(
@@ -1626,31 +1665,33 @@ function KnowledgeManagementContent() {
               </div>
               <div className="mt-12">
                 {/* Show skeleton loader when uploading to NEW collection */}
-                {isUploading && batchProgress.total > 0 && isNewCollectionUpload && (
-                  <div className="mb-8">
-                    <div className="flex justify-between items-center mb-4">
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                          {uploadingCollectionName}
-                        </h2>
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          uploading files...
-                        </span>
+                {isUploading &&
+                  batchProgress.total > 0 &&
+                  isNewCollectionUpload && (
+                    <div className="mb-8">
+                      <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                            {uploadingCollectionName}
+                          </h2>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">
+                            uploading files...
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {batchProgress.current} / {batchProgress.total} files
+                          processed
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {batchProgress.current} / {batchProgress.total} files
-                        processed
-                      </div>
+                      <FileUploadSkeleton
+                        totalFiles={batchProgress.total}
+                        processedFiles={batchProgress.current}
+                        currentBatch={batchProgress.batch}
+                        totalBatches={batchProgress.totalBatches}
+                        showHeaders={true}
+                      />
                     </div>
-                    <FileUploadSkeleton
-                      totalFiles={batchProgress.total}
-                      processedFiles={batchProgress.current}
-                      currentBatch={batchProgress.batch}
-                      totalBatches={batchProgress.totalBatches}
-                      showHeaders={true}
-                    />
-                  </div>
-                )}
+                  )}
 
                 {collections.map((collection) => (
                   <div key={collection.id} className="mb-8">
@@ -1881,18 +1922,18 @@ function KnowledgeManagementContent() {
                           }}
                         />
                         {/* Show skeleton for existing collection uploads */}
-                        {isUploading && 
-                         !isNewCollectionUpload && 
-                         targetCollectionId === collection.id && 
-                         batchProgress.total > 0 && (
-                          <FileUploadSkeleton
-                            totalFiles={batchProgress.total}
-                            processedFiles={batchProgress.current}
-                            currentBatch={batchProgress.batch}
-                            totalBatches={batchProgress.totalBatches}
-                            showHeaders={false}
-                          />
-                        )}
+                        {isUploading &&
+                          !isNewCollectionUpload &&
+                          targetCollectionId === collection.id &&
+                          batchProgress.total > 0 && (
+                            <FileUploadSkeleton
+                              totalFiles={batchProgress.total}
+                              processedFiles={batchProgress.current}
+                              currentBatch={batchProgress.batch}
+                              totalBatches={batchProgress.totalBatches}
+                              showHeaders={false}
+                            />
+                          )}
                       </>
                     )}
                   </div>

@@ -171,19 +171,19 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
 
         // Remove width constraints from all wrappers
         const wrappers = containerRef.current.querySelectorAll(
-          '.docx, .docx-wrapper, .docx-preview-wrapper, .docx-preview'
-        );
+          ".docx, .docx-wrapper, .docx-preview-wrapper, .docx-preview",
+        )
         wrappers.forEach((el) => {
-          const wrapper = el as HTMLElement;
-          wrapper.style.removeProperty('width');
-          wrapper.style.removeProperty('max-width');
-          wrapper.style.removeProperty('min-width');
-          wrapper.style.removeProperty('padding');
-          wrapper.style.width = '100%';
-          wrapper.style.maxWidth = '100%';
-          wrapper.style.minWidth = 'auto';
-          wrapper.style.padding = '12%';
-        });
+          const wrapper = el as HTMLElement
+          wrapper.style.removeProperty("width")
+          wrapper.style.removeProperty("max-width")
+          wrapper.style.removeProperty("min-width")
+          wrapper.style.removeProperty("padding")
+          wrapper.style.width = "100%"
+          wrapper.style.maxWidth = "100%"
+          wrapper.style.minWidth = "auto"
+          wrapper.style.padding = "12%"
+        })
 
         // Make tables responsive
         const tables = containerRef.current.querySelectorAll("table")
@@ -197,15 +197,15 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
           // Make all cells wrap content properly
           const cells = tableEl.querySelectorAll("td, th")
           cells.forEach((cell) => {
-            const cellEl = cell as HTMLElement;
-            cellEl.style.overflowWrap = 'break-word';
-            cellEl.style.whiteSpace = 'normal';
-            cellEl.style.maxWidth = '100px';
-            cellEl.style.minWidth = '0';
-            cellEl.style.boxSizing = 'border-box';
-            cellEl.style.padding = '5px';
-          });
-        });
+            const cellEl = cell as HTMLElement
+            cellEl.style.overflowWrap = "break-word"
+            cellEl.style.whiteSpace = "normal"
+            cellEl.style.maxWidth = "100px"
+            cellEl.style.minWidth = "0"
+            cellEl.style.boxSizing = "border-box"
+            cellEl.style.padding = "5px"
+          })
+        })
 
         // Make images responsive
         const images = containerRef.current.querySelectorAll("img")
@@ -260,7 +260,7 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
           </div>
         </div>
       )}
-      
+
       <div ref={containerRef} />
     </div>
   )

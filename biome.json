@@ -17,7 +17,8 @@
       "./server/eval-results",
       "./server/eval-data",
       "./server/tuning-data",
-      "./deployment/grafana"
+      "./deployment/grafana",
+      "./server/qa_gen"
     ]
   },
   "formatter": {

@@ -16,7 +16,7 @@ import { VespaSearchResultsSchema } from "@xyne/vespa-ts/types" // Type for Vesp
 import { getTracer, type Span } from "@/tracer"
 import { createAgentSchema } from "@/api/agent"
 import type { CreateAgentPayload } from "@/api/agent"
-import { insertAgent } from "@/db/agent" 
+import { insertAgent } from "@/db/agent"
 import { getDateForAI } from "@/utils/index"
 
 const Logger = getLogger(Subsystem.Server)
@@ -29,7 +29,7 @@ export const executeAgentSchema = z.object({
   isStreamable: z.boolean().optional().default(false),
   temperature: z.number().min(0).max(2).optional(),
   max_new_tokens: z.number().positive().optional(),
-  attachmentFileIds: z.array(z.string()).optional().default([]),        // For images: ["att_123", "att_456"]
+  attachmentFileIds: z.array(z.string()).optional().default([]), // For images: ["att_123", "att_456"]
   nonImageAttachmentFileIds: z.array(z.string()).optional().default([]), // For PDFs: ["att_789"]
 })
 
@@ -44,12 +44,12 @@ type ExecuteAgentSuccess = {
 }
 
 type StreamingExecuteAgentResponse = ExecuteAgentSuccess & {
-  type: 'streaming'
+  type: "streaming"
   iterator: AsyncIterableIterator<ConverseResponse>
 }
 
 type NonStreamingExecuteAgentResponse = ExecuteAgentSuccess & {
-  type: 'non-streaming'
+  type: "non-streaming"
   response: ConverseResponse
 }
 
@@ -64,10 +64,9 @@ export type ExecuteAgentResponse =
   | NonStreamingExecuteAgentResponse
   | ExecuteAgentErrorResponse
 
-
 /**
  * ExecuteAgentForWorkflow - Simplified agent execution function with attachment support
- * 
+ *
  * This function provides a simplified subset of AgentMessageApi functionality:
  * 1. Generate chat title and insert in DB
  * 2. Fetch agent details from agent table (includes model)
@@ -75,12 +74,14 @@ export type ExecuteAgentResponse =
  * 4. Call LLM directly with agent prompt + user query + attachments
  * 5. Return response (no reasoning loop, no RAG, no tools)
  */
-export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promise<ExecuteAgentResponse> => {
+export const ExecuteAgentForWorkflow = async (
+  params: ExecuteAgentParams,
+): Promise<ExecuteAgentResponse> => {
   try {
     // Validate parameters
     const validatedParams = executeAgentSchema.parse(params)
     const tracer = getTracer("executeAgent")
-    const executeAgentSpan = tracer.startSpan('executeAgent')
+    const executeAgentSpan = tracer.startSpan("executeAgent")
     const {
       agentId,
       userQuery,
@@ -100,7 +101,9 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     Logger.info(`   - userQuery length: ${userQuery.length}`)
     Logger.info(`   - isStreamable: ${isStreamable}`)
     Logger.info(`   - attachmentFileIds: ${JSON.stringify(attachmentFileIds)}`)
-    Logger.info(`   - nonImageAttachmentFileIds: ${JSON.stringify(nonImageAttachmentFileIds)}`)
+    Logger.info(
+      `   - nonImageAttachmentFileIds: ${JSON.stringify(nonImageAttachmentFileIds)}`,
+    )
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -108,11 +111,10 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       userEmail,
     )
 
-
     const { user, workspace } = userAndWorkspace
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     Logger.info(`Fetched user: ${user.id} and workspace: ${workspace.id}`)
 
     Logger.info(`Fetching agent details for ${agentId}...`)
@@ -121,14 +123,14 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     if (!agent) {
       return {
         success: false,
-        error: `Agent with ID ${agentId} not found`
+        error: `Agent with ID ${agentId} not found`,
       }
     }
 
     if (!agent.model) {
       return {
         success: false,
-        error: `Agent ${agentId} has no model configured`
+        error: `Agent ${agentId} has no model configured`,
       }
     }
 
@@ -142,28 +144,39 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     let finalImageFileNames: string[] = []
 
     Logger.info("🔍 Starting attachment processing...")
-    Logger.info(`📎 Non-image attachments: ${JSON.stringify(nonImageAttachmentFileIds)}`)
+    Logger.info(
+      `📎 Non-image attachments: ${JSON.stringify(nonImageAttachmentFileIds)}`,
+    )
     Logger.info(`🖼️ Image attachments: ${JSON.stringify(attachmentFileIds)}`)
 
     // Step 1: Handle Non-Image Attachments (PDFs, DOCX, etc.)
     if (nonImageAttachmentFileIds.length > 0) {
-      Logger.info(`📄 Processing ${nonImageAttachmentFileIds.length} non-image attachments`)
+      Logger.info(
+        `📄 Processing ${nonImageAttachmentFileIds.length} non-image attachments`,
+      )
 
       try {
         // Retrieve document content from Vespa (same as chat.ts:1974-1979)
-        Logger.info(`🔍 Calling GetDocumentsByDocIds with IDs: ${JSON.stringify(nonImageAttachmentFileIds)}`)
+        Logger.info(
+          `🔍 Calling GetDocumentsByDocIds with IDs: ${JSON.stringify(nonImageAttachmentFileIds)}`,
+        )
 
         //fetching document from VESPA
-        const results = await GetDocumentsByDocIds(nonImageAttachmentFileIds, executeAgentSpan!)
+        const results = await GetDocumentsByDocIds(
+          nonImageAttachmentFileIds,
+          executeAgentSpan!,
+        )
 
         Logger.info(`📊 GetDocumentsByDocIds returned:`, {
           hasRoot: !!results.root,
-          hasChildren: !!(results.root?.children),
+          hasChildren: !!results.root?.children,
           childrenCount: results.root?.children?.length || 0,
         })
 
         if (results.root.children && results.root.children.length > 0) {
-          Logger.info(`📚 Found ${results.root.children.length} documents, transforming to readable context...`)
+          Logger.info(
+            `📚 Found ${results.root.children.length} documents, transforming to readable context...`,
+          )
 
           // Transform Vespa results to readable context (same as chat.ts:2054-2120)
           const contextPromises = results.root.children.map(async (v, i) => {
@@ -172,11 +185,13 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
             const content = await answerContextMap(
               v as z.infer<typeof VespaSearchResultsSchema>,
               userMetadata,
-              0,    // maxSummaryChunks (0 = include all chunks)
+              0, // maxSummaryChunks (0 = include all chunks)
               true, // isSelectedFiles
             )
 
-            Logger.info(`📝 Document ${i} processed, content length: ${content.length} characters`)
+            Logger.info(
+              `📝 Document ${i} processed, content length: ${content.length} characters`,
+            )
             return `Index ${i} \n ${content}`
           })
 
@@ -184,13 +199,15 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
           contextualContent = cleanContext(resolvedContexts.join("\n"))
 
           Logger.info(`✅ Context building completed!`)
-          Logger.info(`📏 Total context length: ${contextualContent.length} characters`)
-          Logger.info(`📄 Context preview (first 200 chars): ${contextualContent.substring(0, 200)}...`)
-
+          Logger.info(
+            `📏 Total context length: ${contextualContent.length} characters`,
+          )
+          Logger.info(
+            `📄 Context preview (first 200 chars): ${contextualContent.substring(0, 200)}...`,
+          )
         } else {
           Logger.warn("⚠️ No documents found in Vespa results")
         }
-
       } catch (error) {
         Logger.error(error, "❌ Error processing non-image attachments")
         // Continue execution even if attachment processing fails
@@ -199,18 +216,22 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       Logger.info("📄 No non-image attachments to process")
     }
 
-    // Step 2: Handle Image Attachments 
+    // Step 2: Handle Image Attachments
     if (attachmentFileIds.length > 0) {
       Logger.info(`🖼️ Processing ${attachmentFileIds.length} image attachments`)
 
       // Transform attachment IDs to image file names (same as chat.ts:2127-2131)
       finalImageFileNames = attachmentFileIds.map((fileid, index) => {
-        const imageName = `${index}_${fileid}_${0}`  // Format: "0_att_123_0"
-        Logger.info(`🏷️ Transformed attachment ID "${fileid}" → image name "${imageName}"`)
+        const imageName = `${index}_${fileid}_${0}` // Format: "0_att_123_0"
+        Logger.info(
+          `🏷️ Transformed attachment ID "${fileid}" → image name "${imageName}"`,
+        )
         return imageName
       })
 
-      Logger.info(`🖼️ Final image file names: ${JSON.stringify(finalImageFileNames)}`)
+      Logger.info(
+        `🖼️ Final image file names: ${JSON.stringify(finalImageFileNames)}`,
+      )
     } else {
       Logger.info("🖼️ No image attachments to process")
     }
@@ -240,10 +261,14 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       stream: isStreamable,
       json: false,
       reasoning: false,
-      systemPrompt: (agent.prompt || "You are a helpful assistant.") + "\n\nIMPORTANT: Please provide responses in plain text format only. Do not use markdown.",
+      systemPrompt:
+        (agent.prompt || "You are a helpful assistant.") +
+        "\n\nIMPORTANT: Please provide responses in plain text format only. Do not use markdown.",
 
       // ADD IMAGE SUPPORT:
-      ...(finalImageFileNames.length > 0 ? { imageFileNames: finalImageFileNames } : {}),
+      ...(finalImageFileNames.length > 0
+        ? { imageFileNames: finalImageFileNames }
+        : {}),
 
       ...(temperature !== undefined ? { temperature } : {}),
       ...(max_new_tokens !== undefined ? { max_new_tokens } : {}),
@@ -262,8 +287,8 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
 
     // UPDATE MESSAGE CONSTRUCTION TO INCLUDE CONTEXT:
     const userContent = contextualContent
-      ? `Context from attached documents:\n${contextualContent}\n\nUser Query: ${userQuery}`  // Include document context
-      : userQuery  // No context, just user query
+      ? `Context from attached documents:\n${contextualContent}\n\nUser Query: ${userQuery}` // Include document context
+      : userQuery // No context, just user query
 
     Logger.info("💬 Message construction details:", {
       hasContext: !!contextualContent,
@@ -273,13 +298,15 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     })
 
     Logger.info("💬 Final user content preview (first 300 chars):")
-    Logger.info(userContent.substring(0, 300) + (userContent.length > 300 ? "..." : ""))
+    Logger.info(
+      userContent.substring(0, 300) + (userContent.length > 300 ? "..." : ""),
+    )
 
     const messages: Message[] = [
       {
         role: "user" as ConversationRole,
-        content: [{ text: userContent }],  // User query + document context
-      }
+        content: [{ text: userContent }], // User query + document context
+      },
     ]
 
     Logger.info("💬 Messages array constructed with 1 user message")
@@ -340,7 +367,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
 
         return {
           success: true,
-          type: 'streaming',
+          type: "streaming",
           iterator: wrappedIterator,
           chatId: insertedChat.externalId,
           title,
@@ -351,7 +378,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         Logger.error(providerError, "❌ Error creating streaming iterator")
         throw providerError
       }
-    } else { 
+    } else {
       Logger.info("💫 Agent execution started (non-streaming mode)")
       Logger.info("💫 About to call LLM with attachments:", {
         hasImages: finalImageFileNames.length > 0,
@@ -363,7 +390,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       // Get non-streaming response
       const response = await getProviderByModel(agent.model as Models).converse(
         messages,
-        modelParams
+        modelParams,
       )
 
       Logger.info("💫 LLM response received:", {
@@ -376,7 +403,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       if (!response.text) {
         return {
           success: false,
-          error: "No response received from LLM"
+          error: "No response received from LLM",
         }
       }
 
@@ -397,7 +424,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
 
       return {
         success: true,
-        type: 'non-streaming',
+        type: "non-streaming",
         chatId: insertedChat.externalId,
         title,
         response: response,
@@ -405,9 +432,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         modelId: agent.model,
       }
     }
-
   } catch (error) {
-    
     Logger.error(error, "Error in executeAgent")
 
     if (error instanceof z.ZodError) {
@@ -434,10 +459,8 @@ async function* createStreamingWithDBSave(
     workspaceExternalId: string
     email: string
     modelId: string
-  }
+  },
 ): AsyncIterableIterator<ConverseResponse> {
-
-
   Logger.info("🌊 createStreamingWithDBSave: Starting...")
   let answer = ""
   let costArr: number[] = []
@@ -445,22 +468,28 @@ async function* createStreamingWithDBSave(
   let wasStreamClosedPrematurely = false
 
   try {
-    Logger.info("🌊 createStreamingWithDBSave: About to start for-await loop...")
+    Logger.info(
+      "🌊 createStreamingWithDBSave: About to start for-await loop...",
+    )
 
     for await (const chunk of originalIterator) {
       if (chunk.text) {
-        answer += chunk.text  // Accumulate full response
-        yield { text: chunk.text }  // Forward to client
+        answer += chunk.text // Accumulate full response
+        yield { text: chunk.text } // Forward to client
       }
-      Logger.info("🌊 createStreamingWithDBSave: Forwarded chunk to client:", chunk.text)
+      Logger.info(
+        "🌊 createStreamingWithDBSave: Forwarded chunk to client:",
+        chunk.text,
+      )
 
       if (chunk.cost) {
-        costArr.push(chunk.cost)  // Accumulate costs
+        costArr.push(chunk.cost) // Accumulate costs
         yield { cost: chunk.cost }
       }
 
       if (chunk.metadata?.usage) {
-        tokenArr.push({  // Accumulate token usage
+        tokenArr.push({
+          // Accumulate token usage
           inputTokens: chunk.metadata.usage.inputTokens,
           outputTokens: chunk.metadata.usage.outputTokens,
         })
@@ -468,7 +497,9 @@ async function* createStreamingWithDBSave(
       }
     }
 
-    Logger.info("🌊 createStreamingWithDBSave: Iterator completed, saving to DB...")
+    Logger.info(
+      "🌊 createStreamingWithDBSave: Iterator completed, saving to DB...",
+    )
 
     // Save to DB after stream completes (same pattern as AgentMessageApi)
     if (answer || wasStreamClosedPrematurely) {
@@ -478,7 +509,6 @@ async function* createStreamingWithDBSave(
         0,
       )
 
-
       await insertMessage(db, {
         chatId: dbSaveParams.chatId,
         userId: dbSaveParams.userId,
@@ -487,7 +517,7 @@ async function* createStreamingWithDBSave(
         messageRole: MessageRole.Assistant,
         email: dbSaveParams.email,
         sources: [],
-        message: answer,  // Full accumulated text
+        message: answer, // Full accumulated text
         modelId: dbSaveParams.modelId,
         cost: totalCost.toString(),
         tokensUsed: totalTokens,
@@ -495,19 +525,17 @@ async function* createStreamingWithDBSave(
 
       Logger.info("Assistant message saved to database after streaming")
     }
-
   } catch (error) {
     Logger.error(error, "Error during streaming or DB save")
     throw error
   }
 }
 
-
 //this function will be used to be called by workflow feature
 export const createAgentForWorkflow = async (
   agentData: CreateAgentPayload,
   userId: number,
-  workspaceId: number
+  workspaceId: number,
 ): Promise<SelectAgent> => {
   try {
     const validatedBody = createAgentSchema.parse(agentData)

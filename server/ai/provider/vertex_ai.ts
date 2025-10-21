@@ -40,7 +40,9 @@ function stringifyToolResultContent(parts: any[] | undefined): string {
   return out.join("\n")
 }
 
-function extractTextFromContentBlocks(blocks: Message["content"] | undefined): string {
+function extractTextFromContentBlocks(
+  blocks: Message["content"] | undefined,
+): string {
   if (!blocks) return ""
   const lines: string[] = []
   for (const block of blocks) {
@@ -53,7 +55,9 @@ function extractTextFromContentBlocks(blocks: Message["content"] | undefined): s
       const status = block.toolResult.status ?? "executed"
       const summary = stringifyToolResultContent(block.toolResult.content)
       const toolUseId = block.toolResult.toolUseId || "tool"
-      lines.push(`Tool result (${toolUseId}, status=${status}): ${summary}`.trim())
+      lines.push(
+        `Tool result (${toolUseId}, status=${status}): ${summary}`.trim(),
+      )
     }
   }
   const joined = lines.join("\n")
@@ -192,11 +196,11 @@ export class VertexAiProvider extends BaseProvider {
     if (provider === VertexProvider.GOOGLE) {
       client = new VertexAI({ project: projectId, location: region })
     } else {
-      client = new AnthropicVertex({ 
-        projectId, 
+      client = new AnthropicVertex({
+        projectId,
         region,
-        timeout: parseInt(process.env.VERTEX_AI_TIMEOUT || '240000'), // Default 4 minutes timeout
-        maxRetries: 3
+        timeout: parseInt(process.env.VERTEX_AI_TIMEOUT || "240000"), // Default 4 minutes timeout
+        maxRetries: 3,
       })
     }
 
@@ -250,13 +254,17 @@ export class VertexAiProvider extends BaseProvider {
         temperature,
         system: systemPrompt,
         messages: normalizedMessages as any,
-        tools: params.tools && params.tools.length
-          ? params.tools.map((t) => ({
-              name: t.name,
-              description: t.description,
-              input_schema: t.parameters || { type: 'object', properties: {} },
-            }))
-          : undefined,
+        tools:
+          params.tools && params.tools.length
+            ? params.tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                input_schema: t.parameters || {
+                  type: "object",
+                  properties: {},
+                },
+              }))
+            : undefined,
       })
 
       const text = response.content
@@ -264,22 +272,26 @@ export class VertexAiProvider extends BaseProvider {
         .map((c: any) => c.text)
         .join("")
       const toolCalls = response.content
-        .filter((c: any) => c.type === 'tool_use')
+        .filter((c: any) => c.type === "tool_use")
         .map((c: any) => ({
-          id: c.id || '',
-          type: 'function' as const,
+          id: c.id || "",
+          type: "function" as const,
           function: {
-            name: c.name || '',
-            arguments: c.input ? JSON.stringify(c.input) : '{}',
+            name: c.name || "",
+            arguments: c.input ? JSON.stringify(c.input) : "{}",
           },
         }))
       const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
       const cost = 0
 
-      return { text, cost, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) }
+      return {
+        text,
+        cost,
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+      }
     } catch (error) {
       Logger.error(`VertexAI Anthropic request failed:`, error)
-      if (error instanceof Error && error.message?.includes('timeout')) {
+      if (error instanceof Error && error.message?.includes("timeout")) {
         throw new Error(`VertexAI request timed out after 4 minutes`)
       }
       throw error
@@ -308,13 +320,14 @@ export class VertexAiProvider extends BaseProvider {
       system: systemPrompt,
       messages: normalizedMessages as any,
       stream: true,
-      tools: params.tools && params.tools.length
-        ? params.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.parameters || { type: 'object', properties: {} },
-          }))
-        : undefined,
+      tools:
+        params.tools && params.tools.length
+          ? params.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters || { type: "object", properties: {} },
+            }))
+          : undefined,
     })
 
     let totalInputTokens = 0
@@ -356,10 +369,7 @@ export class VertexAiProvider extends BaseProvider {
         if (typeof d.partial_json === "string") {
           currentTool.args += d.partial_json
         }
-      } else if (
-        chunk?.type === "content_block_stop" &&
-        currentTool
-      ) {
+      } else if (chunk?.type === "content_block_stop" && currentTool) {
         // Flush tool call
         const toolCalls = [
           {
@@ -587,7 +597,9 @@ export class VertexAiProvider extends BaseProvider {
             }))
 
           chunkSources.forEach((source: WebSearchSource) => {
-            if (!aggregatedSources.some((existing) => existing.uri === source.uri)) {
+            if (
+              !aggregatedSources.some((existing) => existing.uri === source.uri)
+            ) {
               aggregatedSources.push(source)
             }
           })

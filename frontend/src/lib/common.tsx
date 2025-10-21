@@ -177,7 +177,9 @@ export const getFileType = (file: File): FileType => {
   // Fallback to extension checking
   const fileName = file.name.toLowerCase()
   for (const [fileType, extensions] of Object.entries(EXTENSION_MAPPINGS)) {
-    if ((extensions as readonly string[]).some(ext => fileName.endsWith(ext))) {
+    if (
+      (extensions as readonly string[]).some((ext) => fileName.endsWith(ext))
+    ) {
       return fileType as FileType
     }
   }
@@ -189,7 +191,7 @@ export const getFileType = (file: File): FileType => {
 // Icon mapping from FileType to SVG component
 export const getFileIcon = (file: File) => {
   const fileType = getFileType(file)
-  
+
   switch (fileType) {
     case FileType.TEXT:
       return <img src={TextIcon} alt="Text file" className="w-8 h-8" />
@@ -200,9 +202,17 @@ export const getFileIcon = (file: File) => {
     case FileType.DOCUMENT:
       return <img src={DocumentIcon} alt="Document file" className="w-8 h-8" />
     case FileType.SPREADSHEET:
-      return <img src={SpreadsheetIcon} alt="Spreadsheet file" className="w-8 h-8" />
+      return (
+        <img src={SpreadsheetIcon} alt="Spreadsheet file" className="w-8 h-8" />
+      )
     case FileType.PRESENTATION:
-      return <img src={PresentationIcon} alt="Presentation file" className="w-8 h-8" />
+      return (
+        <img
+          src={PresentationIcon}
+          alt="Presentation file"
+          className="w-8 h-8"
+        />
+      )
     default:
       return <FileIcon className="w-8 h-8 text-gray-500" />
   }

@@ -1,0 +1,114 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the recent emails, files, and Slack messages regarding Work ID 318b8082-efd0-4f33-8696-c6979e9a6cd9, what are the primary technical root causes that have been identified for the various Flipkart settlement issues?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the provided documents, several distinct technical root causes for the Flipkart settlement issues have been identified:\n\n1.  **Cross-Border Routing Misconfiguration:** A recently deployed routing rule in the settlement orchestrator service incorrectly processed refunds for certain international BINs as domestic, leading to wrong currency/fee calculations and `INVALID_COUNTRY_CODE` errors (email `534fca6aff044e8c`).\n\n2.  **PCI DSS Compliance Violation:** The 'fk-refund-settlement-processor' service was logging truncated PANs in plain text to an S3 bucket. This was due to the log level being set to DEBUG and an overly permissive IAM policy ('BroadS3Access-Legacy') being used (file `49a3d287719c4892`).\n\n3.  **KYC Automation Failures:** The automated KYC verification process for 'high-risk' customer segments experienced a failure rate spike to over 15%. This was due to Flipkart's `v2/kyc/verify` endpoint returning a `422 Unprocessable Entity` response (email `5be432607c354cc1`). Arjun Mehta in Slack suggests this might be a payload mismatch (message `d2b5f4bf83d54fa9`).\n\n4.  **API Rate Limiting:** Multiple Slack messages confirm that API throttling on Flipkart's end was causing settlement failures. Anjali Patel and Priya Nair both mention getting Flipkart to increase the API call threshold (messages `c285e1d3c27047c1`, `37f5d06278bc4d52`).\n\n5.  **OAuth Token Refresh Failure:** An issue where Flipkart's OAuth token refresh was failing, causing 401 errors and API timeouts. This was diagnosed by Arjun Mehta and later confirmed by Siddharth Nair to be a misconfigured client secret on Flipkart's side, which they hotfixed (messages `6078a2f36dfc43a5`, `e1caed07fedc4efb`).\n\n6.  **Partner System Performance Bottleneck:** A performance bottleneck from Flipkart's core banking system migration caused settlement queries to time out during their batch processing (message `323ec93b3da7493b`).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the total number of impacted transactions and the corresponding financial discrepancy value reported in relation to the Flipkart refund settlement issue?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "There are conflicting reports in the provided documents regarding the scale of the issue:\n\n- In an email to Flipkart (`534fca6aff044e8c`), Siddharth Nair states that **1,428 refund transactions** were impacted, with a total financial discrepancy amounting to **₹1,84,350**.\n\n- In a separate internal email (`45949822e8b64e4f`), Priya Nair mentions a more concerning volume of approximately **15,000 transactions** that failed settlement due to an `INVALID_CURRENCY_CODE` error.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "low",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "According to the 'PCI DSS 3.4 Remediation Plan' document, what are the immediate and permanent remediation steps for the log exposure issue in the 'fk-refund-settlement-processor' service?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the remediation plan file (`49a3d287719c4892`), the following steps are required:\n\n**Immediate Remediation:**\n1.  An emergency hotfix (version 1.7.1) must be deployed to update the `log4j2.xml` configuration, elevating the log level for the `in.juspay.settlement.flipkart` package from DEBUG to INFO.\n2.  The DevOps team is mandated to create and apply a new, scoped-down IAM role, 'fk-settlement-s3-write-role', to replace the legacy 'BroadS3Access-Legacy' policy on the service's ECS task definition within 2 hours. This new role restricts actions to 's3:PutObject' on the 's3://juspay-settlement-logs-prod/flipkart/*' prefix.\n\n**Permanent Resolution:**\n1.  The core engineering team will implement a custom data masking filter in the shared logging library to obfuscate cardholder data using an internal tokenization service via gRPC.\n2.  A new Grafana alert will be configured to monitor for the string 'pan_last4' in production logs to detect regressions.\n3.  A sub-task will be created to manage the controlled and auditable purge of the affected historical log files, which is pending CISO approval.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.6,
+      "Question_Complexity": "medium",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What specific compliance and regulatory risks have been identified across the communications concerning the Flipkart settlement discrepancies?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Several specific compliance and regulatory risks have been identified across the documents:\n\n- **RBI Payment Settlement Guidelines:** The cross-border payment routing error directly impacts adherence to RBI's guidelines on payment settlements (email `45949822e8b64e4f`). Siddharth Nair also mentions the RBI compliance context for cross-border payments as a reason for taking the issue seriously (email `534fca6aff044e8c`).\n\n- **SOC 2 Audit:** The settlement discrepancies are creating issues in the T+1 settlement report for the partner bank, which could be flagged in the next SOC 2 audit (email `45949822e8b64e4f`).\n\n- **Suspicious Activity Reporting (SAR):** Failed transactions are not being captured in the automated SAR pre-screening process, creating a compliance gap (email `45949822e8b64e4f`).\n\n- **PCI DSS Violation:** A critical violation of PCI DSS Requirement 3.4 (Render PAN unreadable) was identified because the 'fk-refund-settlement-processor' service was logging truncated PANs (file `49a3d287719c4892`).\n\n- **RBI AML/KYC Guidelines:** A spike in failures for automated KYC verification on high-risk accounts creates a significant compliance risk under current RBI AML/KYC guidelines (email `5be432607c354cc1`).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the Slack conversation in the CENGINEERING channel, what was the issue with OAuth tokens, who diagnosed it, and what was the resolution?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the Slack conversation:\n\n- **Issue and Diagnosis:** Arjun Mehta diagnosed the issue in message `6078a2f36dfc43a5`. He reported that Flipkart's OAuth token refresh was failing, causing the payment-gateway to receive API timeouts and 401 errors from Flipkart's side. He paused the reconciliation job to prevent alert spam.\n\n- **Resolution:** Siddharth Nair followed up in message `e1caed07fedc4efb`. He confirmed after a call with Flipkart that the root cause was a misconfigured client secret on their end. Flipkart deployed a hotfix, and API calls began succeeding with 200 status codes. Siddharth then requested a formal RCA from Flipkart to attach to JIRA ticket PAY-5450.",
+    "Confidence": 1.0
+  }
+]
+```

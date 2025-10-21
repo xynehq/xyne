@@ -1,36 +1,36 @@
-import React, { useEffect, useState } from "react";
-import Papa from "papaparse";
+import React, { useEffect, useState } from "react"
+import Papa from "papaparse"
 
 interface CsvViewerProps {
-  source: File;
-  className?: string;
-  style?: React.CSSProperties;
+  source: File
+  className?: string
+  style?: React.CSSProperties
 }
 
 const CsvViewer: React.FC<CsvViewerProps> = ({ source, className }) => {
-  const [data, setData] = useState<string[][]>([]);
+  const [data, setData] = useState<string[][]>([])
 
   useEffect(() => {
-    const reader = new FileReader();
+    const reader = new FileReader()
 
     reader.onload = (e) => {
-      const text = e.target?.result;
-      if (!text || typeof text !== "string") return;
+      const text = e.target?.result
+      if (!text || typeof text !== "string") return
 
       Papa.parse(text, {
         complete: (results) => {
-          setData(results.data as string[][]);
+          setData(results.data as string[][])
         },
-        error: (err:any) => {
-          console.error("CSV parsing error:", err);
+        error: (err: any) => {
+          console.error("CSV parsing error:", err)
         },
-      });
-    };
+      })
+    }
 
-    reader.readAsText(source);
-  }, [source]);
+    reader.readAsText(source)
+  }, [source])
 
-  if (data.length === 0) return <div className="p-4">Loading CSV file...</div>;
+  if (data.length === 0) return <div className="p-4">Loading CSV file...</div>
 
   return (
     <div className={`overflow-auto ${className}`}>
@@ -51,7 +51,7 @@ const CsvViewer: React.FC<CsvViewerProps> = ({ source, className }) => {
         </tbody>
       </table>
     </div>
-  );
-};
+  )
+}
 
-export default CsvViewer;
+export default CsvViewer

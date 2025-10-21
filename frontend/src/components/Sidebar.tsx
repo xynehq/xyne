@@ -62,9 +62,12 @@ export const Sidebar = ({
           sessionStorage.removeItem("documentToTempChatMap")
           sessionStorage.removeItem("tempChatIdToChatIdMap")
         } catch (error) {
-          console.error("Failed to clear document chat mappings on logout:", error)
+          console.error(
+            "Failed to clear document chat mappings on logout:",
+            error,
+          )
         }
-        
+
         router.navigate({ to: "/auth" })
       } else {
         toast({

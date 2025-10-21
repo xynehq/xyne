@@ -1,0 +1,33 @@
+{
+  "name": "vertex-ai-generator",
+  "version": "1.0.0",
+  "description": "Vertex AI question-answer generator using TypeScript",
+  "type": "module",
+  "main": "generator.js",
+  "scripts": {
+    "start": "node generator.js",
+    "build": "tsc",
+    "dev": "ts-node generator.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@google-cloud/vertexai": "^1.10.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "google-auth-library": "^9.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "vertex-ai",
+    "google-cloud",
+    "typescript",
+    "question-answer",
+    "generator"
+  ],
+  "author": "",
+  "license": "ISC"
+}

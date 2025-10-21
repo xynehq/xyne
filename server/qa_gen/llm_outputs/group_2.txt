@@ -1,0 +1,114 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "According to the analysis in file 5b1d3e49f973459e, what was the incorrect `slidingWindow.interval` value for the Flink job, and what should the correct value have been?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the analysis in file `5b1d3e49f973459e`, the `slidingWindow.interval` parameter for the Flink job's refund velocity feature was inadvertently reduced to 60 seconds. The correct, specified value should have been 300 seconds. Arjun Mehta initiated a hotfix to revert the parameter to this correct value.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What are the main compliance risks and regulatory concerns mentioned across the emails regarding the Flipkart refund settlement issues?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Across the email threads, several major compliance risks and regulatory concerns regarding the Flipkart refund settlement issues have been mentioned:\n\n1.  **T+1 and T+2 Settlement Timelines:** Multiple emails (e.g., `e12c294e1c3940bf`, `53a52db25bba49e3`, `7040d4d69f0a4a0f`, `664b37f4b39e4498`) express concern about violating RBI's T+1 and T+2 settlement and refund credit timelines due to processing delays and backlogs.\n2.  **SOC 2 Compliance:** The lack of a clean, automated audit trail for transactions is flagged as a serious concern for upcoming SOC 2 reporting and audits in emails `53a52db25bba49e3`, `7040d4d69f0a4a0f`, and `b01939696ed44325`.\n3.  **RBI's Master Direction on KYC:** KYC automation failures necessitate manual intervention, which breaks the automated audit trail mandated by the RBI's Master Direction on KYC, creating verifiable gaps in audit logs (doc: `b01939696ed44325`).\n4.  **Cross-Border Fund Settlement:** Delays and errors in processing international transactions jeopardize the ability to meet strict settlement timelines mandated by the RBI for cross-border funds (doc: `ec3595e5558a4cf0`).\n5.  **Data Localization:** A cross-border routing error where INR-denominated transactions were routed to a EU-based cluster posed a compliance risk by contravening RBI guidelines on data localization and payment processing (doc: `59c90ba34a584db0`).\n6.  **FEMA Reporting:** A misconfiguration in routing for international card BINs posed a potential compliance risk related to RBI's FEMA reporting (doc: `0880c93cdb534bd4`).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the investigations, what are the different root causes identified for API timeouts and high latency when processing Flipkart refunds, and what specific metrics (like p99 latency, error rates, or error codes) are associated with each cause?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the provided documents, multiple distinct root causes for API timeouts and high latency have been identified:\n\n1.  **Performance Bottleneck post-Core Banking Migration:** The p99 latency on Flipkart's refund status API spiked from ~400ms to over 2,500ms, causing a 3.8% error rate and `ReadTimeoutException` errors. (doc: `e12c294e1c3940bf`)\n2.  **Risk Scoring Engine Degradation:** Flipkart's real-time risk scoring engine's p99 latency peaked at over 2.3s (from a baseline of ~180ms), leading to a 3.2% failure rate and `HTTP 504 Gateway Timeout` errors. (doc: `53a52db25bba49e3`)\n3.  **Multi-Currency Forex Lookups:** Timeouts to an external forex data provider caused P99 latency to exceed the 2000ms service timeout, resulting in a nearly 4% error rate. (doc: `4fbbd82a039f42cb`)\n4.  **KYC Automation for High-Risk Segments:** Calls to Flipkart's `/v2/customer/kyc/status` endpoint for high-risk users saw latency spike to over 2.5s (from a 450ms baseline) with a 4.8% error rate, resulting in `KYC_VERIFICATION_TIMEOUT` (Error Code: 4082). (doc: `b01939696ed44325`)\n5.  **API Rate Limiting:** Aggressive rate limiting by Flipkart's `/refunds/v1/query` endpoint resulted in `HTTP 429 Too Many Requests` errors, degrading p99 latency from ~350ms to over 2.1s. (doc: `6e9d81aaa2ce458c`)\n6.  **OAuth 2.0 Token Refresh Failure:** Requests with expired JWTs to Flipkart's authorization server took ~2.5 seconds to respond instead of immediately rejecting, causing `ReadTimeoutException` errors and pushing the reconciliation job's error rate to nearly 4.5%. (doc: `106bbe795e774749`)\n7.  **Post-Authentication Processing Bottleneck:** Even after a successful token refresh, calls to `/v2/refunds/initiate` timed out, with P99 latency degrading from ~250ms to over 2,800ms and error rates spiking to 4.5%. (doc: `c9099a114f3445b9`)",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Summarize all the different payment routing problems identified in the email threads related to the Flipkart settlement discrepancy. For each problem, state the root cause and the resulting error.",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "The email threads identify several distinct payment routing problems:\n\n1.  **Cross-Border Currency Misrouting:** For transactions with a non-INR currency code, calls to the `/v1/refunds/initiate` endpoint were intermittently misrouted, resulting in a `502 Bad Gateway` error on Flipkart's end. (doc: `7040d4d69f0a4a0f`)\n\n2.  **Missing International Flag:** For refunds on international card transactions, the `is_international: true` flag was missing in the API payload from Flipkart. This caused the requests to be incorrectly routed through Juspay's domestic UPI gateway, which failed with an `Error Code: 5042 (Acquirer Mismatch)`. (doc: `ec3595e5558a4cf0`)\n\n3.  **Incorrect BIN Identification:** A misconfigured ruleset in Juspay's payment routing service incorrectly flagged a range of international card BINs as domestic. This caused refund requests to be sent to the wrong settlement processor, triggering an `INVALID_ROUTING_ID` error from Flipkart's `/v2/refunds/initiate` endpoint. (doc: `0880c93cdb534bd4`)\n\n4.  **Data Center Misrouting:** INR-denominated refund requests from Flipkart were intermittently routed to Juspay's EU-based cluster (`api.eu.juspay.io`) instead of the correct India cluster (`api.in.juspay.io`). This caused the validation layer to fail with a `422_INVALID_CURRENCY_FOR_REGION` error. (doc: `59c90ba34a584db0`)",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.9,
+      "Question_Complexity": "high",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What's the overall situation with the Flipkart refund issues, and what are the main action items being pursued by Juspay's teams to fix things?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "The overall situation is a series of complex, concurrent technical failures causing significant discrepancies and backlogs in the Flipkart refund settlement process. These issues, tracked under Work ID `318b8082-efd0-4f33-8696-c6979e9a6cd9`, have led to increased manual reconciliation efforts and pose serious compliance risks regarding RBI guidelines and SOC 2 audits.\n\nThe main action items being pursued by Juspay's teams to resolve these issues are:\n\n*   **Fixing Configuration & Logic Errors (Arjun Mehta):**\n    *   A hotfix was deployed to correct the `slidingWindow.interval` in a Flink job that was causing false fraud alerts (doc: `5b1d3e49f973459e`).\n    *   A fix was deployed with robust retry logic for failing forex rate lookups in the multi-currency settlement process (doc: `4fbbd82a039f42cb`).\n    *   A hotfix was deployed to correct the BIN identification logic that caused cross-border routing errors (doc: `0880c93cdb534bd4`).\n    *   The team is updating the settlement orchestration logic to handle asynchronous KYC states (`PENDING_MANUAL_REVIEW`) to prevent timeouts (doc: `4ce06223f23b44fe`).\n\n*   **Mitigating External Bottlenecks (Arjun Mehta & Anjali Patel):**\n    *   A hotfix is being deployed to implement exponential backoff to handle API rate limiting (`HTTP 429` errors) from Flipkart's API (doc: `6e9d81aaa2ce458c`).\n    *   A formal request is being made to Flipkart to increase the API rate limit to a minimum of 300 TPS (doc: `6e9d81aaa2ce458c`, `5e29d6a52b7b489b`).\n    *   A temporary fix with a more aggressive client-side timeout and a circuit breaker is being deployed to mitigate slow responses from Flipkart's OAuth service (doc: `106bbe795e774749`).\n\n*   **Requesting Investigation from Flipkart:**\n    *   Juspay has repeatedly requested Flipkart's engineering teams to investigate performance bottlenecks, latency spikes, and errors originating from their services, including their core banking system API, risk scoring engine, and authorization server (docs: `e12c294e1c3940bf`, `53a52db25bba49e3`, `106bbe795e774749`).\n\n*   **Manual Intervention & Reconciliation:**\n    *   Teams are performing manual reconciliation and preparing settlement files as a contingency to clear backlogs and mitigate immediate compliance risks (docs: `ec3595e5558a4cf0`, `5e29d6a52b7b489b`).",
+    "Confidence": 1.0
+  }
+]
+```

@@ -1,0 +1,18 @@
+[
+  {
+    "put": "id:namespace:chat_user::U77977971",
+    "fields": {
+      "docId": "U77977971",
+      "teamId": "T04T5CL7L",
+      "name": "Rohit Sharma",
+      "email": "rohit.sharma@juspay.in",
+      "app": "slack",
+      "entity": "user",
+      "image": "https://avatars.slack-edge.com/2020-04-03/1048862212592_7d935c05f31898a1d295_192.jpg",
+      "tz": "Asia/Kolkata",
+      "isAdmin": true,
+      "deleted": false,
+      "updatedAt": 1743659892
+    }
+  }
+]

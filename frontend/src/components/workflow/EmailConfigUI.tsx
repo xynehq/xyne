@@ -2,7 +2,14 @@ import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, X, Trash2, CornerDownLeft, AlertCircle, CheckCircle } from "lucide-react"
+import {
+  ArrowLeft,
+  X,
+  Trash2,
+  CornerDownLeft,
+  AlertCircle,
+  CheckCircle,
+} from "lucide-react"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface EmailConfigUIProps {
@@ -39,47 +46,61 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
   })
 
   const [newEmailAddress, setNewEmailAddress] = useState("")
-  const [emailValidationError, setEmailValidationError] = useState<string | null>(null)
+  const [emailValidationError, setEmailValidationError] = useState<
+    string | null
+  >(null)
   const [isEmailValid, setIsEmailValid] = useState<boolean>(false)
 
   // Email validation regex - comprehensive pattern for email validation
-  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+  const emailRegex =
+    /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
 
   // Validate email function
-  const validateEmail = (email: string): { isValid: boolean; error: string | null } => {
+  const validateEmail = (
+    email: string,
+  ): { isValid: boolean; error: string | null } => {
     if (!email.trim()) {
       return { isValid: false, error: null }
     }
-    
+
     if (email.length > 254) {
-      return { isValid: false, error: "Email address is too long (max 254 characters)" }
+      return {
+        isValid: false,
+        error: "Email address is too long (max 254 characters)",
+      }
     }
-    
+
     if (!emailRegex.test(email)) {
       return { isValid: false, error: "Please enter a valid email address" }
     }
-    
+
     // Additional checks
-    const [localPart, domain] = email.split('@')
-    
+    const [localPart, domain] = email.split("@")
+
     if (localPart.length > 64) {
-      return { isValid: false, error: "Email local part is too long (max 64 characters)" }
+      return {
+        isValid: false,
+        error: "Email local part is too long (max 64 characters)",
+      }
     }
-    
+
     if (domain.length > 253) {
-      return { isValid: false, error: "Email domain is too long (max 253 characters)" }
+      return {
+        isValid: false,
+        error: "Email domain is too long (max 253 characters)",
+      }
     }
-    
+
     // Check for consecutive dots
-    if (email.includes('..')) {
+    if (email.includes("..")) {
       return { isValid: false, error: "Email cannot contain consecutive dots" }
     }
-    
+
     // Check if email starts or ends with dot
-    if (localPart.startsWith('.') || localPart.endsWith('.')) {
+    if (localPart.startsWith(".") || localPart.endsWith(".")) {
       return { isValid: false, error: "Email cannot start or end with a dot" }
     }
-    
+
     return { isValid: true, error: null }
   }
 
@@ -96,17 +117,18 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
     if (isVisible) {
       // Try to load from stepData.config first, then toolData, otherwise use defaults
       let existingConfig = null
-      
+
       if (stepData?.config) {
         existingConfig = stepData.config
       } else if (toolData?.value || toolData?.config) {
         existingConfig = toolData.value || toolData.config || {}
       }
-      
+
       if (existingConfig) {
         setEmailConfig({
           sendingFrom: existingConfig.sendingFrom || "no-reply@xyne.io",
-          emailAddresses: existingConfig.emailAddresses || existingConfig.to_email || [],
+          emailAddresses:
+            existingConfig.emailAddresses || existingConfig.to_email || [],
         })
       } else {
         // Reset to defaults for new Email
@@ -123,25 +145,27 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
 
   const handleAddEmail = () => {
     const validation = validateEmail(newEmailAddress)
-    
+
     if (!validation.isValid) {
-      setEmailValidationError(validation.error || "Please enter a valid email address")
+      setEmailValidationError(
+        validation.error || "Please enter a valid email address",
+      )
       setIsEmailValid(false)
       return
     }
-    
+
     if (emailConfig.emailAddresses.includes(newEmailAddress.toLowerCase())) {
       setEmailValidationError("This email address is already added")
       setIsEmailValid(false)
       return
     }
-    
+
     // Add the email (normalize to lowercase for consistency)
     setEmailConfig((prev) => ({
       ...prev,
       emailAddresses: [...prev.emailAddresses, newEmailAddress.toLowerCase()],
     }))
-    
+
     // Reset input and validation state
     setNewEmailAddress("")
     setEmailValidationError(null)
@@ -282,7 +306,9 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
               className="w-full bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               disabled
             />
-            <p className="text-xs text-slate-500 dark:text-gray-400">Email isn't editable</p>
+            <p className="text-xs text-slate-500 dark:text-gray-400">
+              Email isn't editable
+            </p>
           </div>
 
           {/* Add Email Address */}
@@ -304,8 +330,8 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                   emailValidationError
                     ? "border-red-500 dark:border-red-400 focus:border-red-500 dark:focus:border-red-400"
                     : isEmailValid && newEmailAddress
-                    ? "border-green-500 dark:border-green-400 focus:border-green-500 dark:focus:border-green-400"
-                    : "dark:border-gray-600"
+                      ? "border-green-500 dark:border-green-400 focus:border-green-500 dark:focus:border-green-400"
+                      : "dark:border-gray-600"
                 }`}
               />
               <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
@@ -320,7 +346,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 </div>
               </div>
             </div>
-            
+
             {/* Email validation feedback */}
             {emailValidationError && (
               <div className="flex items-center gap-2 mt-2">
@@ -330,7 +356,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 </p>
               </div>
             )}
-            
+
             {isEmailValid && newEmailAddress && !emailValidationError && (
               <div className="flex items-center gap-2 mt-2">
                 <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400 flex-shrink-0" />
@@ -339,7 +365,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 </p>
               </div>
             )}
-            
+
             {newEmailAddress && !isEmailValid && !emailValidationError && (
               <div className="mt-2">
                 <p className="text-sm text-slate-500 dark:text-gray-400">
@@ -397,7 +423,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             )}
           </div>
         </div>
-        
+
         {/* Save Button - Sticky to bottom */}
         <div className="pt-6 px-0">
           {emailConfig.emailAddresses.length === 0 && (

@@ -52,20 +52,22 @@ const Dropdown: React.FC<DropdownProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
-  const [dropdownPosition, setDropdownPosition] = useState<"bottom" | "top">("bottom")
+  const [dropdownPosition, setDropdownPosition] = useState<"bottom" | "top">(
+    "bottom",
+  )
   const dropdownRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Filter options based on search term
   const filteredOptions = searchable
-    ? options.filter(option =>
-        option.label.toLowerCase().includes(searchTerm.toLowerCase())
+    ? options.filter((option) =>
+        option.label.toLowerCase().includes(searchTerm.toLowerCase()),
       )
     : options
 
   // Find selected option
-  const selectedOption = options.find(option => option.value === value)
+  const selectedOption = options.find((option) => option.value === value)
 
   // Handle position calculation
   useEffect(() => {
@@ -74,7 +76,7 @@ const Dropdown: React.FC<DropdownProps> = ({
       const viewportHeight = window.innerHeight
       const spaceBelow = viewportHeight - rect.bottom
       const spaceAbove = rect.top
-      
+
       // If there's more space above than below and not enough space below for dropdown
       if (spaceAbove > spaceBelow && spaceBelow < 200) {
         setDropdownPosition("top")
@@ -89,7 +91,10 @@ const Dropdown: React.FC<DropdownProps> = ({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false)
         setSearchTerm("")
       }
@@ -126,7 +131,7 @@ const Dropdown: React.FC<DropdownProps> = ({
 
   const handleSelect = (optionValue: string) => {
     if (disabled) return
-    
+
     onSelect(optionValue)
     setIsOpen(false)
     setSearchTerm("")
@@ -154,7 +159,7 @@ const Dropdown: React.FC<DropdownProps> = ({
           return `bg-gray-50 dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-500 text-gray-900 dark:text-gray-100`
       }
     }
-    
+
     // Default lighter border colors
     switch (variant) {
       case "outline":
@@ -188,7 +193,7 @@ const Dropdown: React.FC<DropdownProps> = ({
       "cursor-not-allowed opacity-50": disabled,
       "border-red-500 dark:border-red-400": error,
     },
-    className
+    className,
   )
 
   const dropdownClassName = cn(
@@ -197,16 +202,16 @@ const Dropdown: React.FC<DropdownProps> = ({
     rounded ? "" : "rounded-lg",
     {
       "bottom-full mb-1 mt-0": dropdownPosition === "top",
-    }
+    },
   )
 
   return (
-    <div 
-      className="relative" 
-      ref={dropdownRef} 
+    <div
+      className="relative"
+      ref={dropdownRef}
       style={{
         ...(width ? { width } : {}),
-        ...(rounded ? { borderRadius: rounded } : {})
+        ...(rounded ? { borderRadius: rounded } : {}),
       }}
     >
       <button
@@ -217,7 +222,7 @@ const Dropdown: React.FC<DropdownProps> = ({
         style={{
           ...(rounded ? { borderRadius: rounded } : {}),
           ...(border ? { border: isOpen ? "1px solid #000000" : border } : {}),
-          ...(isOpen && !border ? { border: "1px solid #000000" } : {})
+          ...(isOpen && !border ? { border: "1px solid #000000" } : {}),
         }}
         disabled={disabled}
         aria-haspopup="listbox"
@@ -227,34 +232,36 @@ const Dropdown: React.FC<DropdownProps> = ({
           {selectedOption?.icon && (
             <span className="flex-shrink-0">{selectedOption.icon}</span>
           )}
-          <span className={cn(
-            "truncate",
-            !selectedOption && "text-gray-500 dark:text-gray-400",
-            selectedOption && "text-gray-900 dark:text-gray-100"
-          )}>
+          <span
+            className={cn(
+              "truncate",
+              !selectedOption && "text-gray-500 dark:text-gray-400",
+              selectedOption && "text-gray-900 dark:text-gray-100",
+            )}
+          >
             {selectedOption?.label || placeholder}
           </span>
         </div>
-        
+
         <div className="flex items-center gap-2">
           {loading && (
             <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 dark:border-t-gray-400 rounded-full animate-spin" />
           )}
-          <ChevronDown 
+          <ChevronDown
             className={cn(
               "w-4 h-4 text-gray-400 transition-transform",
-              isOpen && "rotate-180"
-            )} 
+              isOpen && "rotate-180",
+            )}
           />
         </div>
       </button>
 
       {isOpen && (
-        <div 
+        <div
           className={dropdownClassName}
           style={{
             ...(rounded ? { borderRadius: rounded } : {}),
-            ...(border ? { border: border } : {})
+            ...(border ? { border: border } : {}),
           }}
         >
           {searchable && (
@@ -268,20 +275,19 @@ const Dropdown: React.FC<DropdownProps> = ({
                 className={cn(
                   "w-full px-2 py-1 border rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500",
                   border ? "" : "border-gray-200 dark:border-gray-600",
-                  fontSize || "text-sm"
+                  fontSize || "text-sm",
                 )}
                 style={border ? { border: border } : {}}
               />
             </div>
           )}
-          
-          <div 
-            className="overflow-y-auto"
-            style={{ maxHeight }}
-          >
+
+          <div className="overflow-y-auto" style={{ maxHeight }}>
             {filteredOptions.length === 0 ? (
               <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-                {searchable && searchTerm ? "No options found" : "No options available"}
+                {searchable && searchTerm
+                  ? "No options found"
+                  : "No options available"}
               </div>
             ) : (
               filteredOptions.map((option) => (
@@ -294,9 +300,10 @@ const Dropdown: React.FC<DropdownProps> = ({
                     "w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 focus:outline-none text-gray-900 dark:text-gray-100",
                     fontSize || "text-sm",
                     {
-                      "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-medium": option.value === value,
+                      "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-medium":
+                        option.value === value,
                       "cursor-not-allowed opacity-50": option.disabled,
-                    }
+                    },
                   )}
                 >
                   {option.icon && (

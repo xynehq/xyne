@@ -43,7 +43,9 @@ export const getWorkflowToolById = async (
     .where(eq(workflowTool.id, id))
     .limit(1)
 
-  return tool ? ({ ...tool, value: tool.value as any, config: tool.config as any }) : null
+  return tool
+    ? { ...tool, value: tool.value as any, config: tool.config as any }
+    : null
 }
 
 export const getAllWorkflowTools = async (
@@ -53,8 +55,12 @@ export const getAllWorkflowTools = async (
     .select()
     .from(workflowTool)
     .orderBy(desc(workflowTool.createdAt))
-  
-  return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
+
+  return results.map((result) => ({
+    ...result,
+    value: result.value as any,
+    config: result.config as any,
+  }))
 }
 
 export const getWorkflowToolsByIds = async (
@@ -62,14 +68,18 @@ export const getWorkflowToolsByIds = async (
   toolIds: string[],
 ): Promise<SelectWorkflowTool[]> => {
   if (toolIds.length === 0) return []
-  
+
   const results = await trx
     .select()
     .from(workflowTool)
     .where(inArray(workflowTool.id, toolIds))
     .orderBy(desc(workflowTool.createdAt))
-  
-  return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
+
+  return results.map((result) => ({
+    ...result,
+    value: result.value as any,
+    config: result.config as any,
+  }))
 }
 
 export const updateWorkflowTool = async (
@@ -86,7 +96,9 @@ export const updateWorkflowTool = async (
     .where(eq(workflowTool.id, id))
     .returning()
 
-  return updated ? ({ ...updated, value: updated.value as any, config: updated.config as any }) : null
+  return updated
+    ? { ...updated, value: updated.value as any, config: updated.config as any }
+    : null
 }
 
 // Note: The new schema doesn't have soft deletes (deletedAt field)
@@ -103,7 +115,7 @@ export const deleteWorkflowTool = async (
   return deleted.length > 0
 }
 
-// Tool Execution Operations  
+// Tool Execution Operations
 export const createToolExecution = async (
   trx: TxnOrClient,
   data: {
@@ -136,7 +148,7 @@ export const getToolExecutionById = async (
     .where(eq(toolExecution.id, id))
     .limit(1)
 
-  return execution ? ({ ...execution, result: execution.result as any }) : null
+  return execution ? { ...execution, result: execution.result as any } : null
 }
 
 export const getToolExecutionsByWorkflowExecution = async (
@@ -148,8 +160,8 @@ export const getToolExecutionsByWorkflowExecution = async (
     .from(toolExecution)
     .where(eq(toolExecution.workflowExecutionId, workflowExecutionId))
     .orderBy(desc(toolExecution.createdAt))
-  
-  return results.map(result => ({ ...result, result: result.result as any }))
+
+  return results.map((result) => ({ ...result, result: result.result as any }))
 }
 
 export const getToolExecutionsByTool = async (
@@ -161,8 +173,8 @@ export const getToolExecutionsByTool = async (
     .from(toolExecution)
     .where(eq(toolExecution.workflowToolId, workflowToolId))
     .orderBy(desc(toolExecution.createdAt))
-  
-  return results.map(result => ({ ...result, result: result.result as any }))
+
+  return results.map((result) => ({ ...result, result: result.result as any }))
 }
 
 export const updateToolExecution = async (
@@ -179,7 +191,7 @@ export const updateToolExecution = async (
     .where(eq(toolExecution.id, id))
     .returning()
 
-  return updated ? ({ ...updated, result: updated.result as any }) : null
+  return updated ? { ...updated, result: updated.result as any } : null
 }
 
 export const markToolExecutionStarted = async (

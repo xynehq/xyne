@@ -24,7 +24,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
     const [documentContent, setDocumentContent] = useState<Blob | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    
+
     useEffect(() => {
       if (!citation || !isOpen) {
         setDocumentContent(null)
@@ -81,7 +81,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
 
       loadDocument()
     }, [citation, isOpen])
-  
+
     const getFileExtension = (filename: string): string => {
       return filename.toLowerCase().split(".").pop() || ""
     }
@@ -96,20 +96,21 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
       const file = new File([documentContent], fileName, {
         type: documentContent.type || getDefaultMimeType(extension),
       })
-      
+
       switch (extension) {
         case "pdf":
           return (
-  <DocumentOperationsProvider>
-    <PdfViewer 
-    key={citation.docId} 
-    source={file} 
-    className="h-full" 
-    style={{ height: "100%", overflow: "auto" }} 
-    scale={1.0} 
-    showNavigation={true} 
-    displayMode="continuous" />            
-</DocumentOperationsProvider>
+            <DocumentOperationsProvider>
+              <PdfViewer
+                key={citation.docId}
+                source={file}
+                className="h-full"
+                style={{ height: "100%", overflow: "auto" }}
+                scale={1.0}
+                showNavigation={true}
+                displayMode="continuous"
+              />
+            </DocumentOperationsProvider>
           )
         case "md":
         case "markdown":
@@ -137,38 +138,36 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
               }}
             />
           )
-          case "xlsx":
-          case "xls":
-            return(
-              <ExcelViewer
-                key={citation.docId}
-                source={file}
-                className="h-full"
-                style={{ overflow: "visible" }}
-                
-              />
-            )
-            case "csv":
-            case "tsv":
-              return(
-                <CsvViewer
-                  key={citation.docId}
-                  source={file}
-                  className="h-full"
-                  style={{ overflow: "visible" }}
-                />
-              )
-              case "txt":
-              case "text":
-                return(
-                  <TxtViewer
-                    key={citation.docId}
-                    source={file}
-                    className="h-full"
-                    style={{ overflow: "visible" }}
-                  />
-                )
-              
+        case "xlsx":
+        case "xls":
+          return (
+            <ExcelViewer
+              key={citation.docId}
+              source={file}
+              className="h-full"
+              style={{ overflow: "visible" }}
+            />
+          )
+        case "csv":
+        case "tsv":
+          return (
+            <CsvViewer
+              key={citation.docId}
+              source={file}
+              className="h-full"
+              style={{ overflow: "visible" }}
+            />
+          )
+        case "txt":
+        case "text":
+          return (
+            <TxtViewer
+              key={citation.docId}
+              source={file}
+              className="h-full"
+              style={{ overflow: "visible" }}
+            />
+          )
 
         default:
           // For other file types, try to display as text or show a generic message

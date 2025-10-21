@@ -1,0 +1,114 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "According to Arjun Mehta's investigation, what was the peak p99 latency for the /mandate/score-transaction endpoint and what is the associated JIRA ticket number?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on Arjun Mehta's email (docId: a5f262d5d63e4011), the p99 latency for the `/mandate/score-transaction` endpoint jumped from a baseline of ~210ms to a sustained 1.9s. The investigation findings for this issue are being tracked in JIRA PAY-4155.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What's the situation with the cross-border payment issues related to the UPI Mandate work?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "There are two primary cross-border payment issues reported:\n\n1.  **Compliance Breach (Priya Nair, docId: b0bc09865e2f4193):** Approximately 2,150 domestic UPI transactions were incorrectly routed through the international payment gateway, which is a serious breach of RBI's FEMA guidelines. This is tracked as a P0 incident under JIRA PAY-3503, and an immediate rollback of the routing configuration was requested.\n\n2.  **Operational Failures (Anjali Patel, docId: ee7a1feed503420e):** There is a spike in transaction failures for international UPI Mandate transactions, with the error code `U69`. The failure rate jumped from 0.2% to 4.8%. The root cause is a misconfiguration in the `upi-router-service` failing to generate a valid JWT token for non-INR transactions. A rollback of this service was requested, and the issue is tracked in JIRA PAY-9952.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Summarize the different root causes identified for the various UPI Mandate problems, and list which specific service or model is implicated in each case.",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the provided documents, here are the identified root causes and the implicated services/models:\n\n1.  **Latency Spike:** The issue is a bottleneck in the OAuth 2.0 token introspection flow, with a hypothesis of database connection pool exhaustion. The implicated service is the **authentication service** (docId: a5f262d5d63e4011).\n\n2.  **High False Positives (FRM-802):** The cause is an overly sensitive `vpa_velocity_threshold` and disproportionately high weighting for `device_fingerprint_entropy`. The implicated model is the **MandateVelocityScorer-v2** within the HyperSentry fraud engine (docId: b1ced9640b604a7f).\n\n3.  **Domestic Transaction Misrouting:** A faulty JWT claim within the OAuth 2.0 flow failed to differentiate domestic vs. international mandates, leading to a compliance breach. The issue lies within the **payment routing configuration** (docId: b0bc09865e2f4193).\n\n4.  **International Transaction Failures (U69):** A misconfiguration in a Kubernetes deployment is causing the service to fail to initiate the OAuth 2.0 flow for non-INR transactions. The implicated service is the **`upi-router-service`** (docId: ee7a1feed503420e).\n\n5.  **Settlement Discrepancy:** The system is not correctly processing asynchronous late reversal notifications (response code `U69`) from NPCI, leading to a mismatch in the settlement ledger. This is a logical flaw in the **`upi-mandate-processor` service's reconciliation job** (docId: a319e7ad79454258).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are all the JIRA tickets that have been created for the issues related to Work ID 452e9925-ad87-426d-afa1-7736d193d4b2?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the provided emails, the following JIRA tickets have been created for issues related to Work ID 452e9925-ad87-426d-afa1-7736d193d4b2:\n\n*   **PAY-4155:** For the investigation into the latency spike in the UPI Mandate risk scoring engine (docId: a5f262d5d63e4011).\n*   **PAY-3503:** A P0 incident ticket for the critical compliance breach involving cross-border payment routing errors (docId: b0bc09865e2f4193).\n*   **PAY-9952:** For the analysis of cross-border transaction failures with error code `U69` (docId: ee7a1feed503420e).\n*   **PAY-3024:** For the high false positive rate on the UPI Mandate fraud model (docId: 0cf90ecc5cb54b45).\n*   **PAY-6952:** For the investigation into the UPI Mandate settlement discrepancy caused by late reversals (docId: a319e7ad79454258).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.9,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "How are things looking overall with the UPI Mandate project? What is the general risk profile emerging from these incidents?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "The overall status of the UPI Mandate project (Work ID 452e9925-ad87-426d-afa1-7736d193d4b2) appears to be critical, with multiple high-priority incidents occurring simultaneously. The emerging risk profile is multi-faceted, spanning regulatory, financial, and operational domains:\n\n*   **Regulatory & Compliance Risk:** There is a direct and serious breach of RBI's FEMA guidelines due to domestic transactions being misrouted internationally (docId: b0bc09865e2f4193). This requires mandatory reporting and has created a non-compliant audit trail. Additionally, there are concerns about RBI compliance for real-time processing due to latency spikes (docId: a5f262d5d63e4011) and potential self-reporting to NPCI (docId: ee7a1feed503420e).\n*   **Financial Risk:** A settlement discrepancy is causing reconciliation gaps, impacting 142 transactions in one batch. This requires manual data correction to ensure books are balanced (docId: a319e7ad79454258).\n*   **Operational & Business Risk:** Multiple services (`authentication service`, `upi-router-service`, `upi-mandate-processor`) and models (`MandateVelocityScorer-v2`) are experiencing issues. This has led to high latency (1.9s vs 300ms SLA), high transaction failure rates (up to 4.8%), and a high false positive rate (4.2% vs <1.0% threshold). This is causing significant customer friction, an increase in support tickets, and is jeopardizing Q3 goals for mandate adoption (docId: 0cf90ecc5cb54b45).\n*   **Technical Risk:** There are repeated failures related to the OAuth 2.0 and JWT token flow, as well as questions about the effectiveness of CI/CD pipeline validation which failed to catch critical configuration errors before deployment (docId: b0bc09865e2f4193, ee7a1feed503420e).",
+    "Confidence": 1.0
+  }
+]
+```

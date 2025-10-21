@@ -266,7 +266,8 @@ export default function FileUpload({
       console.error("Upload error:", error)
       toast.error({
         title: "Upload Failed",
-        description: "An unexpected error occurred during upload. Please try again.",
+        description:
+          "An unexpected error occurred during upload. Please try again.",
       })
     } finally {
       setIsUploading(false)
@@ -379,7 +380,8 @@ export default function FileUpload({
         if (files.length === 0 && totalItems > 0) {
           toast.error({
             title: "No valid files found",
-            description: "Files must be under 40MB. All oversized files were ignored.",
+            description:
+              "Files must be under 40MB. All oversized files were ignored.",
           })
         }
       })

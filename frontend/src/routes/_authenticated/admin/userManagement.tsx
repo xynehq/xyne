@@ -129,7 +129,6 @@ const Skeleton = ({ className = "" }: { className?: string }) => (
   />
 )
 
-
 export const Route = createFileRoute("/_authenticated/admin/userManagement")({
   beforeLoad: ({ context }) => {
     if (
@@ -609,12 +608,11 @@ function UsersListPage({
       if (!res.ok) {
         throw new Error("Failed to update role")
       }
-       if (activeTab === "loggedIn") {
+      if (activeTab === "loggedIn") {
         await fetchLoggedInUsers()
       } else if (activeTab === "ingested") {
         await fetchIngestedUsers()
       }
-      
 
       toast.success({
         title: "Success",
@@ -706,7 +704,7 @@ function UsersListPage({
       if (!res.ok) {
         throw new Error("Failed to trigger Slack sync")
       }
- 
+
       toast.success({
         title: "Success",
         description: "Slack sync has been successfully triggered.",

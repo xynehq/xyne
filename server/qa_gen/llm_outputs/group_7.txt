@@ -1,0 +1,114 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the recent email exchanges regarding the Flipkart settlement project, what are the primary categories of technical issues being reported by Juspay teams, and what is the recurring business impact mentioned across these different problems?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the documents, the primary categories of technical issues are:\n\n1.  **API Failures and Performance Degradation:** This is the most common category, including:\n    *   **Rate-Limiting:** `HTTP 429 Too Many Requests` errors on endpoints like `/v2/payments/refund/status` (docId: 77dd690e10564777) and `/v2/settlements/refunds/query` (docId: 8947e86b2137411d).\n    *   **Processing Errors:** `422 Unprocessable Entity` responses from Flipkart's `v2/kyc/verify` endpoint (docId: 5be432607c354cc1).\n    *   **Timeouts:** `504 Gateway Timeout` errors linked to latency spikes on Juspay's `/v2/risk/evaluate` endpoint (docId: 33d51709421142ac) and Flipkart's `/kyc/v3/verify` endpoint (docId: e970cd7622a546b6).\n    *   **Third-Party Vendor Issues:** `429 Too Many Requests` and `401 Unauthorized` errors from a third-party KYC vendor's `/v3/verify/enhanced` endpoint (docId: c3b76e06ee444a78).\n\n2.  **Data and State Discrepancies:**\n    *   **Status Mismatch:** Refund statuses from the `/refund/status` API do not align with the final settlement files (docId: 46eb0ace81f64429).\n    *   **Multi-Currency Reconciliation:** Discrepancies in foreign exchange rates used at refund initiation versus final settlement (docId: a8c473b13552445f).\n\n3.  **Security and Compliance Violations:**\n    *   **PCI DSS Violation:** A critical violation where debug-level logs were capturing truncated PANs in plain text, as detailed in the remediation plan (docId: 49a3d287719c4892).\n\nThe recurring business impact mentioned across these issues is:\n*   **Settlement Delays:** Pushing settlement timelines from the T+1 SLA to T+2 or T+3, creating significant backlogs.\n*   **Increased Operational Overhead:** Forcing manual intervention and reconciliation by finance and operations teams, which is described as unsustainable.\n*   **Compliance Risk:** Jeopardizing adherence to regulatory mandates, specifically RBI's guidelines for settlement TAT and AML/KYC, and creating concerns for upcoming SOC 2 and PCI DSS audits.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "arshith.balaraju@juspay.in",
+      "User_name": "Arshith Balaraju"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What specific metrics and error codes are associated with the KYC automation failures for high-risk customer segments as reported by Anjali Patel and Siddharth Nair?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the emails from Anjali Patel and Siddharth Nair, the following metrics and error codes are associated with KYC automation failures for high-risk segments:\n\n*   **From Anjali Patel's email (docId: 5be432607c354cc1):**\n    *   **Metric:** The failure rate for automated KYC verification spiked dramatically from a baseline of <1% to over 15% in the last 48 hours.\n    *   **Endpoint:** `v2/kyc/verify`\n    *   **Error Code:** `422 Unprocessable Entity` response with a generic error payload.\n\n*   **From Siddharth Nair's email (docId: e970cd7622a546b6):**\n    *   **Metric:** A 6.8% failure rate was observed for these specific KYC checks.\n    *   **Metric:** P99 latency for the 'high-risk' segment is spiking to over 4.5 seconds, well above the 800ms SLA.\n    *   **Endpoint:** `/kyc/v3/verify`\n    *   **Error Code:** `504 Gateway Timeout` received from Flipkart's end.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the immediate, two-pronged remediation plan for the PCI DSS violation in the 'fk-refund-settlement-processor' service, as detailed in file 49a3d287719c4892?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "According to the remediation plan in file `49a3d287719c4892`, the immediate two-pronged approach for the PCI DSS violation is:\n\n1.  **Emergency Hotfix:** Deploy hotfix version 1.7.1 to update the `log4j2.xml` configuration. This will elevate the log level for the `in.juspay.settlement.flipkart` package from DEBUG to INFO in the production environment to stop the immediate leakage of sensitive data.\n\n2.  **IAM Role Replacement:** The DevOps team is mandated to create and apply a new, scoped-down IAM role named `fk-settlement-s3-write-role`. This role must restrict actions to `s3:PutObject` exclusively on the `s3://juspay-settlement-logs-prod/flipkart/*` prefix and must replace the legacy `BroadS3Access-Legacy` policy on the service's ECS task definition within the next 2 hours.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List all the specific API endpoints that have reported issues in the recent email discussions, along with their associated JIRA ticket numbers.",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the provided emails, here is a list of the API endpoints with reported issues and their associated JIRA tickets:\n\n*   **`v2/kyc/verify`**: Experiencing `422 Unprocessable Entity` errors. Tracked under **JIRA PAY-9722** (docId: 5be432607c354cc1).\n*   **`/v2/payments/refund/status`**: Throttled with `HTTP 429 Too Many Requests` errors. Tracked under **JIRA PAY-4766** (docId: 77dd690e10564777).\n*   **`/refund/status`**: Showing a state mismatch with settlement files. Tracked under **JIRA PAY-8724** (docId: 46eb0ace81f64429).\n*   **`/v3/verify/enhanced`** (Third-party vendor): Receiving `429 Too Many Requests` and `401 Unauthorized` errors. Tracked under **JIRA PAY-1673** (docId: c3b76e06ee444a78).\n*   **`/v2/refunds`**: Involved in multi-currency discrepancies due to FX rate timing. Tracked under **JIRA PAY-6394** (docId: a8c473b13552445f).\n*   **`/v2/risk/evaluate`**: Latency spike leading to `504 Gateway Timeout` errors. Tracked under **JIRA PAY-3791** (docId: 33d51709421142ac).\n*   **`/kyc/v3/verify`**: High latency causing `504 Gateway Timeout` errors. Tracked under **JIRA PAY-8339** (docId: e970cd7622a546b6).\n*   **`/v2/settlements/refunds/query`**: Aggressive rate-limiting causing `HTTP 429` errors. Tracked under **JIRA PAY-7163** (docId: 8947e86b2137411d).\n*   **`refunds.v2.query`**: Source of PAN data leakage into logs. Tracked under **JIRA PAY-9423** (docId: 49a3d287719c4892).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.8,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "How are things looking with our compliance risk for the Flipkart settlement process, and which specific regulatory or audit standards are being jeopardized?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on recent communications, the compliance risk posture for the Flipkart settlement process is highly concerning. Multiple ongoing technical issues are directly jeopardizing adherence to several key regulatory and audit standards:\n\n1.  **RBI Settlement Mandates (TAT):** Numerous issues, including API rate-limiting (docId: 77dd690e10564777, 8947e86b2137411d), KYC failures (docId: 5be432607c354cc1), and API timeouts (docId: 33d51709421142ac), are causing significant backlogs. This is pushing settlement times past the T+1 and T+2 SLAs, directly violating the RBI's mandated Turnaround Time (TAT) for refund processing.\n\n2.  **RBI AML/KYC Guidelines:** The spike in automated KYC verification failures for 'high-risk' accounts creates a gap in automated verification, posing a significant compliance risk under current RBI Anti-Money Laundering (AML) and Know Your Customer (KYC) guidelines (docId: 5be432607c354cc1).\n\n3.  **PCI DSS:** A critical violation of Requirement 3.4 was identified where the 'fk-refund-settlement-processor' service was logging truncated PANs in plain text (docId: 49a3d287719c4892). This is also mentioned as a potential audit flag in email c3b76e06ee444a78.\n\n4.  **SOC 2 Audit:** The ongoing API throttling and KYC failures are creating problematic audit trails and are explicitly mentioned as difficult points to defend during the upcoming SOC 2 audit cycle (docId: 77dd690e10564777, c3b76e06ee444a78).\n\n5.  **RBI Cross-Border Fund Movement:** While not explicitly stated as a violation, the discrepancies in foreign exchange rates for multi-currency refunds raise questions for RBI compliance audits regarding cross-border fund movements (docId: a8c473b13552445f).",
+    "Confidence": 1.0
+  }
+]
+```

@@ -71,7 +71,6 @@
     "@types/json-schema": "^7.0.15",
     "@types/jszip": "^3.4.1",
     "@types/node": "^24.3.0",
-    "@xyne/vespa-ts": "^1.0.8",
     "@xynehq/jaf": "^0.1.4",
     "ai": "^5.0.51",
     "arctic": "^3.3.0",
@@ -123,5 +122,13 @@
       "jiraPrefix": "XYN-",
       "jiraOptional": false
     }
-  }
+  },
+  "trustedDependencies": [
+    "@biomejs/biome",
+    "canvas",
+    "esbuild",
+    "lzo",
+    "protobufjs",
+    "sharp"
+  ]
 }

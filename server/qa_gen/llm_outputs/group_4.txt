@@ -1,0 +1,114 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "In the hotfix plan for the Flink job, what was the `slidingWindow.interval` parameter incorrectly set to, and what value was it reverted to?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the document 'Hotfix Plan for Flink Job Config Drift...' (docId: 5b1d3e49f973459e), the `slidingWindow.interval` parameter was inadvertently reduced to 60 seconds. The hotfix deployment reverted this parameter to the specified 300 seconds.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Synthesizing across all communications for Work ID 318b8082-efd0-4f33-8696-c6979e9a6cd9, what are the primary compliance risks that have been repeatedly mentioned, and what are the proposed long-term architectural solutions to mitigate them?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Across multiple emails and documents, the recurring compliance risks are:\n1.  **Breaching RBI's T+1/T+2 Settlement Timelines:** This is a major concern mentioned in emails e12c294e1c3940bf, 53a52db25bba49e3, and 664b37f4b39e due to API timeouts, latency, and reconciliation gaps.\n2.  **SOC 2 Audit Failures:** The lack of a clean, automated audit trail for transactions is cited as a serious concern for upcoming SOC 2 reporting cycles in emails 53a52db25bba49e3 and 7040d4d69f0a4a0f.\n3.  **Violating RBI's Master Direction on KYC:** Manual interventions required due to KYC API failures break the mandated automated audit trail, creating verifiable gaps in audit logs (email b01939696ed44325).\n4.  **Data Localization and FEMA Reporting:** Incorrectly routing INR-denominated or cross-border transactions to the wrong geographical cluster poses a risk of contravening RBI guidelines on data localization and FEMA reporting (emails 59c90ba34a584db0, 0880c93cdb534bd4).\n\nProposed long-term architectural solutions include:\n1.  **Asynchronous Callbacks:** Transitioning to an asynchronous callback model for final refund statuses to decouple systems from Flipkart's internal processing latencies (email e12c294e1c3940bf).\n2.  **Webhook for KYC Status:** Implementing a webhook callback from Flipkart's user service to a Juspay endpoint to get real-time notifications on manual KYC review completion, avoiding inefficient polling (email 4ce06223f23b44fe).\n3.  **API and File Enhancements:** Enhancing the settlement API or daily settlement file to include fields like `forexConversionRate`, `original_currency`, and `original_amount` to ensure auditable reconciliation for multi-currency transactions (emails 9240e5f20ea8439c, 420e36e3891144b1).\n4.  **CI/CD Schema Validation:** Implementing a schema validation check using Conftest within the CI/CD pipeline to prevent configuration drifts in future Helm chart deployments (file 5b1d3e49f973459e).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List the different JIRA tickets created to track the Flipkart refund settlement issues and the specific problem each one is associated with.",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the provided documents, the following JIRA tickets have been mentioned:\n\n- **PAY-7793:** Tracks details on Flipkart's risk engine incorrectly flagging high-risk customer segments (Slack message 3077aec8dadc4a02).\n- **PAY-3117:** Tracks details and failed refunds related to an OAuth token refresh failure (Slack message c2cc85e8cc3c4d88).\n- **PAY-1691:** Associated with the hotfix plan for the Flink job configuration drift (file 5b1d3e49f973459e).\n- **PAY-6691:** Tracks the backlog of refunds caused by API timeouts due to performance bottlenecks in Flipkart's core banking system (email e12c294e1c3940bf).\n- **PAY-8163:** Tracks the critical situation of manual reconciliations and risk of violating RBI's T+1 settlement guidelines (email 53a52db25bba49e3).\n- **PAY-9329:** Centralizes findings on a cross-border routing configuration error (email 7040d4d69f0a4a0f).\n- **PAY-5349:** Notes discrepancies caused by the settlement-batch-processor's handling of forex rate lookups (email 4fbbd82a039f42cb).\n- **PAY-5034:** Tracks the recurring issue of UPI refunds confirmed via API but missing from the final settlement file (email 664b37f4b39e).\n- **PAY-7425:** Tracks KYC automation failures for high-risk customer segments (email b01939696ed44325).\n- **PAY-6869:** Tracks the cross-border routing error where the `is_international` flag is missing in API payloads (email ec3595e5558a4cf0).\n- **PAY-5176:** Tracks the investigation into aggressive API rate-limiting by Flipkart's refund status API (email 6e9d81aaa2ce458c).\n- **PAY-4596:** Tracks efforts to resolve severe API rate-limiting on the `/refund/initiate` endpoint (email 5e29d6a52b7b489b).\n- **PAY-7491:** Tracks the investigation into UPI refund discrepancies where transactions are acknowledged by the API but missing from the settlement file (email 6d55c3ea174440c2).\n- **PAY-2864:** Tracks the investigation into API timeouts on the `/v2/refunds/initiate` endpoint (email c9099a114f3445b9).\n- **PAY-2802:** Internal ticket for tracking mitigation of KYC automation failures and the script to re-trigger settlements (email 4ce06223f23b44fe).\n- **PAY-4147:** Tracks intermittent OAuth 2.0 token refresh failures and API timeouts (email 106bbe795e774749).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What's the status of the various cross-border refund issues? Summarize the root cause, financial impact, and the proposed or deployed fix for each distinct problem.",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "There are several distinct cross-border refund issues discussed:\n\n1.  **Misrouted Non-INR Transactions:**\n    *   **Root Cause:** Calls to the `/v1/refunds/initiate` endpoint for non-INR currency were intermittently misrouted, causing a `502 Bad Gateway` (email 7040d4d69f0a4a0f).\n    *   **Financial Impact:** A settlement gap of approximately ₹1.9M across 3,800 transactions.\n    *   **Status:** An investigation into Flipkart's currency/country routing logic was requested.\n\n2.  **Missing 'is_international' Flag:**\n    *   **Root Cause:** Flipkart's `refund.initiate` API call was missing the `is_international: true` flag, causing requests to be incorrectly routed to the domestic UPI gateway and failing with an `Acquirer Mismatch` error (email ec3595e5558a4cf0).\n    *   **Financial Impact:** An error rate spike to 3.8% for the cross-border BIN range, impacting about 1,500 transactions.\n    *   **Status:** Juspay's finance team is performing manual reconciliation, and a permanent fix was requested from Flipkart's engineering team.\n\n3.  **Incorrect BIN Identification:**\n    *   **Root Cause:** A misconfiguration in Juspay's payment routing service incorrectly flagged a range of international card BINs as domestic, leading to an `INVALID_ROUTING_ID` error from Flipkart's API (email 0880c93cdb534bd4).\n    *   **Financial Impact:** Approximately 1,250 affected refund transactions.\n    *   **Status:** A hotfix was deployed by Juspay to correct the BIN logic, and a batch job was being initiated to re-process the failed refunds.\n\n4.  **Forex Rate Lookups:**\n    *   **Root Cause:** Intermittent API timeouts to Juspay's forex data provider caused the settlement job to use stale rates from a Redis cache for non-INR transactions (email 4fbbd82a039f42cb).\n    *   **Financial Impact:** Discrepancy value averaging 1.2% before the fix.\n    *   **Status:** Arjun Mehta deployed a candidate fix to staging with robust retry logic and a tightened cache TTL. It reduced the discrepancy to <0.05% in tests and was awaiting Finance Team sign-off for production deployment.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What were the specific error messages or exceptions reported in Kibana logs for the API performance issues related to Flipkart's core banking system migration and the OAuth token refresh failures?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the emails, two specific error types were reported in Kibana logs related to those issues:\n\n1.  **Core Banking System Migration Issue:** For the performance bottleneck linked to the core banking system migration, Anjali Patel's email (docId: e12c294e1c3940bf) states that the Kibana logs were filled with `ReadTimeoutException` errors pointing to Flipkart's refund service endpoint.\n\n2.  **OAuth Token Refresh Failure:** For the intermittent OAuth 2.0 token refresh failures, Anjali Patel's later email (docId: 106bbe795e774749) also mentions `ReadTimeoutException` errors, but specifies they were occurring on the client-side as a direct result of the authorization server taking too long to respond to requests with expired JWTs.",
+    "Confidence": 1.0
+  }
+]
+```

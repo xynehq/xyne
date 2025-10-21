@@ -295,7 +295,7 @@ export async function resolveNamesToEmails(
         const fields = result.fields as VespaMail
         const contextLine = `
         [Index ${index}]: 
-        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", {timeZone: userMetadata.userTimezone})})
+        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", { timeZone: userMetadata.userTimezone })})
         Subject: ${fields.subject || "Unknown"}
         From: <${fields.from}>
         To: <${fields.to}>
@@ -1228,6 +1228,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     imageCitation?: ImageCitation
   }
 > {
+  loggerWithChild({ email: email }).info(
+    "[av av] Entering generateIterativeTimeFilterAndQueryRewrite function",
+  )
   // we are not going to do time expansion
   // we are going to do 4 months answer
   // if not found we go back to iterative page search
@@ -1383,6 +1386,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
   let userAlpha = alpha
   try {
+    loggerWithChild({ email: email }).info(
+      "[av av] Calling getUserPersonalizationByEmail in generateIterativeTimeFilterAndQueryRewrite",
+    )
     const personalization = await getUserPersonalizationByEmail(db, email)
     if (personalization) {
       const nativeRankParams =
@@ -1448,6 +1454,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   }
   let searchResults: VespaSearchResponse
   if (!agentPrompt) {
+    loggerWithChild({ email: email }).info(
+      "[av av] Calling searchVespa in generateIterativeTimeFilterAndQueryRewrite",
+    )
     searchResults = await searchVespa(message, email, null, null, {
       limit: pageSize,
       alpha: userAlpha,
@@ -1455,6 +1464,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       span: initialSearchSpan,
     })
   } else {
+    loggerWithChild({ email: email }).info(
+      "[av av] Calling searchVespaAgent in generateIterativeTimeFilterAndQueryRewrite",
+    )
     searchResults = await searchVespaAgent(
       message,
       email,
@@ -1477,11 +1489,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   // Expand email threads in the results
   // Skip thread expansion if original intent was GetItems (exact count requested)
   if (classification.type !== QueryType.GetItems) {
-    searchResults.root.children = await expandEmailThreadsInResults(
-      searchResults.root.children || [],
-      email,
-      initialSearchSpan,
+    loggerWithChild({ email: email }).info(
+      "[av av] Calling expandEmailThreadsInResults in generateIterativeTimeFilterAndQueryRewrite",
     )
+    // searchResults.root.children = await expandEmailThreadsInResults(
+    //   searchResults.root.children || [],
+    //   email,
+    //   initialSearchSpan,
+    // )
   }
 
   const latestResults = searchResults.root.children
@@ -1513,12 +1528,18 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
       let results: VespaSearchResponse
       if (!agentPrompt) {
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespa in generateIterativeTimeFilterAndQueryRewrite",
+        )
         results = await searchVespa(message, email, null, null, {
           limit: pageSize,
           alpha: userAlpha,
           span: vespaSearchSpan,
         })
       } else {
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespaAgent in generateIterativeTimeFilterAndQueryRewrite",
+        )
         results = await searchVespaAgent(
           message,
           email,
@@ -1540,11 +1561,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // Expand email threads in the results
       // Skip thread expansion if original intent was GetItems (exact count requested)
       if (classification.type !== QueryType.GetItems) {
-        results.root.children = await expandEmailThreadsInResults(
-          results.root.children || [],
-          email,
-          vespaSearchSpan,
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling expandEmailThreadsInResults in generateIterativeTimeFilterAndQueryRewrite",
         )
+        // results.root.children = await expandEmailThreadsInResults(
+        //   results.root.children || [],
+        //   email,
+        //   vespaSearchSpan,
+        // )
       }
       vespaSearchSpan?.setAttribute(
         "result_count",
@@ -1563,10 +1587,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const initialContext = buildContext(
         results?.root?.children,
         maxSummaryCount,
-        userMetadata
+        userMetadata,
       )
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling queryRewriter in generateIterativeTimeFilterAndQueryRewrite",
+      )
       const queryResp = await queryRewriter(input, userCtx, initialContext, {
         modelId: defaultFastModel, //defaultBestModel,
         stream: false,
@@ -1584,6 +1611,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         querySpan?.setAttribute("query_text", query)
 
         const latestSearchSpan = querySpan?.startSpan("latest_results_search")
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespa or searchVespaAgent in generateIterativeTimeFilterAndQueryRewrite",
+        )
         const latestSearchResponse = await (!agentPrompt
           ? searchVespa(query, email, null, null, {
               limit: pageSize,
@@ -1606,6 +1636,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         // Skip thread expansion if original intent was GetItems (exact count requested)
         let latestResults: VespaSearchResult[]
         if (classification.type !== QueryType.GetItems) {
+          loggerWithChild({ email: email }).info(
+            "[av av] Calling expandEmailThreadsInResults in generateIterativeTimeFilterAndQueryRewrite",
+          )
           const expandedChildren = await expandEmailThreadsInResults(
             latestSearchResponse.root.children || [],
             email,
@@ -1638,6 +1671,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         // })
         let results: VespaSearchResponse
         if (!agentPrompt) {
+          loggerWithChild({ email: email }).info(
+            "[av av] Calling searchVespa in generateIterativeTimeFilterAndQueryRewrite",
+          )
           results = await searchVespa(query, email, null, null, {
             limit: pageSize,
             alpha: userAlpha,
@@ -1646,6 +1682,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.filter((v) => !!v),
           })
         } else {
+          loggerWithChild({ email: email }).info(
+            "[av av] Calling searchVespaAgent in generateIterativeTimeFilterAndQueryRewrite",
+          )
           results = await searchVespaAgent(
             query,
             email,
@@ -1669,6 +1708,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         // Expand email threads in the results
         // Skip thread expansion if original intent was GetItems (exact count requested)
         if (classification.type !== QueryType.GetItems) {
+          loggerWithChild({ email: email }).info(
+            "[av av] Calling expandEmailThreadsInResults in generateIterativeTimeFilterAndQueryRewrite",
+          )
           results.root.children = await expandEmailThreadsInResults(
             results.root.children || [],
             email,
@@ -1692,7 +1734,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = buildContext(totalResults, maxSummaryCount, userMetadata)
+        const initialContext = buildContext(
+          totalResults,
+          maxSummaryCount,
+          userMetadata,
+        )
 
         const { imageFileNames } = extractImageFileNames(
           initialContext,
@@ -1709,6 +1755,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
         const ragSpan = querySpan?.startSpan("baseline_rag")
 
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling baselineRAGJsonStream in generateIterativeTimeFilterAndQueryRewrite",
+        )
         const iterator = baselineRAGJsonStream(
           query,
           userCtx,
@@ -1756,6 +1805,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         "vespa_search_with_excluded_ids",
       )
       if (!agentPrompt) {
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespa in generateIterativeTimeFilterAndQueryRewrite",
+        )
         results = await searchVespa(message, email, null, null, {
           limit: pageSize + pageSize * pageNumber,
           offset: pageNumber * pageSize,
@@ -1764,6 +1816,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           span: searchSpan,
         })
       } else {
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespaAgent in generateIterativeTimeFilterAndQueryRewrite",
+        )
         results = await searchVespaAgent(
           message,
           email,
@@ -1787,6 +1842,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // Expand email threads in the results
       // Skip thread expansion if original intent was GetItems (exact count requested)
       if (classification.type !== QueryType.GetItems) {
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling expandEmailThreadsInResults in generateIterativeTimeFilterAndQueryRewrite",
+        )
         results.root.children = await expandEmailThreadsInResults(
           results.root.children || [],
           email,
@@ -1815,6 +1873,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     } else {
       const searchSpan = pageSearchSpan?.startSpan("vespa_search")
       if (!agentPrompt) {
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespa in generateIterativeTimeFilterAndQueryRewrite",
+        )
         results = await searchVespa(message, email, null, null, {
           limit: pageSize + pageSize * pageNumber,
           offset: pageNumber * pageSize,
@@ -1822,6 +1883,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           span: searchSpan,
         })
       } else {
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespaAgent in generateIterativeTimeFilterAndQueryRewrite",
+        )
         results = await searchVespaAgent(
           message,
           email,
@@ -1844,6 +1908,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // Expand email threads in the results
       // Skip thread expansion if original intent was GetItems (exact count requested)
       if (classification.type !== QueryType.GetItems) {
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling expandEmailThreadsInResults in generateIterativeTimeFilterAndQueryRewrite",
+        )
         results.root.children = await expandEmailThreadsInResults(
           results.root.children || [],
           email,
@@ -1907,14 +1974,23 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     const ragSpan = pageSpan?.startSpan("baseline_rag")
 
-    const iterator = baselineRAGJsonStream(input, userCtx, userMetadata, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-      reasoning: config.isReasoning && userRequestsReasoning,
-      agentPrompt,
-      messages,
-      imageFileNames,
-    })
+    loggerWithChild({ email: email }).info(
+      "[av av] Calling baselineRAGJsonStream in generateIterativeTimeFilterAndQueryRewrite",
+    )
+    const iterator = baselineRAGJsonStream(
+      input,
+      userCtx,
+      userMetadata,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+        agentPrompt,
+        messages,
+        imageFileNames,
+      },
+    )
 
     const answer = yield* processIterator(
       iterator,
@@ -2489,6 +2565,9 @@ async function* generatePointQueryTimeExpansion(
     imageCitation?: ImageCitation
   }
 > {
+  loggerWithChild({ email: email }).info(
+    "[av av] Entering generatePointQueryTimeExpansion function",
+  )
   const rootSpan = eventRagSpan?.startSpan("generatePointQueryTimeExpansion")
   loggerWithChild({ email: email }).debug(
     `Started rootSpan at ${new Date().toISOString()}`,
@@ -2632,6 +2711,9 @@ async function* generatePointQueryTimeExpansion(
     }
   }
 
+  loggerWithChild({ email: email }).info(
+    "[av av] Calling getUserPersonalizationAlpha in generatePointQueryTimeExpansion",
+  )
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
   const direction = classification.direction as string
 
@@ -2694,8 +2776,18 @@ async function* generatePointQueryTimeExpansion(
         to,
       )}`,
     )
-    iterationSpan?.setAttribute("from", new Date(from).toLocaleString("en-US", { timeZone: userMetadata.userTimezone}))
-    iterationSpan?.setAttribute("to", new Date(to).toLocaleString("en-US", { timeZone: userMetadata.userTimezone}))
+    iterationSpan?.setAttribute(
+      "from",
+      new Date(from).toLocaleString("en-US", {
+        timeZone: userMetadata.userTimezone,
+      }),
+    )
+    iterationSpan?.setAttribute(
+      "to",
+      new Date(to).toLocaleString("en-US", {
+        timeZone: userMetadata.userTimezone,
+      }),
+    )
     // Search in both calendar events and emails
     const searchSpan = iterationSpan?.startSpan("search_vespa")
     const emailSearchSpan = searchSpan?.startSpan("email_search")
@@ -2736,6 +2828,9 @@ async function* generatePointQueryTimeExpansion(
       trace: undefined,
     }
     if (!agentPrompt) {
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling searchVespa in generatePointQueryTimeExpansion",
+      )
       ;[results, eventResults] = await Promise.all([
         searchVespa(message, email, Apps.GoogleCalendar, null, {
           limit: pageSize,
@@ -2756,6 +2851,9 @@ async function* generatePointQueryTimeExpansion(
     if (agentPrompt) {
       if (agentAppEnums.length > 0 || agentSpecificDataSourceIds.length > 0) {
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespaAgent in generatePointQueryTimeExpansion",
+        )
         const [agentResults, agentEventResults] = await Promise.all([
           searchVespaAgent(
             message,
@@ -2892,14 +2990,23 @@ async function* generatePointQueryTimeExpansion(
 
     // Stream LLM response
     const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
+    loggerWithChild({ email: email }).info(
+      "[av av] Calling meetingPromptJsonStream in generatePointQueryTimeExpansion",
+    )
     loggerWithChild({ email: email }).info("Using meetingPromptJsonStream")
-    const iterator = meetingPromptJsonStream(input, userCtx, userMetadata.dateForAI, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-      reasoning: config.isReasoning && userRequestsReasoning,
-      agentPrompt,
-      imageFileNames,
-    })
+    const iterator = meetingPromptJsonStream(
+      input,
+      userCtx,
+      userMetadata.dateForAI,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+        agentPrompt,
+        imageFileNames,
+      },
+    )
 
     const answer = yield* processIterator(
       iterator,
@@ -3018,10 +3125,22 @@ async function* processResultsForMetadata(
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app?.length == 1 && app[0] === Apps.Gmail) {
     loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)
-    iterator = mailPromptJsonStream(input, userCtx, userMetadata.dateForAI, context, streamOptions)
+    iterator = mailPromptJsonStream(
+      input,
+      userCtx,
+      userMetadata.dateForAI,
+      context,
+      streamOptions,
+    )
   } else {
     loggerWithChild({ email: email ?? "" }).info(`Using baselineRAGJsonStream`)
-    iterator = baselineRAGJsonStream(input, userCtx, userMetadata, context, streamOptions)
+    iterator = baselineRAGJsonStream(
+      input,
+      userCtx,
+      userMetadata,
+      context,
+      streamOptions,
+    )
   }
 
   return yield* processIterator(
@@ -3053,6 +3172,9 @@ async function* generateMetadataQueryAnswer(
     imageCitation?: ImageCitation
   }
 > {
+  loggerWithChild({ email: email }).info(
+    "[av av] Entering generateMetadataQueryAnswer function",
+  )
   const { apps, entities, startTime, endTime, sortDirection, intent } =
     classification.filters
   const count = classification.filters.count
@@ -3250,7 +3372,16 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling resolveNamesToEmails in generateMetadataQueryAnswer",
+      )
+      resolvedIntent = await resolveNamesToEmails(
+        intent,
+        email,
+        userCtx,
+        userMetadata,
+        span,
+      )
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3281,6 +3412,9 @@ async function* generateMetadataQueryAnswer(
 
       let searchResults: VespaSearchResponse
       if (!agentPrompt) {
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespa in generateMetadataQueryAnswer",
+        )
         searchResults = await searchVespa(
           classification.filterQuery,
           email,
@@ -3295,6 +3429,9 @@ async function* generateMetadataQueryAnswer(
         )
       } else {
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespaAgent in generateMetadataQueryAnswer",
+        )
         searchResults = await searchVespaAgent(
           classification.filterQuery,
           email,
@@ -3314,6 +3451,9 @@ async function* generateMetadataQueryAnswer(
       }
 
       // Expand email threads in the results
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling expandEmailThreadsInResults in generateMetadataQueryAnswer",
+      )
       searchResults.root.children = await expandEmailThreadsInResults(
         searchResults.root.children || [],
         email,
@@ -3351,6 +3491,9 @@ async function* generateMetadataQueryAnswer(
         return
       }
 
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling processResultsForMetadata in generateMetadataQueryAnswer",
+      )
       const answer = yield* processResultsForMetadata(
         items,
         input,
@@ -3415,7 +3558,16 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata,span)
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling resolveNamesToEmails in generateMetadataQueryAnswer",
+      )
+      resolvedIntent = await resolveNamesToEmails(
+        intent,
+        email,
+        userCtx,
+        userMetadata,
+        span,
+      )
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3444,6 +3596,9 @@ async function* generateMetadataQueryAnswer(
           `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.intent)}`,
         )
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling getItems in generateMetadataQueryAnswer",
+        )
         searchResults = await getItems({
           email,
           schema,
@@ -3482,6 +3637,9 @@ async function* generateMetadataQueryAnswer(
         `[GetItems] Query parameters: ${JSON.stringify(getItemsParams)}`,
       )
 
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling getItems in generateMetadataQueryAnswer",
+      )
       searchResults = (await getItems(getItemsParams)) as VespaSearchResponse
       items = searchResults!.root.children || []
       loggerWithChild({ email: email }).info(
@@ -3492,6 +3650,9 @@ async function* generateMetadataQueryAnswer(
     // Skip thread expansion for GetItems - we want exactly what was requested
     // Thread expansion is only for search-based queries, not concrete item retrieval
     if (!isGenericItemFetch && searchResults) {
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling expandEmailThreadsInResults in generateMetadataQueryAnswer",
+      )
       searchResults.root.children = await expandEmailThreadsInResults(
         searchResults.root.children || [],
         email,
@@ -3524,6 +3685,9 @@ async function* generateMetadataQueryAnswer(
     }
 
     span?.end()
+    loggerWithChild({ email: email }).info(
+      "[av av] Calling processResultsForMetadata in generateMetadataQueryAnswer",
+    )
     yield* processResultsForMetadata(
       items,
       input,
@@ -3567,7 +3731,16 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling resolveNamesToEmails in generateMetadataQueryAnswer",
+      )
+      resolvedIntent = await resolveNamesToEmails(
+        intent,
+        email,
+        userCtx,
+        userMetadata,
+        span,
+      )
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3590,6 +3763,9 @@ async function* generateMetadataQueryAnswer(
 
       let searchResults: VespaSearchResponse
       if (!agentPrompt) {
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespa in generateMetadataQueryAnswer",
+        )
         searchResults = await searchVespa(
           query,
           email,
@@ -3603,6 +3779,9 @@ async function* generateMetadataQueryAnswer(
         )
       } else {
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
+        loggerWithChild({ email: email }).info(
+          "[av av] Calling searchVespaAgent in generateMetadataQueryAnswer",
+        )
         searchResults = await searchVespaAgent(
           query,
           email,
@@ -3621,6 +3800,9 @@ async function* generateMetadataQueryAnswer(
       }
 
       // Expand email threads in the results
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling expandEmailThreadsInResults in generateMetadataQueryAnswer",
+      )
       searchResults.root.children = await expandEmailThreadsInResults(
         searchResults.root.children || [],
         email,
@@ -3644,7 +3826,10 @@ async function* generateMetadataQueryAnswer(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
-      iterationSpan?.setAttribute(`context`, buildContext(items, 20, userMetadata))
+      iterationSpan?.setAttribute(
+        `context`,
+        buildContext(items, 20, userMetadata),
+      )
       iterationSpan?.end()
 
       loggerWithChild({ email: email }).info(
@@ -3663,6 +3848,9 @@ async function* generateMetadataQueryAnswer(
         return
       }
 
+      loggerWithChild({ email: email }).info(
+        "[av av] Calling processResultsForMetadata in generateMetadataQueryAnswer",
+      )
       const answer = yield* processResultsForMetadata(
         items,
         input,
@@ -4293,8 +4481,8 @@ export const MessageApi = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -5853,8 +6041,8 @@ export const MessageRetryApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata = { userTimezone, dateForAI }
 
     // Extract sources from search parameters
     const kbItems = c.req.query("selectedKbItems")

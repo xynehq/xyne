@@ -50,16 +50,16 @@ export class TogetherProvider extends BaseProvider {
       })
 
       const cost = 0 // Explicitly setting 0 as cost
-      const toolCalls = (response.choices?.[0]?.message as any)?.tool_calls?.map(
-        (tc: any) => ({
-          id: tc.id || "",
-          type: "function" as const,
-          function: {
-            name: tc.function?.name || "",
-            arguments: tc.function?.arguments || "{}",
-          },
-        }),
-      )
+      const toolCalls = (
+        response.choices?.[0]?.message as any
+      )?.tool_calls?.map((tc: any) => ({
+        id: tc.id || "",
+        type: "function" as const,
+        function: {
+          name: tc.function?.name || "",
+          arguments: tc.function?.arguments || "{}",
+        },
+      }))
       return {
         text: response.choices[0].message?.content || "",
         cost,

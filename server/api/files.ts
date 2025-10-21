@@ -139,12 +139,11 @@ export const handleFileUpload = async (c: Context) => {
           `File "${file.name}" processed successfully for DataSource. Result: ${result.message}`,
         )
       } catch (error) {
-        const errorMessage =
-          isDataSourceError(error)
-            ? error.userMessage
-            : error instanceof Error
-              ? error.message
-              : "Unknown error during DataSource processing"
+        const errorMessage = isDataSourceError(error)
+          ? error.userMessage
+          : error instanceof Error
+            ? error.message
+            : "Unknown error during DataSource processing"
         loggerWithChild({ email: email }).error(
           error,
           `Error processing file "${file.name}" for DataSource`,
@@ -406,7 +405,10 @@ export const handleAttachmentServe = async (c: Context) => {
 
     // Set appropriate headers
     c.header("Content-Type", fileType || "application/octet-stream")
-    c.header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(fileName || 'file')}`)
+    c.header(
+      "Content-Disposition",
+      `inline; filename*=UTF-8''${encodeURIComponent(fileName || "file")}`,
+    )
     c.header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
 
     // Stream the file

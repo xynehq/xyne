@@ -114,23 +114,27 @@ interface WorkflowExecutionsResponse {
 // Helper function to extract data from Hono client response
 async function extractResponseData<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: "Network error" }))
-    throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+    const errorData = await response
+      .json()
+      .catch(() => ({ message: "Network error" }))
+    throw new Error(
+      errorData.message || `HTTP ${response.status}: ${response.statusText}`,
+    )
   }
 
   const responseData = await response.json()
-  
+
   // Extract data from success wrapper if present
   if (responseData.success && responseData.data !== undefined) {
     return responseData.data as T
   }
-  
+
   // If no success wrapper, return the response with success flag removed
   if (responseData.success !== undefined) {
     const { success, ...rest } = responseData
     return rest as T
   }
-  
+
   return responseData as T
 }
 
@@ -154,7 +158,9 @@ export const workflowTemplatesAPI = {
     const response = await api.workflow.templates[id].execute.$post({
       json: options,
     })
-    return extractResponseData<{ workflowId: string; rootStepId: string }>(response)
+    return extractResponseData<{ workflowId: string; rootStepId: string }>(
+      response,
+    )
   },
 }
 
@@ -235,7 +241,6 @@ export const templatesAPI = {
   },
 }
 
-
 // Workflow Executions API
 export const workflowExecutionsAPI = {
   /**
@@ -260,20 +265,24 @@ export const workflowExecutionsAPI = {
     if (params.id) query.id = params.id
 
     const response = await api.workflow.executions.$get({ query })
-    
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: "Network error" }))
-      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      const errorData = await response
+        .json()
+        .catch(() => ({ message: "Network error" }))
+      throw new Error(
+        errorData.message || `HTTP ${response.status}: ${response.statusText}`,
+      )
     }
 
     const responseData = await response.json()
-    
-    // For workflow executions, we need to return the complete response structure 
+
+    // For workflow executions, we need to return the complete response structure
     // (success, data, pagination, filters) as the frontend expects these properties
     if (responseData.success !== undefined) {
       return responseData as WorkflowExecutionsResponse
     }
-    
+
     return responseData as WorkflowExecutionsResponse
   },
 
@@ -347,27 +356,31 @@ export const workflowExecutionsAPI = {
         method: "POST",
         body: formData,
         credentials: "include", // This ensures cookies are sent for authentication
-      }
+      },
     )
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: "Network error" }))
-      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      const errorData = await response
+        .json()
+        .catch(() => ({ message: "Network error" }))
+      throw new Error(
+        errorData.message || `HTTP ${response.status}: ${response.statusText}`,
+      )
     }
 
     const responseData = await response.json()
-    
+
     // Extract data from success wrapper if present
     if (responseData.success && responseData.data !== undefined) {
       return responseData.data
     }
-    
+
     // If no success wrapper, return the response with success flag removed
     if (responseData.success !== undefined) {
       const { success, ...rest } = responseData
       return rest
     }
-    
+
     return responseData
   },
 }
@@ -464,6 +477,8 @@ export const workflowStepsAPI = {
   async linkSteps(_sourceStepId: string, _targetStepId: string): Promise<any> {
     // Note: This specific endpoint doesn't exist in current routes
     // You may need to use updateStep to modify nextStepIds instead
-    throw new Error("linkSteps endpoint not available in current API. Use updateStep to modify nextStepIds.")
+    throw new Error(
+      "linkSteps endpoint not available in current API. Use updateStep to modify nextStepIds.",
+    )
   },
 }

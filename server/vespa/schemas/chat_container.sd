@@ -46,7 +46,7 @@ schema chat_container {
         # group dm
         field isMpim type bool {
             indexing: attribute | summary
-        }
+        } 
 
         field permissions type array<string> {
             indexing: attribute | summary

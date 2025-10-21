@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect } from "react"
-import { Bot, Mail, Settings, X, FileTextIcon , FileText} from "lucide-react"
+import { Bot, Mail, Settings, X, FileTextIcon, FileText } from "lucide-react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -20,13 +20,7 @@ import {
   OnEdgesDelete,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import {
-  Flow,
-  TemplateFlow,
-  Step,
-  UserDetail,
-  Tool,
-} from "./Types"
+import { Flow, TemplateFlow, Step, UserDetail, Tool } from "./Types"
 
 // Type for execution workflow data
 interface ExecutionWorkflowData {
@@ -118,11 +112,7 @@ interface ExecutionWorkflowData {
 import botLogo from "@/assets/bot-logo.svg"
 
 // Custom Node Component
-const StepNode: React.FC<NodeProps> = ({
-  data,
-  isConnectable,
-  selected,
-}) => {
+const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected }) => {
   const { step, isActive, isCompleted, tools } = data as {
     step: Step
     isActive?: boolean
@@ -204,7 +194,6 @@ const StepNode: React.FC<NodeProps> = ({
             <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
               <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
             </div>
-
           </div>
         </>
       )
@@ -311,7 +300,6 @@ const StepNode: React.FC<NodeProps> = ({
           <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
             <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
           </div>
-
         </div>
       </>
     )
@@ -321,12 +309,9 @@ const StepNode: React.FC<NodeProps> = ({
   const hasEmailTool = tools && tools.length > 0 && tools[0].type === "email"
   if (step.type === "email" || hasEmailTool) {
     // Get config from step or tool
-    const emailConfig =
-      (step as any).config || {}
+    const emailConfig = (step as any).config || {}
     const emailAddresses =
-      emailConfig?.emailAddresses ||
-      emailConfig?.to_email ||
-      []
+      emailConfig?.emailAddresses || emailConfig?.to_email || []
     // Consider configured if has email addresses OR if step has name/description
     const isConfigured =
       (Array.isArray(emailAddresses) && emailAddresses.length > 0) ||
@@ -398,7 +383,6 @@ const StepNode: React.FC<NodeProps> = ({
             <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
               <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
             </div>
-
           </div>
         </>
       )
@@ -506,7 +490,6 @@ const StepNode: React.FC<NodeProps> = ({
           <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
             <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
           </div>
-
         </div>
       </>
     )
@@ -571,9 +554,7 @@ const StepNode: React.FC<NodeProps> = ({
                 color: "#3B4145",
               }}
             >
-              {step.name ||
-                (step as any).config?.title ||
-                "Form Submission"}
+              {step.name || (step as any).config?.title || "Form Submission"}
               {/* Show execution status indicator */}
               {(step as any).isExecution && isActive && (
                 <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
@@ -719,7 +700,6 @@ const StepNode: React.FC<NodeProps> = ({
           <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
             <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
           </div>
-
         </div>
       </>
     )
@@ -835,7 +815,6 @@ const StepNode: React.FC<NodeProps> = ({
           <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
             <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
           </div>
-
         </div>
       </>
     )
@@ -886,7 +865,7 @@ const StepNode: React.FC<NodeProps> = ({
                 background: "#E5E7EB",
               }}
             >
-              <Settings width={16} height={16} color="#6B7280" /> 
+              <Settings width={16} height={16} color="#6B7280" />
             </div>
 
             <h3
@@ -1034,7 +1013,6 @@ const StepNode: React.FC<NodeProps> = ({
                 : "bg-gray-400 dark:bg-gray-500"
           }`}
         />
-
       </div>
     </>
   )
@@ -1102,12 +1080,12 @@ const ExecutionResultModal = ({
               const resultString =
                 typeof result === "object"
                   ? JSON.stringify(result, null, 2)
-                  : String(result)              
-                return (
-                  <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
-                    {resultString}
-                  </pre>
-                )
+                  : String(result)
+              return (
+                <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
+                  {resultString}
+                </pre>
+              )
             })()}
           </div>
         </div>
@@ -1125,8 +1103,6 @@ const ExecutionResultModal = ({
     </div>
   )
 }
-
-
 
 // Execution Sidebar Component
 const ExecutionSidebar = ({
@@ -1357,11 +1333,17 @@ const ExecutionSidebar = ({
                                 return (
                                   <div className="space-y-2">
                                     <div>
-                                      <span className="font-medium text-gray-600">Model:</span>
-                                      <span className="ml-2 text-gray-900">{output.model}</span>
+                                      <span className="font-medium text-gray-600">
+                                        Model:
+                                      </span>
+                                      <span className="ml-2 text-gray-900">
+                                        {output.model}
+                                      </span>
                                     </div>
                                     <div>
-                                      <span className="font-medium text-gray-600">AI Output:</span>
+                                      <span className="font-medium text-gray-600">
+                                        AI Output:
+                                      </span>
                                       <div className="mt-1 text-gray-900 whitespace-pre-wrap">
                                         {output.aiOutput}
                                       </div>
@@ -1369,7 +1351,7 @@ const ExecutionSidebar = ({
                                   </div>
                                 )
                               }
-                              
+
                               // Check for the exact same path that works in output card
                               if (
                                 output.formData &&
@@ -1451,13 +1433,8 @@ const ExecutionSidebar = ({
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-gray-700">Output</h3>
           {(() => {
-
-
-
-
             return tools && tools.length > 0 ? (
               tools.map((tool: any, index: number) => {
-
                 return (
                   <div
                     key={tool.id || index}
@@ -1622,7 +1599,6 @@ const ExecutionSidebar = ({
   )
 }
 
-
 const nodeTypes = {
   stepNode: StepNode,
 }
@@ -1666,59 +1642,65 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       selectedTemplate &&
       (selectedTemplate.steps || selectedTemplate.stepExecutions)
     ) {
-
-          // Check if this is an execution (has stepExecutions) or template (has steps)
+      // Check if this is an execution (has stepExecutions) or template (has steps)
       const isExecution = !!selectedTemplate.stepExecutions
       const stepsData = isExecution
         ? selectedTemplate.stepExecutions
         : selectedTemplate.steps
 
-
       // Sort steps for top-to-bottom execution flow starting with root step
       const sortedSteps = (() => {
         if (!stepsData || stepsData.length === 0) return []
-        
+
         // For executions, find the root step using rootWorkflowStepExeId
         if (isExecution && (selectedTemplate as any).rootWorkflowStepExeId) {
           const rootStepExeId = (selectedTemplate as any).rootWorkflowStepExeId
-          const rootStep = stepsData.find((step: any) => step.id === rootStepExeId)
-          
+          const rootStep = stepsData.find(
+            (step: any) => step.id === rootStepExeId,
+          )
+
           if (rootStep) {
-            
             // Build execution order starting from root step
             const orderedSteps: any[] = []
             const visited = new Set<string>()
-            
+
             const addStepAndFollowing = (currentStep: any) => {
               if (visited.has(currentStep.id)) return
-              
+
               visited.add(currentStep.id)
               orderedSteps.push(currentStep)
-              
+
               // Add next steps in order
-              if (currentStep.nextStepIds && currentStep.nextStepIds.length > 0) {
+              if (
+                currentStep.nextStepIds &&
+                currentStep.nextStepIds.length > 0
+              ) {
                 currentStep.nextStepIds.forEach((nextStepId: string) => {
-                  const nextStep = stepsData.find((s: any) => s.workflowStepTemplateId === nextStepId || s.id === nextStepId)
+                  const nextStep = stepsData.find(
+                    (s: any) =>
+                      s.workflowStepTemplateId === nextStepId ||
+                      s.id === nextStepId,
+                  )
                   if (nextStep && !visited.has(nextStep.id)) {
                     addStepAndFollowing(nextStep)
                   }
                 })
               }
             }
-            
+
             addStepAndFollowing(rootStep)
-            
+
             // Add any remaining steps that weren't connected
             stepsData.forEach((step: any) => {
               if (!visited.has(step.id)) {
                 orderedSteps.push(step)
               }
             })
-            
+
             return orderedSteps
           }
         }
-        
+
         // Fallback sorting for templates or when root step not found
         return [...stepsData].sort((a, b) => {
           // First try to sort by step_order in metadata
@@ -1732,10 +1714,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           if (a.nextStepIds?.includes(b.id)) return -1
           if (b.nextStepIds?.includes(a.id)) return 1
           // Final fallback to creation time
-          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          return (
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          )
         })
       })()
-
 
       // Create nodes from steps in top-down layout
       const templateNodes: Node[] = sortedSteps.map((step, index) => {
@@ -1751,8 +1734,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               executionStep.toolExecIds?.includes(toolExec.id),
             ) || []
 
-
-
           // Create tool info from executions
           stepTools = toolExecutions.map((toolExec: any) => ({
             id: toolExec.id,
@@ -1762,7 +1743,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             status: toolExec.status,
             result: toolExec.result,
           }))
-
         } else {
           // For templates, use workflow_tools
           const templateStep = step as any
@@ -1853,7 +1833,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         })
       }
 
-
       setNodes(templateNodes)
       setEdges(templateEdges)
 
@@ -1862,7 +1841,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       }, 50)
     }
   }, [selectedTemplate, setNodes, setEdges, fitView])
-
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -1906,7 +1884,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       // Check if this is an execution workflow node
       const isExecution = (step as any).isExecution
 
-
       // Close execution sidebar first
       setShowExecutionSidebar(false)
 
@@ -1925,21 +1902,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     [onStepClick],
   )
 
-  const onNodesDelete = useCallback<OnNodesDelete>(
-    (_deleted) => {
-      // Handle node deletion if needed
-    },
-    [],
-  )
+  const onNodesDelete = useCallback<OnNodesDelete>((_deleted) => {
+    // Handle node deletion if needed
+  }, [])
 
   const onEdgesDelete = useCallback<OnEdgesDelete>((_deleted) => {
     // Handle edge deletion if needed in the future
   }, [])
-
-
-
-
-
 
   // Sync zoom level with touchpad zoom gestures
   useEffect(() => {
@@ -1976,10 +1945,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }
   }, [getViewport])
 
-
   // Function to fetch workflow status
-
-
 
   // Cleanup polling on component unmount
   useEffect(() => {
@@ -1989,15 +1955,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       }
     }
   }, [pollingInterval])
-
-
-
-
-
-
-
-
-
 
   const handleResultClick = useCallback((result: any) => {
     setSelectedResult(result)
@@ -2039,27 +1996,26 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             snapToGrid={true}
             snapGrid={[15, 15]}
             defaultEdgeOptions={{
-              type: 'smoothstep',
-              style: { 
+              type: "smoothstep",
+              style: {
                 strokeWidth: 2,
-                stroke: '#D1D5DB',
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round'
+                stroke: "#D1D5DB",
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
               },
-              markerEnd: { 
-                type: 'arrowclosed',
-                color: '#D1D5DB'
+              markerEnd: {
+                type: "arrowclosed",
+                color: "#D1D5DB",
               },
             }}
             connectionLineStyle={{
               strokeWidth: 2,
-              stroke: '#D1D5DB',
-              strokeLinecap: 'round',
-              strokeLinejoin: 'round',
+              stroke: "#D1D5DB",
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
             }}
             proOptions={{ hideAttribution: true }}
           >
-
             {/* Loading Template Content */}
             {isLoadingTemplate && (
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[5] text-center">
@@ -2075,10 +2031,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               size={1}
               className="bg-gray-50 dark:bg-slate-900"
             />
-
           </ReactFlow>
         </div>
-
 
         {/* Execution Sidebar */}
         <ExecutionSidebar
@@ -2088,11 +2042,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           onClose={() => setShowExecutionSidebar(false)}
           onResultClick={handleResultClick}
         />
-
-
-
-
-
       </div>
 
       {/* Execution Result Modal */}

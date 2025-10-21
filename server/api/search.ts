@@ -562,8 +562,8 @@ export const AnswerApi = async (c: Context) => {
 
   const ctx = userContext(userAndWorkspace)
   const userTimezone = userAndWorkspace.user?.timeZone || "Asia/Kolkata"
-  const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-  const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+  const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+  const userMetadata: UserMetadataType = { userTimezone, dateForAI }
   const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${query}`
   // could be called parallely if not for userAndWorkspace
   let { result, cost } = await analyzeQueryForNamesAndEmails(initialPrompt, {
@@ -704,7 +704,6 @@ export const AnswerApi = async (c: Context) => {
     })
   })
 }
-
 
 export const GetDriveItem = async (c: Context) => {
   const { sub, workspaceId } = c.get(JwtPayloadKey)

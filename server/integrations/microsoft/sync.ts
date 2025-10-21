@@ -85,7 +85,9 @@ const validateMicrosoftCredentials = () => {
   const clientSecret = process.env.MICROSOFT_CLIENT_SECRET
 
   if (!clientId || !clientSecret) {
-    Logger.warn("Microsoft integration disabled: MICROSOFT_CLIENT_ID and/or MICROSOFT_CLIENT_SECRET environment variables not set")
+    Logger.warn(
+      "Microsoft integration disabled: MICROSOFT_CLIENT_ID and/or MICROSOFT_CLIENT_SECRET environment variables not set",
+    )
     return { clientId: null, clientSecret: null }
   }
 
@@ -1145,7 +1147,9 @@ export const handleMicrosoftOAuthChanges = async (
 ) => {
   // Skip if Microsoft credentials are not configured
   if (!MICROSOFT_CLIENT_ID || !MICROSOFT_CLIENT_SECRET) {
-    Logger.warn("Skipping Microsoft sync job - Microsoft integration not configured")
+    Logger.warn(
+      "Skipping Microsoft sync job - Microsoft integration not configured",
+    )
     return
   }
 

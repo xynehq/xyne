@@ -152,7 +152,12 @@ import {
   deleteSharedChatSchema,
   checkSharedChatSchema,
 } from "@/api/chat/sharedChat"
-import { UserRole, Apps, CreateApiKeySchema, getDocumentSchema } from "@/shared/types" // Import Apps
+import {
+  UserRole,
+  Apps,
+  CreateApiKeySchema,
+  getDocumentSchema,
+} from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,

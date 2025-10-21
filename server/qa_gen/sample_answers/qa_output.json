@@ -1,0 +1,1542 @@
+[
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Who organized the 'Project Sentinel: PCI DSS 4.0 Compliance Upgrade' compliance review meeting, and which Juspay employees have confirmed their attendance?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The compliance review meeting for Project Sentinel was organized by Siddharth Nair from SISA Information Security. The Juspay employees who have accepted the invitation are Alex Chen, Rahul Verma, and Anjali Patel, as detailed in the calendar event (docId: a4127efe-6b95-4eee-8ada-1a5325a29bb5).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rahul.verma@juspay.in",
+      "User_name": "Rahul Verma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "Following the technical review for the SISA integration, what's the current status? Summarize which aspects are approved for development and which key points still require further attention or negotiation.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on an email from Rohit Sharma (docId: 5f1d58e3bc104d6e), the project is ready to move forward with several items approved for development. \n\n**Approved Items:**\n- OAuth implementation with proactive token refresh.\n- Settlement reconciliation with a 2% variance tolerance.\n- Implementation of a circuit breaker pattern for API resilience.\n- Basic monitoring and alerting setup.\n\n**Items Needing Attention:**\n- Upgrading the SLA from 99.9% to 99.95%, with the cost impact yet to be determined.\n- Increasing the API rate limit from 5k to 10k TPS.\n- Implementing enhanced audit logging for compliance.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohan.khanna@juspay.in",
+      "User_name": "Rohan Khanna"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "There seems to be some confusion regarding performance targets for Project Sentinel. Can you synthesize the information from recent documents and chats to clarify the different API rate limits and transaction throughputs being discussed?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "There are multiple performance metrics and targets being discussed across different documents, which could be the source of confusion. Here is a synthesis:\n\n1.  **Technical Specification (docId: 92c21f09dde340e1):** This document specifies two different metrics. It defines a rate limit of **10,000 requests per minute (RPM)** for the Data Ingestion Layer and a separate transaction throughput target of **10,000 transactions per second (TPS)** under 'Performance Metrics & Monitoring'.\n\n2.  **Email Communications (docId: 3365b739af4344f8):** In an email, Arjun Mehta mentions a potential discrepancy, stating, \"We're expecting **10k TPS**, but they've set it at **5k TPS**.\" This suggests that a 5k TPS limit is being negotiated with SISA, which is lower than the internal expectation.\n\n3.  **Slack Messages (docId: c9eb67faaa2b):** Divya Rao echoes this concern on Slack, saying, \"Good catch on the rate limits! We're definitely going to need more than **5k TPS**.\"\n\nIn summary, while the official specification document outlines a target of 10,000 TPS, internal discussions on email and Slack indicate that a lower limit of 5,000 TPS is currently being considered or proposed by the vendor, which the Juspay team sees as a point for negotiation.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "karan.malhotra@juspay.in",
+      "User_name": "Karan Malhotra"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the PCI DSS implementation guide for SISA, what are the technical risks and their corresponding mitigation strategies that have been documented?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the 'PCI DSS Compliance Implementation Guide' (docId: 92c21f09dde340e1), the following technical risks and mitigation strategies have been identified:\n\n**Technical Risks:**\n*   API rate limiting during peak traffic periods.\n*   Data consistency issues in the distributed architecture.\n*   Third-party service availability and reliability.\n\n**Mitigation Strategies:**\n*   Implementation of circuit breaker patterns.\n*   Comprehensive retry logic with exponential backoff.\n*   Multi-region deployment for high availability.\n*   Real-time monitoring and alerting systems.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rahul.verma@juspay.in",
+      "User_name": "Rahul Verma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.6,
+      "Question_Complexity": "high",
+      "Realness": "fact",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Trace the evolution of the uptime SLA discussion for Project Sentinel. What was the initial target, what was proposed during review, and what was the justification provided for the desired change?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The discussion around the uptime SLA for Project Sentinel evolved across multiple documents and conversations:\n\n1.  **Initial Target:** The technical specification document (docId: 92c21f09dde340e1) explicitly states a target system uptime of **99.95%**.\n\n2.  **Proposed Alternative:** During technical reviews, an alternative SLA of **99.9%** appears to have been considered. This is evident from an email by Arjun Mehta (docId: da272e48e7b64a58) where he states, \"I think we should push for a 99.95% uptime commitment instead of 99.9%.\"\n\n3.  **Justification for Change:** The justification for pushing back against the 99.9% proposal and sticking to the 99.95% target was also provided in Arjun Mehta's email. He explained that the seemingly small difference \"translates to about 43 minutes of additional downtime per month, which could impact our merchant partners significantly.\"\n\nThis topic was later flagged by Rohit Sharma (docId: 5f1d58e3bc104d6e) as an item that \"NEEDS ATTENTION,\" indicating it was a point of ongoing negotiation, likely due to cost implications mentioned by Karan Malhotra (docId: 3365b739af4344f8).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What specific compliance areas did Alex Chen's email request a review for regarding the Project Equinox integration?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the email sent by Alex Chen (docId: e28bb6c069804087), the compliance review for the Project Equinox integration with OmniBank Core Services needs to cover the following four areas:\n1.  **RBI Guidelines**: UPI integration compliance and reporting requirements.\n2.  **PCI DSS**: Payment data handling and security standards.\n3.  **Data Protection**: Personal data processing and retention policies.\n4.  **Audit Requirements**: Transaction logging and reporting obligations.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Synthesize the technical risks and concerns raised across different communications regarding the OmniBank integration. Who raised them and where?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Several technical risks and concerns have been raised across documents, emails, and Slack messages regarding the OmniBank integration:\n\n1.  **From Divya Rao's email (docId: 17493fa3658641a1):**\n    *   Potential issues if the OAuth refresh token expires during a high-traffic period.\n    *   Whether the retry logic has been tested with the 2% variance tolerance for settlement reconciliation.\n    *   A suggestion to implement a circuit breaker pattern for API calls.\n    *   A concern that the 99.9% uptime SLA is insufficient, advocating for 99.95%.\n\n2.  **From Arjun Mehta's Slack message (docId: 6bf36ddb2923):**\n    *   A question about whether the 2% variance tolerance for settlement reconciliation is configurable.\n    *   A query about the specific retry logic for failed API calls.\n\n3.  **From the Risk Assessment document (docId: 7a6e87d30ca143af):**\n    *   The document formally lists technical risks including API rate limiting, data consistency in a distributed architecture, and third-party service availability. It also lists mitigation strategies like implementing circuit breaker patterns and comprehensive retry logic with exponential backoff, which directly relate to the concerns raised in the email and Slack message.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohit.sharma@zenithpaysolutions.in",
+      "User_name": "Rohit Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Can you list all personnel from OmniBank Core Services who are involved in the Project Equinox alignment and technical review meetings?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the calendar invites, the following personnel from OmniBank Core Services are involved in meetings for Project Equinox:\n\n*   **Aishwarya Rao** (aishwarya.rao@omnibankcoreservices.com): Organizer of the 'ZenithPay Solutions x OmniBank Core Services Alignment Session' (docId: b67fcb8f-ebcc-4b23-a24b-4d8980f4185a).\n*   **Sneha Gupta** (sneha.gupta@omnibankcoreservices.com): An attendee for the same alignment session.\n*   **Ankit Sood** (ankit.sood@omnibankcoreservices.com): Organizer of the 'ZenithPay Solutions x OmniBank Core Services Technical Review' (docId: 3c0f4891-8af8-4793-a8b1-906dec4be4a5).\n*   **Vikram Singh** (vikram.singh@omnibankcoreservices.com): An attendee for the technical review meeting.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the financial outlook for Project Equinox, considering the budget and projected value mentioned across the project documents?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The financial outlook for Project Equinox has evolved across different document versions, showing an increase in investment and refined value projections:\n\n*   **Budget:**\n    *   An early implementation plan (docId: ea2840cdc691436f, version 2.0) states an approved budget of **$450,000** for FY23-24.\n    *   A later technical specification (docId: e178c1eaf78c44c0, version 2.4) mentions a total allocated budget of **$750,000**.\n\n*   **Projected Value:**\n    *   The initial Project Charter (docId: 3783598801a34b69) projects a **15-20% increase in customer lifetime value (LTV)**.\n    *   The implementation plan (docId: ea2840cdc691436f) projects an increase in **Gross Transaction Value (GTV) by 15-20%** within the first 12 months and a **5-7% reduction in involuntary churn**.\n    *   The most recent technical specification (docId: e178c1eaf78c44c0) targets onboarding **50 key enterprise merchants** and processing **1 million recurring debits per month** post-launch.",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.8,
+      "Question_Complexity": "medium",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "It seems there are two different workstreams for 'Project Equinox'. What's the fundamental difference in their business goals?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Yes, the documents describe two distinct workstreams under the 'Project Equinox' name, each with a different primary business objective:\n\n1.  **Work ID `f438d88f-58d1-4941-b15e-1d61051b559a`**: This stream focuses on **product expansion and revenue growth**. Its goal, as stated in the executive summary of doc `ea2840cdc691436f`, is to integrate NPCI’s UPI Recurring Payments (e-Mandate) to serve subscription-based merchants. The key business driver is to increase Gross Transaction Value (GTV) by 15-20% from this new market segment.\n\n2.  **Work ID `a3a18cd0-5e2c-4093-83bb-e53070e23538`**: This stream focuses on **operational efficiency and cost reduction**. Its primary objective, outlined in the risk assessment document `7a6e87d30ca143af`, is to improve the merchant acquisition funnel. The main success metrics are reducing merchant activation time from 24-48 hours to under 2 hours and achieving a 40% reduction in operational costs.",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "rohan.iyer@juspay.in",
+      "User_name": "Rohan Iyer"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.5,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are the specific success criteria and target performance metrics defined for the HDFC Bank UPI partnership enhancement project?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the project documentation (DocId: ad435ce42e994af3), the defined success criteria and target metrics for the UPI Service Uptime and Latency SLA Enhancement for HDFC Bank Partnership are:\n\n**Business & Operational Success Criteria:**\n*   **Merchant Activation Time:** Reduce from 24-48 hours to under 2 hours.\n*   **Operational Costs:** Achieve a 40% reduction.\n*   **Merchant Satisfaction:** Improve scores to be above 4.5/5.0.\n*   **Transaction Success Rate:** Increase the end-to-end UPI transaction success rate for HDFC Bank-issued handles by a minimum of 200 basis points within three months of implementation.\n\n**Technical Performance Metrics:**\n*   **System Uptime:** Target of 99.95%.\n*   **API Response Times:** Target of less than 200ms.\n*   **Transaction Throughput:** Target of 10,000 Transactions Per Second (TPS).\n*   **P99 Latency:** Improve to sub-450ms for all UPI payment and status check API calls.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rahul.verma@juspay.in",
+      "User_name": "Rohit Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": 0.2,
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "Following my email where I listed items needing attention for the HDFC project, what progress has been made on the SLA upgrade and the API rate limit negotiations?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Following your email (docId: a10d31c8576d4c19) that flagged the SLA upgrade and API rate limits as needing attention, there has been progress on the rate limit negotiation. \n\nAccording to a Slack message from Anita Mukherjee (docId: 0433bb196a59), she had a call with the HDFC Bank team. They are reportedly \"open to increasing the rate limits to 15k TPS but want to discuss the pricing impact.\" This is an increase from both the 5k TPS mentioned as a restriction and the 10k TPS target. \n\nRegarding the SLA upgrade from 99.9% to 99.95%, while it was discussed in other emails as a desirable goal, there are no further updates in the provided documents about a final decision or the status of cost implication analysis with HDFC Bank.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Trace the evolution of the API transaction throughput requirement for the HDFC integration. What was the initial target, what discrepancies were identified, and what is the current state of negotiation?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The API transaction throughput requirement for the HDFC integration has evolved through discussion:\n\n1.  **Initial Target:** The project specification document (DocId: ad435ce42e994af3) initially defined a target transaction throughput of **10,000 TPS** under \"Performance Metrics & Monitoring\".\n\n2.  **Discrepancy Identified:** In an email (docId: bccd1da12ac048c2), DevOps Engineer Arjun Mehta identified a potential conflict, stating, \"I noticed the API rate limits in Doc#ad435ce42e994af3 might be too restrictive... We're expecting 10k TPS, but they've set it at **5k TPS**.\" This was echoed in a Slack message by Rashmi Kulkarni (docId: 5bd89912ff2d).\n\n3.  **Current State of Negotiation:** A subsequent Slack update from Anita Mukherjee (docId: 0433bb196a59) indicates progress. After a call with HDFC Bank, she reported that they are \"open to increasing the rate limits to **15k TPS** but want to discuss the pricing impact.\" The product team was tagged to schedule a follow-up meeting to discuss this.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "compliance@juspay.in",
+      "User_name": "Compliance Team"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": 0.6,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Can you provide a consolidated list of all Jira tickets and Confluence URLs mentioned across all documents related to the HDFC Bank UPI Service Uptime and Latency SLA Enhancement project?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Certainly. Here is a consolidated list of all unique Jira tickets and Confluence URLs found in the provided documents for the HDFC Bank UPI partnership project:\n\n**Jira Tickets:**\n*   JIRA-8916 (from email efdbccd044494105)\n*   PAY-2199 (from email efdbccd044494105)\n*   PAY-3000 (from file ad435ce42e994af3)\n*   PAY-8531 (from Slack message 0433bb196a59)\n*   JIRA-8937 (from event 30995706-2ae2-43b7-ad14-566227d4b63a)\n*   PAY-2589 (from event 30995706-2ae2-43b7-ad14-566227d4b63a)\n\n**Confluence URLs:**\n*   https://juspay.atlassian.net/wiki/spaces/ENG/pages/431859 (from email efdbccd044494105)\n*   https://confluence.juspay.in/display/ENG/upi-service-uptime-and-latency-sla-enhancement-for-hdfc-bank-partnership (mentioned in multiple documents)\n*   https://juspay.atlassian.net/wiki/spaces/ENG/pages/844655 (from event 30995706-2ae2-43b7-ad14-566227d4b63a)",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "divya.rao@juspay.in",
+      "User_name": "Divya Rao"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": 0.4,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "In my email regarding the technical review, I asked about the token refresh mechanism, retry logic for settlement, and the circuit breaker pattern. What were the specific answers provided to these questions?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Yes, your questions from email (docId: 19455ba042154223) were addressed in a reply from Priya Nair (docId: bccd1da12ac048c2). Here are the specific answers provided:\n\n1.  **Token Refresh Mechanism:** A proactive refresh mechanism is implemented that triggers when the token is within 10 minutes of expiration. To handle high-traffic scenarios, a distributed lock is used to ensure only one refresh request is made at a time.\n\n2.  **Retry Logic for Settlement:** The 2% variance tolerance for settlement reconciliation has been tested. It is considered a conservative buffer, as most discrepancies observed were under 0.5%. The buffer accounts for things like currency conversion fluctuations.\n\n3.  **Circuit Breaker Pattern:** The suggestion was accepted and is already being implemented using Hystrix. The configured behavior is for the circuit to open after 5 consecutive failures and reset after 30 seconds.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.4,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Who is the owner of the main technical specification document for Project Falcon, and what is its DocId?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the document metadata, the owner of the 'Project Falcon High-Throughput UPI QR Settlement and Reconciliation Engine Overh.pdf' is Rohan Iyer. The document's ID is d7bb90919d9d4832.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Summarize the key technical concerns raised across emails regarding Project Falcon's implementation and the proposed solutions mentioned in response.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Across several emails (IDs: 399f871f86c04e71, acefe122455b4be1, a8a9e9ce9f7f4624), three main technical concerns were raised. An email from Neha Chopra (ID: 4562e570d8b941d1) provides the following resolutions:\n\n1.  **Concern:** What happens if the OAuth refresh token expires during a high-traffic period?\n    **Solution:** A proactive refresh mechanism has been implemented. It triggers when the token is within 10 minutes of expiration and uses a distributed lock to prevent multiple simultaneous refresh requests.\n\n2.  **Concern:** Has the retry logic been tested with the 2% variance tolerance for settlement reconciliation?\n    **Solution:** Yes, this has been tested. The 2% tolerance is considered conservative, as most discrepancies are under 0.5%.\n\n3.  **Concern:** Should a circuit breaker pattern be implemented for API calls?\n    **Solution:** Yes, this is already being implemented using Hystrix. The circuit will open after 5 consecutive failures and reset after 30 seconds.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohan.iyer@juspay.in",
+      "User_name": "Rohan Iyer"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": 0.6,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "There seems to be conflicting information about the target transaction throughput for Project Falcon. What are the different TPS numbers being discussed across the project documents and communications?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The documents show several different figures for transaction throughput (TPS), indicating a potential discrepancy between the system's capability, the project's target, and partner limitations:\n\n*   **5,000 TPS:** The main project specification (DocId: d7bb90919d9d4832) states the new architecture aims to be 'capable of sustaining over 5,000 TPS'.\n*   **10,000 TPS:** The same specification document, in the 'Performance Metrics & Monitoring' section, lists a 'target 10,000 TPS'. This is echoed in emails (e.g., 4562e570d8b941d1) which state 'We're expecting 10k TPS'.\n*   **5k vs 10k Negotiation:** An email from Arjun Mehta (acefe122455b4be1) and a reply from Neha Chopra (4562e570d8b941d1) highlight that while the team expects 10k TPS, the current API rate limit from NPCI is set at 5k TPS and needs to be negotiated. This is also mentioned in a Slack message by Aditya Singh (c11e185c6e37).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rahul.verma@juspay.in",
+      "User_name": "Rahul Verma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "medium",
+      "Realness": 0.2,
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What's the hold-up with the Falcon project, and what are we doing to get it moving again?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on your Slack message (ID: 7ab044445348), the project is currently blocked because it still requires compliance approval, even though the technical review is complete. The Jira ticket PAY-2376 associated with this is marked as 'Blocked'.\n\nTo address this, a 'Project Falcon: High-Throughput UPI QR Settlement and Reconciliation Engine Overhaul Compliance Review' meeting has been scheduled (Event ID: ed6d08ab-8883-4d76-90a5-88bf4e32850b). The meeting's objective is to conduct a comprehensive review and secure compliance approval. It includes participants from Juspay's Compliance, Legal, and Security teams, as well as the NPCI Compliance Team.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "product-team@juspay.in",
+      "User_name": "Product Team"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": 0.5,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "According to Vivek Agarwal's email, what specific parts of Project Falcon were recommended for approval and which items were flagged as needing further attention?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "In the email from Vivek Agarwal (ID: bb5d0199d25f490f), the following recommendations were made:\n\n**APPROVED Items:**\n*   OAuth implementation with proactive refresh\n*   Settlement reconciliation with 2% variance tolerance\n*   Circuit breaker pattern for API resilience\n*   Basic monitoring and alerting setup\n\n**Items that NEED ATTENTION:**\n*   SLA upgrade from 99.9% to 99.95%\n*   API rate limit increase from 5k to 10k TPS\n*   Enhanced audit logging for compliance",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohan.iyer@juspay.in",
+      "User_name": "Rohan Iyer"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.4,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What are the target p99 latency and uptime SLA for the Kotak v3 API integration as per the initial implementation plan?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the executive summary of the implementation plan document (c1b0936baf4944f1), the successful implementation of the Kotak v3 API integration is intended to enable Juspay to handle an anticipated 500 TPS with a target p99 latency of under 300ms and an uptime SLA of 99.98%.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the discrepancy between the expected transaction throughput and the API rate limits discussed for the Kotak v3 integration, and who raised this concern?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "There is a discrepancy between the target and documented API limits. The planning documents (c1b0936baf4944f1, e4e6fa85920c4f47) state a target transaction throughput of 10,000 TPS. However, Shalini Menon raised a concern in an email (fd5d5e2441c84cd1) that the API rate limits in the documentation might be too restrictive at 5,000 TPS for peak hours. Riya Kapoor also highlighted this issue in a Slack message (d1f8e181004e) and suggested escalating it.",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "tech-leads@juspay.in",
+      "User_name": "Tech Leads"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": 0.2,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the latest communications, what are the key outstanding points that need attention for the Kotak v3 integration project?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on an email from Rohit Sharma (ba96a773bb55496f) and a Slack message from Anita Mukherjee (910e80b993dc), the items that need attention are:\n- Negotiating an SLA upgrade from 99.9% to 99.95% and determining the cost impact.\n- Negotiating an API rate limit increase from 5k to 10k TPS.\n- Implementing enhanced or additional audit logging to meet compliance requirements.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": 0.9,
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "Trace the evolution of the discussion around implementing a circuit breaker pattern for the Kotak API integration. Who was involved and what was the final recommendation?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The discussion around the circuit breaker pattern evolved across multiple documents and conversations. \n1.  **Initial Mention:** The concept was first mentioned as a mitigation strategy for technical risks in the risk management section of the initial implementation plan (c1b0936baf4944f1).\n2.  **Specific Query:** Arjun Mehta explicitly asked if the team should consider implementing a circuit breaker in an email (98c40199edc34eec).\n3.  **Confirmation:** Shalini Menon replied (fd5d5e2441c84cd1), calling it an \"excellent suggestion\" and confirming that it was already being implemented using Hystrix, which would open the circuit after 5 consecutive failures and reset after 30 seconds.\n4.  **Final Approval:** Rohit Sharma's subsequent summary email (ba96a773bb55496f) listed the \"Circuit breaker pattern for API resilience\" as an approved item, recommending to proceed with development.",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "riya.kapoor@juspay.in",
+      "User_name": "Riya Kapoor"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": 0.6,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Who from Juspay was scheduled to attend the compliance review meeting for the UPI AutoPay integration, and what were the main topics on the agenda?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the calendar event (757404b6-2c83-4c30-8758-7c5e164f451f), the scheduled attendees from Juspay were Meera Reddy, Sanjay Bhatia, and Riya Kapoor. The meeting was created by Arjun Mehta. The main agenda topics were:\n1.  Regulatory Framework Review (including RBI guidelines and PCI DSS).\n2.  Technical Implementation Compliance (including security controls and data handling).\n3.  Risk Assessment & Mitigation.\n4.  Documentation & Reporting.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@zenithpay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the target system uptime for the AstraGateway integration, as specified in the 'Root Cause Analysis and Recovery' document?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The target system uptime specified in the 'Root Cause Analysis and Recovery for UPI Transaction Timeout Cascade Failure.json' document (docId: bb126fe98037498f) is 99.95%. This is listed under the 'Success Metrics & KPIs' and 'Performance Metrics & Monitoring' sections.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Synthesize a summary of the key outstanding issues and points of negotiation for the AstraGateway integration project based on recent communications.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on a review of recent communications, there are three main outstanding points of negotiation for the AstraGateway integration project:\n\n1.  **SLA Uptime Commitment:** Anjali Patel and Priya Nair, in emails (dd98248bd3dd4574, 214f193dac034fd3), proposed pushing for a 99.95% uptime SLA instead of 99.9%. Rohit Sharma's email (950b66ba6b864ade) lists this as an item that 'NEEDS ATTENTION' to determine the cost impact.\n\n2.  **API Rate Limit:** Arjun Mehta's email (f1184422d4ba4084) noted that the documented API rate limit of 5k TPS is too restrictive for ZenithPay's expected peak of 10k TPS. Rohan Khanna echoed this concern in a Slack message (6203f504bdd4), suggesting it be escalated. Rohit Sharma also flagged this for attention.\n\n3.  **Enhanced Audit Logging:** Rohit Sharma's summary email (950b66ba6b864ade) also identified 'Enhanced audit logging for compliance' as an item needing attention, which was part of the agenda for the 'AstraGateway Integration Deep-Dive' meeting (68a2d0e3-e669-4aec-9d28-b261dd01923e).",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "rahul.verma@zenithpay.in",
+      "User_name": "Rahul Verma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "What is the current deployment status of the new API endpoint for the UPI Transaction Timeout Cascade Failure project, and what were the immediate follow-up actions requested?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to a Slack message from Rahul Verma (docId: d6092de7e58b), the new API endpoint for the 'Root Cause Analysis and Recovery for UPI Transaction Timeout Cascade Failure' project has been deployed to the staging environment. The immediate follow-up actions requested were for the @qa-team to run integration tests and for the @devops-team to monitor the Grafana dashboards for any latency spikes.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@zenithpay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "medium",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Considering the technical concerns raised in emails about the OAuth implementation, what was the agreed-upon mitigation strategy?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "The primary concern, raised by Anjali Patel in an email (dd98248bd3dd4574), was what would happen if the OAuth refresh token expires during a high-traffic period. Arjun Mehta addressed this in a follow-up email (f1184422d4ba4084), outlining the mitigation strategy. The solution involves a proactive refresh mechanism that triggers when the token is within 10 minutes of expiration. To handle high traffic, a distributed lock is used to ensure only one refresh request is made at a time. This approach was subsequently listed as 'APPROVED' in Rohit Sharma's recommendation email (950b66ba6b864ade).",
+    "Confidence": 0.9
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@zenithpay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Who are the participants in the 'AstraGateway Integration Deep-Dive' meeting, and what is the first item on the agenda?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.8
+    },
+    "Answer": "Based on the calendar event (docId: 68a2d0e3-e669-4aec-9d28-b261dd01923e), the participants include:\n- **Creator:** Arjun Mehta (ZenithPay)\n- **Organizer:** Rashmi Kulkarni (AstraGateway)\n- **Attendees who accepted:** Anjali Patel, Aarushi Mehta, and Priya Sharma (all from ZenithPay).\n- **General participant groups listed:** Compliance Team, Legal Team, Security Team, Product & Engineering Representatives, and the AstraGateway Compliance Team.\n\nThe first item on the agenda is a 10-minute 'Regulatory Framework Review,' covering RBI guidelines, PCI DSS standards, and data protection regulations.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "What were the key technical concerns raised about the NPCI UPI Autopay integration, what were the proposed solutions, and what is the current status of the rate limit negotiations?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the documents, there were several technical concerns raised and addressed for the NPCI UPI Autopay integration (workId: f6cba77e-b84c-4c76-9f92-af9b7f7d032d):\n\n1.  **Token Refresh under high traffic:** The concern was about token expiration during high traffic. The implemented solution is a proactive refresh mechanism that triggers when a token is within 10 minutes of expiring, using a distributed lock to prevent multiple simultaneous refresh requests (email: 9b789a8304174bb4).\n2.  **Retry Logic for settlement reconciliation:** The 2% variance tolerance was questioned. It was confirmed that this has been tested and is considered conservative, as most discrepancies are under 0.5% (email: 9b789a8304174bb4).\n3.  **API Resilience:** A circuit breaker pattern was suggested. This has been implemented using Hystrix, which opens the circuit after 5 consecutive failures and resets after 30 seconds (email: 9b789a8304174bb4).\n4.  **API Rate Limits:** A concern was raised that the 5k TPS limit specified in the ZenithPay spec (DOC5_687838_txt) is too restrictive for Juspay's expected peak of 10k TPS (email: 9b789a8304174bb4). A subsequent Slack message from Rahul Verma confirms he spoke with the NPCI team, who are open to increasing the limit to 15k TPS but need to discuss the pricing impact. He suggested a follow-up meeting with the product team (slack: f0afdb8fa914).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@zenithpay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "According to the ZenithPay integration specification DOC5_687838_txt, what is the settlement cycle for successful transactions and how are reconciliation reports delivered?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to section 4.1.1 of the 'ZenithPay_Enterprise_UPI_Mandate_Integration_Spec_v1.5.txt' (DOC5_687838_txt), the settlement cycle is T+1, meaning all successful transactions from Day T are settled to ClientCorp's bank account on the next business day. The reconciliation reports (Daily Transaction Report and Settlement Report) are delivered in CSV format via a Secure SFTP at `sftp://sftp.zenithpay.in/clientcorp/reports` and are also available for download from the ZenithPay Merchant Dashboard.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Can you provide a list of all individuals from both Juspay and external partners who are documented as being involved in the 'UPI Autopay Mandate Registration Failure Root Cause Analysis' project?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The following individuals are documented as being involved in the 'UPI Autopay Mandate Registration Failure Root Cause Analysis' project (workId: f6cba77e-b84c-4c76-9f92-af9b7f7d032d):\n\n**Juspay Personnel:**\n*   Anjali Patel (email: 278d1fd56726423e)\n*   Arjun Mehta (email: 9b789a8304174bb4, event: 3b3ab414-2b32-4126-b223-944928d69068)\n*   Vikram Singh (email: 9b789a8304174bb4)\n*   Rahul Verma (slack: f0afdb8fa914)\n*   Siddharth Nair (slack: cf5d566df427, email: 8d588215909b4b55)\n*   Priya Sharma (slack: cd449ccb3fea)\n*   Aditya Singh (email: 68b735389a1f4e60, event: 3b3ab414-2b32-4126-b223-944928d69068)\n*   Ankit Sood (event: 3b3ab414-2b32-4126-b223-944928d69068)\n*   Marc de Vries (event: 3b3ab414-2b32-4126-b223-944928d69068)\n*   Sneha Gupta (email: fc419bffcad84e3a)\n*   Priya Nair (email: 8d588215909b4b55)\n\n**External Partners (NPCI):**\n*   Rashmi Kulkarni (event: 3b3ab414-2b32-4126-b223-944928d69068)",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohan.mehta@clientcorp.com",
+      "User_name": "Rohan Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Regarding our ClientCorp Prime subscription service, whose responsibility is it to handle the pre-debit notifications to customers?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the 'ZenithPay_Enterprise_UPI_Mandate_Integration_Spec_v1.5.txt' (DOC5_687838_txt), the responsibility for sending pre-debit notifications to customers falls solely on ClientCorp. \n\nSection 1.4, 'Out of Scope', explicitly states that ZenithPay's direct implementation responsibility does not include the 'Implementation of the pre-debit notification logic.' It further clarifies in Section 4.3, 'Regulatory and Compliance Framework', that '**ClientCorp is solely responsible** for sending a pre-debit notification to the end customer at least 24 hours prior to every debit.' This is also a required item on the go-live checklist (Section 4.4).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "What is the implementation status of the circuit breaker pattern I suggested for the NPCI UPI Autopay integration?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Your suggestion to implement a circuit breaker pattern was accepted and has been implemented. In an email from Arjun Mehta (docId: 9b789a8304174bb4), he confirmed, 'Excellent suggestion! We're already implementing this using Hystrix. The circuit opens after 5 consecutive failures and resets after 30 seconds.' Furthermore, in a subsequent email, Rohit Sharma included 'Circuit breaker pattern for API resilience' in the list of approved items for the project (docId: 68b735389a1f4e60).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rahul.verma@juspay.in",
+      "User_name": "Rahul Verma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What were the specific performance metrics mentioned in the initial Slack alert regarding the HDFC Bank PG API latency?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the Slack message from Rahul Verma (docId: 92e3c8816bb3), the HDFC Bank PG API was showing a p95 latency of 2.5 seconds, which is significantly higher than the target of less than 200 milliseconds. This performance issue was noted to be affecting merchant onboarding.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the internal email discussions, what are the key items that still need to be negotiated or require further attention with HDFC Bank?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Synthesizing from the email conversations, the following items have been identified as needing attention or negotiation with HDFC Bank:\n1.  **SLA Upgrade:** There is a push to upgrade the uptime commitment from 99.9% to 99.95%, as mentioned by Arjun Mehta and Priya Nair. The cost impact of this is yet to be determined (email: 19fbf9b1b1ae4fbe, 6987ca1dd5dc4bc6).\n2.  **API Rate Limit Increase:** The current rate limit of 5,000 TPS is considered too restrictive for peak hours, with an expected need for 10,000 TPS. This needs to be negotiated with HDFC (email: dac9377ea585488b, 19fbf9b1b1ae4fbe).\n3.  **Enhanced Audit Logging:** Rohit Sharma's summary email (19fbf9b1b1ae4fbe) also lists 'Enhanced audit logging for compliance' as an item that 'NEEDS ATTENTION'.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Summarize the complete, multi-faceted remediation strategy for the HDFC PG API timeouts, covering immediate actions, approved technical solutions, and long-term strategic efforts.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The overall remediation strategy is multi-layered, based on information from the RCA document, emails, and meeting plans:\n\n*   **Immediate Tactical Plan:** The initial step, as outlined in the Executive Summary of the RCA document (b0f6788176f74056), is to enhance Juspay's internal retry mechanisms and monitoring capabilities.\n\n*   **Approved Technical Solutions:** Based on the technical review and subsequent emails (19fbf9b1b1ae4fbe, dac9377ea585488b), the team has approved and is proceeding with the implementation of:\n    *   An OAuth implementation with a proactive token refresh mechanism.\n    *   A circuit breaker pattern using Hystrix, which opens after 5 consecutive failures and resets after 30 seconds.\n    *   Settlement reconciliation logic that tolerates a 2% variance.\n\n*   **Strategic Collaborative Effort:** The long-term plan involves a strategic collaboration with HDFC Bank to improve API resilience and implement asynchronous communication patterns. This is being actively pursued through a scheduled technical deep-dive meeting (event: 378effc1-60f0-40b3-9da4-376341e5f632) to discuss and finalize V2 API enhancements.",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "A circuit breaker pattern was suggested for API resilience. How is this being implemented, and what are its configured parameters?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "According to the email from Arjun Mehta (docId: dac9377ea585488b), the team is implementing the circuit breaker pattern using Hystrix. The configured parameters are that the circuit will open after 5 consecutive failures and will reset after 30 seconds.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "divya.rao@hdfcbank.com",
+      "User_name": "Divya Rao"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "What is the status of the technical deep-dive meeting for the HDFC integration project, who from HDFC is involved, and what are the main topics for discussion regarding API enhancements?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the calendar invitation (docId: 378effc1-60f0-40b3-9da4-376341e5f632):\n\n*   **Status:** The meeting 'Root Cause Analysis and Remediation for Intermittent HDFC Bank PG API Timeouts Compliance Review' is 'confirmed'.\n*   **HDFC Involvement:** Vikram Singh from HDFC Bank is the organizer, and Divya Rao from HDFC Bank is listed as an attendee. The general 'HDFC Bank Integration Team' is also expected to participate.\n*   **API Enhancement Topics:** The agenda includes a 20-minute deep dive on 'Proposed V2 API Enhancements', which will cover: New API endpoints and data models, Authentication and security improvements, Rate limiting and performance optimizations, and Error handling and retry mechanisms.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohan.iyer@juspay.in",
+      "User_name": "Rohan Iyer"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Who has accepted the invitation for the 'UPI Auto-Reconciliation and Settlement System Upgrade for High-Volume Merchants Implementation Planning' meeting?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.8
+    },
+    "Answer": "Based on the calendar invitation (docId: 0d8e9657-4709-46df-8cee-f426d32018c0), the following attendees have accepted: Divya Rao and Vikram Singh. Arjun Mehta's response status is 'needsAction'. The meeting was created by Rohan Iyer and organized by Manish Kumar from ICICI Bank (as Sponsor Bank).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "divya.rao@juspay.in",
+      "User_name": "Divya Rao"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What are the main technical points still under negotiation or needing attention for the ICICI Bank integration project?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on a review of emails and project documents, there are three main points that require further attention or negotiation:\n1.  **API Rate Limit Increase:** There is a significant discrepancy between Juspay's requirement of 10,000 TPS and the 5k TPS limit mentioned in discussions. This has been flagged as a concern by Arjun Mehta, Aditya Singh, and Divya Rao in various communications (e.g., emails c3cb7ab5238b44b4, a8f252af2be841ad and Slack message 483f3b45765b). Rohit Sharma's summary email (6db8870caacc491f) explicitly lists this as an item that 'NEEDS ATTENTION'.\n2.  **SLA Upgrade:** Pooja Joshi suggested (email b3ad52e2c5e14af0) pushing for a 99.95% uptime commitment from ICICI Bank instead of 99.9%. This is also listed in Rohit Sharma's summary as needing attention, with the cost impact yet to be determined.\n3.  **Enhanced Audit Logging:** Rohit Sharma's email (6db8870caacc491f) also identifies the need for 'Enhanced audit logging for compliance' as an area that 'NEEDS ATTENTION'.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "high",
+      "Realness": "fact",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the agreed-upon transaction throughput (TPS) for the new UPI settlement system? Summarize the different figures mentioned across the project documents and communications.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "There is no single, final agreed-upon figure for transaction throughput (TPS); it is an active point of discussion with conflicting information across documents:\n\n*   **Requirement (10,000 TPS):** Arjun Mehta's email (a8f252af2be841ad) and Aditya Singh's email (c3cb7ab5238b44b4) both state that Juspay is expecting 10k TPS during peak periods.\n*   **Concern (5,000 TPS):** Multiple communications, including Divya Rao's Slack message (483f3b45765b) and Arjun Mehta's email, express concern that the current limit is 5k TPS, which is considered too restrictive. The 'Project Hyperion' PDF (815ebd8368ba4fa9) also mentions the system is designed to process 'over 5,000 transactions per second (TPS)'.\n*   **Specification (10,000 RPM):** The XML specification document (3f01f8f143bb47e9) provides a different metric, stating the rate limit is '10,000 requests per minute with burst capacity up to 15,000 RPM'.\n\nIn summary, while the design documents mention 5,000 TPS or 10,000 RPM, the team's stated expectation is 10,000 TPS, and this discrepancy is a key negotiation point marked as 'NEEDS ATTENTION' (email 6db8870caacc491f).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "pooja.joshi@juspay.in",
+      "User_name": "Pooja Joshi"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "medium",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the technical reviews and project plans, what specific strategies are being implemented to ensure the system is resilient and reliable?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on project documents and email discussions, several specific strategies are being implemented to ensure system resilience and reliability:\n\n1.  **Circuit Breaker Pattern:** This was suggested in email threads (a8f252af2be841ad, b3ad52e2c5e14af0) and confirmed as being implemented using Hystrix. It will open the circuit after 5 consecutive failures and reset after 30 seconds (email c3cb7ab5238b44b4). This is also listed as a formal mitigation strategy in the spec documents (3f01f8f143bb47e9, 815ebd8368ba4fa9).\n2.  **Proactive OAuth Token Refresh:** To prevent failures during high traffic, a proactive token refresh mechanism is being implemented. It triggers when a token is within 10 minutes of expiration and uses a distributed lock to ensure only one refresh request is made at a time (email c3cb7ab5238b44b4).\n3.  **Comprehensive Retry Logic:** The system will use retry mechanisms with exponential backoff for API calls, as outlined in the risk mitigation sections of the project specifications (3f01f8f143bb47e9, 815ebd8368ba4fa9).\n4.  **Multi-Region Deployment:** To ensure high availability, the architecture plans for a multi-region deployment, as mentioned in the technical risk mitigation strategies (3f01f8f143bb47e9).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohan.iyer@juspay.in",
+      "User_name": "Rohan Iyer"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.9,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What are the key business outcomes we are targeting with the Project Hyperion / UPI system upgrade, and how will we measure success?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The project targets several key business outcomes, with success measured by specific KPIs drawn from the project specification (3f01f8f143bb47e9) and the 'Project Hyperion' document (815ebd8368ba4fa9):\n\n*   **Faster Merchant Onboarding:** The goal is to reduce merchant activation time from 24-48 hours to less than 2 hours. This is a primary success metric.\n*   **Improved Operational Efficiency:** The project aims to reduce manual reconciliation efforts by over 80% and achieve a 40% reduction in overall operational costs.\n*   **Enhanced System Reliability:** Success will be measured by achieving a system uptime of 99.95% (an improvement from the current 99.5%).\n*   **Superior Performance:** The target is to reduce API response times from 500ms to under 200ms.\n*   **Reduced Financial Risk:** A key objective is to decrease the end-of-day settlement mismatch rate to below 0.005%.\n*   **Improved Merchant Satisfaction:** The project aims to improve the merchant satisfaction score to over 4.5 out of 5.0.\n\nThe overall business impact is expected to show a positive ROI within 6 months of implementation.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "Summarize the evolution of the discussion around API rate limits for the NPCI integration project. What was the initial concern, what different TPS values have been mentioned across our documents and conversations, and what is the latest status of the negotiation with NPCI?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The discussion around API rate limits has evolved across several communications. \n\n1.  **Initial Concerns:** The issue was first raised in an email from Anjali Patel (718f861ffa7a42f1) and another from Rohan Khanna (c32d2fb748184f8b), noting that NPCI's proposed rate limit of 5,000 Transactions Per Second (TPS) might be too restrictive for Juspay's expected peak hour load of 10,000 TPS. Riya Kapoor also highlighted this in a Slack message (ca3c89eb987e), suggesting an escalation to NPCI.\n\n2.  **Mentioned TPS Values:**\n    *   **4,500 TPS:** The Root Cause Analysis document (c3a63ba0af5a4953) notes that past transaction timeout incidents were exacerbated when volumes exceeded this number.\n    *   **5,000 TPS:** This was the initial restrictive limit mentioned in emails (c32d2fb748184f8b) and Slack (ca3c89eb987e).\n    *   **10,000 TPS:** This is Juspay's expected requirement for peak periods, as stated in emails (718f861ffa7a42f1, c32d2fb748184f8b) and is also the target listed in the performance metrics of the XML specification document (d6d099c324af4e97).\n    *   **15,000 TPS:** In a recent update via Slack (9620847dd009), Rahul Verma reported that the NPCI team is open to increasing the limit to this level.\n\n3.  **Latest Status:** According to Rahul Verma's Slack message (9620847dd009), NPCI is agreeable to a 15k TPS limit but wishes to discuss the pricing impact. A follow-up meeting with the product team was suggested to continue the negotiation.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "divya.rao@juspay.in",
+      "User_name": "Divya Rao"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.4,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are the specific agenda items for the 'Root Cause Analysis of Intermittent UPI Transaction Timeouts via NPCI Common Library (CL) Implementation Planning' meeting?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the calendar invitation (docId: 11932aae-0737-4904-8edb-fcb9d22f3df7), the agenda for the implementation planning meeting is as follows:\n\n1.  **Project Introduction & Objectives (10 mins)**\n2.  **Technical Approach & Architecture (15 mins)**\n3.  **Project Plan & Timeline (10 mins)**\n4.  **Team Structure & Communication (5 mins)**\n5.  **Next Steps & Action Items (5 mins)**",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": 0.6,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "In my technical review email, I asked if we should consider a circuit breaker pattern. What was the team's response, and what are the specific implementation details that were decided on?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Yes, your suggestion was addressed and adopted. In a reply email (docId: c32d2fb748184f8b), Arjun Mehta (writing as DevOps Engineer) called it an \"Excellent suggestion!\" and confirmed that the team was already implementing it. \n\nThe specific details provided are:\n*   **Technology:** Hystrix is being used for the implementation.\n*   **Conditions:** The circuit will open after 5 consecutive failures.\n*   **Reset:** The circuit will reset after 30 seconds.\n\nThis approach is also documented as a formal mitigation strategy for technical risks in the project's XML specification file (d6d099c324af4e97).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": 0.2,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "According to the v2 RCA document, what was identified as the actual root cause of the intermittent UPI transaction timeouts in June, distinguishing it from the initial theory of network latency?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the executive summary of the Root Cause Analysis document (docId: c3a63ba0af5a4953), while initial investigation pointed towards network latency, the deeper analysis identified the true root cause as a \"combination of thread pool exhaustion within the NPCI Common Library (CL) and suboptimal connection management under high concurrency.\" \n\nThe document further specifies that this issue was particularly exacerbated when processing high volumes of transactions (exceeding 4,500 TPS) that were directed to a concentrated set of sponsor banks. The incident occurred between June 10 and June 14, 2024, and is tracked under JIRA epic PAY-4815.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohan.khanna@juspay.in",
+      "User_name": "Rohan Khanna"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": 0.5,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Following the technical review discussions, what did Rohit Sharma's summary email identify as the items that were approved for development versus those that still needed attention?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on Rohit Sharma's email (docId: 96b9af5834e348d3), the items were categorized as follows:\n\n**APPROVED ✅:**\n*   OAuth implementation with proactive refresh\n*   Settlement reconciliation with 2% variance tolerance\n*   Circuit breaker pattern for API resilience\n*   Basic monitoring and alerting setup\n\n**NEEDS ATTENTION ⚠️:**\n*   SLA upgrade from 99.9% to 99.95% (cost impact to be determined)\n*   API rate limit increase from 5k to 10k TPS\n*   Enhanced audit logging for compliance",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.5,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Who organized the 'FinSecure x Featurespace Technical Review' meeting, and which attendees from FinSecure have accepted the invitation?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.8
+    },
+    "Answer": "Based on the calendar event (docId: 4b800df9-688e-4026-8a1c-7cff3ccb01ca), the meeting was organized by Sneha Gupta from Featurespace (sneha.gupta@featurespace.com). The attendees from FinSecure who have accepted the invitation are Rohan Iyer, Neha Chopra, and Ritesh Patel.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@finsecure.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": 0.2,
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What are the key outstanding negotiation points with Featurespace for the Real-time Fraud Detection System Integration project that still require attention?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Synthesizing information from recent communications, there are three main points that require attention and negotiation with Featurespace:\n1.  **SLA Upgrade:** An upgrade of the Service Level Agreement from 99.9% to 99.95% uptime is desired, but the cost impact is still to be determined (TBD). This is mentioned in emails from Vivek Agarwal (docId: 9cf376b4233e46fc) and Sneha Gupta (docId: 0fb108c6b3524715).\n2.  **API Rate Limit Increase:** There is a need to increase the API rate limit from the current 5,000 TPS to 10,000 TPS to handle peak hours. This concern is raised in multiple emails and a Slack message (docIds: 9cf376b4233e46fc, 361cadd8abc04dba, 2d8c004948b9).\n3.  **Enhanced Audit Logging:** The implementation of enhanced audit logging for compliance purposes is also listed as an item that 'NEEDS ATTENTION' (docId: 9cf376b4233e46fc).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "There appears to be a discrepancy in the documented performance targets. The main integration PDF mentions a rate limit of 10,000 RPM, but recent emails and Slack messages discuss needing to increase a 5k TPS limit to 10k TPS. Based on all communications, what is the most significant technical risk regarding transaction throughput, and what is the team's proposed resolution?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The documents indeed show a discrepancy regarding performance targets. The 'Real-time Fraud Detection System Integration.pdf' (docId: 5017da9c0c424811) specifies a rate limit of 10,000 requests per minute (RPM). However, more recent discussions in emails and Slack (docIds: 9cf376b4233e46fc, 361cadd8abc04dba, 2d8c004948b9) center on a current limit of 5,000 transactions per second (TPS) and an expected need for 10,000 TPS.\n\n**Technical Risk:** The most significant risk is that the current API rate limit of 5,000 TPS provided by Featurespace is considered insufficient and 'too restrictive' for FinSecure's peak hour traffic, which is expected to reach 10,000 TPS.\n\n**Proposed Resolution:** The team's proposed resolution, as suggested in email and Slack conversations, is to formally negotiate this with Featurespace. Divya Rao explicitly suggests escalating this to the Featurespace team (docId: 2d8c004948b9).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "vivek.agarwal@finsecure.in",
+      "User_name": "Vivek Agarwal"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": 0.6,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Summarize the approved and proposed technical mitigation strategies and resilience patterns for the Featurespace integration, including any specific implementation details mentioned.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "Based on the provided documents, the following technical resilience patterns and mitigation strategies are in place or proposed:\n\n**Approved & Implemented:**\n*   **Circuit Breaker Pattern:** This is approved for API resilience (docId: 9cf376b4233e46fc). It is being implemented using Hystrix, configured to open after 5 consecutive failures and reset after 30 seconds (docId: 361cadd8abc04dba).\n*   **OAuth with Proactive Refresh:** An OAuth implementation with a proactive token refresh mechanism is approved (docId: 9cf376b4233e46fc). This mechanism triggers when a token is within 10 minutes of expiration and uses a distributed lock during high traffic to prevent multiple refresh requests (docId: 361cadd8abc04dba).\n*   **Settlement Reconciliation:** A reconciliation process with a 2% variance tolerance is approved (docId: 9cf376b4233e46fc).\n\n**Proposed in Technical Specification:**\n*   The main specification document (docId: 5017da9c0c424811) also lists these general mitigation strategies: \"Comprehensive retry logic with exponential backoff\" and \"Multi-region deployment for high availability.\"",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "rahul.verma",
+      "User_name": "Rahul Verma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "low",
+      "Realness": 0.1,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are the immediate deadlines and meetings for the Featurespace integration project happening this week and next?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "Based on the available emails and Slack messages, here are the immediate deadlines and meetings:\n\n*   **Meeting:** A project review meeting is scheduled for \"tomorrow at 2 PM\" as per the Slack reminder from Rahul Verma (docId: 4a889d77bdb2).\n*   **Technical Review:** The engineering team must complete their technical review by \"This Friday\" (docId: 2e51b2d6051e4eed).\n*   **Security Assessment:** The compliance team is due to complete their security assessment by \"Next Monday\" (docId: 2e51b2d6051e4eed).\n*   **Final Approval:** Final approval from product leadership is due by \"Next Wednesday\" (docId: 2e51b2d6051e4eed).\n*   **Updated Draft:** Arjun Mehta has a follow-up action to \"Share updated draft (v2)\" due by timestamp 1757825777600 (docId: 5017da9c0c424811).",
+    "Confidence": 0.9
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What was the estimated Gross Merchandise Value (GMV) and the number of transactions affected by the UPI transaction timeouts on the Yes Bank gateway between May 14 and May 15, 2024?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the Root Cause Analysis document (42fb74bd76114d82), the intermittent UPI transaction timeouts between May 14, 2024, 18:30 IST and May 15, 2024, 11:00 IST affected approximately 850,000 transactions and an estimated ₹32 Cr in Gross Merchandise Value (GMV).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Synthesize the findings from the different incident reports. How has the understanding of the root cause for the Yes Bank UPI gateway timeouts evolved from the May incident to the June incident?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The understanding of the root cause has evolved significantly between the two incidents. \n\n1.  **May Incident (doc: 42fb74bd76114d82):** The root cause was identified as a combination of two internal and partner-side factors: (1) connection-level resource exhaustion within Juspay's egress proxy layer, triggered by a merchant's flash sale, and (2) an inefficiency in the Yes Bank gateway's handling of persistent HTTP/1.1 Keep-Alive connections, leading to socket-level stalls.\n\n2.  **June Incident (doc: d071fe89626c4424):** The analysis pointed to a different combination of factors: (1) intermittent network-level congestion at an ingress point within the Yes Bank data center, and (2) a suboptimal, fixed-size connection pool configuration in Juspay's `ybl-psp-connector` service that couldn't handle the resulting delays.\n\nIn essence, the initial diagnosis focused on proxy resource exhaustion and HTTP connection handling, while the later analysis identified the core issues as external network congestion at the partner's end and an inflexible connection pool configuration on Juspay's side.",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "alex.chen@juspay.in",
+      "User_name": "Rohit Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Following the technical review, what specific items related to the Yes Bank integration were approved to move forward, and which ones were flagged as needing further attention?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the email from Rohit Sharma (426f6d7148074359), the following items were sorted into two categories:\n\n**APPROVED ✅:**\n*   OAuth implementation with proactive refresh\n*   Settlement reconciliation with 2% variance tolerance\n*   Circuit breaker pattern for API resilience\n*   Basic monitoring and alerting setup\n\n**NEEDS ATTENTION ⚠️:**\n*   SLA upgrade from 99.9% to 99.95% (cost impact to be determined)\n*   API rate limit increase from 5k to 10k TPS\n*   Enhanced audit logging for compliance",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What's the overall status of the Yes Bank integration project, combining information from meetings and email discussions? Are there any conflicting targets or ongoing negotiations?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 0.9,
+      "Domain_relevance": 1
+    },
+    "Answer": "The project is actively in progress with several moving parts. Here's a status summary:\n\n*   **Development:** A new API endpoint has been deployed to staging for testing (slack: 5d95dc089df9). Core approved items like OAuth, settlement logic, and circuit breakers are ready to proceed (email: 426f6d7148074359).\n*   **Reviews & Approvals:** An email from Anjali Patel (aa518ec58cfd4527) outlines pending reviews: a technical review due 'This Friday', a security assessment due 'Next Monday', and final product leadership approval due 'Next Wednesday'.\n*   **Negotiations & Blockers:** There are conflicting performance targets and ongoing negotiations. A calendar invite (9b62cf89-4773-4456-a1bc-dc8cf2698e83) mentions discussing rate limiting. Emails (a5a82ba0f4b4465b, 426f6d7148074359) and a Slack message (c7f363a4e52e) highlight a discrepancy between Juspay's expected 10k TPS and Yes Bank's current limit of 5k TPS. Additionally, the team is pushing to upgrade the SLA from 99.9% to 99.95%, but the cost impact is still to be determined.",
+    "Confidence": 0.9
+  },
+  {
+    "User_data": {
+      "UserID": "shalini.menon@juspay.in",
+      "User_name": "Shalini Menon"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Who are the organizer and creator of the 'RCA and Remediation for Intermittent UPI Transaction Timeouts via Yes Bank PSP Gateway Compliance Review' meeting, and what are the expected outcomes?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the calendar event (9b62cf89-4773-4456-a1bc-dc8cf2698e83):\n\n*   **Creator:** Arjun Mehta (arjun.mehta@juspay.in)\n*   **Organizer:** Ritesh Patel (ritesh.patel@yesbank.com)\n\nThe expected outcomes of the session are:\n*   Technical approach finalized and approved\n*   Implementation timeline agreed upon\n*   Resource allocation confirmed\n*   Risk mitigation plan established",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the latest team discussions and technical reviews, what are the primary points of contention or negotiation with NPCI for the HyperSwitch UPI integration project that still need attention?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on a synthesis of recent emails and technical reviews, there are three primary points that require further negotiation or attention with NPCI:\n\n1.  **SLA Upgrade:** The team is pushing for a 99.95% uptime commitment from NPCI, as opposed to the currently discussed 99.9%. This is considered important as the difference amounts to significant potential downtime for merchants (email `ffa6f2b75bda4b16`, `13c1d78be5e14c38`). This item is officially marked as 'NEEDS ATTENTION' pending a cost impact analysis (email `4934b9bc4e9242e1`).\n\n2.  **API Rate Limit Increase:** There is a discrepancy between Juspay's expected peak load and the rate limits mentioned in the documentation. Juspay expects to need 10,000 transactions per second (TPS), but the current limit is set at 5k TPS (email `517441e8ce444ebc`, `66e47b5417d84507`). This was also flagged in Slack (`b6d68607e677`) and is listed as 'NEEDS ATTENTION' (email `4934b9bc4e9242e1`).\n\n3.  **Enhanced Audit Logging:** The need for enhanced audit logging for compliance purposes was identified as an item that 'NEEDS ATTENTION' in a summary email from Rohit Sharma (`4934b9bc4e9242e1`).",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.5,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the total duration and phased timeline for the HyperSwitch UPI Intent Flow Integration with WhatsApp Pay project as outlined in the specification document?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "According to the 'Payment Gateway Integration Specification' document (`429cf9f98d1040a7`), the project is planned to have a total duration of 20 weeks, broken down into four distinct phases:\n\n*   **Phase 1: Foundation (Weeks 1-4):** Focuses on API contract finalization, documentation, and setting up the development and testing infrastructure.\n*   **Phase 2: Core Development (Weeks 5-12):** Involves the implementation of the payment gateway API integration, data validation logic, and error handling mechanisms.\n*   **Phase 3: Testing & Validation (Weeks 13-16):** Encompasses unit, integration, performance, security, and compliance testing.\n*   **Phase 4: Deployment & Monitoring (Weeks 17-20):** Covers staging deployment, production rollout with feature flags, and setting up monitoring and alerting.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "riya.kapoor@juspay.in",
+      "User_name": "Riya Kapoor"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": 0.2,
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What is the current performance status of the HyperSwitch UPI API, and how does it compare to the project's target success metrics?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "There is currently a significant performance issue. A recent performance alert on Slack (`604537635fc9`) reported that the API is showing a p95 latency of 2.5 seconds (2500ms).\n\nThis is substantially worse than the target success metric defined in the project's specification documents (`429cf9f98d1040a7` and `87218ec77fa64afb`), which state the target API response time is less than 200ms. The alert notes that this latency is affecting merchant onboarding.",
+    "Confidence": 0.98
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": 0.4,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List the mitigation strategies that have been defined for the technical risks associated with the NPCI integration project.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "The technical risk mitigation strategies for the NPCI integration are outlined in the 'Payment Gateway Integration Specification' document (`429cf9f98d1040a7`). They are as follows:\n\n*   Implementation of circuit breaker patterns to handle service availability issues.\n*   Comprehensive retry logic with exponential backoff for transient failures.\n*   Multi-region deployment to ensure high availability.\n*   Real-time monitoring and alerting systems to proactively identify issues.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.6,
+      "Question_Complexity": "medium",
+      "Realness": 0.9,
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "How were the engineering team's concerns about the OAuth implementation, retry logic, and API resilience addressed in the project plan?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The technical concerns raised in your email (`13c1d78be5e14c38`) and by others were addressed by Arjun Mehta in a follow-up email (`517441e8ce444ebc`) and subsequently approved for implementation. Here is a summary of the resolutions:\n\n1.  **OAuth Token Refresh:** To handle token expiration during high traffic, a proactive refresh mechanism was implemented. It triggers when a token is within 10 minutes of expiration and uses a distributed lock to ensure only one refresh request is made at a time.\n2.  **Retry Logic:** The retry logic was confirmed to have been tested with a 2% variance tolerance for settlement reconciliation, which is considered a conservative buffer.\n3.  **API Resilience (Circuit Breaker):** The suggestion to implement a circuit breaker was adopted. The plan is to use Hystrix, configured to open the circuit after 5 consecutive failures and reset after 30 seconds.\n\nThese items were formally marked as 'APPROVED' to proceed with development (`4934b9bc4e9242e1`).",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What are the main technical concerns being discussed for the Project U-Switch integration, and what are the proposed solutions or next steps?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on recent emails and Slack messages, there are several technical concerns under discussion for the Project U-Switch integration:\n\n1.  **SLA Uptime:** Meera Reddy and Priya Nair suggested pushing for a 99.95% uptime commitment from NPCI instead of 99.9%, as the difference amounts to significant potential downtime for merchants. Rohit Sharma's email lists this as an item that 'NEEDS ATTENTION' to determine cost impact (email: 5130be1948034522, f6c2ada252844eab).\n\n2.  **API Rate Limits:** Vikram Singh noted that the API rate limits might be too restrictive (5k TPS) for Juspay's expected peak hours (10k TPS). Anjali Patel echoed this concern on Slack, suggesting it be escalated to the NPCI team. This is also marked as 'NEEDS ATTENTION' (email: 9a18ccea8f9f4082, slack: 8eb365c4a295).\n\n3.  **OAuth Token Refresh:** A question was raised about what happens if the refresh token expires during a high-traffic period. Vikram Singh clarified that a proactive refresh mechanism is implemented, which triggers when the token is within 10 minutes of expiration, using a distributed lock to prevent multiple requests (emails: 5130be1948034522, 9a18ccea8f9f4082).\n\n4.  **API Resilience:** The implementation of a circuit breaker pattern was suggested. This was confirmed to be in progress using Hystrix, which will open the circuit after 5 consecutive failures and reset after 30 seconds (emails: 5130be1948034522, 9a18ccea8f9f4082).\n\nThe general approach, recommended by Rohit Sharma, is to proceed with development on the approved items (OAuth, circuit breaker) while creating separate tickets to negotiate the items needing attention like the SLA and rate limits.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohan.iyer@juspay.in",
+      "User_name": "Rohan Iyer"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "According to the UPI Integration Technical Design document, what specific encryption standard is mandated for the data ingestion layer?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the 'UPI Integration Technical Design' document (docId: 2a5a18d23d0a4341), under section '2.0 Technical Integration Specification & Data Flow Architecture' for the 'Tier 1: Data Ingestion Layer', the mandated standard for real-time data encryption is AES-256.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "There seems to be a discrepancy regarding the API rate limits for Project U-Switch. Can you synthesize the different figures mentioned across documents and conversations and explain the context of this issue?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Yes, there is a notable discrepancy in the data regarding API rate limits for Project U-Switch.\n\n1.  **Official Documentation:** The technical design documents (docId: 2a5a18d23d0a4341 and e54bda7b0b514fe7) specify the rate limit in the 'Data Ingestion Layer' as '10,000 requests per minute with burst capacity up to 15,000 RPM'. This translates to approximately 167 requests per second (RPS).\n\n2.  **Email & Slack Discussions:** In an email thread (mailId: 9a18ccea8f9f4082), Vikram Singh mentions a different figure, stating, 'I noticed the API rate limits in Doc#e54bda7b0b514fe7 might be too restrictive for our peak hours. We're expecting 10k TPS, but they've set it at 5k TPS.' This is echoed in a Slack message by Anjali Patel (docId: 8eb365c4a295), who agrees that 'more than 5k TPS' will be needed and suggests escalating to NPCI.\n\n**Inference & Context:** The discrepancy lies in both the unit (RPM vs. TPS) and the magnitude. The formal documents cite a much lower rate (10,000 RPM ≈ 167 TPS) than the figures being discussed informally (5,000-10,000 TPS). This suggests that the 5k TPS figure may have come from recent negotiations with NPCI, which conflicts with both the team's requirements (10k TPS) and the original design document. The issue is flagged as a point for negotiation.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "pooja.joshi@juspay.in",
+      "User_name": "Pooja Joshi"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Please provide a list of all compliance frameworks and regulatory standards that have been mentioned in relation to the Project U-Switch NPCI integration.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, the following compliance and regulatory frameworks have been mentioned in relation to the Project U-Switch NPCI integration:\n\n*   **RBI guidelines** and compliance requirements (mentioned in calendar event 563dfae8-e689-4cda-af35-634f3b1a3188 and email ee9130e8c278499f).\n*   **PCI DSS standards** for payment data handling (mentioned in calendar event 563dfae8-e689-4cda-af35-634f3b1a3188 and email ee9130e8c278499f).\n*   **Data protection and privacy regulations** (mentioned in calendar event 563dfae8-e689-4cda-af35-634f3b1a3188 and email ee9130e8c278499f).\n*   **Audit Requirements** and transaction logging obligations (mentioned in email ee9130e8c278499f).\n*   **JSON Schema v7** for request validation (mentioned in file 2a5a18d23d0a4341).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rahul.verma@juspay.in",
+      "User_name": "Rahul Verma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.9,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "How are things looking with that big NPCI project?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The 'Project U-Switch: UPI Multi-PSP Bank Routing Engine Upgrade' with NPCI is in an active planning and review phase. Here is a summary of the overall situation:\n\n*   **Objective:** The primary goal is to drastically improve the merchant acquisition funnel by reducing merchant activation time from 24-48 hours to under 2 hours, cutting operational costs by 40%, and increasing system uptime to 99.95%.\n\n*   **Current State:** Technical design documents (docId: 2a5a18d23d0a4341, e54bda7b0b514fe7) have been drafted and are 'In Review'. A key 'Juspay x NPCI Technical Review' meeting has been scheduled to cover compliance, security, and risk (event: 563dfae8-e689-4cda-af35-634f3b1a3188).\n\n*   **Key Discussion Points & Issues:**\n    *   **Technical:** There are ongoing email and Slack discussions about API resilience (implementing circuit breakers), OAuth token refresh mechanisms, and negotiating a higher SLA (99.95%).\n    *   **Blockers:** A significant point of contention is the API rate limit. The team requires 10k TPS, but the current limit from NPCI is reportedly 5k TPS, which is being escalated.\n    *   **Performance:** A recent performance alert was flagged on Slack (docId: 97f1b3c30307) by you, Rahul Verma, showing a p95 latency of 2.5s, which is far above the target of <200ms.\n\n*   **Path Forward:** The team plans to proceed with development on agreed-upon technical items while creating separate tickets to address and negotiate the outstanding issues like the SLA and API rate limits.",
+    "Confidence": 0.95
+  }
+]

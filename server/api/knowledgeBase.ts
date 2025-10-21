@@ -1087,7 +1087,6 @@ export const UploadFilesApi = async (c: Context) => {
         // Parse the file path to extract folder structure
         const pathParts = filePath.split("/").filter((part) => part.length > 0)
         const originalFileName = pathParts.pop() || file.name // Get the actual filename
-       
 
         // Skip if the filename is a system file (in case it comes from path)
         if (
@@ -1338,11 +1337,10 @@ export const UploadFilesApi = async (c: Context) => {
           try {
             await unlink(storagePath)
           } catch (err) {
-           loggerWithChild({ email: userEmail,  }).error(
-            error,
-              `Failed to clean up storage file`
-            );
-
+            loggerWithChild({ email: userEmail }).error(
+              error,
+              `Failed to clean up storage file`,
+            )
           }
         }
 

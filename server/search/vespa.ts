@@ -125,10 +125,10 @@ export const searchVespa = async (
     ...options,
     recencyDecayRate:
       options.recencyDecayRate || config.defaultRecencyDecayRate,
-    isSlackConnected,
-    isDriveConnected,
-    isGmailConnected,
-    isCalendarConnected,
+    isSlackConnected: true,
+    isDriveConnected: true,
+    isGmailConnected: true,
+    isCalendarConnected: true,
   })
 }
 
@@ -217,3 +217,32 @@ export const ifDocumentsExistInSchema =
 export const ifDocumentsExistInChatContainer =
   vespa.ifDocumentsExistInChatContainer.bind(vespa)
 export default vespa
+
+// {
+//   "app": "slack",
+//   "filterQuery": "icici",
+//   "limit": 10,
+//   "offset": 0
+// }
+// const res = await searchVespa(
+//   "flipkart",
+//   "priya.nair@juspay.in", "slack" as any,null,{
+//     limit: 10,
+//     offset: 0
+//   })
+// export interface GetThreadItemsParams {
+//     entity?: Entity | null;
+//     timestampRange?: {
+//         from: any;
+//         to: any;
+//     } | null;
+//     limit?: number;
+//     offset?: number;
+//     email: string;
+//     userEmail?: string;
+//     asc?: boolean;
+//     channelName?: string;
+//     filterQuery?: string;
+// }
+// const res = await getThreadItems(SlackEntity.Message, null, 10, 0, "telkar.varasree@juspay.in", null, false, null, "icici")
+// console.log("searchVespa result", JSON.stringify(res, null, 2))

@@ -19,7 +19,10 @@ async function loadEnvFile(envPath: string): Promise<EnvMap> {
       const key = trimmed.slice(0, eq).trim()
       let val = trimmed.slice(eq + 1).trim()
       // Strip surrounding quotes if present
-      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
         val = val.slice(1, -1)
       }
       map[key] = val
@@ -39,7 +42,11 @@ async function loadEnvFile(envPath: string): Promise<EnvMap> {
 function resolvePdfPath(args: string[], envs: EnvMap): string {
   // Priority: CLI arg -> TEST_PDF_PATH -> PDF_PATH
   const cli = args[0]
-  const fromEnv = envs["TEST_PDF_PATH"] || envs["PDF_PATH"] || process.env.TEST_PDF_PATH || process.env.PDF_PATH
+  const fromEnv =
+    envs["TEST_PDF_PATH"] ||
+    envs["PDF_PATH"] ||
+    process.env.TEST_PDF_PATH ||
+    process.env.PDF_PATH
   const p = cli || fromEnv || DEFAULT_TEST_PDF
   return path.resolve(p)
 }

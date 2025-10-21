@@ -325,7 +325,8 @@ const CollectionFileUpload = ({
                 UPLOAD QUEUE
               </h3>
               <span className="text-xs text-gray-500 dark:text-gray-400">
-                {selectedFiles.length} file{selectedFiles.length !== 1 ? "s" : ""}
+                {selectedFiles.length} file
+                {selectedFiles.length !== 1 ? "s" : ""}
               </span>
               <Button
                 onClick={onRemoveAllFiles}
@@ -342,7 +343,7 @@ const CollectionFileUpload = ({
             <div className="flex-1 overflow-y-auto min-h-0">
               {selectedFiles.map((selectedFile, index) => {
                 const isSupported = isValidFile(selectedFile.file)
-                
+
                 return (
                   <div
                     key={selectedFile.id}
@@ -356,7 +357,10 @@ const CollectionFileUpload = ({
                     {/* File Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title={selectedFile.file.name}>
+                        <p
+                          className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate"
+                          title={selectedFile.file.name}
+                        >
                           {selectedFile.file.name}
                         </p>
                       </div>

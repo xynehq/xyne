@@ -23,7 +23,7 @@ import type {
   LanguageModelV2ToolCallPart,
   LanguageModelV2ToolResultPart,
 } from "@ai-sdk/provider"
-import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
+import { zodSchemaToJsonSchema } from "./jaf-provider-utils.ts"
 
 export type MakeXyneJAFProviderOptions = {
   baseURL?: string
@@ -45,16 +45,21 @@ export const makeXyneJAFProvider = <Ctx>(
       const actualModelId = modelConfig?.actualName ?? model
       const languageModel = provider.languageModel(actualModelId)
 
-      const prompt = buildPromptFromMessages(state.messages, agent.instructions(state))
+      const prompt = buildPromptFromMessages(
+        state.messages,
+        agent.instructions(state),
+      )
       const tools = buildFunctionTools(agent)
-      const advRun = (state.context as {
-        advancedConfig?: {
-          run?: {
-            parallelToolCalls: boolean
-            toolChoice: "auto" | "none" | "required" | undefined
+      const advRun = (
+        state.context as {
+          advancedConfig?: {
+            run?: {
+              parallelToolCalls: boolean
+              toolChoice: "auto" | "none" | "required" | undefined
+            }
           }
         }
-      })?.advancedConfig?.run
+      )?.advancedConfig?.run
 
       const callOptions: LanguageModelV2CallOptions = {
         prompt,
@@ -168,11 +173,11 @@ const buildPromptFromMessages = (
 
     if (message.role === "assistant") {
       const parts: Array<
-        LanguageModelV2TextPart |
-        LanguageModelV2FilePart |
-        LanguageModelV2ReasoningPart |
-        LanguageModelV2ToolCallPart |
-        LanguageModelV2ToolResultPart
+        | LanguageModelV2TextPart
+        | LanguageModelV2FilePart
+        | LanguageModelV2ReasoningPart
+        | LanguageModelV2ToolCallPart
+        | LanguageModelV2ToolResultPart
       > = []
       const text = getTextContent(message.content)
       if (text) {
@@ -276,14 +281,19 @@ const convertResultToJAFMessage = (
   }>
 } => {
   const textSegments = content
-    .filter((part): part is Extract<LanguageModelV2Content, { type: "text" }> => part.type === "text")
+    .filter(
+      (part): part is Extract<LanguageModelV2Content, { type: "text" }> =>
+        part.type === "text",
+    )
     .map((part) => part.text)
 
   let aggregatedText = textSegments.join("\n")
 
   if (!aggregatedText) {
     const toolResult = content.find(
-      (part): part is Extract<LanguageModelV2Content, { type: "tool-result" }> =>
+      (
+        part,
+      ): part is Extract<LanguageModelV2Content, { type: "tool-result" }> =>
         part.type === "tool-result",
     )
     if (toolResult) {
@@ -296,7 +306,9 @@ const convertResultToJAFMessage = (
   }
 
   const toolCalls = content
-    .filter((part): part is LanguageModelV2ToolCall => part.type === "tool-call")
+    .filter(
+      (part): part is LanguageModelV2ToolCall => part.type === "tool-call",
+    )
     .map((part) => ({
       id: part.toolCallId,
       type: "function" as const,

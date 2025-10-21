@@ -533,7 +533,8 @@ export const internalTools: Record<string, ToolDefinition> = {
         name: "filter_query",
         type: "string",
         required: false,
-        description: "Semantic keyword filter for content-based refinement. Use natural language terms, specific phrases, or domain-specific keywords that should appear in the search results. This parameter performs intelligent matching across titles, content, descriptions, and other searchable text fields within the specified app and entity context.",
+        description:
+          "Semantic keyword filter for content-based refinement. Use natural language terms, specific phrases, or domain-specific keywords that should appear in the search results. This parameter performs intelligent matching across titles, content, descriptions, and other searchable text fields within the specified app and entity context.",
       },
       {
         name: "intent",
@@ -553,13 +554,15 @@ export const internalTools: Record<string, ToolDefinition> = {
         name: "limit",
         type: "number",
         required: false,
-        description: "Maximum number of results to return in a single response. Controls result set size for performance optimization and relevant result focus. Default values vary by application type. Use smaller limits (10-50) for detailed reviews, larger limits (100-500) for comprehensive analysis.",
+        description:
+          "Maximum number of results to return in a single response. Controls result set size for performance optimization and relevant result focus. Default values vary by application type. Use smaller limits (10-50) for detailed reviews, larger limits (100-500) for comprehensive analysis.",
       },
       {
         name: "offset",
         type: "number",
         required: false,
-        description: "Number of results to skip from the beginning, enabling pagination through large result sets. Essential for browsing through extensive search results systematically. Combine with 'limit' for efficient data exploration. Example: offset=50, limit=25 retrieves results 51-75.",
+        description:
+          "Number of results to skip from the beginning, enabling pagination through large result sets. Essential for browsing through extensive search results systematically. Combine with 'limit' for efficient data exploration. Example: offset=50, limit=25 retrieves results 51-75.",
       },
       {
         name: "order_direction",
@@ -572,25 +575,29 @@ export const internalTools: Record<string, ToolDefinition> = {
         name: "excludedIds",
         type: "array",
         required: false,
-        description: "Array of document/item identifiers to exclude from search results. Useful for removing known irrelevant items, avoiding duplicate processing, or filtering out specific content. Accepts internal document IDs, file IDs, or message IDs depending on the target application.",
+        description:
+          "Array of document/item identifiers to exclude from search results. Useful for removing known irrelevant items, avoiding duplicate processing, or filtering out specific content. Accepts internal document IDs, file IDs, or message IDs depending on the target application.",
       },
     ],
   },
   [XyneTools.Search]: {
     name: XyneTools.Search,
-    description: "Universal semantic content search engine that performs intelligent, full-text searches across all integrated data sources simultaneously. This tool leverages advanced natural language processing and semantic understanding to find relevant information regardless of source application. Ideal for exploratory searches, content discovery, cross-platform information retrieval, and when you need to find information but aren't sure which specific application contains it. Use this tool for broad, content-focused queries where semantic relevance is more important than metadata precision.",
+    description:
+      "Universal semantic content search engine that performs intelligent, full-text searches across all integrated data sources simultaneously. This tool leverages advanced natural language processing and semantic understanding to find relevant information regardless of source application. Ideal for exploratory searches, content discovery, cross-platform information retrieval, and when you need to find information but aren't sure which specific application contains it. Use this tool for broad, content-focused queries where semantic relevance is more important than metadata precision.",
     params: [
       {
         name: "filter_query",
         type: "string",
         required: true,
-        description: "Natural language search query that describes the information you're seeking. This parameter supports complex semantic queries, conceptual searches, specific phrases, technical terms, and contextual keywords. The system performs intelligent content matching across documents, emails, messages, and other text-based content using advanced NLP techniques.",
+        description:
+          "Natural language search query that describes the information you're seeking. This parameter supports complex semantic queries, conceptual searches, specific phrases, technical terms, and contextual keywords. The system performs intelligent content matching across documents, emails, messages, and other text-based content using advanced NLP techniques.",
       },
       {
         name: "limit",
         type: "number",
         required: false,
-        description: "Maximum number of search results to return, controlling response size and processing time. Higher limits provide comprehensive coverage but may include less relevant results. Recommended values: 20-50 for focused searches, 100+ for comprehensive exploration.",
+        description:
+          "Maximum number of search results to return, controlling response size and processing time. Higher limits provide comprehensive coverage but may include less relevant results. Recommended values: 20-50 for focused searches, 100+ for comprehensive exploration.",
       },
       {
         name: "order_direction",
@@ -603,13 +610,15 @@ export const internalTools: Record<string, ToolDefinition> = {
         name: "offset",
         type: "number",
         required: false,
-        description: "Pagination offset for navigating through large result sets. Specifies how many results to skip from the beginning, enabling systematic exploration of comprehensive search results. Essential for reviewing all relevant information when initial results exceed the limit.",
+        description:
+          "Pagination offset for navigating through large result sets. Specifies how many results to skip from the beginning, enabling systematic exploration of comprehensive search results. Essential for reviewing all relevant information when initial results exceed the limit.",
       },
       {
         name: "excludedIds",
         type: "array",
         required: false,
-        description: "Collection of unique identifiers for items to exclude from search results. Useful for refining searches by removing known irrelevant content, avoiding previously processed items, or filtering out specific documents/messages based on prior search iterations.",
+        description:
+          "Collection of unique identifiers for items to exclude from search results. Useful for refining searches by removing known irrelevant content, avoiding previously processed items, or filtering out specific documents/messages based on prior search iterations.",
       },
     ],
   },
@@ -631,19 +640,22 @@ export const slackTools: Record<string, ToolDefinition> = {
         name: "filter_query",
         type: "string",
         required: false,
-        description: "Semantic search keywords to identify relevant thread conversations. Use natural language terms, project names, technical concepts, or discussion topics to find threads containing specific subjects. The system performs intelligent matching across thread content, participant names, and message context to locate the most relevant threaded discussions.",
+        description:
+          "Semantic search keywords to identify relevant thread conversations. Use natural language terms, project names, technical concepts, or discussion topics to find threads containing specific subjects. The system performs intelligent matching across thread content, participant names, and message context to locate the most relevant threaded discussions.",
       },
       {
         name: "limit",
         type: "number",
         required: false,
-        description: "Maximum number of thread conversations to retrieve in a single response. Controls the breadth of results returned. Recommended values: 10-25 for focused thread analysis, 50+ for comprehensive conversation discovery. Each result represents a complete thread with all its constituent messages.",
+        description:
+          "Maximum number of thread conversations to retrieve in a single response. Controls the breadth of results returned. Recommended values: 10-25 for focused thread analysis, 50+ for comprehensive conversation discovery. Each result represents a complete thread with all its constituent messages.",
       },
       {
         name: "offset",
         type: "number",
         required: false,
-        description: "Pagination parameter to skip a specified number of thread results from the beginning. Essential for browsing through extensive thread collections systematically. Use in combination with 'limit' to navigate large conversation datasets efficiently.",
+        description:
+          "Pagination parameter to skip a specified number of thread results from the beginning. Essential for browsing through extensive thread collections systematically. Use in combination with 'limit' to navigate large conversation datasets efficiently.",
       },
       {
         name: "order_direction",
@@ -656,37 +668,43 @@ export const slackTools: Record<string, ToolDefinition> = {
   },
   [XyneTools.getSlackRelatedMessages]: {
     name: XyneTools.getSlackRelatedMessages,
-    description: "Comprehensive Slack message search and retrieval system with advanced filtering capabilities for targeted channel-based communication analysis. This tool provides granular control over message discovery within specific channels, supporting complex queries involving user-specific messages, time-bounded searches, content filtering, and contextual message retrieval. Essential for channel-focused investigations, user activity analysis, project communication tracking, and temporal message exploration within defined Slack workspaces.",
+    description:
+      "Comprehensive Slack message search and retrieval system with advanced filtering capabilities for targeted channel-based communication analysis. This tool provides granular control over message discovery within specific channels, supporting complex queries involving user-specific messages, time-bounded searches, content filtering, and contextual message retrieval. Essential for channel-focused investigations, user activity analysis, project communication tracking, and temporal message exploration within defined Slack workspaces.",
     params: [
       {
         name: "channel_name",
         type: "string",
         required: true,
-        description: "Exact name or identifier of the target Slack channel for message retrieval. Accepts channel names (without # prefix), channel IDs, or channel display names. This parameter defines the scope boundary for all message searches. Examples: 'general', 'project-alpha', 'engineering-team'.",
+        description:
+          "Exact name or identifier of the target Slack channel for message retrieval. Accepts channel names (without # prefix), channel IDs, or channel display names. This parameter defines the scope boundary for all message searches. Examples: 'general', 'project-alpha', 'engineering-team'.",
       },
       {
         name: "filter_query",
         type: "string",
         required: false,
-        description: "Content-based search filter using natural language keywords, phrases, or semantic concepts. The system performs intelligent text matching across message content, file names, link descriptions, and embedded content. Supports complex queries like technical terms, project names, or contextual discussions.",
+        description:
+          "Content-based search filter using natural language keywords, phrases, or semantic concepts. The system performs intelligent text matching across message content, file names, link descriptions, and embedded content. Supports complex queries like technical terms, project names, or contextual discussions.",
       },
       {
         name: "user_email",
         type: "string",
         required: false,
-        description: "Email address of a specific Slack user to filter messages by authorship. When specified, only messages sent by this user within the target channel will be returned. Useful for tracking individual contributions, finding specific user's communications, or analyzing participation patterns.",
+        description:
+          "Email address of a specific Slack user to filter messages by authorship. When specified, only messages sent by this user within the target channel will be returned. Useful for tracking individual contributions, finding specific user's communications, or analyzing participation patterns.",
       },
       {
         name: "limit",
         type: "number",
         required: false,
-        description: "Maximum number of individual messages to retrieve from the specified channel. Controls result volume and response processing time. Recommended values: 25-100 for focused message analysis, 200+ for comprehensive channel history review.",
+        description:
+          "Maximum number of individual messages to retrieve from the specified channel. Controls result volume and response processing time. Recommended values: 25-100 for focused message analysis, 200+ for comprehensive channel history review.",
       },
       {
         name: "offset",
         type: "number",
         required: false,
-        description: "Number of messages to skip from the beginning of the result set, enabling systematic pagination through large message collections. Critical for exploring extensive channel histories without overwhelming single responses.",
+        description:
+          "Number of messages to skip from the beginning of the result set, enabling systematic pagination through large message collections. Critical for exploring extensive channel histories without overwhelming single responses.",
       },
       {
         name: "order_direction",
@@ -711,7 +729,8 @@ export const slackTools: Record<string, ToolDefinition> = {
   },
   [XyneTools.getUserSlackProfile]: {
     name: XyneTools.getUserSlackProfile,
-    description: "Comprehensive Slack user profile information retrieval tool that fetches detailed user account data, workspace membership details, and professional information from Slack directories. This tool provides essential user context including display names, roles, team affiliations, status information, contact details, and workspace-specific metadata. Invaluable for user identification, team member discovery, contact information lookup, and understanding organizational structure within Slack workspaces. Perfect for queries involving user verification, team composition analysis, and contact management.",
+    description:
+      "Comprehensive Slack user profile information retrieval tool that fetches detailed user account data, workspace membership details, and professional information from Slack directories. This tool provides essential user context including display names, roles, team affiliations, status information, contact details, and workspace-specific metadata. Invaluable for user identification, team member discovery, contact information lookup, and understanding organizational structure within Slack workspaces. Perfect for queries involving user verification, team composition analysis, and contact management.",
     params: [
       {
         name: "user_email",

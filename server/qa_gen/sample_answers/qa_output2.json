@@ -1,0 +1,1762 @@
+[
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "According to the implementation plan for PAY-9101, what was the immediate remediation for the Falcon-7B false positives, and what were the old and new threshold values?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the implementation plan (docId: d005fd9c7f0a4dda), the immediate remediation was a configuration change deployed via the Spinnaker pipeline. The `FALCON_RISK_THRESHOLD` value in the primary Redis cluster was adjusted from the old value of `0.85` to the new value of `0.92`. This was intended to immediately stop the high-latency enrichment call for borderline cases.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Synthesize a list of all the different contributing factors and root causes identified for the intermittent HDFC UPI timeouts across the various investigation threads.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on a synthesis of the provided documents, several distinct factors contributing to HDFC UPI timeouts have been identified:\n\n1.  **Internal Fraud Model Latency (PAY-9101):** The 'Falcon-7B' fraud model's `new_device_heuristic` feature was triggering a slow, synchronous call to a legacy Oracle database for transactions with risk scores between 0.85 and 0.90, causing timeouts (docId: d005fd9c7f0a4dda).\n2.  **KYC Automation Failure (PAY-6511 & PAY-3020):** Failures in the automated KYC process for high-risk users, generating errors like `KYC_AUTO_REJECT_503` and `KYC_TIMEOUT_PRE_VERIFY`, added significant pre-authorization latency (450ms), contributing to transaction timeouts (docIds: aa2d80ea89ee4da8, 40592291fc674cf9).\n3.  **Vendor-Side Rate Limiting (PAY-8674):** Load testing revealed that the HDFC gateway returns `HTTP 429 Too Many Requests` errors when transaction volume exceeds approximately 400 TPS, causing cascading timeouts (docId: a5d8c1b9e4f04312).\n4.  **Multi-Currency Settlement Logic (PAY-5475):** A higher timeout rate (3.1% vs 0.4%) was observed on batches with foreign currency settlements (USD, AED), suggesting a slow synchronous FX rate lookup at the HDFC gateway (docId: 9e481954c5fd46ff).\n5.  **Cross-Border Routing Error (PAY-6284):** A v2.8.1 deployment of the payment router service contained a configuration error that incorrectly classified some international VPA handles as domestic, leading to schema validation failures and timeouts at the HDFC gateway (docId: a3e8f5b1c9d24a6e).\n6.  **Vendor-Side Request Queueing (PAY-6068):** Monitoring showed a timeout rate peak of 14% due to request queueing on HDFC's end, likely related to a core banking migration they had notified Juspay about (docId: 33ed0c4e1b3d4269).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Regarding the settlement mismatch escalated in JIRA PAY-8119, what was the exact shortfall amount, how many transactions were affected, what was the response code from the HDFC gateway for these transactions, and what was the problematic batch ID?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the email you sent (docId: 3b15ee59edc34dbf) regarding JIRA PAY-8119, the specific details of the settlement mismatch are as follows:\n\n- **Shortfall Amount:** ₹1,42,870.50\n- **Affected Transactions:** 218 transactions\n- **Gateway Response Code:** 'DE' (Transaction Timeout)\n- **Problematic Batch ID:** HDFC-UPI-SETL-20240612-04",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What are the key long-term or permanent solutions being implemented or proposed to address the various bottlenecks and failure points in the HDFC UPI payment flow?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Several long-term and permanent solutions have been documented to address the root causes of the HDFC UPI issues:\n\n1.  **Database Migration (PAY-9101):** The permanent fix for the fraud model's latency is to fully migrate the profile data lookup from the legacy Oracle DB to the primary `Customer-360` Cassandra datastore, which has a sub-50ms latency (docId: d005fd9c7f0a4dda).\n2.  **Settlement File Enhancement (PAY-9939):** To fix reconciliation issues, a change request will be proposed to HDFC Bank to include Juspay's `pg_transaction_id` in their daily settlement report. Internally, the `Recon-Scribe` Flink job will be enhanced to use a Redis cache for fallback correlation (docId: 440b1d545ff84169).\n3.  **New Microservice for VPA Validation (PAY-6284):** To prevent future routing errors, a new pre-routing VPA validation microservice will be developed. This is planned to be completed in 2 sprints (docId: a3e8f5b1c9d24a6e).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What issues related to the HDFC UPI gateway performance have been identified as originating from HDFC's side, requiring their investigation or action?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Several performance issues have been identified as originating from HDFC's systems, requiring their direct action:\n\n- **API Rate Limiting (PAY-8674):** Load simulations confirmed that the HDFC gateway throttles requests above ~400 TPS, returning `HTTP 429 Too Many Requests` errors. A discussion was being initiated with HDFC to get these TPS limits revised (docId: a5d8c1b9e4f04312).\n- **Multi-Currency Settlement Logic (PAY-5475):** An inquiry was sent to HDFC to investigate if their gateway is performing a slow synchronous lookup for FX rates on multi-currency transactions, which correlates with increased timeouts (docId: 9e481954c5fd46ff).\n- **Request Queueing (PAY-6068):** A 14% timeout rate was attributed to request queueing on HDFC's end, likely due to a core banking migration. Juspay was awaiting a formal RCA from HDFC (docId: 33ed0c4e1b3d4269).\n- **Settlement File Format (PAY-9939):** HDFC's settlement file is missing Juspay's `pg_transaction_id`, making reconciliation difficult. A change request is being proposed to HDFC to include this field (docId: 440b1d545ff84169).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What was the specific technical cause and the proposed hotfix for the risk scoring latency issue tracked under JIRA ticket PAY-7711?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on a Slack debrief from Siddharth Nair, the technical cause for the latency spike in PAY-7711 (from ~150ms to 800ms+) was a bottleneck within Nethra.ai's new `device_fingerprint_v3` feature computation. Specifically, a series of sequential Redis `GET` calls were identified as the culprit under load. The proposed hotfix from Nethra.ai's team is to switch to a batched `MGET` operation, which was scheduled for deployment within 30 minutes of the update.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohit.sharma@juspay.in",
+      "User_name": "Rohit Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Synthesize a summary of the different types of performance and data integrity issues encountered with the Nethra.ai integration, grouping them by theme such as latency, data mismatch, and incorrect model behavior.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Across the provided documents, several issues with the Nethra.ai integration can be grouped into three main themes:\n\n1.  **Latency & Performance Bottlenecks:**\n    *   **API Timeouts (PAY-5338):** Caused by an OAuth token refresh failure on Nethra.ai's end, leading to p99 latency jumping to over 5000ms.\n    *   **Feature Computation (PAY-7711 & PAY-1416):** Spikes to over 800ms due to sequential Redis calls for the `device_fingerprint_v3` feature and increased payload size for transactions with large histories.\n    *   **Rate Limiting (PAY-9963):** Hitting a 400 TPS hard limit, well below the 650 TPS requirement, causing consumer lag and latency over 850ms.\n    *   **Webhook Latency (PAY-7695):** Asynchronous webhook latency of ~210ms exceeded the processing window, causing data integrity issues.\n\n2.  **Data Mismatch & Routing Errors:**\n    *   **Reconciliation Discrepancy (PAY-7695):** A race condition between Nethra.ai's asynchronous webhook and the NPCI callback led to a `RECON_ERR_404` state mismatch, accumulating a variance of ₹4,21,500.\n    *   **KYC Schema Divergence (PAY-2492):** A 78% failure rate in the KYC automation flow was attributed to a schema divergence between Nethra.ai's risk payload and the KYC service's expected parameters.\n    *   **Cross-Border Routing (PAY-3558):** A misconfiguration, likely from a subtle API payload change, caused SG->IN payments to be incorrectly routed to the domestic NPCI gateway, resulting in a 14.75% error rate.\n\n3.  **Incorrect Model Behavior (False Positives):**\n    *   **Production Spike (PAY-3733):** The false positive rate for UPI transactions > ₹10,000 escalated from 0.75% to 3.1% after a new model deployment (v3.4.1), suspected to be caused by feature drift related to `device_age_days`.\n    *   **Staging Spike (PAY-1269):** The staging model showed a false positive rate spike to 4.2% on high-volume P2M transactions, linked to the `transaction_velocity_per_user` feature.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What were the immediate mitigation actions taken or proposed for the cross-border routing mismatch (PAY-3558) and the reconciliation discrepancy (PAY-7695)?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The immediate mitigation actions for the two issues were:\n\n1.  **Cross-Border Routing Mismatch (PAY-3558):** As a stop-gap measure, a static routing override was deployed for the affected IP block (DBS-SG-PROXY IP range) to restore service on the Singapore-to-India corridor.\n\n2.  **Reconciliation Discrepancy (PAY-7695):** For immediate mitigation, it was planned for the analytics team to deploy a patch script. This script would query for transactions with the `RECON_ERR_404` code and cross-reference them against Nethra.ai API logs to retroactively align their status.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "fact",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Compare the KYC automation failure (PAY-2492) with the production false positive spike (PAY-3733). What was the core problem, the primary metric affected, and the suspected cause for each incident?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Here is a comparison of the two incidents:\n\n**KYC Automation Failure (PAY-2492):**\n*   **Core Problem:** A significant degradation in the KYC automation flow for high-risk customer segments.\n*   **Primary Metric Affected:** The failure rate on the `Aadhaar_eKYC_v2` endpoint increased from a 4% baseline to 78%.\n*   **Suspected Cause:** A data schema divergence between the Nethra.ai risk score payload and the parameters expected by Juspay's KYC validation service.\n\n**Production False Positive Spike (PAY-3733):**\n*   **Core Problem:** A sharp increase in legitimate, high-value P2M transactions being incorrectly flagged as fraudulent.\n*   **Primary Metric Affected:** The false positive rate for UPI transactions > ₹10,000 escalated from a 0.75% baseline to 3.1%.\n*   **Suspected Cause:** Feature drift in the production model v3.4.1, which was incorrectly weighting the `device_age_days` and `geolocation_tier` features for transactions from Tier-3 cities.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Regarding the performance optimization session for PAY-9595, who from Nethra.ai is attending, what specific topics are they responsible for discussing in the agenda, and what is the follow-up action assigned to them?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the calendar event for the 'PAY-9595: Performance Optimization Session':\n\n*   **Attendee from Nethra.ai:** Priya Sharma (priya.sharma@nethra.ai) is listed as an attendee with an 'accepted' response.\n*   **Agenda Responsibility:** Priya Sharma is responsible for the second agenda item: '(20 min) Nethra.ai API Payload & Response Time Analysis'. This involves analyzing response times and discussing potential payload size reduction or using a pre-computed feature store.\n*   **Assigned Follow-up:** A follow-up action, 'Provide report on feasibility of asynchronous API pattern', is assigned to Priya Sharma with a due date.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on all available communications, what are the underlying systemic risks threatening the UPI Lite X deployment, and how do issues like CBS integration, fraud detection, and cross-border routing interrelate as project-level threats?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the documents, there are several systemic risks threatening the UPI Lite X deployment, all stemming from the failure of existing systems to adapt to the new transaction patterns introduced by Lite X:\n\n1.  **Core System Integration Risk (CBS Latency):** The integration with the new Core Banking System (CBS) is causing a P99 latency of over 450ms, which exceeds the 300ms SLA and is a critical blocker for go-live. This is tracked in JIRA PAY-6330 and was the subject of a performance deep-dive meeting (docId: e4b1c8f0d3a24e69).\n\n2.  **Flawed Business Logic Risk (Cross-Border Routing):** A static, hardcoded list of Bank Identification Numbers (BINs) in the 'fx-router' service is causing a 12% failure rate for cross-border transactions by misrouting them as domestic. This indicates a design flaw where configuration is not dynamic (docId: b11316e9a5b8408c).\n\n3.  **Inadequate Model Training Risk (Fraud Detection):** The v2.1 anomaly detection model, trained on traditional UPI data, is misinterpreting normal UPI Lite X offline sync behavior as fraudulent. This has increased the false positive rate from 0.4% to 2.8%, degrading user experience and requiring a model rollback (docId: b3415129b8654a80).\n\nThe interrelation is that each issue represents a component of the platform (core banking, routing logic, fraud engine) that was not adequately prepared for or tested against the unique characteristics of UPI Lite X, such as its offline-to-online sync patterns and new international partners. This pattern of failures across different domains constitutes a systemic risk to the project's timeline and success.",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the exact failure rate, the specific NPCI error code, and the average latency impact mentioned in the email regarding KYC automation failures for high-risk segments in UPI Lite X staging (PAY-8361)?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the email from Anjali Patel (docId: 4f39717feee1484b) regarding ticket PAY-8361, the specific details are:\n\n- **Failure Rate:** A 36.57% failure rate for users onboarding with older-format PAN cards.\n- **NPCI Error Code:** The NPCI gateway is consistently returning `NPCI-KYC-ERR-42` (Liveness Check Timeout).\n- **Latency Impact:** The issue is adding an average of 365ms to the p99 latency before the user journey fails.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "What's the current situation with the NPCI API rate limiting problem impacting the UPI Lite X deployment? Summarize the performance impact and the specific actions requested from NPCI.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The UPI Lite X deployment is currently blocked by NPCI API rate limiting, as tracked in JIRA ticket PAY-3681 (status: Blocked).\n\n**Performance Impact:**\n- Load tests targeting 800 TPS are being throttled to approximately 450 TPS.\n- This is causing an 18.5% error rate with `HTTP 429 Too Many Requests` responses.\n- The p99 latency for the wallet activation flow has degraded to 620ms due to the retry queue backing up (docId: 33b931e8a6384566).\n- A separate Slack message also notes that integration tests are being capped at ~120 TPS against a target of 400 (docId: cafe5df2f27a4593).\n\n**Actions Requested from NPCI:**\nSiddharth Nair has emailed NPCI requesting the following:\n1.  Confirmation of the exact rate-limit (requests/sec and burst capacity) provisioned for Juspay.\n2.  The formal process and SLA to request an increased limit, with a goal of provisioning for a sustained 1200 TPS.\n3.  Guidance on whether NPCI's system prioritizes sustained rate over burst to help fine-tune the client-side calling strategy.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List all the mitigation strategies that were brainstormed during the performance deep-dive meeting for the CBS latency issue (PAY-6330).",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the agenda in the calendar event '[Performance Deep-Dive] Mitigating CBS Latency for UPI Lite X Transaction Commit' (docId: e4b1c8f0d3a24e69), the following three mitigation strategies were brainstormed:\n\n- **Option A: Asynchronous Commit Pattern:** Evaluate the feasibility of responding to the client before the final CBS commit, handling reconciliation via a separate ledger.\n- **Option B: Connection Pool Optimization:** Propose specific tuning parameters for HikariCP (max connections, idle timeout, leak detection) tailored to the new CBS's behavior.\n- **Option C: Write-Ahead Log (WAL) for Batching:** Explore using an internal WAL to batch multiple transaction commits into a single, less frequent write operation to the CBS.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.6,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Synthesize the critical data-related risks identified for the UPI Lite X project. Describe the PCI compliance vulnerability concerning data-at-rest and the separate issue of the fraud model's misclassification. For each issue, outline the proposed short-term and long-term remediation plans.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, there are two critical data-related risks identified for the UPI Lite X project:\n\n**1. PCI Compliance Vulnerability (Data-at-Rest)**\n*   **Risk Description:** A PCI audit flagged a violation of PCI DSS requirement 3.4. The current implementation for offline payments temporarily writes raw, unmasked transaction data to a device-local file cache for an average of 250ms before it is processed by the secure enclave. This creates a data-at-rest vulnerability (docId: 6f52da0835fc41de).\n*   **Remediation Plan:** The issue has been escalated to the security architecture team to provide an immediate recommendation. The proposed path involves exploring compliant in-memory data-handling approaches, such as piping the data stream directly to the enclave or using a specific encrypted buffer API. A formal plan is pending this recommendation.\n\n**2. Fraud Model Misclassification (Data-in-Use)**\n*   **Risk Description:** The v2.1 anomaly detection model is misinterpreting valid UPI Lite X transaction patterns (frequent, small, on-device transactions followed by a sync) as anomalous. This is due to the model being trained on traditional UPI data and over-weighting features like `device_id_velocity`. It has caused the false positive rate to surge to 2.8%, triggering excessive `FR77 - Suspicious Transaction` alerts (docId: b3415129b8654a80).\n*   **Short-Term Remediation:** Roll back the model to v2.0 for the UPI Lite X transaction type using the feature flag `upi-litex-fraud-model-v2_1-enabled`.\n*   **Long-Term Remediation:** The data science team will retrain the model with a curated dataset of Lite X transaction logs. Concurrently, the v2.1 model will be run in shadow mode to log predictions to a Kafka topic for performance validation before a future production rollout.",
+    "Confidence": 0.9
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on recent communications, what are the primary operational and compliance risks associated with the Nethra.ai integration, and which JIRA tickets are tracking them?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the documents, there are several significant operational and compliance risks with the Nethra.ai integration:\n\n**Compliance Risks:**\n1.  **PCI DSS 4.0 Violation (PAY-7874):** Raw, untokenized data elements, specifically 'device_fingerprint.os_version' and 'customer.geo_coordinates', are being sent to Nethra.ai's endpoint. This affects approximately 1.2 million UPI transactions and requires an immediate remediation plan for auditors (docId: 1101435af6ce4cce).\n2.  **PCI Requirement 3.4 Violation (PAY-4800):** Application logs are capturing plaintext partial PAN data (first 6 and last 4 digits) for a subset of failed UPI transactions. This is a blocker for the PCI-AOC renewal and requires a remediation plan within 48 hours (docId: 500e0b2bb1524ff3).\n\n**Operational & Performance Risks:**\n1.  **Core Banking System Latency (PAY-9257):** The `cbs-adapter-service` is experiencing p99 latencies over 1500ms (against a 300ms SLO) due to a non-indexed database lookup during the Finacle CBS migration, causing a 22% failure rate for some transactions (docId: 16bb6b136cba49d5).\n2.  **Multi-Currency Latency & Inaccuracy (PAY-3906):** Non-INR transactions have a high false positive rate of 4.1% (vs. 0.6% baseline) and an added processing latency of 180ms, far exceeding the 50ms expected overhead. This is suspected to be due to the ML model not being trained on diverse currency data (docId: b5fc24b37d16462e).\n3.  **API Rate Limiting (PAY-6006, PAY-6813):** The integration has faced aggressive throttling from Nethra.ai's API gateway, receiving `HTTP 429` errors. This has caused latency to increase from 351ms to over 480ms in one incident and flatlined load tests at 150 TPS instead of the 280 TPS target in another (docIds: 52dc2a6c3f5e4370, e790f32005414e41).\n4.  **High-Risk Segment Latency (PAY-4594):** KYC automation for 'new-to-platform, high-velocity' customers is failing at a 45% rate, with p99 latency spiking from 150ms to over 800ms, likely due to model complexity for these profiles (docId: f5f2bdec114645c8).\n5.  **Authentication Failures (PAY-2581):** Intermittent `HTTP 401 Unauthorized` errors are occurring due to a race condition in the OAuth token refresh mechanism, causing cascading timeouts (docId: b08e83c99232413b).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What were the specific P99 latency spikes and their identified root causes for tickets PAY-6006 and PAY-4594?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents:\n\n*   **For JIRA PAY-6006:** The P99 latency for the UPI flow was pushed from a baseline of 351ms to over 480ms. The root cause was identified as Nethra.ai's API rate limiting, which resulted in a peak `HTTP 429` error rate of approximately 12% from their scoring endpoint. The issue was resolved after Nethra.ai increased the API quota (docId: 52dc2a6c3f5e4370).\n\n*   **For JIRA PAY-4594:** The P99 latency for KYC automation in the 'new-to-platform, high-velocity' customer segment increased from a normal 150ms to over 800ms. The suspected root cause is the Nethra.ai model's complexity and computational bottlenecks when processing these specific high-risk profiles (docId: f5f2bdec114645c8).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Regarding the performance bottleneck from the CBS migration tracked in PAY-9257, what is the status of the proposed solutions?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the Root Cause Analysis for PAY-9257 (docId: 16bb6b136cba49d5), two solutions were proposed for the performance bottleneck caused by a non-indexed lookup on the `ACCOUNT_TRANSACTION_LEDGER` table:\n\n1.  **Immediate Remediation:** Implement a feature flag to dynamically bypass the velocity feature enrichment if the `cbs-adapter-service` latency exceeds a 600ms threshold. This allows transactions to proceed with a reduced feature set, providing graceful degradation.\n2.  **Permanent Solution:** Create a denormalized, read-optimized projection of the required ledger data into an internal ScyllaDB cluster, updated via a Kafka-based Change Data Capture (CDC) stream. A proposal for this is being drafted.\n\nThe status of the overall plan is 'In Review', and it is waiting for feedback from the DB architecture team on the ScyllaDB proposal. A previous hotfix to simply increase the connection pool size was rejected.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Who from Nethra.ai attended the performance tuning meeting for PAY-1366, and what was the main goal of the session?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the calendar event for the '[Performance Tuning] Nethra.ai UPI Fraud Engine: P99 Latency Spike Analysis (PAY-1366)' meeting (docId: 336031b27dca443a6):\n\n*   **Attendees from Nethra.ai:** Sunita Rao and David Chen both had a response status of 'accepted'.\n\n*   **Main Goal:** The purpose of the session was to 'isolate the root cause of the degradation from our 315ms SLA baseline and formulate a concrete remediation plan' for the recent P99 latency spikes (>800ms) observed in the production environment.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "compliance.team@juspay.in",
+      "User_name": "Compliance Team"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "list",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Can you provide a consolidated list of all recent PCI audit findings concerning the Nethra.ai integration, detailing the specific data involved in each breach?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Yes, based on the provided documents, there are two distinct PCI audit findings related to the Nethra.ai integration:\n\n1.  **Finding 1 (JIRA PAY-7874):**\n    *   **Violation:** Raw, untokenized data elements are being passed to Nethra.ai's fraud scoring endpoint, which contravenes PCI DSS 4.0 requirements for protecting sensitive data in transit.\n    *   **Specific Data Involved:** The `device_fingerprint.os_version` and `customer.geo_coordinates` fields in the API payload (docId: 1101435af6ce4cce).\n\n2.  **Finding 2 (JIRA PAY-4800):**\n    *   **Violation:** Sensitive authentication data is being captured in application logs for a subset of failed UPI transactions, violating PCI Requirement 3.4.\n    *   **Specific Data Involved:** The first 6 and last 4 digits of the cardholder's PAN are being logged in plaintext within the JSON payload sent to Nethra.ai (docId: 500e0b2bb1524ff3).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the recent investigations across different JIRA tickets like PAY-9101, PAY-8674, and PAY-6511, what are the distinct underlying causes of the HDFC UPI gateway timeouts and settlement issues, distinguishing between problems originating from Juspay's systems versus HDFC's systems?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the documents, the HDFC UPI issues stem from distinct causes originating from both Juspay's internal systems and HDFC Bank's external systems.\n\n**Issues Originating from Juspay's Systems:**\n1.  **Fraud Model Latency (PAY-9101):** The internal 'Falcon-7B' fraud model is causing timeouts by making a synchronous call to a legacy Oracle database for profile enrichment. This call has a p99 latency over 2500ms, breaching the UPI transaction window and causing a `U69` timeout error before the request is sent to HDFC (docId: d005fd9c7f0a4dda).\n2.  **KYC Automation Latency (PAY-6511):** Failures in the automated e-KYC process for high-risk users add an average of 450ms of latency, which correlates to a 12% spike in `T3` (Transaction Timeout) errors at the HDFC gateway (docId: aa2d80ea89ee4da8).\n\n**Issues Originating from HDFC Bank's Systems:**\n1.  **API Rate Limiting (PAY-8674):** Load testing confirmed that HDFC's gateway throttles requests with `HTTP 429 Too Many Requests` errors when transaction volume exceeds approximately 400 TPS (docId: a5d8c1b9e4f04312).\n2.  **Settlement File Format (PAY-9939):** HDFC's settlement file is missing the `pg_transaction_id`, which prevents the `Recon-Scribe` service from correlating transactions that received a late success authorization (`U30`), leading to a daily average variance of ₹32,850 (docId: 440b1d545ff84169).\n3.  **Gateway Instability (PAY-6068):** A core banking migration at HDFC led to request queueing and sustained degradation, with timeout rates peaking at 14% (docId: 33ed0c4e1b3d4269).\n4.  **Multi-Currency Processing (PAY-5475):** Batches containing foreign currency settlements (USD, AED) have a significantly higher timeout rate (3.1% vs 0.4%), suggesting a synchronous FX rate lookup at the gateway is causing delays (docId: 9e481954c5fd46ff).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.5,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What were the three specific action items defined during the PAY-6284 incident post-mortem, and who is the owner for each?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the calendar event for the 'Incident Post-Mortem: PAY-6284', the three specific action items and their owners are:\n\n1.  **A.I. 1:** Hotfix deployment to revert the faulty routing ruleset. \n    - **Owner:** Arjun Mehta\n    - **ETA:** EOD\n\n2.  **A.I. 2:** Develop a pre-routing VPA validation microservice to prevent future misclassifications. \n    - **Owner:** Priya Sharma\n    - **ETA:** 2 Sprints\n\n3.  **A.I. 3:** Enhance monitoring to specifically alert on HDFC gateway schema validation error codes.\n    - **Owner:** Arjun Mehta\n    - **ETA:** End of Week",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": 0.2,
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Priya Nair reported a settlement shortfall of ₹1,42,870.50 for PAY-8119, while Arjun Mehta's plan for PAY-9939 mentions a daily average variance of ₹32,850. What are the different technical root causes and proposed solutions for these two separate settlement mismatch issues?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The two settlement issues have different root causes and remediation plans:\n\n1.  **Issue 1 (PAY-8119, Shortfall of ₹1,42,870.50):**\n    *   **Root Cause:** As detailed in Priya Nair's email (docId: 3b15ee59edc34dbf), 218 transactions received a 'DE' (Transaction Timeout) response from HDFC's gateway but were later marked as 'Success' by NPCI. These transactions are completely absent from HDFC's settlement file.\n    *   **Proposed Solution:** The immediate plan is to file a formal dispute with HDFC. To support this, the Payments Engineering team was asked to pull the full request/response payloads for the affected transactions from Kafka stream archives.\n\n2.  **Issue 2 (PAY-9939, Daily Variance of ₹32,850):**\n    *   **Root Cause:** According to the implementation plan (docId: 440b1d545ff84169), this issue affects transactions with a late success authorization (NPCI response code `U30`). They are missing from the settlement file because the file lacks the `pg_transaction_id`, making correlation impossible for the `Recon-Scribe` service.\n    *   **Proposed Solution:** The temporary fix is a Python script to query Elasticsearch for `U30` transactions and manually update their reconciliation status. The permanent fix involves requesting HDFC to add the `pg_transaction_id` to their settlement report and enhancing the internal Flink job with a Redis cache for fallback correlation.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "low",
+      "Realness": 0.6,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Regarding the investigation into PAY-8674, what were the specific results of the load simulation on the HDFC UPI staging environment, including the TPS threshold, the error type observed, and the p99 latency spike?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the Slack update from Siddharth Nair (docId: a5d8c1b9e4f04312), the load simulation for PAY-8674 confirmed the rate-limiting hypothesis with the following specific results:\n\n*   **TPS Threshold:** Throttling begins once the transaction volume breaches approximately 400 Transactions Per Second (TPS).\n*   **Error Type:** A sharp increase in `HTTP 429 Too Many Requests` errors was observed.\n*   **Latency Spike:** The p99 latency for successful transactions spiked to approximately 850ms just before the throttling started.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.6,
+      "Question_Complexity": "high",
+      "Realness": 0.9,
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "The implementation plan for PAY-9101 identifies the 'Falcon-7B' fraud model as a cause for timeouts. Detail the complete, multi-stage remediation strategy, including the immediate configuration change, the concurrent data science activity, and the long-term architectural fix.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The multi-stage remediation strategy for the 'Falcon-7B' induced timeouts, as outlined in the implementation plan (docId: d005fd9c7f0a4dda), is as follows:\n\n*   **Immediate Remediation:** A configuration change will be deployed via Spinnaker to adjust the `FALCON_RISK_THRESHOLD` value in the primary Redis cluster from `0.85` to `0.92`. This is intended to immediately halt the high-latency enrichment calls for borderline-risk transactions.\n\n*   **Concurrent Activity:** The Data Science team will initiate an emergency model retraining cycle under ticket DS-441. They will use transaction data from the last 48 hours to recalibrate the model's feature weights, particularly the over-weighted `new_device_heuristic` feature.\n\n*   **Permanent Fix:** The long-term solution, tracked under the parent epic PAY-9101, is to fully migrate the profile data lookup. The process will move from the legacy `cust-profile` Oracle database to the primary `Customer-360` Cassandra datastore, which has a sub-50ms latency, to permanently eliminate this performance bottleneck.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are the four immediate mitigation strategies being considered for the PAY-9595 latency bottleneck, as listed in the performance optimization session agenda?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the agenda for the 'PAY-9595: Performance Optimization Session', the four immediate mitigation strategies being considered are:\n1. Implementing a circuit breaker for Nethra.ai calls.\n2. Optimizing the SQL query that enriches transaction data post-fraud check.\n3. Increasing the connection pool size as a temporary fix.\n4. Exploring an asynchronous callback pattern with Nethra.ai for non-critical transactions.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "What is the status of the investigation into the spike in false positives for the Nethra.ai staging model, as mentioned in ticket PAY-1269?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "According to a Slack message from Siddharth Nair regarding PAY-1269, the Nethra.ai staging model showed a false positive rate spike to 4.2% on high-volume UPI P2M transactions. The initial analysis points to the `transaction_velocity_per_user` feature as the main cause. Nethra.ai has already suggested a weight recalibration, and their notes were attached to the Jira ticket. The next step being considered is whether to sync with Nethra.ai's data science team before pushing the updated model to the sandbox environment. A follow-up action to schedule this sync is pending.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohit.sharma@juspay.in",
+      "User_name": "Rohit Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Regarding the reconciliation discrepancy issue tracked in JIRA PAY-7695, what is the root cause of the problem and what was the resulting financial variance?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The analysis file for JIRA PAY-7695 confirms that the root cause of the reconciliation discrepancy (RECON_ERR_404) is a race condition. This occurs between the Nethra.ai model's asynchronous webhook and the primary NPCI callback listener for transactions with a risk score greater than 0.92. This issue has resulted in an accumulated financial variance of ₹4,21,500 over the last 48-hour cycle.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Across the various incidents involving Nethra.ai, such as rate limiting, API timeouts, and general latency, what appears to be the most frequently proposed technical mitigation pattern?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "Based on a synthesis of multiple documents, the most frequently proposed technical mitigation pattern for issues with the Nethra.ai integration is the implementation of a circuit breaker. This is mentioned as a potential solution in the agenda for the PAY-9595 performance session, it was prototyped using Resilience4j to handle `HTTP 429` rate-limiting errors in the analysis for PAY-9963, and it is noted to have 'kicked in' during the OAuth token failure incident (PAY-5338).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@nethra.ai",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.9,
+      "Question_Complexity": "high",
+      "Realness": "list",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Provide a high-level summary of all the distinct types of problems Juspay has encountered with the Nethra.ai integration, including issues with performance, model behavior, and data logic.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, Juspay has encountered several distinct types of problems with the Nethra.ai integration:\n\n*   **API Performance & Reliability:**\n    *   **Rate Limiting (PAY-9963):** Encountered a hard rate limit of ~400 TPS, below the contracted 650 TPS, causing `HTTP 429` errors and latency spikes to over 850ms.\n    *   **Authentication Failure (PAY-5338):** An OAuth token refresh failure on Nethra.ai's end led to `401 Unauthorized` responses and p99 latency jumping to over 5000ms.\n    *   **Latency Bottlenecks (PAY-9595, PAY-7711):** A critical p99 latency breach (>250ms vs 150ms SLA) was observed, with specific causes identified as database query time, connection pool contention, and slow feature computation (e.g., `device_fingerprint_v3`) on Nethra.ai's side.\n\n*   **ML Model Behavior:**\n    *   **False Positive Spikes (PAY-1269, PAY-3733):** The false positive rate spiked to 4.2% in staging due to the `transaction_velocity_per_user` feature and to 3.1% in production, seemingly related to the `device_age_days` feature.\n\n*   **Integration & Data Logic:**\n    *   **Reconciliation Mismatch (PAY-7695):** A race condition between Nethra.ai's webhook and the NPCI callback caused a settlement variance of ₹4,21,500.\n    *   **KYC Flow Failure (PAY-2492):** A 78% failure rate in the KYC automation flow was attributed to a suspected data schema divergence between the Nethra.ai risk payload and the KYC service.\n    *   **Incorrect Routing (PAY-3558):** A misconfiguration, possibly due to a payload change from Nethra.ai, caused cross-border payments to be incorrectly routed to the domestic gateway.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.4,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "According to the analysis for PAY-9963, what was the observed transaction throughput (TPS) threshold where the Nethra.ai API started returning `HTTP 429` errors, and what is the contracted peak capacity requirement?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the 'Nethra.ai API Rate Limiting Analysis' document (docId: 8e29849f753849b8), the Juspay UPI processing service began receiving persistent `HTTP 429 Too Many Requests` responses once the transaction throughput exceeded a threshold of approximately 400 transactions per second (TPS). This is significantly below the contracted peak capacity requirement of 650 TPS.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Synthesize the various performance degradation incidents related to the Nethra.ai integration. What common theme emerges regarding the root causes, specifically concerning new or complex model features and their impact on latency and error rates?",
+    "Answer_weights": {
+      "Factuality": 0.9,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "A common theme across multiple incidents is that the introduction or behavior of new, computationally intensive features in the Nethra.ai models is a recurring root cause for performance degradation. \n\nThis is evidenced by:\n1.  **False Positives (PAY-3733):** An email from Siddharth Nair (docId: 92925a175914450b) suggests that the model is incorrectly flagging transactions due to feature weights for `device_age_days` and `geolocation_tier` in production model v3.4.1.\n2.  **Staging False Positives (PAY-1269):** A Slack message (docId: a201e541f67d4f72) notes a false positive spike in the staging model caused by the `transaction_velocity_per_user` feature.\n3.  **Latency from Payload Size (PAY-1416):** A Slack analysis (docId: fa00b240c0744f27) points to a latency spike caused by feature vector serialization for transactions with large histories, suspecting that \"new behavioral attributes might be computationally intensive.\"\n4.  **Latency from Feature Computation (PAY-7711):** Another Slack message (docId: 09c39c3a91a14454) traces a P99 latency spike to a bottleneck within the new `device_fingerprint_v3` feature computation, which was using inefficient sequential Redis calls.",
+    "Confidence": 0.95
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": 0.2,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List all follow-up actions assigned to me, Siddharth Nair, across the various incidents, and include their respective due dates.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, the following follow-up actions are assigned to you, Siddharth Nair:\n\n- **Action:** Schedule emergency sync call if no resolution in 2 hours. (from email 92925a175914450b)\n  - **Due By:** 1757661720000\n\n- **Action:** Coordinate with Nethra.ai to analyze model performance with larger payloads. (from Slack message fa00b240c0744f27)\n  - **Due By:** 1758204918996\n\n- **Action:** Schedule sync with Nethra.ai data science team. (from Slack message a201e541f67d4f72)\n  - **Due By:** 1758192936366\n\n- **Action:** Post confirmation of latency normalization. (from Slack message 09c39c3a91a14454)\n  - **Due By:** 1757658600000\n\n- **Action:** Sync with Product team on risk thresholds. (from email 78fdce13510242cb)\n  - **Due By:** 1757712000000\n\n- **Action:** Get preliminary analysis from Nethra.ai. (from email 78fdce13510242cb)\n  - **Due By:** 1757740800000",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "riya.kapoor@juspay.in",
+      "User_name": "Riya Kapoor"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "medium",
+      "Realness": 0.1,
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What are the different architectural and configuration problems we're facing with the Nethra.ai integration? Summarize the issues related to API communication, data processing race conditions, and model performance.",
+    "Answer_weights": {
+      "Factuality": 0.9,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the documents, here is a summary of the architectural and configuration problems with the Nethra.ai integration:\n\n**API Communication Issues:**\n- **Authentication Failure (PAY-5338):** An OAuth token refresh failure on Nethra.ai's end caused a spike in '401 Unauthorized' responses, leading to API timeouts (docId: cbc40add56f44120).\n- **Rate Limiting (PAY-9963):** A hard rate limit of ~400 TPS is being enforced by Nethra.ai, which is below the contracted 650 TPS, causing `HTTP 429` errors during load testing (docId: 8e29849f753849b8).\n- **Routing Mismatch (PAY-3558):** A suspected misconfiguration or change in the Nethra.ai API response payload is causing cross-border payments from Singapore to be incorrectly routed to the domestic NPCI gateway, resulting in `DECLINED_BY_REMITTER` errors (docId: 45a12089b2a84cb2).\n\n**Data Processing Race Conditions:**\n- **Settlement Mismatch (PAY-7695):** A race condition exists between Nethra.ai's asynchronous webhook (latency ~210ms) and the primary NPCI callback. If the NPCI callback confirms success before the fraud flag is consumed, it leads to a `RECON_ERR_404` state mismatch during settlement, causing a financial variance of ₹4,21,500 (docId: 610d564e23cf4543).\n\n**Model Performance Issues:**\n- **False Positives (PAY-3733):** The production model v3.4.1 has a false positive rate spike to 3.1% (from 0.75%), suspected to be caused by feature weights for `device_age_days` and `geolocation_tier` (docId: 92925a175914450b).\n- **Latency Bottlenecks:** Multiple incidents report latency spikes due to specific model features, such as the `device_fingerprint_v3` feature's use of sequential Redis calls (PAY-7711) and feature vector serialization for large transaction histories (PAY-1416).",
+    "Confidence": 0.9
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0,
+      "Question_Complexity": "medium",
+      "Realness": 0.5,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Who from Nethra.ai is scheduled to attend the 'PAY-9595: Performance Optimization Session'? What specific topic is she expected to present, and what is the core problem this meeting aims to solve, including the observed vs. SLA p99 latency?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the calendar event for 'PAY-9595: Performance Optimization Session' (docId: 8b0c1e5d9a7f4c3a):\n\n- **Nethra.ai Attendee:** Priya Sharma from Nethra.ai is scheduled to attend.\n- **Topic:** She is responsible for agenda item 2, \"Nethra.ai API Payload & Response Time Analysis.\" The description states she will analyze average and max response times from their API and discuss potential payload size reduction or using a pre-computed feature store.\n- **Core Problem:** The meeting's objective is to address a critical p99 latency breach in the UPI transaction flow. The observed latency is greater than 250ms, which violates the 150ms SLA.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Synthesize the various root cause hypotheses for the HDFC UPI timeouts across all related communications. For each hypothesis, identify if it's a Juspay-internal issue or an HDFC-external issue, and list the associated JIRA ticket.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the documents, here is a synthesis of the different root cause hypotheses for the HDFC UPI timeouts, categorized by origin:\n\n**Juspay-Internal Issues:**\n*   **PAY-2545:** A recent update to Juspay's real-time risk scoring engine is suspected to be more computationally intensive, causing p99 latency spikes to over 350ms. (Source: email e1396b117d3b4a36)\n*   **PAY-3841:** An incorrect pre-processing logic is misflagging cross-border transactions as domestic, leading to a routing mismatch at the HDFC gateway. (Source: email 890c94e4dd2f4404)\n*   **PAY-3046:** Failures in the automated document verification with the DigiLocker service (`KYC_DOC_FETCH_TIMEOUT`) are causing upstream transaction timeouts. A recent certificate rotation is the suspected cause. (Source: slack 61b859d153e34ebf)\n*   **PAY-1584:** Juspay's new fraud detection model (v2.1) is showing a spike in false positives for HDFC-routed traffic, potentially due to a data normalization issue. (Source: email 24f2b423135c47b6)\n*   **PAY-8758:** Read contention in Juspay's Redis cache for velocity counters is causing latency in the 'Sentinel' risk engine, leading to timeouts. (Source: slack f4b3e2a1c9d84e5b)\n*   **PAY-8989:** A state persistence failure in the `upi-callback-processor` service, caused by Redis cache connection pool exhaustion, is preventing the settlement status from being updated correctly. (Source: file e2f5b405c1e943d0)\n*   **PAY-2291:** Increased latency in the C-KYC/DigiLocker validation API is causing downstream timeouts in the HDFC UPI authentication flow. (Source: event 7a8b3c4d5e6f7a8b)\n\n**HDFC-External Issues:**\n*   **PAY-6816:** HDFC's newly migrated Finacle core banking instance is experiencing database index contention on its PostgreSQL-compatible DB layer, causing acknowledgement times to exceed the NPCI timeout window. (Source: file 685156c7a3284e07)\n*   **PAY-5141:** A recent update to HDFC's own fraud detection model has caused a jump in the false positive rate for transactions over ₹5000, leading to U30 declines. (Source: slack cae11dff6d69475b)\n*   **PAY-3444:** Increased response times from HDFC's `vpa.lookup.v2` API endpoint are causing Juspay's internal risk scoring engine latency to spike. (Source: email a71a96e2c12d46cf)",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "According to the calendar invite for the post-mortem of PAY-2291, who is presenting the Impact Analysis, and what are the two long-term remediation ideas to be discussed?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the calendar event details for the 'Incident Post-Mortem: PAY-2291' (docId: 7a8b3c4d5e6f7a8b):\n\n1.  **Presenter for Impact Analysis:** Priya Sharma is scheduled to present the impact analysis, which includes quantifying the number of failed transactions, affected GMV, and customer support ticket volume.\n2.  **Long-term Remediation Idea:** The agenda includes brainstorming long-term fixes, with one specific idea listed as 'Scope out an asynchronous KYC validation flow for non-critical paths.'",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are the specific immediate and long-term remediation plans proposed for the settlement discrepancy issue in PAY-8989 and the database contention issue in PAY-6816?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, here are the remediation plans for the two specified JIRA tickets:\n\n**For PAY-8989 (Settlement Discrepancy - file e2f5b405c1e943d0):**\n*   **Immediate Remediation:** Deploy a dedicated Kubernetes CronJob named `hdfc-upi-recon-patcher`. This script will run daily at 04:00 IST to find transactions stuck in `PENDING_RECON` status and force a re-evaluation against the settlement file.\n*   **Long-term Remediation:** Refactor the `upi-callback-processor` service to use a more resilient connection pooling library, increase the Redis client timeout to 3500ms, and add a circuit breaker pattern.\n\n**For PAY-6816 (HDFC DB Contention - file 685156c7a3284e07):**\n*   **Immediate Remediation (for HDFC):** HDFC's DBA team is required to initiate an emergency re-indexing and table partitioning strategy on the affected ledgers.\n*   **Long-term Remediation (for Juspay):** Juspay's `psp-router` service will be updated to implement a dynamic, latency-aware circuit breaker. It will de-prioritize the HDFC gateway if its p99 latency exceeds 18 seconds for more than 60 seconds.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List the full names and email addresses of all individuals from HDFC Bank who were either direct recipients of emails or attendees of meetings regarding the UPI timeout incidents.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, the following individuals from HDFC Bank were involved in communications:\n\n1.  **Name:** Rahul Verma\n    **Email:** `rahul.verma@hdfcbank.com`\n    **Source:** Recipient of the email with subject 'Investigation: Correlation between HDFC API Latency & Juspay Risk Engine Spike (JIRA: PAY-3444)' (docId: a71a96e2c12d46cf).\n\n2.  **Name:** Ritesh Agarwal\n    **Email:** `ritesh.agarwal@hdfcbank.com`\n    **Source:** Attendee of the 'Incident Post-Mortem: PAY-2291' meeting (docId: 7a8b3c4d5e6f7a8b).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "data.science.dl@juspay.in",
+      "User_name": "Data Science DL"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Compare the two separate investigations into Juspay's internal models causing HDFC gateway issues. What were the JIRA tickets, the specific model components and parameters implicated, the key performance metrics that showed degradation, and the proposed actions for the data science team?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Here is a comparison of the two investigations into Juspay's internal models based on the provided documents:\n\n**Investigation 1: Risk Engine Latency (PAY-2545)**\n*   **Source Document:** Email from Arjun Mehta (docId: e1396b117d3b4a36).\n*   **Model Component:** The real-time risk scoring engine, specifically a new model version deployed 'last Tuesday'.\n*   **Implicated Parameters:** The specific feature set of the new model is questioned for being too computationally intensive.\n*   **Degraded Metrics:** p99 latency spiked from ~80ms to over 350ms, correlating with a 4.5% increase in `504 Gateway Timeout` errors.\n*   **Action for Data Science:** Rohan Verma and the Data Science team were asked to review the feature set of the new risk model to confirm if heavy computations were introduced.\n\n**Investigation 2: Fraud Model False Positives (PAY-1584)**\n*   **Source Document:** Email from Priya Nair (docId: 24f2b423135c47b6).\n*   **Model Component:** The new fraud detection model (v2.1).\n*   **Implicated Parameters:** The model was incorrectly weighting `device_fingerprint_age` and `vpa_transaction_frequency` parameters, suggesting a data normalization issue.\n*   **Degraded Metrics:** The false positive rate for transactions between ₹5,000-₹10,000 jumped from a baseline of 0.15% to 1.8%, causing a 1.65% dip in success rate.\n*   **Action for Data Science:** The Data Science team was asked to investigate the feature engineering pipeline for the HDFC integration specifically and help decide between a model rollback to v2.0 or a hotfix.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "list",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Summarize all the different root cause hypotheses being investigated for the HDFC UPI timeouts, and list the associated JIRA ticket for each.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, here is a summary of the different root cause hypotheses for the HDFC UPI timeouts, along with their associated JIRA tickets:\n\n- **PAY-2545:** A recent update to Juspay's real-time risk scoring model is suspected to be more computationally intensive, causing p99 latency to spike to over 350ms under high load (docId: e1396b117d3b4a36).\n- **PAY-6816:** HDFC's newly migrated Finacle core banking instance is experiencing severe database index contention on its PostgreSQL-compatible database, causing acknowledgement times to exceed the NPCI timeout window (docId: 685156c7a3284e07).\n- **PAY-3841:** Cross-border transactions are being incorrectly flagged as domestic by Juspay's pre-processing logic, leading to a routing configuration mismatch and `T3_TIMEOUT` errors at the HDFC PSP gateway (docId: 890c94e4dd2f4404).\n- **PAY-3046:** Timeouts are spiking during KYC validation for high-risk merchants, with the automated document verification with the DigiLocker service failing with a `KYC_DOC_FETCH_TIMEOUT`, possibly due to a recent certificate rotation (docId: 61b859d153e34ebf).\n- **PAY-5141:** A recent update to HDFC's own fraud detection model has increased the false positive rate from ~0.8% to 4.5% for transactions over ₹5000, causing a spike in U30 declines (docId: cae11dff6d69475b).\n- **PAY-1584:** Juspay's new internal fraud detection model (v2.1) is incorrectly weighting parameters for HDFC-routed traffic, causing a false positive rate jump from 0.15% to 1.8% for transactions between ₹5,000-₹10,000 (docId: 24f2b423135c47b6).\n- **PAY-3444:** Juspay's risk scoring engine latency is spiking due to increased response times from HDFC's `vpa.lookup.v2` API endpoint, which is queried during pre-processing (docId: a71a96e2c12d46cf).\n- **PAY-8758:** Juspay's 'Sentinel' risk engine is experiencing latency spikes up to ~850ms due to suspected Redis cache read contention on velocity counters, which cascades into transaction timeouts (docId: f4b3e2a1c9d84e5b).\n- **PAY-8989:** A state persistence failure in Juspay's `upi-callback-processor` service, caused by Redis cache connection pool exhaustion, is preventing the `settlement_status` from being updated, leading to settlement discrepancies (docId: e2f5b405c1e943d0).\n- **PAY-2291:** Increased latency in the C-KYC/DigiLocker validation API for high-risk profiles is causing downstream timeouts in the HDFC UPI authentication flow (docId: 7a8b3c4d5e6f7a8b).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Who is confirmed to attend the 'Incident Post-Mortem: PAY-2291' and what is the Google Meet link for the meeting?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the calendar event (docId: 7a8b3c4d5e6f7a8b), the following people have confirmed their attendance (response status 'accepted') for the 'Incident Post-Mortem: PAY-2291':\n\n- Arjun Mehta\n- Priya Sharma\n- Anjali Desai\n- Vikram Singh\n- Ritesh Agarwal (HDFC)\n\nThe Google Meet joining link is: https://meet.google.com/pqr-stuv-wxy.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "suresh.kumar@juspay.in",
+      "User_name": "Suresh Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Regarding the cross-border routing mismatch issue in PAY-3841, what was the immediate mitigation proposed by Anjali Patel, who was asked to confirm its feasibility, and what was the deadline for confirmation?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the email from Anjali Patel (docId: 890c94e4dd2f4404) regarding PAY-3841:\n\n- **Proposed Mitigation:** To dynamically route all transactions flagged with `countryCode != IN` to the secondary ICICI gateway until the HDFC routing logic is patched.\n- **Feasibility Confirmation Owner:** You (suresh.kumar@juspay.in) were asked to confirm the feasibility.\n- **Deadline:** The deadline for confirmation was set for 30 minutes after the email was sent, which corresponds to the timestamp `1757653740000`.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What is the status of the implementation plan for the reconciliation script under PAY-8989, and what is the immediate next action item?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the file 'Implementation Plan: Idempotent Reconciliation Script...' (docId: e2f5b405c1e943d0):\n\n- **Status:** The implementation plan document itself is currently 'In Review'. However, a key decision has been made: Aditya Singh has approved the logic for the cron-based reconciliation query, greenlighting the implementation.\n- **Next Action Item:** The immediate next step is for you (Arjun Mehta) to 'Deploy hdfc-upi-recon-patcher to staging K8s cluster'. The due date for this action is `1758117428952`.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Two separate issues concerning fraud models are impacting the HDFC gateway. Compare the problems identified in PAY-1584 and PAY-5141, detailing which company's model is at fault and the specific problem for each.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Yes, there are two distinct issues related to fraud models. Here is a comparison based on the provided documents:\n\n1.  **PAY-1584 (Juspay's Model Issue):**\n    *   **Fault:** This issue lies with **Juspay's internal** fraud detection model (v2.1).\n    *   **Specific Problem:** The model is incorrectly weighting the `device_fingerprint_age` and `vpa_transaction_frequency` parameters for HDFC-routed traffic. This has caused a spike in the false positive rate from a baseline of 0.15% to 1.8% for transactions between ₹5,000 and ₹10,000 (docId: 24f2b423135c47b6).\n\n2.  **PAY-5141 (HDFC's Model Issue):**\n    *   **Fault:** This issue lies with **HDFC Bank's** fraud detection model.\n    *   **Specific Problem:** A recent update to HDFC's model caused the false positive rate to jump from ~0.8% to 4.5% for transactions greater than ₹5000. The problem is attributed to new 'velocity check parameters' deployed by HDFC (docId: cae11dff6d69475b).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Synthesize a summary of all the performance degradation and reliability incidents related to the Nethra.ai integration, detailing the root cause for each distinct problem.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on recent documents, there are several distinct performance and reliability incidents with the Nethra.ai integration:\n\n1.  **High Latency from Core Banking System (PAY-9257):** The `cbs-adapter-service` experienced p99 latencies over 1500ms (vs. a 300ms SLO). The root cause was a non-indexed database lookup on the `ACCOUNT_TRANSACTION_LEDGER` table in the partially migrated Finacle core banking system, leading to extensive read locks and I/O wait times (Source: file `16bb6b136cba49d5`).\n\n2.  **API Rate Limiting (PAY-6006, PAY-6813):** The system experienced a high rate of `HTTP 429` errors from Nethra.ai's API. One incident caused a ~12% error rate and pushed P99 latency over 480ms (from a 351ms baseline). Another incident during a load test caused a ~45% failure rate. The root cause was Juspay's account exceeding its API request quota, which was subsequently increased by Nethra.ai's ops team (Sources: slack messages `52dc2a6c3f5e4370`, `e790f32005414e41`).\n\n3.  **Authentication Failures (PAY-2581):** Intermittent `HTTP 401 Unauthorized` errors were traced to a race condition in the OAuth token refresh mechanism. Multiple pods in the `nethra-proxy-service` attempted to refresh the token simultaneously using a basic `SETNX` command on a Redis key, leading to a lock-failure state where the token was not updated before expiring (Source: file `b08e83c99232413b`).\n\n4.  **Multi-Currency Settlement Latency (PAY-8187):** During a multi-currency settlement window, P99 latency for the UPI stream jumped from 350ms to over 1200ms. This was suspected to be caused by memory leaks or resource contention within Nethra.ai's model container when handling sustained, high-volume payloads (Source: email `ab4902236eac4825`).\n\n5.  **KYC Automation Latency Spike (PAY-4594):** For 'new-to-platform, high-velocity' customer segments, KYC automation failures hit 45% due to p99 latency increasing from 150ms to over 800ms when calling the Nethra.ai endpoint. The suspected cause is the complexity of the ML model's processing for these specific high-risk profiles (Source: email `f5f2bdec114645c8`).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": 0.5,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List the two separate PCI audit findings mentioned in emails concerning the Nethra.ai integration. For each finding, specify the JIRA ticket, the exact type of sensitive data being exposed, and the immediate action or information requested from the vendor.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "There are two distinct PCI audit findings detailed in the emails:\n\n**Finding 1 (JIRA: PAY-4800):**\n*   **Source Document:** Email `500e0b2bb1524ff3`\n*   **Sensitive Data Exposed:** The first 6 and last 4 digits of the cardholder's PAN (Primary Account Number) were being captured in plaintext in JSON payloads for a subset of failed UPI transactions.\n*   **Action Requested from Vendor (Nethra.ai):** To confirm if a server-side configuration exists that can reject or sanitize any payload containing unmasked PAN data to act as a secondary control.\n\n**Finding 2 (JIRA: PAY-7874):**\n*   **Source Document:** Email `1101435af6ce4cce`\n*   **Sensitive Data Exposed:** Raw, untokenized data elements were being passed in the 'device_fingerprint.os_version' and 'customer.geo_coordinates' fields to Nethra.ai's fraud scoring endpoint.\n*   **Action Requested from Vendor (Nethra.ai):** To provide confirmation and an impact analysis on model accuracy by EOD if Juspay starts sending hashed or null values for these two specific fields.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": 0.2,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "According to the calendar invite for the P99 latency spike analysis (PAY-1366), what are the four main topics on the agenda for the deep-dive session, and which person or team is assigned to lead the discussion for each?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "Based on the description in the calendar event `336031b27dca443a6`, the four main agenda topics and their assigned leads are:\n\n1.  **Incident Timeline & Metric Review:** Led by Arjun Mehta.\n2.  **Nethra.ai Endpoint Analysis:** Led by the Nethra.ai Team.\n3.  **Network Path & Payload Investigation:** A joint analysis between teams.\n4.  **Caching Strategy Efficacy:** Led by Priya Sharma.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.6,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What was the specific cause and final resolution for the service degradation issue tracked under JIRA ticket PAY-6006?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.8
+    },
+    "Answer": "According to the post-mortem update in Slack message `52dc2a6c3f5e4370`, the service degradation for PAY-6006 had the following cause and resolution:\n\n*   **Cause:** Nethra.ai's API rate limiting. Grafana logs confirmed a peak `HTTP 429` error rate of approximately 12% from their scoring endpoint.\n*   **Resolution:** The issue was fully resolved after Nethra.ai's operations team deployed an increased API quota for Juspay's account.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": 0.9,
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the root cause analysis for PAY-9257, describe the immediate graceful degradation strategy and the proposed long-term architectural solution to fix the CBS migration latency bottleneck.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The root cause analysis document `16bb6b136cba49d5` for PAY-9257 outlines a two-part strategy to address the latency bottleneck caused by a non-indexed lookup in the migrated core banking system:\n\n1.  **Immediate Remediation (Graceful Degradation):** The plan is to implement a feature flag that dynamically bypasses the 'velocity feature enrichment' process if the `cbs-adapter-service` latency exceeds a 600ms threshold. This allows the transaction to proceed with a reduced feature set sent to Nethra.ai, preventing a hard failure and providing graceful degradation of the service.\n\n2.  **Permanent Solution (Architectural Change):** The long-term proposal is to create a denormalized, read-optimized projection of the required ledger data into Juspay's internal ScyllaDB cluster. This data would be kept updated using a Kafka-based Change Data Capture (CDC) stream. This architecture will decouple the critical-path fraud check from the volatile CBS, ensuring predictable and low-latency data access for the Nethra.ai model.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What are the main performance bottlenecks currently affecting the UPI Lite X project, and what are the specific metrics and JIRA tickets associated with each?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, there are several distinct performance bottlenecks affecting the UPI Lite X project:\n\n1.  **API Rate Limiting in Integration Tests (PAY-3896):** Integration tests are hitting NPCI's API rate limits, resulting in `HTTP 429` errors. The transaction throughput is capped at approximately 120 TPS, against a target of 400 TPS.\n\n2.  **API Rate Limiting in Pre-production (PAY-3681):** During load tests simulating peak hours, transaction attempts are being throttled at around 450 TPS, while the target is 800 TPS. This has caused an 18.5% error rate and degraded p99 latency to 620ms.\n\n3.  **Real-Time Risk Scoring Latency (PAY-7791):** The p99 latency for the risk scoring engine spiked from a baseline of ~50ms to 240ms during a period of moderate volume (~280 TPS), leading to a 1.2% increase in transaction timeouts with `U16` error codes.\n\n4.  **`RiskGuard` Engine Latency (PAY-6926):** The `RiskGuard` engine's p99 scoring latency jumped from ~45ms to bursts of 300-450ms, specifically affecting on-device wallet activations. This is associated with `FeatureVectorGenerationTimeout` errors.\n\n5.  **Core Banking System (CBS) Integration Latency (PAY-6330):** The new CBS integration has caused the P99 latency in the transaction commit phase to exceed 450ms during load tests, which is above the NPCI mandated SLA of 300ms.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.4,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Regarding the post-mortem for PAY-7954, what was the root cause of the cross-border transaction failures, and what is the specific remediation plan, including the new container image version?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the post-mortem document (b11316e9a5b8408c), the root cause was a static rule within the 'fx-router' service's `routing-rules.yaml` ConfigMap. This relied on a hardcoded list of Bank Identification Number (BIN) prefixes that was not updated for new partner banks, causing international transactions to be misrouted as domestic and subsequently rejected by the NPCI gateway with a 'U30' error.\n\nThe remediation plan involves modifying the 'fx-router' service to fetch BIN ranges dynamically from the 'partners.bin_ranges' PostgreSQL table at startup and every 6 hours. The corrected container image for this fix is 'juspay/fx-router:v2.1.4-hotfix'.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "compliance.team@juspay.in",
+      "User_name": "Compliance Team"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": 0.7,
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Provide a list of all identified compliance, security, and financial risk issues related to the UPI Lite X project, detailing the specific problem for each.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The following compliance, security, and financial risk issues have been identified for the UPI Lite X project:\n\n*   **PCI Compliance Failure (PAY-7932):** A PCI audit found a critical violation of DSS requirement 3.4. The implementation temporarily writes raw, unmasked transaction data to a device-local file cache for an average of 250ms during offline payments, creating a data-at-rest vulnerability.\n\n*   **KYC Automation Failures (PAY-8361):** There is a 36.57% failure rate in the automated KYC process for users with older-format PAN cards. The NPCI gateway returns an `NPCI-KYC-ERR-42` (Liveness Check Timeout), blocking onboarding for this segment.\n\n*   **High-Risk KYC Automation Failures (PAY-8071):** For users flagged as 'high-risk', the automated V-CIP fallback is failing to initialize, leading to an 87.8% failure rate for this cohort and a generic gateway timeout after 45 seconds.\n\n*   **Fraud Detection False Positives (PAY-8966):** A new anomaly detection model (v2.1) increased the false positive rate from 0.4% to 2.8% for offline-to-online sync transactions, incorrectly flagging genuine low-value top-ups as suspicious (`FR77 - Suspicious Transaction`).\n\n*   **Settlement Reconciliation Anomaly (PAY-1340):** A settlement mismatch was found for batch ID `882642`, where the internal ledger is short by ₹12,450.75 across 87 transactions. The internal system failed to update the final state to 'settled' despite confirmation from the NPCI settlement file.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0,
+      "Question_Complexity": "low",
+      "Realness": 0.6,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What were the three mitigation strategies brainstormed during the '[Performance Deep-Dive] Mitigating CBS Latency for UPI Lite X Transaction Commit' meeting, and what are the assigned follow-up actions and their owners?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the calendar event description (e4b1c8f0d3a24e69), the three mitigation strategies brainstormed were:\n\n1.  **Option A: Asynchronous Commit Pattern:** Respond to the client before the final CBS commit and handle reconciliation separately.\n2.  **Option B: Connection Pool Optimization:** Tune parameters for HikariCP (e.g., max connections, idle timeout) for the new CBS.\n3.  **Option C: Write-Ahead Log (WAL) for Batching:** Use an internal WAL to batch multiple transaction commits into a single write operation.\n\nThe assigned follow-up actions are:\n*   **Create POC for Asynchronous Commit Pattern:** Owned by priya.sharma@juspay.in.\n*   **Draft updated connection pool configuration for staging deployment:** Owned by rohan.desai@juspay.in.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": 0.2,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "I'm aware of multiple API rate limiting problems. Can you summarize the different situations where we've been throttled by NPCI, including the specific environments, JIRA tickets, TPS figures, and the actions taken for each case?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on your communications, there are two distinct situations where API rate limiting from NPCI has been a blocker:\n\n1.  **Integration Test Environment (JIRA: PAY-3896):**\n    *   **Context:** Integration tests for the UPI Lite X deployment are consistently hitting NPCI's API rate limits.\n    *   **Metrics:** Throughput is capped at approximately 120 TPS, far below the target of 400 TPS. This is causing a backlog in the on-device settlement queue.\n    *   **Action Taken:** You initiated a conversation with NPCI counterparts to get the staging IP whitelisted for a higher quota.\n\n2.  **Pre-production Environment (JIRA: PAY-3681):**\n    *   **Context:** Load tests simulating peak-hour volumes for on-device wallet activation are being throttled.\n    *   **Metrics:** Transaction attempts are capped at approximately 450 TPS against a target of 800 TPS. You have requested a provision for a sustained 1200 TPS.\n    *   **Action Taken:** You sent an email to NPCI support and your contacts to confirm the exact rate limits, inquire about the formal process for requesting an increase, and ask for guidance on their system's preference for sustained rate vs. burst.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the specific container image and Git branch associated with the hotfix for the UPI Lite X cross-border routing failure identified in ticket PAY-7954?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the post-mortem document (docId: b11316e9a5b8408c), the architectural change for the hotfix is tracked under the Git branch 'hotfix/PAY-7954'. The corrected container image to be deployed is 'juspay/fx-router:v2.1.4-hotfix'.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What are the different KYC-related problems being reported for the UPI Lite X project, and what are their corresponding JIRA tickets?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "There are two distinct KYC-related problems reported for the UPI Lite X project:\n1.  **KYC Automation Failures for High-Risk Segments (PAY-8361):** An email from Anjali Patel (docId: 4f39717feee1484b) details a 36.57% failure rate for users with older-format PAN cards, resulting in 'NPCI-KYC-ERR-42' (Liveness Check Timeout) errors.\n2.  **V-CIP Fallback Initialization Failure (PAY-8071):** An email from Siddharth Nair (docId: c3a34b09608b4e71) reports that the automated Video Customer Identification Process (V-CIP) fallback is failing to initialize for 'high-risk' users, leading to an 87.8% failure rate and generic gateway timeouts.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Synthesizing information from recent emails, files, and meeting agendas, what are the primary technical and compliance risks currently threatening the UPI Lite X go-live schedule?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, the primary risks threatening the UPI Lite X go-live schedule are:\n\n1.  **Compliance Risk (PAY-7932):** A critical PCI audit finding has put the compliance certification on hold. The issue is that the current implementation for offline payments temporarily writes unmasked transaction data to a device-local file cache, violating PCI DSS requirement 3.4 regarding data-at-rest. (Source: email `6f52da0835fc41de`)\n\n2.  **Performance/SLA Risk (PAY-6330):** The integration with the new Core Banking System (CBS) has caused P99 latency to spike to over 450ms, which exceeds the mandatory 300ms SLA from NPCI. This is identified as a critical blocker for the go-live. (Source: event `e4b1c8f0d3a24e69`)\n\n3.  **Scalability Risk (PAY-3681):** The deployment is blocked by NPCI's API rate limiting. Load tests are being throttled at 450 TPS, which is far below the targeted 800 TPS and the required 1200 TPS for an operational buffer, jeopardizing the wallet activation experience. (Source: email `33b931e8a6384566`)\n\n4.  **Fraud Detection Risk (PAY-8966):** The new v2.1 anomaly detection model is generating a high rate of false positives (2.8%), incorrectly flagging genuine UPI Lite X sync transactions as suspicious. This degrades user experience and requires a model rollback and retraining. (Source: file `b3415129b8654a80`)",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What were the specific financial details of the reconciliation anomaly reported in the #engineering channel, including the batch ID, monetary discrepancy, and number of affected transactions?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the Slack message from Anjali Patel (docId: ccf224c35abc4813), the reconciliation anomaly from the UPI Lite X pilot involved:\n- **Batch ID:** `882642`\n- **Monetary Discrepancy:** The internal ledger was short by ₹12,450.75.\n- **Affected Transactions:** The discrepancy was spread across 87 transactions.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.8,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Across all reported incidents, what are the different performance bottlenecks impacting the UPI Lite X project, and what are their root causes according to the available communications?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on a synthesis of the provided documents, several distinct performance bottlenecks are impacting the UPI Lite X project:\n\n1.  **API Rate Limiting (PAY-3681, PAY-3896):** The system is being throttled by NPCI's API. The root cause is that Juspay's API credentials and/or staging IP do not have a high enough request quota provisioned by NPCI to handle the load test volumes. (Sources: email `33b931e8a6384566`, Slack message `cafe5df2f27a4593`)\n\n2.  **Risk Scoring Latency (PAY-7791, PAY-6926):** The p99 latency for the real-time risk scoring engine has spiked from ~50ms to as high as 450ms. The suspected root causes include resource contention on Kubernetes pods or a specific feature rule (`FeatureVectorGenerationTimeout`) struggling with the new transaction profile. (Sources: email `c8f4f15611534d7a`, Slack message `42917912c1f742d0`)\n\n3.  **Cross-Border Routing Latency (PAY-7954):** A 200ms P99 latency increase was observed on certain transactions. The root cause was a static, hardcoded list of Bank Identification Numbers (BINs) in the 'fx-router' service's ConfigMap, which failed to identify new international partner banks. (Source: file `b11316e9a5b8408c`)\n\n4.  **Transaction Commit Latency (PAY-6330):** The transaction commit phase latency has exceeded 450ms, violating the 300ms NPCI SLA. The root cause is linked to the new Core Banking System (CBS) integration, with the specific issue being investigated (either application logic or DB I/O wait time). (Source: event `e4b1c8f0d3a24e69`)\n\n5.  **KYC Journey Latency (PAY-8361):** An average of 365ms is being added to the p99 latency for certain user onboarding journeys before they fail. The root cause is a 'Liveness Check Timeout' from the NPCI gateway when processing older-format PAN cards. (Source: email `4f39717feee1484b`)",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.8,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on all the incident discussions, what is the underlying theme of our system's brittleness when dealing with partner dependencies like HDFC and internal service interactions?",
+    "Answer_weights": {
+      "Factuality": 0.8,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the documents, the underlying theme of system brittleness appears to be a combination of cascading failures originating from both external dependencies and internal bottlenecks, particularly under load. Several incidents highlight this pattern:\n\n1.  **External Dependency Timeouts:** Problems at HDFC directly impact Juspay's services. This is seen with HDFC's Finacle core banking database contention (`docId: 685156c7a3284e07`), latency in HDFC's `vpa.lookup.v2` API endpoint (`docId: a71a96e2c12d46cf`), and issues with HDFC's fraud detection model updates (`docId: cae11dff6d69475b`). In these cases, an external delay causes a timeout in Juspay's upstream transaction flow.\n\n2.  **Internal Bottlenecks causing Timeouts:** Juspay's internal services are also a source of latency that leads to transaction failures. Examples include:\n    *   **Risk Engine:** A computationally heavy risk model update (`docId: e1396b117d3b4a36`) and Redis cache read contention (`docId: f4b3e2a1c9d84e5b`) both cause spikes in risk engine latency, leading to timeouts.\n    *   **Callback/State Persistence:** The `upi-callback-processor` service fails to update transaction states due to Redis connection pool exhaustion under load, causing settlement discrepancies (`docId: e2f5b405c1e943d0`).\n    *   **Dependent Service Failures:** Timeouts in the DigiLocker KYC validation service, possibly due to a certificate issue, cascade to failures in the HDFC UPI auth flow (`docId: 61b859d153e34ebf` and `docId: 7a8b3c4d5e6f7a8b`).\n\nIn essence, the system lacks sufficient resilience (e.g., robust circuit breakers, dynamic timeouts, resilient connection pooling) to gracefully handle delays from either internal microservices or external partners, leading to cascading failures that manifest as UPI transaction timeouts.",
+    "Confidence": 0.9
+  },
+  {
+    "User_data": {
+      "UserID": "suresh.kumar@juspay.in",
+      "User_name": "Suresh Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the specific JIRA ticket for the cross-border routing mismatch issue, and what was the immediate mitigation proposed by Anjali Patel?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the email from Anjali Patel (`docId: 890c94e4dd2f4404`), the JIRA ticket for the cross-border routing mismatch issue is PAY-3841. The immediate mitigation she proposed was to dynamically route all transactions flagged with `countryCode != IN` to the secondary ICICI gateway until the HDFC routing logic is patched.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "tech-leads@juspay.in",
+      "User_name": "Tech Leads"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What are the various technical problems identified across different documents as potential root causes for the HDFC UPI timeouts?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Multiple distinct technical problems have been identified as potential root causes for the HDFC UPI timeouts:\n\n*   **Internal Risk Engine Latency:** A recent risk model update is suspected of being too computationally intensive under high load, spiking p99 latency from ~80ms to over 350ms (`docId: e1396b117d3b4a36`).\n*   **External DB Contention:** HDFC's newly migrated PostgreSQL database is experiencing severe index contention and 'Lock:tuple' waits during high-volume debit operations, causing their acknowledgement time to exceed the NPCI timeout (`docId: 685156c7a3284e07`).\n*   **Internal Routing Logic Error:** Cross-border transactions are being incorrectly flagged as domestic, causing a routing configuration mismatch and `T3_TIMEOUT` errors (`docId: 890c94e4dd2f4404`).\n*   **Internal KYC Service Failure:** The automated document verification with the DigiLocker service is timing out (`KYC_DOC_FETCH_TIMEOUT`), possibly due to a certificate rotation issue, which contributes to `T5` transaction timeouts (`docId: 61b859d153e34ebf`). This is also a topic for an incident post-mortem (`docId: 7a8b3c4d5e6f7a8b`).\n*   **External Fraud Model False Positives:** An update to HDFC's fraud detection model has increased the false positive rate for transactions > ₹5000, causing U30 declines (`docId: cae11dff6d69475b`).\n*   **Internal Fraud Model Issues:** Juspay's own fraud model (v2.1) is showing a spike in false positives due to a suspected data normalization issue in the feature engineering pipeline (`docId: 24f2b423135c47b6`).\n*   **External API Latency:** Increased response times from HDFC's `vpa.lookup.v2` API endpoint are causing Juspay's risk scoring engine latency to spike, leading to 'U5' timeouts (`docId: a71a96e2c12d46cf`).\n*   **Internal Cache Contention:** The 'Sentinel' risk engine's Redis cache for velocity counters is experiencing read contention, spiking latency to ~850ms and causing `U69` timeouts (`docId: f4b3e2a1c9d84e5b`).\n*   **Internal State Persistence Failure:** The `upi-callback-processor` service is failing to update settlement status in PostgreSQL due to Redis connection pool exhaustion, leading to settlement discrepancies (`docId: e2f5b405c1e943d0`).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "high",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Compare the two distinct fraud model issues reported by Priya Nair and Siddharth Nair. Detail the model involved, the specific transaction cohort affected, the reported false positive rate increase, and the suspected location of the problem (internal vs. external).",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Here is a comparison of the two distinct fraud model issues reported by Priya Nair and Siddharth Nair:\n\n**1. Issue reported by Priya Nair (Internal Juspay Model):**\n*   **Source:** Email `docId: 24f2b423135c47b6`\n*   **Model Involved:** Juspay's new internal fraud detection model (v2.1).\n*   **Transaction Cohort:** Transactions between ₹5,000 - ₹10,000.\n*   **False Positive Rate:** Jumped from a baseline of 0.15% to 1.8%.\n*   **Problem Location:** Suspected to be **internal** to Juspay, specifically a data normalization issue with the feature set being fed to the model for HDFC-routed traffic.\n\n**2. Issue reported by Siddharth Nair (External HDFC Model):**\n*   **Source:** Slack message `docId: cae11dff6d69475b`\n*   **Model Involved:** HDFC's fraud detection model, which was recently updated.\n*   **Transaction Cohort:** Transactions > ₹5000.\n*   **False Positive Rate:** Jumped from a baseline of ~0.8% to 4.5%.\n*   **Problem Location:** The problem is **external**, located at HDFC's end. Siddharth is formally requesting HDFC to review the new velocity check parameters they deployed.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "According to the implementation plan for PAY-8989, what is the immediate fix for the settlement discrepancies, and what is the proposed long-term solution?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the implementation plan (`docId: e2f5b405c1e943d0`), the status and solutions for the PAY-8989 settlement discrepancies are as follows:\n\n*   **Immediate Fix:** The immediate remediation is to deploy a dedicated Kubernetes CronJob named `hdfc-upi-recon-patcher`. This Python script is scheduled to run at 04:00 IST (T+4 hours) to find transactions stuck in `settlement_status='PENDING_RECON'` and invoke an internal admin API (`POST /v1/admin/force-recon`) to re-evaluate and force a state update against the settlement file.\n\n*   **Long-term Solution:** The `upi-callback-processor` service will be refactored to use a more resilient connection pooling library. Additionally, the Redis client timeout will be increased from 1500ms to 3500ms, and a circuit breaker pattern will be added to prevent cascading failures when the cache is unavailable.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the implementation plans and related emails, what are the primary examples of technical debt or legacy systems that are causing or complicating the HDFC UPI timeout and settlement issues?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The documents highlight two main areas of technical debt contributing to the problems:\n1.  **Legacy Profile Enrichment Database:** The implementation plan for mitigating UPI timeouts (docId: d005fd9c7f0a4dda) identifies a synchronous call to a legacy `cust-profile` Oracle database as a root cause. This database exhibits a p99 latency exceeding 2500ms, which breaches the UPI transaction window. The permanent fix is to migrate this functionality to the modern `Customer-360` Cassandra datastore.\n2.  **Inadequate Settlement File Format:** The corrective script plan for PAY-9939 (docId: 440b1d545ff84169) reveals that HDFC Bank's settlement file format is a complicating factor. It lacks Juspay's `pg_transaction_id`, forcing difficult secondary lookups using `UtrNo` and `amount`. This makes reconciling \"late success\" (`U30`) transactions difficult and requires a manual Python script as a workaround. The long-term solution proposed is a change request to HDFC to include the `pg_transaction_id`.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List all the specific error codes, NPCI response codes, and HTTP status codes mentioned across the various incident reports, emails, and Slack messages related to the HDFC UPI gateway issues.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, the following codes are mentioned:\n- **UPI/Processor Error Code:** `U69` (Transaction timed out at PSP), from the implementation plan (d005fd9c7f0a4dda).\n- **Juspay Internal Error Code:** `KYC_AUTO_REJECT_503`, from Anjali Patel's email regarding KYC failures (aa2d80ea89ee4da8).\n- **Juspay Internal Error Code:** `KYC_TIMEOUT_PRE_VERIFY`, from Priya Nair's Slack message about KYC automation (40592291fc674cf9).\n- **HDFC Gateway Response:** 'DE' (Transaction Timeout), from Priya Nair's email about a settlement mismatch (3b15ee59edc34dbf).\n- **Juspay Reconciliation Error Metric:** `TXN_NOT_FOUND_IN_SETTLEMENT`, from Arjun Mehta's email (9b0df1db565648d4).\n- **HTTP Status Code:** `HTTP 429 Too Many Requests`, identified during a load simulation reported by Siddharth Nair in Slack (a5d8c1b9e4f04312).\n- **NPCI Response Code:** `U30` (late success authorization), identified as a cause for settlement mismatches in the corrective script plan (440b1d545ff84169).\n- **Juspay Internal Log Status:** `T3` (Transaction Timeout), mentioned in Anjali Patel's email as a result of added KYC latency (aa2d80ea89ee4da8).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "What actions are being taken to address the various settlement mismatches reported with the HDFC UPI gateway, and who is responsible for them?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Several actions are being taken by different team members to address the settlement mismatches:\n1.  **Formal Dispute with HDFC (PAY-8119):** For a shortfall of ₹1,42,870.50, Priya Nair is preparing a dispute report. She has requested payloads from the Payments Engineering team (owner: ravi.kumar@juspay.in) to support the filing. Priya Nair is responsible for filing the dispute (Source: 3b15ee59edc34dbf).\n2.  **Internal Verification (PAY-6556):** For a discrepancy of ₹47,821.50, Arjun Mehta has asked the finance reconciliation team (owner: priya.sharma@juspay.in) to first verify if HDFC has issued any manual credit notes before he escalates to HDFC's technical team (Source: 9b0df1db565648d4).\n3.  **Vendor Investigation (PAY-5910):** For a mismatch of ₹1,42,550, Anjali Patel has already escalated to HDFC's support team with a CSV of transaction IDs and is tracking their response and ETA for fund credit (Source: df0237286d2345a7).\n4.  **Corrective Script and Process Enhancement (PAY-9939):** For persistent mismatches from `U30` codes, Arjun Mehta has designed a temporary Python script for manual reconciliation. He is also proposing a change request to HDFC to include Juspay's `pg_transaction_id` in reports and enhancing the internal `Recon-Scribe` service (Source: 440b1d545ff84169).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Synthesizing all the provided information, what are the distinct categories of root causes identified for the intermittent HDFC UPI timeouts?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the analysis across all documents, the root causes for the HDFC UPI timeouts can be grouped into four distinct categories:\n1.  **Internal System Latency:** Problems originating within Juspay's own infrastructure. Examples include a slow synchronous call to a legacy Oracle database triggered by the 'Falcon-7B' fraud model (d005fd9c7f0a4dda), and added latency from a fallback to manual KYC review due to `KYC_AUTO_REJECT_503` errors (aa2d80ea89ee4da8).\n2.  **Vendor-Side (HDFC) Limitations:** Issues originating from HDFC's gateway. Examples include suspected request queueing due to a core banking migration (33ed0c4e1b3d4269), strict rate limiting causing `HTTP 429` errors above ~400 TPS (a5d8c1b9e4f04312), and potential synchronous FX rate lookups for multi-currency settlements (9e481954c5fd46ff).\n3.  **Integration and Configuration Errors:** Problems from the interaction between Juspay's and HDFC's systems. The primary example is a misconfiguration in the payment router (v2.8.1) that incorrectly classified international VPA handles, causing schema validation failures at the HDFC gateway (a3e8f5b1c9d24a6e).\n4.  **Race Conditions and Asynchronous Behavior:** Issues related to timing. For example, transactions receiving a `U30` (late success) response after an initial timeout are successfully processed by NPCI but cause settlement reconciliation problems later (440b1d545ff84169).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "rohan.desai@juspay.in",
+      "User_name": "Rohan Desai"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "According to the agenda for the 'Incident Post-Mortem: PAY-6284' meeting, who are the designated owners for the main agenda items and the defined action items?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "According to the meeting invitation (docId: a3e8f5b1c9d24a6e), the owners are as follows:\n\n**Agenda Item Owners:**\n- **Incident Timeline & Detection Review:** Arjun Mehta\n- **Technical Root Cause Analysis:** Priya Sharma (Backend Eng)\n- **Business & Customer Impact Assessment:** Rohan Desai (Data Analyst)\n\n**Action Item (A.I.) Owners:**\n- **A.I. 1 (Hotfix deployment):** Arjun Mehta\n- **A.I. 2 (Develop VPA validation microservice):** Priya Sharma\n- **A.I. 3 (Enhance monitoring):** Arjun Mehta",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": 0.9,
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the various investigations into HDFC UPI gateway issues, what are the different systemic problems, both internal and external, that have been identified as contributing to transaction timeouts?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the documents, several distinct systemic problems, both internal to Juspay and external with HDFC, have been identified as root causes for UPI transaction timeouts:\n\n**Internal Juspay Issues:**\n1.  **Fraud Model Latency:** The internal 'Falcon-7B' fraud model triggers a high-latency synchronous call to a legacy Oracle database for certain transactions, which exceeds 2500ms and causes a `U69` timeout before the request is even sent to HDFC (docId: d005fd9c7f0a4dda).\n2.  **KYC Automation Failure:** Failures in the automated KYC process for high-risk users add an average of 450ms of latency pre-authorization, pushing transactions over the time-to-live limit at the HDFC gateway (docId: aa2d80ea89ee4da8). Another related issue is the internal risk engine itself timing out during KYC pre-verification (docId: 40592291fc674cf9).\n3.  **Cross-Border Routing Error:** A configuration error in the payment router service (v2.8.1) incorrectly classified some international VPA handles as domestic, leading to schema validation failures and API timeouts at the HDFC gateway (docId: a3e8f5b1c9d24a6e).\n\n**External HDFC Bank Issues:**\n1.  **Multi-Currency Settlement:** Timeouts show a strong correlation with batches containing high volumes of foreign currency settlements (USD, AED), suggesting a potential issue with synchronous real-time FX rate lookups at the HDFC gateway (docId: 9e481954c5fd46ff).\n2.  **Vendor-Side Rate Limiting:** Load simulations confirmed that HDFC's staging environment begins to return `HTTP 429 Too Many Requests` errors when transaction volume breaches approximately 400 TPS (docId: a5d8c1b9e4f04312).\n3.  **Core Banking Instability:** A compliance update noted that the HDFC PSP timeout rate peaked at 14%, likely due to request queueing on HDFC's end stemming from a core banking migration they had previously announced (docId: 33ed0c4e1b3d4269).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": 0.4,
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What were the specific findings from the load simulation on the HDFC UPI staging environment regarding PAY-8674?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the Slack update from Siddharth Nair (docId: a5d8c1b9e4f04312), the load simulation on the HDFC UPI staging environment confirmed the hypothesis about rate limiting. The specific findings were:\n- A sharp increase in `HTTP 429 Too Many Requests` errors was observed once the transaction volume breached approximately 400 TPS.\n- The p99 latency for successful transactions spiked to around 850ms just before the throttling began.\n- This throttling caused cascading timeouts in upstream services at Juspay.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": 0.6,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Summarize all the distinct settlement mismatch incidents reported with HDFC Bank, including the JIRA ticket, the number of affected transactions, and the total monetary value for each incident.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided documents, four distinct settlement mismatch incidents with the HDFC Bank UPI gateway have been reported:\n\n1.  **JIRA PAY-8119:** An email from Priya Nair reported a shortfall of ₹1,42,870.50 affecting 218 transactions that timed out but were marked as 'Success' by NPCI (docId: 3b15ee59edc34dbf).\n2.  **JIRA PAY-5910:** An email from Anjali Patel reported a mismatch of ₹1,42,550 affecting 87 transactions that were marked as 'TXN_SUCCESS' internally but were absent from HDFC's settlement file (docId: df0237286d2345a7).\n3.  **JIRA PAY-6556:** An email from Arjun Mehta reported a discrepancy of ₹47,821.50 corresponding to 94 transactions that were logged as `SUCCESS` but were missing from the bank's settled list (docId: 9b0df1db565648d4).\n4.  **JIRA PAY-9939:** An implementation plan by Arjun Mehta mentions a persistent issue with a daily average variance of ₹32,850 affecting transactions with a late success authorization (NPCI response code `U30`) (docId: 440b1d545ff84169).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": 0.1,
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What were the action items, their owners, and ETAs defined during the incident post-mortem for PAY-6284?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The incident post-mortem for PAY-6284 (docId: a3e8f5b1c9d24a6e) defined the following action items, owners, and ETAs:\n\n- **A.I. 1:** Deploy a hotfix to revert the faulty cross-border routing ruleset.\n  - **Owner:** Arjun Mehta\n  - **ETA:** EOD\n\n- **A.I. 2:** Develop a pre-routing VPA validation microservice to prevent future misclassifications.\n  - **Owner:** Priya Sharma\n  - **ETA:** 2 Sprints\n\n- **A.I. 3:** Enhance monitoring to specifically alert on HDFC gateway schema validation error codes.\n  - **Owner:** Arjun Mehta\n  - **ETA:** End of Week",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": 0.8,
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "How do internal performance bottlenecks, such as the 'Falcon-7B' fraud model and the KYC automation process, specifically lead to transaction timeouts that are attributed to the HDFC gateway?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the provided analysis, internal performance bottlenecks lead to HDFC gateway timeouts through added pre-authorization latency that breaches the overall transaction time-to-live (TTL) window. Here's how each specific process contributes:\n\n1.  **'Falcon-7B' Fraud Model:** As detailed in the implementation plan (docId: d005fd9c7f0a4dda), transactions flagged by the model with scores between 0.85 and 0.90 trigger a synchronous enrichment call to a legacy Oracle database. This call exhibits a p99 latency exceeding 2500ms. This delay is so significant that Juspay's own processor times out and returns a `U69` (Transaction timed out at PSP) error code *before the transaction payload is ever dispatched to the HDFC gateway*.\n\n2.  **KYC Automation Process:** For high-risk customer segments, failures in the automated e-KYC flow force a fallback to a manual review queue. This process was measured to add an average of 450ms of latency pre-authorization. This added time, combined with the rest of the processing, is enough to push the transaction over its TTL limit, causing a `T3` (Transaction Timeout) error at the HDFC gateway (docId: aa2d80ea89ee4da8). A similar issue was noted where the internal risk engine itself timed out during a `KYC_TIMEOUT_PRE_VERIFY` step, also contributing to the overall latency before HDFC's endpoint is even hit (docId: 40592291fc674cf9).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "suresh.kumar@juspay.in",
+      "User_name": "Suresh Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.8,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "How are things looking with the HDFC integration? What's the underlying theme of the problems we're facing?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "The HDFC integration is experiencing multiple critical issues leading to transaction timeouts and failures. The underlying theme is instability stemming from both recent changes on HDFC's side and issues within our own logic.\n\nSpecifically, there are four distinct problems identified:\n1.  **Vendor-Side Fraud Model:** HDFC's recent update to their fraud detection model has increased the false positive rate from ~0.8% to 4.5% for transactions over ₹5000, causing a 3.7% dip in success rate (PAY-5141).\n2.  **Vendor-Side Infrastructure:** HDFC's migration to a new Finacle core banking instance on a PostgreSQL-compatible database is causing severe index contention and database timeouts (`BT` errors) during peak load (PAY-6816).\n3.  **Internal Routing Logic:** Our pre-processing logic is incorrectly flagging cross-border transactions as domestic, leading to a routing mismatch and a 14.2% timeout rate for that cohort (PAY-3841).\n4.  **Internal Fraud Model:** Our own new fraud detection model (v2.1) is incorrectly weighting parameters for HDFC traffic, spiking the false positive rate from 0.15% to 1.8% for transactions between ₹5,000-₹10,000 (PAY-1584).",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "suresh.kumar@juspay.in",
+      "User_name": "Suresh Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What was the timeout rate for cross-border transactions originating from IP blocks in the UAE and Singapore on the HDFC gateway during the 08:00-11:00 IST window?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the email from Anjali Patel regarding ticket PAY-3841, the timeout rate for the cohort of cross-border transactions from IP blocks in the UAE and Singapore spiked to 14.2% during the 08:00-11:00 IST window.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are the proposed fixes and next steps for the various HDFC issues?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the available documents, the following fixes and next steps have been proposed or initiated:\n\n*   **For HDFC's Fraud Model (PAY-5141):** Siddharth Nair is formally requesting that the HDFC team review the new velocity check parameters they deployed.\n*   **For HDFC's DB Contention (PAY-6816):** The immediate remediation requires HDFC's DBA team to initiate an emergency re-indexing and table partitioning strategy. The long-term solution is for Juspay's `psp-router` service to implement a dynamic, latency-aware circuit breaker for the HDFC PSP.\n*   **For Cross-Border Routing (PAY-3841):** Anjali Patel recommended an immediate mitigation to dynamically route all transactions with `countryCode != IN` to the secondary ICICI gateway until the HDFC routing logic is patched.\n*   **For Juspay's Fraud Model (PAY-1584):** The Data Science team has been asked to investigate the feature engineering pipeline. A decision is pending on whether to roll back the model to v2.0 for the HDFC gateway or deploy a hotfix.",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What is the status of the follow-up actions assigned to the data science team and Suresh Kumar regarding recent HDFC gateway incidents?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the metadata in the emails, here are the statuses of the assigned follow-up actions:\n\n1.  **Regarding Juspay's Fraud Model (PAY-1584):**\n    *   **Action:** Investigate feature engineering pipeline for HDFC integration.\n    *   **Owner:** `data.science.dl@juspay.in`\n    *   **Due By:** 1757673660000\n    *   **Action:** Provide recommendation on rollback vs hotfix.\n    *   **Owner:** `arjun.mehta@juspay.in`\n    *   **Due By:** 1757684460000\n\n2.  **Regarding Cross-Border Routing (PAY-3841):**\n    *   **Action:** Confirm feasibility of temporary traffic rerouting.\n    *   **Owner:** `suresh.kumar@juspay.in`\n    *   **Due By:** 1757653740000",
+    "Confidence": 1
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.6,
+      "Question_Complexity": "high",
+      "Realness": "fact",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Tell me about the performance degradation caused by the different fraud model problems.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "There are two distinct issues related to fraud models causing performance degradation for the HDFC gateway. It is crucial to differentiate between them:\n\n1.  **HDFC's Internal Fraud Model (Ticket PAY-5141):**\n    *   **Cause:** A recent update to HDFC's own fraud detection model.\n    *   **Impacted Cohort:** Transactions greater than ₹5000.\n    *   **Performance Degradation:** The false positive rate jumped from a baseline of approximately 0.8% to 4.5%. This caused a 3.7% dip in the success rate (SR) for the HDFC route, impacting around 12,000 P2M transactions over the weekend.\n\n2.  **Juspay's Internal Fraud Model (Ticket PAY-1584):**\n    *   **Cause:** Our new fraud detection model (v2.1) incorrectly weighting parameters like `device_fingerprint_age` for HDFC-routed traffic.\n    *   **Impacted Cohort:** Transactions between ₹5,000 and ₹10,000.\n    *   **Performance Degradation:** The false positive rate for this cohort jumped from a baseline of 0.15% to 1.8%. This caused a direct 1.65% dip in the success rate, affecting approximately 12,000 transactions.",
+    "Confidence": 1
+  }
+]

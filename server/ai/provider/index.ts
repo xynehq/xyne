@@ -855,7 +855,7 @@ export const generateTitleUsingQuery = async (
 
     params.json = true
     Logger.info("inside generateTitleUsingQuery")
-    if(assistantResponse === undefined){
+    if (assistantResponse === undefined) {
       assistantResponse = ""
     }
 
@@ -1204,7 +1204,7 @@ export const baselineRAGJson = async (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
-      dateForAI
+      dateForAI,
     )
   } else {
     params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx, dateForAI)
@@ -1386,10 +1386,14 @@ export const temporalPromptJsonStream = (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
-      dateForAI
+      dateForAI,
     )
   } else {
-    params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx, dateForAI)
+    params.systemPrompt = temporalDirectionJsonPrompt(
+      userCtx,
+      retrievedCtx,
+      dateForAI,
+    )
   }
   params.json = true
   const baseMessage = {
@@ -1597,7 +1601,7 @@ export async function generateToolSelectionOutput(
   reasoning?: string | null
 } | null> {
   params.json = true
-  const dateForAI = getDateForAI({userTimeZone: "Asia/Kolkata"})
+  const dateForAI = getDateForAI({ userTimeZone: "Asia/Kolkata" })
 
   let defaultReasoning = isReasoning
   params.systemPrompt = SearchQueryToolContextPrompt(
@@ -1753,7 +1757,7 @@ export function generateSynthesisBasedOnToolOutput(
     userCtx,
     currentMessage,
     gatheredFragments,
-    dateForAI
+    dateForAI,
   )
 
   const baseMessage = {

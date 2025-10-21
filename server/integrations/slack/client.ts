@@ -643,8 +643,8 @@ const handleAgentSearchCommand = async (
       )
       const ctx = userContext(userAndWorkspace)
       const userTimezone = userAndWorkspace?.user?.timeZone || "Asia/Kolkata"
-      const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-      const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+      const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+      const userMetadata: UserMetadataType = { userTimezone, dateForAI }
 
       const agentConfig = await getAgentByExternalIdWithPermissionCheck(
         db,
@@ -678,7 +678,7 @@ const handleAgentSearchCommand = async (
       const limitedMessages: any[] = []
 
       const searchOrAnswerIterator =
-        generateSearchQueryOrAnswerFromConversation(query, ctx, userMetadata,{
+        generateSearchQueryOrAnswerFromConversation(query, ctx, userMetadata, {
           modelId: config.defaultBestModel,
           stream: true,
           json: true,

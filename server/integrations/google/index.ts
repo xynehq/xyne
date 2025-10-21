@@ -2990,21 +2990,20 @@ export async function* listFiles(
   }
 
   do {
-    const res: any =
-      await retryWithBackoff(
-        () =>
-          drive.files.list({
-            q: query,
-            pageSize: 100,
-            fields:
-              "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
-            pageToken: nextPageToken,
-          }),
-        `Fetching all files from Google Drive`,
-        Apps.GoogleDrive,
-        0,
-        client,
-      )
+    const res: any = await retryWithBackoff(
+      () =>
+        drive.files.list({
+          q: query,
+          pageSize: 100,
+          fields:
+            "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
+          pageToken: nextPageToken,
+        }),
+      `Fetching all files from Google Drive`,
+      Apps.GoogleDrive,
+      0,
+      client,
+    )
 
     if (res.data.files) {
       yield res.data.files
@@ -3041,17 +3040,16 @@ export const googleDocsVespa = async (
         email: userEmail,
       })
       try {
-        const docResponse: any =
-          await retryWithBackoff(
-            () =>
-              docs.documents.get({
-                documentId: doc.id as string,
-              }),
-            `Fetching document with documentId ${doc.id}`,
-            Apps.GoogleDrive,
-            0,
-            client,
-          )
+        const docResponse: any = await retryWithBackoff(
+          () =>
+            docs.documents.get({
+              documentId: doc.id as string,
+            }),
+          `Fetching document with documentId ${doc.id}`,
+          Apps.GoogleDrive,
+          0,
+          client,
+        )
         if (!docResponse || !docResponse.data) {
           throw new DocsParsingError(
             `Could not get document content for file: ${doc.id}`,
@@ -3383,20 +3381,19 @@ export async function countDriveFiles(
   }
 
   do {
-    const res: any =
-      await retryWithBackoff(
-        () =>
-          drive.files.list({
-            q: query,
-            pageSize: 1000,
-            fields: "nextPageToken, files(id)",
-            pageToken: nextPageToken,
-          }),
-        `Counting Drive files (pageToken: ${nextPageToken || "initial"})`,
-        Apps.GoogleDrive,
-        0,
-        client,
-      )
+    const res: any = await retryWithBackoff(
+      () =>
+        drive.files.list({
+          q: query,
+          pageSize: 1000,
+          fields: "nextPageToken, files(id)",
+          pageToken: nextPageToken,
+        }),
+      `Counting Drive files (pageToken: ${nextPageToken || "initial"})`,
+      Apps.GoogleDrive,
+      0,
+      client,
+    )
     fileCount += res.data.files?.length || 0
     nextPageToken = res.data.nextPageToken as string | undefined
   } while (nextPageToken)

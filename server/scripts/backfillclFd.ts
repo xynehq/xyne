@@ -51,7 +51,11 @@ class clFdBackfillService {
     this.vespaEndpoint = config.vespaEndpoint
   }
 
-  private async fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
+  private async fetchWithRetry(
+    url: string,
+    options: RequestInit,
+    maxRetries = 3,
+  ): Promise<Response> {
     let lastError: Error | null = null
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -61,15 +65,15 @@ class clFdBackfillService {
       } catch (error) {
         lastError = error as Error
         Logger.warn(`Fetch attempt ${attempt} failed: ${lastError.message}`)
-        
+
         if (attempt < maxRetries) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
-          await new Promise(resolve => setTimeout(resolve, delay))
+          await new Promise((resolve) => setTimeout(resolve, delay))
         }
       }
     }
 
-    throw lastError || new Error('Max retries exceeded')
+    throw lastError || new Error("Max retries exceeded")
   }
 
   async visit(options: VisitOptions): Promise<VisitResponse> {
@@ -80,14 +84,14 @@ class clFdBackfillService {
       wantedDocumentCount = 200,
       fieldSet = `${schema}:*`,
       concurrency = 1,
-      cluster = CLUSTER
+      cluster = CLUSTER,
     } = options
 
     const params = new URLSearchParams({
       wantedDocumentCount: wantedDocumentCount.toString(),
       cluster: cluster,
       selection: schema,
-      ...(continuation ? { continuation } : {})
+      ...(continuation ? { continuation } : {}),
     })
 
     const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid?${params.toString()}`
@@ -97,35 +101,37 @@ class clFdBackfillService {
       if (continuation) {
         Logger.info(`Using continuation token: ${continuation}`)
       }
-      
+
       const response = await this.fetchWithRetry(url, {
-        method: 'GET',
+        method: "GET",
         headers: {
-          Accept: 'application/json'
-        }
+          Accept: "application/json",
+        },
       })
 
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(
-          `Visit failed: ${response.status} ${response.statusText} - ${errorText}`
+          `Visit failed: ${response.status} ${response.statusText} - ${errorText}`,
         )
       }
 
       const data = await response.json()
-      
+
       // Log the continuation token for recovery purposes
       if (data.continuation) {
         Logger.info(`Received continuation token: ${data.continuation}`)
         Logger.info(`RECOVERY_TOKEN: ${data.continuation}`) // Special log for easy grep
       } else {
-        Logger.info("No continuation token received - this might be the last batch")
+        Logger.info(
+          "No continuation token received - this might be the last batch",
+        )
       }
-      
+
       return {
         documents: data.documents || [],
         continuation: data.continuation,
-        documentCount: data.documentCount || 0
+        documentCount: data.documentCount || 0,
       }
     } catch (error) {
       const errMessage = (error as Error).message
@@ -138,7 +144,7 @@ class clFdBackfillService {
     try {
       const item = await db
         .select({
-          parentId: collectionItems.parentId
+          parentId: collectionItems.parentId,
         })
         .from(collectionItems)
         .where(eq(collectionItems.id, itemId))
@@ -158,51 +164,60 @@ class clFdBackfillService {
     const updateDoc = {
       fields: {
         clFd: {
-          assign: clfdValue
-        }
-      }
+          assign: clfdValue,
+        },
+      },
     }
 
     try {
       Logger.debug(`Updating document ${docId} with clFd: ${clfdValue}`)
-      
+
       // Use direct HTTP call instead of UpdateDocument function
       const url = `${this.vespaEndpoint}/document/v1/${NAMESPACE}/kb_items/docid/${docId}`
       const response = await this.fetchWithRetry(url, {
-        method: 'PUT',
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json'
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(updateDoc)
+        body: JSON.stringify(updateDoc),
       })
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(`Update failed: ${response.status} ${response.statusText} - ${errorText}`)
+        throw new Error(
+          `Update failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
       }
 
       return true
     } catch (error) {
-      Logger.error(error, `Failed to update document ${docId} with clFd: ${clfdValue}. Update payload: ${JSON.stringify(updateDoc)}`)
-      
+      Logger.error(
+        error,
+        `Failed to update document ${docId} with clFd: ${clfdValue}. Update payload: ${JSON.stringify(updateDoc)}`,
+      )
+
       // Check if it's a schema issue
-      if (error instanceof Error && error.message.includes('400 Bad Request')) {
-        Logger.error(`Possible schema issue: clFd field might not exist in deployed Vespa schema for document ${docId}`)
+      if (error instanceof Error && error.message.includes("400 Bad Request")) {
+        Logger.error(
+          `Possible schema issue: clFd field might not exist in deployed Vespa schema for document ${docId}`,
+        )
       }
-      
+
       return false
     }
   }
 
   async processDocumentBatch(documents: VespaDocument[]): Promise<BatchStats> {
     const batchId = createId()
-    Logger.info(`Processing batch ${batchId} with ${documents.length} documents`)
+    Logger.info(
+      `Processing batch ${batchId} with ${documents.length} documents`,
+    )
 
     const stats: BatchStats = {
       processed: 0,
       updated: 0,
       skipped: 0,
-      errors: 0
+      errors: 0,
     }
 
     for (const doc of documents) {
@@ -212,23 +227,27 @@ class clFdBackfillService {
         // Skip if clFd already exists (already migrated)
         if (clFd !== undefined && clFd !== null) {
           stats.skipped++
-          Logger.debug(`Skipping document ${docId} - clFd already exists: ${clFd}`)
+          Logger.debug(
+            `Skipping document ${docId} - clFd already exists: ${clFd}`,
+          )
           continue
         }
 
         // Get parentId from PostgreSQL
         const parentclFd = await this.getParentIdFromDatabase(itemId)
-        
+
         // Skip update if parentclFd is null (files at collection root)
         if (parentclFd === null) {
           stats.skipped++
-          Logger.debug(`Skipping document ${docId} - no parentId (collection root file)`)
+          Logger.debug(
+            `Skipping document ${docId} - no parentId (collection root file)`,
+          )
           continue
         }
-        
+
         // Update document with clFd field
         const success = await this.updateDocumentclFd(docId, parentclFd)
-        
+
         if (success) {
           stats.updated++
           Logger.debug(`Updated document ${docId} with clFd: ${parentclFd}`)
@@ -240,10 +259,11 @@ class clFdBackfillService {
 
         // Add small delay to avoid overwhelming Vespa
         if (stats.processed % 50 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 100))
-          Logger.info(`Batch ${batchId} progress: ${stats.processed}/${documents.length} processed`)
+          await new Promise((resolve) => setTimeout(resolve, 100))
+          Logger.info(
+            `Batch ${batchId} progress: ${stats.processed}/${documents.length} processed`,
+          )
         }
-
       } catch (error) {
         stats.errors++
         Logger.error(error, `Error processing document ${doc.id}`)
@@ -256,19 +276,19 @@ class clFdBackfillService {
 
   async backfillAllDocuments(startContinuation?: string): Promise<void> {
     Logger.info("Starting clFd backfill process for kb_items schema")
-    
+
     if (startContinuation) {
       Logger.info(`Resuming from continuation token: ${startContinuation}`)
       Logger.info(`RESUMING_FROM_TOKEN: ${startContinuation}`) // Special log for tracking
     }
-    
+
     let totalStats: BatchStats = {
       processed: 0,
       updated: 0,
       skipped: 0,
-      errors: 0
+      errors: 0,
     }
-    
+
     let continuation: string | undefined = startContinuation
     let batchCount = 0
     const startTime = Date.now()
@@ -277,15 +297,17 @@ class clFdBackfillService {
       do {
         batchCount++
         const batchStartTime = Date.now()
-        
+
         Logger.info(`Processing batch ${batchCount}...`)
-        Logger.info(`BATCH_START: ${batchCount} - TOKEN: ${continuation || 'INITIAL'}`)
+        Logger.info(
+          `BATCH_START: ${batchCount} - TOKEN: ${continuation || "INITIAL"}`,
+        )
 
         // Visit documents with continuation
         const visitResult = await this.visit({
           schema: "kb_items",
           continuation,
-          wantedDocumentCount: 200 
+          wantedDocumentCount: 200,
         })
 
         if (visitResult.documents.length === 0) {
@@ -294,17 +316,19 @@ class clFdBackfillService {
         }
 
         // Process the batch
-        const batchStats = await this.processDocumentBatch(visitResult.documents)
-        
+        const batchStats = await this.processDocumentBatch(
+          visitResult.documents,
+        )
+
         // Update total counters
         totalStats.processed += batchStats.processed
         totalStats.updated += batchStats.updated
         totalStats.skipped += batchStats.skipped
         totalStats.errors += batchStats.errors
-        
+
         // Set continuation for next batch
         continuation = visitResult.continuation
-        
+
         const batchDuration = Date.now() - batchStartTime
         const totalDuration = Date.now() - startTime
 
@@ -314,15 +338,16 @@ class clFdBackfillService {
           batchDurationMs: batchDuration,
           totalDurationMs: totalDuration,
           documentsInBatch: visitResult.documents.length,
-          nextContinuation: continuation || 'NONE'
+          nextContinuation: continuation || "NONE",
         })
 
         // Log special recovery information
-        Logger.info(`BATCH_COMPLETE: ${batchCount} - NEXT_TOKEN: ${continuation || 'FINAL'}`)
+        Logger.info(
+          `BATCH_COMPLETE: ${batchCount} - NEXT_TOKEN: ${continuation || "FINAL"}`,
+        )
 
         // Add delay between batches to be gentle on the system
-        await new Promise(resolve => setTimeout(resolve, 500))
-
+        await new Promise((resolve) => setTimeout(resolve, 500))
       } while (continuation)
 
       const totalDuration = Date.now() - startTime
@@ -330,14 +355,19 @@ class clFdBackfillService {
         totalStats,
         totalBatches: batchCount,
         totalDurationMs: totalDuration,
-        averageDocsPerSecond: Math.round((totalStats.processed / (totalDuration / 1000)) * 100) / 100
+        averageDocsPerSecond:
+          Math.round((totalStats.processed / (totalDuration / 1000)) * 100) /
+          100,
       })
 
-      Logger.info(`BACKFILL_COMPLETE: Total processed=${totalStats.processed}, updated=${totalStats.updated}, skipped=${totalStats.skipped}, errors=${totalStats.errors}`)
-
+      Logger.info(
+        `BACKFILL_COMPLETE: Total processed=${totalStats.processed}, updated=${totalStats.updated}, skipped=${totalStats.skipped}, errors=${totalStats.errors}`,
+      )
     } catch (error) {
       Logger.error(error, `Backfill process failed at batch ${batchCount}`)
-      Logger.error(`BACKFILL_FAILED: batch=${batchCount}, continuation=${continuation}`)
+      Logger.error(
+        `BACKFILL_FAILED: batch=${batchCount}, continuation=${continuation}`,
+      )
       throw error
     }
   }
@@ -346,7 +376,7 @@ class clFdBackfillService {
 // Main execution function
 async function runBackfill(resumeToken?: string) {
   const backfillService = new clFdBackfillService()
-  
+
   try {
     await backfillService.backfillAllDocuments(resumeToken)
     Logger.info("clFd backfill completed successfully!")

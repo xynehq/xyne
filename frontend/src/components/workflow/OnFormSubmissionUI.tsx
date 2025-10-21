@@ -7,14 +7,14 @@ import { BackArrowIcon } from "./WorkflowIcons"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface OnFormSubmissionUIProps {
-  isVisible?: boolean 
+  isVisible?: boolean
   onBack: () => void
-  onClose?: () => void 
+  onClose?: () => void
   onSave?: (formConfig: FormConfig, apiResponse?: any) => void
   initialConfig?: FormConfig
-  toolData?: any 
-  toolId?: string 
-  showBackButton?: boolean 
+  toolData?: any
+  toolId?: string
+  showBackButton?: boolean
   builder?: boolean
 }
 
@@ -23,7 +23,7 @@ interface FormField {
   name: string
   placeholder: string
   type: "file" // Only file type is supported
-  fileTypes?: string[] 
+  fileTypes?: string[]
   required?: boolean
   maxSize?: string
 }
@@ -34,13 +34,8 @@ export interface FormConfig {
   fields: FormField[]
 }
 
-
 // Only allow specific file types as requested
-const VALID_FILE_TYPES = [
-  "txt", "pdf", "docx", "doc"
-]
-
-
+const VALID_FILE_TYPES = ["txt", "pdf", "docx", "doc"]
 
 const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   isVisible = true,
@@ -55,22 +50,21 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
 }) => {
   const initialFieldId = crypto.randomUUID()
 
-  
   const getInitialFormConfig = (): FormConfig => {
-    
     const formTitle = toolData?.value?.title || initialConfig?.title || ""
-    const formDescription = toolData?.value?.description || initialConfig?.description || ""
-    
-    
+    const formDescription =
+      toolData?.value?.description || initialConfig?.description || ""
+
     let convertedFields: FormField[] = []
-    
+
     if (toolData?.value?.fields && Array.isArray(toolData.value.fields)) {
       convertedFields = toolData.value.fields.map((field: any) => ({
         id: field.id || crypto.randomUUID(),
         name: field.name || field.label || field.id || "Field",
         placeholder: field.placeholder || "",
         type: "file", // Force all fields to be file type
-        fileTypes: field.filetypes || field.fileTypes || ["txt", "pdf", "docx", "doc"],
+        fileTypes: field.filetypes ||
+          field.fileTypes || ["txt", "pdf", "docx", "doc"],
         required: field.required !== undefined ? field.required : true,
         maxSize: field.maxSize || "",
       }))
@@ -116,7 +110,6 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
     getInitialFormConfig(),
   )
 
-  
   React.useEffect(() => {
     setFormConfig(getInitialFormConfig())
   }, [initialConfig, toolData])
@@ -128,24 +121,23 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
     [fieldId: string]: File[]
   }>({})
 
-  
   React.useEffect(() => {
-    setFormConfig(prev => ({
+    setFormConfig((prev) => ({
       ...prev,
-      fields: prev.fields.map(field => ({
+      fields: prev.fields.map((field) => ({
         ...field,
-        fileTypes: (!field.fileTypes || field.fileTypes.length === 0) 
-          ? ["txt", "pdf", "docx", "doc"] 
-          : field.fileTypes,
-        required: true
-      }))
+        fileTypes:
+          !field.fileTypes || field.fileTypes.length === 0
+            ? ["txt", "pdf", "docx", "doc"]
+            : field.fileTypes,
+        required: true,
+      })),
     }))
   }, [])
 
   const handleSave = async () => {
     try {
-      
-      console.log("tool id here",toolId)
+      console.log("tool id here", toolId)
       if (toolId && !builder) {
         const updatedToolData = {
           type: "form",
@@ -169,21 +161,25 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
           },
         }
 
-        const apiResponse = await workflowToolsAPI.updateTool(toolId, updatedToolData)
-        console.log("tool id here 2",toolId)
-        console.log("Form tool updated successfully, API response:", apiResponse)
-        
-        
+        const apiResponse = await workflowToolsAPI.updateTool(
+          toolId,
+          updatedToolData,
+        )
+        console.log("tool id here 2", toolId)
+        console.log(
+          "Form tool updated successfully, API response:",
+          apiResponse,
+        )
+
         console.log("Form configuration saved:", formConfig)
         onSave?.(formConfig, apiResponse)
       } else {
-        
         console.log("Form configuration saved:", formConfig)
         onSave?.(formConfig)
       }
     } catch (error) {
       console.error("Failed to save form configuration:", error)
-      
+
       onSave?.(formConfig)
     }
   }
@@ -202,7 +198,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
       ...prev,
       fields: prev.fields.filter((field) => field.id !== fieldId),
     }))
-    
+
     setCollapsedFieldIds((prev) => {
       const newSet = new Set(prev)
       newSet.delete(fieldId)
@@ -210,15 +206,12 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
     })
   }
 
-
-
   const removeFile = (fieldId: string, fileIndex: number) => {
     setUploadedFiles((prev) => ({
       ...prev,
       [fieldId]: prev[fieldId]?.filter((_, index) => index !== fileIndex) || [],
     }))
   }
-
 
   const getFieldTypeIcon = () => {
     return <Upload className="w-4 h-4" />
@@ -356,9 +349,9 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                       setCollapsedFieldIds((prev) => {
                         const newSet = new Set(prev)
                         if (newSet.has(field.id)) {
-                          newSet.delete(field.id) 
+                          newSet.delete(field.id)
                         } else {
-                          newSet.add(field.id) 
+                          newSet.add(field.id)
                         }
                         return newSet
                       })
@@ -418,32 +411,30 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                                 Uploaded Files
                               </Label>
                               <div className="space-y-2">
-                                {uploadedFiles[field.id].map(
-                                  (file, index) => (
-                                    <div
-                                      key={index}
-                                      className="flex items-center justify-between p-2 bg-slate-50 dark:bg-gray-700 rounded-md"
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <FileIcon className="w-4 h-4 text-slate-500 dark:text-gray-400" />
-                                        <span className="text-sm text-slate-700 dark:text-gray-300 truncate">
-                                          {file.name}
-                                        </span>
-                                        <span className="text-xs text-slate-500 dark:text-gray-400">
-                                          ({(file.size / 1024).toFixed(1)} KB)
-                                        </span>
-                                      </div>
-                                      <button
-                                        onClick={() =>
-                                          removeFile(field.id, index)
-                                        }
-                                        className="p-1 hover:bg-slate-200 dark:hover:bg-gray-600 rounded transition-colors"
-                                      >
-                                        <X className="w-4 h-4 text-slate-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400" />
-                                      </button>
+                                {uploadedFiles[field.id].map((file, index) => (
+                                  <div
+                                    key={index}
+                                    className="flex items-center justify-between p-2 bg-slate-50 dark:bg-gray-700 rounded-md"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <FileIcon className="w-4 h-4 text-slate-500 dark:text-gray-400" />
+                                      <span className="text-sm text-slate-700 dark:text-gray-300 truncate">
+                                        {file.name}
+                                      </span>
+                                      <span className="text-xs text-slate-500 dark:text-gray-400">
+                                        ({(file.size / 1024).toFixed(1)} KB)
+                                      </span>
                                     </div>
-                                  ),
-                                )}
+                                    <button
+                                      onClick={() =>
+                                        removeFile(field.id, index)
+                                      }
+                                      className="p-1 hover:bg-slate-200 dark:hover:bg-gray-600 rounded transition-colors"
+                                    >
+                                      <X className="w-4 h-4 text-slate-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400" />
+                                    </button>
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           )}
@@ -453,7 +444,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                           <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
                             Allowed File Types
                           </Label>
-                          
+
                           {/* Display current file types as read-only pills */}
                           <div className="min-h-[40px] w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md flex flex-wrap items-center gap-1">
                             {field.fileTypes?.map((fileType, index) => (
@@ -465,13 +456,12 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                               </div>
                             ))}
                           </div>
-                          
+
                           <p className="text-xs text-slate-500 dark:text-gray-400">
                             Supported file types: {VALID_FILE_TYPES.join(", ")}
                           </p>
                         </div>
                       </div>
-
 
                       {/* Remove Field Button */}
                       {formConfig.fields.length > 1 && (
@@ -491,7 +481,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
             </div>
           </div>
         </div>
-        
+
         {/* Save Button - Sticky to bottom */}
         <div className="pt-6 px-0">
           <Button

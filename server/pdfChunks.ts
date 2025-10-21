@@ -17,7 +17,6 @@ const qcmsWasmPath =
 const seenHashDescriptions = new Map<string, string>()
 const MIN_IMAGE_DIM_PX = parseInt(process.env.MIN_IMAGE_DIM_PX || "150", 10)
 
-
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "pdfChunks",
 })
@@ -198,8 +197,6 @@ function validateTextItem(item: any): boolean {
     item.str.length > 0
   )
 }
-
-
 
 /**
  * Process collected paragraphs into chunks and add to results
@@ -387,8 +384,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
       return paragraphs.filter((p) => p.trim().length > 0)
     }
 
-
-
     for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
       Logger.debug(`Processing page ${pageNum}`)
 
@@ -398,8 +393,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
         // Use textContent-based paragraphs for this page as primary source
         let paragraphs: string[] = await buildParagraphsFromPage(page)
-
-        
 
         let textOperatorCount = (await page.getTextContent()).items.length
 
@@ -415,7 +408,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
         Logger.debug("Text extraction summary for page", {
           pageNum,
           primaryParagraphs: paragraphs.length,
-         
+
           finalParagraphs: paragraphs.length,
           textOperatorCount,
           initialPageOverlap: pageOverlap,
@@ -792,9 +785,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     } else {
                       const cnv = createCanvas(width, height)
                       const cctx = cnv.getContext("2d")
-                      
+
                       try {
-                        
                         // @ts-ignore draw directly
                         cctx.drawImage(imgLike, 0, 0)
                         const buffer = cnv.toBuffer("image/png")
@@ -1181,7 +1173,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           "Using default description (describeImages=false)",
                         )
                       }
-                      
+
                       // Check description quality after LLM call
                       if (
                         !description ||

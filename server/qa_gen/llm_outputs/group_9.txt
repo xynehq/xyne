@@ -1,0 +1,114 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the various communications, what are the primary systemic risks and compliance concerns that have been identified regarding the Flipkart refund settlement discrepancies?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the documents, the primary systemic risks and compliance concerns are:\n\n1.  **Violation of RBI Settlement Timelines:** Multiple emails and Slack messages express concern about breaching the Reserve Bank of India's (RBI) T+1 and T+2 settlement and refund turnaround time (TAT) guidelines. This is mentioned as a pressing issue due to API latency, processing backlogs, and reconciliation failures (Docs: e12c294e1c3940bf, 53a52db25bba49e3, 7040d4d69f0a4a0f, 6e9d81aaa2ce458c).\n\n2.  **Compromised Audit Trails for SOC 2 Compliance:** The lack of clean, automated audit trails for transactions is a recurring theme. Manual interventions and data discrepancies are seen as a serious concern and a 'red flag' for upcoming SOC 2 audits (Docs: 53a52db25bba49e3, 7040d4d69f0a4a0f, b01939696ed44325, 9240e5f20ea8439c).\n\n3.  **KYC/AML Compliance Gaps:** Failures in the automated KYC process for high-risk segments necessitate manual intervention, which breaks the automated audit trail mandated by RBI's Master Direction on KYC (Doc: b01939696ed44325). Failures to get KYC validation programmatically halt fund transfers (Doc: 7913fec56a8a433d).\n\n4.  **Data Localization and Cross-Border Processing:** One urgent compliance flag was raised when INR-denominated transactions were incorrectly routed to a EU-based cluster instead of the India cluster, contravening RBI guidelines on data localization and payment processing (Doc: 59c90ba34a584db0).\n\n5.  **FEMA Reporting Risk:** A misconfiguration in routing cross-border transactions posed a potential compliance risk with RBI's FEMA (Foreign Exchange Management Act) reporting requirements (Doc: 0880c93cdb534bd4).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "According to the hotfix plan for PAY-1691, what was the incorrect value for the 'slidingWindow.interval' parameter in the Flink job, and what value was it being reverted to?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "According to the hotfix plan document (5b1d3e49f973459e), the `slidingWindow.interval` parameter was incorrectly reduced to 60 seconds. The hotfix plan was to revert it to the specified 300 seconds.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What is the situation with the various KYC automation failures impacting high-risk segments for Flipkart refunds?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "There are multiple, distinct issues with KYC automation for high-risk segments:\n\n1.  **API Timeouts:** Arjun Mehta's Slack message (bbf75a7ae45f477c) identifies that API calls to Flipkart's KYC service are timing out for the high-risk segment. This is also detailed in Priya Nair's email (b01939696ed44325), which notes `KYC_VERIFICATION_TIMEOUT` errors and p99 latency spiking to over 2.5s.\n2.  **Asynchronous Flow Mismatch:** Arjun Mehta's email (4ce06223f23b44fe) explains that Juspay's KYC service correctly flags profiles for `PENDING_MANUAL_REVIEW`, but the downstream refund settlement module is not designed for this asynchronous state and times out, incorrectly marking the refund as failed.\n3.  **Insufficient Data Errors:** An email from Priya Nair (f04cb429d0d548d7) points to Flipkart's KYC endpoint returning a `KYC_VERIFICATION_FAILED_INSUFFICIENT_DATA` error, suggesting a data mismatch between the API payload and Flipkart's expected schema for high-risk profiles.\n4.  **Forbidden Access:** Anjali Patel's email (7913fec56a8a433d) reports a high volume of `403 Forbidden` responses from the `/v2/customer/kyc/verify` endpoint, suggesting a potential WAF rule or permissioning issue on Flipkart's side.\n5.  **Data Mismatch:** Arjun Mehta's email (30cada38493f419d) identifies `422 Unprocessable Entity` responses with an error code `KYC_DATA_MISMATCH` related to Aadhaar validation for high-risk profiles.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Can you list all the specific JIRA tickets mentioned across the emails, files, and slack messages related to the Flipkart refund settlement discrepancy, and who mentioned them?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Here is a list of the JIRA tickets mentioned:\n\n*   **PAY-9787:** Mentioned by Arjun Mehta in a Slack message (bbf75a7ae45f477c) regarding KYC automation failures.\n*   **PAY-1992:** Mentioned by Siddharth Nair in a Slack message (44c635cd07324998) after updating it with notes from a call with Flipkart's finance team.\n*   **PAY-1691:** Mentioned in the title of a file (5b1d3e49f973459e) by Arjun Mehta regarding a hotfix for a Flink job.\n*   **PAY-6691:** Mentioned by Anjali Patel in an email (e12c294e1c3940bf) for tracking a backlog of over 14,500 unreconciled refunds.\n*   **PAY-8163:** Mentioned by Priya Nair in an email (53a52db25bba49e3) for tracking issues with T+1 settlement guidelines.\n*   **PAY-9329:** Mentioned by Siddharth Nair in an email (7040d4d69f0a4a0f) to centralize findings on a cross-border routing issue.\n*   **PAY-5349:** Mentioned by Arjun Mehta in an email (4fbbd82a039f42cb) for discrepancies caused by forex rate lookups.\n*   **PAY-5034:** Mentioned by Anjali Patel in an email (664b37f4b39e4498) regarding a UPI refund shortfall for the May 15th cycle.\n*   **PAY-7425:** Mentioned by Priya Nair in an email (b01939696ed44325) for tracking KYC automation failures in high-risk segments.\n*   **PAY-6869:** Mentioned by Siddharth Nair in an email (ec3595e5558a4cf0) for a cross-border routing error where the `is_international` flag was missing.\n*   **PAY-5176:** Mentioned by Arjun Mehta in an email (6e9d81aaa2ce458c) for an investigation into API rate limiting.\n*   **PAY-4596:** Mentioned by Anjali Patel in an email (5e29d6a52b7b489b) regarding API rate limiting from Flipkart's `/refund/initiate` endpoint.\n*   **PAY-7491:** Mentioned by Priya Nair in an email (6d55c3ea174440c2) to track a UPI refund discrepancy of 412 transactions.\n*   **PAY-2864:** Mentioned by Siddharth Nair in an email (c9099a114f3445b9) for an API timeout investigation.\n*   **PAY-2802:** Mentioned by Arjun Mehta in an email (4ce06223f23b44fe) for tracking mitigation of a KYC automation failure.\n*   **PAY-4147:** Mentioned by Anjali Patel in an email (106bbe795e774749) for an issue with OAuth token refresh failures causing timeouts.\n*   **PAY-2149:** Mentioned by Priya Nair in an email (f4a54fd229d1468b) for a critical incident related to OAuth token refresh timeouts.\n*   **PAY-8008:** Mentioned by Siddharth Nair in an email (6b0a685449d3491c) to formally track a risk scoring engine latency spike.\n*   **PAY-8919:** Mentioned by Arjun Mehta in an email (0880c93cdb534bd4) regarding a misconfiguration in the payment routing service.\n*   **PAY-9997:** Mentioned by Anjali Patel in an email (7913fec56a8a433d) for a root cause analysis of KYC API failures.\n*   **PAY-8845:** Mentioned by Priya Nair in an email (59c90ba34a584db0) for a cross-border routing error causing compliance risks.\n*   **PAY-7262:** Mentioned by Siddharth Nair in an email (b27c8d2271284bb0) for a UPI refund discrepancy related to settlement cutoff logic.\n*   **PAY-6536:** Mentioned by Arjun Mehta in an email (9240e5f20ea8439c) for tracking `CURRENCY_MISMATCH` errors.\n*   **PAY-9316:** Mentioned by Priya Nair in a Slack message (1a25e0d307e44103) for tracking a fraud-engine false positive issue.\n*   **PAY-7511:** Mentioned by Anjali Patel in a Slack message (8c93f39af06044e5) to update financial impact numbers for a cross-border routing issue.\n*   **PAY-1917:** Mentioned by Arjun Mehta in a calendar event (d26934b7640141a4) for a deep dive on KYC automation fallback failures.\n*   **PAY-6198:** Mentioned by Priya Nair in a Slack message (a39b0d94616f4d6f) regarding a failed settlement due to a CBS migration bottleneck.\n*   **PAY-9249:** Mentioned by Priya Nair in a Slack message (b357407c533a45ca) for a discrepancy in UPI refunds for batch ID 417173.\n*   **PAY-1880:** Mentioned by Siddharth Nair in a Slack message (1008682b42154c48) after a call with Flipkart about a multi-currency settlement process issue.\n*   **PAY-5030:** Mentioned by Arjun Mehta in a Slack message (ec4bd977074b4ffa) for a timing issue with a delayed UPI reversal update.\n*   **PAY-7893:** Mentioned by Anjali Patel in a Slack message (fe0db5e696a24265) for a cross-border routing config error.\n*   **PAY-8277:** Mentioned by Priya Nair in a Slack message (c1cbe6d0e91143ee) regarding a discrepancy with ID 831926.\n*   **PAY-2372:** Mentioned by Siddharth Nair in a Slack message (9ef9e9e634dd485c) for an issue where the wrong FX rate date was used.\n*   **PAY-7280:** Mentioned by Arjun Mehta in a Slack message (ad7d2305d2d14200) for an OAuth token refresh failure.\n*   **PAY-9328:** Mentioned by Anjali Patel in a Slack message (98d2f3f888dc4851) regarding the fraud-engine being overzealous.\n*   **PAY-6398:** Mentioned by Priya Nair in a Slack message (fce5c74b2c854a05) related to a bottleneck in the core banking system.\n*   **PAY-6493:** Mentioned by Siddharth Nair in a Slack message (0da085efce7949f8) after a performance bottleneck was resolved by Flipkart.\n*   **PAY-1010:** Mentioned by Arjun Mehta in a Slack message (ac6ba0f69f98485d) regarding an OAuth token refresh failure.\n*   **PAY-7701:** Mentioned by Anjali Patel in a Slack message (6465322333a54f14) after a call with Flipkart's FinOps team.\n*   **PAY-4869:** Mentioned by Priya Nair in a Slack message (49b3eeab66164648) to confirm a KYC automation failure was manually overridden by Flipkart.\n*   **PAY-1172:** Mentioned by Arjun Mehta in a Slack message (84511f3c9d7544fb) for a recurring API rate limiting issue.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "high",
+      "Vagueness": 0.9,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Looking at the whole picture, what is the general health of the Flipkart integration and what are the recurring problem patterns?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Synthesizing information across all provided documents, the general health of the Flipkart integration appears to be unstable, characterized by multiple, recurring, and diverse types of failures. The main problem patterns are:\n\n1.  **API Performance & Stability:** There are numerous instances of performance degradation on Flipkart's side, including high latency and timeouts. This is seen in their KYC service (bbf75a7ae45f477c), refund status API after a core banking migration (e12c294e1c3940bf), and risk scoring engine (53a52db25bba49e3, 6b0a685449d3491c).\n\n2.  **Authentication & Authorization Issues:** OAuth 2.0 token refresh flows are a recurring point of failure, leading to `401 Unauthorized` errors, timeouts, and settlement job failures (ac6ba0f69f98485d, ad7d2305d2d14200, 106bbe795e774749, f4a54fd229d1468b).\n\n3.  **Misconfigurations & Logic Errors:** Several problems stem from incorrect configurations. This includes a Flink job config drift (5b1d3e49f973459e), cross-border payment routing errors (7040d4d69f0a4a0f, ec3595e5558a4cf0, 59c90ba34a584db0, 0880c93cdb534bd4), and incorrect settlement cutoff time logic (b27c8d2271284bb0).\n\n4.  **Data & Schema Mismatches:** The integration is brittle to changes in data. Issues include mismatches in how multi-currency/forex rates are handled (44c635cd07324998, 9240e5f20ea8439c) and KYC verification failing due to `INSUFFICIENT_DATA` or `DATA_MISMATCH` errors, suggesting schema misalignment (f04cb429d0d548d7, 30cada38493f419d).\n\n5.  **External Dependencies:** The system is vulnerable to external factors, such as aggressive API rate limiting from Flipkart (6e9d81aaa2ce458c, 5e29d6a52b7b489b, 84511f3c9d7544fb) and timeouts when connecting to an external forex data provider (4fbbd82a039f42cb).\n\nOverall, the integration appears to require frequent manual intervention and firefighting, posing significant operational and compliance risks.",
+    "Confidence": 1.0
+  }
+]
+```

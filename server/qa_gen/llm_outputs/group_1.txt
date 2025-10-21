@@ -1,0 +1,114 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What was the specific technical cause for the discrepancy related to UPI transaction 384818, and which JIRA ticket is tracking it?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "The technical cause for the discrepancy with UPI transaction `384818` was a timing issue. According to Arjun Mehta's analysis, the payment-gateway processed the initial success from NPCI but missed a delayed reversal update during the EOD recon job. This issue is being tracked under JIRA ticket PAY-5030.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.6,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Synthesize a list of all the distinct root causes for the Flipkart refund settlement discrepancies mentioned across emails, files, and Slack messages. Include any specific error codes or technical parameters involved.",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the documents, the following distinct root causes for Flipkart refund settlement discrepancies have been identified:\n\n1.  **Cross-Border Routing Error (Slack):** Anjali Patel mentioned a 'cross-border routing config error' impacting batch `unique_id: 303397` (JIRA PAY-7893).\n2.  **Delayed Reversal Update (Slack):** Arjun Mehta found a timing issue for a UPI transaction where a delayed reversal update from NPCI was missed in the EOD recon job (JIRA PAY-5030).\n3.  **Flink Job Config Drift (File):** The `slidingWindow.interval` parameter in a Flink job was incorrectly set to 60 seconds instead of 300, causing false positives with `FLAG_REASON_CODE: 701` (Velocity Check Mismatch) (JIRA PAY-1691).\n4.  **API Performance Bottleneck (Email):** Anjali Patel reported p99 latency on Flipkart's refund status API spiking to over 2,500ms, causing `ReadTimeoutException` errors (JIRA PAY-6691).\n5.  **Risk Scoring Engine Latency (Email):** Priya Nair identified performance degradation in Flipkart's real-time risk scoring engine, with p99 latency exceeding 2.3s, leading to `HTTP 504 Gateway Timeout` errors (JIRA PAY-8163).\n6.  **Missing International Flag (Email):** Siddharth Nair found that the `is_international: true` flag was missing from Flipkart's API payload for cross-border refunds, causing `Error Code: 5042 (Acquirer Mismatch)` (JIRA PAY-6869).\n7.  **API Rate Limiting (Email):** Arjun Mehta and Anjali Patel reported being aggressively rate-limited by Flipkart's API, receiving `HTTP 429 Too Many Requests` errors and being throttled to 50-80 TPS (JIRAs PAY-5176, PAY-4596).\n8.  **KYC Automation Failures (Email):** Multiple emails from Priya Nair, Arjun Mehta, and Siddharth Nair describe various KYC failures for high-risk segments, resulting in errors like `KYC_VERIFICATION_TIMEOUT` (Error Code: 4082), `403 Forbidden`, `KYC_VERIFICATION_FAILED_INSUFFICIENT_DATA`, and `KYC_DATA_MISMATCH` (JIRAs PAY-7425, PAY-9997, PAY-4241, PAY-1054, PAY-4290).\n9.  **OAuth Token Refresh Timeouts (Email):** Anjali Patel and Priya Nair reported that requests with expired JWTs were taking over 2.5 seconds to respond instead of an immediate `401`, leading to `ReadTimeoutException` and `HTTP 504 Gateway Timeout` errors (JIRAs PAY-4147, PAY-2149).\n10. **Incorrect Settlement Cutoff Logic (Email):** Siddharth Nair hypothesized a discrepancy in settlement cutoff times for UPI refunds, where transactions after 18:00 IST were being incorrectly classified as T+1 by Flipkart instead of T+2 (JIRA PAY-7262).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What are the recurring compliance risks associated with the Flipkart refund settlement issues, and which regulatory bodies or standards are mentioned?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the communications, there are several recurring compliance risks associated with the Flipkart refund settlement issues. The primary regulatory body mentioned is the Reserve Bank of India (RBI).\n\nThe key risks are:\n1.  **Violation of Settlement Timelines:** Multiple emails express concern over breaching RBI's T+1 and T+2 settlement guidelines for UPI and other transactions.\n2.  **Breaching Refund Turnaround Time (TAT):** Several authors, including Priya Nair and Siddharth Nair, state that delays put them at risk of violating RBI's prescribed TAT for customer refunds.\n3.  **Compromised Audit Trails:** Failures in automated processes (like KYC checks) necessitate manual intervention, which breaks the automated audit trail. This is flagged as a major red flag for upcoming SOC 2 audits.\n4.  **KYC/AML Non-compliance:** Failures in the KYC verification process for high-risk segments are a direct compliance concern under the RBI's Master Direction on KYC and AML guidelines.\n5.  **Cross-Border Processing Violations:** Misrouting INR-denominated transactions to EU clusters is noted as contravening RBI guidelines on data localization and payment processing. Other cross-border issues pose risks related to FEMA (Foreign Exchange Management Act) reporting.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List the different JIRA tickets that have been created to track the various Flipkart refund settlement issues.",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "The following JIRA tickets have been created to track the Flipkart refund settlement issues:\n\n*   **PAY-7893:** Tracks work related to a cross-border routing config error.\n*   **PAY-5030:** Tracks a timing issue with a delayed UPI reversal update.\n*   **PAY-1691:** Tracks the hotfix for the Flink job configuration drift.\n*   **PAY-6691:** Tracks a backlog of refunds due to API performance bottlenecks.\n*   **PAY-8163:** Tracks issues related to latency spikes in the risk scoring engine.\n*   **PAY-9329:** Centralizes findings on a cross-border routing issue for non-INR currency.\n*   **PAY-5349:** Notes discrepancies related to forex rate lookups for multi-currency settlements.\n*   **PAY-5034:** Tracks a shortfall in the May 15th UPI settlement cycle.\n*   **PAY-7425:** Tracks KYC automation failures for high-risk segments.\n*   **PAY-6869:** Tracks a cross-border routing error due to a missing 'is_international' flag.\n*   **PAY-5176:** Tracks API rate limiting issues impacting throughput.\n*   **PAY-4596:** Tracks efforts to resolve severe API rate limiting.\n*   **PAY-7491:** Tracks a discrepancy in the T+1 batch for UPI refunds.\n*   **PAY-2864:** Tracks API timeout investigations for the `/v2/refunds/initiate` endpoint.\n*   **PAY-2802:** Tracks the mitigation for KYC automation failures.\n*   **PAY-4147:** Tracks OAuth token refresh failures and API timeouts.\n*   **PAY-2149:** Tracks a critical incident related to OAuth token refresh timeouts.\n*   **PAY-8008:** Tracks the investigation into risk scoring engine latency spikes.\n*   **PAY-8919:** Tracks the RCA for a misconfiguration in the payment routing service.\n*   **PAY-9997:** Tracks the investigation into KYC API failures returning '403 Forbidden'.\n*   **PAY-8845:** Tracks a compliance flag on a cross-border routing error.\n*   **PAY-7262:** Tracks a UPI refund discrepancy related to settlement cutoff logic.\n*   **PAY-6536:** Tracks errors in the `refund-settlement-processor` service for multi-currency handling.\n*   **PAY-9427:** Tracks the root cause analysis for a cross-border routing error.\n*   **PAY-4241:** Tracks compliance concerns from KYC automation failures.\n*   **PAY-4290:** Tracks the investigation into KYC failures returning '422 Unprocessable Entity'.\n*   **PAY-1054:** Tracks settlement file discrepancies due to KYC failures.",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What was the problem with the Flink job configuration as detailed in the hotfix plan PAY-1691, and what was the two-part plan to address it?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "According to the hotfix plan (file `5b1d3e49f973459e`), the problem was a configuration drift in the Flink job. The `slidingWindow.interval` parameter was inadvertently reduced to 60 seconds from the specified 300 seconds during a Helm chart upgrade (`chart-version: 3.4.1`). This caused the 'Anomalous Refund Pattern' model to misinterpret short-term refund bursts as fraudulent activity.\n\nThe two-part plan to address this was:\n1.  **Immediate Hotfix:** Trigger a new Jenkins pipeline (`hotfix-PAY-1691`) to revert the `slidingWindow.interval` parameter back to 300 seconds in the staging environment, followed by a production rollout after validation.\n2.  **Future Prevention:** Implement a schema validation check within the CI/CD pipeline using Conftest to prevent similar configuration drifts in future Helm chart deployments.",
+    "Confidence": 1.0
+  }
+]
+```

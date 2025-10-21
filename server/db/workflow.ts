@@ -195,7 +195,7 @@ export const updateWorkflowExecution = async (
     .where(eq(workflowExecution.id, id))
     .returning()
 
-  return updated ? ({ ...updated, metadata: updated.metadata as any }) : null
+  return updated ? { ...updated, metadata: updated.metadata as any } : null
 }
 
 // Workflow Step Execution Operations
@@ -242,8 +242,11 @@ export const getWorkflowStepExecutionsByExecution = async (
     .from(workflowStepExecution)
     .where(eq(workflowStepExecution.workflowExecutionId, workflowExecutionId))
     .orderBy(workflowStepExecution.createdAt)
-  
-  return results.map(result => ({ ...result, metadata: result.metadata as any }))
+
+  return results.map((result) => ({
+    ...result,
+    metadata: result.metadata as any,
+  }))
 }
 
 export const getWorkflowStepExecutionById = async (
@@ -256,7 +259,9 @@ export const getWorkflowStepExecutionById = async (
     .where(eq(workflowStepExecution.id, id))
     .limit(1)
 
-  return stepExecution ? ({ ...stepExecution, metadata: stepExecution.metadata as any }) : null
+  return stepExecution
+    ? { ...stepExecution, metadata: stepExecution.metadata as any }
+    : null
 }
 
 export const updateWorkflowStepExecution = async (
@@ -286,5 +291,5 @@ export const updateWorkflowStepExecution = async (
     .where(eq(workflowStepExecution.id, id))
     .returning()
 
-  return updated ? ({ ...updated, metadata: updated.metadata as any }) : null
+  return updated ? { ...updated, metadata: updated.metadata as any } : null
 }

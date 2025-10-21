@@ -15,9 +15,7 @@ import {
   baselineRAGOffJsonStream,
   agentWithNoIntegrationsQuestion,
 } from "@/ai/provider"
-import {
-  getConnectorById,
-} from "@/db/connector"
+import { getConnectorById } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import {
@@ -43,15 +41,9 @@ import {
   updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
-import {
-  insertMessage,
-  getChatMessagesWithAuth,
-} from "@/db/message"
+import { insertMessage, getChatMessagesWithAuth } from "@/db/message"
 import { getToolsByConnectorId } from "@/db/tool"
-import {
-  type SelectChat,
-  type SelectMessage,
-} from "@/db/schema"
+import { type SelectChat, type SelectMessage } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import {
@@ -63,15 +55,8 @@ import {
   type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
-import {
-  MessageRole,
-  Subsystem,
-  type UserMetadataType,
-} from "@/types"
-import {
-  getErrorMessage,
-  splitGroupedCitationsWithSpaces,
-} from "@/utils"
+import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
+import { getErrorMessage, splitGroupedCitationsWithSpaces } from "@/utils"
 import {
   type ConversationRole,
   type Message,
@@ -97,9 +82,7 @@ import {
   type VespaSearchResults,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
-import {
-  insertChatTrace,
-} from "@/db/chatTrace"
+import { insertChatTrace } from "@/db/chatTrace"
 import type { AttachmentMetadata } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
@@ -185,9 +168,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 type ChatContainerFields = z.infer<typeof VespaChatContainerSearchSchema>
 type ChatUserFields = z.infer<typeof VespaChatUserSchema>
 
-const isChatContainerFields = (
-  value: unknown,
-): value is ChatContainerFields =>
+const isChatContainerFields = (value: unknown): value is ChatContainerFields =>
   isRecord(value) && VespaChatContainerSearchSchema.safeParse(value).success
 
 const isChatUserFields = (value: unknown): value is ChatUserFields =>
@@ -218,13 +199,19 @@ const generateStepSummary = async (
 
     // Use a fast model for summary generation
     const summarySpan = span.startSpan("synthesis_call")
-    const summary = await generateSynthesisBasedOnToolOutput(prompt,dateForAI, "", "", {
-      modelId: (modelId as Models) || defaultFastModel,
-      stream: false,
-      json: true,
-      reasoning: false,
-      messages: [],
-    })
+    const summary = await generateSynthesisBasedOnToolOutput(
+      prompt,
+      dateForAI,
+      "",
+      "",
+      {
+        modelId: (modelId as Models) || defaultFastModel,
+        stream: false,
+        json: true,
+        reasoning: false,
+        messages: [],
+      },
+    )
     summarySpan.setAttribute("model_id", defaultFastModel)
     summarySpan.end()
 
@@ -909,8 +896,8 @@ export const MessageWithToolsApi = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
     initSpan.end()
 
@@ -1584,10 +1571,12 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               planningContext = cleanContext(resolvedContexts?.join("\n"))
               if (chatContexts.length > 0) {
-                planningContext += "\n" + buildContext(chatContexts, 10, userMetadata)
+                planningContext +=
+                  "\n" + buildContext(chatContexts, 10, userMetadata)
               }
               if (threadContexts.length > 0) {
-                planningContext += "\n" + buildContext(threadContexts, 10, userMetadata)
+                planningContext +=
+                  "\n" + buildContext(threadContexts, 10, userMetadata)
               }
 
               gatheredFragments = results.root.children.map(
@@ -1769,6 +1758,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             wasStreamClosedPrematurely = true
             break
           }
+          Logger.info(`JAF Event [av]: ${JSON.stringify(evt.type)}`)
           switch (evt.type) {
             case "turn_start": {
               currentTurn = evt.data.turn
@@ -2325,13 +2315,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                             fallbackResponse.contexts &&
                             Array.isArray(fallbackResponse.contexts)
                           ) {
-                            fallbackResponse.contexts.forEach(
-                              (context) => {
-                                citations.push(context.source)
-                                citationMap[citations.length] =
-                                  citations.length - 1
-                              },
-                            )
+                            fallbackResponse.contexts.forEach((context) => {
+                              citations.push(context.source)
+                              citationMap[citations.length] =
+                                citations.length - 1
+                            })
 
                             if (citations.length > 0) {
                               await stream.writeSSE({
@@ -2730,8 +2718,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -3555,8 +3543,8 @@ export const AgentMessageApi = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")

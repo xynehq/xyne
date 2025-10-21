@@ -173,7 +173,10 @@ export class GeminiAIProvider extends BaseProvider {
                     functionDeclarations: params.tools.map((t) => ({
                       name: t.name,
                       description: t.description,
-                      parameters: t.parameters || { type: 'object', properties: {} },
+                      parameters: t.parameters || {
+                        type: "object",
+                        properties: {},
+                      },
                     })),
                   },
                 ],
@@ -299,7 +302,10 @@ export class GeminiAIProvider extends BaseProvider {
                     functionDeclarations: params.tools.map((t) => ({
                       name: t.name,
                       description: t.description,
-                      parameters: t.parameters || { type: 'object', properties: {} },
+                      parameters: t.parameters || {
+                        type: "object",
+                        properties: {},
+                      },
                     })),
                   },
                 ],
@@ -406,12 +412,15 @@ export class GeminiAIProvider extends BaseProvider {
         )
         if (fnPart?.functionCall) {
           const fc = fnPart.functionCall
-          pendingFn = { name: fc.name || '', args: fc.args ? JSON.stringify(fc.args) : '{}' }
+          pendingFn = {
+            name: fc.name || "",
+            args: fc.args ? JSON.stringify(fc.args) : "{}",
+          }
           yield {
             tool_calls: [
               {
-                id: '',
-                type: 'function' as const,
+                id: "",
+                type: "function" as const,
                 function: { name: pendingFn.name, arguments: pendingFn.args },
               },
             ],

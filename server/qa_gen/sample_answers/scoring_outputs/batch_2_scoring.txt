@@ -1,0 +1,171 @@
+[
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List the different JIRA tickets that have been created to track the various Flipkart refund settlement issues.",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 0.9
+    },
+    "Answer": "The following JIRA tickets have been created to track the Flipkart refund settlement issues:\n\n*   **PAY-7893:** Tracks work related to a cross-border routing config error.\n*   **PAY-5030:** Tracks a timing issue with a delayed UPI reversal update.\n*   **PAY-1691:** Tracks the hotfix for the Flink job configuration drift.\n*   **PAY-6691:** Tracks a backlog of refunds due to API performance bottlenecks.\n*   **PAY-8163:** Tracks issues related to latency spikes in the risk scoring engine.\n*   **PAY-9329:** Centralizes findings on a cross-border routing issue for non-INR currency.\n*   **PAY-5349:** Notes discrepancies related to forex rate lookups for multi-currency settlements.\n*   **PAY-5034:** Tracks a shortfall in the May 15th UPI settlement cycle.\n*   **PAY-7425:** Tracks KYC automation failures for high-risk segments.\n*   **PAY-6869:** Tracks a cross-border routing error due to a missing 'is_international' flag.\n*   **PAY-5176:** Tracks API rate limiting issues impacting throughput.\n*   **PAY-4596:** Tracks efforts to resolve severe API rate limiting.\n*   **PAY-7491:** Tracks a discrepancy in the T+1 batch for UPI refunds.\n*   **PAY-2864:** Tracks API timeout investigations for the `/v2/refunds/initiate` endpoint.\n*   **PAY-2802:** Tracks the mitigation for KYC automation failures.\n*   **PAY-4147:** Tracks OAuth token refresh failures and API timeouts.\n*   **PAY-2149:** Tracks a critical incident related to OAuth token refresh timeouts.\n*   **PAY-8008:** Tracks the investigation into risk scoring engine latency spikes.\n*   **PAY-8919:** Tracks the RCA for a misconfiguration in the payment routing service.\n*   **PAY-9997:** Tracks the investigation into KYC API failures returning '403 Forbidden'.\n*   **PAY-8845:** Tracks a compliance flag on a cross-border routing error.\n*   **PAY-7262:** Tracks a UPI refund discrepancy related to settlement cutoff logic.\n*   **PAY-6536:** Tracks errors in the `refund-settlement-processor` service for multi-currency handling.\n*   **PAY-9427:** Tracks the root cause analysis for a cross-border routing error.\n*   **PAY-4241:** Tracks compliance concerns from KYC automation failures.\n*   **PAY-4290:** Tracks the investigation into KYC failures returning '422 Unprocessable Entity'.\n*   **PAY-1054:** Tracks settlement file discrepancies due to KYC failures.",
+    "Confidence": 1,
+    "citations": [
+      "fe0db5e696a24265",
+      "ec4bd977074b4ffa",
+      "5b1d3e49f973459e",
+      "e12c294e1c3940bf",
+      "53a52db25bba49e3",
+      "7040d4d69f0a4a0f",
+      "4fbbd82a039f42cb",
+      "664b37f4b39e4498",
+      "b01939696ed44325",
+      "ec3595e5558a4cf0",
+      "6e9d81aaa2ce458c",
+      "5e29d6a52b7b489b",
+      "6d55c3ea174440c2",
+      "c9099a114f3445b9",
+      "4ce06223f23b44fe",
+      "106bbe795e774749",
+      "f4a54fd229d1468b",
+      "6b0a685449d3491c",
+      "0880c93cdb534bd4",
+      "7913fec56a8a433d",
+      "59c90ba34a584db0",
+      "b27c8d2271284bb0",
+      "9240e5f20ea8439c",
+      "7da177f705a34067",
+      "f04cb429d0d548d7",
+      "642f580106b646d4",
+      "30cada38493f419d"
+    ],
+    "Agentic_answer": "Based on the information from the context fragments and my search results, here are the different JIRA tickets that have been created to track the various Flipkart refund settlement issues:## JIRA Tickets for Flipkart Refund Settlement Issues1. **PAY-7772** - Tracks issues with fraud-engine model being too aggressive, causing false positives on refunds that align with Flipkart discrepancy figures. Related to unique ID 155310.2. **PAY-6493** - Closed ticket related to Flipkart's performance bottleneck due to core banking system migration affecting settlement batch ID 980267.3. **PAY-7793** - Tracks issues with Flipkart's risk engine incorrectly flagging high-risk customer segments, causing KYC automation failures on refunds (UID: 983213).4. **PAY-8786** - Related to cross-border payment routing config error on Flipkart's end, affecting refund batch with unique ID 901105.5. **PAY-7701** - Tracks settlement discrepancy tied to PCI audit finding, unique ID 772610.6. **PAY-7511** - Contains financial impact numbers for cross-border routing config issue affecting batch ID 682508.7. **PAY-1780** - Tracks discrepancies from Flipkart's core banking system migration affecting batch ID 815197.8. **PAY-1992** - Related to forex rate handling issues for multi-currency refunds affecting batch ID 726743.9. **PAY-6807** - Tracks refund settlement mismatch for unique ID 256863 due to file processing lag on Flipkart's end.All of these tickets are part of the larger optimization effort tracked under work ID `318b8082-efd0-4f33-8696-c6979e9a6cd9`. The issues range from technical configuration problems, fraud detection model sensitivity, KYC automation failures, to core banking system migration impacts affecting various settlement batches.",
+    "score": {
+      "Factuality": 10,
+      "Completeness": 4,
+      "Overall_Score": 7,
+      "Reason": "Factuality scored 10 because no overlapping facts contradict the ground truth; completeness scored 4 because only a small subset of the listed tickets is present, omitting the majority of the ground‑truth tickets.",
+      "Insights": "MISSING TRUTH: The answer omits the 27 JIRA tickets listed in the ground truth (e.g., PAY-7893, PAY-5030, PAY-1691, etc.). CONTRADICTIONS: None – no overlapping ticket IDs conflict with the ground truth. DEVIATIONS: None – the provided tickets are different but not contradictory. ADDITIONAL CONTEXT: Provides nine alternative tickets not mentioned in the ground truth, which are irrelevant to the asked list. OVERALL ASSESSMENT: The answer captures the idea of listing tickets but fails to include the correct set, resulting in low completeness."
+    }
+  },
+  {
+    "User_data": {
+      "UserID": "arjun.mehta@juspay.in",
+      "User_name": "Arjun Mehta"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What was the problem with the Flink job configuration as detailed in the hotfix plan PAY-1691, and what was the two-part plan to address it?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "According to the hotfix plan (file `5b1d3e49f973459e`), the problem was a configuration drift in the Flink job. The `slidingWindow.interval` parameter was inadvertently reduced to 60 seconds from the specified 300 seconds during a Helm chart upgrade (`chart-version: 3.4.1`). This caused the 'Anomalous Refund Pattern' model to misinterpret short-term refund bursts as fraudulent activity.\n\nThe two-part plan to address this was:\n1.  **Immediate Hotfix:** Trigger a new Jenkins pipeline (`hotfix-PAY-1691`) to revert the `slidingWindow.interval` parameter back to 300 seconds in the staging environment, followed by a production rollout after validation.\n2.  **Future Prevention:** Implement a schema validation check within the CI/CD pipeline using Conftest to prevent similar configuration drifts in future Helm chart deployments.",
+    "Confidence": 1,
+    "citations": [
+      "fe0db5e696a24265",
+      "ec4bd977074b4ffa",
+      "5b1d3e49f973459e",
+      "e12c294e1c3940bf",
+      "53a52db25bba49e3",
+      "7040d4d69f0a4a0f",
+      "4fbbd82a039f42cb",
+      "664b37f4b39e4498",
+      "b01939696ed44325",
+      "ec3595e5558a4cf0",
+      "6e9d81aaa2ce458c",
+      "5e29d6a52b7b489b",
+      "6d55c3ea174440c2",
+      "c9099a114f3445b9",
+      "4ce06223f23b44fe",
+      "106bbe795e774749",
+      "f4a54fd229d1468b",
+      "6b0a685449d3491c",
+      "0880c93cdb534bd4",
+      "7913fec56a8a433d",
+      "59c90ba34a584db0",
+      "b27c8d2271284bb0",
+      "9240e5f20ea8439c",
+      "7da177f705a34067",
+      "f04cb429d0d548d7",
+      "642f580106b646d4",
+      "30cada38493f419d"
+    ],
+    "Agentic_answer": "I don't have sufficient information to answer your query about the Flink job configuration problem and two-part plan detailed in hotfix plan PAY-1691.To get the results you're looking for, you might want to:- Search specifically for 'PAY-1691' or 'hotfix PAY-1691' to locate the exact document- Try searching for 'Flink job configuration issues' or 'Flink hotfix plan' to find related documentation- Look for recent incident reports or technical documentation that might contain this specific ticket reference- Check if PAY-1691 might be referenced in a different format (like 'PAY 1691' or 'JIRA PAY-1691')The search returned a generic object reference without any readable content about the specific hotfix plan, Flink job configuration issues, or the PAY-1691 ticket details you're looking for. This suggests the search may not have successfully located the relevant technical documentation or incident reports that would contain this specific information.",
+    "score": {
+      "Factuality": 10,
+      "Completeness": 1,
+      "Overall_Score": 5,
+      "Reason": "Factuality scored 10 because no overlapping facts contradict the ground truth; completeness scored 1 because the answer provides no information about the problem or the two‑part plan.",
+      "Insights": "MISSING TRUTH: The answer omits the description of the configuration drift (slidingWindow.interval reduced to 60 s) and both steps of the remediation plan (immediate hotfix to revert to 300 s and schema validation for future prevention). CONTRADICTIONS: None – the answer simply states lack of information rather than providing conflicting facts. DEVIATIONS: None. ADDITIONAL CONTEXT: None. OVERALL ASSESSMENT: The response fails to address any of the required content, resulting in very low completeness."
+    }
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "According to the analysis in file 5b1d3e49f973459e, what was the incorrect `slidingWindow.interval` value for the Flink job, and what should the correct value have been?",
+    "Answer_weights": {
+      "Factuality": 1,
+      "Completeness": 1,
+      "Domain_relevance": 1
+    },
+    "Answer": "Based on the analysis in file `5b1d3e49f973459e`, the `slidingWindow.interval` parameter for the Flink job's refund velocity feature was inadvertently reduced to 60 seconds. The correct, specified value should have been 300 seconds. Arjun Mehta initiated a hotfix to revert the parameter to this correct value.",
+    "Confidence": 1,
+    "citations": [
+      "e12c294e1c3940bf",
+      "5b1d3e49f973459e",
+      "53a52db25bba49e3",
+      "7040d4d69f0a4a0f",
+      "4fbbd82a039f42cb",
+      "664b37f4b39e4498",
+      "b01939696ed44325",
+      "ec3595e5558a4cf0",
+      "6e9d81aaa2ce458c",
+      "5e29d6a52b7b489b",
+      "6d55c3ea174440c2",
+      "c9099a114f3445b9",
+      "4ce06223f23b44fe",
+      "106bbe795e774749",
+      "f4a54fd229d1468b",
+      "6b0a685449d3491c",
+      "0880c93cdb534bd4",
+      "7913fec56a8a433d",
+      "59c90ba34a584db0"
+    ],
+    "Agentic_answer": "Based on the search results, I can see references to file \"5b1d3e49f973459e\" and mentions of Flink job configuration issues, but I haven't been able to retrieve the specific content of that file that contains the analysis of the incorrect `slidingWindow.interval` value.The search results indicate there is a \"Hotfix Plan for Flink Job Config Drift Causing Flipkart Refund False Positives (PAY-1691)\" which seems most relevant to your question. However, I cannot find the specific details about the incorrect and correct `slidingWindow.interval` values from file \"5b1d3e49f973459e\" in the available context.Could you help me locate this file by providing additional search terms or context that might help me find the specific analysis document you're referring to? Alternatively, if you have access to the file directly, that would allow me to provide you with the exact values you're looking for.",
+    "score": {
+      "Factuality": 10,
+      "Completeness": 1,
+      "Overall_Score": 5,
+      "Reason": "Factuality scored 10 because no overlapping facts contradict the ground truth; completeness scored 1 because the answer does not provide the incorrect and correct interval values.",
+      "Insights": "MISSING TRUTH: The answer lacks the key facts that the interval was incorrectly set to 60 seconds and should be 300 seconds. CONTRADICTIONS: None – the response merely states insufficient information. DEVIATIONS: None. ADDITIONAL CONTEXT: None. OVERALL ASSESSMENT: The response fails to deliver any of the required factual content, resulting in very low completeness."
+    }
+  }
+]

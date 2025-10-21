@@ -1,8 +1,6 @@
 import React, { useState } from "react"
 import { AttachmentMetadata } from "shared/types"
-import {
-  Eye,
-} from "lucide-react"
+import { Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -71,7 +69,12 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           </div>
         ) : (
           <div className="w-12 h-12 flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded-md">
-            {getFileIcon(getFileType({type: attachment.fileType, name: attachment.fileName}))}
+            {getFileIcon(
+              getFileType({
+                type: attachment.fileType,
+                name: attachment.fileName,
+              }),
+            )}
           </div>
         )}
       </div>
@@ -82,23 +85,27 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           {attachment.fileName}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          {formatFileSize(attachment.fileSize)} • {getFileType({type: attachment.fileType, name: attachment.fileName})}
+          {formatFileSize(attachment.fileSize)} •{" "}
+          {getFileType({
+            type: attachment.fileType,
+            name: attachment.fileName,
+          })}
         </p>
       </div>
 
       {/* Actions */}
       {isImage && (
         <div className="flex items-center space-x-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleImageView}
-              className="p-2"
-              aria-label={`Preview ${attachment.fileName}`}
-            >
-              <Eye className="w-4 h-4" />
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleImageView}
+            className="p-2"
+            aria-label={`Preview ${attachment.fileName}`}
+          >
+            <Eye className="w-4 h-4" />
+          </Button>
+        </div>
       )}
 
       {/* Image Modal */}

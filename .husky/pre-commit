@@ -6,14 +6,14 @@ check_and_format() {
     # Temporarily disable exit on error
     set +e
     cd server
-    bunx @biomejs/biome check ../ --formatter-enabled=true --linter-enabled=false --vcs-use-ignore-file=true --organize-imports-enabled=false
+    arch -arm64 bunx @biomejs/biome check ../ --formatter-enabled=true --linter-enabled=false --vcs-use-ignore-file=true --organize-imports-enabled=false
     CHECK_STATUS=$?
     # set -e
     if [ $CHECK_STATUS -ne 0 ]; then
         echo "Formatting issues detected. Running formatter..."
 
         # Format all applicable files, not just staged ones
-        bun run format
+        arch -arm64 bun run format
         
         echo "Files have been formatted. Please add them to staging and commit again."
         exit 1
@@ -22,4 +22,3 @@ check_and_format() {
 
 # Run the check and format function
 check_and_format
-

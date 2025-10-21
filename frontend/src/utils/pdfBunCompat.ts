@@ -2,7 +2,7 @@ import type { DocumentInitParameters } from "pdfjs-dist/types/src/display/api"
 
 /**
  * Bun-optimized PDF.js configuration
- * 
+ *
  * This module provides Bun-specific configurations for PDF.js
  * since we're targeting Bun as our runtime environment.
  */
@@ -68,7 +68,9 @@ const DEFAULT_PDF_OPTIONS = Object.freeze({
 /**
  * Get Bun-optimized PDF.js document options
  */
-export function getPdfDocumentOptions(baseOptions: Partial<DocumentInitParameters> = {}) {
+export function getPdfDocumentOptions(
+  baseOptions: Partial<DocumentInitParameters> = {},
+) {
   const defaultOptions = {
     ...DEFAULT_PDF_OPTIONS,
     ...baseOptions,

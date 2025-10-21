@@ -754,7 +754,6 @@ export const getModelValueFromLabel = (
   return null
 }
 
-
 export const getActualNameFromEnum = (enumValue: string): string | null => {
   const modelConfig = MODEL_CONFIGURATIONS[enumValue as Models]
   return modelConfig?.actualName || null

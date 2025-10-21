@@ -18,7 +18,10 @@ class SimpleEmailService {
   constructor() {
     Logger.info("📧 Initializing Email Service...")
 
-    if (process.env.SES_AWS_ACCESS_KEY_ID && process.env.SES_AWS_SECRET_ACCESS_KEY) {
+    if (
+      process.env.SES_AWS_ACCESS_KEY_ID &&
+      process.env.SES_AWS_SECRET_ACCESS_KEY
+    ) {
       try {
         this.sesClient = new SESClient({
           region: process.env.SES_AWS_REGION || "us-east-1",

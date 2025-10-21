@@ -1,0 +1,88 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "priya.nair@juspay.in",
+      "User_name": "Priya Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.6,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the various communications concerning Work ID 318b8082-efd0-4f33-8696-c6979e9a6cd9, what is the overall compliance posture and what are the primary categories of risk being discussed across different teams?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "The overall compliance posture regarding the Flipkart integration is poor and facing significant risk. Communications from multiple team members highlight several categories of concern:\n\n1.  **Regulatory & Audit Risk:** There are repeated concerns about non-compliance with RBI guidelines, specifically regarding Anti-Money Laundering (AML), Know Your Customer (KYC), and mandated Turnaround Times (TAT) for T+1 and T+2 refund settlements. Upcoming SOC 2 and PCI DSS audits are also frequently mentioned as being at risk due to issues like messy audit trails, data integrity problems, and failures in timely failure detection (emails `77dd690e10564777`, `c3b76e06ee444a78`, `ea289a02acfc4e5e`, `5be432607c354cc1`).\n\n2.  **Technical & Performance Risk:** Multiple API endpoints are failing. This includes rate-limiting (`HTTP 429`) on Flipkart's `/v2/payments/refund/status` and `/v2/settlements/refunds/query` endpoints, high latency and timeouts (`504 Gateway Timeout`) on risk scoring and KYC verification endpoints, and OAuth token refresh failures (emails `77dd690e10564777`, `33d51709421142ac`, `d2d49c4e3db348bd`).\n\n3.  **Data Security & Integrity Risk:** A critical PCI DSS violation was identified where truncated PANs were being logged in plain text in an S3 bucket due to debug-level logging and an overly permissive IAM policy (file `49a3d287719c4892`).\n\n4.  **Operational Risk:** These technical failures are causing a significant backlog of unprocessed refunds, forcing teams into unsustainable manual reconciliation efforts and creating operational overhead for the finance and ops teams (emails `5be432607c354cc1`, `46eb0ace81f64429`).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "anjali.patel@juspay.in",
+      "User_name": "Anjali Patel"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are the exact, immediate remediation steps outlined in the 'PCI DSS 3.4 Remediation Plan' document, and what is the specified timeline for the DevOps team's task?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the document 'PCI DSS 3.4 Remediation Plan for Flipkart Settlement Log Exposure' (docId: `49a3d287719c4892`), the immediate remediation requires a two-pronged approach:\n\n1.  An emergency hotfix (version 1.7.1) must be deployed to update the 'log4j2.xml' configuration, elevating the log level for the 'in.juspay.settlement.flipkart' package from DEBUG to INFO in production.\n2.  The DevOps team is mandated to create and apply a new, scoped-down IAM role named 'fk-settlement-s3-write-role'. This role must restrict actions to 's3:PutObject' exclusively on the 's3://juspay-settlement-logs-prod/flipkart/*' prefix.\n\nThe timeline specified for the DevOps team to replace the legacy IAM policy with this new role is \"within the next 2 hours.\"",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.singh.001@juspay.in",
+      "User_name": "Aditya Singh"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Can you provide a consolidated list of all the different technical problems being discussed with Flipkart and what specific API endpoints or systems are involved?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Based on the provided communications, here is a consolidated list of technical problems and the systems involved:\n\n*   **Rate Limiting:** Juspay is being throttled by Flipkart's API, receiving `HTTP 429 Too Many Requests` errors. This affects the `/v2/payments/refund/status` (email `77dd690e10564777`) and `/v2/settlements/refunds/query` (email `8947e86b2137411d`) endpoints.\n*   **KYC Automation Failures:** Calls to Flipkart's `v2/kyc/verify` endpoint are failing with `422 Unprocessable Entity` responses for high-risk customer segments (email `5be432607c354cc1`). Another KYC issue involves timeouts (`504 Gateway Timeout`) on Flipkart's `/kyc/v3/verify` endpoint (email `e970cd7622a546b6`).\n*   **PCI Compliance Violation:** The 'fk-refund-settlement-processor' service was logging truncated PANs from Flipkart's 'refunds.v2.query' API endpoint into an S3 bucket (file `49a3d287719c4892`).\n*   **State Mismatch:** Refund statuses from Flipkart's `/refund/status` API do not match the final settlement files. For example, a refund is marked `FAILED` in the API but is absent from the settlement failure report (email `46eb0ace81f64429`).\n*   **Multi-Currency FX Rate Discrepancy:** The exchange rate used at refund initiation via the `/v2/refunds` endpoint differs from the rate used in the final SFTP settlement file (email `a8c473b13552445f`).\n*   **Risk Scoring Latency:** Juspay's own `/v2/risk/evaluate` endpoint experienced a latency spike leading to `504 Gateway Timeout` errors for Flipkart refund transactions (email `33d51709421142ac`).\n*   **OAuth Token Timeout:** Juspay's services are experiencing `Connection timed out` errors when trying to refresh OAuth 2.0 access tokens from Flipkart's `/auth/token` endpoint (email `d2d49c4e3db348bd`).\n*   **Third-Party KYC Vendor Issues:** Calls to a third-party KYC vendor's `/v3/verify/enhanced` endpoint are resulting in `429 Too Many Requests` and `401 Unauthorized` errors (email `c3b76e06ee444a78`).",
+    "Confidence": 1.0
+  },
+  {
+    "User_data": {
+      "UserID": "siddharth.nair@juspay.in",
+      "User_name": "Siddharth Nair"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Summarize the different proposed solutions and mitigation strategies for the various Flipkart settlement issues. Who proposed them and what are the key action items?",
+    "Answer_weights": {
+      "Factuality": 1.0,
+      "Completeness": 1.0,
+      "Domain_relevance": 1.0
+    },
+    "Answer": "Several solutions and mitigations have been proposed across different communications:\n\n1.  **For API Rate Limiting:** Priya Nair proposed implementing an exponential backoff mechanism in the reconciliation engine as a short-term fix. The long-term solution is to formally request an API rate limit increase from Flipkart to at least 200 TPS (email `77dd690e10564777`). Arjun Mehta later requested an increase to 120 TPS for the `/v2/settlements/refunds/query` endpoint (email `8947e86b2137411d`).\n\n2.  **For PCI/Logging Issues:** Anjali Patel's remediation plan involves an immediate hotfix to change the log level to INFO and a permanent fix by implementing a custom data masking filter in the shared logging library (file `49a3d287719c4892`).\n\n3.  **For KYC & State Mismatches:** Siddharth Nair requested that Flipkart investigate their state transition logic and provide more granular logs (email `46eb0ace81f64429`). Arjun Mehta proposed introducing a finality webhook for UPI refunds to get an immutable, bank-confirmed status from the NPCI network, rather than relying on the initial synchronous API response (email `931ad8de9ede45c8`).\n\n4.  **For Multi-Currency Discrepancies:** Anjali Patel proposed two solutions: an immediate mitigation to add a `settlementExchangeRate` column to the settlement report, and a long-term solution to enhance the `/v2/refunds/status` API to return final settlement amounts and currency (email `a8c473b13552445f`).\n\n5.  **For Internal Latency/Resilience:** Anjali Patel suggested re-architecting the brittle batch job to an asynchronous flow using a Kafka topic to queue incoming settlement files (email `ea289a02acfc4e5e`). Priya Nair proposed defining a fallback mechanism (fail-open or fail-close) for when the risk engine times out (email `037585f8e80

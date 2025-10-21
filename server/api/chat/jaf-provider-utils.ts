@@ -21,21 +21,29 @@ const isZodType = (value: unknown): value is ZodSchema =>
 const isJsonSchemaPrimitive = (
   value: unknown,
 ): value is string | number | boolean | null =>
-  value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+  value === null ||
+  typeof value === "string" ||
+  typeof value === "number" ||
+  typeof value === "boolean"
 
-const getDefinition = (schema: ZodSchema | undefined): ZodDefinition | undefined => {
+const getDefinition = (
+  schema: ZodSchema | undefined,
+): ZodDefinition | undefined => {
   const definition = schema?._def
   return isRecord(definition) ? (definition as ZodDefinition) : undefined
 }
 
 const getZodType = (value: unknown): ZodSchema | undefined =>
-  (isZodType(value) ? value : undefined)
+  isZodType(value) ? value : undefined
 
 export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
   const def = getDefinition(zodSchema)
   const typeName = typeof def?.typeName === "string" ? def.typeName : undefined
 
-  const attachDesc = (schema: JsonSchema, node: ZodSchema | undefined): JsonSchema => {
+  const attachDesc = (
+    schema: JsonSchema,
+    node: ZodSchema | undefined,
+  ): JsonSchema => {
     const description = getDefinition(node)?.description
     return typeof description === "string" && description.length > 0
       ? { ...schema, description }
@@ -47,7 +55,8 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
     return zod ? zodSchemaToJsonSchema(zod) : createStringSchema()
   }
 
-  const unwrap = (inner: unknown): JsonSchema => attachDesc(schemaFromCandidate(inner), zodSchema)
+  const unwrap = (inner: unknown): JsonSchema =>
+    attachDesc(schemaFromCandidate(inner), zodSchema)
 
   if (!def || !typeName) {
     return attachDesc(createStringSchema(), zodSchema)
@@ -72,7 +81,9 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
   if (typeName === "ZodObject") {
     const shapeGetter = typeof def.shape === "function" ? def.shape : undefined
     const shapeResult = shapeGetter ? shapeGetter() : undefined
-    const shapeEntries = isRecord(shapeResult) ? Object.entries(shapeResult) : []
+    const shapeEntries = isRecord(shapeResult)
+      ? Object.entries(shapeResult)
+      : []
 
     const properties: Record<string, JsonSchema> = {}
     const required: string[] = []
@@ -151,14 +162,21 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
     return attachDesc(tupleSchema, zodSchema)
   }
   if (typeName === "ZodUnion") {
-    const unionOptionsRaw: unknown[] = Array.isArray(def.options) ? def.options : []
-    const unionSchemas = unionOptionsRaw.map((option) => schemaFromCandidate(option))
+    const unionOptionsRaw: unknown[] = Array.isArray(def.options)
+      ? def.options
+      : []
+    const unionSchemas = unionOptionsRaw.map((option) =>
+      schemaFromCandidate(option),
+    )
     const unionSchema: JsonSchema = { anyOf: unionSchemas }
     return attachDesc(unionSchema, zodSchema)
   }
   if (typeName === "ZodDiscriminatedUnion") {
-    const optionsIterable: Iterable<unknown> = def.options instanceof Map ? def.options.values() : []
-    const discriminatedSchemas = Array.from(optionsIterable).map((option) => schemaFromCandidate(option))
+    const optionsIterable: Iterable<unknown> =
+      def.options instanceof Map ? def.options.values() : []
+    const discriminatedSchemas = Array.from(optionsIterable).map((option) =>
+      schemaFromCandidate(option),
+    )
     const discriminatedUnionSchema: JsonSchema = { anyOf: discriminatedSchemas }
     return attachDesc(discriminatedUnionSchema, zodSchema)
   }
@@ -181,7 +199,9 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
       const kind = check.kind
       return typeof kind === "string" && kind === "int"
     })
-    const numberSchema: JsonSchema = { type: hasIntegerCheck ? "integer" : "number" }
+    const numberSchema: JsonSchema = {
+      type: hasIntegerCheck ? "integer" : "number",
+    }
     return attachDesc(numberSchema, zodSchema)
   }
   if (typeName === "ZodBigInt") {
@@ -199,7 +219,9 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
   }
   if (typeName === "ZodEnum") {
     const enumValuesRaw: unknown[] = Array.isArray(def.values) ? def.values : []
-    const enumValues = enumValuesRaw.filter((value): value is string => typeof value === "string")
+    const enumValues = enumValuesRaw.filter(
+      (value): value is string => typeof value === "string",
+    )
     const enumSchema: JsonSchema = { type: "string" }
     if (enumValues.length > 0) {
       enumSchema.enum = enumValues
@@ -208,8 +230,9 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
   }
   if (typeName === "ZodNativeEnum") {
     const rawValues = isRecord(def.values) ? Object.values(def.values) : []
-    const nativeEnumValues = rawValues.filter((value): value is string | number =>
-      typeof value === "string" || typeof value === "number",
+    const nativeEnumValues = rawValues.filter(
+      (value): value is string | number =>
+        typeof value === "string" || typeof value === "number",
     )
     const nativeEnumSchema: JsonSchema = {}
     if (nativeEnumValues.length > 0) {

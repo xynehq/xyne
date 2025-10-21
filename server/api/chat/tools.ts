@@ -98,12 +98,12 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       selectedItems: selectedItem,
     }
   }
-  
+
   let agentPromptData: { appIntegrations?: string[] } = {}
 
   try {
     agentPromptData = JSON.parse(agentPrompt)
-    let selectedItem:any= {}
+    let selectedItem: any = {}
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
       const { selectedApps, selectedItems } = parseAppSelections(
         agentPromptData.appIntegrations,
@@ -115,22 +115,21 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
     }
 
     if (selectedItem[Apps.KnowledgeBase]) {
-        for (const itemId of selectedItem[Apps.KnowledgeBase]) {
-          if (itemId.startsWith("cl-")) {
-            // Entire collection - remove cl- prefix
-            agentSpecificCollectionIds.push(itemId.replace(/^cl[-_]/, ""))
-          } else if (itemId.startsWith("clfd-")) {
-            // Collection folder - remove clfd- prefix
-            agentSpecificCollectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
-          } else if (itemId.startsWith("clf-")) {
-            // Collection file - remove clf- prefix
-            agentSpecificCollectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
-          }
+      for (const itemId of selectedItem[Apps.KnowledgeBase]) {
+        if (itemId.startsWith("cl-")) {
+          // Entire collection - remove cl- prefix
+          agentSpecificCollectionIds.push(itemId.replace(/^cl[-_]/, ""))
+        } else if (itemId.startsWith("clfd-")) {
+          // Collection folder - remove clfd- prefix
+          agentSpecificCollectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
+        } else if (itemId.startsWith("clf-")) {
+          // Collection file - remove clf- prefix
+          agentSpecificCollectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
         }
-        
-      } else {
-        Logger.info("No KnowledgeBase items found in selectedItems")
       }
+    } else {
+      Logger.info("No KnowledgeBase items found in selectedItems")
+    }
 
     Logger.debug({ agentPromptData }, "Parsed agent prompt data")
   } catch (error) {
@@ -147,8 +146,6 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       selectedItems: selectedItem,
     }
   }
-
-  
 
   if (
     !agentPromptData.appIntegrations ||
@@ -259,7 +256,10 @@ interface UnifiedSearchOptions {
   collectionFileIds?: string[]
 }
 
-const userMetadata: UserMetadataType = {userTimezone: "Asia/Kolkata", dateForAI: getDateForAI({userTimeZone: "Asia/Kolkata"})}
+const userMetadata: UserMetadataType = {
+  userTimezone: "Asia/Kolkata",
+  dateForAI: getDateForAI({ userTimeZone: "Asia/Kolkata" }),
+}
 
 async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   result: string
@@ -885,6 +885,7 @@ export const getSlackThreads: AgentTool = {
     ctx?: string,
     agentPrompt?: string,
   ) => {
+    console.log
     const execSpan = span?.startSpan("slack_message")
     if (!email) {
       const errorMsg = "email is required for search tool execution."

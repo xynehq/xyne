@@ -188,13 +188,7 @@ export const FormSubmissionIcon: React.FC<IconProps> = ({
   className = "",
   width = 20,
   height = 20,
-}) => (
-  <FileText
-    className={className}
-    width={width}
-    height={height}
-  />
-)
+}) => <FileText className={className} width={width} height={height} />
 
 export const WorkflowExecutionIcon: React.FC<IconProps> = ({
   className = "",
