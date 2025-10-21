@@ -212,9 +212,7 @@ export const TimelineFilter: React.FC<TimelineFilterProps> = ({
       setSelectedTimelines(updatedTimelines)
       
       // Build filter string
-      const selectedPeopleNames = slackUsers
-        .filter((u: { id: string; name: string }) => selectedPeople.has(u.id))
-        .map((u: { id: string; name: string }) => `@${u.name}`)
+      const selectedPeopleIds = Array.from(selectedPeople ?? new Set<string>()).map(id => `@${id}`)
       
       const selectedChannelIds = Array.from(selectedChannels).map(id => `#${id}`)
       const selectedTimelineNames = Array.from(updatedTimelines).map(t => `~${t}`)
@@ -225,7 +223,7 @@ export const TimelineFilter: React.FC<TimelineFilterProps> = ({
         f.startsWith('from:') || f.startsWith('to:') || f.startsWith('cc:') || f.startsWith('bcc:')
       )
       
-      const combinedNames = [...existingGmailFilters, ...selectedPeopleNames, ...selectedChannelIds, ...selectedTimelineNames].join(', ')
+      const combinedNames = [...existingGmailFilters, ...selectedPeopleIds, ...selectedChannelIds, ...selectedTimelineNames].join(', ')
       onFilterChange(combinedNames)
       
       setShowDatePicker(false)

@@ -221,6 +221,13 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
         newSet.delete(channelId)
         return newSet
       })
+    } else if (part?.startsWith('@')) {
+      const personId = part.substring(1)
+      setSelectedPeople(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(personId)
+        return newSet
+      })
     }
   }
   
@@ -2117,18 +2124,11 @@ function AgentComponent() {
           } else if (part.startsWith('bcc:')) {
             bccEmails.push(part.substring(4))
           } else if (part.startsWith('@')) {
-            // Slack person - the display format is @name, but we need to extract the docId
-            // Since we're saving, we need to convert the display name back to docId
-            // The filter string contains display names, but we need to store docIds
-            // For now, we'll store the name and let the backend handle the conversion
-            // Or we can extract the docId from the filter value if it was stored there
-            const personName = part.substring(1)
-            // Store the name for now - ideally we'd have a mapping
-            senderIds.push(personName)
+            const personId = part.substring(1)
+            senderIds.push(personId)
           } else if (part.startsWith('#')) {
-            // Slack channel - similar to person, store the name
-            const channelName = part.substring(1)
-            channelIds.push(channelName)
+            const channelId = part.substring(1)
+            channelIds.push(channelId)
           } else if (part.startsWith('~')) {
             // Parse timeline filters and collect them
             const timelineValue = part.substring(1)
