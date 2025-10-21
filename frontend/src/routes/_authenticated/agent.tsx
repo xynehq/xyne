@@ -28,7 +28,6 @@ import {
   type Citation,
   type SelectPublicAgent,
   type AttachmentMetadata,
-  SlackEntity,
   AgentPromptPayload,
   DEFAULT_TEST_AGENT_ID,
 } from "shared/types"
@@ -81,6 +80,11 @@ import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
 import ViewAgent from "@/components/ViewAgent"
 import agentEmptyStateIcon from "@/assets/emptystateIcons/agent.png"
+import { GmailPeopleFilter } from "@/components/agent/GmailPeopleFilter"
+import { SlackPeopleFilter } from "@/components/agent/SlackPeopleFilter"
+import { SlackChannelFilter } from "@/components/agent/SlackChannelFilter"
+import { TimelineFilter } from "@/components/agent/TimelineFilter"
+import { FilterBadge } from "@/components/agent/FilterBadge"
 
 type CurrentResp = {
   resp: string
@@ -116,151 +120,6 @@ interface FetchedDataSource {
   entity: string
 }
 
-interface DateRangePickerProps {
-  dateRange: { start: Date | null; end: Date | null }
-  setDateRange: React.Dispatch<React.SetStateAction<{ start: Date | null; end: Date | null }>>
-  currentMonth: Date
-  setCurrentMonth: React.Dispatch<React.SetStateAction<Date>>
-  onApply: () => void
-  onCancel: () => void
-}
-
-const DateRangePicker: React.FC<DateRangePickerProps> = ({
-  dateRange,
-  setDateRange,
-  currentMonth,
-  setCurrentMonth,
-  onApply,
-  onCancel,
-}) => {
-  const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate()
-  const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay()
-  
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-  const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-  
-  const handleDateClick = (day: number) => {
-    const clickedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
-    
-    if (!dateRange.start || (dateRange.start && dateRange.end)) {
-      // Start new selection
-      setDateRange({ start: clickedDate, end: null })
-    } else {
-      // Complete the range
-      if (clickedDate < dateRange.start) {
-        setDateRange({ start: clickedDate, end: dateRange.start })
-      } else {
-        setDateRange({ start: dateRange.start, end: clickedDate })
-      }
-    }
-  }
-  
-  const isDateInRange = (day: number) => {
-    if (!dateRange.start) return false
-    const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
-    if (dateRange.end) {
-      return date >= dateRange.start && date <= dateRange.end
-    }
-    return date.getTime() === dateRange.start.getTime()
-  }
-  
-  const isDateSelected = (day: number) => {
-    const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
-    return (dateRange.start && date.getTime() === dateRange.start.getTime()) ||
-           (dateRange.end && date.getTime() === dateRange.end.getTime())
-  }
-  
-  const previousMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))
-  }
-  
-  const nextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))
-  }
-  
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
-      {/* Month/Year Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-        </h3>
-        <div className="flex gap-2">
-          <button
-            onClick={previousMonth}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-          >
-            <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          </button>
-          <button
-            onClick={nextMonth}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-          >
-            <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          </button>
-        </div>
-      </div>
-      
-      {/* Day Names */}
-      <div className="grid grid-cols-7 gap-1 mb-2">
-        {dayNames.map(day => (
-          <div key={day} className="text-center text-sm font-medium text-gray-500 dark:text-gray-400 py-2">
-            {day}
-          </div>
-        ))}
-      </div>
-      
-      {/* Calendar Days */}
-      <div className="grid grid-cols-7 gap-1">
-        {/* Empty cells for days before month starts */}
-        {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-          <div key={`empty-${i}`} />
-        ))}
-        
-        {/* Actual days */}
-        {Array.from({ length: daysInMonth }).map((_, i) => {
-          const day = i + 1
-          const inRange = isDateInRange(day)
-          const selected = isDateSelected(day)
-          
-          return (
-            <button
-              key={day}
-              onClick={() => handleDateClick(day)}
-              className={`
-                aspect-square p-2 text-sm rounded-full
-                ${selected ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900' : ''}
-                ${inRange && !selected ? 'bg-gray-200 dark:bg-gray-700' : ''}
-                ${!inRange && !selected ? 'hover:bg-gray-100 dark:hover:bg-gray-700' : ''}
-                text-gray-900 dark:text-gray-100
-              `}
-            >
-              {day}
-            </button>
-          )
-        })}
-      </div>
-      
-      {/* Action Buttons */}
-      <div className="flex gap-2 mt-4">
-        <button
-          onClick={onCancel}
-          className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={onApply}
-          disabled={!dateRange.start || !dateRange.end}
-          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-gray-900 dark:bg-gray-100 dark:text-gray-900 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Apply
-        </button>
-      </div>
-    </div>
-  )
-}
-
 const CustomBadge: React.FC<CustomBadgeProps> = ({
   text, 
   onRemove, 
@@ -269,11 +128,9 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
   filterValue,
   onFilterChange,
 }) => {
-  const { toast } = useToast()
-  
   // Only show filter input for Gmail and Slack
-  const showFilterInput = appId === 'gmail' || appId === 'slack'
-  
+  const showFilterInput = appId === Apps.Gmail || appId === Apps.Slack
+
   // State for filter dropdown
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false)
   const [filterNavigationPath, setFilterNavigationPath] = useState<Array<{
@@ -282,15 +139,36 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
     type: "filter-root" | "people" | "channels" | "timeline"
   }>>([])
   
+  // State for tracking selected items (needed for Timeline filter)
+  const [selectedPeople, setSelectedPeople] = useState<Set<string>>(new Set())
+  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set())
+  
+  // Parse selected people and channels from filterValue
+  useEffect(() => {
+    if (!filterValue) return
+    
+    const filters = filterValue.split(', ').filter(f => f.trim())
+
+    if (appId === Apps.Slack) {
+      // Parse people names (convert to IDs when needed)
+      const peopleNames = filters.filter(f => f.startsWith('@')).map(f => f.substring(1))
+      setSelectedPeople(new Set(peopleNames))
+      
+      // Parse channel IDs
+      const channelIds = filters.filter(f => f.startsWith('#')).map(f => f.substring(1))
+      setSelectedChannels(new Set(channelIds))
+    }
+  }, [filterValue, appId])
+  
   // Define filter options based on app
   const getFilterOptions = () => {
-    if (appId === 'slack') {
+    if (appId === Apps.Slack) {
       return [
         { label: 'People', value: '@people' },
         { label: 'Channels', value: '#channel' },
         { label: 'Timeline', value: '~timeline' }
       ]
-    } else if (appId === 'gmail') {
+    } else if (appId === Apps.Gmail) {
       return [
         { label: 'People', value: '@people' },
         { label: 'Timeline', value: '~timeline' }
@@ -298,265 +176,6 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
     }
     return []
   }
-  
-  // State for Slack users
-  const [slackUsers, setSlackUsers] = useState<Array<{ id: string; name: string }>>([])
-  const [slackSearchQuery, setSlackSearchQuery] = useState('')
-  const [slackOffset, setSlackOffset] = useState(0)
-  const [slackHasMore, setSlackHasMore] = useState(true)
-  const [isLoadingSlackUsers, setIsLoadingSlackUsers] = useState(false)
-  const slackUsersContainerRef = useRef<HTMLDivElement>(null)
-  
-  // State for selected people
-  const [selectedPeople, setSelectedPeople] = useState<Set<string>>(new Set())
-
-  // State for Gmail people fields
-  const [gmailPeopleFields, setGmailPeopleFields] = useState<{
-    from: string[]
-    to: string[]
-    cc: string[]
-    bcc: string[]
-  }>({
-    from: [],
-    to: [],
-    cc: [],
-    bcc: []
-  })
-  
-  // State for current input values in Gmail people fields
-  const [gmailPeopleInputs, setGmailPeopleInputs] = useState<{
-    from: string
-    to: string
-    cc: string
-    bcc: string
-  }>({
-    from: '',
-    to: '',
-    cc: '',
-    bcc: ''
-  })
-
-  // State for Slack channels
-  const [slackChannels, setSlackChannels] = useState<Array<{ id: string; name: string }>>([])
-  const [slackChannelsSearchQuery, setSlackChannelsSearchQuery] = useState('')
-  const [slackChannelsOffset, setSlackChannelsOffset] = useState(0)
-  const [slackChannelsHasMore, setSlackChannelsHasMore] = useState(true)
-  const [isLoadingSlackChannels, setIsLoadingSlackChannels] = useState(false)
-  const slackChannelsContainerRef = useRef<HTMLDivElement>(null)
-  
-  // State for selected channels
-  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set())
-
-  // Parse existing filter values and initialize state
-  useEffect(() => {
-    if (!filterValue || !showFilterInput) return
-    
-    const filters = filterValue.split(', ').filter(f => f.trim())
-    
-    if (appId === 'gmail') {
-      // Parse Gmail filters
-      const newGmailFields = {
-        from: [] as string[],
-        to: [] as string[],
-        cc: [] as string[],
-        bcc: [] as string[]
-      }
-      
-      filters.forEach(filter => {
-        if (filter.startsWith('from:')) {
-          newGmailFields.from.push(filter.substring(5))
-        } else if (filter.startsWith('to:')) {
-          newGmailFields.to.push(filter.substring(3))
-        } else if (filter.startsWith('cc:')) {
-          newGmailFields.cc.push(filter.substring(3))
-        } else if (filter.startsWith('bcc:')) {
-          newGmailFields.bcc.push(filter.substring(4))
-        }
-      })
-      
-      setGmailPeopleFields(newGmailFields)
-      
-      // Parse timeline filters for Gmail
-      const timelineFilters = filters.filter(f => f.startsWith('~')).map(f => f.substring(1))
-      setSelectedTimelines(new Set(timelineFilters))
-      
-    } else if (appId === 'slack') {
-      // Parse Slack filters - timeline filters can be set immediately
-      const timelineFilters = filters.filter(f => f.startsWith('~')).map(f => f.substring(1))
-      
-      // For Slack people and channels, we need to wait for the API data to map names to IDs
-      // This will be handled in separate useEffect hooks below
-      setSelectedTimelines(new Set(timelineFilters))
-    }
-  }, [filterValue, appId, showFilterInput])
-
-  // Effect to map Slack user names to IDs when slackUsers data is available
-  useEffect(() => {
-    if (appId === 'slack' && filterValue && slackUsers.length > 0) {
-      const filters = filterValue.split(', ').filter(f => f.trim())
-      const peopleNames = filters.filter(f => f.startsWith('@')).map(f => f.substring(1))
-      
-      const newSelectedPeople = new Set<string>()
-      peopleNames.forEach(name => {
-        const user = slackUsers.find(u => u.name === name)
-        if (user) {
-          newSelectedPeople.add(user.id)
-        }
-      })
-      
-      setSelectedPeople(newSelectedPeople)
-    }
-  }, [slackUsers, filterValue, appId])
-
-  // Effect to parse Slack channel IDs from filter when available
-  useEffect(() => {
-    if (appId === 'slack' && filterValue) {
-      const filters = filterValue.split(', ').filter(f => f.trim())
-      const channelIds = filters.filter(f => f.startsWith('#')).map(f => f.substring(1))
-      
-      setSelectedChannels(new Set(channelIds))
-    }
-  }, [filterValue, appId])
-
-  // Fetch Slack users from API
-  const fetchSlackUsers = async (query: string = '', offset: number = 0, append: boolean = false) => {
-    if (appId !== 'slack') return
-    
-    setIsLoadingSlackUsers(true)
-    try {
-      const limit = offset + 50
-      const queryParams: any = {
-        entity: SlackEntity.User,
-        limit: limit.toString(),
-        offset: offset.toString(),
-      }
-      
-      // Add query parameter if search query exists
-      if (query && query.trim()) {
-        queryParams.query = query.trim()
-      }
-      
-      const response = await api.slack.entities.$get({
-        query: queryParams
-      });
-      
-      if (response.ok) {
-        const data = await response.json()
-        const users = data.results?.root?.children?.map((child: any) => ({
-          id: child.fields?.docId || child.id,
-          name: child.fields?.name || 'Unknown User',
-        })) || []
-        
-        if (append) {
-          setSlackUsers(prev => [...prev, ...users])
-        } else {
-          setSlackUsers(users)
-        }
-        
-        // Check if there are more users to load
-        const hasMore = users.length === 50
-        setSlackHasMore(hasMore)
-      } else {
-        toast.error({
-          title: 'Error',
-          description: 'Failed to fetch Slack users',
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching Slack users:', error)
-      toast.error({
-        title: 'Error',
-        description: 'An error occurred while fetching Slack users',
-      })
-    } finally {
-      setIsLoadingSlackUsers(false)
-    }
-  }
-
-  // Fetch Slack channels from API
-  const fetchSlackChannels = async (query: string = '', offset: number = 0, append: boolean = false) => {
-    if (appId !== 'slack') return
-    
-    setIsLoadingSlackChannels(true)
-    try {
-      const limit = offset + 50
-      const queryParams: any = {
-        entity: SlackEntity.Channel,
-        limit: limit.toString(),
-        offset: offset.toString(),
-      }
-      
-      // Add query parameter if search query exists
-      if (query && query.trim()) {
-        queryParams.query = query.trim()
-      }
-      
-      const response = await api.slack.entities.$get({
-        query: queryParams
-      });
-      
-      if (response.ok) {
-        const data = await response.json()
-        const channels = data.results?.root?.children?.map((child: any) => ({
-          id: child.fields?.docId || child.id,
-          name: child.fields?.name || 'Unknown Channel',
-        })) || []
-        
-        if (append) {
-          setSlackChannels(prev => [...prev, ...channels])
-        } else {
-          setSlackChannels(channels)
-        }
-        
-        // Check if there are more channels to load
-        const hasMore = channels.length === 50
-        setSlackChannelsHasMore(hasMore)
-      } else {
-        toast.error({
-          title: 'Error',
-          description: 'Failed to fetch Slack channels',
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching Slack channels:', error)
-      toast.error({
-        title: 'Error',
-        description: 'An error occurred while fetching Slack channels',
-      })
-    } finally {
-      setIsLoadingSlackChannels(false)
-    }
-  }
-
-  // Handle infinite scroll for Slack users
-  const handleSlackUsersScroll = useCallback(() => {
-    const container = slackUsersContainerRef.current
-    if (!container || isLoadingSlackUsers || !slackHasMore) return
-    
-    const { scrollTop, scrollHeight, clientHeight } = container
-    const scrollThreshold = 50 // pixels from bottom
-    
-    if (scrollHeight - scrollTop - clientHeight < scrollThreshold) {
-      const newOffset = slackOffset + 50
-      setSlackOffset(newOffset)
-      fetchSlackUsers(slackSearchQuery, newOffset, true)
-    }
-  }, [slackOffset, slackSearchQuery, isLoadingSlackUsers, slackHasMore, appId])
-
-  // Handle infinite scroll for Slack channels
-  const handleSlackChannelsScroll = useCallback(() => {
-    const container = slackChannelsContainerRef.current
-    if (!container || isLoadingSlackChannels || !slackChannelsHasMore) return
-    
-    const { scrollTop, scrollHeight, clientHeight } = container
-    const scrollThreshold = 50 // pixels from bottom
-    
-    if (scrollHeight - scrollTop - clientHeight < scrollThreshold) {
-      const newOffset = slackChannelsOffset + 50
-      setSlackChannelsOffset(newOffset)
-      fetchSlackChannels(slackChannelsSearchQuery, newOffset, true)
-    }
-  }, [slackChannelsOffset, slackChannelsSearchQuery, isLoadingSlackChannels, slackChannelsHasMore, appId])
   
   // Get icon for filter option
   const getFilterIcon = (label: string) => {
@@ -572,24 +191,15 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
     }
   }
   
-  const handleFilterOptionSelect = (option: any) => {
+  const handleFilterOptionSelect = (option: { label: string; value: string }) => {
     if (option.label === 'People') {
       setFilterNavigationPath([
         { id: 'people', name: 'People', type: 'people' }
       ])
-      // Load initial Slack users when opening People filter (only for Slack)
-      if (appId === 'slack' && slackUsers.length === 0) {
-        fetchSlackUsers('', 0, false)
-      }
-      // For Gmail, we don't need to fetch anything - just show the input fields
     } else if (option.label === 'Channels') {
       setFilterNavigationPath([
         { id: 'channels', name: 'Channels', type: 'channels' }
       ])
-      // Load initial Slack channels when opening Channels filter
-      if (appId === 'slack' && slackChannels.length === 0) {
-        fetchSlackChannels('', 0, false)
-      }
     } else if (option.label === 'Timeline') {
       setFilterNavigationPath([
         { id: 'timeline', name: 'Timeline', type: 'timeline' }
@@ -597,124 +207,21 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
     }
   }
   
-  // State for selected timelines (changed to Set for multi-selection)
-  const [selectedTimelines, setSelectedTimelines] = useState<Set<string>>(new Set())
-  
-  // State for custom date range picker
-  const [showDatePicker, setShowDatePicker] = useState(false)
-  const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({
-    start: null,
-    end: null,
-  })
-  const [currentMonth, setCurrentMonth] = useState(new Date())
-
-  const handleTimelineSelect = (timelineOption: { label: string; value: string }) => {
-    // If "Custom date" is selected, show date picker instead
-    if (timelineOption.label === 'Custom date') {
-      setShowDatePicker(true)
-      return
+  const handleRemoveFilter = (index: number) => {
+    const parts = filterValue?.split(', ').filter(p => p.trim()) || []
+    const part = parts[index]
+    const newParts = parts.filter((_, i) => i !== index)
+    onFilterChange?.(newParts.join(', '))
+    
+    // Update state based on filter type
+    if (part?.startsWith('#')) {
+      const channelId = part.substring(1)
+      setSelectedChannels(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(channelId)
+        return newSet
+      })
     }
-    // Toggle timeline selection in the set
-    setSelectedTimelines(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(timelineOption.label)) {
-        newSet.delete(timelineOption.label)
-      } else {
-        newSet.add(timelineOption.label)
-      }
-      return newSet
-    })
-    
-    // Update filter value with selected timelines
-    const updatedTimelines = new Set(selectedTimelines)
-    if (updatedTimelines.has(timelineOption.label)) {
-      updatedTimelines.delete(timelineOption.label)
-    } else {
-      updatedTimelines.add(timelineOption.label)
-    }
-    
-    // Build filter string from selected timelines
-    const selectedTimelineNames = Array.from(updatedTimelines).map(t => `~${t}`)
-    
-    // Preserve existing filters from current filterValue that aren't timeline filters
-    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-    const existingNonTimelineFilters = currentFilters.filter(f => !f.startsWith('~'))
-    
-    // Combine new timeline filters with existing non-timeline filters
-    const combinedFilters = [...selectedTimelineNames, ...existingNonTimelineFilters]
-    
-    onFilterChange?.(combinedFilters.join(', '))
-    // Don't close dropdown - let user select multiple timelines
-  }
-  
-  const handlePersonSelect = (person: any) => {
-    // person.id is the docId from the API response
-    setSelectedPeople(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(person.id)) {
-        newSet.delete(person.id)
-      } else {
-        newSet.add(person.id)
-      }
-      return newSet
-    })
-    
-    // Update filter value with selected people names (for display)
-    const updatedPeople = new Set(selectedPeople)
-    if (updatedPeople.has(person.id)) {
-      updatedPeople.delete(person.id)
-    } else {
-      updatedPeople.add(person.id)
-    }
-    
-    // Build filter string from selected people (using names for display)
-    const selectedPeopleNames = slackUsers
-      .filter(u => updatedPeople.has(u.id))
-      .map(u => `@${u.name}`)
-    
-    // Preserve existing filters from current filterValue that aren't people filters
-    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-    const existingNonPeopleFilters = currentFilters.filter(f => !f.startsWith('@'))
-    
-    // Combine new people filters with existing non-people filters
-    const combinedFilters = [...selectedPeopleNames, ...existingNonPeopleFilters]
-    
-    onFilterChange?.(combinedFilters.join(', '))
-    // Don't close dropdown - let user select multiple people
-  }
-
-  const handleChannelSelect = (channel: any) => {
-    // channel.id is the docId from the API response
-    setSelectedChannels(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(channel.id)) {
-        newSet.delete(channel.id)
-      } else {
-        newSet.add(channel.id)
-      }
-      return newSet
-    })
-    
-    // Update filter value with selected channel docIds
-    const updatedChannels = new Set(selectedChannels)
-    if (updatedChannels.has(channel.id)) {
-      updatedChannels.delete(channel.id)
-    } else {
-      updatedChannels.add(channel.id)
-    }
-    
-    // Build filter string from selected channels (using channel IDs)
-    const selectedChannelIds = Array.from(updatedChannels).map(id => `#${id}`)
-    
-    // Preserve existing filters from current filterValue that aren't channel filters
-    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-    const existingNonChannelFilters = currentFilters.filter(f => !f.startsWith('#'))
-    
-    // Combine new channel filters with existing non-channel filters
-    const combinedFilters = [...selectedChannelIds, ...existingNonChannelFilters]
-    
-    onFilterChange?.(combinedFilters.join(', '))
-    // Don't close dropdown - let user select multiple channels
   }
   
   return (
@@ -828,439 +335,37 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
                   ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'people' ? (
                     // People selection view - different for Gmail vs Slack
                     appId === 'gmail' ? (
-                      // Gmail People fields (From, To, CC, BCC)
-                      <div className="px-4 py-3 space-y-3">
-                        {(['from', 'to', 'cc', 'bcc'] as const).map((field) => (
-                          <div key={field} className="space-y-2">
-                            <label className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase">
-                              {field}
-                            </label>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                placeholder={`Enter ${field} address`}
-                                value={gmailPeopleInputs[field]}
-                                onChange={(e) => {
-                                  setGmailPeopleInputs(prev => ({
-                                    ...prev,
-                                    [field]: e.target.value
-                                  }))
-                                }}
-                                onKeyDown={(e) => {
-                                  e.stopPropagation()
-                                  if (e.key === 'Enter' && gmailPeopleInputs[field].trim()) {
-                                    // Add email on Enter key
-                                    const email = gmailPeopleInputs[field].trim()
-                                    setGmailPeopleFields(prev => ({
-                                      ...prev,
-                                      [field]: [...prev[field], email]
-                                    }))
-                                    setGmailPeopleInputs(prev => ({
-                                      ...prev,
-                                      [field]: ''
-                                    }))
-                                    
-                                    // Update filter value
-                                    const allFields = {
-                                      ...gmailPeopleFields,
-                                      [field]: [...gmailPeopleFields[field], email]
-                                    }
-                                    const filterParts: string[] = []
-                                    if (allFields.from.length > 0) filterParts.push(...allFields.from.map(e => `from:${e}`))
-                                    if (allFields.to.length > 0) filterParts.push(...allFields.to.map(e => `to:${e}`))
-                                    if (allFields.cc.length > 0) filterParts.push(...allFields.cc.map(e => `cc:${e}`))
-                                    if (allFields.bcc.length > 0) filterParts.push(...allFields.bcc.map(e => `bcc:${e}`))
-                                    
-                                    // Preserve existing timeline filters from the current filterValue
-                                    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-                                    const existingTimelineFilters = currentFilters.filter(f => f.startsWith('~'))
-                                    const combinedFilters = [...filterParts, ...existingTimelineFilters]
-                                    
-                                    onFilterChange?.(combinedFilters.join(', '))
-                                  }
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
-                              />
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  const email = gmailPeopleInputs[field].trim()
-                                  if (email) {
-                                    setGmailPeopleFields(prev => ({
-                                      ...prev,
-                                      [field]: [...prev[field], email]
-                                    }))
-                                    setGmailPeopleInputs(prev => ({
-                                      ...prev,
-                                      [field]: ''
-                                    }))
-                                    
-                                    // Update filter value
-                                    const allFields = {
-                                      ...gmailPeopleFields,
-                                      [field]: [...gmailPeopleFields[field], email]
-                                    }
-                                    const filterParts: string[] = []
-                                    if (allFields.from.length > 0) filterParts.push(...allFields.from.map(e => `from:${e}`))
-                                    if (allFields.to.length > 0) filterParts.push(...allFields.to.map(e => `to:${e}`))
-                                    if (allFields.cc.length > 0) filterParts.push(...allFields.cc.map(e => `cc:${e}`))
-                                    if (allFields.bcc.length > 0) filterParts.push(...allFields.bcc.map(e => `bcc:${e}`))
-                                    
-                                    // Preserve existing timeline filters from the current filterValue
-                                    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-                                    const existingTimelineFilters = currentFilters.filter(f => f.startsWith('~'))
-                                    const combinedFilters = [...filterParts, ...existingTimelineFilters]
-                                    
-                                    onFilterChange?.(combinedFilters.join(', '))
-                                  }
-                                }}
-                                className="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </button>
-                            </div>
-                            {/* Display added emails as pills */}
-                            {gmailPeopleFields[field].length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 mt-2">
-                                {gmailPeopleFields[field].map((email, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-2.5 py-1 rounded-md text-xs"
-                                  >
-                                    <span>{email}</span>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        // Remove this email
-                                        const newEmails = gmailPeopleFields[field].filter((_, i) => i !== idx)
-                                        setGmailPeopleFields(prev => ({
-                                          ...prev,
-                                          [field]: newEmails
-                                        }))
-                                        
-                                        // Update filter value
-                                        const allFields = {
-                                          ...gmailPeopleFields,
-                                          [field]: newEmails
-                                        }
-                                        const filterParts: string[] = []
-                                        if (allFields.from.length > 0) filterParts.push(...allFields.from.map(e => `from:${e}`))
-                                        if (allFields.to.length > 0) filterParts.push(...allFields.to.map(e => `to:${e}`))
-                                        if (allFields.cc.length > 0) filterParts.push(...allFields.cc.map(e => `cc:${e}`))
-                                        if (allFields.bcc.length > 0) filterParts.push(...allFields.bcc.map(e => `bcc:${e}`))
-                                        
-                                        // Preserve existing timeline filters from the current filterValue
-                                        const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-                                        const existingTimelineFilters = currentFilters.filter(f => f.startsWith('~'))
-                                        const combinedFilters = [...filterParts, ...existingTimelineFilters]
-                                        
-                                        onFilterChange?.(combinedFilters.join(', '))
-                                      }}
-                                      className="hover:bg-gray-200 dark:hover:bg-gray-600 rounded-sm p-0.5"
-                                    >
-                                      <LucideX className="h-3 w-3" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                      <GmailPeopleFilter
+                        filterValue={filterValue}
+                        onFilterChange={onFilterChange || (() => {})}
+                      />
                     ) : (
-                      // Slack People selection (existing code)
-                      <>
-                        <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
-                          <div className="flex items-center">
-                            <input
-                              type="text"
-                              placeholder="Search"
-                              value={slackSearchQuery}
-                              onChange={(e) => {
-                                const newQuery = e.target.value
-                                setSlackSearchQuery(newQuery)
-                                // Reset offset and fetch with new query
-                                setSlackOffset(0)
-                                fetchSlackUsers(newQuery, 0, false)
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              onKeyDown={(e) => e.stopPropagation()}
-                              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
-                            />
-                          </div>
-                        </div>
-                        <div 
-                          ref={slackUsersContainerRef}
-                          onScroll={handleSlackUsersScroll}
-                          className="px-2 max-h-60 overflow-y-auto"
-                        >
-                          {isLoadingSlackUsers && slackUsers.length === 0 ? (
-                            <div className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
-                              Loading users...
-                            </div>
-                          ) : slackUsers.length === 0 ? (
-                            <div className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
-                              No users found
-                            </div>
-                          ) : (
-                            <>
-                              {slackUsers.map((person) => (
-                                <DropdownMenuItem
-                                  key={person.id}
-                                  onSelect={(e) => {
-                                    e.preventDefault()
-                                    handlePersonSelect(person)
-                                  }}
-                                  className="flex items-center cursor-pointer text-sm py-2 px-2 hover:!bg-gray-100 dark:hover:!bg-gray-700 focus:!bg-gray-100 dark:focus:!bg-gray-700 data-[highlighted]:!bg-gray-100 dark:data-[highlighted]:!bg-gray-700 rounded"
-                                >
-                                  <input 
-                                    type="checkbox" 
-                                    className="mr-3" 
-                                    checked={selectedPeople.has(person.id)}
-                                    onChange={() => {}}
-                                  />
-                                  <span className="text-gray-700 dark:text-gray-200">{person.name}</span>
-                                </DropdownMenuItem>
-                              ))}
-                              {isLoadingSlackUsers && (
-                                <div className="text-center py-2 text-sm text-gray-500 dark:text-gray-400">
-                                  Loading more...
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </>
+                      <SlackPeopleFilter
+                        filterValue={filterValue}
+                        onFilterChange={onFilterChange || (() => {})}
+                      />
                     )
                   ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'channels' ? (
-                    // Channels selection view
-                    <>
-                      <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center">
-                          <input
-                            type="text"
-                            placeholder="Search"
-                            value={slackChannelsSearchQuery}
-                            onChange={(e) => {
-                              const newQuery = e.target.value
-                              setSlackChannelsSearchQuery(newQuery)
-                              // Reset offset and fetch with new query
-                              setSlackChannelsOffset(0)
-                              fetchSlackChannels(newQuery, 0, false)
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => e.stopPropagation()}
-                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
-                          />
-                        </div>
-                      </div>
-                      <div 
-                        ref={slackChannelsContainerRef}
-                        onScroll={handleSlackChannelsScroll}
-                        className="px-2 max-h-60 overflow-y-auto"
-                      >
-                        {isLoadingSlackChannels && slackChannels.length === 0 ? (
-                          <div className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
-                            Loading channels...
-                          </div>
-                        ) : slackChannels.length === 0 ? (
-                          <div className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
-                            No channels found
-                          </div>
-                        ) : (
-                          <>
-                            {slackChannels.map((channel) => (
-                              <DropdownMenuItem
-                                key={channel.id}
-                                onSelect={(e) => {
-                                  e.preventDefault()
-                                  handleChannelSelect(channel)
-                                }}
-                                className="flex items-center cursor-pointer text-sm py-2 px-2 hover:!bg-gray-100 dark:hover:!bg-gray-700 focus:!bg-gray-100 dark:focus:!bg-gray-700 data-[highlighted]:!bg-gray-100 dark:data-[highlighted]:!bg-gray-700 rounded"
-                              >
-                                <input 
-                                  type="checkbox" 
-                                  className="mr-3" 
-                                  checked={selectedChannels.has(channel.id)}
-                                  onChange={() => {}}
-                                />
-                                <span className="text-gray-700 dark:text-gray-200">{channel.name}</span>
-                              </DropdownMenuItem>
-                            ))}
-                            {isLoadingSlackChannels && (
-                              <div className="text-center py-2 text-sm text-gray-500 dark:text-gray-400">
-                                Loading more...
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </>
+                    <SlackChannelFilter
+                      filterValue={filterValue}
+                      onFilterChange={onFilterChange || (() => {})}
+                    />
                   ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'timeline' ? (
-                    // Timeline selection view
-                    <>
-                      {!showDatePicker ? (
-                        <div className="px-2 max-h-60 overflow-y-auto">
-                          {[
-                            { label: 'Last week', value: 'last_week' },
-                            { label: 'Last month', value: 'last_month' },
-                            { label: 'Last 7 days', value: 'last_7_days' },
-                            { label: 'Last 14 days', value: 'last_14_days' },
-                            { label: 'Custom date', value: 'custom_date' }
-                          ].map((timelineOption) => (
-                            <DropdownMenuItem
-                              key={timelineOption.value}
-                              onSelect={(e) => {
-                                e.preventDefault()
-                                handleTimelineSelect(timelineOption)
-                              }}
-                              className="flex items-center cursor-pointer text-sm py-2 px-2 hover:!bg-gray-100 dark:hover:!bg-gray-700 focus:!bg-gray-100 dark:focus:!bg-gray-700 data-[highlighted]:!bg-gray-100 dark:data-[highlighted]:!bg-gray-700 rounded"
-                            >
-                              <input 
-                                type="checkbox" 
-                                className="mr-3" 
-                                checked={selectedTimelines.has(timelineOption.label)}
-                                onChange={() => {}}
-                              />
-                              <span className="text-gray-700 dark:text-gray-200">{timelineOption.label}</span>
-                            </DropdownMenuItem>
-                          ))}
-                        </div>
-                      ) : (
-                        // Date Range Picker
-                        <div className="p-4">
-                          <DateRangePicker
-                            dateRange={dateRange}
-                            setDateRange={setDateRange}
-                            currentMonth={currentMonth}
-                            setCurrentMonth={setCurrentMonth}
-                            onApply={() => {
-                              if (dateRange.start && dateRange.end) {
-                                const formatDate = (date: Date) => {
-                                  const day = String(date.getDate()).padStart(2, '0')
-                                  const month = String(date.getMonth() + 1).padStart(2, '0')
-                                  const year = date.getFullYear()
-                                  return `${day}/${month}/${year}`
-                                }
-                                
-                                const dateRangeString = `${formatDate(dateRange.start)} → ${formatDate(dateRange.end)}`
-                                
-                                // Add to selected timelines
-                                setSelectedTimelines(prev => {
-                                  const newSet = new Set(prev)
-                                  newSet.add(dateRangeString)
-                                  return newSet
-                                })
-                                
-                                // Build filter string
-                                const selectedPeopleNames = slackUsers
-                                  .filter(u => selectedPeople.has(u.id))
-                                  .map(u => `@${u.name}`)
-                                
-                                const selectedChannelIds = Array.from(selectedChannels).map(id => `#${id}`)
-                                
-                                const updatedTimelines = new Set(selectedTimelines)
-                                updatedTimelines.add(dateRangeString)
-                                const selectedTimelineNames = Array.from(updatedTimelines).map(t => `~${t}`)
-                                
-                                // Preserve existing Gmail people filters from the current filterValue
-                                const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-                                const existingGmailFilters = currentFilters.filter(f => 
-                                  f.startsWith('from:') || f.startsWith('to:') || f.startsWith('cc:') || f.startsWith('bcc:')
-                                )
-                                
-                                const combinedNames = [...existingGmailFilters, ...selectedPeopleNames, ...selectedChannelIds, ...selectedTimelineNames].join(', ')
-                                onFilterChange?.(combinedNames)
-                                
-                                // Reset date picker
-                                setShowDatePicker(false)
-                                setDateRange({ start: null, end: null })
-                              }
-                            }}
-                            onCancel={() => {
-                              setShowDatePicker(false)
-                              setDateRange({ start: null, end: null })
-                            }}
-                          />
-                        </div>
-                      )}
-                    </>
+                    <TimelineFilter
+                      filterValue={filterValue}
+                      onFilterChange={onFilterChange || (() => {})}
+                      selectedPeople={selectedPeople}
+                      selectedChannels={selectedChannels}
+                    />
                   ) : null}
                 </div>
               </DropdownMenuContent>
             </DropdownMenu>
             <div className="flex-1 flex flex-wrap items-center gap-1.5">
-              {/* Display selected filters as badges */}
-              {filterValue && filterValue.split(', ').filter(part => part.trim()).map((part, idx) => (
-                <div
-                  key={idx}
-                  className="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-2.5 py-1 rounded-md text-sm"
-                >
-                  <span>{part}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      // Remove this filter from the list
-                      const parts = filterValue.split(', ').filter(p => p.trim())
-                      const newParts = parts.filter((_, i) => i !== idx)
-                      onFilterChange?.(newParts.join(', '))
-                      
-                      // Also remove from appropriate state based on filter type
-                      if (part.startsWith('from:') || part.startsWith('to:') || part.startsWith('cc:') || part.startsWith('bcc:')) {
-                        // Gmail people filter
-                        const [fieldType, email] = part.split(':')
-                        const field = fieldType as 'from' | 'to' | 'cc' | 'bcc'
-                        setGmailPeopleFields(prev => ({
-                          ...prev,
-                          [field]: prev[field].filter(e => e !== email)
-                        }))
-                      } else if (part.startsWith('@')) {
-                        const personToRemove = slackUsers.find(u => `@${u.name}` === part)
-                        if (personToRemove) {
-                          setSelectedPeople(prev => {
-                            const newSet = new Set(prev)
-                            newSet.delete(personToRemove.id)
-                            return newSet
-                          })
-                        }
-                      } else if (part.startsWith('#')) {
-                        const channelToRemove = slackChannels.find(c => `#${c.id}` === part)
-                        if (channelToRemove) {
-                          setSelectedChannels(prev => {
-                            const newSet = new Set(prev)
-                            newSet.delete(channelToRemove.id)
-                            return newSet
-                          })
-                        }
-                      } else if (part.startsWith('~')) {
-                        // Remove timeline filter
-                        const timelineToRemove = part.substring(1) // Remove the ~ prefix
-                        setSelectedTimelines(prev => {
-                          const newSet = new Set(prev)
-                          newSet.delete(timelineToRemove)
-                          return newSet
-                        })
-                      }
-                    }}
-                    className="hover:bg-gray-200 dark:hover:bg-gray-600 rounded-sm p-0.5"
-                  >
-                    <LucideX className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-              {/* Input field for adding more filters */}
-              {(!filterValue || filterValue.split(', ').filter(n => n.trim()).length === 0) && (
-                <input
-                  type="text"
-                  placeholder='Add filters'
-                  className="flex-1 bg-transparent border-0 outline-none text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 min-w-[100px]"
-                  readOnly
-                />
-              )}
+              <FilterBadge
+                filters={filterValue?.split(', ').filter(f => f.trim()) || []}
+                onRemoveFilter={handleRemoveFilter}
+              />
             </div>
           </div>
         </div>
@@ -1331,11 +436,6 @@ export const availableIntegrationsList: IntegrationSource[] = [
     entity: "pdf_default",
     icon: getIcon("pdf", "pdf_default", { w: 16, h: 16, mr: 8 }),
   },
-]
-
-const AGENT_ENTITY_SEARCH_EXCLUSIONS: { app: string; entity: string }[] = [
-  { app: Apps.Slack, entity: SlackEntity.Message },
-  { app: Apps.Slack, entity: SlackEntity.User },
 ]
 
 interface User {
@@ -1529,14 +629,6 @@ function AgentComponent() {
   // State for managing multiple filters per app (Gmail and Slack)
   const [appFilters, setAppFilters] = useState<Record<string, string[]>>({})
   const [isIntegrationMenuOpen, setIsIntegrationMenuOpen] = useState(false)
-  const [selectedEntities, setSelectedEntities] = useState<FetchedDataSource[]>(
-    [],
-  )
-  const [entitySearchQuery, setEntitySearchQuery] = useState("")
-  const [entitySearchResults, setEntitySearchResults] = useState<
-    FetchedDataSource[]
-  >([])
-  const [showEntitySearchResults, setShowEntitySearchResults] = useState(false)
   const [selectedItemsInCollection, setSelectedItemsInCollection] = useState<
     Record<string, Set<string>>
   >({})
@@ -1791,57 +883,6 @@ function AgentComponent() {
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const { toast } = useToast()
-
-  useEffect(() => {
-    if (entitySearchQuery.trim() === "") {
-      setEntitySearchResults([])
-      setShowEntitySearchResults(false)
-      return
-    }
-
-    const searchEntities = async () => {
-      try {
-        const response = await api.search.$get({
-          query: {
-            query: entitySearchQuery,
-            app: Apps.Slack,
-            isAgentIntegSearch: true,
-          },
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          // @ts-ignore
-          const results = (data.results || []) as FetchedDataSource[]
-
-          const selectedEntityIds = new Set(
-            selectedEntities.map((entity) => entity.docId),
-          )
-
-          const filteredResults = results.filter((r) => {
-            const isAlreadySelected = selectedEntityIds.has(r.docId)
-
-            const isExcluded = AGENT_ENTITY_SEARCH_EXCLUSIONS.some(
-              (exclusion) =>
-                exclusion.app === r.app && exclusion.entity === r.entity,
-            )
-
-            return !isAlreadySelected && !isExcluded
-          })
-          setEntitySearchResults(filteredResults)
-          setShowEntitySearchResults(true)
-        }
-      } catch (error) {
-        console.error("Failed to search entities", error)
-      }
-    }
-
-    const debounceSearch = setTimeout(() => {
-      searchEntities()
-    }, 300)
-
-    return () => clearTimeout(debounceSearch)
-  }, [entitySearchQuery, selectedEntities])
 
   const [users, setUsers] = useState<User[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -2357,7 +1398,6 @@ function AgentComponent() {
     setIsGeneratingPrompt(false)
     setShouldHighlightPrompt(false)
     cleanupPromptGenerationEventSource()
-    setSelectedEntities([])
     setAppFilters({})
   }
 
@@ -2830,12 +1870,6 @@ function AgentComponent() {
 
   useEffect(() => {
     if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
-      setSelectedEntities(editingAgent.docIds || [])
-    }
-  }, [editingAgent, viewMode])
-
-  useEffect(() => {
-    if (editingAgent && (viewMode === "create" || viewMode === "edit")) {
       // Load existing user permissions only for private agents
       const loadAgentPermissions = async () => {
         try {
@@ -3008,10 +2042,54 @@ function AgentComponent() {
   }
 
   const handleSaveAgent = async () => {
+    // Helper function to parse timeline value into time range
+    const parseTimelineValue = (timelineValue: string): { startDate: number; endDate: number } | null => {
+      const now = Date.now()
+      const dayInMs = 24 * 60 * 60 * 1000
+      
+      if (timelineValue === 'Last week') {
+        return {
+          startDate: Math.floor((now - 7 * dayInMs) / 1000),
+          endDate: Math.floor(now / 1000)
+        }
+      } else if (timelineValue === 'Last month') {
+        return {
+          startDate: Math.floor((now - 30 * dayInMs) / 1000),
+          endDate: Math.floor(now / 1000)
+        }
+      } else if (timelineValue === 'Last 7 days') {
+        return {
+          startDate: Math.floor((now - 7 * dayInMs) / 1000),
+          endDate: Math.floor(now / 1000)
+        }
+      } else if (timelineValue === 'Last 14 days') {
+        return {
+          startDate: Math.floor((now - 14 * dayInMs) / 1000),
+          endDate: Math.floor(now / 1000)
+        }
+      } else if (timelineValue.includes('→')) {
+        // Custom date range format: "DD/MM/YYYY → DD/MM/YYYY"
+        const [startStr, endStr] = timelineValue.split('→').map(s => s.trim())
+        const parseDate = (dateStr: string) => {
+          const [day, month, year] = dateStr.split('/').map(Number)
+          return Math.floor(new Date(year, month - 1, day).getTime() / 1000)
+        }
+        return {
+          startDate: parseDate(startStr),
+          endDate: parseDate(endStr)
+        }
+      }
+      
+      return null
+    }
+
     // Helper function to parse filter strings into structured filter objects
     const parseFilters = (filterStrings: string[], appId: string) => {
       const filters: any[] = []
       let filterId = 1
+      
+      // Collect all time ranges first to merge them later
+      const allTimeRanges: Array<{ startDate: number; endDate: number }> = []
       
       for (const filterString of filterStrings) {
         if (!filterString || !filterString.trim()) continue
@@ -3028,9 +2106,6 @@ function AgentComponent() {
         // Parse Slack filters (people and channels) - store docIds
         const senderIds: string[] = []
         const channelIds: string[] = []
-        
-        // Parse timeline filters
-        let timeRange: { startDate: number; endDate: number } | undefined
         
         for (const part of filterParts) {
           if (part.startsWith('from:')) {
@@ -3055,58 +2130,44 @@ function AgentComponent() {
             const channelName = part.substring(1)
             channelIds.push(channelName)
           } else if (part.startsWith('~')) {
-            // Parse timeline filters
+            // Parse timeline filters and collect them
             const timelineValue = part.substring(1)
-            const now = Date.now()
-            const dayInMs = 24 * 60 * 60 * 1000
-            
-            if (timelineValue === 'Last week') {
-              timeRange = {
-                startDate: Math.floor((now - 7 * dayInMs) / 1000),
-                endDate: Math.floor(now / 1000)
-              }
-            } else if (timelineValue === 'Last month') {
-              timeRange = {
-                startDate: Math.floor((now - 30 * dayInMs) / 1000),
-                endDate: Math.floor(now / 1000)
-              }
-            } else if (timelineValue === 'Last 7 days') {
-              timeRange = {
-                startDate: Math.floor((now - 7 * dayInMs) / 1000),
-                endDate: Math.floor(now / 1000)
-              }
-            } else if (timelineValue === 'Last 14 days') {
-              timeRange = {
-                startDate: Math.floor((now - 14 * dayInMs) / 1000),
-                endDate: Math.floor(now / 1000)
-              }
-            } else if (timelineValue.includes('→')) {
-              // Custom date range format: "DD/MM/YYYY → DD/MM/YYYY"
-              const [startStr, endStr] = timelineValue.split('→').map(s => s.trim())
-              const parseDate = (dateStr: string) => {
-                const [day, month, year] = dateStr.split('/').map(Number)
-                return Math.floor(new Date(year, month - 1, day).getTime() / 1000)
-              }
-              timeRange = {
-                startDate: parseDate(startStr),
-                endDate: parseDate(endStr)
-              }
+            const timeRange = parseTimelineValue(timelineValue)
+            if (timeRange) {
+              allTimeRanges.push(timeRange)
             }
           }
         }
         
-        // Add parsed fields to filter object
+        // Add parsed fields to filter object (excluding timeRange for now)
         if (fromEmails.length > 0) filter.from = fromEmails
         if (toEmails.length > 0) filter.to = toEmails
         if (ccEmails.length > 0) filter.cc = ccEmails
         if (bccEmails.length > 0) filter.bcc = bccEmails
         if (senderIds.length > 0) filter.senderId = senderIds
         if (channelIds.length > 0) filter.channelId = channelIds
-        if (timeRange) filter.timeRange = timeRange
         
-        // Only add filter if it has at least one field
+        // Only add filter if it has at least one non-timeline field
         if (Object.keys(filter).length > 1) {
           filters.push(filter)
+        }
+      }
+      
+      // Merge all time ranges into the longest one (earliest start, latest end)
+      if (allTimeRanges.length > 0) {
+        const mergedTimeRange = {
+          startDate: Math.min(...allTimeRanges.map(r => r.startDate)),
+          endDate: Math.max(...allTimeRanges.map(r => r.endDate))
+        }
+        
+        // Add merged time range to the first filter, or create a new one if no filters exist
+        if (filters.length > 0) {
+          filters[0].timeRange = mergedTimeRange
+        } else {
+          filters.push({
+            id: 1,
+            timeRange: mergedTimeRange
+          })
         }
       }
       
@@ -3131,11 +2192,6 @@ function AgentComponent() {
     const dataSourceIds: string[] = []
     let hasDataSourceSelections = false
 
-    // Check for Slack channels in selected entities
-    const slackChannels = selectedEntities.filter(
-      (entity) =>
-        entity.app === Apps.Slack && entity.entity === SlackEntity.Channel,
-    )
     // Process each selected integration
     for (const [integrationId, isSelected] of Object.entries(
       selectedIntegrations,
@@ -3229,14 +2285,6 @@ function AgentComponent() {
       }
     }
 
-    // Handle Slack channels from selected entities
-    if (slackChannels.length > 0) {
-      appIntegrationsObject["slack"] = {
-        itemIds: slackChannels.map((channel) => channel.docId),
-        selectedAll: false,
-      }
-    }
-
     // Add collection selections if any exist
     if (hasCollectionSelections) {
       appIntegrationsObject["knowledge_base"] = {
@@ -3261,7 +2309,6 @@ function AgentComponent() {
       isPublic: isPublic,
       isRagOn: isRagOn,
       appIntegrations: appIntegrationsObject,
-      docIds: selectedEntities,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
@@ -3623,7 +2670,6 @@ function AgentComponent() {
         })
         return newSelections
       })
-      setSelectedEntities([])
     }
     // Also update the test agent's RAG status when the form's RAG changes,
     // but only if we are testing the current form config.
@@ -3815,7 +2861,6 @@ function AgentComponent() {
         isPublic: isPublic,
         isRagOn: isRagOn,
         appIntegrations: appIntegrationsObject,
-        docIds: selectedEntities,
         userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
         allowWebSearch: false, // Not supported in form config
       }
@@ -5763,74 +4808,6 @@ function AgentComponent() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                 </div>
-
-                {isRagOn && (
-                  <div>
-                    <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
-                      Specific Entities
-                    </Label>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
-                      Search for and select specific entities for your agent to
-                      use.
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
-                      {selectedEntities.length > 0 ? (
-                        selectedEntities.map((entity) => (
-                          <CustomBadge
-                            key={entity.docId}
-                            text={entity.name}
-                            onRemove={() =>
-                              setSelectedEntities((prev) =>
-                                prev.filter((c) => c.docId !== entity.docId),
-                              )
-                            }
-                          />
-                        ))
-                      ) : (
-                        <span className="text-sm text-gray-500 dark:text-gray-300">
-                          Selected entities will be shown here
-                        </span>
-                      )}
-                    </div>
-                    <div className="relative mt-2">
-                      <Input
-                        placeholder="Search for specific entities..."
-                        value={entitySearchQuery}
-                        onChange={(e) => setEntitySearchQuery(e.target.value)}
-                        className="bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full dark:text-gray-100"
-                      />
-                      {showEntitySearchResults && (
-                        <Card className="absolute z-10 mt-1 shadow-lg w-full dark:bg-slate-800 dark:border-slate-700">
-                          <CardContent className="p-0 max-h-[150px] overflow-y-auto w-full scrollbar-thin">
-                            {entitySearchResults.length > 0 ? (
-                              entitySearchResults.map((entity) => (
-                                <div
-                                  key={entity.docId}
-                                  className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
-                                  onClick={() => {
-                                    setSelectedEntities((prev) => [
-                                      ...prev,
-                                      entity,
-                                    ])
-                                    setEntitySearchQuery("")
-                                  }}
-                                >
-                                  <p className="text-sm font-medium">
-                                    {entity.name}
-                                  </p>
-                                </div>
-                              ))
-                            ) : (
-                              <div className="p-3 text-center text-gray-500">
-                                No entities found.
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-                      )}
-                    </div>
-                  </div>
-                )}
 
                 {!isPublic && (
                   <div>
