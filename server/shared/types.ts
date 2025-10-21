@@ -543,6 +543,11 @@ export enum UserAgentRole {
   Shared = "shared", // User who has been shared the agent (general access)
 }
 
+export enum UserWorkflowRole {
+  Owner = "owner", 
+  Shared = "shared",
+}
+
 export enum MessageFeedback {
   Like = "like",
   Dislike = "dislike",

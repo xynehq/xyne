@@ -23,7 +23,9 @@ import {
   workflowStepExecution,
   workflowTool,
   toolExecution,
-} from "@/db/schema/workflows"
+  userWorkflowPermissions,
+  users,
+} from "@/db/schema"
 import { getUserFromJWT } from "@/db/user"
 import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { type CreateAgentPayload } from "./agent"
@@ -79,7 +81,7 @@ import {
   getWorkflowExecutionByIdWithChecks, 
   getWorkflowStepTemplateById, 
   getWorkflowStepTemplatesByTemplateId, 
-  getWorkflowTemplateByIdWithPublicCheck, 
+  getWorkflowTemplateByIdWithPermissionCheck, 
   updateWorkflowTemplate,
   createWorkflowExecution,
   createWorkflowStepExecutionsFromSteps,
@@ -220,7 +222,7 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
     )
     const templateId = c.req.param("templateId")
 
-    const template = await getWorkflowTemplateByIdWithPublicCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -308,7 +310,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     }
 
     // Get template and validate (allow access to user's own or public templates)
-    const template = await getWorkflowTemplateByIdWithPublicCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -665,7 +667,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     const templateId = c.req.param("templateId")
     const requestData = await c.req.json()
 
-    const template = await getWorkflowTemplateByIdWithPublicCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -2449,10 +2451,22 @@ export const ExecuteTemplateApi = ExecuteWorkflowTemplateApi
 // Update workflow template
 export const UpdateWorkflowTemplateApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const templateId = c.req.param("templateId")
     const requestData = await c.req.json()
+    
+    const existingTemplate = getWorkflowTemplateByIdWithPermissionCheck(
+      db,
+      templateId,
+      user.workspaceId,
+      user.id
+    )
 
-    const template = await updateWorkflowTemplate(
+    if (!existingTemplate) {
+      return c.json({ message: "Workflow not found or access denied"}, 404)
+    }
+
+    const updatedTemplate = await updateWorkflowTemplate(
       db,
       templateId,
       {
@@ -2466,7 +2480,7 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
 
     return c.json({
       success: true,
-      data: template,
+      data: updatedTemplate,
     })
   } catch (error) {
     Logger.error(error, "Failed to update workflow template")
@@ -2806,7 +2820,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     const templateId = c.req.param("templateId")
     const requestData = await c.req.json()
 
-    const template = await getWorkflowTemplateByIdWithPublicCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -2907,7 +2921,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     }
 
     // 5. Return the complete updated template with new step
-    const updatedTemplate = await getWorkflowTemplateByIdWithPublicCheck(
+    const updatedTemplate = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -2973,7 +2987,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     const templateId = stepToDelete.workflowTemplateId
 
     // 2. Get the workflow template
-    const template = await getWorkflowTemplateByIdWithPublicCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -3095,7 +3109,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     }
 
     // 9. Get updated workflow data
-    const updatedTemplate = await getWorkflowTemplateByIdWithPublicCheck(
+    const updatedTemplate = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,

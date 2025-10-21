@@ -322,7 +322,9 @@ export const executeWorkflowSchema = z.object({
 
 // Additional schemas required by server.ts
 export const updateWorkflowTemplateSchema =
-  createWorkflowTemplateSchema.partial()
+  createWorkflowTemplateSchema.partial().extend({
+    userEmails: z.array(z.email())
+  })
 
 // Complex workflow template creation schema for frontend workflow builder
 export const createComplexWorkflowTemplateSchema = z.object({
