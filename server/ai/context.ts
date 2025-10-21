@@ -65,17 +65,11 @@ const constructFileContext = (
     maxSummaryChunks = fields.chunks_summary?.length
   }
   // Handle metadata that might already be an object or a string that needs parsing
-  // const parsedMetadata =
-  //   typeof fields.metadata === "string"
-  //     ? JSON.parse(fields.metadata)
-  //     : fields.metadata
-  // const folderName = parsedMetadata.parents?.[0]?.folderName || ""
-  const parsedMetadata = fields.metadata
-    ? typeof fields.metadata === "string"
+  const parsedMetadata =
+    typeof fields.metadata === "string"
       ? JSON.parse(fields.metadata)
       : fields.metadata
-    : null
-  const folderName = parsedMetadata?.parents?.[0]?.folderName || ""
+  const folderName = parsedMetadata.parents?.[0]?.folderName || ""
   let chunks: ScoredChunk[] = []
   if (fields.matchfeatures) {
     chunks = getSortedScoredChunks(

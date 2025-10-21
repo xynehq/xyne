@@ -18,7 +18,8 @@
       "./server/eval-data",
       "./server/tuning-data",
       "./deployment/grafana",
-      "./server/qa_gen"
+      "./server/qa_gen",
+      "./server/threadId_data.json"
     ]
   },
   "formatter": {

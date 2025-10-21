@@ -1489,9 +1489,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   // Expand email threads in the results
   // Skip thread expansion if original intent was GetItems (exact count requested)
   if (classification.type !== QueryType.GetItems) {
-    loggerWithChild({ email: email }).info(
-      "[av av] Calling expandEmailThreadsInResults in generateIterativeTimeFilterAndQueryRewrite",
-    )
     // searchResults.root.children = await expandEmailThreadsInResults(
     //   searchResults.root.children || [],
     //   email,
@@ -1561,9 +1558,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // Expand email threads in the results
       // Skip thread expansion if original intent was GetItems (exact count requested)
       if (classification.type !== QueryType.GetItems) {
-        loggerWithChild({ email: email }).info(
-          "[av av] Calling expandEmailThreadsInResults in generateIterativeTimeFilterAndQueryRewrite",
-        )
         // results.root.children = await expandEmailThreadsInResults(
         //   results.root.children || [],
         //   email,

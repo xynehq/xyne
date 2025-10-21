@@ -3,6 +3,8 @@
 #!/bin/sh
 set -e
 
+
+
 mkdir -p models
 TOKENIZER_URL=""
 MODEL_URL=""

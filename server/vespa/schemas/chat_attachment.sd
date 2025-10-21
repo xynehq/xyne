@@ -79,6 +79,7 @@ schema chat_attachment {
     }
   }
 
+
   field content_embeddings type tensor<bfloat16>(p{}, v[384]) {
     indexing: input chunks | embed | attribute | index
     attribute {

@@ -1,5 +1,3 @@
-#!/usr/bin/env bun
-
 // --- Load Environment Variables ---
 // import { config as loadEnv } from 'dotenv';
 // import { resolve } from 'path';
@@ -14,7 +12,7 @@ import { readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 
 // Use environment variable for test user email, or default to a test email
-const TEST_USER_EMAIL = "arshith.balaraju@juspay.in"
+const TEST_USER_EMAIL = "telkar.varasree@juspay.in"
 
 const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET!
 const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET!
@@ -786,7 +784,8 @@ async function testBothModes(
   console.log("=".repeat(80))
 
   // Test regular mode
-  const regularResult = await testAPI(query, cookies, false)
+  // const regularResult = await testAPI(query, cookies, false);
+  const regularResult = null
 
   // Small delay between requests
   await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -816,14 +815,15 @@ async function main() {
 
   try {
     // --- File and Data Handling ---
-    const qaInputPath = join(
+    const qaInputPath = join(__dirname, "flipkart_scenario_qa.json")
+    const nonAgenticOutputPath = join(
       __dirname,
-      "qa_gen",
-      "sample_answers",
-      "qa_output_v1.json",
+      "non_agentic_answers_flipkart_new.json",
     )
-    const nonAgenticOutputPath = join(__dirname, "non_agentic_answers.json")
-    const agenticOutputPath = join(__dirname, "agentic_answers.json")
+    const agenticOutputPath = join(
+      __dirname,
+      "agentic_answers_flipkart_new.json",
+    )
 
     console.log(`\n📂 Reading QA data from: ${qaInputPath}`)
     const qaData = JSON.parse(readFileSync(qaInputPath, "utf-8"))
@@ -832,7 +832,7 @@ async function main() {
     // --- Slice Configuration ---
     // Adjust the slice range to process a subset of questions
     const startIndex = 0
-    const endIndex = 2 // Process first 5 questions. Change this to process more.
+    const endIndex = 45 // Process first 100 questions. Change this to process more.
     const questionsToProcess = qaData.slice(startIndex, endIndex)
     console.log(
       `🔪 Processing a slice of ${questionsToProcess.length} questions (from index ${startIndex} to ${endIndex}).\n`,
