@@ -1,0 +1,428 @@
+
+schema zoho_ticket {
+
+  document zoho_ticket {
+
+    ##########################################
+    # 1. Identifiers (mapping to Zoho backend)
+    ##########################################
+    field ticketId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field threadId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field commentId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field contactId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field assigneeId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field teamId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field departmentId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+     
+    field orgId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    # Required integration fields
+    field docId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+
+    ##########################################
+    # 2. Core Content
+    ##########################################
+    field subject type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+    field description type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+    field threads_text type array<string> {
+      indexing: index | summary
+      index: enable-bm25
+    }
+    field comments_text type array<string> {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+    ##########################################
+    # 3. Metadata
+    ##########################################
+    field status type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field priority type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field category type string {
+      indexing: attribute | summary
+    }
+    field subCategory type string {
+      indexing: attribute | summary
+    }
+    field channel type string {
+      indexing: attribute | summary
+    }
+    field departmentName type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+    ##########################################
+    # 4. People
+    ##########################################
+    field from type string {
+      indexing: index | summary | attribute
+      attribute: fast-search
+      index: enable-bm25
+    }
+    field to type array<string> {
+      indexing: index | summary | attribute
+      attribute: fast-search
+      index: enable-bm25
+    }
+    field cc type array<string> {
+      indexing: index | summary | attribute
+      attribute: fast-search
+      index: enable-bm25
+    }
+    field commenters type array<string> {
+      indexing: index | summary | attribute
+      attribute: fast-search
+      index: enable-bm25
+    }
+    field commentMentions type array<string> {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    ##########################################
+    # 5. Flags (boolean-ish)
+    ##########################################
+    field isSpam type bool { indexing: attribute | summary }
+    field isEscalated type bool { indexing: attribute | summary }
+    field isOverdue type bool { indexing: attribute | summary }
+
+    ##########################################
+    # 5.5. Permissions
+    ##########################################
+    field permissions type array<string> {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    ##########################################
+    # 6. Time Fields
+    ##########################################
+    field createdTime type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field modifiedTime type long {
+      indexing: attribute | summary
+    }
+    field closedTime type long {
+      indexing: attribute | summary
+    }
+    field dueDate type long {
+      indexing: attribute | summary
+    }
+
+    ##########################################
+    # 7. Tags
+    ##########################################
+    field labels type array<string> {
+      indexing: index | summary | attribute
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+    ##########################################
+    # 8. Embeddings (semantic search)
+    ##########################################
+    field subject_embedding type tensor<bfloat16>(x[384]) {
+      indexing: attribute | index
+      attribute {
+        distance-metric: angular
+      }
+    }
+    field description_embedding type tensor<bfloat16>(x[384]) {
+      indexing: attribute | index
+      attribute {
+        distance-metric: angular
+      }
+    }
+    field thread_embeddings type tensor<bfloat16>(x[384]) {
+      indexing: attribute | index
+      attribute {
+        distance-metric: angular
+      }
+    }
+    field comment_embeddings type tensor<bfloat16>(x[384]) {
+      indexing: attribute | index
+      attribute {
+        distance-metric: angular
+      }
+    }
+
+    ##########################################
+    # 9. Fuzzy Search
+    ##########################################
+    field subject_fuzzy type string {
+      indexing: input subject | index
+      index: enable-bm25
+      match {
+        gram
+        gram-size: 3
+      }
+    }
+  }
+
+  ##########################################
+  # 10. Fieldsets
+  ##########################################
+  fieldset default {
+    fields: subject, description, threads_text, comments_text
+  }
+
+  fieldset autocomplete {
+    fields: subject
+  }
+
+  ##########################################
+  # 11. Rank Profiles
+  ##########################################
+
+  # Pure lexical BM25
+  rank-profile default_bm25 {
+    constants {
+      BM25_SUBJECT_WEIGHT: 2.0
+      BM25_DESCRIPTION_WEIGHT: 1.5
+      BM25_THREADS_WEIGHT: 1.0
+      BM25_COMMENTS_WEIGHT: 0.5
+    }
+
+    first-phase {
+      expression: 
+        (BM25_SUBJECT_WEIGHT * bm25(subject)) +
+        (BM25_DESCRIPTION_WEIGHT * bm25(description)) +
+        (BM25_THREADS_WEIGHT * bm25(threads_text)) +
+        (BM25_COMMENTS_WEIGHT * bm25(comments_text))
+    }
+  }
+
+  # Pure embeddings
+  rank-profile hybrid_vector {
+    inputs {
+      query(q) tensor<bfloat16>(v[384])
+      query(alpha) double: 1.0
+    }
+    constants {
+      THREAD_WEIGHT: 0.75
+      DESCRIPTION_WEIGHT: 0.20
+      SUBJECT_WEIGHT: 0.05
+    }
+    first-phase {
+      expression: 
+        query(alpha) * (
+          (THREAD_WEIGHT * closeness(thread_embeddings, query(q))) +
+          (DESCRIPTION_WEIGHT * closeness(description_embedding, query(q))) +
+          (SUBJECT_WEIGHT * closeness(subject_embedding, query(q)))
+        )
+    }
+  }
+
+  # Hybrid (semantic + lexical)
+  rank-profile hybrid {
+    inputs {
+      query(q) tensor<bfloat16>(v[384])
+      query(alpha) double
+    }
+    constants {
+      THREAD_EMB_WEIGHT: 0.75
+      DESCRIPTION_EMB_WEIGHT: 0.20
+      SUBJECT_EMB_WEIGHT: 0.05
+
+      BM25_SUBJECT_WEIGHT: 2.0
+      BM25_DESCRIPTION_WEIGHT: 1.5
+      BM25_THREADS_WEIGHT: 1.0
+      BM25_COMMENTS_WEIGHT: 0.5
+    }
+    first-phase {
+      expression: 
+        (query(alpha) * (
+          (THREAD_EMB_WEIGHT * closeness(thread_embeddings, query(q))) +
+          (DESCRIPTION_EMB_WEIGHT * closeness(description_embedding, query(q))) +
+          (SUBJECT_EMB_WEIGHT * closeness(subject_embedding, query(q)))
+        ))
+        +
+        ((1 - query(alpha)) * (
+          (BM25_SUBJECT_WEIGHT * bm25(subject)) +
+          (BM25_DESCRIPTION_WEIGHT * bm25(description)) +
+          (BM25_THREADS_WEIGHT * bm25(threads_text)) +
+          (BM25_COMMENTS_WEIGHT * bm25(comments_text))
+        ))
+    }
+  }
+
+  # Hybrid + Recency boost
+  rank-profile recency_boosted {
+    inputs {
+      query(q) tensor<bfloat16>(v[384])
+      query(alpha) double
+      query(decay_rate) double
+    }
+    constants {
+      THREAD_EMB_WEIGHT: 0.75
+      DESCRIPTION_EMB_WEIGHT: 0.20
+      SUBJECT_EMB_WEIGHT: 0.05
+
+      BM25_SUBJECT_WEIGHT: 2.0
+      BM25_DESCRIPTION_WEIGHT: 1.5
+      BM25_THREADS_WEIGHT: 1.0
+      BM25_COMMENTS_WEIGHT: 0.5
+
+      ONE_DAY_IN_SECONDS: 86400.0
+    }
+    function recency() {
+      expression: 1 / (1 + query(decay_rate) * sqrt((now() - attribute(createdTime)) / ONE_DAY_IN_SECONDS))
+    }
+    first-phase {
+      expression: (
+        (query(alpha) * (
+          (THREAD_EMB_WEIGHT * closeness(thread_embeddings, query(q))) +
+          (DESCRIPTION_EMB_WEIGHT * closeness(description_embedding, query(q))) +
+          (SUBJECT_EMB_WEIGHT * closeness(subject_embedding, query(q)))
+        ))
+        +
+        ((1 - query(alpha)) * (
+          (BM25_SUBJECT_WEIGHT * bm25(subject)) +
+          (BM25_DESCRIPTION_WEIGHT * bm25(description)) +
+          (BM25_THREADS_WEIGHT * bm25(threads_text)) +
+          (BM25_COMMENTS_WEIGHT * bm25(comments_text))
+        ))
+      ) * recency()
+    }
+  }
+
+  # Hybrid + People boost
+  rank-profile people_ranked {
+    inputs {
+      query(q) tensor<bfloat16>(v[384])
+      query(alpha) double
+      query(decay_rate) double
+    }
+    constants {
+      THREAD_EMB_WEIGHT: 0.75
+      DESCRIPTION_EMB_WEIGHT: 0.20
+      SUBJECT_EMB_WEIGHT: 0.05
+
+      PEOPLE_FROM_WEIGHT: 2.0
+      PEOPLE_TO_WEIGHT: 1.5
+      PEOPLE_CC_WEIGHT: 1.0
+      PEOPLE_COMMENTERS_WEIGHT: 0.5
+
+      ONE_DAY_IN_SECONDS: 86400.0
+    }
+    function peopleRank() {
+      expression: 
+        (PEOPLE_FROM_WEIGHT * nativeRank(from)) +
+        (PEOPLE_TO_WEIGHT * nativeRank(to)) +
+        (PEOPLE_CC_WEIGHT * nativeRank(cc)) +
+        (PEOPLE_COMMENTERS_WEIGHT * nativeRank(commenters))
+    }
+    function recency() {
+      expression: 1 / (1 + query(decay_rate) * sqrt((now() - attribute(createdTime)) / ONE_DAY_IN_SECONDS))
+    }
+    first-phase {
+      expression: (
+        (query(alpha) * (
+          (THREAD_EMB_WEIGHT * closeness(thread_embeddings, query(q))) +
+          (DESCRIPTION_EMB_WEIGHT * closeness(description_embedding, query(q))) +
+          (SUBJECT_EMB_WEIGHT * closeness(subject_embedding, query(q)))
+        ))
+        +
+        ((1 - query(alpha)) * peopleRank)
+      ) * recency()
+    }
+  }
+
+  # Autocomplete
+  rank-profile autocomplete {
+    first-phase {
+      expression: bm25(subject_fuzzy)
+    }
+  }
+
+  ##########################################
+  # 12. Document Summaries
+  ##########################################
+
+  # Default summary (search results)
+  document-summary default {
+    summary ticketId {}
+    summary subject {}
+    summary description { bolding: on }
+    summary threads_snippet { bolding: on source: threads_text }
+    summary createdTime {}
+    summary status {}
+    summary priority {}
+  }
+
+  # Autocomplete summary
+  document-summary autocomplete {
+    summary ticketId {}
+    summary subject {}
+  }
+
+  # Detailed summary (full ticket view)
+  document-summary detailed {
+    summary ticketId {}
+    summary subject {}
+    summary description {}
+    summary threads_text {}
+    summary comments_text {}
+    summary from {}
+    summary to {}
+    summary cc {}
+    summary commenters {}
+    summary createdTime {}
+    summary status {}
+    summary priority {}
+    summary labels {}
+  }
+}

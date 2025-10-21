@@ -12,7 +12,7 @@ const querystring = require('querystring');
 const CONFIG = {
   CLIENT_ID: "1000.HRFLWOF4DAFL4SK4IZ3UKXCI6CRQJV",
   CLIENT_SECRET: "55898a4588dd60641f5bf5a00575cca7f82e580989",
-  REFRESH_TOKEN: "1000.bd85f643e64432a71d6c8c8a9eb3cde5.f984ab9628a579ebd5b38123accb5730",
+  REFRESH_TOKEN: "1000.1c79e331da83dfa2a8244ef1f0a3bfde.9716adf4510ba82244f7ad5078fefe90",
   ACCOUNTS_URL: "https://accounts.zoho.com",
   SCOPE: "Desk.tickets.READ"
 };

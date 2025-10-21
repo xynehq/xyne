@@ -1,0 +1,9 @@
+{
+  "access_token": "1000.abcd3e95a49a9707645dfbfdbcbbd2d1.e4ad91b5dbaab5dc383faa56e10ce820",
+  "refresh_token": "1000.1c79e331da83dfa2a8244ef1f0a3bfde.9716adf4510ba82244f7ad5078fefe90",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "Desk.tickets.READ",
+  "generated_at": "2025-10-17T09:24:16.930Z",
+  "data_center": "com"
+}
