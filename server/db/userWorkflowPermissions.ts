@@ -1,9 +1,13 @@
 import {
   userWorkflowPermissions,
+  workflowTemplate,
+  users,
   insertUserWorkflowPermissionSchema,
   selectUserWorkflowPermissionSchema,
+  userWorkflowPermissionWithDetailsSchema,
   type InsertUserWorkflowPermission,
   type SelectUserWorkflowPermission,
+  type UserWorkflowPermissionWithDetails,
 } from "@/db/schema"
 import { UserWorkflowRole } from "@/shared/types"
 import type { TxnOrClient } from "@/types"
@@ -97,4 +101,82 @@ export const revokeUserWorkflowPermission = async (
     .returning()
 
   return result.length > 0
+}
+
+/**
+ * Sync user permissions for a workflow based on provided email list
+ * This function will:
+ * 1. Add permissions for new users (as Shared role)
+ * 2. Remove permissions for users not in the list (except Owner)
+ * 3. Keep existing permissions for users still in the list
+ */
+export const syncWorkflowUserPermissions = async (
+  trx: TxnOrClient,
+  workflowId: number,
+  userEmails: string[],
+  workspaceId: number,
+): Promise<void> => {
+  // Get current permissions for this workflow
+  const currentPermissions = await trx
+    .select({
+      userId: userWorkflowPermissions.userId,
+      userEmail: users.email,
+      role: userWorkflowPermissions.role,
+    })
+    .from(userWorkflowPermissions)
+    .innerJoin(users, eq(userWorkflowPermissions.userId, users.id))
+    .where(eq(userWorkflowPermissions.workflowId, workflowId))
+
+  // Get users by email in the workspace
+  const usersInWorkspace = await trx
+    .select({
+      id: users.id,
+      email: users.email,
+    })
+    .from(users)
+    .where(
+      and(eq(users.workspaceId, workspaceId), inArray(users.email, userEmails)),
+    )
+
+  const currentUserEmails = currentPermissions.map((p) => p.userEmail)
+  const newUserEmails = userEmails.filter(
+    (email) => !currentUserEmails.includes(email),
+  )
+  const removedUserEmails = currentUserEmails.filter(
+    (email) =>
+      !userEmails.includes(email) &&
+      currentPermissions.find((p) => p.userEmail === email)?.role !==
+        UserWorkflowRole.Owner,
+  )
+
+  // Add permissions for new users
+  for (const email of newUserEmails) {
+    const user = usersInWorkspace.find((u) => u.email === email)
+    if (user) {
+      await grantUserWorkflowPermission(trx, {
+        userId: user.id,
+        workflowId,
+        role: UserWorkflowRole.Shared,
+      })
+    }
+  }
+
+  // Remove permissions for users no longer in the list (except Owner)
+  if (removedUserEmails.length > 0) {
+    const usersToRemove = await trx
+      .select({
+        userId: users.id,
+      })
+      .from(users)
+      .where(
+        and(
+          eq(users.workspaceId, workspaceId),
+          inArray(users.email, removedUserEmails),
+        ),
+      )
+
+    for (const user of usersToRemove) {
+      await revokeUserWorkflowPermission(trx, user.userId, workflowId)
+    }
+  }
 }

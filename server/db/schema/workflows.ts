@@ -335,6 +335,8 @@ export const executeWorkflowSchema = z.object({
 // Additional schemas required by server.ts
 export const updateWorkflowTemplateSchema =
   createWorkflowTemplateSchema.partial().extend({
+    isPublic: z.boolean().optional(),
+    status: z.enum(WorkflowStatus).optional(),
     userEmails: z
       .array(z.email())
       .min(1)

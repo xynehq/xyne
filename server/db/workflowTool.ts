@@ -98,6 +98,10 @@ export const getAllWorkflowTools = async (
   return z.array(selectWorkflowToolSchema).parse(results)
 }
 
+/*
+  Doesn't check for user access, 
+  only to be used with already authenticated toolIds
+*/
 export const getWorkflowToolsByIds = async (
   trx: TxnOrClient,
   toolIds: string[],

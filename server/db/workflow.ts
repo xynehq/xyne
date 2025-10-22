@@ -189,7 +189,7 @@ export const getAccessibleWorkflowTemplates = async (
   return z.array(selectWorkflowTemplateSchema).parse(templates)
 }
 
-export const updateWorkflowTemplate = async (
+export const updateWorkflowTemplateByExternalId = async (
   trx: TxnOrClient,
   external_id: string,
   data: Partial<InsertWorkflowTemplate>,

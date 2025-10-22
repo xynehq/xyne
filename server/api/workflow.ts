@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
-import { publicWorkflowTemplateSchema, type SelectAgent } from "../db/schema"
+import { publicWorkflowTemplateSchema, type SelectAgent, type UpdateWorkflowTemplateRequest } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
 
 
@@ -82,11 +82,14 @@ import {
   getWorkflowStepTemplateById, 
   getWorkflowStepTemplatesByTemplateId, 
   getWorkflowTemplateByExternalIdWithPermissionCheck, 
-  updateWorkflowTemplate,
+  updateWorkflowTemplateByExternalId,
   createWorkflowExecution,
   createWorkflowStepExecutionsFromSteps,
   getWorkflowTemplateByIdWithPermissionCheck,
 } from "@/db/workflow"
+import {
+  syncWorkflowUserPermissions,
+} from "@/db/userWorkflowPermissions"
 import {
   getAccessibleWorkflowTools,
   getWorkflowToolById,
@@ -2413,7 +2416,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       rootStepId = rootStep?.id || createdSteps[0].id
 
       // Update template with root step ID
-      await updateWorkflowTemplate(
+      await updateWorkflowTemplateByExternalId(
         db,
         templateExternalId,
         {
@@ -2451,7 +2454,7 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const templateExternalId = c.req.param("templateExternalId")
-    const requestData = await c.req.json()
+    const requestData = await c.req.json<UpdateWorkflowTemplateRequest>()
     
     const existingTemplate = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
@@ -2464,21 +2467,63 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
       return c.json({ message: "Workflow not found or access denied"}, 404)
     }
 
-    const updatedTemplate = await updateWorkflowTemplate(
-      db,
-      templateExternalId,
-      {
-        name: requestData.name,
-        description: requestData.description,
-        version: requestData.version,
-        status: requestData.status,
-        config: requestData.config,
+    // Update workflow and sync user permissions in a transaction
+    const result = await db.transaction(async (trx) => {
+      const updatedTemplate = await updateWorkflowTemplateByExternalId(
+        trx,
+        templateExternalId,
+        {
+          name: requestData.name,
+          description: requestData.description,
+          version: requestData.version,
+          status: requestData.status,
+          config: requestData.config,
+          isPublic: requestData.isPublic,
+        }
+      )
+
+      if (!updatedTemplate) {
+        throw new Error("Workflow template not found or failed to update")
       }
-    )
+
+      // Handle user permissions based on isPublic field
+      if (requestData.isPublic === true) {
+        // If switching to public, clear all non-owner permissions
+        await syncWorkflowUserPermissions(
+          trx,
+          updatedTemplate.id,
+          [], // Empty array clears all non-owner permissions
+          user.workspaceId,
+        )
+      } else if (
+        requestData.isPublic === false &&
+        requestData.userEmails !== undefined
+      ) {
+        // If switching to private or updating private workflow, sync user permissions
+        await syncWorkflowUserPermissions(
+          trx,
+          updatedTemplate.id,
+          requestData.userEmails,
+          user.workspaceId,
+        )
+      } else if (requestData.userEmails !== undefined) {
+        // If userEmails are provided but isPublic not specified, check existing workflow
+        if (!existingTemplate.isPublic) {
+          await syncWorkflowUserPermissions(
+            trx,
+            updatedTemplate.id,
+            requestData.userEmails,
+            user.workspaceId,
+          )
+        }
+      }
+
+      return updatedTemplate
+    })
 
     return c.json({
       success: true,
-      data: publicWorkflowTemplateSchema.parse(updatedTemplate),
+      data: publicWorkflowTemplateSchema.parse(result),
     })
   } catch (error) {
     Logger.error(error, "Failed to update workflow template")
@@ -2880,7 +2925,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     // 4. Handle step connections
     if (isFirstStep) {
       // This is the first/root step
-      await updateWorkflowTemplate(
+      await updateWorkflowTemplateByExternalId(
         db,
         templateId,
         {
@@ -3033,7 +3078,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       // If no next steps, set to null
       newRootStepId = nextStepIds.length > 0 ? nextStepIds[0] : null
 
-      await updateWorkflowTemplate(
+      await updateWorkflowTemplateByExternalId(
         db,
         template.external_id,
         {

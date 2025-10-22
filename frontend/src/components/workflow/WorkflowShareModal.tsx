@@ -130,7 +130,6 @@ export function WorkflowShareModal({
 
   // Handle keyboard navigation in autocomplete
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (filteredUsers.length === 0) return
 
     switch (e.key) {
       case "ArrowDown":
@@ -147,7 +146,7 @@ export function WorkflowShareModal({
         break
       case "Enter":
         e.preventDefault()
-        if (selectedSearchIndex >= 0) {
+        if (filteredUsers.length > 0 && selectedSearchIndex >= 0) {
           handleSelectUser(filteredUsers[selectedSearchIndex])
         } else if (filteredUsers.length > 0) {
           handleSelectUser(filteredUsers[0])
