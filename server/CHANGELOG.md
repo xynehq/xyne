@@ -1,3 +1,10 @@
+## [3.19.1](https://github.com/xynehq/xyne/compare/v3.19.0...v3.19.1) (2025-10-22)
+
+
+### Bug Fixes
+
+* **sheet-redirect:** fixed sub-sheet redirect issue ([#1001](https://github.com/xynehq/xyne/issues/1001)) ([6747ea5](https://github.com/xynehq/xyne/commit/6747ea5fac8336d02cb614d6ec1a11e964686454))
+
 # [3.19.0](https://github.com/xynehq/xyne/compare/v3.18.8...v3.19.0) (2025-10-17)
 
 
