@@ -90,7 +90,6 @@ async function fixCalendarPermissions() {
           `Fixed calendar email ${docId}: [${currentPermissions.join(", ")}] → [${userEmail}]`,
         )
         totalFixed++
-        count++
       } catch (error) {
         logger.error(`Failed to update ${docId}: ${error}`)
       }
