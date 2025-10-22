@@ -2403,7 +2403,37 @@ export const GetChatQueriesApi = async (c: Context) => {
         400,
       )
     }
-    const queries = await fetchUserQueriesForChat(db, chatId)
+
+    // Get current user and check if they are admin/superadmin
+    const { workspaceId: currentWorkspaceId, sub } = c.get(JwtPayloadKey)
+    const currentUserRes = await getUserByEmail(db, sub)
+    if (!currentUserRes || !currentUserRes.length) {
+      loggerWithChild({ email: sub }).error(
+        { sub },
+        "No user found for sub in GetChatQueriesApi",
+      )
+      throw new HTTPException(403, { message: "User not found" })
+    }
+    const currentUser = currentUserRes[0]
+
+    // Check if user is admin or superadmin
+    const isAuthorized =
+      currentUser.role === "Admin" || currentUser.role === "SuperAdmin"
+    if (!isAuthorized) {
+      loggerWithChild({ email: sub }).warn(
+        { userEmail: sub, userRole: currentUser.role },
+        "Unauthorized access attempt to chat queries - not admin",
+      )
+      throw new HTTPException(403, {
+        message: "Access denied. Admin privileges required.",
+      })
+    }
+
+    const queries = await fetchUserQueriesForChat(
+      db,
+      chatId,
+      currentWorkspaceId,
+    )
 
     return c.json(
       {
@@ -2414,6 +2444,9 @@ export const GetChatQueriesApi = async (c: Context) => {
     )
   } catch (error) {
     Logger.error(error, "Error fetching chat queries")
+    if (error instanceof HTTPException) {
+      throw error
+    }
     return c.json(
       {
         success: false,

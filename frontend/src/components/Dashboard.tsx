@@ -38,7 +38,6 @@ import {
   Area,
   AreaChart,
 } from "recharts"
-import { AdminChatsTable } from "@/components/AdminChatsTable"
 import type { AdminChat } from "@/components/AdminChatsTable"
 
 interface Chat {
@@ -2704,7 +2703,7 @@ export const Dashboard = ({
       feedbackMessages: [],
     },
   })
-  const [adminChats, setAdminChats] = useState<AdminChat[]>([])
+  const [_, setAdminChats] = useState<AdminChat[]>([])
   const [adminLoading, setAdminLoading] = useState(false)
   const [adminError, setAdminError] = useState<string | null>(null)
   const [selectedUser, setSelectedUser] = useState<AdminUserUsage | null>(null)
