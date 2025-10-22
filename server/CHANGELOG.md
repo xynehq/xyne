@@ -1,3 +1,52 @@
+## [3.19.1](https://github.com/xynehq/xyne/compare/v3.19.0...v3.19.1) (2025-10-22)
+
+
+### Bug Fixes
+
+* **sheet-redirect:** fixed sub-sheet redirect issue ([#1001](https://github.com/xynehq/xyne/issues/1001)) ([6747ea5](https://github.com/xynehq/xyne/commit/6747ea5fac8336d02cb614d6ec1a11e964686454))
+
+# [3.19.0](https://github.com/xynehq/xyne/compare/v3.18.8...v3.19.0) (2025-10-17)
+
+
+### Features
+
+* **slack-channel-resumability:** Added functionality to pause and resume the channel ingestion-1 ([4219d8b](https://github.com/xynehq/xyne/commit/4219d8b1f57ca73100b2c710a955178e97fb1303))
+
+## [3.18.8](https://github.com/xynehq/xyne/compare/v3.18.7...v3.18.8) (2025-10-17)
+
+
+### Bug Fixes
+
+* chat chunk highlight ([#1122](https://github.com/xynehq/xyne/issues/1122)) ([c48f04a](https://github.com/xynehq/xyne/commit/c48f04ad92f2e8257cc3a1cf95e06741f699c9b2))
+
+## [3.18.7](https://github.com/xynehq/xyne/compare/v3.18.6...v3.18.7) (2025-10-17)
+
+
+### Bug Fixes
+
+* XYNE-213 Modified docker-compose files to fix PG not working ([#1123](https://github.com/xynehq/xyne/issues/1123)) ([82450af](https://github.com/xynehq/xyne/commit/82450af21ebc7ac7b9e1c1ffdc818cbc399f9786))
+
+## [3.18.6](https://github.com/xynehq/xyne/compare/v3.18.5...v3.18.6) (2025-10-17)
+
+
+### Bug Fixes
+
+* **zip-upload:** increased limit for upload ([#1124](https://github.com/xynehq/xyne/issues/1124)) ([7f2bc16](https://github.com/xynehq/xyne/commit/7f2bc16146a334097cc1c3ede92b64b8516ea1aa))
+
+## [3.18.5](https://github.com/xynehq/xyne/compare/v3.18.4...v3.18.5) (2025-10-17)
+
+
+### Bug Fixes
+
+* XYNE-152 attachment upload removal when chat is kb based ([#1069](https://github.com/xynehq/xyne/issues/1069)) ([3c84691](https://github.com/xynehq/xyne/commit/3c84691a59a9f6742e578401078843ebc10071b2))
+
+## [3.18.4](https://github.com/xynehq/xyne/compare/v3.18.3...v3.18.4) (2025-10-17)
+
+
+### Bug Fixes
+
+* XYNE-157 fixed attachement cancel while uploading ([#1119](https://github.com/xynehq/xyne/issues/1119)) ([d0ff988](https://github.com/xynehq/xyne/commit/d0ff98838a150b9867e416d7252ed0bc29a9c272))
+
 ## [3.18.3](https://github.com/xynehq/xyne/compare/v3.18.2...v3.18.3) (2025-10-16)
 
 

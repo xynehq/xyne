@@ -107,8 +107,8 @@ import type { ProviderV2 } from "@ai-sdk/provider"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
-  agentBaselineFileContextPromptJson,
   agentBaselineFilesContextPromptJson,
+  agentBaselineKbContextPromptJson,
   agentBaselinePrompt,
   agentBaselinePromptJson,
   agentBaselineReasoningPromptJson,
@@ -1247,7 +1247,7 @@ export const baselineRAGJsonStream = (
   retrievedCtx: string,
   params: ModelParams,
   specificFiles?: boolean,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
@@ -1261,23 +1261,34 @@ export const baselineRAGJsonStream = (
 
   if (specificFiles) {
     Logger.info("Using baselineFilesContextPromptJson")
-    if (isMsgWithSources) {
-      params.systemPrompt = agentBaselineFileContextPromptJson(
-        userCtx,
-        userMetadata.dateForAI,
-        retrievedCtx,
-      )
-    } else if (!isAgentPromptEmpty(params.agentPrompt)) {
-      params.systemPrompt = agentBaselineFilesContextPromptJson(
-        userCtx,
-        indexToCitation(retrievedCtx),
-        parseAgentPrompt(params.agentPrompt),
-      )
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      if (isMsgWithKbItems) {
+        params.systemPrompt = agentBaselineKbContextPromptJson(
+          userCtx,
+          userMetadata.dateForAI,
+          retrievedCtx,
+          parseAgentPrompt(params.agentPrompt),
+        )
+      } else {
+        params.systemPrompt = agentBaselineFilesContextPromptJson(
+          userCtx,
+          indexToCitation(retrievedCtx),
+          parseAgentPrompt(params.agentPrompt),
+        )
+      }
     } else {
-      params.systemPrompt = baselineFilesContextPromptJson(
-        userCtx,
-        indexToCitation(retrievedCtx),
-      )
+      if (isMsgWithKbItems) {
+        params.systemPrompt = agentBaselineKbContextPromptJson(
+          userCtx,
+          userMetadata.dateForAI,
+          retrievedCtx,
+        )
+      } else {
+        params.systemPrompt = baselineFilesContextPromptJson(
+          userCtx,
+          indexToCitation(retrievedCtx),
+        )
+      }
     }
   } else if (defaultReasoning) {
     Logger.info("Using baselineReasoningPromptJson")
