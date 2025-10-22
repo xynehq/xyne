@@ -792,3 +792,8 @@ export enum UploadStatus {
   COMPLETED = "completed", 
   FAILED = "failed",
 }
+
+export enum NodeType {
+  FILE = "file",
+  FOLDER = "folder",
+}

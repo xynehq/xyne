@@ -274,6 +274,9 @@ import {
   PollCollectionsStatusApi,
 } from "@/api/knowledgeBase"
 import {
+  InsertFileDocumentApi,
+} from "@/api/documentInsertion"
+import {
   searchKnowledgeBaseSchema,
   SearchKnowledgeBaseApi,
 } from "./api/knowledgeBase/search"
@@ -313,6 +316,11 @@ import {
 const deleteDataSourceFileQuerySchema = z.object({
   dataSourceName: z.string().min(1),
   fileName: z.string().min(1),
+})
+
+// Define Zod schema for document insertion file ID parameter
+const insertDocumentParamSchema = z.object({
+  fileId: z.string().uuid("Invalid fileId format - must be a valid UUID"),
 })
 
 export type Variables = JwtVariables
@@ -1153,6 +1161,10 @@ export const AppRoutes = app
   .post("/cl/:clId/items/upload", UploadFilesApi)
   .post("/cl/:clId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
   .post("/cl/:clId/items/upload/complete", UploadFilesApi) // Complete batch session
+  
+  // Document insertion API route
+  .post("/document/:fileId/insert", zValidator("param", insertDocumentParamSchema), InsertFileDocumentApi) // Insert file document into Vespa
+  
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)

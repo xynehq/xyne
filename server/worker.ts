@@ -8,20 +8,24 @@ import config from "@/config"
 
 const Logger = getLogger(Subsystem.Queue)
 
-// File processing worker using boss.work() - non-blocking and event-driven
-export const initFileProcessingWorker = async () => {
-  Logger.info("Initializing file processing worker...")
-  Logger.info(`Using batch size of ${config.fileProcessingTeamSize} for concurrent file processing`)
+// Common worker initialization logic with proper individual job failure handling
+async function createWorker(
+  queueName: string,
+  batchSize: number,
+  workerType: string
+) {
+  Logger.info(`Initializing ${workerType} worker...`)
+  Logger.info(`Using batch size of ${batchSize} for concurrent ${workerType}`)
   
-  // Use batchSize to process multiple jobs concurrently
-  await boss.work(FileProcessingQueue, { batchSize: config.fileProcessingTeamSize }, async (jobs) => {
-    // Process all jobs in parallel using Promise.all
+  await boss.work(queueName, { batchSize }, async (jobs) => {
+    // Process all jobs in parallel, but handle failures individually
+    // so one failed job doesn't fail the entire batch.
     const jobPromises = jobs.map(async (job) => {
       try {
         const jobData = job.data as ProcessingJob
         const jobType = jobData.type || ProcessingJobType.FILE
         
-        Logger.info(`Processing ${jobType} job: ${JSON.stringify(jobData)}`)
+        Logger.info(`Processing ${workerType} ${jobType} job: ${JSON.stringify(jobData)}`)
 
         // Process the job using the unified processor
         // The processJob function handles all status updates internally:
@@ -30,64 +34,34 @@ export const initFileProcessingWorker = async () => {
         // - Calls updateParentStatus to check parent completion
         await processJob(job as { data: ProcessingJob })
 
-        Logger.info(`✅ ${jobType} job processed successfully`)
+        Logger.info(`✅ ${workerType} ${jobType} job processed successfully`)
         
+        // Explicitly mark the job as complete.
+        await boss.complete(job.id)
       } catch (error) {
         const jobData = job.data as ProcessingJob
         const jobType = jobData.type || ProcessingJobType.FILE
         const errorMessage = getErrorMessage(error)
-        Logger.error(error, `❌ ${jobType} job failed: ${errorMessage}`)
+        Logger.error(error, `❌ ${workerType} ${jobType} job failed: ${errorMessage}`)
         
-        // Re-throw to let pg-boss handle the retry logic
-        throw error
+        // Explicitly fail the job to trigger pg-boss's retry mechanism for this job alone.
+        await boss.fail(job.id)
       }
     })
 
-    // Wait for all jobs in the batch to complete
+    // Wait for all jobs in the batch to be either completed or failed.
     await Promise.all(jobPromises)
   })
 
-  Logger.info("File processing worker initialized successfully")
+  Logger.info(`${workerType} worker initialized successfully`)
+}
+
+// File processing worker using boss.work() - non-blocking and event-driven
+export const initFileProcessingWorker = async () => {
+  await createWorker(FileProcessingQueue, config.fileProcessingTeamSize, "file processing")
 }
 
 // PDF file processing worker using boss.work() - non-blocking and event-driven
 export const initPdfFileProcessingWorker = async () => {
-  Logger.info("Initializing PDF file processing worker...")
-  Logger.info(`Using batch size of ${config.pdfFileProcessingTeamSize} for concurrent PDF file processing`)
-  
-  // Use batchSize to process multiple PDF jobs concurrently
-  await boss.work(PdfFileProcessingQueue, { batchSize: config.pdfFileProcessingTeamSize }, async (jobs) => {
-    // Process all jobs in parallel using Promise.all
-    const jobPromises = jobs.map(async (job) => {
-      try {
-        const jobData = job.data as ProcessingJob
-        const jobType = jobData.type || ProcessingJobType.FILE
-        
-        Logger.info(`Processing PDF ${jobType} job: ${JSON.stringify(jobData)}`)
-
-        // Process the job using the unified processor
-        // The processJob function handles all status updates internally:
-        // - Sets status to PROCESSING
-        // - Sets status to COMPLETED after success
-        // - Calls updateParentStatus to check parent completion
-        await processJob(job as { data: ProcessingJob })
-
-        Logger.info(`✅ PDF ${jobType} job processed successfully`)
-        
-      } catch (error) {
-        const jobData = job.data as ProcessingJob
-        const jobType = jobData.type || ProcessingJobType.FILE
-        const errorMessage = getErrorMessage(error)
-        Logger.error(error, `❌ PDF ${jobType} job failed: ${errorMessage}`)
-        
-        // Re-throw to let pg-boss handle the retry logic
-        throw error
-      }
-    })
-
-    // Wait for all jobs in the batch to complete
-    await Promise.all(jobPromises)
-  })
-
-  Logger.info("PDF file processing worker initialized successfully")
+  await createWorker(PdfFileProcessingQueue, config.pdfFileProcessingTeamSize, "PDF file processing")
 }

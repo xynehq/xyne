@@ -2009,8 +2009,121 @@ function KnowledgeManagementContent() {
                               }
                             }
                           }}
-                          onRetry={(node, path) => {
-                            // TODO: Implement retry logic here
+                          onRetry={async (node, path) => {
+                            if (
+                              node.type !== "file" ||
+                              node.uploadStatus !== UploadStatus.FAILED ||
+                              !node.id
+                            ) {
+                              return
+                            }
+
+                            const updateNodeStatusInState = (
+                              status: UploadStatus,
+                              message?: string,
+                            ) => {
+                              setCollections((prev) => {
+                                const updateRecursively = (
+                                  nodes: FileNode[],
+                                ): FileNode[] => {
+                                  return nodes.map((n) => {
+                                    if (n.id === node.id) {
+                                      return {
+                                        ...n,
+                                        uploadStatus: status,
+                                        statusMessage: message,
+                                      }
+                                    }
+                                    if (n.children) {
+                                      return {
+                                        ...n,
+                                        children: updateRecursively(n.children),
+                                      }
+                                    }
+                                    return n
+                                  })
+                                }
+
+                                return prev.map((c) =>
+                                  c.id !== collection.id
+                                    ? c
+                                    : {
+                                        ...c,
+                                        items: updateRecursively(c.items),
+                                      },
+                                )
+                              })
+
+                              setSelectedDocument((prevSelected) => {
+                                if (!prevSelected || prevSelected.file.id !== node.id) {
+                                  return prevSelected
+                                }
+                                return {
+                                  ...prevSelected,
+                                  uploadStatus: status,
+                                  file: {
+                                    ...prevSelected.file,
+                                    uploadStatus: status,
+                                    statusMessage: message,
+                                  },
+                                }
+                              })
+                            }
+
+                            try {
+                              updateNodeStatusInState(
+                                UploadStatus.PROCESSING,
+                                "Retrying...",
+                              )
+
+                              const response = await api.document[
+                                ":fileId"
+                              ].insert.$post({
+                                param: { fileId: node.id },
+                              })
+
+                              if (!response.ok) {
+                                const errorBody = await response.text()
+                                throw new Error(
+                                  `API returned ${response.status}: ${errorBody}`,
+                                )
+                              }
+
+                              const result = await response.json()
+                              if (
+                                !result.success ||
+                                result.status !== "completed"
+                              ) {
+                                throw new Error(
+                                  result.message ||
+                                    "Processing failed after successful API call.",
+                                )
+                              }
+
+                              toast({
+                                title: "File processed successfully",
+                                description: `${node.name} has been processed and added to the knowledge base.`,
+                              })
+                              updateNodeStatusInState(
+                                UploadStatus.COMPLETED,
+                                undefined,
+                              )
+                            } catch (error) {
+                              console.error("Retry failed:", error)
+                              const errorMessage =
+                                error instanceof Error
+                                  ? error.message
+                                  : `Failed to process ${node.name}. Please try again.`
+                              toast({
+                                title: "Retry failed",
+                                description: errorMessage,
+                                variant: "destructive",
+                              })
+                              updateNodeStatusInState(
+                                UploadStatus.FAILED,
+                                "Retry failed",
+                              )
+                            }
                           }}
                           onToggle={async (node) => {
                             if (node.type !== "folder") return

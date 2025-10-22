@@ -19,6 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import type { FileNode } from "@/utils/fileUtils"
+import { UploadStatus, NodeType } from "shared/types"
 
 // Helper function to truncate email smartly
 const truncateEmail = (email: string, maxLength: number = 20): string => {
@@ -69,13 +70,13 @@ const UploadStatusIndicator = ({
         <Tooltip>
           <TooltipTrigger asChild>
             <div>
-              {uploadStatus === "completed" && (
+              {uploadStatus === UploadStatus.COMPLETED && (
                 <Check size={14} className="text-green-600 dark:text-green-400" />
               )}
-              {(uploadStatus === "processing" || uploadStatus === "pending") && (
+              {(uploadStatus === UploadStatus.PROCESSING || uploadStatus === UploadStatus.PENDING) && (
                 <Loader2 size={14} className="text-black dark:text-white animate-spin" />
               )}
-              {uploadStatus === "failed" && (
+              {uploadStatus === UploadStatus.FAILED && (
                 <AlertOctagon size={14} className="text-red-500" />
               )}
             </div>
@@ -162,7 +163,7 @@ const FileNodeComponent = ({
           className="col-span-5 flex items-center hover:cursor-pointer"
           style={indentStyle}
         >
-          {node.type === "folder" ? (
+          {node.type === NodeType.FOLDER ? (
             <div
               className="flex items-center gap-2 cursor-pointer w-full"
               onClick={() => onToggle(node)}
@@ -212,7 +213,7 @@ const FileNodeComponent = ({
         <div className="col-span-2">
           {isHovered && (
             <div className="flex items-center justify-end gap-2 pr-4">
-              {node.type === "folder" && (
+              {node.type === NodeType.FOLDER && (
                 <Plus
                   size={16}
                   className="cursor-pointer"
@@ -222,7 +223,7 @@ const FileNodeComponent = ({
                   }}
                 />
               )}
-              {node.type === "file" && onDownload && (
+              {node.type === NodeType.FILE && onDownload && (
                 <Download
                   size={16}
                   className="cursor-pointer text-gray-700 dark:text-gray-200 flex-shrink-0"
@@ -233,7 +234,7 @@ const FileNodeComponent = ({
                   }}
                 />
               )}
-              {(node.retryCount ?? 0) > 3 && onRetry && (
+              {node.uploadStatus === UploadStatus.FAILED && node.type === NodeType.FILE && onRetry && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -265,7 +266,7 @@ const FileNodeComponent = ({
           )}
         </div>
         <div className="col-span-1 text-center">
-          {node.type === "file" ? 1 : node.files}
+          {node.type === NodeType.FILE ? 1 : node.files}
         </div>
         <div className="col-span-2">
           {node.lastUpdated
@@ -302,7 +303,7 @@ const FileNodeComponent = ({
           )}
         </div>
       </div>
-      {node.type === "folder" && node.isOpen && node.children && (
+      {node.type === NodeType.FOLDER && node.isOpen && node.children && (
         <div>
           {node.children.map((child, index) => (
             <FileNodeComponent
