@@ -184,6 +184,11 @@ export const adminQuerySchema = z.object({
     .string()
     .optional()
     .transform((val) => (val?.trim() ? val.trim() : undefined)),
+  filterType: z.enum(["all", "agent", "normal"]).optional().default("all"),
+  sortBy: z
+    .enum(["created", "messages", "cost", "tokens"])
+    .optional()
+    .default("created"),
 })
 
 // Schema for user agent leaderboard query
@@ -1692,12 +1697,31 @@ export const IngestMoreChannelApi = async (c: Context) => {
 
 export const GetAdminChats = async (c: Context) => {
   try {
+    // Get current user and workspace info
+    const { workspaceId: currentWorkspaceId, sub } = c.get(JwtPayloadKey)
+    const currentUserRes = await getUserByEmail(db, sub)
+    if (!currentUserRes || !currentUserRes.length) {
+      throw new HTTPException(403, { message: "User not found" })
+    }
+    const currentUser = currentUserRes[0]
+    const isSuperAdmin = currentUser.role === "SuperAdmin"
+
     // Get validated query parameters
     // @ts-ignore
-    const { from, to, userId, page, offset, search } = c.req.valid("query")
+    const { from, to, userId, page, offset, search, filterType, sortBy } =
+      c.req.valid("query")
 
     // Build the conditions array
     const conditions = []
+
+    // Always exclude deleted messages
+    conditions.push(isNull(messages.deletedAt))
+
+    // Add workspace filtering unless user is SuperAdmin
+    // if (!isSuperAdmin) {
+    conditions.push(eq(users.workspaceExternalId, currentWorkspaceId))
+    // }
+
     if (from) {
       conditions.push(gte(chats.createdAt, from))
     }
@@ -1708,12 +1732,20 @@ export const GetAdminChats = async (c: Context) => {
       conditions.push(eq(chats.userId, userId))
     }
 
-    // Add search functionality across email, chat title, and user name
+    // Add filterType conditions
+    if (filterType === "agent") {
+      conditions.push(sql`${chats.agentId} IS NOT NULL`)
+    } else if (filterType === "normal") {
+      conditions.push(sql`${chats.agentId} IS NULL`)
+    }
+
+    // Add search functionality using parameterized LIKE queries
     if (search) {
+      const searchParam = `%${search}%`
       const searchCondition = sql`(
-        LOWER(${chats.title}) LIKE LOWER(${"%" + search + "%"}) OR
-        LOWER(${users.email}) LIKE LOWER(${"%" + search + "%"}) OR
-        LOWER(${users.name}) LIKE LOWER(${"%" + search + "%"})
+        LOWER(${chats.title}) LIKE LOWER(${searchParam}) OR
+        LOWER(${users.email}) LIKE LOWER(${searchParam}) OR
+        LOWER(${users.name}) LIKE LOWER(${searchParam})
       )`
       conditions.push(searchCondition)
     }
@@ -1732,48 +1764,47 @@ export const GetAdminChats = async (c: Context) => {
         userRole: users.role,
         userCreatedAt: users.createdAt, // Add user's actual creation date
         messageCount: sql<number>`COUNT(${messages.id})::int`,
-        likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
-        dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
-        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
-        totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
+        likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' AND ${messages.deletedAt} IS NULL THEN 1 END)::int`,
+        dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' AND ${messages.deletedAt} IS NULL THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END), 0)::numeric`,
+        totalTokens: sql<number>`COALESCE(SUM(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.tokensUsed} ELSE 0 END), 0)::bigint`,
       })
       .from(chats)
       .leftJoin(users, eq(chats.userId, users.id))
       .leftJoin(messages, eq(chats.id, messages.chatId))
 
-    // Execute the query
-    const result =
-      conditions.length > 0
-        ? await baseQuery
-            .where(and(...conditions))
-            .groupBy(
-              chats.id,
-              users.email,
-              users.name,
-              users.role,
-              users.createdAt,
-            )
-            .orderBy(chats.createdAt)
-        : await baseQuery
-            .groupBy(
-              chats.id,
-              users.email,
-              users.name,
-              users.role,
-              users.createdAt,
-            )
-            .orderBy(chats.createdAt)
-
-    // Apply pagination in JavaScript for now
-    let paginatedResult = result
-    if (offset && offset > 0) {
-      const startIndex = (page - 1) * offset
-      const endIndex = startIndex + offset
-      paginatedResult = result.slice(startIndex, endIndex)
+    // Determine sort order based on sortBy parameter
+    let orderByClause
+    switch (sortBy) {
+      case "messages":
+        orderByClause = sql`COUNT(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.id} END) DESC`
+        break
+      case "cost":
+        orderByClause = sql`COALESCE(SUM(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END), 0) DESC`
+        break
+      case "tokens":
+        orderByClause = sql`COALESCE(SUM(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.tokensUsed} ELSE 0 END), 0) DESC`
+        break
+      case "created":
+      default:
+        orderByClause = sql`${chats.createdAt} DESC`
+        break
     }
 
+    // Calculate pagination offsets
+    const limit = offset || 20
+    const offsetValue = ((page || 1) - 1) * limit
+
+    // Execute the query with SQL-based pagination
+    const result = await baseQuery
+      .where(and(...conditions))
+      .groupBy(chats.id, users.email, users.name, users.role, users.createdAt)
+      .orderBy(orderByClause)
+      .limit(limit)
+      .offset(offsetValue)
+
     // Convert totalCost from string to number and totalTokens from bigint to number
-    const processedResult = paginatedResult.map((chat) => ({
+    const processedResult = result.map((chat) => ({
       ...chat,
       totalCost: Number(chat.totalCost) || 0, // numeric → string at runtime
       totalTokens: Number(chat.totalTokens) || 0, // bigint → string at runtime

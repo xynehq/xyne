@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useNavigate } from "@tanstack/react-router"
 import {
   Users,
   Activity,
@@ -2639,6 +2640,7 @@ export const Dashboard = ({
   role?: string
   isAgentMode?: boolean
 } = {}) => {
+  const navigate = useNavigate()
   const [stats, setStats] = useState<DashboardStats>({
     totalChats: 0,
     totalMessages: 0,
@@ -4038,11 +4040,14 @@ export const Dashboard = ({
                     onUserClick={handleAdminUserSelect}
                     onAllChatsClick={() => {
                       // Navigate to all chats view
-                      window.location.href = "/admin/chat-overview"
+                      navigate({ to: "/admin/chat-overview" })
                     }}
                     onUserChatsClick={(userId: number, userName: string) => {
                       // Navigate to user-specific chats view
-                      window.location.href = `/admin/chat-overview?userId=${userId}&userName=${encodeURIComponent(userName)}`
+                      navigate({
+                        to: "/admin/chat-overview",
+                        search: { userName: userName },
+                      })
                     }}
                   />
 
@@ -4051,15 +4056,6 @@ export const Dashboard = ({
                     agentUsage={adminStats.agentUsage}
                     showAll={true}
                     onAgentClick={handleAdminAgentSelect}
-                  />
-
-                  {/* All Chats Table */}
-                  <AdminChatsTable
-                    chats={adminChats}
-                    loading={adminLoading}
-                    onChatView={(chat: AdminChat) => {
-                      console.log("Viewing chat:", chat.externalId)
-                    }}
                   />
                 </div>
               )}

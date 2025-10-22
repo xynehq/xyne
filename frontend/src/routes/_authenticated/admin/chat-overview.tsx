@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button"
 import { z } from "zod"
 
 const searchSchema = z.object({
-  userId: z.string().optional(),
   userName: z.string().optional(),
   page: z.string().optional(),
   offset: z.string().optional(),
@@ -66,10 +65,32 @@ function ChatOverviewPage({
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
 
-  // Reset to page 1 when userId filter changes
+  // Lift filter state from AdminChatsTable
+  const [searchInput, setSearchInput] = useState<string>("") // What user is typing
+  const [searchQuery, setSearchQuery] = useState<string>("") // Actual search query for API
+  const [filterType, setFilterType] = useState<"all" | "agent" | "normal">(
+    "all",
+  )
+  const [userFilter, setUserFilter] = useState<"all" | number>("all")
+  const [sortBy, setSortBy] = useState<
+    "created" | "messages" | "cost" | "tokens"
+  >("created")
+
+  // Reset to page 1 when filter changes
   useEffect(() => {
     setCurrentPage(1)
-  }, [search.userId])
+  }, [searchQuery, filterType, userFilter, sortBy])
+
+  // Function to execute search
+  const handleSearch = () => {
+    setSearchQuery(searchInput.trim())
+  }
+
+  // Function to clear search
+  const handleClearSearch = () => {
+    setSearchInput("")
+    setSearchQuery("")
+  }
 
   useEffect(() => {
     const fetchAdminChats = async () => {
@@ -77,16 +98,27 @@ function ChatOverviewPage({
         setLoading(true)
         setError(null)
 
-        // Build query with pagination and optional userId filter
+        // Build query with pagination and filters
         const query: any = {
           page: currentPage.toString(),
           offset: pageSize.toString(),
         }
-        if (search.userId) {
-          query.userId = search.userId
-        }
+
+        // Add server-side filters
         if (search.search) {
           query.search = search.search
+        }
+        if (searchQuery.trim()) {
+          query.search = searchQuery.trim()
+        }
+        if (userFilter !== "all") {
+          query.userId = userFilter.toString()
+        }
+        if (filterType !== "all") {
+          query.filterType = filterType
+        }
+        if (sortBy !== "created") {
+          query.sortBy = sortBy
         }
 
         const [adminChatsResponse, adminAgentsResponse] = await Promise.all([
@@ -107,9 +139,11 @@ function ChatOverviewPage({
             externalId: chat.externalId,
             title: chat.title || "Untitled Chat",
             createdAt: chat.createdAt,
-            userId: chat.userId || chat.user?.id,
-            userName: chat.userName || chat.user?.name || "Unknown User",
-            userEmail: chat.userEmail || chat.user?.email || "",
+            userId: chat.userId ?? chat.user?.id ?? 0,
+            userName: (chat.userName ??
+              chat.user?.name ??
+              "Unknown User") as string,
+            userEmail: (chat.userEmail ?? chat.user?.email ?? "") as string,
             agentId: chat.agentId,
             agentName:
               chat.agentName ||
@@ -136,7 +170,15 @@ function ChatOverviewPage({
     }
 
     fetchAdminChats()
-  }, [search.userId, currentPage, pageSize])
+  }, [
+    search.search,
+    currentPage,
+    pageSize,
+    searchQuery,
+    filterType,
+    userFilter,
+    sortBy,
+  ])
 
   const handleBackToDashboard = () => {
     navigate({ to: "/dashboard" })
@@ -144,7 +186,7 @@ function ChatOverviewPage({
 
   // Determine page title and description based on filter
   const getPageInfo = () => {
-    if (search.userId && search.userName) {
+    if (search.userName) {
       return {
         title: `Chats for ${search.userName}`,
         description: `All chat conversations for user: ${search.userName}`,
@@ -196,18 +238,22 @@ function ChatOverviewPage({
             </div>
           )}
 
-          {/* Debug Info */}
-          {!loading && (
-            <div className="text-xs text-muted-foreground mb-4 p-2 bg-muted/20 rounded">
-              Debug: userId={search.userId}, userName={search.userName}, chats=
-              {adminChats.length}, page={currentPage}, pageSize={pageSize}
-            </div>
-          )}
-
           {/* Chat Overview Table */}
           <AdminChatsTable
             chats={adminChats}
             loading={loading}
+            searchInput={searchInput}
+            searchQuery={searchQuery}
+            onSearchInputChange={setSearchInput}
+            onSearch={handleSearch}
+            onClearSearch={handleClearSearch}
+            filterType={filterType}
+            onFilterTypeChange={setFilterType}
+            userFilter={userFilter}
+            onUserFilterChange={setUserFilter}
+            sortBy={sortBy}
+            onSortByChange={setSortBy}
+            showUserFilter={!search.userName}
             onChatView={(chat: AdminChat) => {
               console.log("Viewing chat:", chat.externalId)
               // You can implement chat viewing functionality here if needed

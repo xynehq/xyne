@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   MessageSquare,
   Bot,
@@ -10,8 +10,6 @@ import {
   Filter,
   X,
   User,
-  Clock,
-  Hash,
   Loader2,
   Users,
 } from "lucide-react"
@@ -26,7 +24,6 @@ import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -80,7 +77,7 @@ const ChatViewDialog = ({ isOpen, onClose, chat }: ChatViewDialogProps) => {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [messagesError, setMessagesError] = useState<string | null>(null)
 
-  const fetchChatMessages = async (chatId: string) => {
+  const fetchChatMessages = useCallback(async (chatId: string) => {
     try {
       setLoadingMessages(true)
       setMessagesError(null)
@@ -104,7 +101,7 @@ const ChatViewDialog = ({ isOpen, onClose, chat }: ChatViewDialogProps) => {
     } finally {
       setLoadingMessages(false)
     }
-  }
+  }, [])
 
   // Fetch messages when dialog opens and chat changes
   useEffect(() => {
@@ -115,7 +112,7 @@ const ChatViewDialog = ({ isOpen, onClose, chat }: ChatViewDialogProps) => {
       setMessages([])
       setMessagesError(null)
     }
-  }, [isOpen, chat])
+  }, [isOpen, chat, fetchChatMessages])
 
   if (!chat) return null
 
@@ -255,21 +252,39 @@ interface AdminChatsTableProps {
   chats: AdminChat[]
   loading?: boolean
   onChatView?: (chat: AdminChat) => void
+  // Controlled component props for filters
+  searchInput: string
+  searchQuery: string
+  onSearchInputChange: (input: string) => void
+  onSearch: () => void
+  onClearSearch: () => void
+  filterType: "all" | "agent" | "normal"
+  onFilterTypeChange: (type: "all" | "agent" | "normal") => void
+  userFilter: "all" | number
+  onUserFilterChange: (filter: "all" | number) => void
+  sortBy: "created" | "messages" | "cost" | "tokens"
+  onSortByChange: (sortBy: "created" | "messages" | "cost" | "tokens") => void
+  // Props to control visibility of user dropdown
+  showUserFilter?: boolean
 }
 
 export const AdminChatsTable = ({
   chats,
   loading = false,
   onChatView,
+  searchInput,
+  searchQuery,
+  onSearchInputChange,
+  onSearch,
+  onClearSearch,
+  filterType,
+  onFilterTypeChange,
+  userFilter,
+  onUserFilterChange,
+  sortBy,
+  onSortByChange,
+  showUserFilter = true,
 }: AdminChatsTableProps) => {
-  const [searchQuery, setSearchQuery] = useState<string>("")
-  const [filterType, setFilterType] = useState<"all" | "agent" | "normal">(
-    "all",
-  )
-  const [userFilter, setUserFilter] = useState<"all" | number>("all")
-  const [sortBy, setSortBy] = useState<
-    "created" | "messages" | "cost" | "tokens"
-  >("created")
   const [selectedChat, setSelectedChat] = useState<AdminChat | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [users, setUsers] = useState<AdminUser[]>([])
@@ -285,6 +300,12 @@ export const AdminChatsTable = ({
     setIsDialogOpen(false)
     setSelectedChat(null)
   }
+
+  // Memoize the display chats calculation to prevent unnecessary re-renders
+  const displayChats = useMemo(() => {
+    // Since filtering and sorting are now handled server-side, we just display the chats as received
+    return chats
+  }, [chats])
 
   // Fetch users on component mount
   useEffect(() => {
@@ -328,41 +349,6 @@ export const AdminChatsTable = ({
     )
   }
 
-  // Filter chats based on search query, filter type, and user filter
-  const filteredChats = chats.filter((chat) => {
-    const matchesSearch =
-      chat.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      chat.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      chat.userEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (chat.agentName &&
-        chat.agentName.toLowerCase().includes(searchQuery.toLowerCase()))
-
-    const matchesFilter =
-      filterType === "all" ||
-      (filterType === "agent" && chat.agentId) ||
-      (filterType === "normal" && !chat.agentId)
-
-    const matchesUser = userFilter === "all" || chat.userId === userFilter
-
-    return matchesSearch && matchesFilter && matchesUser
-  })
-
-  // Sort chats
-  const sortedChats = [...filteredChats].sort((a, b) => {
-    switch (sortBy) {
-      case "created":
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      case "messages":
-        return b.messageCount - a.messageCount
-      case "cost":
-        return b.totalCost - a.totalCost
-      case "tokens":
-        return b.totalTokens - a.totalTokens
-      default:
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    }
-  })
-
   return (
     <>
       <Card>
@@ -386,14 +372,38 @@ export const AdminChatsTable = ({
           <div className="mt-4 flex flex-col sm:flex-row gap-4">
             {/* Search */}
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <input
                 type="text"
                 placeholder="Search by chat title, user name, email, or agent..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                value={searchInput}
+                onChange={(e) => onSearchInputChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    onSearch()
+                  }
+                }}
+                className="w-full pl-2 pr-16 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               />
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                {searchInput && (
+                  <button
+                    type="button"
+                    onClick={onClearSearch}
+                    className="p-1 hover:bg-muted rounded-sm transition-colors"
+                    title="Clear search"
+                  >
+                    <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onSearch}
+                  className="p-1 hover:bg-muted rounded-sm transition-colors"
+                  title="Search"
+                >
+                  <Search className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                </button>
+              </div>
             </div>
 
             {/* Filter Dropdown */}
@@ -401,7 +411,9 @@ export const AdminChatsTable = ({
               <select
                 value={filterType}
                 onChange={(e) =>
-                  setFilterType(e.target.value as "all" | "agent" | "normal")
+                  onFilterTypeChange(
+                    e.target.value as "all" | "agent" | "normal",
+                  )
                 }
                 className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
               >
@@ -414,40 +426,42 @@ export const AdminChatsTable = ({
               </div>
             </div>
 
-            {/* User Filter Dropdown */}
-            <div className="relative">
-              <select
-                value={userFilter}
-                onChange={(e) =>
-                  setUserFilter(
-                    e.target.value === "all" ? "all" : Number(e.target.value),
-                  )
-                }
-                className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent min-w-[150px]"
-                disabled={loadingUsers}
-              >
-                <option value="all">All Users</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name} ({user.email})
-                  </option>
-                ))}
-              </select>
-              <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
-                {loadingUsers ? (
-                  <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
-                ) : (
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                )}
+            {/* User Filter Dropdown - Only show if not filtering by specific user */}
+            {showUserFilter && (
+              <div className="relative">
+                <select
+                  value={userFilter}
+                  onChange={(e) =>
+                    onUserFilterChange(
+                      e.target.value === "all" ? "all" : Number(e.target.value),
+                    )
+                  }
+                  className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent min-w-[150px]"
+                  disabled={loadingUsers}
+                >
+                  <option value="all">All Users</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name} ({user.email})
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                  {loadingUsers ? (
+                    <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+                  ) : (
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Sort Dropdown */}
             <div className="relative">
               <select
                 value={sortBy}
                 onChange={(e) =>
-                  setSortBy(
+                  onSortByChange(
                     e.target.value as
                       | "created"
                       | "messages"
@@ -490,8 +504,8 @@ export const AdminChatsTable = ({
             <div className="space-y-4">
               {/* Chats List */}
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {sortedChats.length > 0 ? (
-                  sortedChats.map((chat, index) => (
+                {displayChats.length > 0 ? (
+                  displayChats.map((chat, index) => (
                     <div
                       key={chat.externalId}
                       className="flex items-center justify-between p-4 rounded-lg hover:bg-muted/50 transition-colors"
@@ -595,10 +609,10 @@ export const AdminChatsTable = ({
               </div>
 
               {/* Results Summary */}
-              {filteredChats.length > 0 && (
+              {displayChats.length > 0 && (
                 <div className="text-xs text-muted-foreground text-center pt-2 border-t">
-                  Showing {sortedChats.length} of {chats.length} chats
-                  {searchQuery && ` (filtered from ${chats.length})`}
+                  Showing {displayChats.length} chats
+                  {searchQuery && ` • Search: "${searchQuery}"`}
                   {filterType !== "all" && ` • ${filterType} chats only`}
                   {userFilter !== "all" &&
                     ` • User: ${users.find((u) => u.id === userFilter)?.name || "Unknown"}`}
