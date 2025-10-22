@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { X, Plus, Trash2, AlertCircle, Users, UserPlus } from "lucide-react"
 import { api } from "../../api"
+import { WorkflowTemplate } from "./Types"
 
 interface User {
   id: number
@@ -12,7 +13,7 @@ interface User {
 interface WorkflowShareModalProps {
   isOpen: boolean
   onClose: () => void
-  workflow: any
+  workflow: WorkflowTemplate
   onSuccess?: () => void
 }
 

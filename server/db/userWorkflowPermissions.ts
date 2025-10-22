@@ -94,6 +94,7 @@ export const revokeUserWorkflowPermission = async (
         eq(userWorkflowPermissions.workflowId, workflowId),
       ),
     )
+    .returning()
 
-  return result.rowCount > 0
+  return result.length > 0
 }
