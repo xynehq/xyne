@@ -1,0 +1,49 @@
+services:
+  app-sync:
+    image: xynehq/xyne
+    container_name: xyne-app-sync
+    user: "${DOCKER_UID}:${DOCKER_GID}"
+    ports:
+      - "3010:3010"
+    depends_on:
+      app:
+        condition: service_healthy
+      xyne-db:
+        condition: service_healthy
+      vespa:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_HOST=xyne-db
+      - VESPA_HOST=vespa
+      - MAIN_SERVER_HOST=app
+    volumes:
+      # Application data volumes
+      - ${XYNE_DATA_DIR:-./data}/app-uploads:/usr/src/app/server/storage
+      - ${XYNE_DATA_DIR:-./data}/app-logs:/usr/src/app/server/logs
+      - ${XYNE_DATA_DIR:-./data}/app-assets:/usr/src/app/server/dist/assets/videos
+      - ${XYNE_DATA_DIR:-./data}/app-migrations:/usr/src/app/server/migrations
+      - ${XYNE_DATA_DIR:-./data}/app-downloads:/usr/src/app/server/downloads
+    networks:
+      - xyne
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["bun", "run", "dev:sync"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+networks:
+  xyne:
+    external: true

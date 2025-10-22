@@ -1,64 +1,22 @@
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import {
-  createVespaService,
-  createDefaultConfig,
-  type VespaDependencies,
-} from "@xyne/vespa-ts"
-import config, { CLUSTER, NAMESPACE } from "@/config"
-import {
   Apps,
-  chatContainerSchema,
-  chatMessageSchema,
-  chatUserSchema,
   DriveEntity,
-  eventSchema,
-  fileSchema,
-  mailAttachmentSchema,
-  mailSchema,
-  userSchema,
   type Entity,
+  type GetItemsParams,
   type VespaQueryConfig,
+  type VespaSchema,
 } from "@xyne/vespa-ts/types"
+import config from "@/config"
 import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { AuthType, ConnectorStatus } from "@/shared/types"
 import { extractDriveIds, extractCollectionVespaIds } from "./utils"
 import { getAppSyncJobsByEmail } from "@/db/syncJob"
-// Define your Vespa endpoint and schema name
+import { sharedVespaService as vespa } from "./vespaService"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
-
-const vespaConfig = createDefaultConfig({
-  vespaBaseHost: config.vespaBaseHost,
-  page: config.VespaPageSize,
-  isDebugMode: config.isDebugMode,
-  namespace: NAMESPACE,
-  cluster: CLUSTER,
-  vespaMaxRetryAttempts: config.vespaMaxRetryAttempts,
-  vespaRetryDelay: config.vespaRetryDelay,
-})
-const AllSources = [
-  fileSchema,
-  userSchema,
-  mailSchema,
-  eventSchema,
-  mailAttachmentSchema,
-  chatUserSchema,
-  chatMessageSchema,
-  chatContainerSchema,
-  // Not adding datasource or datasource_file to AllSources by default,
-  // as they are for a specific app functionality.
-  // dataSourceFileSchema and collection file schemas are intentionally excluded from search
-]
-const dependencies: VespaDependencies = {
-  logger: Logger,
-  config: vespaConfig,
-  sourceSchemas: AllSources,
-  vespaEndpoint: config.vespaEndpoint,
-}
-
-const vespa = createVespaService(dependencies)
 
 export const insert = vespa.insert.bind(vespa)
 export const GetDocument = vespa.GetDocument.bind(vespa)
@@ -120,7 +78,6 @@ export const searchVespa = async (
       "Error fetching Google sync jobs status",
     )
   }
-
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
     recencyDecayRate:
@@ -172,9 +129,31 @@ export const updateUserQueryHistory = vespa.updateUserQueryHistory.bind(vespa)
 export const ifMailDocumentsExist = vespa.ifMailDocumentsExist.bind(vespa)
 export const IfMailDocExist = vespa.IfMailDocExist.bind(vespa)
 export const SearchEmailThreads = vespa.SearchEmailThreads.bind(vespa)
-
+export const searchGoogleApps = vespa.searchGoogleApps.bind(vespa)
 // Item operations
-export const getItems = vespa.getItems.bind(vespa)
+export const getItems = async (
+  params: Omit<GetItemsParams, "processedCollectionSelections"> & {
+    collectionSelections?: Array<{
+      collectionIds?: string[]
+      collectionFolderIds?: string[]
+      collectionFileIds?: string[]
+    }>
+  },
+) => {
+  const driveIds = await extractDriveIds(
+    { selectedItem: params.selectedItem },
+    params.email,
+  )
+  const processedCollectionSelections = await extractCollectionVespaIds({
+    collectionSelections: params.collectionSelections,
+  })
+  return await vespa.getItems.bind(vespa)({
+    processedCollectionSelections,
+    driveIds,
+    ...params,
+  })
+}
+
 export const getFolderItems = vespa.getFolderItems.bind(vespa)
 export const getThreadItems = vespa.getThreadItems.bind(vespa)
 export const SearchVespaThreads = vespa.SearchVespaThreads.bind(vespa)
@@ -199,7 +178,6 @@ export const GetRandomDocument = vespa.GetRandomDocument.bind(vespa)
 export const HybridDefaultProfile = vespa.HybridDefaultProfile.bind(vespa)
 
 export const GetDocumentsByDocIds = vespa.GetDocumentsByDocIds.bind(vespa)
-export const searchVespaThroughAgent = vespa.searchVespaThroughAgent.bind(vespa)
 export const searchSlackInVespa = vespa.searchSlackInVespa.bind(vespa)
 
 export const getAllDocumentsForAgent = vespa.getAllDocumentsForAgent.bind(vespa)

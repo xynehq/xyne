@@ -1,34 +1,10 @@
 import { isValidFile, isImageFile } from "shared/fileUtils"
 import { SelectedFile } from "@/components/ClFileUpload"
 import { authFetch } from "./authFetch"
-import { FileType, MIME_TYPE_MAPPINGS, EXTENSION_MAPPINGS } from "shared/types"
+import { UploadStatus } from "shared/types"
 
 // Generate unique ID for files
 export const generateFileId = () => Math.random().toString(36).substring(2, 9)
-
-export const getFileType = ({ type, name }: { type: string, name: string }): FileType => {
-  const fileName = name.toLowerCase()
-  const mimeType = type.toLowerCase()
-  const baseMime = mimeType.split(";")[0]
-
-  // Check each file type category using the mappings
-  for (const [fileType, mimeTypes] of Object.entries(MIME_TYPE_MAPPINGS)) {
-    // Check MIME type first (more reliable)
-    if (mimeTypes.some(mime => baseMime === mime)) {
-      return fileType as FileType
-    }
-  }
-
-  // Fallback to extension-based detection
-  for (const [fileType, extensions] of Object.entries(EXTENSION_MAPPINGS)) {
-    if (extensions.some(ext => fileName.endsWith(ext))) {
-      return fileType as FileType
-    }
-  }
-
-  // Default fallback
-  return FileType.FILE
-}
 
 // Create preview URL for image files
 export const createImagePreview = (file: File): string | undefined => {
@@ -140,6 +116,9 @@ export interface FileNode {
   lastUpdated?: string
   updatedBy?: string
   isOpen?: boolean
+  uploadStatus?: UploadStatus
+  statusMessage?: string
+  retryCount?: number
 }
 
 export const buildFileTree = (
@@ -150,6 +129,9 @@ export const buildFileTree = (
     totalFileCount?: number
     updatedAt?: string
     updatedBy?: string
+    uploadStatus?: UploadStatus
+    statusMessage?: string
+    retryCount?: number
   }[],
 ): FileNode[] => {
   const root: FileNode = {
@@ -180,6 +162,9 @@ export const buildFileTree = (
           files: file.totalFileCount,
           lastUpdated: file.updatedAt,
           updatedBy: file.updatedBy,
+          uploadStatus: file.uploadStatus,
+          statusMessage: file.statusMessage,
+          retryCount: file.retryCount,
         }
         if (!currentNode.children) {
           currentNode.children = []
@@ -206,6 +191,7 @@ export const uploadFileBatch = async (
   files: File[],
   collectionId: string,
   parentId?: string | null,
+  abortSignal?: AbortSignal,
 ): Promise<any> => {
   const formData = new FormData()
 
@@ -228,6 +214,7 @@ export const uploadFileBatch = async (
       {
         method: "POST",
         body: formData,
+        signal: abortSignal,
       },
     )
 

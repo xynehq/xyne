@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm"
+import { and, eq, isNull, sql } from "drizzle-orm"
 import { db } from "./client"
 import {
   apiKeys,
@@ -21,6 +21,7 @@ import type { TxnOrClient } from "@/types"
 import { HTTPException } from "hono/http-exception"
 import { Apps, type UserRole } from "@/shared/types"
 import crypto from "crypto"
+import { NoUserFound } from "@/errors"
 
 // Define an interface for the shape of data after processing and before Zod parsing
 interface ProcessedUser
@@ -229,6 +230,34 @@ export const getUserById = async (
   return parsedRes.data
 }
 
+export const getUsersByWorkspace = async (
+  trx: TxnOrClient,
+  workspaceExternalId: string,
+  externalId?: string,
+): Promise<SelectUser[]> => {
+  const conditions = [
+    eq(users.workspaceExternalId, workspaceExternalId),
+    isNull(users.deletedAt),
+  ]
+
+  // Add external ID filter if provided
+  if (externalId) {
+    conditions.push(eq(users.externalId, externalId))
+  }
+
+  const resp = await trx
+    .select()
+    .from(users)
+    .where(and(...conditions))
+
+  return resp.map((user) => {
+    const parsedRes = selectUserSchema.safeParse(user)
+    if (!parsedRes.success) {
+      throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
+    }
+    return parsedRes.data
+  })
+}
 // based on user email will perform the join on tables users and sync_jobs which will have same email
 // then for each user we can have max 4 row 1 is for slack other is for google-drive , gmail, google-calendar
 // then we will get the last_ran_on and the user data to frontend
@@ -424,7 +453,7 @@ export const updateUserTimezone = async (
       .returning({ id: users.id, email: users.email, timeZone: users.timeZone })
 
     if (!result || result.length === 0) {
-      throw new HTTPException(400, { message: "User not found" })
+      throw new HTTPException(404, { message: "User not found" })
     }
 
     return {
@@ -441,6 +470,20 @@ export const updateUserTimezone = async (
       cause: error instanceof Error ? error.message : "Unknown error",
     })
   }
+}
+
+export const getUserFromJWT = async (
+  db: TxnOrClient,
+  jwtPayload: { sub: string; workspaceId: string }
+): Promise<SelectUser> => {
+  const email = jwtPayload.sub
+  const userRes = await getUserByEmail(db, email)
+  
+  if (!userRes?.length) {
+    throw new NoUserFound({ message: `User with email ${email} not found.` })
+  }
+  
+  return userRes[0]
 }
 
 export async function createUserApiKey({

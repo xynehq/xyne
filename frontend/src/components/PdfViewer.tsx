@@ -355,6 +355,24 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }
   }, [numPages, displayMode, rowVirtualizer])
 
+  // Register the goToPage function with the DocumentOperations ref
+  useEffect(() => {
+    if (documentOperationsRef?.current) {
+      documentOperationsRef.current.goToPage = async (pageIndex?: number) => {
+        if (pageIndex !== undefined) {
+          goToPage(pageIndex)
+        }
+      }
+    }
+    
+    // Cleanup function to remove the goToPage function when component unmounts
+    return () => {
+      if (documentOperationsRef?.current) {
+        documentOperationsRef.current.goToPage = undefined
+      }
+    }
+  }, [documentOperationsRef, goToPage])
+
   const commitPageInput = useCallback(() => {
     if (pageInput === null) return
     const num = parseInt(pageInput, 10)

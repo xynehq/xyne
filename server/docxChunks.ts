@@ -2624,7 +2624,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
                   `Reusing description for repeated image ${imagePath}`,
                 )
               } else {
-                if(describeImages) {
+                if (describeImages) {
                   description = await describeImageWithllm(imageBuffer)
                 } else {
                   description = "This is an image."

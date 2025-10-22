@@ -19,6 +19,12 @@ import type {
   PeopleEntity,
 } from "@xyne/vespa-ts/types"
 
+export enum ProcessingJobType {
+  FILE = "file",
+  COLLECTION = "collection",
+  FOLDER = "folder",
+}
+
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
 
@@ -45,7 +51,10 @@ const baseSearchSchema = z.object({
     .pipe(z.number())
     .optional(),
   app: z.nativeEnum(Apps).optional(),
-  entity: z.string().min(1).optional(),
+  entity: z.union([
+    z.string().min(1),          
+    z.array(z.string().min(1)),  
+  ]).optional(),
   lastUpdated: z.string().default("anytime"),
   isQueryTyped: z.preprocess((val) => val === "true", z.boolean()).optional(),
   debug: z
@@ -225,6 +234,13 @@ export const createOAuthProvider = z
     }
   })
 
+export const microsoftServiceSchema = z.object({
+  clientId: z.string(),
+  clientSecret: z.string(),
+  tenantId: z.string(),
+  app: z.nativeEnum(Apps),
+})
+
 export const deleteConnectorSchema = z.object({
   connectorId: z.string(),
 })
@@ -285,6 +301,7 @@ export const deleteUserDataSchema = z.object({
 export type DeleteUserDataPayload = z.infer<typeof deleteUserDataSchema>
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
+export type microsoftService = z.infer<typeof microsoftServiceSchema>
 
 export type SaaSJob = {
   connectorId: number
@@ -299,7 +316,9 @@ export type SaaSJob = {
 
 export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
-export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
+export type TxnOrClient =
+  | PgTransaction<any>
+  | PostgresJsDatabase<any>
 
 export type OAuthCredentials = {
   data: {
@@ -320,6 +339,7 @@ export enum SyncCron {
   // applying filters like modifiedAt/updatedAt internally.
   FullSync = "FullSync",
 }
+
 
 // history id was getting removed if we just use union
 // and do parse of selectSyncJobSchema
@@ -373,6 +393,11 @@ const MicrosoftCalendarDeltaTokenSchema = z.object({
   calendarDeltaToken: z.string(),
   lastSyncedAt: z.coerce.date(),
 })
+const MicrosoftSharepointDeltaTokenSchema = z.object({
+  type: z.literal("microsoftSharepointDeltaTokens"),
+  deltaLinks: z.record(z.string(), z.string()).optional(),
+  lastSyncedAt: z.coerce.date(),
+})
 
 const ChangeTokenSchema = z.discriminatedUnion("type", [
   DefaultTokenSchema,
@@ -382,6 +407,7 @@ const ChangeTokenSchema = z.discriminatedUnion("type", [
   MicrosoftDriveDeltaTokenSchema,
   MicrosoftOutlookDeltaTokenSchema,
   MicrosoftCalendarDeltaTokenSchema,
+  MicrosoftSharepointDeltaTokenSchema,
 ])
 
 // Define UpdatedAtVal schema
@@ -442,6 +468,15 @@ export type GoogleClient = JWT | OAuth2Client
 export type GoogleServiceAccount = {
   client_email: string
   private_key: string
+}
+
+export type MicrosoftServiceCredentials = {
+  tenantId: string
+  clientId: string
+  clientSecret: string
+  scopes: string[]
+  access_token: string
+  expires_at: string
 }
 
 export enum MessageTypes {
@@ -526,9 +561,13 @@ export const ingestMoreChannelSchema = z.object({
   channelsToIngest: z.array(z.string()),
   startDate: z.string(),
   endDate: z.string(),
+  includeBotMessage: z.boolean().optional().default(false),
 })
 export const startSlackIngestionSchema = z.object({
   connectorId: z.number(),
+})
+export const startGoogleIngestionSchema = z.object({
+  connectorId: z.string(),
 })
 
 export type EntityType =
@@ -570,3 +609,35 @@ export const UserMetadata = z.object({
 })
 
 export type UserMetadataType = z.infer<typeof UserMetadata>
+
+// ChunkMetadata type for OCR and file processing
+export type ChunkMetadata = {
+  chunk_index: number;
+  page_numbers: number[];
+  block_labels: string[];
+};
+
+// DuckDB related types
+export interface DuckDBQuery {
+  sql: string
+  notes: string
+}
+
+export interface DuckDBResult {
+  user_question: string
+  resolved_metric?: string
+  sql: string
+  execution_meta: {
+    row_count: number
+    elapsed_ms: number
+    as_of: string
+  }
+  schema_fragment?: {
+    table: string
+    columns: Record<string, string>
+  }
+  assumptions: string[]
+  data: {
+    rows: unknown[][]
+  }
+}

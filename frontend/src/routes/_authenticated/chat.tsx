@@ -1,6 +1,5 @@
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import DOMPurify from "dompurify"
-import { getCodeString } from "rehype-rewrite"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
 import {
@@ -22,10 +21,6 @@ import {
   RefreshCw,
   ZoomIn,
   ZoomOut,
-  Plus,
-  Minus,
-  Maximize2,
-  Minimize2,
   Share2,
   ArrowDown,
 } from "lucide-react"
@@ -43,44 +38,9 @@ import {
   useControls,
 } from "react-zoom-pan-pinch"
 import { useTheme } from "@/components/ThemeContext"
-import mermaid from "mermaid"
 import { Pill } from "@/components/Pill"
-// Initialize mermaid with secure configuration to prevent syntax errors
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "default",
-  securityLevel: "strict",
-  fontFamily: "monospace",
-  logLevel: "fatal", // Minimize mermaid console logs
-  suppressErrorRendering: true, // Suppress error rendering if available
-  flowchart: {
-    useMaxWidth: true,
-  },
-  sequence: {
-    useMaxWidth: true,
-  },
-  gantt: {
-    useMaxWidth: true,
-  },
-  journey: {
-    useMaxWidth: true,
-  },
-  class: {
-    useMaxWidth: true,
-  },
-  state: {
-    useMaxWidth: true,
-  },
-  er: {
-    useMaxWidth: true,
-  },
-  pie: {
-    useMaxWidth: true,
-  },
-  gitGraph: {
-    useMaxWidth: true,
-  },
-})
+import { MermaidCodeWrapper } from "@/hooks/useMermaidRenderer"
+
 import {
   SelectPublicMessage,
   Citation,
@@ -137,92 +97,20 @@ import { ShareModal } from "@/components/ShareModal"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { renderToStaticMarkup } from "react-dom/server"
-import { CitationPreview } from "@/components/CitationPreview"
+import CitationPreview from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
 import { createPortal } from "react-dom"
-import { cleanCitationsFromResponse, processMessage } from "@/utils/chatUtils"
+import {
+  cleanCitationsFromResponse,
+  processMessage,
+  createTableComponents,
+} from "@/utils/chatUtils.tsx"
+import {
+  useDocumentOperations,
+  DocumentOperationsProvider,
+} from "@/contexts/DocumentOperationsContext"
 
 export const THINKING_PLACEHOLDER = "Thinking"
-
-// Utility function to suppress console logs for a specific operation
-function suppressLogs<T>(fn: () => T | Promise<T>): T | Promise<T> {
-  const originals = ["error", "warn", "log", "info", "debug"].map((k) => [
-    k,
-    (console as any)[k],
-  ])
-  originals.forEach(([k]) => ((console as any)[k] = () => {}))
-  try {
-    const result = fn()
-    if (result instanceof Promise) {
-      return result.finally(() => {
-        originals.forEach(([k, v]) => ((console as any)[k] = v))
-      })
-    } else {
-      originals.forEach(([k, v]) => ((console as any)[k] = v))
-      return result
-    }
-  } catch (error) {
-    originals.forEach(([k, v]) => ((console as any)[k] = v))
-    throw error
-  }
-}
-
-// Extract table components to avoid duplication
-const createTableComponents = () => ({
-  table: ({ node, ...props }: any) => (
-    <div className="overflow-x-auto max-w-full my-2">
-      <table
-        style={{
-          borderCollapse: "collapse",
-          borderStyle: "hidden",
-          tableLayout: "auto",
-          minWidth: "100%",
-          maxWidth: "none",
-        }}
-        className="w-auto dark:bg-slate-800"
-        {...props}
-      />
-    </div>
-  ),
-  th: ({ node, ...props }: any) => (
-    <th
-      style={{
-        border: "none",
-        padding: "8px 12px",
-        textAlign: "left",
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        maxWidth: "300px",
-        minWidth: "100px",
-        whiteSpace: "normal",
-      }}
-      className="dark:text-white font-semibold"
-      {...props}
-    />
-  ),
-  td: ({ node, ...props }: any) => (
-    <td
-      style={{
-        border: "none",
-        padding: "8px 12px",
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        maxWidth: "300px",
-        minWidth: "100px",
-        whiteSpace: "normal",
-      }}
-      className="border-t border-gray-100 dark:border-gray-800 dark:text-white"
-      {...props}
-    />
-  ),
-  tr: ({ node, ...props }: any) => (
-    <tr
-      style={{ border: "none" }}
-      className="bg-white dark:bg-[#1E1E1E]"
-      {...props}
-    />
-  ),
-})
 
 // Mapping from source ID to app/entity object
 // const sourceIdToAppEntityMap: Record<string, { app: string; entity?: string }> =
@@ -341,6 +229,7 @@ export const ChatPage = ({
   const [sharedChatData, setSharedChatData] = useState<any>(null)
   const [sharedChatLoading, setSharedChatLoading] = useState(false)
   const [sharedChatError, setSharedChatError] = useState<string | null>(null)
+  const { documentOperationsRef } = useDocumentOperations()
 
   const data = useLoaderData({
     from: isWithChatId
@@ -382,6 +271,7 @@ export const ChatPage = ({
     startStream,
     stopStream,
     retryMessage,
+    displayPartial,
   } = useChatStream(
     chatId,
     (title: string) => setChatTitle(title),
@@ -427,7 +317,7 @@ export const ChatPage = ({
   // merging the real stream IDs once available
   const currentResp = isStreaming
     ? {
-        resp: partial,
+        resp: displayPartial ?? partial,
         thinking,
         deepResearchSteps,
         sources,
@@ -523,7 +413,11 @@ export const ChatPage = ({
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(
     null,
   )
+  const [selectedChunkIndex, setSelectedChunkIndex] = useState<number | null>(
+    null,
+  )
   const [cameFromSources, setCameFromSources] = useState(false)
+  const [isDocumentLoaded, setIsDocumentLoaded] = useState(false)
 
   // Compute disableRetry flag for retry buttons
   const disableRetry = isStreaming || retryIsStreaming || isSharedChat
@@ -789,6 +683,7 @@ export const ChatPage = ({
         chatParams.agentId,
         chatParams.toolsList,
         chatParams.selectedModel, // Use selectedModel from URL params
+        false, // isFollowup = false for initial query
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -867,6 +762,7 @@ export const ChatPage = ({
 
   const [streamingStarted, setStreamingStarted] = useState(false)
   const [lastUserMessageCount, setLastUserMessageCount] = useState(0)
+  const [initialBottomSpace, setInitialBottomSpace] = useState(0)
 
   // Detect when streaming starts for a new query and calculate exact space needed
   useEffect(() => {
@@ -898,13 +794,14 @@ export const ChatPage = ({
           spaceNeeded = Math.max(300, containerHeight * 0.65)
         } else if (containerHeight <= 900) {
           // Medium screens: good separation without excess
-          spaceNeeded = Math.max(400, containerHeight * 0.72)
+          spaceNeeded = Math.max(400, containerHeight * 0.78)
         } else {
           // Large screens: sufficient space but not excessive
           spaceNeeded = Math.max(800, Math.min(containerHeight * 1, 980))
         }
 
         setBottomSpace(spaceNeeded)
+        setInitialBottomSpace(spaceNeeded)
 
         // Position the latest user message at the top with precise scroll positioning
         setTimeout(() => {
@@ -943,6 +840,98 @@ export const ChatPage = ({
     lastUserMessageCount,
   ])
 
+  // Shared function to adjust bottom space based on content height
+  // Calculates total height of last assistant message (including action buttons, sources, follow-ups)
+  // and adjusts the spacer to prevent unnecessary extra space
+  const adjustBottomSpaceForContent = useCallback(
+    (forceUpdate = false) => {
+      if (initialBottomSpace === 0) return
+
+      const container = messagesContainerRef.current
+      if (!container) return
+
+      const assistantMessageWrappers = container.querySelectorAll(
+        '[data-message-role="assistant"]',
+      )
+      if (assistantMessageWrappers.length === 0) return
+
+      const lastMessageWrapper = assistantMessageWrappers[
+        assistantMessageWrappers.length - 1
+      ] as HTMLElement
+      if (!lastMessageWrapper) return
+
+      const totalHeight = lastMessageWrapper.offsetHeight
+      const newBottomSpace = Math.max(50, initialBottomSpace - totalHeight)
+
+      // During streaming, only update if there's a significant change (>10px) to avoid jitter
+      // After streaming, always update to ensure accurate spacing
+      setBottomSpace((prevBottomSpace) => {
+        if (forceUpdate || Math.abs(prevBottomSpace - newBottomSpace) > 10) {
+          return newBottomSpace
+        }
+        return prevBottomSpace
+      })
+    },
+    [initialBottomSpace],
+  )
+
+  // Adjust bottom space during streaming as content grows
+  useEffect(() => {
+    if (!streamingStarted || (!isStreaming && !retryIsStreaming)) return
+    if (initialBottomSpace === 0) return
+
+    const observer = new ResizeObserver(() => adjustBottomSpaceForContent())
+    const interval = setInterval(() => adjustBottomSpaceForContent(), 100)
+
+    const container = messagesContainerRef.current
+    if (container) observer.observe(container)
+
+    return () => {
+      observer.disconnect()
+      clearInterval(interval)
+    }
+  }, [
+    streamingStarted,
+    isStreaming,
+    retryIsStreaming,
+    initialBottomSpace,
+    adjustBottomSpaceForContent,
+    partial,
+    currentResp,
+  ])
+
+  // Adjust bottom space after streaming ends for action buttons, sources, and follow-ups
+  useEffect(() => {
+    if (isStreaming || retryIsStreaming || initialBottomSpace === 0) return
+
+    const observer = new ResizeObserver(() => adjustBottomSpaceForContent(true))
+
+    const container = messagesContainerRef.current
+    if (container) observer.observe(container)
+
+    // Timed adjustments to catch elements as they appear:
+    // 50ms: action buttons, 200ms: sources, 400ms: follow-up loading, 600ms: safety check
+    const timeouts = [50, 200, 400, 600].map((delay) =>
+      setTimeout(() => adjustBottomSpaceForContent(true), delay),
+    )
+
+    return () => {
+      observer.disconnect()
+      timeouts.forEach(clearTimeout)
+    }
+  }, [
+    isStreaming,
+    retryIsStreaming,
+    initialBottomSpace,
+    messages,
+    adjustBottomSpaceForContent,
+  ])
+
+  // Callback for when follow-up questions finish generating
+  const handleFollowUpQuestionsLoaded = useCallback(() => {
+    setTimeout(() => adjustBottomSpaceForContent(true), 150)
+  }, [adjustBottomSpaceForContent])
+
   const handleSend = async (
     messageToSend: string,
     metadata?: AttachmentMetadata[],
@@ -950,6 +939,7 @@ export const ChatPage = ({
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[],
     selectedModel?: string,
+    isFollowUp?: boolean,
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
@@ -984,6 +974,7 @@ export const ChatPage = ({
         toolsList,
         metadata,
         selectedModel,
+        isFollowUp,
       )
     } catch (error) {
       // If there's an error, clear the optimistically added message from cache
@@ -1195,9 +1186,104 @@ export const ChatPage = ({
     }
   }
 
+  // Handle chunk index changes from CitationPreview
+  const handleChunkIndexChange = useCallback(
+    async (newChunkIndex: number | null, documentId: string, docId: string) => {
+      if (!documentId) {
+        console.error("handleChunkIndexChange called without documentId")
+        return
+      }
+
+      if (selectedCitation?.itemId !== documentId) {
+        return
+      }
+
+      if (newChunkIndex === null) {
+        documentOperationsRef?.current?.clearHighlights?.()
+        return
+      }
+
+      if (newChunkIndex !== null) {
+        try {
+          const chunkContentResponse = await api.chunk[":cId"].files[
+            ":docId"
+          ].content.$get({
+            param: { cId: newChunkIndex.toString(), docId: docId },
+          })
+
+          if (!chunkContentResponse.ok) {
+            console.error(
+              "Failed to fetch chunk content:",
+              chunkContentResponse.status,
+            )
+            toast({
+              title: "Error",
+              description: "Failed to load chunk content",
+              variant: "destructive",
+            })
+            return
+          }
+
+          const chunkContent = await chunkContentResponse.json()
+
+          // Ensure we are still on the same document before mutating UI
+          if (selectedCitation?.itemId !== documentId) {
+            return
+          }
+
+          if (chunkContent && chunkContent.chunkContent) {
+            if (documentOperationsRef?.current?.clearHighlights) {
+              documentOperationsRef.current.clearHighlights()
+            }
+
+            if (documentOperationsRef?.current?.highlightText) {
+              try {
+                await documentOperationsRef.current.highlightText(
+                  chunkContent.chunkContent,
+                  newChunkIndex,
+                  chunkContent.pageIndex,
+                  true,
+                )
+              } catch (error) {
+                console.error(
+                  "Error highlighting chunk text:",
+                  chunkContent.chunkContent,
+                  error,
+                )
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error in handleChunkIndexChange:", error)
+          toast({
+            title: "Error",
+            description: "Failed to process chunk navigation",
+            variant: "destructive",
+          })
+        }
+      }
+    },
+    [selectedCitation, toast, documentOperationsRef],
+  )
+
+  useEffect(() => {
+    if (selectedCitation && isDocumentLoaded) {
+      handleChunkIndexChange(
+        selectedChunkIndex,
+        selectedCitation?.itemId ?? "",
+        selectedCitation?.docId ?? "",
+      )
+    }
+  }, [
+    selectedChunkIndex,
+    selectedCitation,
+    isDocumentLoaded,
+    handleChunkIndexChange,
+  ])
+
   // Handler for citation clicks - moved before conditional returns
   const handleCitationClick = useCallback(
-    (citation: Citation, fromSources: boolean = false) => {
+    (citation: Citation, chunkIndex?: number, fromSources: boolean = false) => {
       if (!citation || !citation.clId || !citation.itemId) {
         // For citations without clId or itemId, open as regular link
         if (citation.url) {
@@ -1215,6 +1301,11 @@ export const ChatPage = ({
         setCurrentCitations([])
         setCurrentMessageId(null)
       }
+      // Handle chunk index change if provided
+      setSelectedChunkIndex(null)
+      setTimeout(() => {
+        setSelectedChunkIndex(chunkIndex ?? null)
+      }, 0)
     },
     [],
   )
@@ -1224,7 +1315,26 @@ export const ChatPage = ({
     setIsCitationPreviewOpen(false)
     setSelectedCitation(null)
     setCameFromSources(false)
+    setSelectedChunkIndex(null)
+    setIsDocumentLoaded(false)
   }, [])
+
+  // Callback for when document is loaded in CitationPreview
+  const handleDocumentLoaded = useCallback(() => {
+    setIsDocumentLoaded(true)
+  }, [])
+
+  useEffect(() => {
+    setIsDocumentLoaded(false)
+  }, [selectedCitation])
+
+  useEffect(() => {
+    setIsCitationPreviewOpen(false)
+    setSelectedCitation(null)
+    setCameFromSources(false)
+    setSelectedChunkIndex(null)
+    setIsDocumentLoaded(false)
+  }, [chatId])
 
   // Handler for back to sources navigation
   const handleBackToSources = useCallback(() => {
@@ -1234,6 +1344,7 @@ export const ChatPage = ({
       setIsCitationPreviewOpen(false)
       setSelectedCitation(null)
       setCameFromSources(false)
+      setSelectedChunkIndex(null)
     }
   }, [currentCitations, currentMessageId])
 
@@ -1528,6 +1639,7 @@ export const ChatPage = ({
                 isAutoScrollingRef={isAutoScrollingRef}
                 partial={partial}
                 bottomSpace={bottomSpace}
+                onFollowUpQuestionsLoaded={handleFollowUpQuestionsLoaded}
               />
               {showRagTrace && chatId && selectedMessageId && (
                 <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
@@ -1627,6 +1739,8 @@ export const ChatPage = ({
         onClose={handleCloseCitationPreview}
         showBackButton={cameFromSources}
         onBackToSources={handleBackToSources}
+        documentOperationsRef={documentOperationsRef}
+        onDocumentLoaded={handleDocumentLoaded}
       />
     </div>
   )
@@ -1700,7 +1814,11 @@ const CitationList = ({
   onCitationClick,
 }: {
   citations: Citation[]
-  onCitationClick?: (citation: Citation, fromSources?: boolean) => void
+  onCitationClick?: (
+    citation: Citation,
+    chunkIndex?: number,
+    fromSources?: boolean,
+  ) => void
 }) => {
   return (
     <ul className={`mt-2`}>
@@ -1710,7 +1828,7 @@ const CitationList = ({
           className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] mt-[12px] w-[85%] cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
           onClick={(e) => {
             e.preventDefault()
-            onCitationClick?.(citation, true)
+            onCitationClick?.(citation, undefined, true)
           }}
         >
           <div className="flex pl-[12px] pt-[12px]">
@@ -1746,7 +1864,11 @@ const Sources = ({
   showSources: boolean
   citations: Citation[]
   closeSources: () => void
-  onCitationClick?: (citation: Citation, fromSources?: boolean) => void
+  onCitationClick?: (
+    citation: Citation,
+    chunkIndex?: number,
+    fromSources?: boolean,
+  ) => void
 }) => {
   return showSources ? (
     <div
@@ -1964,443 +2086,6 @@ export const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
   )
 }
 
-const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36)
-const Code = ({
-  inline,
-  children,
-  className,
-  ...props
-}: {
-  inline?: boolean
-  children?: React.ReactNode
-  className?: string
-  node?: any
-}) => {
-  const demoid = useRef(`dome${randomid()}`)
-  const [container, setContainer] = useState<HTMLElement | null>(null)
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [containerHeight, setContainerHeight] = useState(600)
-  const isMermaid =
-    className && /^language-mermaid/.test(className.toLocaleLowerCase())
-
-  // Debug logging for inline code detection
-  const codeString =
-    typeof children === "string" ? children : String(children || "")
-
-  let codeContent = ""
-  if (props.node && props.node.children && props.node.children.length > 0) {
-    codeContent = getCodeString(props.node.children)
-  } else if (typeof children === "string") {
-    codeContent = children
-  } else if (
-    Array.isArray(children) &&
-    children.length > 0 &&
-    typeof children[0] === "string"
-  ) {
-    // Fallback for cases where children might still be an array with a single string
-    codeContent = children[0]
-  }
-
-  // State for managing mermaid validation and rendering
-  const [lastValidMermaid, setLastValidMermaid] = useState<string>("")
-  const mermaidRenderTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Function to validate if mermaid syntax looks complete
-  const isMermaidSyntaxValid = async (code: string): Promise<boolean> => {
-    if (!code || code.trim() === "") return false
-
-    const trimmedCode = code.trim()
-
-    const mermaidPatterns = [
-      /^graph\s+(TD|TB|BT|RL|LR)\s*\n/i,
-      /^flowchart\s+(TD|TB|BT|RL|LR)\s*\n/i,
-      /^sequenceDiagram\s*\n/i,
-      /^classDiagram\s*\n/i,
-      /^stateDiagram\s*\n/i,
-      /^stateDiagram-v2\s*\n/i,
-      /^erDiagram\s*\n/i,
-      /^journey\s*\n/i,
-      /^gantt\s*\n/i,
-      /^pie\s*\n/i,
-      /^gitgraph\s*\n/i,
-      /^mindmap\s*\n/i,
-      /^timeline\s*\n/i,
-
-      // Additional or experimental diagram types
-      /^zenuml\s*\n/i,
-      /^quadrantChart\s*\n/i,
-      /^requirementDiagram\s*\n/i,
-      /^userJourney\s*\n/i,
-
-      // Optional aliasing/loose matching for future compatibility
-      /^flowchart\s*\n/i,
-      /^graph\s*\n/i,
-    ]
-
-    // Check if it starts with a valid mermaid diagram type
-    const hasValidStart = mermaidPatterns.some((pattern) =>
-      pattern.test(trimmedCode),
-    )
-    if (!hasValidStart) return false
-
-    // Try to parse with mermaid to validate syntax
-    try {
-      // Use scoped console suppression to avoid global hijacking
-      return await suppressLogs(async () => {
-        await mermaid.parse(trimmedCode)
-        return true
-      })
-    } catch (error) {
-      // Invalid syntax
-      return false
-    }
-  }
-
-  // Debounced function to validate and render mermaid
-  const debouncedMermaidRender = useCallback(
-    async (code: string) => {
-      if (!container || !isMermaid) return
-
-      // Clear any existing timeout
-      if (mermaidRenderTimeoutRef.current) {
-        clearTimeout(mermaidRenderTimeoutRef.current)
-      }
-
-      // If code is empty, clear the container
-      if (!code || code.trim() === "") {
-        container.innerHTML = ""
-        setLastValidMermaid("")
-        return
-      }
-
-      // Check if syntax looks valid (async now)
-      const isValid = await isMermaidSyntaxValid(code)
-      if (!isValid) {
-        // If we have a previous valid render, keep showing it
-        if (lastValidMermaid) {
-          return
-        } else {
-          // Show loading state for incomplete syntax
-          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
-          <div>Mermaid Chart..</div>
-          <div style="margin-top: 10px; font-size: 12px;">Streaming mermaid</div>
-        </div>`
-          return
-        }
-      }
-
-      // Debounce the actual rendering to avoid too many rapid attempts
-      mermaidRenderTimeoutRef.current = setTimeout(async () => {
-        try {
-          // Additional safety: validate the code before rendering
-          if (!code || code.trim().length === 0) {
-            container.innerHTML = ""
-            setLastValidMermaid("")
-            return
-          }
-
-          // Sanitize the code to prevent potential issues
-          const sanitizedCode = code
-            .replace(/javascript:/gi, "") // Remove javascript: protocols
-            .replace(/data:/gi, "") // Remove data: protocols
-            .replace(/<script[^>]*>.*?<\/script>/gis, "") // Remove script tags
-            .trim()
-
-          if (!sanitizedCode) {
-            container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
-            <div>📊 Mermaid Diagram</div>
-            <div style="margin-top: 10px; font-size: 12px; color: #999;">Invalid diagram content</div>
-          </div>`
-            return
-          }
-
-          // Use scoped console suppression during rendering
-          try {
-            await suppressLogs(async () => {
-              // Render with additional error boundary
-              const { svg } = await mermaid.render(
-                demoid.current,
-                sanitizedCode,
-              )
-
-              // Validate that we got valid SVG
-              if (!svg || !svg.includes("<svg")) {
-                throw new Error("Invalid SVG generated")
-              }
-
-              container.innerHTML = svg
-              setLastValidMermaid(sanitizedCode)
-            })
-          } catch (error: any) {
-            // Completely suppress all error details from users
-
-            // Always gracefully handle any mermaid errors by either:
-            // 1. Keeping the last valid diagram if we have one
-            // 2. Showing a loading/placeholder state if no valid diagram exists
-            // 3. Never showing syntax error messages to users
-
-            if (lastValidMermaid) {
-              // Keep showing the last valid diagram - don't change anything
-              return
-            } else {
-              // Show a generic processing state instead of error details
-              container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
-              <div>📊 Mermaid Diagram</div>
-              <div style="margin-top: 10px; font-size: 12px; color: #999;">Processing diagram content...</div>
-            </div>`
-            }
-          }
-        } catch (outerError: any) {
-          // Final fallback error handling
-          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
-          <div>📊 Mermaid Diagram</div>
-          <div style="margin-top: 10px; font-size: 12px; color: #999;">Unable to render diagram</div>
-        </div>`
-        }
-      }, 300)
-    },
-    [container, isMermaid, lastValidMermaid],
-  )
-
-  useEffect(() => {
-    debouncedMermaidRender(codeContent)
-
-    // Cleanup timeout on unmount
-    return () => {
-      if (mermaidRenderTimeoutRef.current) {
-        clearTimeout(mermaidRenderTimeoutRef.current)
-      }
-    }
-  }, [debouncedMermaidRender, codeContent])
-
-  const refElement = useCallback((node: HTMLElement | null) => {
-    if (node !== null) {
-      setContainer(node)
-    }
-  }, [])
-
-  const handleFullscreen = () => {
-    setIsFullscreen(!isFullscreen)
-  }
-
-  const adjustHeight = (delta: number) => {
-    setContainerHeight((prev) => Math.max(200, Math.min(1200, prev + delta)))
-  }
-
-  const MermaidControls = () => {
-    const { zoomIn, zoomOut, resetTransform, centerView } = useControls()
-    const buttonBaseClass =
-      "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-1.5 shadow-md z-10 transition-colors"
-    const iconSize = 12
-
-    const handleResetAndCenter = () => {
-      resetTransform()
-      // Small delay to ensure reset is complete before centering
-      setTimeout(() => {
-        centerView()
-      }, 10)
-    }
-
-    return (
-      <div className="absolute top-2 left-2 flex space-x-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-        <button
-          onClick={() => zoomIn()}
-          className={`${buttonBaseClass} rounded-l-md`}
-          title="Zoom In"
-        >
-          <ZoomIn size={iconSize} />
-        </button>
-        <button
-          onClick={() => zoomOut()}
-          className={`${buttonBaseClass}`}
-          title="Zoom Out"
-        >
-          <ZoomOut size={iconSize} />
-        </button>
-        <button
-          onClick={handleResetAndCenter}
-          className={`${buttonBaseClass}`}
-          title="Reset View"
-        >
-          <RefreshCw size={iconSize} />
-        </button>
-        <button
-          onClick={() => adjustHeight(-100)}
-          className={`${buttonBaseClass}`}
-          title="Decrease Height"
-        >
-          <Minus size={iconSize} />
-        </button>
-        <button
-          onClick={() => adjustHeight(100)}
-          className={`${buttonBaseClass}`}
-          title="Increase Height"
-        >
-          <Plus size={iconSize} />
-        </button>
-        <button
-          onClick={handleFullscreen}
-          className={`${buttonBaseClass} rounded-r-md`}
-          title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-        >
-          {isFullscreen ? (
-            <Minimize2 size={iconSize} />
-          ) : (
-            <Maximize2 size={iconSize} />
-          )}
-        </button>
-      </div>
-    )
-  }
-
-  if (isMermaid) {
-    const containerStyle = isFullscreen
-      ? {
-          position: "fixed" as const,
-          top: 0,
-          left: 0,
-          width: "100vw",
-          height: "100vh",
-          backgroundColor: "rgba(113, 109, 109, 0.95)",
-          zIndex: 9999,
-        }
-      : {
-          width: "100%",
-          height: `${containerHeight}px`,
-          minHeight: "200px",
-          maxHeight: "1200px",
-        }
-
-    // Transform wrapper configuration for different view modes
-    const transformConfig = isFullscreen
-      ? {
-          initialScale: 2,
-          minScale: 0.5,
-          maxScale: 10,
-          limitToBounds: true,
-          centerOnInit: true,
-          centerZoomedOut: true,
-          doubleClick: { disabled: true },
-          wheel: { step: 0.1 },
-          panning: { velocityDisabled: true },
-        }
-      : {
-          initialScale: 1.5,
-          minScale: 0.5,
-          maxScale: 7,
-          limitToBounds: true,
-          centerOnInit: true,
-          centerZoomedOut: true,
-          doubleClick: { disabled: true },
-          wheel: { step: 0.1 },
-          panning: { velocityDisabled: true },
-        }
-
-    return (
-      <div
-        className={`group relative mb-6 overflow-hidden ${isFullscreen ? "" : "w-full"}`}
-        style={isFullscreen ? containerStyle : undefined}
-      >
-        <TransformWrapper
-          key={`mermaid-transform-${isFullscreen ? "fullscreen" : "normal"}`}
-          initialScale={transformConfig.initialScale}
-          minScale={transformConfig.minScale}
-          maxScale={transformConfig.maxScale}
-          limitToBounds={transformConfig.limitToBounds}
-          centerOnInit={transformConfig.centerOnInit}
-          centerZoomedOut={transformConfig.centerZoomedOut}
-          doubleClick={transformConfig.doubleClick}
-          wheel={transformConfig.wheel}
-          panning={transformConfig.panning}
-        >
-          <TransformComponent
-            wrapperStyle={{
-              width: "100%",
-              height: isFullscreen ? "100vh" : `${containerHeight}px`,
-              cursor: "grab",
-              backgroundColor: isFullscreen ? "transparent" : "transparent",
-            }}
-            contentStyle={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <div style={{ display: "inline-block" }}>
-              <code id={demoid.current} style={{ display: "none" }} />
-              <code
-                ref={refElement}
-                data-name="mermaid"
-                className={`mermaid ${className || ""}`}
-                style={{
-                  display: "inline-block",
-                  backgroundColor: "transparent",
-                }}
-              />
-            </div>
-          </TransformComponent>
-          <MermaidControls />
-        </TransformWrapper>
-        {isFullscreen && (
-          <button
-            onClick={handleFullscreen}
-            className="absolute top-4 right-4 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-2 rounded-full shadow-lg z-10 transition-colors"
-            title="Exit Fullscreen"
-          >
-            <X size={16} />
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  // Enhanced inline detection - fallback if inline prop is not set correctly
-  const isActuallyInline =
-    inline ||
-    (!className && !codeString.includes("\n") && codeString.trim().length > 0)
-
-  // For regular code blocks, render as plain text without boxing
-  if (!isActuallyInline) {
-    return (
-      <pre
-        className="text-sm block w-full my-2 font-mono"
-        style={{
-          whiteSpace: "pre-wrap",
-          overflowWrap: "break-word",
-          wordBreak: "break-word",
-          maxWidth: "100%",
-          color: "inherit",
-          background: "none",
-          border: "none",
-          padding: 0,
-          margin: 0,
-        }}
-      >
-        <code style={{ background: "none", color: "inherit" }}>{children}</code>
-      </pre>
-    )
-  }
-
-  return (
-    <code
-      className={`${className || ""} font-mono bg-gray-100 dark:bg-gray-800 rounded-md px-2 py-1 text-xs`}
-      style={{
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        maxWidth: "100%",
-        color: "inherit",
-        display: "inline",
-        fontSize: "0.75rem",
-        verticalAlign: "baseline",
-      }}
-    >
-      {children}
-    </code>
-  )
-}
-
 // Virtualized Messages Component
 interface VirtualizedMessagesProps {
   messages: SelectPublicMessage[]
@@ -2442,6 +2127,7 @@ interface VirtualizedMessagesProps {
   isAutoScrollingRef: React.MutableRefObject<boolean>
   partial: string
   bottomSpace: number
+  onFollowUpQuestionsLoaded: () => void
 }
 
 const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
@@ -2484,6 +2170,7 @@ const VirtualizedMessages = React.forwardRef<
       isAutoScrollingRef,
       partial,
       bottomSpace,
+      onFollowUpQuestionsLoaded,
     },
     ref,
   ) => {
@@ -2650,7 +2337,10 @@ const VirtualizedMessages = React.forwardRef<
                       }
                       message={message.message}
                       isUser={message.messageRole === "user"}
-                      responseDone={message.externalId !== "current-resp"}
+                      responseDone={
+                        message.isStreaming !== true &&
+                        message.externalId !== "current-resp"
+                      }
                       thinking={message.thinking}
                       deepResearchSteps={message.deepResearchSteps}
                       citations={message.sources}
@@ -2770,6 +2460,7 @@ const VirtualizedMessages = React.forwardRef<
                           chatBoxRef.current?.sendMessage(question)
                         }}
                         isStreaming={isStreaming || retryIsStreaming}
+                        onQuestionsLoaded={onFollowUpQuestionsLoaded}
                       />
                     )}
                   </Fragment>
@@ -2907,6 +2598,7 @@ export const ChatMessage = ({
                   </div>
                 ) : message !== "" ? (
                   <MarkdownPreview
+                    key={`markdown-${messageId || "unknown"}`}
                     source={processMessage(message, citationMap, citationUrls)}
                     wrapperElement={{
                       "data-color-mode": theme,
@@ -2922,7 +2614,7 @@ export const ChatMessage = ({
                     }}
                     components={{
                       a: createCitationLink(citations, onCitationClick),
-                      code: Code,
+                      code: MermaidCodeWrapper,
                       img: ({ src, alt, ...props }: any) => {
                         if (src?.startsWith("image-citation:")) {
                           const citationKey = src.replace("image-citation:", "")
@@ -2993,7 +2685,7 @@ export const ChatMessage = ({
                 ) : null}
               </div>
             </div>
-            {responseDone && !isRetrying && (
+            {!isStreaming && responseDone && !isRetrying && (
               <div className="flex flex-col">
                 {isDebugMode && messageId && (
                   <button
@@ -3170,11 +2862,13 @@ export const Route = createFileRoute("/_authenticated/chat")({
     const { user, workspace, agentWhiteList } =
       matches[matches.length - 1].context
     return (
-      <ChatPage
-        user={user}
-        workspace={workspace}
-        agentWhiteList={agentWhiteList}
-      />
+      <DocumentOperationsProvider>
+        <ChatPage
+          user={user}
+          workspace={workspace}
+          agentWhiteList={agentWhiteList}
+        />
+      </DocumentOperationsProvider>
     )
   },
   errorComponent: errorComponent,

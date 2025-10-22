@@ -133,9 +133,9 @@ export enum Models {
   Vertex_Claude_Sonnet_4 = VertexAIModels.Claude_Sonnet_4,
   // Vertex_Claude_Opus_4_1 = VertexAIModels.Claude_Opus_4_1,
   // Vertex_Claude_Opus_4 = VertexAIModels.Claude_Opus_4,
-  Vertex_Claude_3_7_Sonnet = VertexAIModels.Claude_3_7_Sonnet,
+  // Vertex_Claude_3_7_Sonnet = VertexAIModels.Claude_3_7_Sonnet,
   // Vertex_Claude_3_5_Sonnet_V2 = VertexAIModels.Claude_3_5_Sonnet_V2,
-  Vertex_Claude_3_5_Sonnet = VertexAIModels.Claude_3_5_Sonnet,
+  // Vertex_Claude_3_5_Sonnet = VertexAIModels.Claude_3_5_Sonnet,
   // Vertex_Claude_3_5_Haiku = VertexAIModels.Claude_3_5_Haiku,
   // Vertex_Claude_3_Opus = VertexAIModels.Claude_3_Opus,
   // Vertex_Claude_3_Haiku = VertexAIModels.Claude_3_Haiku,
@@ -228,9 +228,9 @@ export enum ModelDisplayNames {
   VERTEX_CLAUDE_SONNET_4 = "Claude Sonnet 4",
   // VERTEX_CLAUDE_OPUS_4_1 = "Claude Opus 4.1",
   // VERTEX_CLAUDE_OPUS_4 = "Claude Opus 4",
-  VERTEX_CLAUDE_3_7_SONNET = "Claude 3.7 Sonnet",
+  // VERTEX_CLAUDE_3_7_SONNET = "Claude 3.7 Sonnet",
   // VERTEX_CLAUDE_3_5_SONNET_V2 = "Claude 3.5 Sonnet V2",
-  VERTEX_CLAUDE_3_5_SONNET = "Claude 3.5 Sonnet",
+  // VERTEX_CLAUDE_3_5_SONNET = "Claude 3.5 Sonnet",
   // VERTEX_CLAUDE_3_5_HAIKU = "Claude 3.5 Haiku",
   // VERTEX_CLAUDE_3_OPUS = "Claude 3 Opus",
   // VERTEX_CLAUDE_3_HAIKU = "Claude 3 Haiku",
@@ -382,7 +382,7 @@ export const ToolAnswerResponse = z.object({
 })
 
 // Intent Schema - only includes fields with actual values (modular for different apps)
-export const IntentSchema = z.object({
+export const MailParticipantSchema = z.object({
   from: z.array(z.string()).optional(),
   to: z.array(z.string()).optional(),
   cc: z.array(z.string()).optional(),
@@ -390,7 +390,7 @@ export const IntentSchema = z.object({
   subject: z.array(z.string()).optional(),
 })
 
-export type Intent = z.infer<typeof IntentSchema>
+export type MailParticipant = z.infer<typeof MailParticipantSchema>
 
 // Zod schemas for filters
 export const FiltersSchema = z.object({
@@ -401,7 +401,7 @@ export const FiltersSchema = z.object({
   sortDirection: z.string().optional(),
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
   offset: z.preprocess((val) => (val == null ? 0 : val), z.number()),
-  intent: IntentSchema.optional(),
+  mailParticipants: MailParticipantSchema.optional(),
 })
 
 const TemporalClassifierSchema = z.object({

@@ -37,15 +37,17 @@ import {
   KnowledgeBaseEntity,
   MailAttachmentEntity,
   WebSearchEntity,
+  type MailParticipant,
 } from "@xyne/vespa-ts/types"
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
-import type { Intent, UserQuery, QueryRouterLLMResponse } from "@/ai/types"
+import type { UserQuery, QueryRouterLLMResponse } from "@/ai/types"
 import {
   AgentReasoningStepType,
   OpenAIError,
   type AgentReasoningStep,
+  type AttachmentMetadata,
 } from "@/shared/types"
 import type { Citation } from "@/api/chat/types"
 import { getFolderItems, SearchEmailThreads } from "@/search/vespa"
@@ -53,6 +55,7 @@ import { getLoggerWithChild, getLogger } from "@/logger"
 import type { Span } from "@/tracer"
 import { Subsystem } from "@/types"
 import type { SelectMessage } from "@/db/schema"
+import { MessageRole } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
@@ -62,7 +65,96 @@ import {
   getCollectionFoldersItemIds,
 } from "@/db/knowledgeBase"
 import { db } from "@/db/client"
+import { collections, collectionItems } from "@/db/schema"
+import { and, eq, isNull } from "drizzle-orm"
 import { get } from "http"
+
+// Follow-up context types and utilities
+export type WorkingSet = {
+  fileIds: string[]
+  attachmentFileIds: string[] // images etc.
+  carriedFromMessageIds: string[]
+}
+
+const MAX_FILES = 12
+
+export function collectFollowupContext(
+  messages: SelectMessage[],
+  maxHops = 12,
+): WorkingSet {
+  const startIdx = messages.length - 1
+  const ws: WorkingSet = {
+    fileIds: [],
+    attachmentFileIds: [],
+    carriedFromMessageIds: [],
+  }
+
+  const seen = new Set<string>()
+  let hops = 0
+
+  // Extract chain breaks to understand conversation boundaries
+  const chainBreaks = extractChainBreakClassifications(messages)
+  const chainBreakIndices = new Set(chainBreaks.map((cb) => cb.messageIndex))
+
+  for (let i = startIdx; i >= 0 && hops < maxHops; i--, hops++) {
+    const m = messages[i]
+
+    // 1) attachments the user explicitly added
+    if (Array.isArray(m.attachments)) {
+      for (const a of m.attachments as AttachmentMetadata[]) {
+        if (a.isImage && a.fileId && !seen.has(`img:${a.fileId}`)) {
+          ws.attachmentFileIds.push(a.fileId)
+          ws.carriedFromMessageIds.push(m.externalId)
+          seen.add(`img:${a.fileId}`)
+          continue // images are separate from fileIds
+        }
+        if (a.fileId && !seen.has(`f:${a.fileId}`)) {
+          ws.fileIds.push(a.fileId)
+          ws.carriedFromMessageIds.push(m.externalId)
+          seen.add(`f:${a.fileId}`)
+          if (ws.fileIds.length >= MAX_FILES) break
+        }
+      }
+    }
+
+    // 2) fileIds from user messages
+    if (Array.isArray(m.fileIds) && m.fileIds.length > 0) {
+      for (const fileId of m.fileIds) {
+        if (!seen.has(`f:${fileId}`)) {
+          ws.fileIds.push(fileId)
+          ws.carriedFromMessageIds.push(m.externalId)
+          seen.add(`f:${fileId}`)
+          if (ws.fileIds.length >= MAX_FILES) break
+        }
+      }
+    }
+
+    // 3) sourceIds from assistant messages
+    if (
+      Array.isArray(m.sources) &&
+      m.sources.length > 0 &&
+      ws.fileIds.length < MAX_FILES
+    ) {
+      for (const source of m.sources) {
+        if (!seen.has(`f:${source.docId}`)) {
+          ws.fileIds.push(source.docId)
+          ws.carriedFromMessageIds.push(m.externalId)
+          seen.add(`f:${source.docId}`)
+          if (ws.fileIds.length >= MAX_FILES) break
+        }
+      }
+    }
+
+    // Stop if we hit a chain break (previous conversation topic)
+    if (chainBreakIndices.has(i)) break
+  }
+
+  // De-dupe & trim
+  ws.fileIds = Array.from(new Set(ws.fileIds)).slice(0, MAX_FILES)
+  ws.attachmentFileIds = Array.from(new Set(ws.attachmentFileIds))
+
+  return ws
+}
 
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
@@ -100,12 +192,12 @@ export interface AppSelectionMap {
 
 export interface ParsedResult {
   selectedApps: Apps[]
-  selectedItems: { [app: string]: string[] }
+  selectedItems: Partial<Record<Apps, string[]>>
 }
 
 export function parseAppSelections(input: AppSelectionMap): ParsedResult {
   const selectedApps: Apps[] = []
-  const selectedItems: { [app: string]: string[] } = {}
+  let selectedItems: Record<Apps, string[]> = {} as Record<Apps, string[]>
 
   for (let [appName, selection] of Object.entries(input)) {
     let app: Apps
@@ -358,10 +450,7 @@ export const extractImageFileNames = (
   return { imageFileNames }
 }
 
-export const searchToCitation = (
-  result: VespaSearchResults,
-  chunkIndex?: number,
-): Citation => {
+export const searchToCitation = (result: VespaSearchResults): Citation => {
   const fields = result.fields
   if (result.fields.sddocname === userSchema) {
     return {
@@ -443,7 +532,6 @@ export const searchToCitation = (
       entity: clFields.entity,
       itemId: clFields.itemId,
       clId: clFields.clId,
-      chunkIndex: chunkIndex,
     }
   } else if (result.fields.sddocname === chatContainerSchema) {
     return {
@@ -466,7 +554,8 @@ const searchToCitations = (results: VespaSearchResults[]): Citation[] => {
 }
 
 export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
+export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
+export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
 
 export const processMessage = (
   text: string,
@@ -691,7 +780,84 @@ export const extractFileIdsFromMessage = async (
     collectionFolderIds: collectionIds.filter(Boolean),
   }
 }
+export const extractItemIdsFromPath = async (
+  pathRefId: string,
+): Promise<{
+  collectionFileIds: string[]
+  collectionFolderIds: string[]
+  collectionIds: string[]
+}> => {
+  const collectionFileIds: string[] = []
+  const collectionFolderIds: string[] = []
+  const collectionIds: string[] = []
 
+  // If pathRefId is empty string, return empty object
+  if (!pathRefId || pathRefId === "") {
+    return {
+      collectionFileIds,
+      collectionFolderIds,
+      collectionIds,
+    }
+  }
+
+  const vespaId = String(pathRefId)
+
+  try {
+    // Check prefix and do respective DB call
+    if (vespaId.startsWith("clf-") || vespaId.startsWith("clfd-")) {
+      // Collection file/folder prefix - extract ID and query collectionItems with type verification
+      const isFile = vespaId.startsWith("clf-")
+      const expectedType = isFile ? "file" : "folder"
+      const [item] = await db
+        .select({ id: collectionItems.id, type: collectionItems.type })
+        .from(collectionItems)
+        .where(
+          and(
+            eq(collectionItems.vespaDocId, vespaId),
+            isNull(collectionItems.deletedAt),
+          ),
+        )
+
+      // Verify the item exists and type matches the prefix
+      if (item && item.type === expectedType) {
+        if (isFile) {
+          collectionFileIds.push(`clf-${item.id}`) // Keep the original prefixed ID
+        } else {
+          collectionFolderIds.push(`clfd-${item.id}`) // Keep the original prefixed ID
+        }
+      }
+    } else if (vespaId.startsWith("cl-")) {
+      // Collection prefix - extract ID and query collections table
+      const [collection] = await db
+        .select({ id: collections.id })
+        .from(collections)
+        .where(
+          and(
+            eq(collections.vespaDocId, vespaId),
+            isNull(collections.deletedAt),
+          ),
+        )
+
+      if (collection) {
+        collectionIds.push(`cl-${collection.id}`) // Keep the original prefixed ID
+      }
+    } else {
+    }
+  } catch (error) {
+    // Log error but don't throw - return empty arrays
+    getLoggerWithChild(Subsystem.Chat)().error(
+      `Error extracting item IDs from pathRefId: ${vespaId}`,
+      error,
+    )
+  }
+
+  // Ensure we always return the same structure
+  return {
+    collectionFileIds,
+    collectionFolderIds,
+    collectionIds,
+  }
+}
 export const handleError = (error: any) => {
   let errorMessage = "Something went wrong. Please try again."
   if (error?.code === OpenAIError.RateLimitError) {
@@ -878,11 +1044,11 @@ export const getCitationToImage = async (
   }
 }
 
-export function extractNamesFromIntent(intent: any): Intent {
+export function extractNamesFromIntent(intent: any): MailParticipant {
   if (!intent || typeof intent !== "object") return {}
 
-  const result: Intent = {}
-  const fieldsToCheck = ["from", "to", "cc", "bcc", "subject"] as const
+  const result: MailParticipant = {}
+  const fieldsToCheck = ["from", "to", "cc", "bcc"] as const
 
   for (const field of fieldsToCheck) {
     if (Array.isArray(intent[field]) && intent[field].length > 0) {

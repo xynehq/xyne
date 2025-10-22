@@ -22,7 +22,7 @@ import {
   chatTeamSchema,
   chatMessageSchema,
   chatUserSchema,
-  chatAttachment,
+  chatAttachmentSchema,
 } from "@xyne/vespa-ts/types"
 
 async function getVespaSchemas(): Promise<string[]> {
@@ -363,7 +363,7 @@ async function clearVespaDataByUser(email: string): Promise<void> {
     chatContainerSchema,
     chatTeamSchema,
     chatUserSchema,
-    chatAttachment, // Now valid as chatAttachment is in VespaSchema type
+    chatAttachmentSchema, // Now valid as chatAttachment is in VespaSchema type
   ]
 
   for (const fullSchemaName of allPrefixedSchemas) {

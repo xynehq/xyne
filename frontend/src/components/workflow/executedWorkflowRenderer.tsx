@@ -32,6 +32,8 @@ import {
 interface ExecutionWorkflowData {
   id: string
   name: string
+  userId: number
+  workspaceId: number
   description?: string
   version?: string
   status: string
@@ -43,7 +45,6 @@ interface ExecutionWorkflowData {
     allowed_file_types?: string[]
     supports_file_upload?: boolean
   }
-  createdBy?: string
   rootWorkflowStepTemplateId?: string
   rootWorkflowStepExeId?: string // For execution workflows
   createdAt: string
@@ -109,13 +110,13 @@ interface ExecutionWorkflowData {
     type: string
     value: any
     config: any
-    createdBy: string
+    workspaceId: number
+    userId: number
     createdAt: string
     updatedAt: string
   }>
 }
 
-import botLogo from "@/assets/bot-logo.svg"
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
@@ -725,121 +726,6 @@ const StepNode: React.FC<NodeProps> = ({
     )
   }
 
-  // Special rendering for python_script tools
-  const hasPythonScriptTool =
-    tools && tools.length > 0 && tools[0].type === "python_script"
-  if (step.type === "python_script" || hasPythonScriptTool) {
-    // Check if any associated tool execution has failed
-    const hasFailedToolExecution =
-      tools && tools.some((tool) => (tool as any).status === "failed")
-    const isFailed = step.status === "failed" || hasFailedToolExecution
-
-    return (
-      <>
-        <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow"
-          style={{
-            width: "320px",
-            minHeight: "122px",
-            borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
-            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
-            boxShadow: isFailed
-              ? "0 0 0 2px #FECACA"
-              : isCompleted
-                ? "0 0 0 2px #BBF7D0"
-                : "0 0 0 2px #E2E2E2",
-          }}
-        >
-          {/* Header with icon and title */}
-          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
-            {/* Bot icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0"
-              style={{
-                display: "flex",
-                width: "24px",
-                height: "24px",
-                padding: "4px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "4.8px",
-                background: "#EBF4FF",
-              }}
-            >
-              <img src={botLogo} alt="Bot" width={16} height={16} />
-            </div>
-
-            <h3
-              className="text-gray-800 truncate flex-1"
-              style={{
-                fontFamily: "Inter",
-                fontSize: "14px",
-                fontStyle: "normal",
-                fontWeight: "600",
-                lineHeight: "normal",
-                letterSpacing: "-0.14px",
-                color: "#3B4145",
-              }}
-            >
-              {step.name || "Python Script"}
-              {/* Show execution status indicator */}
-              {(step as any).isExecution && isActive && (
-                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                  Running
-                </span>
-              )}
-              {(step as any).isExecution &&
-                isFailed &&
-                step.status !== "failed" && (
-                  <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
-                    Tool Failed
-                  </span>
-                )}
-            </h3>
-          </div>
-
-          {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 mb-3"></div>
-
-          {/* Description text */}
-          <div className="px-4 pb-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {step.description ||
-                "Execute Python script to process data and generate results."}
-            </p>
-          </div>
-
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
-          </div>
-
-        </div>
-      </>
-    )
-  }
 
   // For executions, create a generic template-style node if no specific type matched
   const isExecution = (step as any).isExecution
@@ -1497,14 +1383,14 @@ const ExecutionSidebar = ({
                               step.status === "completed" &&
                               tool.status === "completed"
                             const hasEmailBody =
-                              tool.result?.python_script_output?.body
+                              tool.result?.email_details
 
                             if (isEmailTool && isSuccess && hasEmailBody) {
                               return (
                                 <button
                                   onClick={() =>
                                     onResultClick?.(
-                                      tool.result.python_script_output.body,
+                                      tool.result,
                                     )
                                   }
                                   className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
@@ -1535,10 +1421,10 @@ const ExecutionSidebar = ({
 
                             if (isEmailTool && isSuccess) {
                               const hasEmailBody =
-                                tool.result?.python_script_output?.body
+                                tool.result?.email_details
                               if (hasEmailBody) {
                                 onResultClick?.(
-                                  tool.result.python_script_output.body,
+                                  tool.result,
                                 )
                               } else {
                                 onResultClick?.(tool.result)
@@ -1563,7 +1449,6 @@ const ExecutionSidebar = ({
                               const error =
                                 tool.result?.error ||
                                 tool.result?.message ||
-                                tool.result?.python_script_output?.error ||
                                 tool.result?.stderr ||
                                 tool.result?.exception ||
                                 `${tool.type} execution failed`

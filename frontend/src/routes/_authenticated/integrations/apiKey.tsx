@@ -74,6 +74,11 @@ const AVAILABLE_SCOPES: ApiKeyScope[] = [
     description: "Allows creating new agents",
   },
   {
+    id: ApiKeyScopes.READ_AGENT,
+    name: "Read Agent",
+    description: "Allows reading agent details (read-only access)",
+  },
+  {
     id: ApiKeyScopes.AGENT_CHAT,
     name: "Agent Chat",
     description: "Allows chatting with agents",
@@ -102,6 +107,11 @@ const AVAILABLE_SCOPES: ApiKeyScope[] = [
     id: ApiKeyScopes.CREATE_COLLECTION,
     name: "Create Collection",
     description: "Allows creating knowledge base collections",
+  },
+  {
+    id: ApiKeyScopes.UPDATE_COLLECTION,
+    name: "Update Collection",
+    description: "Allows updating knowledge base collections",
   },
   {
     id: ApiKeyScopes.LIST_COLLECTIONS,
@@ -255,8 +265,7 @@ const ApiKeyComponent = ({ user, agentWhiteList }: ApiKeyProps) => {
     } catch (error) {
       toast({
         title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to create API key",
+        description: "Failed to create API key",
         variant: "destructive",
       })
     } finally {
@@ -294,8 +303,7 @@ const ApiKeyComponent = ({ user, agentWhiteList }: ApiKeyProps) => {
     } catch (error) {
       toast({
         title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to revoke API key",
+        description: "Failed to revoke API key",
         variant: "destructive",
       })
     }

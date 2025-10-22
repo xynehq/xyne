@@ -6,11 +6,13 @@ import {
 } from "@/db/schema"
 import {
   Apps,
+  chatAttachmentSchema,
   chatContainerSchema,
   chatMessageSchema,
   chatTeamSchema,
   chatUserSchema,
   SlackEntity,
+  type VespaChatAttachment,
   type VespaChatContainer,
   type VespaChatMessage,
 } from "@xyne/vespa-ts/types"
@@ -78,6 +80,7 @@ import {
 } from "@/metrics/slack/slack-metrics"
 import config, { NAMESPACE } from "@/config"
 import { periodicSaveState } from "./config"
+import type { FileElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
   module: "slack",
@@ -697,6 +700,67 @@ export const getTeam = async (
   return message.team
 }
 
+export const insertChatAttachment = async (
+  file: FileElement,
+  messageId: string,
+  teamId: string,
+  userId: string,
+  channelId: string,
+) => {
+  // Extract dimensions for images
+  let dimensions: number[] | undefined
+  if (file.thumb_pdf_w && file.thumb_pdf_h) {
+    dimensions = [parseFloat(file.thumb_pdf_w), parseFloat(file.thumb_pdf_h)]
+  } else if (file.original_w && file.original_h) {
+    dimensions = [parseFloat(file.original_w), parseFloat(file.original_h)]
+  }
+
+  // Get thumbnail URL (prioritize specific format thumbnails)
+  let thumbnailUrl: string | undefined
+  if (file.thumb_pdf) {
+    thumbnailUrl = file.thumb_pdf
+  } else if (file.thumb_360) {
+    thumbnailUrl = file.thumb_360
+  } else if (file.thumb_160) {
+    thumbnailUrl = file.thumb_160
+  }
+
+  const vespaChatAttachment: VespaChatAttachment = {
+    docId: file.id!,
+    messageId: messageId,
+    title: file.title || file.name || "",
+    filename: file.name || "",
+    mimeType: file.mimetype || "",
+    fileType: file.filetype || "",
+    size: file.size || 0,
+    url: file.permalink_public,
+    urlPrivate: file.url_private || "",
+    urlPrivateDownload: file.url_private_download || "",
+    thumbnailUrl,
+    createdAt: file.timestamp
+      ? file.timestamp * 1000
+      : file.created
+        ? file.created * 1000
+        : 0, // Convert to milliseconds
+    teamId: teamId,
+    userId: userId,
+    chatRef: `id:${NAMESPACE}:${chatContainerSchema}::${channelId}`,
+    dimensions,
+    duration: file.duration_ms,
+    metadata: JSON.stringify({
+      pretty_type: file.pretty_type,
+      mode: file.mode,
+      is_external: file.is_external,
+      is_public: file.is_public,
+      file_access: file.file_access,
+      has_rich_preview: file.has_rich_preview,
+    }),
+    chunks: [], // Files don't have text chunks initially, could be populated later if needed
+  }
+
+  return insertWithRetry(vespaChatAttachment, chatAttachmentSchema)
+}
+
 export const insertChatMessage = async (
   client: WebClient,
   message: SlackMessage & { mentions?: string[] },
@@ -704,17 +768,48 @@ export const insertChatMessage = async (
   name: string,
   username: string,
   image: string,
+  channelMap?: Map<string, string>,
 ) => {
   const editedTimestamp = message.edited
     ? parseFloat(message?.edited?.ts!)
     : message.ts!
+
+  // Process attachments if they exist
+  const attachmentIds: string[] = []
+  if (message.files && message.files.length > 0) {
+    for (const file of message.files) {
+      if (!file.id) {
+        loggerWithChild({ email: name }).info(
+          `attachment Id is missing for message ${message.client_msg_id}`,
+        )
+        continue
+      }
+      try {
+        await insertChatAttachment(
+          file,
+          message.client_msg_id!,
+          message.team!,
+          message.user!,
+          channelId,
+        )
+        attachmentIds.push(file.id!)
+        loggerWithChild({ email: name }).info(
+          `Inserted attachment ${file.id} for message ${message.client_msg_id}`,
+        )
+      } catch (error) {
+        loggerWithChild({ email: name }).error(
+          `Error inserting attachment ${file.id}: ${error}`,
+        )
+      }
+    }
+  }
 
   return insertWithRetry(
     {
       docId: message.client_msg_id!,
       teamId: message.team!,
       text: message.text!,
-      attachmentIds: [],
+      attachmentIds: attachmentIds,
       app: Apps.Slack,
       entity: SlackEntity.Message,
       name: name || username,
@@ -789,7 +884,22 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
       db,
       data.connectorId,
     )
-
+    // change the status of connector to connecting
+    // before update the status is authenticated
+    try {
+      await db
+        .update(connectors)
+        .set({
+          status: ConnectorStatus.Connecting,
+        })
+        .where(eq(connectors.id, data.connectorId))
+    } catch (error) {
+      loggerWithChild({ email: data.email }).error(
+        error,
+        `Failed to update connector status to Connecting`,
+      )
+      throw error
+    }
     // Initialize ingestion state
     const initialState: SlackOAuthIngestionState = {
       app: Apps.Slack,
