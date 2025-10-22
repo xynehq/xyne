@@ -73,7 +73,8 @@ export const getWorkflowTemplateByExternalIdWithPermissionCheck = async (
 ): Promise<SelectWorkflowTemplate | null> => {
   const [template] = await trx
     .selectDistinct({
-      id: workflowTemplate.external_id,
+      id: workflowTemplate.id,
+      external_id: workflowTemplate.external_id,
       name: workflowTemplate.name,
       workspaceId: workflowTemplate.workspaceId,
       userId: workflowTemplate.userId,
@@ -115,7 +116,8 @@ export const getWorkflowTemplateByIdWithPermissionCheck = async (
 ): Promise<SelectWorkflowTemplate | null> => {
   const [template] = await trx
     .selectDistinct({
-      id: workflowTemplate.external_id,
+      id: workflowTemplate.id,
+      external_id: workflowTemplate.external_id,
       name: workflowTemplate.name,
       workspaceId: workflowTemplate.workspaceId,
       userId: workflowTemplate.userId,
@@ -155,7 +157,8 @@ export const getAccessibleWorkflowTemplates = async (
 ): Promise<SelectWorkflowTemplate[]> => {
   const templates = await trx
     .selectDistinct({
-      id: workflowTemplate.external_id,
+      id: workflowTemplate.id,
+      external_id: workflowTemplate.external_id,
       name: workflowTemplate.name,
       workspaceId: workflowTemplate.workspaceId,
       userId: workflowTemplate.userId,

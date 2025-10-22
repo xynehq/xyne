@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
-import { type SelectAgent } from "../db/schema"
+import { publicWorkflowTemplateSchema, type SelectAgent } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
 
 
@@ -196,7 +196,7 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
         }
 
         return {
-          ...template,
+          ...publicWorkflowTemplateSchema.parse(template),
           rootStep,
         }
       }),
@@ -249,7 +249,7 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
     return c.json({
       success: true,
       data: {
-        ...template,
+        ...publicWorkflowTemplateSchema.parse(template),
         steps,
         workflow_tools: tools,
       },
@@ -2116,7 +2116,7 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
 
     return c.json({
       success: true,
-      data: template,
+      data: publicWorkflowTemplateSchema.parse(template),
     })
   } catch (error) {
     Logger.error(error, "Failed to create workflow template")
@@ -2424,7 +2424,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
     // Return the complete workflow template with steps and tools
     const completeTemplate = {
-      ...template,
+      ...publicWorkflowTemplateSchema.parse(template),
       rootWorkflowStepTemplateId: rootStepId,
       steps: createdSteps,
       workflow_tools: createdTools,
@@ -2478,7 +2478,7 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
 
     return c.json({
       success: true,
-      data: updatedTemplate,
+      data: publicWorkflowTemplateSchema.parse(updatedTemplate),
     })
   } catch (error) {
     Logger.error(error, "Failed to update workflow template")
@@ -2934,7 +2934,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     return c.json({
       success: true,
       data: {
-        template: updatedTemplate,
+        template: publicWorkflowTemplateSchema.parse(updatedTemplate),
         newStep: newStep,
         newTool: newTool,
         totalSteps: allSteps.length,

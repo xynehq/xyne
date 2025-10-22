@@ -267,6 +267,16 @@ export type InsertToolExecution = z.infer<typeof insertToolExecutionSchema>
 
 // Public schemas (for API responses)
 export const publicWorkflowTemplateSchema = selectWorkflowTemplateSchema
+  .omit({
+    id: true,
+    workspaceId: true,
+    userId: true,
+  })
+  .transform(({ external_id, ...rest }) => ({
+    ...rest,          // keep other fields unchanged
+    id: external_id,  // rename external_id -> id since frontend expects 'id'
+  }));
+
 export const publicWorkflowExecutionSchema = selectWorkflowExecutionSchema.omit(
   {
     completedBy: true,
