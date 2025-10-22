@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { Phone, Video, Send, Loader2 } from "lucide-react"
+import { Phone, Video, Send, Loader2, Check } from "lucide-react"
 import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
@@ -41,8 +41,11 @@ export default function ChatView({
   const [messageText, setMessageText] = useState("")
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [isOtherUserTyping, setIsOtherUserTyping] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageContainerRef = useRef<HTMLDivElement>(null)
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isTypingRef = useRef(false)
 
   // Scroll to bottom when messages change
   const scrollToBottom = () => {
@@ -51,7 +54,7 @@ export default function ChatView({
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+  }, [messages, isOtherUserTyping])
 
   // Fetch conversation history
   const fetchConversation = async () => {
@@ -98,6 +101,39 @@ export default function ChatView({
     }
   }
 
+  // Send typing indicator
+  const handleTypingIndicator = (isTyping: boolean) => {
+    callNotificationClient.sendTypingIndicator(targetUser.id, isTyping)
+    isTypingRef.current = isTyping
+  }
+
+  // Handle input change with typing indicator
+  const handleMessageChange = (text: string) => {
+    if (text.length <= MAX_MESSAGE_LENGTH) {
+      setMessageText(text)
+
+      // Send typing indicator when user starts typing or resumes typing
+      if (text.length > 0 && !isTypingRef.current) {
+        handleTypingIndicator(true)
+      }
+
+      // Clear existing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+
+      // Set timeout to send "stopped typing" after 2 seconds of inactivity
+      if (text.length > 0) {
+        typingTimeoutRef.current = setTimeout(() => {
+          handleTypingIndicator(false)
+        }, 2000)
+      } else {
+        // If text is cleared, immediately send "stopped typing"
+        handleTypingIndicator(false)
+      }
+    }
+  }
+
   // Send a message
   const sendMessage = async () => {
     if (!messageText.trim() || sending) return
@@ -110,6 +146,12 @@ export default function ChatView({
       })
       return
     }
+
+    // Clear typing indicator when sending message
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current)
+    }
+    handleTypingIndicator(false)
 
     setSending(true)
     try {
@@ -204,9 +246,26 @@ export default function ChatView({
       },
     )
 
+    // Subscribe to typing indicators
+    const unsubscribeTyping = callNotificationClient.onTypingIndicator(
+      (indicator) => {
+        // Only show typing indicator if it's from the target user
+        if (indicator.userId === targetUser.id) {
+          setIsOtherUserTyping(indicator.isTyping)
+        }
+      },
+    )
+
     return () => {
       unsubscribeMessage()
       unsubscribeRead()
+      unsubscribeTyping()
+
+      // Clear typing timeout and send final "stopped typing" when unmounting
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+      handleTypingIndicator(false)
     }
   }, [targetUser.id])
 
@@ -319,19 +378,60 @@ export default function ChatView({
                   <p className="text-sm break-words whitespace-pre-wrap">
                     {message.messageContent}
                   </p>
-                  <p
+                  <div
                     className={cn(
-                      "text-xs mt-1",
-                      message.isMine
-                        ? "text-blue-100"
-                        : "text-gray-500 dark:text-gray-400",
+                      "flex items-center gap-1 mt-1",
+                      message.isMine ? "justify-end" : "justify-start",
                     )}
                   >
-                    {formatTime(message.createdAt)}
-                  </p>
+                    <p
+                      className={cn(
+                        "text-xs",
+                        message.isMine
+                          ? "text-blue-100"
+                          : "text-gray-500 dark:text-gray-400",
+                      )}
+                    >
+                      {formatTime(message.createdAt)}
+                    </p>
+                    {/* Read receipt indicators - only for sent messages */}
+                    {message.isMine && (
+                      <div className="flex items-center">
+                        {message.isRead ? (
+                          // Double check - message read
+                          <div className="flex -space-x-1">
+                            <Check className="h-3 w-3 text-blue-100" />
+                            <Check className="h-3 w-3 text-blue-100" />
+                          </div>
+                        ) : (
+                          // Single check - message sent but not read
+                          <Check className="h-3 w-3 text-blue-100 opacity-60" />
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
+            {/* Typing Indicator */}
+            {isOtherUserTyping && (
+              <div className="flex justify-start">
+                <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-4 py-2 flex items-center gap-1">
+                  <span
+                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                    style={{ animationDelay: "0ms" }}
+                  ></span>
+                  <span
+                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                    style={{ animationDelay: "150ms" }}
+                  ></span>
+                  <span
+                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                    style={{ animationDelay: "300ms" }}
+                  ></span>
+                </div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </>
         )}
@@ -345,10 +445,7 @@ export default function ChatView({
               <Input
                 value={messageText}
                 onChange={(e) => {
-                  const text = e.target.value
-                  if (text.length <= MAX_MESSAGE_LENGTH) {
-                    setMessageText(text)
-                  }
+                  handleMessageChange(e.target.value)
                 }}
                 onKeyPress={handleKeyPress}
                 placeholder={`Message ${targetUser.name}...`}
