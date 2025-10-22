@@ -15,12 +15,14 @@ import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { z } from "zod"
 
-const searchSchema = z.object({
+const chatOverviewSearchSchema = z.object({
   userName: z.string().optional(),
   page: z.string().optional(),
   offset: z.string().optional(),
   search: z.string().optional(),
 })
+
+type ChatOverviewSearch = z.infer<typeof chatOverviewSearchSchema>
 
 export const Route = createFileRoute("/_authenticated/admin/chat-overview")({
   beforeLoad: ({ context }) => {
@@ -30,7 +32,7 @@ export const Route = createFileRoute("/_authenticated/admin/chat-overview")({
       throw redirect({ to: "/" })
     }
   },
-  validateSearch: searchSchema,
+  validateSearch: chatOverviewSearchSchema,
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
     const { user, workspace, agentWhiteList } =
@@ -58,7 +60,9 @@ function ChatOverviewPage({
   agentWhiteList,
 }: ChatOverviewPageProps) {
   const navigate = useNavigate()
-  const search = useSearch({ from: "/_authenticated/admin/chat-overview" })
+  const search = useSearch({
+    from: "/_authenticated/admin/chat-overview",
+  }) as ChatOverviewSearch
   const [adminChats, setAdminChats] = useState<AdminChat[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
