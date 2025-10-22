@@ -26,7 +26,23 @@ import {
   getToolsByConnectorId as dbGetToolsByConnectorId,
   tools as toolsTable,
 } from "@/db/tool" // Added dbGetToolsByConnectorId and toolsTable
-import { eq, and, inArray, sql, gte, lte, isNull } from "drizzle-orm"
+import {
+  eq,
+  and,
+  inArray,
+  sql,
+  gte,
+  lte,
+  isNull,
+  isNotNull,
+  like,
+  ilike,
+  count,
+  sum,
+  desc,
+  asc,
+  or,
+} from "drizzle-orm"
 import {
   deleteConnector,
   getConnectorByExternalId,
@@ -1698,18 +1714,18 @@ export const IngestMoreChannelApi = async (c: Context) => {
 export const GetAdminChats = async (c: Context) => {
   try {
     // Get current user and workspace info
-    const { workspaceId: currentWorkspaceId, sub } = c.get(JwtPayloadKey)
-    const currentUserRes = await getUserByEmail(db, sub)
-    if (!currentUserRes || !currentUserRes.length) {
-      throw new HTTPException(403, { message: "User not found" })
-    }
-    const currentUser = currentUserRes[0]
-    const isSuperAdmin = currentUser.role === "SuperAdmin"
+    const { workspaceId: currentWorkspaceId } = c.get(JwtPayloadKey)
 
-    // Get validated query parameters
-    // @ts-ignore
-    const { from, to, userId, page, offset, search, filterType, sortBy } =
-      c.req.valid("query")
+    // Get query parameters directly
+    const query = c.req.query()
+    const from = query.from ? new Date(query.from) : undefined
+    const to = query.to ? new Date(query.to) : undefined
+    const userId = query.userId ? Number(query.userId) : undefined
+    const page = query.page ? Number(query.page) : 1
+    const offset = query.offset ? Number(query.offset) : 20
+    const search = query.search?.trim() || undefined
+    const filterType = query.filterType || "all"
+    const sortBy = query.sortBy || "created"
 
     // Build the conditions array
     const conditions = []
@@ -1734,19 +1750,19 @@ export const GetAdminChats = async (c: Context) => {
 
     // Add filterType conditions
     if (filterType === "agent") {
-      conditions.push(sql`${chats.agentId} IS NOT NULL`)
+      conditions.push(isNotNull(chats.agentId))
     } else if (filterType === "normal") {
-      conditions.push(sql`${chats.agentId} IS NULL`)
+      conditions.push(isNull(chats.agentId))
     }
 
-    // Add search functionality using parameterized LIKE queries
+    // Add search functionality using ORM methods
     if (search) {
       const searchParam = `%${search}%`
-      const searchCondition = sql`(
-        LOWER(${chats.title}) LIKE LOWER(${searchParam}) OR
-        LOWER(${users.email}) LIKE LOWER(${searchParam}) OR
-        LOWER(${users.name}) LIKE LOWER(${searchParam})
-      )`
+      const searchCondition = or(
+        ilike(chats.title, searchParam),
+        ilike(users.email, searchParam),
+        ilike(users.name, searchParam),
+      )
       conditions.push(searchCondition)
     }
 
@@ -1763,7 +1779,7 @@ export const GetAdminChats = async (c: Context) => {
         userName: users.name,
         userRole: users.role,
         userCreatedAt: users.createdAt, // Add user's actual creation date
-        messageCount: sql<number>`COUNT(${messages.id})::int`,
+        messageCount: count(messages.id),
         likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' AND ${messages.deletedAt} IS NULL THEN 1 END)::int`,
         dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' AND ${messages.deletedAt} IS NULL THEN 1 END)::int`,
         totalCost: sql<number>`COALESCE(SUM(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END), 0)::numeric`,
@@ -1787,7 +1803,7 @@ export const GetAdminChats = async (c: Context) => {
         break
       case "created":
       default:
-        orderByClause = sql`${chats.createdAt} DESC`
+        orderByClause = desc(chats.createdAt)
         break
     }
 
@@ -2403,31 +2419,7 @@ export const GetChatQueriesApi = async (c: Context) => {
         400,
       )
     }
-
-    // Get current user and check if they are admin/superadmin
-    const { workspaceId: currentWorkspaceId, sub } = c.get(JwtPayloadKey)
-    const currentUserRes = await getUserByEmail(db, sub)
-    if (!currentUserRes || !currentUserRes.length) {
-      loggerWithChild({ email: sub }).error(
-        { sub },
-        "No user found for sub in GetChatQueriesApi",
-      )
-      throw new HTTPException(403, { message: "User not found" })
-    }
-    const currentUser = currentUserRes[0]
-
-    // Check if user is admin or superadmin
-    const isAuthorized =
-      currentUser.role === "Admin" || currentUser.role === "SuperAdmin"
-    if (!isAuthorized) {
-      loggerWithChild({ email: sub }).warn(
-        { userEmail: sub, userRole: currentUser.role },
-        "Unauthorized access attempt to chat queries - not admin",
-      )
-      throw new HTTPException(403, {
-        message: "Access denied. Admin privileges required.",
-      })
-    }
+    const { workspaceId: currentWorkspaceId } = c.get(JwtPayloadKey)
 
     const queries = await fetchUserQueriesForChat(
       db,

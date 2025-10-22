@@ -45,6 +45,7 @@ import {
   startSlackIngestionSchema,
   microsoftServiceSchema,
   UserRoleChangeSchema,
+  chatIdParamSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -1318,7 +1319,11 @@ export const AppRoutes = app
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetUserAgentLeaderboard,
   )
-  .get("/chat/queries/:chatId", GetChatQueriesApi)
+  .get(
+    "/chat/queries/:chatId",
+    zValidator("param", chatIdParamSchema),
+    GetChatQueriesApi,
+  )
 
   .get(
     "/agents/:agentId/analysis",
