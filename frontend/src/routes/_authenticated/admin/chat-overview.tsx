@@ -1,0 +1,273 @@
+import {
+  createFileRoute,
+  redirect,
+  useRouterState,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router"
+import { useEffect, useState } from "react"
+import { api } from "@/api"
+import { errorComponent } from "@/components/error"
+import { Sidebar } from "@/components/Sidebar"
+import { AdminChatsTable } from "@/components/AdminChatsTable"
+import type { AdminChat } from "@/components/AdminChatsTable"
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { z } from "zod"
+
+const searchSchema = z.object({
+  userId: z.string().optional(),
+  userName: z.string().optional(),
+  page: z.string().optional(),
+  offset: z.string().optional(),
+  search: z.string().optional(),
+})
+
+export const Route = createFileRoute("/_authenticated/admin/chat-overview")({
+  beforeLoad: ({ context }) => {
+    if (
+      !(context.user.role === "Admin" || context.user.role === "SuperAdmin")
+    ) {
+      throw redirect({ to: "/" })
+    }
+  },
+  validateSearch: searchSchema,
+  component: () => {
+    const matches = useRouterState({ select: (s) => s.matches })
+    const { user, workspace, agentWhiteList } =
+      matches[matches.length - 1].context
+    return (
+      <ChatOverviewPage
+        user={user}
+        workspace={workspace}
+        agentWhiteList={agentWhiteList}
+      />
+    )
+  },
+  errorComponent: errorComponent,
+})
+
+interface ChatOverviewPageProps {
+  user: any
+  workspace: any
+  agentWhiteList: boolean
+}
+
+function ChatOverviewPage({
+  user,
+  workspace,
+  agentWhiteList,
+}: ChatOverviewPageProps) {
+  const navigate = useNavigate()
+  const search = useSearch({ from: "/_authenticated/admin/chat-overview" })
+  const [adminChats, setAdminChats] = useState<AdminChat[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+
+  // Reset to page 1 when userId filter changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search.userId])
+
+  useEffect(() => {
+    const fetchAdminChats = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // Build query with pagination and optional userId filter
+        const query: any = {
+          page: currentPage.toString(),
+          offset: pageSize.toString(),
+        }
+        if (search.userId) {
+          query.userId = search.userId
+        }
+        if (search.search) {
+          query.search = search.search
+        }
+
+        const [adminChatsResponse, adminAgentsResponse] = await Promise.all([
+          api.admin.chats.$get({ query }),
+          api.admin.agents.$get(),
+        ])
+
+        if (!adminChatsResponse.ok || !adminAgentsResponse.ok) {
+          throw new Error("Failed to fetch admin data")
+        }
+
+        const adminChats = await adminChatsResponse.json()
+        const adminAgents = await adminAgentsResponse.json()
+
+        // Process and set the admin chats data
+        setAdminChats(
+          adminChats.map((chat: any) => ({
+            externalId: chat.externalId,
+            title: chat.title || "Untitled Chat",
+            createdAt: chat.createdAt,
+            userId: chat.userId || chat.user?.id,
+            userName: chat.userName || chat.user?.name || "Unknown User",
+            userEmail: chat.userEmail || chat.user?.email || "",
+            agentId: chat.agentId,
+            agentName:
+              chat.agentName ||
+              (chat.agentId
+                ? adminAgents.find((a: any) => a.externalId === chat.agentId)
+                    ?.name
+                : null),
+            messageCount: chat.messageCount || chat.messages?.length || 0,
+            totalCost: chat.totalCost || 0,
+            totalTokens: chat.totalTokens || 0,
+            likes: chat.likes || 0,
+            dislikes: chat.dislikes || 0,
+            isBookmarked: chat.isBookmarked || false,
+          })),
+        )
+      } catch (err) {
+        console.error("Error fetching admin chats:", err)
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch admin data",
+        )
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchAdminChats()
+  }, [search.userId, currentPage, pageSize])
+
+  const handleBackToDashboard = () => {
+    navigate({ to: "/dashboard" })
+  }
+
+  // Determine page title and description based on filter
+  const getPageInfo = () => {
+    if (search.userId && search.userName) {
+      return {
+        title: `Chats for ${search.userName}`,
+        description: `All chat conversations for user: ${search.userName}`,
+      }
+    }
+    return {
+      title: "All Chats Overview",
+      description:
+        "Complete overview of all chat conversations across the platform",
+    }
+  }
+
+  const { title, description } = getPageInfo()
+
+  return (
+    <div className="h-full w-full flex dark:bg-[#1E1E1E]">
+      <Sidebar
+        photoLink={user?.photoLink ?? ""}
+        role={user?.role}
+        isAgentMode={agentWhiteList}
+      />
+      <div className="flex flex-col flex-grow h-full ml-[52px]">
+        <div className="p-6 space-y-6 max-w-7xl mx-auto w-full">
+          {/* Header with Back Button */}
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleBackToDashboard}
+              className="flex items-center gap-2 text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl tracking-wider font-display">{title}</h1>
+              <p className="text-muted-foreground">{description}</p>
+            </div>
+          </div>
+
+          {/* Error State */}
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg">
+              <p className="font-medium">Error loading chats</p>
+              <p className="text-sm">{error}</p>
+            </div>
+          )}
+
+          {/* Debug Info */}
+          {!loading && (
+            <div className="text-xs text-muted-foreground mb-4 p-2 bg-muted/20 rounded">
+              Debug: userId={search.userId}, userName={search.userName}, chats=
+              {adminChats.length}, page={currentPage}, pageSize={pageSize}
+            </div>
+          )}
+
+          {/* Chat Overview Table */}
+          <AdminChatsTable
+            chats={adminChats}
+            loading={loading}
+            onChatView={(chat: AdminChat) => {
+              console.log("Viewing chat:", chat.externalId)
+              // You can implement chat viewing functionality here if needed
+            }}
+          />
+
+          {/* Pagination Controls */}
+          {!loading && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Show</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value))
+                    setCurrentPage(1) // Reset to first page when changing page size
+                  }}
+                  className="border border-input bg-background rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span className="text-sm text-muted-foreground">
+                  per page (Total: {adminChats.length})
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  className="flex items-center gap-1"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+
+                <span className="text-sm text-muted-foreground px-4">
+                  Page {currentPage}
+                </span>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(currentPage + 1)}
+                  disabled={adminChats.length < pageSize}
+                  className="flex items-center gap-1"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

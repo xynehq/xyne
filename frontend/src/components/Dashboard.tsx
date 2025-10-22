@@ -37,6 +37,8 @@ import {
   Area,
   AreaChart,
 } from "recharts"
+import { AdminChatsTable } from "@/components/AdminChatsTable"
+import type { AdminChat } from "@/components/AdminChatsTable"
 
 interface Chat {
   externalId: string
@@ -1507,10 +1509,14 @@ const AdminUsersLeaderboard = ({
   users,
   loading = false,
   onUserClick,
+  onAllChatsClick,
+  onUserChatsClick,
 }: {
   users: AdminUserUsage[]
   loading?: boolean
   onUserClick?: (user: AdminUserUsage) => void
+  onAllChatsClick?: () => void
+  onUserChatsClick?: (userId: number, userName: string) => void
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [feedbackModal, setFeedbackModal] = useState<{
@@ -1533,6 +1539,11 @@ const AdminUsersLeaderboard = ({
       userName: user.userName,
       userEmail: user.userEmail,
     })
+  }
+
+  const handleViewChatsClick = (e: React.MouseEvent, user: AdminUserUsage) => {
+    e.stopPropagation()
+    onUserChatsClick?.(user.userId, user.userName)
   }
 
   const closeFeedbackModal = () => {
@@ -1579,11 +1590,24 @@ const AdminUsersLeaderboard = ({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Users className="h-5 w-5" />
-          Users Leaderboard
-        </CardTitle>
-        <CardDescription>All active users by message count</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Users Leaderboard
+            </CardTitle>
+            <CardDescription>All active users by message count</CardDescription>
+          </div>
+          {onAllChatsClick && (
+            <button
+              onClick={onAllChatsClick}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <MessageSquare className="h-4 w-4" />
+              All Chats
+            </button>
+          )}
+        </div>
         <div className="mt-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
@@ -1687,15 +1711,26 @@ const AdminUsersLeaderboard = ({
                         <span>{user.dislikes}</span>
                       </div>
                     </div>
-                    {(user.likes > 0 || user.dislikes > 0) && (
-                      <button
-                        onClick={(e) => handleFeedbackClick(e, user)}
-                        className="ml-3 px-3 py-1.5 text-xs text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors font-medium flex items-center gap-1"
-                      >
-                        <MessageSquare className="h-3 w-3" />
-                        Feedbacks
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {onUserChatsClick && (
+                        <button
+                          onClick={(e) => handleViewChatsClick(e, user)}
+                          className="px-3 py-1.5 text-xs text-green-600 border border-green-200 rounded-lg hover:bg-green-50 hover:border-green-300 transition-colors font-medium flex items-center gap-1"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          View Chats
+                        </button>
+                      )}
+                      {(user.likes > 0 || user.dislikes > 0) && (
+                        <button
+                          onClick={(e) => handleFeedbackClick(e, user)}
+                          className="px-3 py-1.5 text-xs text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors font-medium flex items-center gap-1"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          Feedbacks
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -2667,6 +2702,7 @@ export const Dashboard = ({
       feedbackMessages: [],
     },
   })
+  const [adminChats, setAdminChats] = useState<AdminChat[]>([])
   const [adminLoading, setAdminLoading] = useState(false)
   const [adminError, setAdminError] = useState<string | null>(null)
   const [selectedUser, setSelectedUser] = useState<AdminUserUsage | null>(null)
@@ -2855,6 +2891,7 @@ export const Dashboard = ({
 
         const adminChats = await adminChatsResponse.json()
         const adminAgents = await adminAgentsResponse.json()
+
         // Process admin stats
         const processedAdminStats = processAdminChatsData(
           adminChats,
@@ -2862,6 +2899,31 @@ export const Dashboard = ({
           timeRange,
         )
         setAdminStats(processedAdminStats)
+
+        // Set the raw admin chats data for the table
+        setAdminChats(
+          adminChats.map((chat: any) => ({
+            externalId: chat.externalId,
+            title: chat.title || "Untitled Chat",
+            createdAt: chat.createdAt,
+            userId: chat.userId || chat.user?.id,
+            userName: chat.userName || chat.user?.name || "Unknown User",
+            userEmail: chat.userEmail || chat.user?.email || "",
+            agentId: chat.agentId,
+            agentName:
+              chat.agentName ||
+              (chat.agentId
+                ? adminAgents.find((a: any) => a.externalId === chat.agentId)
+                    ?.name
+                : null),
+            messageCount: chat.messageCount || chat.messages?.length || 0,
+            totalCost: chat.totalCost || 0,
+            totalTokens: chat.totalTokens || 0,
+            likes: chat.likes || 0,
+            dislikes: chat.dislikes || 0,
+            isBookmarked: chat.isBookmarked || false,
+          })),
+        )
 
         setAdminError(null)
       } catch (err) {
@@ -3974,6 +4036,14 @@ export const Dashboard = ({
                     users={adminStats.topUsers}
                     loading={adminLoading}
                     onUserClick={handleAdminUserSelect}
+                    onAllChatsClick={() => {
+                      // Navigate to all chats view
+                      window.location.href = "/admin/chat-overview"
+                    }}
+                    onUserChatsClick={(userId: number, userName: string) => {
+                      // Navigate to user-specific chats view
+                      window.location.href = `/admin/chat-overview?userId=${userId}&userName=${encodeURIComponent(userName)}`
+                    }}
                   />
 
                   {/* Top Agents System-wide */}
@@ -3981,6 +4051,15 @@ export const Dashboard = ({
                     agentUsage={adminStats.agentUsage}
                     showAll={true}
                     onAgentClick={handleAdminAgentSelect}
+                  />
+
+                  {/* All Chats Table */}
+                  <AdminChatsTable
+                    chats={adminChats}
+                    loading={adminLoading}
+                    onChatView={(chat: AdminChat) => {
+                      console.log("Viewing chat:", chat.externalId)
+                    }}
                   />
                 </div>
               )}

@@ -141,6 +141,7 @@ import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
 import { GetDocument } from "@/search/vespa"
 import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 import { replaceSheetIndex } from "@/search/utils"
+import { fetchUserQueriesForChat } from "@/db/message"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -165,6 +166,24 @@ export const adminQuerySchema = z.object({
     .string()
     .optional()
     .transform((val) => (val ? Number(val) : undefined)),
+  page: z
+    .string()
+    .optional()
+    .refine((val) => !val || (!isNaN(Number(val)) && Number(val) > 0), {
+      message: "Page must be a positive number",
+    })
+    .transform((val) => (val ? Number(val) : 1)),
+  offset: z
+    .string()
+    .optional()
+    .refine((val) => !val || (!isNaN(Number(val)) && Number(val) >= 0), {
+      message: "Offset must be a non-negative number",
+    })
+    .transform((val) => (val ? Number(val) : 20)),
+  search: z
+    .string()
+    .optional()
+    .transform((val) => (val?.trim() ? val.trim() : undefined)),
 })
 
 // Schema for user agent leaderboard query
@@ -1584,48 +1603,51 @@ export const IngestMoreChannelApi = async (c: Context) => {
     }
 
     // Import ingestion functions for database operations
-    const { createIngestion, hasActiveIngestion } = await import("@/db/ingestion")
+    const { createIngestion, hasActiveIngestion } = await import(
+      "@/db/ingestion"
+    )
 
     // Prevent concurrent ingestions using database transaction to avoid race conditions
     // This atomically checks for active ingestions and creates new one if none exist
     const ingestion = await db.transaction(async (trx) => {
       const hasActive = await hasActiveIngestion(trx, user.id, connector.id)
       if (hasActive) {
-        throw new HTTPException(409, { 
-          message: "An ingestion is already in progress for this connector. Please wait for it to complete or cancel it first." 
+        throw new HTTPException(409, {
+          message:
+            "An ingestion is already in progress for this connector. Please wait for it to complete or cancel it first.",
         })
       }
 
       // Create ingestion record with initial metadata for resumability
       // All state needed for resuming is stored in the metadata field
       return await createIngestion(trx, {
-      userId: user.id,
-      connectorId: connector.id,
-      workspaceId: connector.workspaceId,
-      status: "pending",
-      metadata: {
-        slack: {
-          // Data sent to frontend via WebSocket for progress display
-          websocketData: {
-            connectorId: connector.externalId,
-            progress: {
-              totalChannels: payload.channelsToIngest.length,
-              processedChannels: 0,
-              totalMessages: 0,
-              processedMessages: 0,
+        userId: user.id,
+        connectorId: connector.id,
+        workspaceId: connector.workspaceId,
+        status: "pending",
+        metadata: {
+          slack: {
+            // Data sent to frontend via WebSocket for progress display
+            websocketData: {
+              connectorId: connector.externalId,
+              progress: {
+                totalChannels: payload.channelsToIngest.length,
+                processedChannels: 0,
+                totalMessages: 0,
+                processedMessages: 0,
+              },
+            },
+            // Internal state data for resumability
+            ingestionState: {
+              channelsToIngest: payload.channelsToIngest,
+              startDate: payload.startDate,
+              endDate: payload.endDate,
+              includeBotMessage: payload.includeBotMessage,
+              currentChannelIndex: 0, // Resume from this channel
+              lastUpdated: new Date().toISOString(),
             },
           },
-          // Internal state data for resumability
-          ingestionState: {
-            channelsToIngest: payload.channelsToIngest,
-            startDate: payload.startDate,
-            endDate: payload.endDate,
-            includeBotMessage: payload.includeBotMessage,
-            currentChannelIndex: 0,  // Resume from this channel
-            lastUpdated: new Date().toISOString(),
-          },
         },
-      },
       })
     })
 
@@ -1639,7 +1661,7 @@ export const IngestMoreChannelApi = async (c: Context) => {
       payload.endDate,
       email,
       payload.includeBotMessage,
-      ingestion.id,  // Pass ingestion ID for progress tracking
+      ingestion.id, // Pass ingestion ID for progress tracking
     ).catch((error) => {
       loggerWithChild({ email: sub }).error(
         error,
@@ -1672,7 +1694,7 @@ export const GetAdminChats = async (c: Context) => {
   try {
     // Get validated query parameters
     // @ts-ignore
-    const { from, to, userId } = c.req.valid("query")
+    const { from, to, userId, page, offset, search } = c.req.valid("query")
 
     // Build the conditions array
     const conditions = []
@@ -1684,6 +1706,16 @@ export const GetAdminChats = async (c: Context) => {
     }
     if (userId) {
       conditions.push(eq(chats.userId, userId))
+    }
+
+    // Add search functionality across email, chat title, and user name
+    if (search) {
+      const searchCondition = sql`(
+        LOWER(${chats.title}) LIKE LOWER(${"%" + search + "%"}) OR
+        LOWER(${users.email}) LIKE LOWER(${"%" + search + "%"}) OR
+        LOWER(${users.name}) LIKE LOWER(${"%" + search + "%"})
+      )`
+      conditions.push(searchCondition)
     }
 
     // Build the query with feedback aggregation and cost tracking
@@ -1709,6 +1741,7 @@ export const GetAdminChats = async (c: Context) => {
       .leftJoin(users, eq(chats.userId, users.id))
       .leftJoin(messages, eq(chats.id, messages.chatId))
 
+    // Execute the query
     const result =
       conditions.length > 0
         ? await baseQuery
@@ -1720,16 +1753,27 @@ export const GetAdminChats = async (c: Context) => {
               users.role,
               users.createdAt,
             )
-        : await baseQuery.groupBy(
-            chats.id,
-            users.email,
-            users.name,
-            users.role,
-            users.createdAt,
-          )
+            .orderBy(chats.createdAt)
+        : await baseQuery
+            .groupBy(
+              chats.id,
+              users.email,
+              users.name,
+              users.role,
+              users.createdAt,
+            )
+            .orderBy(chats.createdAt)
+
+    // Apply pagination in JavaScript for now
+    let paginatedResult = result
+    if (offset && offset > 0) {
+      const startIndex = (page - 1) * offset
+      const endIndex = startIndex + offset
+      paginatedResult = result.slice(startIndex, endIndex)
+    }
 
     // Convert totalCost from string to number and totalTokens from bigint to number
-    const processedResult = result.map((chat) => ({
+    const processedResult = paginatedResult.map((chat) => ({
       ...chat,
       totalCost: Number(chat.totalCost) || 0, // numeric → string at runtime
       totalTokens: Number(chat.totalTokens) || 0, // bigint → string at runtime
@@ -2265,10 +2309,7 @@ export const GetKbVespaContent = async (c: Context) => {
     // console.log("Fetched Vespa Doc ID:", vespaDocId)
     const schema = rawSchema as VespaSchema
 
-    const documentData = await GetDocument(
-      schema,
-      vespaDocId,
-    )
+    const documentData = await GetDocument(schema, vespaDocId)
 
     if (!documentData || !("fields" in documentData) || !documentData.fields) {
       loggerWithChild({ email: userEmail }).warn(
@@ -2316,5 +2357,38 @@ export const GetKbVespaContent = async (c: Context) => {
       message:
         "Unable to fetch document data at this time. Please try again later.",
     })
+  }
+}
+
+export const GetChatQueriesApi = async (c: Context) => {
+  try {
+    const chatId = c.req.param("chatId")
+    if (!chatId) {
+      return c.json(
+        {
+          success: false,
+          message: "chatId is required",
+        },
+        400,
+      )
+    }
+    const queries = await fetchUserQueriesForChat(db, chatId)
+
+    return c.json(
+      {
+        success: true,
+        data: queries,
+      },
+      200,
+    )
+  } catch (error) {
+    Logger.error(error, "Error fetching chat queries")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
   }
 }

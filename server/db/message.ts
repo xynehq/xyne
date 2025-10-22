@@ -291,13 +291,15 @@ export const getMessagesWithAttachmentsByChatId = async (
   chatExternalId: string,
   limit: number,
   offset: number,
-): Promise<Array<{
-  id: number
-  externalId: string
-  attachments: unknown
-  sources: unknown
-  email: string
-}>> => {
+): Promise<
+  Array<{
+    id: number
+    externalId: string
+    attachments: unknown
+    sources: unknown
+    email: string
+  }>
+> => {
   const chatMessages = await trx
     .select({
       id: messages.id,
@@ -338,4 +340,24 @@ export const updateMessageAttachmentsAndSources = async (
         eq(messages.email, email),
       ),
     )
+}
+
+export const fetchUserQueriesForChat = async (
+  trx: TxnOrClient,
+  chatExternalId: string,
+): Promise<string[]> => {
+  const queries = await trx
+    .select({
+      content: messages.message,
+    })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.chatExternalId, chatExternalId),
+        eq(messages.messageRole, MessageRole.User),
+        isNull(messages.deletedAt),
+      ),
+    )
+    .orderBy(asc(messages.createdAt))
+  return queries.map((q) => q.content)
 }
