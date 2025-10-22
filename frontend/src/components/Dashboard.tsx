@@ -4056,12 +4056,12 @@ export const Dashboard = ({
                     onUserClick={handleAdminUserSelect}
                     onAllChatsClick={() => {
                       // Navigate to all chats view
-                      navigate({ to: "/admin/chat-overview" })
+                      navigate({ to: "/admin/chat-overview" as const })
                     }}
                     onUserChatsClick={(userId: number, userName: string) => {
                       // Navigate to user-specific chats view
                       navigate({
-                        to: "/admin/chat-overview",
+                        to: "/admin/chat-overview" as const,
                         search: { userName: userName },
                       })
                     }}

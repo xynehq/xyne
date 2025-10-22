@@ -20,6 +20,9 @@ const chatOverviewSearchSchema = z.object({
   offset: z.string().optional(),
   search: z.string().optional(),
 })
+
+type ChatOverviewSearch = z.infer<typeof chatOverviewSearchSchema>
+
 export const Route = createFileRoute("/_authenticated/admin/chat-overview")({
   beforeLoad: ({ context }) => {
     if (
@@ -28,7 +31,9 @@ export const Route = createFileRoute("/_authenticated/admin/chat-overview")({
       throw redirect({ to: "/" })
     }
   },
-  validateSearch: chatOverviewSearchSchema,
+  validateSearch: (search: Record<string, unknown>): ChatOverviewSearch => {
+    return chatOverviewSearchSchema.parse(search)
+  },
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
     const { user, workspace, agentWhiteList } =
