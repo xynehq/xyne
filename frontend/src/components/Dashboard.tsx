@@ -2890,12 +2890,29 @@ export const Dashboard = ({
           throw new Error("Failed to fetch admin data")
         }
 
-        const adminChats = await adminChatsResponse.json()
+        const adminChatsData = await adminChatsResponse.json()
         const adminAgents = await adminAgentsResponse.json()
+
+        // Handle both new pagination format and old format for backward compatibility
+        let chatsArray: any[]
+        if (
+          adminChatsData &&
+          typeof adminChatsData === "object" &&
+          "data" in adminChatsData &&
+          "pagination" in adminChatsData
+        ) {
+          // New format with pagination metadata
+          chatsArray = adminChatsData.data
+        } else if (Array.isArray(adminChatsData)) {
+          // Old format - direct array
+          chatsArray = adminChatsData
+        } else {
+          throw new Error("Invalid response format from admin chats API")
+        }
 
         // Process admin stats
         const processedAdminStats = processAdminChatsData(
-          adminChats,
+          chatsArray,
           adminAgents,
           timeRange,
         )
@@ -2903,7 +2920,7 @@ export const Dashboard = ({
 
         // Set the raw admin chats data for the table
         setAdminChats(
-          adminChats.map((chat: any) => ({
+          chatsArray.map((chat: any) => ({
             externalId: chat.externalId,
             title: chat.title || "Untitled Chat",
             createdAt: chat.createdAt,

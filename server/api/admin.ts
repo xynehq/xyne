@@ -1722,7 +1722,7 @@ export const GetAdminChats = async (c: Context) => {
     const to = query.to ? new Date(query.to) : undefined
     const userId = query.userId ? Number(query.userId) : undefined
     const page = query.page ? Number(query.page) : 1
-    const offset = query.offset ? Number(query.offset) : 20
+    const pageSize = query.offset ? Number(query.offset) : 20
     const search = query.search?.trim() || undefined
     const filterType = query.filterType || "all"
     const sortBy = query.sortBy || "created"
@@ -1766,6 +1766,19 @@ export const GetAdminChats = async (c: Context) => {
       conditions.push(searchCondition)
     }
 
+    // First, get the total count using Drizzle count function
+    const totalCountResult = await db
+      .select({
+        count: count(),
+      })
+      .from(chats)
+      .leftJoin(users, eq(chats.userId, users.id))
+      .leftJoin(messages, eq(chats.id, messages.chatId))
+      .where(and(...conditions))
+      .groupBy(chats.id, users.email, users.name, users.role, users.createdAt)
+
+    const totalCount = totalCountResult.length
+
     // Build the query with feedback aggregation and cost tracking
     const baseQuery = db
       .select({
@@ -1778,12 +1791,20 @@ export const GetAdminChats = async (c: Context) => {
         userEmail: users.email,
         userName: users.name,
         userRole: users.role,
-        userCreatedAt: users.createdAt, // Add user's actual creation date
+        userCreatedAt: users.createdAt,
         messageCount: count(messages.id),
-        likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' AND ${messages.deletedAt} IS NULL THEN 1 END)::int`,
-        dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' AND ${messages.deletedAt} IS NULL THEN 1 END)::int`,
-        totalCost: sql<number>`COALESCE(SUM(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END), 0)::numeric`,
-        totalTokens: sql<number>`COALESCE(SUM(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.tokensUsed} ELSE 0 END), 0)::bigint`,
+        likes: count(
+          sql`CASE WHEN ${messages.feedback}->>'type' = 'like' AND ${messages.deletedAt} IS NULL THEN 1 END`,
+        ),
+        dislikes: count(
+          sql`CASE WHEN ${messages.feedback}->>'type' = 'dislike' AND ${messages.deletedAt} IS NULL THEN 1 END`,
+        ),
+        totalCost: sum(
+          sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END`,
+        ),
+        totalTokens: sum(
+          sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.tokensUsed} ELSE 0 END`,
+        ),
       })
       .from(chats)
       .leftJoin(users, eq(chats.userId, users.id))
@@ -1793,13 +1814,25 @@ export const GetAdminChats = async (c: Context) => {
     let orderByClause
     switch (sortBy) {
       case "messages":
-        orderByClause = sql`COUNT(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.id} END) DESC`
+        orderByClause = desc(
+          count(
+            sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.id} END`,
+          ),
+        )
         break
       case "cost":
-        orderByClause = sql`COALESCE(SUM(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END), 0) DESC`
+        orderByClause = desc(
+          sum(
+            sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END`,
+          ),
+        )
         break
       case "tokens":
-        orderByClause = sql`COALESCE(SUM(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.tokensUsed} ELSE 0 END), 0) DESC`
+        orderByClause = desc(
+          sum(
+            sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.tokensUsed} ELSE 0 END`,
+          ),
+        )
         break
       case "created":
       default:
@@ -1808,8 +1841,8 @@ export const GetAdminChats = async (c: Context) => {
     }
 
     // Calculate pagination offsets
-    const limit = offset || 20
-    const offsetValue = ((page || 1) - 1) * limit
+    const limit = pageSize
+    const offsetValue = (page - 1) * limit
 
     // Execute the query with SQL-based pagination
     const result = await baseQuery
@@ -1826,7 +1859,23 @@ export const GetAdminChats = async (c: Context) => {
       totalTokens: Number(chat.totalTokens) || 0, // bigint → string at runtime
     }))
 
-    return c.json(processedResult)
+    // Calculate pagination metadata
+    const hasNextPage = page * pageSize < totalCount
+    const hasPreviousPage = page > 1
+
+    // Return data with pagination metadata
+    const response = {
+      data: processedResult,
+      pagination: {
+        totalCount,
+        currentPage: page,
+        pageSize,
+        hasNextPage,
+        hasPreviousPage,
+      },
+    }
+
+    return c.json(response)
   } catch (error) {
     Logger.error(error, "Error fetching admin chats")
     return c.json(

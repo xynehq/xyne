@@ -601,6 +601,22 @@ export const UserRoleChangeSchema = z.object({
 
 export type userRoleChange = z.infer<typeof UserRoleChangeSchema>
 
+// Admin pagination response schema
+export const AdminChatsPaginationResponseSchema = z.object({
+  data: z.array(z.any()), // Chat data array
+  pagination: z.object({
+    totalCount: z.number(),
+    currentPage: z.number(),
+    pageSize: z.number(),
+    hasNextPage: z.boolean(),
+    hasPreviousPage: z.boolean(),
+  }),
+})
+
+export type AdminChatsPaginationResponse = z.infer<
+  typeof AdminChatsPaginationResponseSchema
+>
+
 export const UserMetadata = z.object({
   userTimezone: z.string(),
   dateForAI: z.string(),

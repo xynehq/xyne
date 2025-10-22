@@ -3,7 +3,6 @@ import {
   redirect,
   useRouterState,
   useNavigate,
-  useSearch,
 } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { api } from "@/api"
@@ -21,9 +20,6 @@ const chatOverviewSearchSchema = z.object({
   offset: z.string().optional(),
   search: z.string().optional(),
 })
-
-type ChatOverviewSearch = z.infer<typeof chatOverviewSearchSchema>
-
 export const Route = createFileRoute("/_authenticated/admin/chat-overview")({
   beforeLoad: ({ context }) => {
     if (
@@ -60,17 +56,22 @@ function ChatOverviewPage({
   agentWhiteList,
 }: ChatOverviewPageProps) {
   const navigate = useNavigate()
-  const search = useSearch({
-    from: "/_authenticated/admin/chat-overview",
-  }) as ChatOverviewSearch
+  const search = Route.useSearch()
   const [adminChats, setAdminChats] = useState<AdminChat[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
 
+  // Pagination metadata state
+  const [paginationMetadata, setPaginationMetadata] = useState<{
+    totalCount: number
+    hasNextPage: boolean
+    hasPreviousPage: boolean
+  } | null>(null)
+
   // Lift filter state from AdminChatsTable
-  const [searchInput, setSearchInput] = useState<string>("") // What user is typing
+  const [searchInput, setSearchInput] = useState<string>(search.search || "") // What user is typing
   const [searchQuery, setSearchQuery] = useState<string>("") // Actual search query for API
   const [filterType, setFilterType] = useState<"all" | "agent" | "normal">(
     "all",
@@ -134,12 +135,49 @@ function ChatOverviewPage({
           throw new Error("Failed to fetch admin data")
         }
 
-        const adminChats = await adminChatsResponse.json()
+        const adminChatsData = await adminChatsResponse.json()
         const adminAgents = await adminAgentsResponse.json()
+
+        // Handle both new pagination format and old format for backward compatibility
+        let chatsArray: any[]
+        let paginationMeta: {
+          totalCount: number
+          hasNextPage: boolean
+          hasPreviousPage: boolean
+        } | null = null
+
+        if (
+          adminChatsData &&
+          typeof adminChatsData === "object" &&
+          "data" in adminChatsData &&
+          "pagination" in adminChatsData
+        ) {
+          // New format with pagination metadata
+          chatsArray = adminChatsData.data
+          paginationMeta = {
+            totalCount: adminChatsData.pagination.totalCount,
+            hasNextPage: adminChatsData.pagination.hasNextPage,
+            hasPreviousPage: adminChatsData.pagination.hasPreviousPage,
+          }
+        } else if (Array.isArray(adminChatsData)) {
+          // Old format - direct array
+          chatsArray = adminChatsData
+          // Fallback: use length-based logic for hasNextPage
+          paginationMeta = {
+            totalCount: adminChatsData.length, // This is just the current page count
+            hasNextPage: adminChatsData.length >= pageSize, // Old logic as fallback
+            hasPreviousPage: currentPage > 1,
+          }
+        } else {
+          throw new Error("Invalid response format from admin chats API")
+        }
+
+        // Set pagination metadata
+        setPaginationMetadata(paginationMeta)
 
         // Process and set the admin chats data
         setAdminChats(
-          adminChats.map((chat: any) => ({
+          chatsArray.map((chat: any) => ({
             externalId: chat.externalId,
             title: chat.title || "Untitled Chat",
             createdAt: chat.createdAt,
@@ -283,7 +321,10 @@ function ChatOverviewPage({
                   <option value={100}>100</option>
                 </select>
                 <span className="text-sm text-muted-foreground">
-                  per page (Total: {adminChats.length})
+                  per page
+                  {paginationMetadata?.totalCount !== undefined && (
+                    <> (Total: {paginationMetadata.totalCount})</>
+                  )}
                 </span>
               </div>
 
@@ -292,7 +333,11 @@ function ChatOverviewPage({
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                  disabled={currentPage === 1}
+                  disabled={
+                    paginationMetadata
+                      ? !paginationMetadata.hasPreviousPage
+                      : currentPage === 1
+                  }
                   className="flex items-center gap-1"
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -307,7 +352,11 @@ function ChatOverviewPage({
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage(currentPage + 1)}
-                  disabled={adminChats.length < pageSize}
+                  disabled={
+                    paginationMetadata
+                      ? !paginationMetadata.hasNextPage
+                      : adminChats.length < pageSize
+                  }
                   className="flex items-center gap-1"
                 >
                   Next
