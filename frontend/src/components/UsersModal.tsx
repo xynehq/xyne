@@ -6,6 +6,7 @@ import {
   X,
   Users as UsersIcon,
   History,
+  Mic,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CLASS_NAMES } from "@/lib/constants"
@@ -13,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
 import CallHistory from "./CallHistory"
+import AudioRecorder from "./AudioRecorder"
 
 interface User {
   id: string
@@ -25,7 +27,7 @@ interface UsersModalProps {
   onClose: () => void
 }
 
-type TabType = "users" | "history"
+type TabType = "users" | "history" | "audioRecorder"
 
 export default function UsersModal({ onClose }: UsersModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>("users")
@@ -277,6 +279,25 @@ export default function UsersModal({ onClose }: UsersModalProps) {
               )}
             />
           </button>
+          <button
+            onClick={() => setActiveTab("audioRecorder")}
+            className={cn(
+              "flex w-10 h-10 rounded-lg items-center justify-center cursor-pointer transition-colors",
+              activeTab === "audioRecorder"
+                ? "bg-[#D8DFE680] dark:bg-gray-700"
+                : "hover:bg-[#D8DFE680] dark:hover:bg-gray-700",
+            )}
+            title="Audio Recorder"
+          >
+            <Mic
+              size={20}
+              className={cn(
+                activeTab === "audioRecorder"
+                  ? "text-[#384049] dark:text-[#F1F3F4]"
+                  : "text-gray-500 dark:text-gray-400",
+              )}
+            />
+          </button>
         </div>
       </div>
 
@@ -284,6 +305,10 @@ export default function UsersModal({ onClose }: UsersModalProps) {
       {activeTab === "history" ? (
         <div className="fixed left-[112px] top-0 right-0 bottom-0 z-30">
           <CallHistory />
+        </div>
+      ) : activeTab === "audioRecorder" ? (
+        <div className="fixed left-[112px] top-0 right-0 bottom-0 z-30">
+          <AudioRecorder />
         </div>
       ) : (
         <div
