@@ -43,10 +43,9 @@ async function fixCalendarPermissions() {
   let totalFixed = 0
   let alreadyCorrect = 0
 
-  let count = 0
   logger.info("Starting calendar permissions fix using YQL query...")
 
-  while (count < 2) {
+  while (true) {
     const { documents, totalCount } = await queryCalendarEmails(offset, limit)
 
     if (documents.length === 0) break
