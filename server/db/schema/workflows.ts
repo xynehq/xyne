@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm"
 import {
   uuid,
   pgTable,
+  serial,
   text,
   integer,
   timestamp,
@@ -61,7 +62,8 @@ export const toolExecutionStatusEnum = pgEnum("tool_execution_status", Object.va
 
 // 1. Workflow Templates Table (renamed from workflow_templates)
 export const workflowTemplate = pgTable("workflow_template", {
-  id: uuid("id").notNull().primaryKey().defaultRandom(),
+  id: serial("id").notNull().primaryKey(),
+  external_id: uuid("external_id").notNull().defaultRandom(),
   name: text("name").notNull(),
   workspaceId: integer("workspace_id")
     .notNull()
@@ -89,7 +91,7 @@ export const workflowTemplate = pgTable("workflow_template", {
 // 2. Workflow Step Templates Table (renamed from workflow_step_templates)
 export const workflowStepTemplate = pgTable("workflow_step_template", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
-  workflowTemplateId: uuid("workflow_template_id")
+  workflowTemplateId: integer("workflow_template_id")
     .notNull()
     .references(() => workflowTemplate.id),
   name: text("name").notNull(),
@@ -141,7 +143,7 @@ export const workflowExecution = pgTable("workflow_execution", {
   workspaceId: integer("workspace_id")
     .notNull()
     .references(() => workspaces.id),
-  workflowTemplateId: uuid("workflow_template_id")
+  workflowTemplateId: integer("workflow_template_id")
     .notNull()
     .references(() => workflowTemplate.id),
   name: text("name").notNull(),
@@ -302,7 +304,7 @@ export const updateWorkflowToolSchema = createWorkflowToolSchema
   })
 
 export const createWorkflowStepTemplateSchema = z.object({
-  workflowTemplateId: z.string().uuid(),
+  workflowTemplateId: z.number().int(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   type: z.enum(Object.values(StepType) as [string, ...string[]]).default(StepType.AUTOMATED),
@@ -390,7 +392,7 @@ export const createComplexWorkflowTemplateSchema = z.object({
 })
 
 export const createWorkflowExecutionSchema = z.object({
-  workflowTemplateId: z.string().uuid(),
+  workflowTemplateId: z.number().int(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),

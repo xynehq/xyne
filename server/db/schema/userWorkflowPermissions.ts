@@ -27,7 +27,7 @@ export const userWorkflowPermissions = pgTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    workflowId: uuid("workflow_id")
+    workflowId: integer("workflow_id")
       .notNull()
       .references(() => workflowTemplate.id, { onDelete: "cascade" }),
     role: userWorkflowRoleEnum("role")
@@ -41,6 +41,11 @@ export const userWorkflowPermissions = pgTable(
       .default(sql`NOW()`),
   },
   (table) => ({
+    // Uniqueness: one permission row per (user, workflow)
+    userWorkflowUniqueIndex: uniqueIndex("user_workflow_permissions_user_workflow_uq").on(
+      table.userId,
+      table.workflowId,
+    ),
     // Index for efficient queries by user
     userIdIndex: index("user_workflow_permissions_user_id_index").on(
       table.userId,

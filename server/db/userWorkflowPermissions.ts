@@ -14,7 +14,7 @@ import { and, eq, isNull, desc, or, inArray } from "drizzle-orm"
 export const checkUserWorkflowAccess = async (
   trx: TxnOrClient,
   userId: number,
-  workflowId: string,
+  workflowId: number,
 ): Promise<SelectUserWorkflowPermission | null> => {
   const permissionArr = await trx
     .select()
@@ -56,7 +56,7 @@ export const grantUserWorkflowPermission = async (
 export const updateUserWorkflowPermission = async (
   trx: TxnOrClient,
   userId: number,
-  workflowId: string,
+  workflowId: number,
   role: UserWorkflowRole,
 ): Promise<SelectUserWorkflowPermission | null> => {
   const permissionArr = await trx
@@ -84,7 +84,7 @@ export const updateUserWorkflowPermission = async (
 export const revokeUserWorkflowPermission = async (
   trx: TxnOrClient,
   userId: number,
-  workflowId: string,
+  workflowId: number,
 ): Promise<boolean> => {
   const result = await trx
     .delete(userWorkflowPermissions)

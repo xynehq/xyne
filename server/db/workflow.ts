@@ -65,15 +65,57 @@ export const createWorkflowTemplate = async (
 }
 
 // Get template and validate (allow access to user's own, public templates, or shared via permissions)
-export const getWorkflowTemplateByIdWithPermissionCheck = async (
+export const getWorkflowTemplateByExternalIdWithPermissionCheck = async (
   trx: TxnOrClient,
-  id: string,
+  external_id: string,
   workspaceId: number,
   userId: number,
 ): Promise<SelectWorkflowTemplate | null> => {
   const [template] = await trx
     .selectDistinct({
-      id: workflowTemplate.id,
+      id: workflowTemplate.external_id,
+      name: workflowTemplate.name,
+      workspaceId: workflowTemplate.workspaceId,
+      userId: workflowTemplate.userId,
+      isPublic: workflowTemplate.isPublic,
+      description: workflowTemplate.description,
+      version: workflowTemplate.version,
+      status: workflowTemplate.status,
+      config: workflowTemplate.config,
+      rootWorkflowStepTemplateId: workflowTemplate.rootWorkflowStepTemplateId,
+      createdAt: workflowTemplate.createdAt,
+      updatedAt: workflowTemplate.updatedAt,
+    })
+    .from(workflowTemplate)
+    .leftJoin(
+      userWorkflowPermissions,
+      eq(workflowTemplate.id, userWorkflowPermissions.workflowId),
+    )
+    .where(
+      and(
+        eq(workflowTemplate.external_id, external_id),
+        eq(workflowTemplate.workspaceId, workspaceId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(userWorkflowPermissions.userId, userId),
+        ),
+      ),
+    )
+    .limit(1)
+
+  return template ? selectWorkflowTemplateSchema.parse(template) : null
+}
+
+
+export const getWorkflowTemplateByIdWithPermissionCheck = async (
+  trx: TxnOrClient,
+  id: number,
+  workspaceId: number,
+  userId: number,
+): Promise<SelectWorkflowTemplate | null> => {
+  const [template] = await trx
+    .selectDistinct({
+      id: workflowTemplate.external_id,
       name: workflowTemplate.name,
       workspaceId: workflowTemplate.workspaceId,
       userId: workflowTemplate.userId,
@@ -113,7 +155,7 @@ export const getAccessibleWorkflowTemplates = async (
 ): Promise<SelectWorkflowTemplate[]> => {
   const templates = await trx
     .selectDistinct({
-      id: workflowTemplate.id,
+      id: workflowTemplate.external_id,
       name: workflowTemplate.name,
       workspaceId: workflowTemplate.workspaceId,
       userId: workflowTemplate.userId,
@@ -146,7 +188,7 @@ export const getAccessibleWorkflowTemplates = async (
 
 export const updateWorkflowTemplate = async (
   trx: TxnOrClient,
-  id: string,
+  external_id: string,
   data: Partial<InsertWorkflowTemplate>,
 ): Promise<SelectWorkflowTemplate | null> => {
   const [updated] = await trx
@@ -155,7 +197,7 @@ export const updateWorkflowTemplate = async (
       ...data,
       updatedAt: new Date(),
     })
-    .where(eq(workflowTemplate.id, id))
+    .where(eq(workflowTemplate.external_id, external_id))
     .returning()
 
   return updated ? selectWorkflowTemplateSchema.parse(updated) : null
@@ -165,7 +207,7 @@ export const updateWorkflowTemplate = async (
 export const createWorkflowStepTemplate = async (
   trx: TxnOrClient,
   data: {
-    workflowTemplateId: string
+    workflowTemplateId: number
     name: string
     description?: string
     type: StepType
@@ -211,7 +253,7 @@ export const getWorkflowStepTemplateById = async (
 
 export const getWorkflowStepTemplatesByTemplateId = async (
   trx: TxnOrClient,
-  workflowTemplateId: string,
+  workflowTemplateId: number,
 ): Promise<SelectWorkflowStepTemplate[]> => {
   const steps = await trx
     .select()
@@ -225,7 +267,7 @@ export const getWorkflowStepTemplatesByTemplateId = async (
 export const createWorkflowExecution = async (
   trx: TxnOrClient,
   data: {
-    workflowTemplateId: string
+    workflowTemplateId: number
     workspaceId: number
     userId: number
     name: string

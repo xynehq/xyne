@@ -81,10 +81,11 @@ import {
   getWorkflowExecutionByIdWithChecks, 
   getWorkflowStepTemplateById, 
   getWorkflowStepTemplatesByTemplateId, 
-  getWorkflowTemplateByIdWithPermissionCheck, 
+  getWorkflowTemplateByExternalIdWithPermissionCheck, 
   updateWorkflowTemplate,
   createWorkflowExecution,
   createWorkflowStepExecutionsFromSteps,
+  getWorkflowTemplateByIdWithPermissionCheck,
 } from "@/db/workflow"
 import {
   getAccessibleWorkflowTools,
@@ -220,11 +221,11 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
       db,
       c.get(JwtPayloadKey)
     )
-    const templateId = c.req.param("templateId")
+    const templateExternalId = c.req.param("templateExternalId")
 
-    const template = await getWorkflowTemplateByIdWithPermissionCheck(
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
-      templateId,
+      templateExternalId,
       user.workspaceId,
       user.id
     )
@@ -235,7 +236,7 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
 
     const steps = await getWorkflowStepTemplatesByTemplateId(
       db,
-      templateId
+      template.id
     )
 
 
@@ -273,7 +274,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
     Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${user.workspaceId}, workspaceExternalId=${workspaceExternalId}`)
 
-    const templateId = c.req.param("templateId")
+    const templateExternalId = c.req.param("templateExternalId")
     const contentType = c.req.header("content-type") || ""
 
     let requestData: any = {}
@@ -310,9 +311,9 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     }
 
     // Get template and validate (allow access to user's own or public templates)
-    const template = await getWorkflowTemplateByIdWithPermissionCheck(
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
-      templateId,
+      templateExternalId,
       user.workspaceId,
       user.id
     )
@@ -432,7 +433,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     // Get all step templates
     const steps = await getWorkflowStepTemplatesByTemplateId(
       db,
-      templateId
+      template.id
     )
 
     const stepExecutions = await createWorkflowStepExecutionsFromSteps(db, execution.id, steps)
@@ -661,12 +662,12 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 export const ExecuteWorkflowTemplateApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const templateId = c.req.param("templateId")
+    const templateExternalId = c.req.param("templateExternalId")
     const requestData = await c.req.json()
 
-    const template = await getWorkflowTemplateByIdWithPermissionCheck(
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
-      templateId,
+      templateExternalId,
       user.workspaceId,
       user.id
     )
@@ -678,7 +679,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     // Get step templates
     const steps = await getWorkflowStepTemplatesByTemplateId(
       db,
-      templateId
+      template.id
     )
 
     // Get all toolIds from step templates to fetch exactly the tools referenced by this workflow
@@ -2171,7 +2172,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       }
     )
 
-    const templateId = template.id
+    const templateExternalId = template.external_id
 
     // Create workflow tools first (needed for step tool references)
     const toolIdMap = new Map<string, string>() // frontend tool ID -> backend tool ID
@@ -2326,7 +2327,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       const [createdStep] = await db
         .insert(workflowStepTemplate)
         .values({
-          workflowTemplateId: templateId,
+          workflowTemplateId: template.id,
           name: stepData.name,
           description: stepData.description || "",
           type: stepData.type === "form_submission" || stepData.type === "manual" ? "manual" : "automated",
@@ -2414,7 +2415,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       // Update template with root step ID
       await updateWorkflowTemplate(
         db,
-        templateId,
+        templateExternalId,
         {
           rootWorkflowStepTemplateId: rootStepId,
         }
@@ -2449,12 +2450,12 @@ export const ExecuteTemplateApi = ExecuteWorkflowTemplateApi
 export const UpdateWorkflowTemplateApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const templateId = c.req.param("templateId")
+    const templateExternalId = c.req.param("templateExternalId")
     const requestData = await c.req.json()
     
-    const existingTemplate = await getWorkflowTemplateByIdWithPermissionCheck(
+    const existingTemplate = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
-      templateId,
+      templateExternalId,
       user.workspaceId,
       user.id
     )
@@ -2465,7 +2466,7 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
 
     const updatedTemplate = await updateWorkflowTemplate(
       db,
-      templateId,
+      templateExternalId,
       {
         name: requestData.name,
         description: requestData.description,
@@ -2814,10 +2815,10 @@ export const DeleteWorkflowToolApi = async (c: Context) => {
 export const AddStepToWorkflowApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const templateId = c.req.param("templateId")
+    const templateId = c.req.param("templateExternalId")
     const requestData = await c.req.json()
 
-    const template = await getWorkflowTemplateByIdWithPermissionCheck(
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -2847,7 +2848,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     // 2. Get all existing steps for this template
     const existingSteps = await getWorkflowStepTemplatesByTemplateId(
       db,
-      templateId
+      template.id
     )
     const isFirstStep =
       existingSteps.length === 0 || !template.rootWorkflowStepTemplateId
@@ -2857,7 +2858,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     const [newStep] = await db
       .insert(workflowStepTemplate)
       .values({
-        workflowTemplateId: templateId,
+        workflowTemplateId: template.id,
         name: requestData.stepName,
         description: requestData.stepDescription || `Step ${stepOrder}`,
         type: requestData.stepType || "automated",
@@ -2918,7 +2919,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     }
 
     // 5. Return the complete updated template with new step
-    const updatedTemplate = await getWorkflowTemplateByIdWithPermissionCheck(
+    const updatedTemplate = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -3034,7 +3035,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
 
       await updateWorkflowTemplate(
         db,
-        templateId,
+        template.external_id,
         {
           rootWorkflowStepTemplateId: newRootStepId,
         }
@@ -3106,16 +3107,16 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     }
 
     // 9. Get updated workflow data
-    const updatedTemplate = await getWorkflowTemplateByIdWithPermissionCheck(
+    const updatedTemplate = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
-      templateId,
+      template.external_id,
       user.workspaceId,
       user.id
     )
 
     const updatedSteps = await getWorkflowStepTemplatesByTemplateId(
       db,
-      template.id
+      templateId
     )
 
     Logger.info(

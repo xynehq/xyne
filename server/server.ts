@@ -1033,19 +1033,19 @@ export const AppRoutes = app
     CreateComplexWorkflowTemplateApi,
   )
   .get("/workflow/templates", ListWorkflowTemplatesApi)
-  .get("/workflow/templates/:templateId", GetWorkflowTemplateApi)
+  .get("/workflow/templates/:templateExternalId", GetWorkflowTemplateApi)
   .put(
-    "/workflow/templates/:templateId",
+    "/workflow/templates/:templateExternalId",
     zValidator("json", updateWorkflowTemplateSchema),
     UpdateWorkflowTemplateApi,
   )
-  .post("/workflow/templates/:templateId/execute", ExecuteTemplateApi)
+  .post("/workflow/templates/:templateExternalId/execute", ExecuteTemplateApi)
   .post(
-    "/workflow/templates/:templateId/execute-with-input",
+    "/workflow/templates/:templateExternalId/execute-with-input",
     ExecuteWorkflowWithInputApi,
   )
   .post(
-    "/workflow/templates/:templateId/steps",
+    "/workflow/templates/:templateExternalId/steps",
     zValidator("json", addStepToWorkflowSchema),
     AddStepToWorkflowApi,
   )
