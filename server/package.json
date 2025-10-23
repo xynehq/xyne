@@ -79,7 +79,7 @@
     "@types/jszip": "^3.4.1",
     "@types/node": "^24.3.0",
     "@xyne/vespa-ts": "1.1.8",
-    "@xynehq/jaf": "^0.1.4",
+    "@xynehq/jaf": "^0.1.17",
     "ai": "^5.0.51",
     "arctic": "^3.3.0",
     "async-mutex": "^0.5.0",
