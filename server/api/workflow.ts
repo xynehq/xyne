@@ -422,7 +422,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         workspaceId: user.workspaceId,
         name:
           requestData.name ||
-          `${template[0].name} - ${new Date().toLocaleDateString()}`,
+          `${template[0].name} - ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}`,
         description:
           requestData.description || `Execution of ${template[0].name}`,
         metadata: {
@@ -740,7 +740,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
         workspaceId: user.workspaceId,
         name:
           requestData.name ||
-          `${template[0].name} - ${new Date().toLocaleDateString()}`,
+          `${template[0].name} - ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}`,
         description:
           requestData.description || `Execution of ${template[0].name}`,
         metadata: requestData.metadata || {},
@@ -1913,7 +1913,7 @@ const executeWorkflowTool = async (
     <div class="content">
         <div class="header">
             <h2>🤖 Results of Workflow: ${workflowName} </h2>
-            <p>Generated on: ${new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })}</p>
+            <p>Generated on: ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
         </div>
         <div class="body-content">
             ${emailBody.replace(/\n/g, "<br>")}
