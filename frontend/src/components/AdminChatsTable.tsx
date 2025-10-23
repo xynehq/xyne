@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   MessageSquare,
   Bot,
@@ -301,12 +301,6 @@ export const AdminChatsTable = ({
     setSelectedChat(null)
   }
 
-  // Memoize the display chats calculation to prevent unnecessary re-renders
-  const displayChats = useMemo(() => {
-    // Since filtering and sorting are now handled server-side, we just display the chats as received
-    return chats
-  }, [chats])
-
   // Fetch users on component mount
   useEffect(() => {
     const fetchUsers = async () => {
@@ -504,8 +498,8 @@ export const AdminChatsTable = ({
             <div className="space-y-4">
               {/* Chats List */}
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {displayChats.length > 0 ? (
-                  displayChats.map((chat, index) => (
+                {chats.length > 0 ? (
+                  chats.map((chat, index) => (
                     <div
                       key={chat.externalId}
                       className="flex items-center justify-between p-4 rounded-lg hover:bg-muted/50 transition-colors"
@@ -609,9 +603,9 @@ export const AdminChatsTable = ({
               </div>
 
               {/* Results Summary */}
-              {displayChats.length > 0 && (
+              {chats.length > 0 && (
                 <div className="text-xs text-muted-foreground text-center pt-2 border-t">
-                  Showing {displayChats.length} chats
+                  Showing {chats.length} chats
                   {searchQuery && ` • Search: "${searchQuery}"`}
                   {filterType !== "all" && ` • ${filterType} chats only`}
                   {userFilter !== "all" &&

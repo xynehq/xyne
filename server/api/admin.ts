@@ -1792,7 +1792,9 @@ export const GetAdminChats = async (c: Context) => {
         userName: users.name,
         userRole: users.role,
         userCreatedAt: users.createdAt,
-        messageCount: count(messages.id),
+        messageCount: count(
+          sql`CASE WHEN ${messages.deletedAt} IS NULL THEN 1 END`,
+        ),
         likes: count(
           sql`CASE WHEN ${messages.feedback}->>'type' = 'like' AND ${messages.deletedAt} IS NULL THEN 1 END`,
         ),
@@ -2459,15 +2461,6 @@ export const GetKbVespaContent = async (c: Context) => {
 export const GetChatQueriesApi = async (c: Context) => {
   try {
     const chatId = c.req.param("chatId")
-    if (!chatId) {
-      return c.json(
-        {
-          success: false,
-          message: "chatId is required",
-        },
-        400,
-      )
-    }
     const { workspaceId: currentWorkspaceId } = c.get(JwtPayloadKey)
 
     const queries = await fetchUserQueriesForChat(
