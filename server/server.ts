@@ -45,6 +45,7 @@ import {
   startSlackIngestionSchema,
   microsoftServiceSchema,
   UserRoleChangeSchema,
+  chatIdParamSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -79,6 +80,7 @@ import {
   ListAllLoggedInUsers,
   ListAllIngestedUsers,
   GetKbVespaContent,
+  GetChatQueriesApi,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { initApiServerQueue } from "@/queue/api-server-queue"
@@ -112,16 +114,25 @@ import {
   GetUserApiKeys,
   DeleteUserApiKey,
 } from "@/api/auth"
+import {
+  getIngestionStatusSchema,
+  cancelIngestionSchema,
+  pauseIngestionSchema,
+  resumeIngestionSchema,
+} from "@/api/ingestion"
 import { SearchWorkspaceUsersApi, searchUsersSchema } from "@/api/users"
 import {
   InitiateCallApi,
   JoinCallApi,
   EndCallApi,
+  LeaveCallApi,
   GetActiveCallsApi,
+  GetCallHistoryApi,
   InviteToCallApi,
   initiateCallSchema,
   joinCallSchema,
   endCallSchema,
+  leaveCallSchema,
   inviteToCallSchema,
 } from "@/api/calls"
 import { AuthRedirectError, InitialisationError } from "@/errors"
@@ -896,7 +907,11 @@ export const AppRoutes = app
   .post("/files/upload-attachment", handleAttachmentUpload)
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
-  .post("/files/delete", zValidator("json", handleAttachmentDeleteSchema), handleAttachmentDeleteApi)
+  .post(
+    "/files/delete",
+    zValidator("json", handleAttachmentDeleteSchema),
+    handleAttachmentDeleteApi,
+  )
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/generateTitle",
@@ -1107,7 +1122,9 @@ export const AppRoutes = app
   )
   .post("/calls/join", zValidator("json", joinCallSchema), JoinCallApi)
   .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
+  .post("/calls/leave", zValidator("json", leaveCallSchema), LeaveCallApi)
   .get("/calls/active", GetActiveCallsApi)
+  .get("/calls/history", GetCallHistoryApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
@@ -1158,6 +1175,21 @@ export const AppRoutes = app
   )
   .post("/google/start_ingestion", (c) =>
     proxyToSyncServer(c, "/google/start_ingestion"),
+  )
+  // Ingestion Management APIs - new polling-based approach for Slack channel ingestion
+  .get(
+    "/ingestion/status",
+    zValidator("query", getIngestionStatusSchema),
+    (c) => proxyToSyncServer(c, "/ingestion/status", "GET"),
+  )
+  .post("/ingestion/cancel", zValidator("json", cancelIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/cancel"),
+  )
+  .post("/ingestion/pause", zValidator("json", pauseIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/pause"),
+  )
+  .post("/ingestion/resume", zValidator("json", resumeIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/resume"),
   )
   .delete(
     "/oauth/connector/delete",
@@ -1287,6 +1319,11 @@ export const AppRoutes = app
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetUserAgentLeaderboard,
   )
+  .get(
+    "/chat/queries/:chatId",
+    zValidator("param", chatIdParamSchema),
+    GetChatQueriesApi,
+  )
 
   .get(
     "/agents/:agentId/analysis",
@@ -1391,6 +1428,7 @@ app
     UpdateAgentApi,
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi) // Delete Agent
+  .get("/agent/:agentExternalId", GetAgentApi) // Get Agent details
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
   .post("/cl", CreateCollectionApi) // Create collection (KB)
   .get("/cl", ListCollectionsApi) // List all collections
@@ -1399,12 +1437,19 @@ app
     zValidator("query", searchKnowledgeBaseSchema), // Search over KB
     SearchKnowledgeBaseApi,
   )
+  .get("/cl/:clId", GetCollectionApi) // Get collection by ID
+  .put("/cl/:clId", UpdateCollectionApi) // Update collection (rename, etc.)
   .delete("/cl/:clId", DeleteCollectionApi) // Delete collection (KB)
-  .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB
-  .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB
+  .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB (supports zip files)
+  .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB by ID
+  .post("/cl/poll-status", PollCollectionsStatusApi) // Poll collection items status
 
 // Proxy function to forward ingestion API calls to sync server
-const proxyToSyncServer = async (c: Context, endpoint: string) => {
+const proxyToSyncServer = async (
+  c: Context,
+  endpoint: string,
+  method: string = "POST",
+) => {
   try {
     // Get JWT token from cookie
     const token = getCookie(c, AccessTokenCookieName)
@@ -1412,21 +1457,36 @@ const proxyToSyncServer = async (c: Context, endpoint: string) => {
       throw new HTTPException(401, { message: "No authentication token" })
     }
 
-    // Get request body
-    const body = await c.req.json()
+    // Prepare URL - for GET requests, add query parameters
+    let url = `http://localhost:${config.syncServerPort}${endpoint}`
+    if (method === "GET") {
+      const urlObj = new URL(url)
+      const queryParams = c.req.query()
+      Object.keys(queryParams).forEach((key) => {
+        if (queryParams[key]) {
+          urlObj.searchParams.set(key, queryParams[key])
+        }
+      })
+      url = urlObj.toString()
+    }
+
+    // Prepare request configuration
+    const requestConfig: RequestInit = {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `${AccessTokenCookieName}=${token}`,
+      },
+    }
+
+    // Add body for non-GET requests
+    if (method !== "GET") {
+      const body = await c.req.json()
+      requestConfig.body = JSON.stringify(body)
+    }
 
     // Forward to sync server
-    const response = await fetch(
-      `http://localhost:${config.syncServerPort}${endpoint}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `${AccessTokenCookieName}=${token}`,
-        },
-        body: JSON.stringify(body),
-      },
-    )
+    const response = await fetch(url, requestConfig)
 
     if (!response.ok) {
       const errorData = await response
