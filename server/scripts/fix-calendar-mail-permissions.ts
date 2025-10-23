@@ -68,6 +68,13 @@ async function fixCalendarPermissions() {
         continue
       }
 
+      if (userEmails.length > 1) {
+        logger.warn(
+          `Multiple users found in userMap for calendar email: ${docId} (users: ${userEmails.join(", ")}), skipping for manual review`,
+        )
+        continue
+      }
+
       const userEmail = userEmails[0].toLowerCase()
       const expectedPermissions = [userEmail]
 
