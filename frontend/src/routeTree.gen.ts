@@ -33,6 +33,7 @@ import { Route as AuthenticatedIntegrationsApiKeyImport } from './routes/_authen
 import { Route as AuthenticatedDataSourceDocIdImport } from './routes/_authenticated/dataSource.$docId'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
 import { Route as AuthenticatedAdminUserManagementImport } from './routes/_authenticated/admin/userManagement'
+import { Route as AuthenticatedAdminChatOverviewImport } from './routes/_authenticated/admin/chat-overview'
 import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
 import { Route as AuthenticatedTraceChatIdMsgIdImport } from './routes/_authenticated/trace.$chatId.$msgId'
 import { Route as AuthenticatedAdminIntegrationsSlackImport } from './routes/_authenticated/admin/integrations/slack'
@@ -183,6 +184,13 @@ const AuthenticatedAdminUserManagementRoute =
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
+const AuthenticatedAdminChatOverviewRoute =
+  AuthenticatedAdminChatOverviewImport.update({
+    id: '/admin/chat-overview',
+    path: '/admin/chat-overview',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
 const AuthenticatedAdminIntegrationsIndexRoute =
   AuthenticatedAdminIntegrationsIndexImport.update({
     id: '/admin/integrations/',
@@ -311,6 +319,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/chat-overview': {
+      id: '/_authenticated/admin/chat-overview'
+      path: '/admin/chat-overview'
+      fullPath: '/admin/chat-overview'
+      preLoaderRoute: typeof AuthenticatedAdminChatOverviewImport
       parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/admin/userManagement': {
@@ -450,6 +465,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
   AuthenticatedWorkflowRoute: typeof AuthenticatedWorkflowRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedAdminChatOverviewRoute: typeof AuthenticatedAdminChatOverviewRoute
   AuthenticatedAdminUserManagementRoute: typeof AuthenticatedAdminUserManagementRoute
   AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
   AuthenticatedIntegrationsApiKeyRoute: typeof AuthenticatedIntegrationsApiKeyRoute
@@ -476,6 +492,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedTuningRoute: AuthenticatedTuningRoute,
   AuthenticatedWorkflowRoute: AuthenticatedWorkflowRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAdminChatOverviewRoute: AuthenticatedAdminChatOverviewRoute,
   AuthenticatedAdminUserManagementRoute: AuthenticatedAdminUserManagementRoute,
   AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
   AuthenticatedIntegrationsApiKeyRoute: AuthenticatedIntegrationsApiKeyRoute,
@@ -517,6 +534,7 @@ export interface FileRoutesByFullPath {
   '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
+  '/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
@@ -547,6 +565,7 @@ export interface FileRoutesByTo {
   '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
+  '/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
@@ -579,6 +598,7 @@ export interface FileRoutesById {
   '/_authenticated/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/_authenticated/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
@@ -612,6 +632,7 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/oauth/success'
     | '/'
+    | '/admin/chat-overview'
     | '/admin/userManagement'
     | '/chat/$chatId'
     | '/dataSource/$docId'
@@ -641,6 +662,7 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/oauth/success'
     | '/'
+    | '/admin/chat-overview'
     | '/admin/userManagement'
     | '/chat/$chatId'
     | '/dataSource/$docId'
@@ -671,6 +693,7 @@ export interface FileRouteTypes {
     | '/_authenticated/workflow'
     | '/oauth/success'
     | '/_authenticated/'
+    | '/_authenticated/admin/chat-overview'
     | '/_authenticated/admin/userManagement'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dataSource/$docId'
@@ -731,6 +754,7 @@ export const routeTree = rootRoute
         "/_authenticated/tuning",
         "/_authenticated/workflow",
         "/_authenticated/",
+        "/_authenticated/admin/chat-overview",
         "/_authenticated/admin/userManagement",
         "/_authenticated/dataSource/$docId",
         "/_authenticated/integrations/apiKey",
@@ -790,6 +814,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/": {
       "filePath": "_authenticated/index.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/chat-overview": {
+      "filePath": "_authenticated/admin/chat-overview.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/admin/userManagement": {
