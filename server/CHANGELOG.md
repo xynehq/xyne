@@ -1,3 +1,10 @@
+## [3.20.2](https://github.com/xynehq/xyne/compare/v3.20.1...v3.20.2) (2025-10-23)
+
+
+### Bug Fixes
+
+* **agentic:** fix accumulation logic to include only best documents ([#1115](https://github.com/xynehq/xyne/issues/1115)) ([096ccb1](https://github.com/xynehq/xyne/commit/096ccb15e33bd90ed14a554d4a40bb1f6fab0fc4))
+
 ## [3.20.1](https://github.com/xynehq/xyne/compare/v3.20.0...v3.20.1) (2025-10-23)
 
 
