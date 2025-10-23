@@ -46,28 +46,6 @@ const PageWrapper = memo(
     prev.pageNumber === next.pageNumber && prev.scale === next.scale,
 )
 
-const MemoizedPage = memo(
-  ({
-    pageNumber,
-    scale,
-    loading,
-    error,
-  }: {
-    pageNumber: number
-    scale: number
-    loading: React.ReactNode
-    error: React.ReactNode
-  }) => (
-    <PageWrapper
-      pageNumber={pageNumber}
-      scale={scale}
-      loading={loading}
-      error={error}
-    />
-  ),
-  (prev, next) =>
-    prev.pageNumber === next.pageNumber && prev.scale === next.scale,
-)
 
 interface PdfViewerProps {
   /** Either a URL or File object */
@@ -165,13 +143,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             return vp.height
           } catch (error) {
             console.warn(`Failed to get page ${idx + 1} dimensions:`, error)
-            return Math.round(792 * scale)
+            return Math.round(792 * currentScale)
           }
         }),
       )
       return heights
     },
-    [numPages],
+    [],
   )
 
   // Get precomputed height for virtualizer
@@ -719,7 +697,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                             contentVisibility: "auto",
                           }}
                         >
-                          <MemoizedPage
+                          <PageWrapper
                             pageNumber={pageNum}
                             scale={scale}
                             loading={
