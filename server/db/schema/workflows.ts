@@ -404,7 +404,7 @@ export const createComplexWorkflowTemplateSchema = z.object({
 })
 
 export const createWorkflowExecutionSchema = z.object({
-  workflowTemplateId: z.number().int(),
+  workflowTemplateExternalId: z.number().int(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),

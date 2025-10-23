@@ -441,15 +441,35 @@ export const getWorkflowStepExecutionsByExecution = async (
   return z.array(selectWorkflowStepExecutionSchema).parse(results)
 }
 
-export const getWorkflowStepExecutionById = async (
+export const getWorkflowStepExecutionByIdWithChecks = async (
   trx: TxnOrClient,
   id: string,
+  workspaceId: number,
+  userId: number,
 ): Promise<SelectWorkflowStepExecution | null> => {
-  const [stepExecution] = await trx
-    .select()
+  const result = await trx
+    .select({
+      stepExecution: workflowStepExecution,
+    })
     .from(workflowStepExecution)
-    .where(eq(workflowStepExecution.id, id))
+    .innerJoin(
+      workflowExecution,
+      eq(workflowStepExecution.workflowExecutionId, workflowExecution.id)
+    )
+    .where(
+      and(
+        eq(workflowStepExecution.id, id),
+        eq(workflowExecution.userId, userId),
+        eq(workflowExecution.workspaceId, workspaceId)
+      )
+    )
     .limit(1)
+  
+  if (!result || result.length === 0) {
+    return null
+  }
+
+  const stepExecution = result[0].stepExecution
 
   return stepExecution
     ? selectWorkflowStepExecutionSchema.parse(stepExecution)

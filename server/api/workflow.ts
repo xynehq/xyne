@@ -86,6 +86,7 @@ import {
   createWorkflowExecution,
   createWorkflowStepExecutionsFromSteps,
   getWorkflowTemplateByIdWithPermissionCheck,
+  getWorkflowStepExecutionByIdWithChecks,
 } from "@/db/workflow"
 import {
   syncWorkflowUserPermissions,
@@ -1374,18 +1375,20 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       }
 
       // Get step execution to access workflow IDs for file handling
-      const stepExecution = await db
-        .select()
-        .from(workflowStepExecution)
-        .where(eq(workflowStepExecution.id, stepId))
+      const stepExecution = await getWorkflowStepExecutionByIdWithChecks(
+        db,
+        stepId,
+        user.workspaceId,
+        user.id
+      )
 
-      if (!stepExecution || stepExecution.length === 0) {
+      if (!stepExecution) {
         throw new HTTPException(404, {
           message: "Workflow step execution not found",
         })
       }
 
-      currentStepExecution = stepExecution[0]
+      currentStepExecution = stepExecution
 
       // Get step template to access form definition for validation
       const stepTemplate = await getWorkflowStepTemplateById(
@@ -1495,18 +1498,18 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
 
     if (!stepExecution) {
       // Handle JSON case - fetch step execution
-      const stepExecutions = await db
-        .select()
-        .from(workflowStepExecution)
-        .where(eq(workflowStepExecution.id, stepId))
+      stepExecution = await getWorkflowStepExecutionByIdWithChecks(
+        db,
+        stepId,
+        user.workspaceId,
+        user.id
+      )
 
-      if (!stepExecutions || stepExecutions.length === 0) {
+      if (!stepExecution) {
         throw new HTTPException(404, {
           message: "Workflow step execution not found",
         })
       }
-
-      stepExecution = stepExecutions[0]
 
       // Get the form tool for JSON case
       const stepTemplate = await getWorkflowStepTemplateById(
@@ -2542,10 +2545,21 @@ export const CreateWorkflowExecutionApi = async (c: Context) => {
     )
     const requestData = await c.req.json()
 
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+      db,
+      requestData.workflowTemplateExternalId,
+      user.workspaceId,
+      user.id
+    )
+
+    if (!template) {
+      throw new Error("Workflow Template not found or access denied")
+    }
+
     const execution = await createWorkflowExecution(
       db,
       {
-        workflowTemplateId: requestData.workflowTemplateId,
+        workflowTemplateId: template.id,
         workspaceId: user.workspaceId,
         userId: user.id,
         name: requestData.name,
