@@ -1,3 +1,10 @@
+## [3.20.3](https://github.com/xynehq/xyne/compare/v3.20.2...v3.20.3) (2025-10-23)
+
+
+### Bug Fixes
+
+* XYNE-216 fixed pdf highlight ([#1134](https://github.com/xynehq/xyne/issues/1134)) ([9f5eb75](https://github.com/xynehq/xyne/commit/9f5eb75367e73c0b28109af2dd974d76649ca22c))
+
 ## [3.20.2](https://github.com/xynehq/xyne/compare/v3.20.1...v3.20.2) (2025-10-23)
 
 
