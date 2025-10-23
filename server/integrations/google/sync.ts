@@ -425,15 +425,43 @@ export const getDriveChanges = async (
   newStartPageToken: string | null | undefined
 } | null> => {
   try {
-    const response = await retryWithBackoff(
-      () => driveClient.changes.list({ pageToken: config.driveToken }),
-      `Fetching drive changes with pageToken ${config.driveToken}`,
-      Apps.GoogleDrive,
-      0,
-      oauth2Client,
-    )
-    const { changes, newStartPageToken } = response.data
-    return { changes, newStartPageToken }
+    // Implement proper pagination for OAuth Drive changes
+    let nextPageToken = ""
+    let newStartPageToken = config.driveToken
+    let allChanges: drive_v3.Schema$Change[] = []
+
+    do {
+      const response = await retryWithBackoff(
+        () =>
+          driveClient.changes.list({
+            pageToken: nextPageToken || config.driveToken,
+          }),
+        `Fetching drive changes with pageToken ${nextPageToken || config.driveToken}`,
+        Apps.GoogleDrive,
+        0,
+        oauth2Client,
+      )
+
+      if (!response?.data) {
+        Logger.error("Failed to fetch drive changes in getDriveChanges")
+        break
+      }
+
+      // Collect changes from this page
+      if (response.data.changes) {
+        allChanges = allChanges.concat(response.data.changes)
+      }
+
+      // Update pagination tokens
+      nextPageToken = response.data.nextPageToken ?? ""
+
+      // newStartPageToken is only present in the final page (when nextPageToken is absent)
+      if (response.data.newStartPageToken) {
+        newStartPageToken = response.data.newStartPageToken
+      }
+    } while (nextPageToken)
+
+    return { changes: allChanges, newStartPageToken }
   } catch (error: unknown) {
     // Final catch: log the error details without breaking the sync job.
     if (error instanceof GaxiosError) {
@@ -607,7 +635,14 @@ export const handleGoogleOAuthChanges = async (
           break
         }
       } while (nextPageToken)
-      if (changesExist) {
+      // Check if tokens were updated (independent of content changes)
+      const tokensUpdated =
+        newStartPageToken !== config.driveToken ||
+        contactsToken !== config.contactsToken ||
+        otherContactsToken !== config.otherContactsToken
+
+      // Update config if tokens changed OR content changed
+      if (changesExist || tokensUpdated) {
         config = {
           type: "googleDriveChangeToken",
           lastSyncedAt: new Date(),
@@ -616,39 +651,50 @@ export const handleGoogleOAuthChanges = async (
           otherContactsToken,
         }
 
-        // update this sync job and
-        // create sync history
+        // update this sync job and optionally create sync history
         await db.transaction(async (trx) => {
           await updateSyncJob(trx, syncJob.id, {
             config,
             lastRanOn: new Date(),
             status: SyncJobStatus.Successful,
           })
-          // make it compatible with sync history config type
-          await insertSyncHistory(trx, {
-            workspaceId: syncJob.workspaceId,
-            workspaceExternalId: syncJob.workspaceExternalId,
-            dataAdded: stats.added,
-            dataDeleted: stats.removed,
-            dataUpdated: stats.updated,
-            authType: AuthType.OAuth,
-            summary: { description: stats.summary },
-            errorMessage: "",
-            app: Apps.GoogleDrive,
-            status: SyncJobStatus.Successful,
-            config: {
-              ...config,
-              lastSyncedAt: config.lastSyncedAt.toISOString(),
-            },
-            type: SyncCron.ChangeToken,
-            lastRanOn: new Date(),
-          })
+
+          // Only create sync history for actual content changes
+          if (changesExist) {
+            await insertSyncHistory(trx, {
+              workspaceId: syncJob.workspaceId,
+              workspaceExternalId: syncJob.workspaceExternalId,
+              dataAdded: stats.added,
+              dataDeleted: stats.removed,
+              dataUpdated: stats.updated,
+              authType: AuthType.OAuth,
+              summary: { description: stats.summary },
+              errorMessage: "",
+              app: Apps.GoogleDrive,
+              status: SyncJobStatus.Successful,
+              config: {
+                ...config,
+                lastSyncedAt: config.lastSyncedAt.toISOString(),
+              },
+              type: SyncCron.ChangeToken,
+              lastRanOn: new Date(),
+            })
+          }
         })
-        loggerWithChild({ email: data.email ?? "" }).info(
-          `Changes successfully synced for Drive: ${JSON.stringify(stats)}`,
-        )
+
+        if (changesExist) {
+          loggerWithChild({ email: data.email ?? "" }).info(
+            `Changes successfully synced for Drive: ${JSON.stringify(stats)}`,
+          )
+        } else if (tokensUpdated) {
+          loggerWithChild({ email: data.email ?? "" }).info(
+            `Sync tokens updated for Drive (no content changes)`,
+          )
+        }
       } else {
-        loggerWithChild({ email: data.email ?? "" }).info(`No changes to sync`)
+        loggerWithChild({ email: data.email ?? "" }).info(
+          `No changes or token updates to sync`,
+        )
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -705,7 +751,11 @@ export const handleGoogleOAuthChanges = async (
         oauth2Client,
       )
 
-      if (changesExist) {
+      // Check if historyId was updated (independent of content changes)
+      const historyIdUpdated = historyId !== config.historyId
+
+      // Update config if historyId changed OR content changed
+      if (changesExist || historyIdUpdated) {
         // update the change token
         config.historyId = historyId
         await db.transaction(async (trx) => {
@@ -714,31 +764,41 @@ export const handleGoogleOAuthChanges = async (
             lastRanOn: new Date(),
             status: SyncJobStatus.Successful,
           })
-          // make it compatible with sync history config type
-          await insertSyncHistory(trx, {
-            workspaceId: syncJob.workspaceId,
-            workspaceExternalId: syncJob.workspaceExternalId,
-            dataAdded: stats.added,
-            dataDeleted: stats.removed,
-            dataUpdated: stats.updated,
-            authType: AuthType.OAuth,
-            summary: { description: stats.summary },
-            errorMessage: "",
-            app: Apps.Gmail,
-            status: SyncJobStatus.Successful,
-            config: {
-              ...config,
-              lastSyncedAt: config.lastSyncedAt.toISOString(),
-            },
-            type: SyncCron.ChangeToken,
-            lastRanOn: new Date(),
-          })
+
+          // Only create sync history for actual content changes
+          if (changesExist) {
+            await insertSyncHistory(trx, {
+              workspaceId: syncJob.workspaceId,
+              workspaceExternalId: syncJob.workspaceExternalId,
+              dataAdded: stats.added,
+              dataDeleted: stats.removed,
+              dataUpdated: stats.updated,
+              authType: AuthType.OAuth,
+              summary: { description: stats.summary },
+              errorMessage: "",
+              app: Apps.Gmail,
+              status: SyncJobStatus.Successful,
+              config: {
+                ...config,
+                lastSyncedAt: config.lastSyncedAt.toISOString(),
+              },
+              type: SyncCron.ChangeToken,
+              lastRanOn: new Date(),
+            })
+          }
         })
-        loggerWithChild({ email: data.email ?? "" }).info(
-          `Changes successfully synced for Gmail: ${JSON.stringify(stats)}`,
-        )
+
+        if (changesExist) {
+          loggerWithChild({ email: data.email ?? "" }).info(
+            `Changes successfully synced for Gmail: ${JSON.stringify(stats)}`,
+          )
+        } else if (historyIdUpdated) {
+          loggerWithChild({ email: data.email ?? "" }).info(
+            `Gmail historyId updated (no content changes)`,
+          )
+        }
       } else {
-        Logger.info(`No Gmail changes to sync`)
+        Logger.info(`No Gmail changes or historyId updates to sync`)
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -800,7 +860,12 @@ export const handleGoogleOAuthChanges = async (
           oauth2Client,
         )
 
-      if (changesExist) {
+      // Check if calendar events token was updated (independent of content changes)
+      const calendarTokenUpdated =
+        newCalendarEventsSyncToken !== config.calendarEventsToken
+
+      // Update config if token changed OR content changed
+      if (changesExist || calendarTokenUpdated) {
         // update the change token
         config.calendarEventsToken = newCalendarEventsSyncToken
         await db.transaction(async (trx) => {
@@ -809,32 +874,42 @@ export const handleGoogleOAuthChanges = async (
             lastRanOn: new Date(),
             status: SyncJobStatus.Successful,
           })
-          // make it compatible with sync history config type
-          await insertSyncHistory(trx, {
-            workspaceId: syncJob.workspaceId,
-            workspaceExternalId: syncJob.workspaceExternalId,
-            dataAdded: stats.added,
-            dataDeleted: stats.removed,
-            dataUpdated: stats.updated,
-            authType: AuthType.OAuth,
-            summary: { description: stats.summary },
-            errorMessage: "",
-            app: Apps.GoogleCalendar,
-            status: SyncJobStatus.Successful,
-            config: {
-              ...config,
-              lastSyncedAt: config.lastSyncedAt.toISOString(),
-            },
-            type: SyncCron.ChangeToken,
-            lastRanOn: new Date(),
-          })
+
+          // Only create sync history for actual content changes
+          if (changesExist) {
+            await insertSyncHistory(trx, {
+              workspaceId: syncJob.workspaceId,
+              workspaceExternalId: syncJob.workspaceExternalId,
+              dataAdded: stats.added,
+              dataDeleted: stats.removed,
+              dataUpdated: stats.updated,
+              authType: AuthType.OAuth,
+              summary: { description: stats.summary },
+              errorMessage: "",
+              app: Apps.GoogleCalendar,
+              status: SyncJobStatus.Successful,
+              config: {
+                ...config,
+                lastSyncedAt: config.lastSyncedAt.toISOString(),
+              },
+              type: SyncCron.ChangeToken,
+              lastRanOn: new Date(),
+            })
+          }
         })
-        loggerWithChild({ email: data.email ?? "" }).info(
-          `Changes successfully synced for Google Calendar Events: ${JSON.stringify(stats)}`,
-        )
+
+        if (changesExist) {
+          loggerWithChild({ email: data.email ?? "" }).info(
+            `Changes successfully synced for Google Calendar Events: ${JSON.stringify(stats)}`,
+          )
+        } else if (calendarTokenUpdated) {
+          loggerWithChild({ email: data.email ?? "" }).info(
+            `Calendar events token updated (no content changes)`,
+          )
+        }
       } else {
         loggerWithChild({ email: data.email ?? "" }).info(
-          `No Google Calendar Event changes to sync`,
+          `No Google Calendar Event changes or token updates to sync`,
         )
       }
     } catch (error) {
@@ -1623,7 +1698,14 @@ export const handleGoogleServiceAccountChanges = async (
           )
         }
       }
-      if (changesExist) {
+      // Check if tokens were updated (independent of content changes)
+      const tokensUpdated =
+        newStartPageToken !== config.driveToken ||
+        contactsToken !== config.contactsToken ||
+        otherContactsToken !== config.otherContactsToken
+
+      // Update config if tokens changed OR content changed
+      if (changesExist || tokensUpdated) {
         const newConfig = {
           type: config.type,
           driveToken: newStartPageToken ?? config.driveToken,
@@ -1631,37 +1713,45 @@ export const handleGoogleServiceAccountChanges = async (
           otherContactsToken,
           lastSyncedAt: new Date(),
         }
-        // update this sync job and
-        // create sync history
+
+        // update this sync job and optionally create sync history
         await db.transaction(async (trx) => {
           await updateSyncJob(trx, syncJob.id, {
             config: newConfig,
             lastRanOn: new Date(),
             status: SyncJobStatus.Successful,
           })
-          // make it compatible with sync history config type
-          await insertSyncHistory(trx, {
-            workspaceId: syncJob.workspaceId,
-            workspaceExternalId: syncJob.workspaceExternalId,
-            dataAdded: stats.added,
-            dataDeleted: stats.removed,
-            dataUpdated: stats.updated,
-            authType: AuthType.ServiceAccount,
-            summary: { description: stats.summary },
-            errorMessage: "",
-            app: Apps.GoogleDrive,
-            status: SyncJobStatus.Successful,
-            config: {
-              ...newConfig,
-              lastSyncedAt: newConfig.lastSyncedAt.toISOString(),
-            },
-            type: SyncCron.ChangeToken,
-            lastRanOn: new Date(),
-          })
+
+          // Only create sync history for actual content changes
+          if (changesExist) {
+            await insertSyncHistory(trx, {
+              workspaceId: syncJob.workspaceId,
+              workspaceExternalId: syncJob.workspaceExternalId,
+              dataAdded: stats.added,
+              dataDeleted: stats.removed,
+              dataUpdated: stats.updated,
+              authType: AuthType.ServiceAccount,
+              summary: { description: stats.summary },
+              errorMessage: "",
+              app: Apps.GoogleDrive,
+              status: SyncJobStatus.Successful,
+              config: {
+                ...newConfig,
+                lastSyncedAt: newConfig.lastSyncedAt.toISOString(),
+              },
+              type: SyncCron.ChangeToken,
+              lastRanOn: new Date(),
+            })
+          }
         })
-        Logger.info(`Changes successfully synced: ${JSON.stringify(stats)}`)
+
+        if (changesExist) {
+          Logger.info(`Changes successfully synced: ${JSON.stringify(stats)}`)
+        } else if (tokensUpdated) {
+          Logger.info(`Sync tokens updated for Drive (no content changes)`)
+        }
       } else {
-        Logger.info(`No changes to sync`)
+        Logger.info(`No changes or token updates to sync`)
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
