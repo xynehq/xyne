@@ -1,3 +1,10 @@
+# [3.21.0](https://github.com/xynehq/xyne/compare/v3.20.3...v3.21.0) (2025-10-23)
+
+
+### Features
+
+* XYNE-189 instance based requests for large pdfswith retry /backoff ([#1117](https://github.com/xynehq/xyne/issues/1117)) ([edef00c](https://github.com/xynehq/xyne/commit/edef00cca057e6fe6a81cd7bda189c90c79c1e40))
+
 ## [3.20.3](https://github.com/xynehq/xyne/compare/v3.20.2...v3.20.3) (2025-10-23)
 
 
