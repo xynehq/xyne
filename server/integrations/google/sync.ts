@@ -372,12 +372,12 @@ export const handleGoogleDriveChange = async (
               const permissionsAsString = toPermissionsList(
                 vespaData.permissions,
                 email,
-              );
+              )
               const vespaDataForInsert = {
                 ...vespaData,
                 permissions: permissionsAsString,
-              };
-              await insertWithRetry(vespaDataForInsert, fileSchema);
+              }
+              await insertWithRetry(vespaDataForInsert, fileSchema)
             }
           }
         } catch (err) {
@@ -1441,28 +1441,51 @@ export const handleGoogleServiceAccountChanges = async (
       let jwtClient = createJwtClient(serviceAccountKey, syncJob.email)
       const driveClient = google.drive({ version: "v3", auth: jwtClient })
       const config: GoogleChangeToken = syncJob.config as GoogleChangeToken
-      // TODO: add pagination for all the possible changes
-      const { changes, newStartPageToken } = (
-        await retryWithBackoff(
-          () => driveClient.changes.list({ pageToken: config.driveToken }),
-          `Fetching drive changes with pageToken ${config.driveToken}`,
+
+      // Implement proper pagination for Drive changes
+      let driveNextPageToken = ""
+      let newStartPageToken = config.driveToken
+      let allChanges: drive_v3.Schema$Change[] = []
+
+      do {
+        const response = await retryWithBackoff(
+          () =>
+            driveClient.changes.list({
+              pageToken: driveNextPageToken || config.driveToken,
+            }),
+          `Fetching drive changes with pageToken ${driveNextPageToken || config.driveToken}`,
           Apps.GoogleDrive,
         )
-      ).data
-      // there are changes
 
-      // Potential issues:
-      // we remove the doc but don't update the syncJob
-      // leading to us trying to remove the doc again which throws error
-      // as it is already removed
-      // we should still update it in that case?
+        if (!response?.data) {
+          Logger.error(
+            "Failed to fetch drive changes, skipping this sync iteration",
+          )
+          break
+        }
+
+        // Collect changes from this page
+        if (response.data.changes) {
+          allChanges = allChanges.concat(response.data.changes)
+        }
+
+        // Update pagination tokens
+        driveNextPageToken = response.data.nextPageToken ?? ""
+
+        // newStartPageToken is only present in the final page (when nextPageToken is absent)
+        if (response.data.newStartPageToken) {
+          newStartPageToken = response.data.newStartPageToken
+        }
+      } while (driveNextPageToken)
+
+      // Process all collected changes
       if (
-        changes?.length &&
+        allChanges.length &&
         newStartPageToken &&
         newStartPageToken !== config.driveToken
       ) {
-        Logger.info(`About to Sync Drive changes:  ${changes.length}`)
-        for (const change of changes) {
+        Logger.info(`About to Sync Drive changes: ${allChanges.length}`)
+        for (const change of allChanges) {
           try {
             let changeStats = await handleGoogleDriveChange(
               change,
@@ -1470,13 +1493,13 @@ export const handleGoogleServiceAccountChanges = async (
               user.email,
             )
             stats = mergeStats(stats, changeStats)
+            changesExist = true
           } catch (err) {
             Logger.error(
               err,
               `Error syncing drive change, but continuing sync engine execution.`,
             )
           }
-          changesExist = true
         }
       }
       const peopleService = google.people({
@@ -1501,6 +1524,11 @@ export const handleGoogleServiceAccountChanges = async (
             `Fetching contacts changes with syncToken ${config.contactsToken}`,
             Apps.GoogleDrive,
           )
+
+          // Update tokens from response - CRITICAL: Fix infinite loop
+          contactsToken = response.data.nextSyncToken ?? contactsToken
+          nextPageToken = response.data.nextPageToken ?? ""
+
           if (response.data.connections && response.data.connections.length) {
             Logger.info(
               `About to update ${response.data.connections.length} contacts`,
@@ -1554,7 +1582,11 @@ export const handleGoogleServiceAccountChanges = async (
             `Fetching other contacts changes with syncToken ${otherContactsToken}`,
             Apps.GoogleDrive,
           )
+
+          // Update tokens from response - CRITICAL: Fix infinite loop
           otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
+          nextPageToken = response.data.nextPageToken ?? ""
+
           if (
             response.data.otherContacts &&
             response.data.otherContacts.length
