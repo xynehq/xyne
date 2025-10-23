@@ -11,7 +11,14 @@
  * 4. Creates collection_items for each file (without storage key as files don't exist physically)
  * 5. Inserts each file into Vespa's kb_items schema
  * 6. Updates agent's app_integrations to include the new collection under knowledge_base
- * 7. Removes the DataSource object from app_integrations after successful migration
+ * 7. Optionally removes the DataSource object from app_integrations (use --remove-datasource flag)
+ *
+ * Usage:
+ *   bun run scripts/migrate-datasources-to-kb.ts [--dry-run] [--remove-datasource]
+ *
+ * Flags:
+ *   --dry-run             Preview what will be migrated without making changes
+ *   --remove-datasource   Remove DataSource objects after successful migration (CAUTION: use only after verifying migration)
  *
  * NOTE: This script does NOT delete datasources or datasource files from Vespa
  */
@@ -54,7 +61,7 @@ interface MigrationStats {
 /**
  * Main migration function
  */
-async function migrateDatasourcesToKnowledgeBase() {
+async function migrateDatasourcesToKnowledgeBase(removeDataSource = false) {
   const stats: MigrationStats = {
     totalAgentsProcessed: 0,
     totalDatasourcesProcessed: 0,
@@ -110,7 +117,7 @@ async function migrateDatasourcesToKnowledgeBase() {
         )
 
         // Get user info for the agent owner
-        const [user] = await db.query.users.findMany({
+        const user = await db.query.users.findFirst({
           where: (users, { eq }) => eq(users.id, agent.userId),
         })
 
@@ -309,15 +316,15 @@ async function migrateDatasourcesToKnowledgeBase() {
         }
 
         // Update agent's app_integrations to include knowledge_base collections
-        // and remove DataSource object after successful migration
+        // and optionally remove DataSource object (controlled by CLI flag)
         if (migratedCollectionIds.length > 0) {
           await updateAgentWithKnowledgeBase(
             agent.id,
             migratedCollectionIds,
-            true, // removeDataSource flag
+            removeDataSource, // from CLI flag
           )
           Logger.info(
-            `Updated agent ${agent.id} with ${migratedCollectionIds.length} knowledge base collections and removed DataSource integration`,
+            `Updated agent ${agent.id} with ${migratedCollectionIds.length} knowledge base collections${removeDataSource ? " and removed DataSource integration" : ""}`,
           )
         }
       } catch (agentError) {
@@ -494,14 +501,14 @@ async function updateAgentWithKnowledgeBase(
     appIntegrations.knowledge_base.itemIds = mergedIds
   }
 
-  // Remove DataSource object if requested
+  // Remove DataSource object if requested (controlled by CLI flag)
   if (removeDataSource && appIntegrations.DataSource) {
-    Logger.info(`Removing DataSource integration from agent ${agentId}`)
+    Logger.info(`✓ Removing DataSource integration from agent ${agentId}`)
     delete appIntegrations.DataSource
   } else if (removeDataSource && !appIntegrations.DataSource) {
-    Logger.info(`DataSource already removed from agent ${agentId}`)
-  } else if (!removeDataSource) {
-    Logger.info(`Not removing DataSource from agent ${agentId} (removeDataSource=false)`)
+    Logger.debug(`DataSource already removed from agent ${agentId}`)
+  } else if (!removeDataSource && appIntegrations.DataSource) {
+    Logger.debug(`Preserving DataSource integration for agent ${agentId} (use --remove-datasource to remove)`)
   }
 
   // Update agent
@@ -519,7 +526,7 @@ async function updateAgentWithKnowledgeBase(
 }
 
 /**
- * Fetch all files for a datasource from Vespa by dataSourceRef
+ * Fetch all files for a datasource from Vespa by dataSourceRef with pagination
  */
 async function fetchDatasourceFiles(
   datasourceId: string,
@@ -543,48 +550,81 @@ async function fetchDatasourceFiles(
 
     Logger.debug(`Vespa endpoint: ${searchUrl}`)
 
-    const response = await fetch(searchUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        yql,
-        hits: 400,
-        timeout: 10000,
-      }),
-    })
+    // Pagination parameters
+    const hitsPerPage = 400 // Maximum allowed by Vespa
+    let offset = 0
+    let allFiles: any[] = []
+    let totalCount = 0
+    let hasMore = true
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      Logger.error(`Vespa HTTP error: ${response.status} ${response.statusText}`)
-      Logger.error(`Vespa error response: ${errorText}`)
-      throw new Error(
-        `Vespa query failed: ${response.status} ${response.statusText}`,
-      )
+    // Fetch all files with pagination
+    while (hasMore) {
+      Logger.debug(`Fetching files with offset ${offset}, hits ${hitsPerPage}`)
+
+      const response = await fetch(searchUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          yql,
+          hits: hitsPerPage,
+          offset: offset,
+          timeout: 10000,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        Logger.error(`Vespa HTTP error: ${response.status} ${response.statusText}`)
+        Logger.error(`Vespa error response: ${errorText}`)
+        throw new Error(
+          `Vespa query failed: ${response.status} ${response.statusText}`,
+        )
+      }
+
+      const results = await response.json()
+
+      if (results && results.root) {
+        // Store total count from first response
+        if (offset === 0 && results.root.fields && results.root.fields.totalCount !== undefined) {
+          totalCount = results.root.fields.totalCount
+          Logger.info(`Total files in datasource ${datasourceId}: ${totalCount}`)
+        }
+
+        // Check for errors
+        if (results.root.errors && results.root.errors.length > 0) {
+          Logger.error(`Vespa query errors: ${JSON.stringify(results.root.errors)}`)
+        }
+
+        // Add children to results
+        if (results.root.children && results.root.children.length > 0) {
+          allFiles = allFiles.concat(results.root.children)
+          Logger.debug(`Fetched ${results.root.children.length} files in this batch (total so far: ${allFiles.length})`)
+
+          // Check if there are more files to fetch
+          offset += results.root.children.length
+          hasMore = results.root.children.length === hitsPerPage && offset < totalCount
+        } else {
+          // No more results
+          hasMore = false
+        }
+      } else {
+        // Invalid response
+        hasMore = false
+      }
     }
 
-    const results = await response.json()
-
-    Logger.debug(`Vespa response: ${JSON.stringify(results, null, 2)}`)
-
-    if (results && results.root) {
-      if (results.root.errors && results.root.errors.length > 0) {
-        Logger.error(`Vespa query errors: ${JSON.stringify(results.root.errors)}`)
-      }
-
-      if (results.root.children && results.root.children.length > 0) {
-        Logger.info(
-          `Found ${results.root.children.length} files for datasource ${datasourceId}`,
-        )
-        return results.root.children
-      }
+    if (allFiles.length > 0) {
+      Logger.info(
+        `Found ${allFiles.length} files for datasource ${datasourceId}`,
+      )
+      return allFiles
     }
 
     Logger.warn(
       `No files found for datasource ${datasourceId} (query returned no results)`,
     )
-    Logger.debug(`Full Vespa response: ${JSON.stringify(results, null, 2)}`)
     return []
   } catch (error) {
     Logger.error(
@@ -643,6 +683,16 @@ async function dryRun() {
 // Main execution
 const args = process.argv.slice(2)
 const isDryRun = args.includes("--dry-run")
+const removeDataSource = args.includes("--remove-datasource")
+
+// Log CLI flags
+Logger.info("Migration Script Configuration:")
+Logger.info(`  Dry run: ${isDryRun}`)
+Logger.info(`  Remove DataSource after migration: ${removeDataSource}`)
+if (!removeDataSource) {
+  Logger.warn("  ⚠️  DataSource objects will NOT be removed (use --remove-datasource to remove)")
+}
+Logger.info("=" + "=".repeat(60))
 
 if (isDryRun) {
   dryRun()
@@ -655,7 +705,7 @@ if (isDryRun) {
       process.exit(1)
     })
 } else {
-  migrateDatasourcesToKnowledgeBase()
+  migrateDatasourcesToKnowledgeBase(removeDataSource)
     .then(() => {
       Logger.info("Migration completed successfully")
       process.exit(0)
