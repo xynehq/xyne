@@ -83,9 +83,9 @@ export const searchVespa = async (
     recencyDecayRate:
       options.recencyDecayRate || config.defaultRecencyDecayRate,
     isSlackConnected,
-    isDriveConnected: true,
-    isGmailConnected: true,
-    isCalendarConnected: true,
+    isDriveConnected,
+    isGmailConnected,
+    isCalendarConnected,
   })
 }
 
