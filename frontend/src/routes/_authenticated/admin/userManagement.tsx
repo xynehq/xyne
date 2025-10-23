@@ -449,25 +449,28 @@ function UsersListPage({
         Array.isArray(ingestedData.data)
       ) {
         setIngestedUsers(
-          ingestedData.data.map((user: any) => ({
-            ...user,
-            syncJobs: Object.fromEntries(
-              Object.entries(user.syncJobs || {}).map(([app, value]) => [
-                app,
-                value === null
-                  ? { lastSyncDate: null, createdAt: null }
-                  : typeof value === "object" && Object.keys(value).length > 0
-                    ? value // already in correct format
-                    : {
-                        lastSyncDate:
-                          typeof value === "string" || typeof value === "number"
-                            ? new Date(value)
-                            : null,
-                        createdAt: null,
-                      },
-              ]),
-            ),
-          })),
+          ingestedData.data
+            .filter((user: { email?: string | null }) => user.email) // Filter out users with empty email
+            .map((user: any) => ({
+              ...user,
+              syncJobs: Object.fromEntries(
+                Object.entries(user.syncJobs || {}).map(([app, value]) => [
+                  app,
+                  value === null
+                    ? { lastSyncDate: null, createdAt: null }
+                    : typeof value === "object" && Object.keys(value).length > 0
+                      ? value // already in correct format
+                      : {
+                          lastSyncDate:
+                            typeof value === "string" ||
+                            typeof value === "number"
+                              ? new Date(value)
+                              : null,
+                          createdAt: null,
+                        },
+                ]),
+              ),
+            })),
         )
       } else {
         setIngestedUsers([])
@@ -1395,7 +1398,7 @@ function UsersListPage({
                                 <div className="flex items-center space-x-3">
                                   <Avatar className="h-10 w-10">
                                     <AvatarFallback className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium">
-                                      {user.email[0].toUpperCase()}
+                                      {user?.email[0]?.toUpperCase()}
                                     </AvatarFallback>
                                   </Avatar>
                                   <div className="min-w-0 flex-1">
@@ -1548,11 +1551,11 @@ function UsersListPage({
                     </Avatar>
                     <div>
                       <div className="font-medium text-gray-900 dark:text-gray-100">
-                        {userToConfirmRoleChange.user.name ||
-                          userToConfirmRoleChange.user.email}
+                        {userToConfirmRoleChange?.user?.name ||
+                          userToConfirmRoleChange?.user.email}
                       </div>
                       <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {userToConfirmRoleChange.user.email}
+                        {userToConfirmRoleChange?.user.email}
                       </div>
                     </div>
                   </div>
@@ -1643,7 +1646,7 @@ function UsersListPage({
                     </Avatar>
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                        {selectedUser.name || selectedUser.email}
+                        {selectedUser?.name || selectedUser.email}
                       </h3>
                       <p className="text-gray-500 dark:text-gray-400">
                         {selectedUser.email}

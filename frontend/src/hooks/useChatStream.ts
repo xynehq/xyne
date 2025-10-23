@@ -11,6 +11,7 @@ import {
 } from "shared/types"
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
+import { CharacterAnimationManager } from "@/utils/streamRenderer"
 
 interface DeepResearchStep {
   id: string
@@ -44,6 +45,10 @@ interface StreamState {
   isRetrying?: boolean
   subscribers: Set<() => void>
   response?: string
+
+  // Character animation display versions
+  displayPartial: string
+  animationManager: CharacterAnimationManager
 }
 
 interface StreamInfo {
@@ -57,6 +62,8 @@ interface StreamInfo {
   chatId?: string
   isStreaming: boolean
   isRetrying?: boolean
+  // Character animation display versions
+  displayPartial: string
 }
 
 // Global map to store active streams - persists across component unmounts
@@ -212,28 +219,93 @@ const appendReasoningData = (streamState: StreamState, data: string) => {
 export async function createAuthEventSource(url: string): Promise<EventSource> {
   return new Promise((resolve, reject) => {
     let triedRefresh = false
+    let retryCount = 0
+    const maxRetries = 3
+    let isResolved = false
+    let currentEventSource: EventSource | null = null
+
+    const cleanup = () => {
+      if (currentEventSource) {
+        currentEventSource.onopen = null
+        currentEventSource.onerror = null
+        if (currentEventSource.readyState !== EventSource.CLOSED) {
+          currentEventSource.close()
+        }
+      }
+    }
+
+    const tryRefreshAndRetry = async () => {
+      if (triedRefresh) {
+        // After refresh, try up to 3 more times before giving up
+        if (retryCount >= maxRetries) {
+          reject(new Error(`Connection failed after token refresh and ${maxRetries} retry attempts`))
+          return
+        }
+        
+        retryCount++
+        // Exponential backoff: 100ms, 200ms, 400ms
+        const delay = 100 * Math.pow(2, retryCount - 1)
+        setTimeout(() => make(), delay)
+        return
+      }
+      
+      triedRefresh = true
+      try {
+        const refresh = await fetch("/api/v1/refresh-token", {
+          method: "POST",
+          credentials: "include",
+        })
+        
+        if (refresh.ok) {
+          // Small delay before retry to avoid rapid reconnection
+          setTimeout(() => make(), 100)
+        } else {
+          reject(new Error("Token refresh failed"))
+        }
+      } catch (e) {
+        reject(new Error("Token refresh failed"))
+      }
+    }
 
     const make = () => {
-      const es = new EventSource(url, { withCredentials: true })
+      try {
+        cleanup() // Clean up any previous attempt
+        const es = new EventSource(url, { withCredentials: true })
+        currentEventSource = es
 
-      es.onopen = () => resolve(es)
+        // Set a timeout for the connection attempt
+        const connectionTimeout = setTimeout(() => {
+          if (!isResolved) {
+            cleanup()
+            tryRefreshAndRetry()
+          }
+        }, 5000) // 5 second timeout
 
-      es.onerror = async () => {
-        // es.close()
+        es.onopen = () => {
+          if (!isResolved) {
+            clearTimeout(connectionTimeout)
+            isResolved = true
+            resolve(es)
+          }
+        }
 
-        if (!triedRefresh) {
-          triedRefresh = true
-          // Attempt token refresh
-          const refresh = await fetch("/api/v1/refresh-token", {
-            method: "POST",
-            credentials: "include",
-          })
-          if (!refresh.ok) return reject(new Error("Token refresh failed"))
+        es.onerror = async (e) => {
+          clearTimeout(connectionTimeout)
+          
+          if (isResolved) {
+            // If already resolved, don't handle the error here
+            return
+          }
 
-          // Retry opening the stream
-          make()
-        } else {
-          reject(new Error("SSE connection failed after refresh"))
+          // Check if EventSource is in a failed state
+          if (es.readyState === EventSource.CLOSED) {
+            cleanup()
+            await tryRefreshAndRetry()
+          }
+        }
+      } catch (error) {
+        if (!isResolved) {
+          reject(new Error(`Failed to create EventSource: ${error instanceof Error ? error.message : 'Unknown error'}`))
         }
       }
     }
@@ -258,6 +330,7 @@ export const startStream = async (
   setChatId?: (chatId: string) => void,
   selectedModel?: string,
   selectedKbItems: string[] = [],
+  isFollowUp: boolean = false,
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -293,7 +366,7 @@ export const startStream = async (
     url.searchParams.append("chatId", chatId)
   }
   if (isAgenticMode) {
-    url.searchParams.append("agentic", "false")
+    url.searchParams.append("agentic", "true")
   }
   // Build selected model JSON configuration (optional)
   let modelConfig: { model?: string; capabilities?: any } | null = null
@@ -335,6 +408,8 @@ export const startStream = async (
     url.searchParams.append("agentId", agentIdToUse)
   }
 
+  url.searchParams.append("isFollowUp", isFollowUp ? "true" : "false")
+
   // Create EventSource with auth handling
   let eventSource: EventSource
   try {
@@ -342,8 +417,8 @@ export const startStream = async (
   } catch (err) {
     console.error("Failed to create EventSource:", err)
     toast({
-      title: "Failed to create EventSource",
-      description: "Failed to create EventSource",
+      title: "Error",
+      description: "Something went wrong. Please try again.",
       variant: "destructive",
     })
     return
@@ -363,13 +438,25 @@ export const startStream = async (
     isRetrying: false,
     subscribers: new Set(),
     response: "",
+    // Character animation display versions
+    displayPartial: "",
+    animationManager: new CharacterAnimationManager(),
   }
 
   activeStreams.set(streamKey, streamState)
 
   streamState.es.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
     streamState.partial += event.data
-    notifySubscribers(streamKey)
+
+    // Add chunk to character animation queue for main response
+    const responseQueue = streamState.animationManager.getQueue(
+      "response",
+      (displayText: string) => {
+        streamState.displayPartial = displayText
+        notifySubscribers(streamKey)
+      },
+    )
+    responseQueue.addChunk(event.data)
   })
 
   streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
@@ -514,9 +601,24 @@ export const startStream = async (
     }
   })
 
-  streamState.es.addEventListener(ChatSSEvents.End, () => {
-    streamState.isStreaming = false
+  streamState.es.addEventListener(ChatSSEvents.End, async () => {
     streamState.es.close()
+    // Wait for all character animations to complete before finalizing
+    await streamState.animationManager.waitForAllAnimationsComplete()
+    streamState.isStreaming = false
+
+    // Finalize character animations with complete content
+    streamState.animationManager.setImmediate(
+      "response",
+      streamState.response || streamState.partial,
+    )
+    streamState.animationManager.setImmediate("thinking", streamState.thinking)
+
+    // Ensure display versions match final content
+    streamState.displayPartial = streamState.response || streamState.partial
+
+    // Now that streaming is complete, notify subscribers so citations appear
+    notifySubscribers(streamKey)
 
     // Create new complete message with accumulated text and citations
     if (
@@ -557,7 +659,6 @@ export const startStream = async (
         },
       )
     }
-    notifySubscribers(streamKey)
   })
 
   streamState.es.addEventListener(ChatSSEvents.Error, (event) => {
@@ -615,6 +716,12 @@ export const stopStream = async (
   stream.isStreaming = false
   stream.es.close()
 
+  // Stop all animations and cleanup
+  stream.animationManager.stopAll()
+
+  // Ensure display versions show current content immediately
+  stream.displayPartial = stream.partial
+
   const currentChatId = stream.chatId || streamKey
   if (currentChatId) {
     try {
@@ -639,6 +746,9 @@ export const stopStream = async (
     }
   }
   notifySubscribers(currentChatId)
+
+  // Cleanup animation manager before deleting stream
+  stream.animationManager.cleanup()
   activeStreams.delete(streamKey)
 }
 
@@ -657,6 +767,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
       messageId: undefined,
       chatId: undefined,
       isStreaming: false,
+      displayPartial: "",
     }
   }
 
@@ -670,6 +781,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     messageId: stream.messageId,
     chatId: stream.chatId,
     isStreaming: stream.isStreaming,
+    displayPartial: stream.displayPartial,
   }
 }
 
@@ -761,6 +873,7 @@ export const useChatStream = (
       toolsList?: ToolsListItem[],
       metadata?: AttachmentMetadata[],
       selectedModel?: string,
+      isFollowUp: boolean = false,
       selectedKbItems: string[] = [],
     ) => {
       const streamKey = currentStreamKey
@@ -780,6 +893,7 @@ export const useChatStream = (
         setChatId,
         selectedModel,
         selectedKbItems,
+        isFollowUp,
       )
 
       setStreamInfo(getStreamState(streamKey))
@@ -928,8 +1042,8 @@ export const useChatStream = (
       } catch (err) {
         console.error("Failed to create EventSource:", err)
         toast({
-          title: "Failed to create EventSource",
-          description: "Failed to create EventSource",
+          title: "Error",
+          description: "Something went wrong. Please try again.",
           variant: "destructive",
         })
         return
@@ -954,6 +1068,11 @@ export const useChatStream = (
         isStreaming: false,
         isRetrying: true,
         subscribers: new Set(),
+        response: "",
+
+        // Character animation display versions
+        displayPartial: "",
+        animationManager: new CharacterAnimationManager(),
       }
 
       activeStreams.set(retryStreamKey, streamState)
@@ -966,30 +1085,6 @@ export const useChatStream = (
         subscriberRef.current()
       }
       notifySubscribers(retryStreamKey)
-
-      const patchResponseContent = (delta: string, isFinal = false) => {
-        if (!chatId) return
-        queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
-          if (!old?.messages) return old
-          return {
-            ...old,
-            messages: old.messages.map((m: any) =>
-              (
-                isError
-                  ? m.externalId === targetMessageId
-                  : m.externalId === messageId && m.messageRole === "assistant"
-              )
-                ? {
-                    ...m,
-                    message: isFinal ? delta : (m.message || "") + delta,
-                    isRetrying: !isFinal,
-                  }
-                : m,
-            ),
-          }
-        })
-      }
-
       const patchReasoningContent = (delta: string) => {
         if (!chatId) return
         queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
@@ -1014,7 +1109,42 @@ export const useChatStream = (
 
       eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
         streamState.partial += event.data
-        patchResponseContent(event.data)
+
+        // Add chunk to character animation queue for retry response
+        const responseQueue = streamState.animationManager.getQueue(
+          "response",
+          (displayText: string) => {
+            streamState.displayPartial = displayText
+            // Update the UI with animated text for retry messages
+            // patchResponseContent(displayText, false)
+            if (chatId) {
+              queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+                if (!old?.messages) return old
+                return {
+                  ...old,
+                  messages: old.messages.map((m: any) =>
+                    (
+                      isError
+                        ? m.externalId === targetMessageId
+                        : m.externalId === messageId &&
+                          m.messageRole === "assistant"
+                    )
+                      ? {
+                          ...m,
+                          message: displayText,
+                          isRetrying: true,
+                        }
+                      : m,
+                  ),
+                }
+              })
+            }
+            notifySubscribers(retryStreamKey)
+          },
+        )
+        responseQueue.addChunk(event.data)
+
+        notifySubscribers(retryStreamKey)
       })
 
       eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
@@ -1023,9 +1153,41 @@ export const useChatStream = (
       })
 
       eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-        const { contextChunks, citationMap } = JSON.parse(event.data)
+        const { contextChunks, citationMap, updatedResponse } = JSON.parse(
+          event.data,
+        )
         streamState.sources = contextChunks
         streamState.citationMap = citationMap
+        streamState.response = updatedResponse
+
+        // Update React Query cache with current animated text AND new citation data
+        if (chatId) {
+          queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+            if (!old?.messages) return old
+            return {
+              ...old,
+              messages: old.messages.map((m: any) =>
+                (
+                  isError
+                    ? m.externalId === targetMessageId
+                    : m.externalId === messageId &&
+                      m.messageRole === "assistant"
+                )
+                  ? {
+                      ...m,
+                      message:
+                        streamState.displayPartial ?? streamState.partial,
+                      sources: contextChunks,
+                      citationMap: citationMap,
+                      isRetrying: true,
+                    }
+                  : m,
+              ),
+            }
+          })
+        }
+
+        notifySubscribers(retryStreamKey)
       })
 
       eventSource.addEventListener(ChatSSEvents.AttachmentUpdate, (event) => {
@@ -1069,8 +1231,40 @@ export const useChatStream = (
         streamState.messageId = newMessageId
       })
 
-      eventSource.addEventListener(ChatSSEvents.End, () => {
-        patchResponseContent(streamState.partial)
+      eventSource.addEventListener(ChatSSEvents.End, async () => {
+        // Wait for all character animations to complete before finalizing retry
+        await streamState.animationManager.waitForAllAnimationsComplete()
+
+        // Update the retry message with final content and citation data
+        const finalContent = streamState.response || streamState.partial
+        if (chatId) {
+          queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+            if (!old?.messages) return old
+            return {
+              ...old,
+              messages: old.messages.map((m: any) =>
+                (
+                  isError
+                    ? m.externalId === targetMessageId
+                    : m.externalId === messageId &&
+                      m.messageRole === "assistant"
+                )
+                  ? {
+                      ...m,
+                      message: finalContent,
+                      sources: streamState.sources,
+                      citationMap: streamState.citationMap,
+                      thinking: streamState.thinking,
+                      imageCitations: streamState.imageCitations,
+                      deepResearchSteps: streamState.deepResearchSteps,
+                      isRetrying: false,
+                    }
+                  : m,
+              ),
+            }
+          })
+        }
+
         if (chatId) {
           queryClient.invalidateQueries({ queryKey: ["chatHistory", chatId] })
         }
@@ -1094,6 +1288,7 @@ export const useChatStream = (
           setRetryIsStreaming(false)
         }
         streamState.isRetrying = false
+        streamState.animationManager.cleanup()
         notifySubscribers(retryStreamKey)
         activeStreams.delete(retryStreamKey)
         eventSource.close()
@@ -1105,6 +1300,7 @@ export const useChatStream = (
           setRetryIsStreaming(false)
         }
         streamState.isRetrying = false
+        streamState.animationManager.cleanup()
         notifySubscribers(retryStreamKey)
         activeStreams.delete(retryStreamKey)
         eventSource.close()

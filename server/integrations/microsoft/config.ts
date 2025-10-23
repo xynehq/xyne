@@ -1,10 +1,6 @@
 // Microsoft Graph API scopes for OAuth
 export const scopes = [
-  "https://graph.microsoft.com/Files.Read.All",
-  "https://graph.microsoft.com/Mail.Read",
-  "https://graph.microsoft.com/Calendars.Read",
-  "https://graph.microsoft.com/Contacts.Read",
-  "https://graph.microsoft.com/User.Read",
+  "https://graph.microsoft.com/.default",
   "offline_access", // Required for refresh tokens
 ]
 

@@ -1,5 +1,6 @@
 import { VertexAI } from "@google-cloud/vertexai"
 import { evaluator } from "./evaluator"
+import type { QAItem } from "./types"
 import { DataStore, GroupMetadata } from "./dataStore"
 import * as dotenv from "dotenv"
 import * as fs from "fs/promises"
@@ -253,28 +254,6 @@ async function call_llm(
   throw new Error(errorMsg)
 }
 
-export interface QAItem {
-  User_data: {
-    UserID: string
-    User_name: string
-  }
-  Question_weights: {
-    Coverage_preference: "low" | "medium" | "high"
-    Vagueness: number
-    Question_Complexity: "low" | "medium" | "high"
-    Realness: number
-    Reasoning: "fact-based" | "inferential"
-    Question_format: "definitive" | "listing" | "status"
-  }
-  Question: string
-  Answer_weights: {
-    Factuality: number
-    Completeness: number
-    Domain_relevance: number
-  }
-  Answer: string
-  Confidence: number
-}
 
 // Main generator function (memory-optimized)
 export async function generator(

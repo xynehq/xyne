@@ -227,9 +227,12 @@ export type ChangeStepStatusResponse = {
 export interface WorkflowTemplate {
   id: string
   name: string
+  userId: number
+  workspaceId: number
   description: string
   version: string
   status: string
+  isPublic?: boolean
   config: {
     ai_model?: string
     max_file_size?: string
@@ -238,7 +241,6 @@ export interface WorkflowTemplate {
     allowed_file_types?: string[]
     supports_file_upload?: boolean
   }
-  createdBy: string
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
@@ -268,7 +270,6 @@ export interface WorkflowTemplate {
         [key: string]: any
       }
       config: any
-      createdBy: string
       createdAt: string
       updatedAt: string
     }
@@ -313,7 +314,6 @@ export interface LegacyWorkflowTemplate {
   }
   createdAt?: string
   updatedAt?: string
-  createdBy?: string | null
   serviceConfigId?: string
   rootWorkflowStepTemplateId?: string | null
   steps: Step[]
@@ -321,4 +321,25 @@ export interface LegacyWorkflowTemplate {
   category?: string
   created_at?: string
   updated_at?: string
+}
+
+
+export interface AgentToolData {
+  agentId: string
+  name: string
+  description?: string
+  model?: string
+  isExistingAgent?: boolean
+  prompt?: string
+  isRagOn?: boolean
+  appIntegrations?: any
+}
+
+// ✅ Type for the tool object passed as prop
+export interface AgentTool {
+  id: string
+  type: string
+  val?: AgentToolData
+  value?: AgentToolData
+  config?: AgentToolData
 }

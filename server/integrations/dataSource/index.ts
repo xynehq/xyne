@@ -32,11 +32,12 @@ import {
 } from "./errors"
 import { describeImageWithllm } from "@/lib/describeImageWithllm"
 import { promises as fsPromises } from "fs"
-import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
+import { PdfProcessor } from "@/lib/pdfProcessor"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import imageType from "image-type"
 import { NAMESPACE } from "@/config"
+import { chunkSheetWithHeaders } from "@/sheetChunk"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "dataSourceIntegration",
@@ -90,10 +91,10 @@ const validateFile = (file: File): void => {
   }
 }
 
-const checkFileSize = (file: File, maxFileSizeMB: number): void => {
-  const fileSizeMB = file.size / (1024 * 1024)
+export const checkFileSize = (size: number, maxFileSizeMB: number): void => {
+  const fileSizeMB = size / (1024 * 1024)
   if (fileSizeMB > maxFileSizeMB) {
-    throw createFileSizeError(file, maxFileSizeMB)
+    throw createFileSizeError(size, maxFileSizeMB)
   }
 }
 
@@ -207,9 +208,15 @@ const processPdfContent = async (
 ): Promise<VespaDataSourceFile> => {
   try {
     const docId = `dsf-${createId()}`
-    const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
-      await extractTextAndImagesWithChunksFromPDFviaGemini(pdfBuffer, docId)
-    if (text_chunks.length === 0 && image_chunks.length === 0) {
+    const result = await PdfProcessor.processWithFallback(
+      Buffer.from(pdfBuffer),
+      options.fileName,
+      docId,
+      true,
+      true,
+    )
+    
+    if (result.chunks.length === 0 && result.image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",
         "PDF",
@@ -217,12 +224,12 @@ const processPdfContent = async (
     }
 
     return createVespaDataSourceFile(
-      text_chunks,
+      result.chunks,
       options,
-      "pdf_processing",
-      image_chunks,
-      text_chunk_pos,
-      image_chunk_pos,
+      result.processingMethod || "pdf_processing",
+      result.image_chunks,
+      result.chunks_pos,
+      result.image_chunks_pos,
       docId,
     )
   } catch (error) {
@@ -374,27 +381,8 @@ const processSpreadsheetFile = async (
       const worksheet = workbook.Sheets[sheetName]
       if (!worksheet) continue
 
-      const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
-        header: 1,
-        defval: "",
-        raw: false,
-      })
-
-      const validRows = sheetData.filter((row) =>
-        row.some((cell) => cell && cell.toString().trim().length > 0),
-      )
-
-      if (validRows.length === 0) continue
-
-      if (validRows?.length > DATASOURCE_CONFIG.MAX_ATTACHMENT_SHEET_ROWS) {
-        // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-        // Logger.warn(
-        //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-        // )
-        return []
-      }
-
-      const sheetChunks = chunkSheetRows(validRows)
+      // Use the new header-preserving chunking function
+      const sheetChunks = chunkSheetWithHeaders(worksheet)
 
       const filteredChunks = sheetChunks.filter(
         (chunk) => chunk.trim().length > 0,
@@ -467,55 +455,6 @@ const processSpreadsheetFile = async (
   }
 }
 
-// Function to chunk sheet rows (simplified version of chunkFinalRows)
-const chunkSheetRows = (allRows: string[][]): string[] => {
-  const chunks: string[] = []
-  let currentChunk = ""
-  let totalTextLength = 0
-  const MAX_CHUNK_SIZE = 512
-
-  for (const row of allRows) {
-    // Filter out numerical cells and empty strings, join textual cells
-    const textualCells = row
-      .filter(
-        (cell) =>
-          cell && isNaN(Number(cell)) && cell.toString().trim().length > 0,
-      )
-      .map((cell) => cell.toString().trim())
-
-    if (textualCells.length === 0) continue
-
-    const rowText = textualCells.join(" ")
-
-    // Check if adding this rowText would exceed the maximum text length
-    if (
-      totalTextLength + rowText.length >
-      DATASOURCE_CONFIG.MAX_ATTACHMENT_SHEET_TEXT_LEN
-    ) {
-      // Logger.warn(`Text length excedded, indexing with empty content`)
-      // Return an empty array if the total text length exceeds the limit
-      return []
-    }
-
-    totalTextLength += rowText.length
-
-    if ((currentChunk + " " + rowText).trim().length > MAX_CHUNK_SIZE) {
-      if (currentChunk.trim().length > 0) {
-        chunks.push(currentChunk.trim())
-      }
-      currentChunk = rowText
-    } else {
-      currentChunk += (currentChunk ? " " : "") + rowText
-    }
-  }
-
-  if (currentChunk.trim().length > 0) {
-    chunks.push(currentChunk.trim())
-  }
-
-  return chunks
-}
-
 // Main export function
 export const handleDataSourceFileUpload = async (
   file: File,
@@ -546,7 +485,7 @@ export const handleDataSourceFileUpload = async (
           `LLM API endpoint is not set. Skipping image: ${options.fileName}`,
         )
       }
-      checkFileSize(file, DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB)
+      checkFileSize(file.size, DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB)
       const imageBuffer = Buffer.from(await file.arrayBuffer())
       const type = await imageType(new Uint8Array(imageBuffer))
       if (!type || !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)) {
@@ -581,25 +520,26 @@ export const handleDataSourceFileUpload = async (
     } else {
       // Process based on file type
       if (mimeType === "application/pdf") {
-        checkFileSize(file, DATASOURCE_CONFIG.MAX_PDF_FILE_SIZE_MB)
+        checkFileSize(file.size, DATASOURCE_CONFIG.MAX_PDF_FILE_SIZE_MB)
         const fileBuffer = new Uint8Array(await file.arrayBuffer())
         const processedFile = await processPdfContent(fileBuffer, options)
         processedFiles = [processedFile]
       } else if (isDocxFile(mimeType)) {
-        checkFileSize(file, DATASOURCE_CONFIG.MAX_DOCX_FILE_SIZE_MB)
+        checkFileSize(file.size, DATASOURCE_CONFIG.MAX_DOCX_FILE_SIZE_MB)
         const fileBuffer = new Uint8Array(await file.arrayBuffer())
         const processedFile = await processDocxContent(fileBuffer, options)
         processedFiles = [processedFile]
       } else if (isPptxFile(mimeType)) {
-        checkFileSize(file, DATASOURCE_CONFIG.MAX_PPTX_FILE_SIZE_MB)
+        checkFileSize(file.size, DATASOURCE_CONFIG.MAX_PPTX_FILE_SIZE_MB)
         const fileBuffer = new Uint8Array(await file.arrayBuffer())
         const processedFile = await processPptxContent(fileBuffer, options)
         processedFiles = [processedFile]
       } else if (isSheetFile(mimeType)) {
+        checkFileSize(file.size, DATASOURCE_CONFIG.MAX_SPREADSHEET_FILE_SIZE_MB)
         const fileBuffer = Buffer.from(await file.arrayBuffer())
         processedFiles = await processSheetContent(fileBuffer, options)
       } else if (isTextFile(mimeType)) {
-        checkFileSize(file, DATASOURCE_CONFIG.MAX_TEXT_FILE_SIZE_MB)
+        checkFileSize(file.size, DATASOURCE_CONFIG.MAX_TEXT_FILE_SIZE_MB)
         const content = await file.text()
         const processedFile = await processTextContent(content, options)
         processedFiles = [processedFile]

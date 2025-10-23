@@ -28,6 +28,7 @@ export interface AIAgentConfig {
   inputPrompt: string
   systemPrompt: string
   knowledgeBase: string
+  isExistingAgent: boolean
 }
 
 const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
@@ -48,6 +49,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
     inputPrompt: "$json.input",
     systemPrompt: "",
     knowledgeBase: "",
+    isExistingAgent: false,
   })
 
   React.useEffect(() => {
@@ -68,6 +70,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
           inputPrompt: existingConfig.inputPrompt || "$json.input",
           systemPrompt: existingConfig.systemPrompt || "",
           knowledgeBase: existingConfig.knowledgeBase || "",
+          isExistingAgent: existingConfig.isExistingAgent || false,
         })
       } else {
         setAgentConfig({
@@ -77,6 +80,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
           inputPrompt: "$json.input",
           systemPrompt: "",
           knowledgeBase: "",
+          isExistingAgent: false,
         })
       }
       setIsModelDropdownOpen(false)

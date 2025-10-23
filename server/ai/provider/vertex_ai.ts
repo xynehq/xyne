@@ -9,6 +9,7 @@ import { getErrorMessage } from "@/utils"
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import {
   AIProviders,
+  Models,
   type ConverseResponse,
   type ModelParams,
   type WebSearchSource,
@@ -17,6 +18,9 @@ import BaseProvider, { findImageByName, regex } from "@/ai/provider/base"
 import { Subsystem } from "@/types"
 import config from "@/config"
 import { createLabeledImageContent } from "../utils"
+import { calculateCost } from "@/utils/index"
+import { modelDetailsMap } from "../mappers"
+
 
 const { MAX_IMAGE_SIZE_BYTES } = config
 
@@ -282,7 +286,16 @@ export class VertexAiProvider extends BaseProvider {
           },
         }))
       const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
-      const cost = 0
+      const cost =
+        (usage.input_tokens > 0 || usage.output_tokens > 0) && modelId
+          ? calculateCost(
+              {
+                inputTokens: usage.input_tokens,
+                outputTokens: usage.output_tokens,
+              },
+              modelDetailsMap[modelId].cost.onDemand,
+            )
+          : 0
 
       return {
         text,
@@ -388,7 +401,18 @@ export class VertexAiProvider extends BaseProvider {
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         }
-        const cost = 0 //TODO :  explitly set cost to 0 for now
+
+        const cost =
+          (usage.inputTokens > 0 || usage.outputTokens > 0) && modelId
+            ? calculateCost(
+                {
+                  inputTokens: usage.inputTokens,
+                  outputTokens: usage.outputTokens,
+                },
+                modelDetailsMap[modelId].cost.onDemand,
+              )
+            : 0
+
         yield {
           text: "",
           cost,
@@ -486,8 +510,20 @@ export class VertexAiProvider extends BaseProvider {
         .filter((part: any) => part.text)
         .map((part: any) => part.text)
         .join("")
+      const usageMetadata = response.response.usageMetadata || {}
+      const inputTokens = usageMetadata.promptTokenCount || 0
+      const outputTokens = usageMetadata.candidatesTokenCount || 0
 
-      const cost = 0
+      const cost =
+        (inputTokens > 0 || outputTokens > 0) && modelId
+          ? calculateCost(
+              {
+                inputTokens,
+                outputTokens,
+              },
+              modelDetailsMap[modelId].cost.onDemand,
+            )
+          : 0
 
       let sources: WebSearchSource[] = []
       const groundingMetadata =
@@ -626,12 +662,30 @@ export class VertexAiProvider extends BaseProvider {
             .map((part: any) => part.text)
           chunkText += textParts.join("")
         }
+        let totalInputTokens = 0
+        let totalOutputTokens = 0
+        const usageMetadata = chunk.usageMetadata
+        if (usageMetadata) {
+          totalInputTokens = usageMetadata.promptTokenCount || 0
+          totalOutputTokens = usageMetadata.candidatesTokenCount || 0
+        }
 
         if (chunkText) {
+          const cost =
+            (totalInputTokens > 0 || totalOutputTokens > 0) && modelParams.modelId
+              ? calculateCost(
+                  {
+                    inputTokens: totalInputTokens,
+                    outputTokens: totalOutputTokens,
+                  },
+                  modelDetailsMap[modelParams.modelId].cost.onDemand,
+                )
+              : 0
+
           aggregatedText += chunkText
           yield {
             text: chunkText,
-            cost: 0,
+            cost,
             sources:
               aggregatedSources.length > 0 ? aggregatedSources : undefined,
             groundingSupports:

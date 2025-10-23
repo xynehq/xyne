@@ -45,11 +45,11 @@ export const OAuthCallback = async (c: Context) => {
     email = sub
     const { state, code } = c.req.query()
     if (!state) {
-      throw new HTTPException(500)
+      throw new HTTPException(400, { message: "Missing 'state' parameter." })
     }
     const { app, random } = JSON.parse(state)
     if (!app) {
-      throw new HTTPException(500)
+      throw new HTTPException(400, { message: "Invalid 'state': missing 'app'." })
     }
     const stateInCookie = getCookie(c, `${app}-state`)
     if (random !== stateInCookie) {
@@ -89,7 +89,9 @@ export const OAuthCallback = async (c: Context) => {
 
       const tokenData = (await response.json()) as any
       if (!tokenData.ok) {
-        throw new Error("Could not get Slack token")
+        throw new HTTPException(400, {
+          message: `Could not get Slack token`,
+        })
       }
 
       tokens = {
@@ -127,13 +129,13 @@ export const OAuthCallback = async (c: Context) => {
       tokens = oauthTokens as OAuthCredentials
       tokens.data.accessTokenExpiresAt = oauthTokens.accessTokenExpiresAt()
     } else {
-      throw new HTTPException(500, { message: "Invalid App" })
+      throw new HTTPException(400, { message: "Unsupported OAuth app" })
     }
     const connectorId = provider.connectorId
     const connector: SelectConnector = await updateConnector(db, connectorId, {
       subject: email,
       oauthCredentials: JSON.stringify(tokens),
-      status: ConnectorStatus.Connecting,
+      status: ConnectorStatus.Authenticated,
     })
     const SaasJobPayload: SaaSOAuthJob = {
       connectorId: connector.id,
@@ -144,13 +146,8 @@ export const OAuthCallback = async (c: Context) => {
     }
 
     if (IsGoogleApp(app)) {
-      // Start ingestion in the background, but catch any errors it might throw later
-      handleGoogleOAuthIngestion(SaasJobPayload).catch((error) => {
-        loggerWithChild({ email: email }).error(
-          error,
-          `Background Google OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
-        )
-      })
+      // moved the ingestion logic to sync-server , once the user will click on start ingestion
+      // ingestion will start on sync-server
     } else if (IsMicrosoftApp(app)) {
       handleMicrosoftOAuthIngestion(SaasJobPayload).catch((error) => {
         loggerWithChild({ email: email }).error(

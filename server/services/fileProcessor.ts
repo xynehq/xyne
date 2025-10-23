@@ -1,10 +1,14 @@
 import { getErrorMessage } from "@/utils"
 import { chunkDocument } from "@/chunks"
-// import { extractTextAndImagesWithChunksFromPDF } from "@/pdf
-
-import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
+import { type ChunkMetadata } from "@/types"
+import { 
+  PdfProcessor, 
+  type PdfProcessingMethod,
+  type ProcessingResultDraft 
+} from "@/lib/pdfProcessor"
+import { chunkSheetWithHeaders } from "@/sheetChunk"
 import * as XLSX from "xlsx"
 import {
   getBaseMimeType,
@@ -13,13 +17,37 @@ import {
   isDocxFile,
   isPptxFile,
 } from "@/integrations/dataSource/config"
+import { getLogger, Subsystem } from "@/logger"
+
+const Logger = getLogger(Subsystem.Ingest).child({
+  module: "fileProcessor",
+})
+
+export { 
+  type PdfProcessingMethod, 
+  type ProcessingResultDraft 
+} from "@/lib/pdfProcessor"
+
+
 
 export interface ProcessingResult {
   chunks: string[]
   chunks_pos: number[]
   image_chunks: string[]
   image_chunks_pos: number[]
+  chunks_map: ChunkMetadata[]
+  image_chunks_map: ChunkMetadata[]
+  processingMethod?: PdfProcessingMethod
 }
+
+export interface SheetProcessingResult extends ProcessingResult {
+  sheetName: string
+  sheetIndex: number
+  totalSheets: number
+  docId: string
+}
+
+type ProcessingResultArray = (ProcessingResult | SheetProcessingResult)[]
 
 export class FileProcessorService {
   static async processFile(
@@ -30,7 +58,7 @@ export class FileProcessorService {
     storagePath?: string,
     extractImages: boolean = false,
     describeImages: boolean = false,
-  ): Promise<ProcessingResult> {
+  ): Promise<ProcessingResultArray> {
     const baseMimeType = getBaseMimeType(mimeType || "text/plain")
     let chunks: string[] = []
     let chunks_pos: number[] = []
@@ -39,15 +67,17 @@ export class FileProcessorService {
 
     try {
       if (baseMimeType === "application/pdf") {
-        // Process PDF
-        const result = await extractTextAndImagesWithChunksFromPDFviaGemini(
-          new Uint8Array(buffer),
+        // Use the modular PDF processor with fallback logic
+        // It returns a complete result, no need to finalize again
+        const pdfResult = await PdfProcessor.processWithFallback(
+          buffer,
+          fileName,
           vespaDocId,
+          extractImages,
+          describeImages,
         )
-        chunks = result.text_chunks
-        chunks_pos = result.text_chunk_pos
-        image_chunks = result.image_chunks || []
-        image_chunks_pos = result.image_chunk_pos || []
+        // Wrap in array to match return type
+        return [pdfResult]
       } else if (isDocxFile(baseMimeType)) {
         // Process DOCX
         const result = await extractTextAndImagesWithChunksFromDocx(
@@ -80,40 +110,51 @@ export class FileProcessorService {
         } else {
           workbook = XLSX.readFile(storagePath)
         }
-        const allChunks: string[] = []
 
-        for (const sheetName of workbook.SheetNames) {
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          throw new Error("No worksheets found in spreadsheet")
+        }
+
+        const sheetResults: SheetProcessingResult[] = []
+
+        for (const [sheetIndex, sheetName] of workbook.SheetNames.entries()) {
           const worksheet = workbook.Sheets[sheetName]
           if (!worksheet) continue
 
-          const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
-            header: 1,
-            defval: "",
-            raw: false,
-          })
-
-          const validRows = sheetData.filter((row) =>
-            row.some((cell) => cell && cell.toString().trim().length > 0),
+          // Use the same header-preserving chunking function as dataSource integration
+          const sheetChunks = chunkSheetWithHeaders(worksheet)
+          
+          const filteredChunks = sheetChunks.filter(
+            (chunk) => chunk.trim().length > 0,
           )
 
-          for (const row of validRows) {
-            const textualCells = row
-              .filter(
-                (cell) =>
-                  cell &&
-                  isNaN(Number(cell)) &&
-                  cell.toString().trim().length > 0,
-              )
-              .map((cell) => cell.toString().trim())
+          // Skip sheets with no valid content
+          if (filteredChunks.length === 0) continue
 
-            if (textualCells.length > 0) {
-              allChunks.push(textualCells.join(" "))
-            }
+          // Generate a unique docId for each sheet
+          const sheetDocId = `${vespaDocId}_sheet_${sheetIndex}`
+
+          const sheetResult: SheetProcessingResult = {
+            chunks: filteredChunks,
+            chunks_pos: filteredChunks.map((_, idx) => idx),
+            image_chunks: [],
+            image_chunks_pos: [],
+            chunks_map: [],
+            image_chunks_map: [],
+            sheetName,
+            sheetIndex,
+            totalSheets: workbook.SheetNames.length,
+            docId: sheetDocId,
           }
+
+          sheetResults.push(sheetResult)
         }
 
-        chunks = allChunks
-        chunks_pos = allChunks.map((_, idx) => idx)
+        if (sheetResults.length === 0) {
+          throw new Error("No valid content found in any worksheet")
+        }
+
+        return sheetResults
       } else if (isTextFile(baseMimeType)) {
         // Process text file
         const content = buffer.toString("utf-8")
@@ -130,7 +171,6 @@ export class FileProcessorService {
             chunks_pos = chunks.map((_, idx) => idx)
           }
         } catch {
-          // If text extraction fails, create a basic chunk with file info
           chunks = [
             `File: ${fileName}, Type: ${baseMimeType}, Size: ${buffer.length} bytes`,
           ]
@@ -138,21 +178,33 @@ export class FileProcessorService {
         }
       }
     } catch (error) {
-      console.warn(
-        `Failed to process file content for ${fileName}: ${getErrorMessage(error)}`,
-      )
-      // Create basic chunk on processing error
-      chunks = [
-        `File: ${fileName}, Type: ${baseMimeType}, Size: ${buffer.length} bytes`,
-      ]
-      chunks_pos = [0]
+      Logger.error(error, `File processing failed for ${fileName} (${baseMimeType}, ${buffer.length} bytes)`)
+      
+      // Re-throw the error to ensure proper error handling upstream
+      throw new Error(`Failed to process file "${fileName}": ${getErrorMessage(error)}`)
     }
 
-    return {
+    // For non-PDF files, create empty chunks_map and image_chunks_map for backward compatibility
+    const chunks_map: ChunkMetadata[] = chunks.map((_, index) => ({
+      chunk_index: index,
+      page_numbers: [], 
+      block_labels: ["text"], 
+    }));
+
+    const image_chunks_map: ChunkMetadata[] = image_chunks.map((_, index) => ({
+      chunk_index: index, 
+      page_numbers: [], 
+      block_labels: ["image"], 
+    }));
+
+    // Wrap in array to match return type
+    return [{
       chunks,
       chunks_pos,
       image_chunks,
       image_chunks_pos,
-    }
+      chunks_map: chunks_map,
+      image_chunks_map: image_chunks_map,
+    }]
   }
 }

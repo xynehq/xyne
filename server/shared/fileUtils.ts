@@ -7,6 +7,30 @@ export const isImageFile = (fileType: string): boolean => {
   )
 }
 
+export const getFileType = ({ type, name }: { type: string, name: string }): FileType => {
+  const fileName = name.toLowerCase()
+  const mimeType = type.toLowerCase()
+  const baseMime = mimeType.split(";")[0]
+
+  // Check each file type category using the mappings
+  for (const [fileType, mimeTypes] of Object.entries(MIME_TYPE_MAPPINGS)) {
+    // Check MIME type first (more reliable)
+    if (mimeTypes.some(mime => baseMime === mime)) {
+      return fileType as FileType
+    }
+  }
+
+  // Fallback to extension-based detection
+  for (const [fileType, extensions] of Object.entries(EXTENSION_MAPPINGS)) {
+    if (extensions.some(ext => fileName.endsWith(ext))) {
+      return fileType as FileType
+    }
+  }
+
+  // Default fallback
+  return FileType.FILE
+}
+
 export const isValidFile = (file: File) => {
   // Set size limits
   const maxGeneralSize = 40 * 1024 * 1024 // 40MB

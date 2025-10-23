@@ -11,6 +11,7 @@ import {
   type SelectAgent,
   type SelectPublicAgent,
   selectPublicAgentSchema,
+  AgentCreationSource,
 } from "@/db/schema"
 import { UserAgentRole } from "@/shared/types"
 import type { TxnOrClient } from "@/types"
@@ -138,6 +139,7 @@ export const getUserAccessibleAgents = async (
     .where(
       and(
         eq(agents.workspaceId, workspaceId),
+        eq(agents.creation_source, AgentCreationSource.DIRECT),
         isNull(agents.deletedAt),
         or(
           // User has explicit permission to the agent
@@ -187,6 +189,7 @@ export const getAgentsMadeByMe = async (
     .where(
       and(
         eq(agents.workspaceId, workspaceId),
+        eq(agents.creation_source, AgentCreationSource.DIRECT),
         isNull(agents.deletedAt),
         eq(userAgentPermissions.userId, userId),
         eq(userAgentPermissions.role, UserAgentRole.Owner),
@@ -233,6 +236,7 @@ export const getAgentsSharedToMe = async (
       and(
         eq(agents.workspaceId, workspaceId),
         isNull(agents.deletedAt),
+        eq(agents.creation_source, AgentCreationSource.DIRECT),
         eq(userAgentPermissions.userId, userId),
         eq(userAgentPermissions.role, UserAgentRole.Shared),
       ),

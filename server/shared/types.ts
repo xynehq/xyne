@@ -27,6 +27,7 @@ import {
   GooglePeopleEntity,
   SlackEntity,
   MicrosoftPeopleEntity,
+  AttachmentEntity,
 } from "@xyne/vespa-ts/types"
 export {
   GooglePeopleEntity,
@@ -35,6 +36,7 @@ export {
   CalendarEntity,
   MailAttachmentEntity,
   SlackEntity,
+  AttachmentEntity,
   Apps,
   isMailAttachment,
   SystemEntity,
@@ -52,9 +54,14 @@ export type {
   SearchResultsSchema,
   SearchResponse,
   SearchResultDiscriminatedUnion,
+  
 } from "@xyne/vespa-ts/types"
 
-export const FileEntitySchema = z.nativeEnum(DriveEntity)
+export type VespaFile = z.infer<typeof VespaFileSchema>
+export const FileEntitySchema = z.union([
+  z.nativeEnum(DriveEntity),
+  z.nativeEnum(AttachmentEntity),
+])
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
 export const EventEntitySchema = z.nativeEnum(CalendarEntity)
@@ -131,10 +138,12 @@ export enum ConnectorStatus {
   Connected = "connected",
   // Pending = 'pending',
   Connecting = "connecting",
+
   Paused = "paused",
   Failed = "failed",
   // for oauth we will default to this
   NotConnected = "not-connected",
+  Authenticated = "authenticated",
 }
 
 export enum SyncJobStatus {
@@ -200,14 +209,26 @@ export const EXTENSION_MAPPINGS = {
   [FileType.TEXT]: [".txt", ".md"],
 } as const
 
+export const attachmentFileTypeMap: Record<string, AttachmentEntity> = {
+  [FileType.DOCUMENT]: AttachmentEntity.Docs,
+  [FileType.SPREADSHEET]: AttachmentEntity.Sheets,
+  [FileType.PRESENTATION]: AttachmentEntity.PPT,
+  [FileType.PDF]: AttachmentEntity.PDF,
+  [FileType.TEXT]: AttachmentEntity.Text,
+  [FileType.IMAGE]: AttachmentEntity.Image,
+  [FileType.FILE]: AttachmentEntity.File,
+}
+
 export enum ApiKeyScopes {
   CREATE_AGENT = "CREATE_AGENT",
+  READ_AGENT = "READ_AGENT",
   AGENT_CHAT = "AGENT_CHAT",
   AGENT_CHAT_STOP = "AGENT_CHAT_STOP",
   UPDATE_AGENT = "UPDATE_AGENT",
   DELETE_AGENT = "DELETE_AGENT",
   CHAT_HISTORY = "CHAT_HISTORY",
   CREATE_COLLECTION = "CREATE_COLLECTION",
+  UPDATE_COLLECTION = "UPDATE_COLLECTION",
   LIST_COLLECTIONS = "LIST_COLLECTIONS",
   UPLOAD_FILES = "UPLOAD_FILES",
   SEARCH_COLLECTION = "SEARCH_COLLECTION",
@@ -761,5 +782,13 @@ export interface ModelConfiguration {
 }
 export const getDocumentSchema = z.object({
   docId: z.string().min(1),
+  sheetIndex: z.number().min(0).optional(),
   schema: z.string().min(1),
 })
+
+export enum UploadStatus {
+  PENDING = "pending",
+  PROCESSING = "processing",
+  COMPLETED = "completed", 
+  FAILED = "failed",
+}

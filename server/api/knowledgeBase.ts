@@ -4,16 +4,17 @@ import { createReadStream as createFileReadStream } from "node:fs"
 import { join, dirname, extname } from "node:path"
 import { stat } from "node:fs/promises"
 import { stream } from "hono/streaming"
-import { type SelectUser } from "@/db/schema"
+import { userAgentPermissions, type SelectUser } from "@/db/schema"
 import { z } from "zod"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { Subsystem } from "@/types"
+import { Subsystem, ProcessingJobType, type TxnOrClient } from "@/types"
 import config from "@/config"
 import { getErrorMessage } from "@/utils"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
+import JSZip from "jszip"
 import {
   // New primary function names
   createCollection,
@@ -35,22 +36,66 @@ import {
   generateFolderVespaDocId,
   generateCollectionVespaDocId,
   getCollectionFilesVespaIds,
+  getCollectionItemsStatusByCollections,
+  markParentAsProcessing,
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
-import { cleanUpAgentDb } from "@/db/agent"
+import { cleanUpAgentDb, getAgentByExternalId } from "@/db/agent"
 import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
-import { insert, DeleteDocument, GetDocument } from "@/search/vespa"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
-import crypto from "crypto"
-import { FileProcessorService } from "@/services/fileProcessor"
+import { DeleteDocument, GetDocument } from "@/search/vespa"
+import { ChunkMetadata, KbItemsSchema } from "@xyne/vespa-ts/types"
+import {
+  boss,
+  FileProcessingQueue,
+  PdfFileProcessingQueue,
+} from "@/queue/api-server-queue"
+import * as crypto from "crypto"
+import { fileTypeFromBuffer } from "file-type"
 import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
 } from "@/integrations/dataSource/config"
 import { getAuth, safeGet } from "./agent"
-import { ApiKeyScopes } from "@/shared/types"
+import { ApiKeyScopes, FileType, UploadStatus } from "@/shared/types"
+import { expandSheetIds } from "@/search/utils"
+import { checkFileSize } from "@/integrations/dataSource"
+import { getFileType } from "@/shared/fileUtils"
+
+const EXTENSION_MIME_MAP: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx":
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".txt": "text/plain",
+  ".csv": "text/csv",
+  ".html": "text/html",
+  ".xml": "application/xml",
+  ".json": "application/json",
+  ".zip": "application/zip",
+  ".rar": "application/vnd.rar",
+  ".7z": "application/x-7z-compressed",
+  ".tar": "application/x-tar",
+  ".gz": "application/gzip",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".mp4": "video/mp4",
+  ".avi": "video/x-msvideo",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+}
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "knowledgeBaseService",
@@ -60,8 +105,8 @@ const { JwtPayloadKey } = config
 
 // Storage configuration for Knowledge Base feature files
 const KB_STORAGE_ROOT = join(process.cwd(), "storage", "kb_files")
-const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB max file size
-const MAX_FILES_PER_REQUEST = 100 // Maximum files per upload request
+const MAX_FILE_SIZE = 100 // 100MB max file size
+const MAX_ZIP_FILE_SIZE = 35 // 35MB max zip file size
 
 // Initialize storage directory for Knowledge Base files
 ;(async () => {
@@ -125,6 +170,106 @@ function getStoragePath(
   )
 }
 
+/**
+ * Checks if a file path or filename is a system file that should be skipped
+ * @param pathOrName - Full path or just filename to check
+ * @returns true if the file is a system file and should be skipped
+ */
+function isSystemFile(pathOrName: string): boolean {
+  // Check for macOS system directories and files
+  if (
+    pathOrName.includes("__MACOSX/") ||
+    pathOrName.includes("/._") ||
+    pathOrName.endsWith(".DS_Store")
+  ) {
+    return true
+  }
+
+  // Extract filename from path
+  const fileName = pathOrName.split("/").pop() || ""
+
+  // Check for common system files
+  if (
+    fileName === ".DS_Store" ||
+    fileName.startsWith("._") ||
+    fileName === "Thumbs.db" ||
+    fileName === "desktop.ini"
+  ) {
+    return true
+  }
+
+  return false
+}
+
+// Enhanced MIME type detection with extension normalization and magic byte analysis
+async function detectMimeType(
+  fileName: string,
+  buffer: ArrayBuffer | Uint8Array | Buffer,
+  browserMimeType?: string,
+): Promise<string> {
+  try {
+    let detectionBuffer: Uint8Array | Buffer
+    if (Buffer.isBuffer(buffer)) {
+      detectionBuffer = buffer
+    } else if (buffer instanceof Uint8Array) {
+      detectionBuffer = buffer
+    } else {
+      detectionBuffer = new Uint8Array(buffer)
+    }
+
+    // Step 1: Normalize the file extension (case-insensitive)
+    const ext = extname(fileName).toLowerCase()
+
+    // Step 2: Extension-based MIME mapping uses a module-level constant now.
+
+    // Step 3: Use magic byte detection from file-type library
+    let detectedType: string | undefined
+    try {
+      const fileTypeResult = await fileTypeFromBuffer(detectionBuffer)
+      if (fileTypeResult?.mime) {
+        detectedType = fileTypeResult.mime
+        loggerWithChild().debug(
+          `Magic byte detection for ${fileName}: ${detectedType}`,
+        )
+      }
+    } catch (error) {
+      loggerWithChild().debug(
+        `Magic byte detection failed for ${fileName}: ${getErrorMessage(error)}`,
+      )
+    }
+
+    // Step 4: Determine the best MIME type using fallback strategy
+    let finalMimeType: string
+
+    // Priority: 1. Magic bytes (most reliable), 2. Extension mapping, 3. Browser type, 4. Default
+    if (detectedType) {
+      finalMimeType = detectedType
+    } else if (EXTENSION_MIME_MAP[ext]) {
+      finalMimeType = EXTENSION_MIME_MAP[ext]
+    } else if (
+      browserMimeType &&
+      browserMimeType !== "application/octet-stream"
+    ) {
+      finalMimeType = browserMimeType
+    } else {
+      finalMimeType = "application/octet-stream"
+    }
+
+    loggerWithChild().debug(
+      `MIME detection for ${fileName}: extension=${ext}, magic=${detectedType}, browser=${browserMimeType}, final=${finalMimeType}`,
+    )
+
+    return finalMimeType
+  } catch (error) {
+    loggerWithChild().error(
+      error,
+      `Error in MIME detection for ${fileName}: ${getErrorMessage(error)}`,
+    )
+    // Fallback to browser type or default
+    return browserMimeType || "application/octet-stream"
+  }
+}
+
 // API Handlers
 
 // Create a new Collection
@@ -183,40 +328,23 @@ export const CreateCollectionApi = async (c: Context) => {
       `Creating Collection with data: ${JSON.stringify(collectionData)}`,
     )
 
-    // Use transaction to ensure both database and Vespa operations succeed together
-    const collection = await db.transaction(async (tx) => {
-      const createdCollection = await createCollection(tx, collectionData)
-
-      const vespaDoc = {
-        docId: vespaDocId,
-        clId: createdCollection.id,
-        itemId: createdCollection.id,
-        fileName: validatedData.name,
-        app: Apps.KnowledgeBase as const,
-        entity: KnowledgeBaseEntity.Collection,
-        description: validatedData.description || "",
-        storagePath: "",
-        chunks: [],
-        image_chunks: [],
-        chunks_pos: [],
-        image_chunks_pos: [],
-        metadata: JSON.stringify({
-          version: "1.0",
-          lastModified: Date.now(),
-          ...validatedData.metadata,
-        }),
-        createdBy: user.email,
-        duration: 0,
-        mimeType: "knowledge_base",
-        fileSize: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        clFd: null,
-      }
-
-      await insert(vespaDoc, KbItemsSchema)
-      return createdCollection
+    // Create collection in database first
+    const collection = await db.transaction(async (tx: TxnOrClient) => {
+      return await createCollection(tx, collectionData)
     })
+
+    // Queue after transaction commits to avoid race condition
+    await boss.send(
+      FileProcessingQueue,
+      {
+        collectionId: collection.id,
+        type: ProcessingJobType.COLLECTION,
+      },
+      {
+        retryLimit: 3,
+        expireInHours: 12,
+      },
+    )
     loggerWithChild({ email: userEmail }).info(
       `Created Collection: ${collection.id} for user ${userEmail}`,
     )
@@ -324,7 +452,19 @@ export const ListCollectionsApi = async (c: Context) => {
 
 // Get a specific Collection
 export const GetCollectionApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.LIST_COLLECTIONS)) {
+      return c.json(
+        { message: "API key does not have scope to get collection details" },
+        403,
+      )
+    }
+  }
+
   const collectionId = c.req.param("clId")
 
   // Get user from database
@@ -362,9 +502,86 @@ export const GetCollectionApi = async (c: Context) => {
   }
 }
 
+export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const collectionId = c.req.param("clId")
+  const agentExternalId = c.req.query("agentExternalId")
+
+  if (!agentExternalId || !collectionId) {
+    throw new HTTPException(400, {
+      message: "agentExternalId and collectionId are required",
+    })
+  }
+
+  const users = await getUserByEmail(db, userEmail)
+  if (!users || users.length === 0) {
+    throw new HTTPException(404, { message: "User not found" })
+  }
+  const user = users[0]
+
+  const agent = await getAgentByExternalId(
+    db,
+    agentExternalId,
+    user.workspaceId,
+  )
+
+  if (!agent) {
+    throw new HTTPException(404, { message: "Agent not found" })
+  }
+  if (!agent.isPublic) {
+    const hasPermission = await db
+      .select()
+      .from(userAgentPermissions)
+      .where(
+        and(
+          eq(userAgentPermissions.userId, user.id),
+          eq(userAgentPermissions.agentId, agent.id),
+        ),
+      )
+      .limit(1)
+
+    if (!hasPermission || hasPermission.length === 0) {
+      throw new HTTPException(403, {
+        message: "You don't have shared access to this agent",
+      })
+    }
+  }
+  try {
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
+    }
+
+    return c.json({ name: collection.name })
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to get Collection: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to get Collection",
+    })
+  }
+}
+
 // Update a Collection
 export const UpdateCollectionApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.UPDATE_COLLECTION)) {
+      return c.json(
+        { message: "API key does not have scope to update collections" },
+        403,
+      )
+    }
+  }
+
   const collectionId = c.req.param("clId")
 
   // Get user from database
@@ -472,7 +689,7 @@ export const DeleteCollectionApi = async (c: Context) => {
     let deletedFoldersCount = 0
     const deletedItemIds: string[] = []
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: TxnOrClient) => {
       // Collect item IDs for agent cleanup (with proper prefixes)
       for (const item of collectionItemsToDelete) {
         if (item.type === "file") {
@@ -685,9 +902,9 @@ export const CreateFolderApi = async (c: Context) => {
       version: "1.0",
     }
 
-    // Use transaction to ensure both folder creation and Vespa insertion succeed together
-    const folder = await db.transaction(async (tx) => {
-      const createdFolder = await createFolder(
+    // Create folder in database first
+    const folder = await db.transaction(async (tx: TxnOrClient) => {
+      return await createFolder(
         tx,
         collectionId,
         validatedData.parentId || null,
@@ -696,38 +913,20 @@ export const CreateFolderApi = async (c: Context) => {
         user.id,
         user.email,
       )
-
-      // Use the vespaDocId from the folder record (generated in createFolder)
-      const vespaDoc = {
-        docId: createdFolder.vespaDocId!,
-        clId: collectionId,
-        itemId: createdFolder.id,
-        app: Apps.KnowledgeBase as const,
-        fileName: validatedData.name,
-        entity: KnowledgeBaseEntity.Folder,
-        description: folderMetadata.description || "",
-        storagePath: "",
-        chunks: [],
-        image_chunks: [],
-        chunks_pos: [],
-        image_chunks_pos: [],
-        metadata: JSON.stringify({
-          version: "1.0",
-          lastModified: Date.now(),
-          tags: folderMetadata.tags || [],
-        }),
-        createdBy: user.email,
-        duration: 0,
-        mimeType: "folder",
-        fileSize: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        clFd: validatedData.parentId || null,
-      }
-
-      await insert(vespaDoc, KbItemsSchema)
-      return createdFolder
     })
+
+    // Queue after transaction commits to avoid race condition
+    await boss.send(
+      FileProcessingQueue,
+      {
+        folderId: folder.id,
+        type: ProcessingJobType.FOLDER,
+      },
+      {
+        retryLimit: 3,
+        expireInHours: 12,
+      },
+    )
 
     loggerWithChild({ email: userEmail }).info(
       `Created folder: ${folder.id} in Collection: ${collectionId} with Vespa doc: ${folder.vespaDocId}`,
@@ -794,11 +993,11 @@ const uploadSessions = new Map<
 // Clean up old sessions (older than 1 hour)
 setInterval(() => {
   const now = Date.now()
-  for (const [sessionId, session] of uploadSessions.entries()) {
+  uploadSessions.forEach((session, sessionId) => {
     if (now - session.createdAt > 3600000) {
       uploadSessions.delete(sessionId)
     }
-  }
+  })
 }, 300000) // Run every 5 minutes
 
 // Helper function to ensure folder exists or create it
@@ -855,48 +1054,29 @@ async function ensureFolderPath(
       autoCreatedReason: "folder_structure_from_file_path",
     }
 
-    // Use transaction to ensure both folder creation and Vespa insertion succeed together
-    const newFolder = await db.transaction(async (tx: any) => {
-      const createdFolder = await createFolder(
+    // Create auto-folder in database first
+    const newFolder = await db.transaction(async (tx: TxnOrClient) => {
+      return await createFolder(
         tx,
         collectionId,
         parentId,
         folderName,
         autoCreatedFolderMetadata,
       )
-
-      // Use the vespaDocId from the newly created folder (no duplication!)
-      const vespaDoc = {
-        docId: createdFolder.vespaDocId!, // Use the ID generated by createFolder
-        clId: collectionId,
-        itemId: createdFolder.id,
-        fileName: folderName,
-        app: Apps.KnowledgeBase as const,
-        entity: KnowledgeBaseEntity.Folder,
-        description: "Auto-created during file upload",
-        storagePath: "",
-        chunks: [],
-        image_chunks: [],
-        chunks_pos: [],
-        image_chunks_pos: [],
-        metadata: JSON.stringify({
-          version: "1.0",
-          lastModified: Date.now(),
-          autoCreated: true,
-          originalPath: pathParts.join("/"),
-        }),
-        createdBy: "system",
-        duration: 0,
-        mimeType: "folder",
-        fileSize: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        clFd: parentId,
-      }
-
-      await insert(vespaDoc, KbItemsSchema)
-      return createdFolder
     })
+
+    // Queue after transaction commits to avoid race condition
+    await boss.send(
+      FileProcessingQueue,
+      {
+        folderId: newFolder.id,
+        type: ProcessingJobType.FOLDER,
+      },
+      {
+        retryLimit: 3,
+        expireInHours: 12,
+      },
+    )
 
     currentFolderId = newFolder.id
 
@@ -996,8 +1176,8 @@ export const UploadFilesApi = async (c: Context) => {
 
     const formData = await c.req.formData()
     const parentId = formData.get("parentId") as string | null
-    const files = formData.getAll("files") as File[]
-    const paths = formData.getAll("paths") as string[] // Get file paths for folder structure
+    let files = formData.getAll("files") as File[]
+    let paths = formData.getAll("paths") as string[] // Get file paths for folder structure
     const duplicateStrategy =
       (formData.get("duplicateStrategy") as DuplicateStrategy) ||
       DuplicateStrategy.RENAME
@@ -1023,10 +1203,94 @@ export const UploadFilesApi = async (c: Context) => {
       throw new HTTPException(400, { message: "No files provided" })
     }
 
-    // Validate file count
-    if (files.length > MAX_FILES_PER_REQUEST) {
+    // Check if any files are zip files and extract them
+    const extractedFiles: File[] = []
+    const extractedPaths: string[] = []
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const ext = extname(file.name).toLowerCase()
+
+      if (ext === ".zip") {
+        // Check zip file size before extraction
+        const zipSizeMB = Math.round(file.size / 1024 / 1024)
+        if (file.size > MAX_ZIP_FILE_SIZE * 1024 * 1024) {
+          loggerWithChild({ email: userEmail }).warn(
+            `Zip file too large: ${file.name} (${zipSizeMB}MB). Maximum is ${MAX_ZIP_FILE_SIZE}MB`,
+          )
+          throw new HTTPException(400, {
+            message: `Zip file too large (${zipSizeMB}MB). Maximum size is ${MAX_ZIP_FILE_SIZE}MB`,
+          })
+        }
+
+        loggerWithChild({ email: userEmail }).info(
+          `Extracting zip file: ${file.name} (${zipSizeMB}MB)`,
+        )
+
+        try {
+          // Extract zip file
+          const zipBuffer = await file.arrayBuffer()
+          const zip = await JSZip.loadAsync(zipBuffer)
+
+          let extractedCount = 0
+          for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+            // Skip directories
+            if (zipEntry.dir) continue
+
+            // Skip system files using helper function
+            if (isSystemFile(relativePath)) {
+              continue
+            }
+
+            // Get the file name from the path
+            const pathParts = relativePath.split("/")
+            const entryFileName = pathParts[pathParts.length - 1]
+
+            // Extract the file content
+            const content = await zipEntry.async("blob")
+
+            // Detect proper MIME type for the extracted file
+            const arrayBuffer = await content.arrayBuffer()
+            const mimeType = await detectMimeType(entryFileName, arrayBuffer)
+
+            const extractedFile = new File([content], entryFileName, {
+              type: mimeType,
+            })
+
+            extractedFiles.push(extractedFile)
+            extractedPaths.push(relativePath)
+            extractedCount++
+          }
+
+          loggerWithChild({ email: userEmail }).info(
+            `Extracted ${extractedCount} files from ${file.name}`,
+          )
+        } catch (error) {
+          loggerWithChild({ email: userEmail }).error(
+            error,
+            `Failed to extract zip file: ${file.name}`,
+          )
+          // If extraction fails, treat it as a regular file
+          extractedFiles.push(file)
+          extractedPaths.push(paths[i] || file.name)
+        }
+      } else {
+        // Not a zip file, add as-is
+        extractedFiles.push(file)
+        extractedPaths.push(paths[i] || file.name)
+      }
+    }
+
+    // Replace files and paths with extracted versions
+    files = extractedFiles
+    paths = extractedPaths
+
+    // Validate file count - allow up to 3000 files for zip extractions
+    const maxFilesLimit = 10000
+
+    if (files.length > maxFilesLimit) {
       throw new HTTPException(400, {
-        message: `Too many files. Maximum ${MAX_FILES_PER_REQUEST} files allowed per request`,
+        message: `Too many files. Maximum ${maxFilesLimit} files allowed per request`,
       })
     }
 
@@ -1041,6 +1305,7 @@ export const UploadFilesApi = async (c: Context) => {
       duplicateId?: string
       isIdentical?: boolean
       wasRenamed?: boolean
+      uploadStatus?: string // Add uploadStatus field
     }
 
     const uploadResults: UploadResult[] = []
@@ -1051,12 +1316,7 @@ export const UploadFilesApi = async (c: Context) => {
       let targetParentId = parentId // Declare here so it's accessible in catch block
 
       // Skip system files
-      if (
-        file.name === ".DS_Store" ||
-        file.name.startsWith("._") ||
-        file.name === "Thumbs.db" ||
-        file.name === "desktop.ini"
-      ) {
+      if (isSystemFile(file.name)) {
         uploadResults.push({
           success: false,
           fileName: file.name,
@@ -1071,12 +1331,14 @@ export const UploadFilesApi = async (c: Context) => {
       let storagePath = ""
       try {
         // Validate file size
-        if (file.size > MAX_FILE_SIZE) {
+        try {
+          checkFileSize(file.size, MAX_FILE_SIZE)
+        } catch (error) {
           uploadResults.push({
             success: false,
             fileName: file.name,
             parentId: targetParentId,
-            message: `Skipped: File too large (${Math.round(file.size / 1024 / 1024)}MB). Maximum size is ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB`,
+            message: `Skipped: File too large (${Math.round(file.size / 1024 / 1024)}MB). Maximum size is ${MAX_FILE_SIZE}MB`,
           })
           loggerWithChild({ email: userEmail }).info(
             `Skipped large file: ${file.name} (${file.size} bytes)`,
@@ -1089,12 +1351,7 @@ export const UploadFilesApi = async (c: Context) => {
         const originalFileName = pathParts.pop() || file.name // Get the actual filename
 
         // Skip if the filename is a system file (in case it comes from path)
-        if (
-          originalFileName === ".DS_Store" ||
-          originalFileName.startsWith("._") ||
-          originalFileName === "Thumbs.db" ||
-          originalFileName === "desktop.ini"
-        ) {
+        if (isSystemFile(originalFileName)) {
           uploadResults.push({
             success: false,
             fileName: originalFileName,
@@ -1232,21 +1489,16 @@ export const UploadFilesApi = async (c: Context) => {
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
 
-        // Process file using the service
-        const processingResult = await FileProcessorService.processFile(
+        // Detect MIME type using robust detection with extension normalization and magic bytes
+        const detectedMimeType = await detectMimeType(
+          originalFileName,
           buffer,
-          file.type || "text/plain",
-          fileName,
-          vespaDocId,
-          storagePath,
+          file.type,
         )
 
-        const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
-          processingResult
-
-        // Use transaction for atomic file creation AND Vespa insertion
-        const item = await db.transaction(async (tx) => {
-          const createdItem = await createFileItem(
+        // Create file record in database first
+        const item = await db.transaction(async (tx: TxnOrClient) => {
+          return await createFileItem(
             tx,
             collectionId,
             targetParentId,
@@ -1255,7 +1507,7 @@ export const UploadFilesApi = async (c: Context) => {
             fileName,
             storagePath,
             storageKey,
-            file.type || "application/octet-stream",
+            detectedMimeType,
             file.size,
             checksum,
             {
@@ -1269,45 +1521,24 @@ export const UploadFilesApi = async (c: Context) => {
             },
             user.id,
             user.email,
+            `File uploaded successfully, queued for processing`, // Initial status message
           )
-
-          // Create Vespa document within the same transaction
-          const vespaDoc = {
-            docId: vespaDocId,
-            clId: collectionId,
-            itemId: createdItem.id,
-            fileName:
-              targetPath === "/"
-                ? collection?.name + targetPath + filePath
-                : collection?.name + targetPath + fileName,
-            app: Apps.KnowledgeBase as const,
-            entity: KnowledgeBaseEntity.File, // Always "file" for files being uploaded
-            description: "", // Default description for uploaded files
-            storagePath: storagePath,
-            chunks: chunks,
-            chunks_pos: chunks_pos,
-            image_chunks: image_chunks,
-            image_chunks_pos: image_chunks_pos,
-            metadata: JSON.stringify({
-              originalFileName: file.name,
-              uploadedBy: user.email,
-              chunksCount: chunks.length,
-              imageChunksCount: image_chunks.length,
-              processingMethod: getBaseMimeType(file.type || "text/plain"),
-              lastModified: Date.now(),
-            }),
-            createdBy: user.email,
-            duration: 0,
-            mimeType: getBaseMimeType(file.type || "text/plain"),
-            fileSize: file.size,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            clFd: targetParentId,
-          }
-
-          await insert(vespaDoc, KbItemsSchema)
-          return createdItem
         })
+
+        // Queue after transaction commits to avoid race condition
+        // Route PDF files to the PDF queue, other files to the general queue
+        const queueName =
+          detectedMimeType === "application/pdf"
+            ? PdfFileProcessingQueue
+            : FileProcessingQueue
+        await boss.send(
+          queueName,
+          { fileId: item.id, type: ProcessingJobType.FILE },
+          {
+            retryLimit: 3,
+            expireInHours: 12,
+          },
+        )
 
         uploadResults.push({
           success: true,
@@ -1317,9 +1548,10 @@ export const UploadFilesApi = async (c: Context) => {
           parentId: targetParentId,
           message:
             fileName !== originalFileName
-              ? `File uploaded as "${fileName}" (renamed to avoid duplicate)`
-              : "File uploaded successfully",
+              ? `File uploaded as "${fileName}" (renamed to avoid duplicate) - queued for processing`
+              : "File uploaded successfully - queued for processing",
           wasRenamed: fileName !== originalFileName,
+          uploadStatus: UploadStatus.PENDING, // Indicate it's pending processing
         })
 
         loggerWithChild({ email: userEmail }).info(
@@ -1473,7 +1705,7 @@ export const DeleteItemApi = async (c: Context) => {
     let deletedFoldersCount = 0
     const deletedItemIds: string[] = []
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: TxnOrClient) => {
       // Collect item IDs for agent cleanup (with proper prefixes)
       for (const itemToDelete of itemsToDelete) {
         if (itemToDelete.type === "file") {
@@ -1499,10 +1731,20 @@ export const DeleteItemApi = async (c: Context) => {
         try {
           // Delete from Vespa
           if (itemToDelete.vespaDocId) {
-            await DeleteDocument(itemToDelete.vespaDocId, KbItemsSchema)
-            loggerWithChild({ email: userEmail }).info(
-              `Deleted file from Vespa: ${itemToDelete.vespaDocId}`,
-            )
+            const vespaDocIds = expandSheetIds(itemToDelete.vespaDocId)
+            for (const id of vespaDocIds) {
+              try {
+                await DeleteDocument(id, KbItemsSchema)
+                loggerWithChild({ email: userEmail }).info(
+                  `Deleted file from Vespa: ${id}`,
+                )
+              } catch (error) {
+                loggerWithChild({ email: userEmail }).error(
+                  `Failed to delete file from Vespa: ${id}`,
+                  { error: getErrorMessage(error) },
+                )
+              }
+            }
           }
         } catch (error) {
           loggerWithChild({ email: userEmail }).warn(
@@ -1647,23 +1889,10 @@ export const GetFilePreviewApi = async (c: Context) => {
 export const GetChunkContentApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const chunkIndex = parseInt(c.req.param("cId"))
-  const itemId = c.req.param("itemId")
+  const docId = c.req.param("docId")
 
   try {
-    const collectionFile = await getCollectionFileByItemId(db, itemId)
-    if (!collectionFile) {
-      throw new HTTPException(404, { message: "File data not found" })
-    }
-
-    const vespaIds = await getCollectionFilesVespaIds([itemId], db)
-    if (vespaIds.length === 0) {
-      throw new HTTPException(404, { message: "Vespa document ID not found" })
-    }
-    if (!vespaIds[0].vespaDocId) {
-      throw new HTTPException(404, { message: "Vespa document ID is null" })
-    }
-
-    const resp = await GetDocument(KbItemsSchema, vespaIds[0].vespaDocId)
+    const resp = await GetDocument(KbItemsSchema, docId)
 
     if (!resp || !resp.fields) {
       throw new HTTPException(404, {
@@ -1679,8 +1908,25 @@ export const GetChunkContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Document missing chunk data" })
     }
 
+    // Handle both legacy number[] format and new ChunkMetadata[] format
     const index = resp.fields.chunks_pos.findIndex(
-      (pos: number) => pos === chunkIndex,
+      (pos: number | ChunkMetadata) => {
+        // If it's a number (legacy format), compare directly
+        if (typeof pos === "number") {
+          return pos === chunkIndex
+        }
+        // If it's a ChunkMetadata object, compare the index field
+        if (typeof pos === "object" && pos !== null) {
+          if (pos.chunk_index !== undefined) {
+            return pos.chunk_index === chunkIndex
+          } else {
+            loggerWithChild({ email: userEmail }).warn(
+              `Unexpected chunk position object format: ${JSON.stringify(pos)}`,
+            )
+          }
+        }
+        return false
+      },
     )
     if (index === -1) {
       throw new HTTPException(404, { message: "Chunk index not found" })
@@ -1688,12 +1934,35 @@ export const GetChunkContentApi = async (c: Context) => {
 
     // Get the chunk content from Vespa response
     const chunkContent = resp.fields.chunks[index]
+    let pageIndex: number | undefined
+
+    const isSheetFile =
+      getFileType({
+        type: resp.fields.mimeType || "",
+        name: resp.fields.fileName || "",
+      }) === FileType.SPREADSHEET
+    if (isSheetFile) {
+      const sheetIndexMatch = docId.match(/_sheet_(\d+)$/)
+      if (sheetIndexMatch) {
+        pageIndex = parseInt(sheetIndexMatch[1], 10)
+      } else {
+        pageIndex = 0
+      }
+    } else {
+      const pageNums = resp.fields.chunks_map?.[index]?.page_numbers
+      pageIndex =
+        Array.isArray(pageNums) && typeof pageNums[0] === "number"
+          ? pageNums[0]
+          : 0
+    }
+
     if (!chunkContent) {
       throw new HTTPException(404, { message: "Chunk content not found" })
     }
 
     return c.json({
       chunkContent: chunkContent,
+      pageIndex: pageIndex,
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error
@@ -1745,6 +2014,64 @@ export const GetFileContentApi = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Failed to get file content",
+    })
+  }
+}
+
+// Poll collection items status for multiple collections
+export const PollCollectionsStatusApi = async (c: Context) => {
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.LIST_COLLECTIONS)) {
+      return c.json(
+        { message: "API key does not have scope to poll collection status" },
+        403,
+      )
+    }
+  }
+
+  // Get user from database
+  const users = await getUserByEmail(db, userEmail)
+  if (!users || users.length === 0) {
+    throw new HTTPException(404, { message: "User not found" })
+  }
+  const user = users[0]
+
+  try {
+    const body = await c.req.json()
+    const collectionIds = body.collectionIds as string[]
+
+    if (
+      !collectionIds ||
+      !Array.isArray(collectionIds) ||
+      collectionIds.length === 0
+    ) {
+      throw new HTTPException(400, {
+        message: "collectionIds array is required",
+      })
+    }
+
+    // Fetch items only for collections owned by the user (enforced in DB function)
+    const items = await getCollectionItemsStatusByCollections(
+      db,
+      collectionIds,
+      user.id,
+    )
+
+    return c.json({ items })
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to poll collections status: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to poll collections status",
     })
   }
 }
@@ -1818,7 +2145,7 @@ export const DownloadFileApi = async (c: Context) => {
     const storagePath = collectionFile.storagePath
 
     if (!collectionFile.originalName) {
-      throw new HTTPException(500, { message: "File original name is missing" })
+      throw new HTTPException(400, { message: "File original name is missing" })
     }
 
     // Filename sanitization helper functions for download functionality

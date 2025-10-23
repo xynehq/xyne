@@ -8,16 +8,21 @@ import React, {
 
 // Define the interface for document operations
 export interface DocumentOperations {
-  highlightText?: (text: string, chunkIndex: number) => Promise<boolean>
+  highlightText?: (
+    text: string,
+    chunkIndex: number,
+    pageIndex?: number,
+    waitForTextLayer?: boolean,
+  ) => Promise<boolean>
   clearHighlights?: () => void
   scrollToMatch?: (index: number) => boolean
-  renderAllPagesForHighlighting?: () => Promise<void>
+  goToPage?: (pageIndex: number) => Promise<void>
 }
 
 // Create the context
 const DocumentOperationsContext = createContext<{
   documentOperationsRef: React.RefObject<DocumentOperations>
-  setRenderAllPagesForHighlighting: (fn: (() => Promise<void>) | null) => void
+  setGoToPage: (fn: ((pageIndex: number) => Promise<void>) | null) => void
 } | null>(null)
 
 // Provider component
@@ -28,11 +33,10 @@ export const DocumentOperationsProvider: React.FC<{
     {} as DocumentOperations,
   )
 
-  const setRenderAllPagesForHighlightingFn = React.useCallback(
-    (fn: (() => Promise<void>) | null) => {
+  const setGoToPageFn = React.useCallback(
+    (fn: ((pageIndex: number) => Promise<void>) | null) => {
       if (documentOperationsRef.current) {
-        documentOperationsRef.current.renderAllPagesForHighlighting =
-          fn || undefined
+        documentOperationsRef.current.goToPage = fn || undefined
       }
     },
     [],
@@ -42,7 +46,7 @@ export const DocumentOperationsProvider: React.FC<{
     <DocumentOperationsContext.Provider
       value={{
         documentOperationsRef,
-        setRenderAllPagesForHighlighting: setRenderAllPagesForHighlightingFn,
+        setGoToPage: setGoToPageFn,
       }}
     >
       {children}
@@ -73,11 +77,18 @@ export const withDocumentOperations = <P extends object>(
     useImperativeHandle(
       ref,
       () => ({
-        highlightText: async (text: string, chunkIndex: number) => {
+        highlightText: async (
+          text: string,
+          chunkIndex: number,
+          pageIndex?: number,
+          waitForTextLayer: boolean = false,
+        ) => {
           if (documentOperationsRef.current?.highlightText) {
             return await documentOperationsRef.current.highlightText(
               text,
               chunkIndex,
+              pageIndex,
+              waitForTextLayer,
             )
           }
           return false
@@ -93,9 +104,9 @@ export const withDocumentOperations = <P extends object>(
           }
           return false
         },
-        renderAllPagesForHighlighting: async () => {
-          if (documentOperationsRef.current?.renderAllPagesForHighlighting) {
-            await documentOperationsRef.current.renderAllPagesForHighlighting()
+        goToPage: async (pageIndex: number) => {
+          if (documentOperationsRef.current?.goToPage) {
+            await documentOperationsRef.current.goToPage(pageIndex)
           }
         },
       }),

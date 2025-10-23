@@ -52,6 +52,7 @@ import {
   ChevronLeft,
   ChevronRight,
   BookOpen,
+  Eye,
 } from "lucide-react"
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useTheme } from "@/components/ThemeContext"
@@ -73,9 +74,11 @@ import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { createAuthEventSource } from "@/hooks/useChatStream"
-import { textToCitationIndex } from "@/utils/chatUtils"
+import { textToCitationIndex } from "@/utils/chatUtils.tsx"
 import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
+import ViewAgent from "@/components/ViewAgent"
+import agentEmptyStateIcon from "@/assets/emptystateIcons/agent.png"
 
 type CurrentResp = {
   resp: string
@@ -89,6 +92,7 @@ type CurrentResp = {
 export const Route = createFileRoute("/_authenticated/agent")({
   validateSearch: z.object({
     agentId: z.string().optional(),
+    mode: z.enum(['edit', 'view']).optional(),
   }),
   component: AgentComponent,
 })
@@ -130,7 +134,7 @@ interface IntegrationSource {
   icon: React.ReactNode
 }
 
-const availableIntegrationsList: IntegrationSource[] = [
+export const availableIntegrationsList: IntegrationSource[] = [
   {
     id: "googledrive",
     name: "Google Drive",
@@ -197,12 +201,79 @@ interface User {
   email: string
 }
 
-interface CollectionItem {
+export interface CollectionItem {
   id: string
   collectionId: string
   path?: string
   type?: "collection" | "folder" | "file"
   name?: string
+}
+// Icon components
+export const FileIcon: React.FC<{ className?: string }> = ({
+  className = "mr-2 text-blue-600",
+}) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+    <polyline points="13 2 13 9 20 9"></polyline>
+  </svg>
+)
+
+export const FolderIcon: React.FC<{ className?: string }> = ({
+  className = "mr-2 text-blue-600",
+}) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+  </svg>
+)
+
+export const CollectionIcon: React.FC<{ className?: string }> = ({
+  className = "mr-2 text-blue-600",
+}) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+  </svg>
+)
+export const getItemIcon = (itemType: string): React.ReactNode => {
+  switch (itemType) {
+    case "folder":
+      return <FolderIcon />
+    case "collection":
+      return <CollectionIcon />
+    case "file":
+    default:
+      return <FileIcon />
+  }
 }
 
 // Utility function to check if an item is selected either directly or through parent inheritance
@@ -265,9 +336,11 @@ function isItemSelectedWithInheritance(
 }
 
 function AgentComponent() {
-  const { agentId } = Route.useSearch()
+  const { agentId, mode } = Route.useSearch()
   const navigate = useNavigate()
-  const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list")
+  const [viewMode, setViewMode] = useState<
+    "list" | "create" | "edit" | "viewAgent"
+  >("list")
   const [allAgentsList, setAllAgentsList] = useState<SelectPublicAgent[]>([])
   const [madeByMeAgentsList, setMadeByMeAgentsList] = useState<
     SelectPublicAgent[]
@@ -276,6 +349,9 @@ function AgentComponent() {
     SelectPublicAgent[]
   >([])
   const [editingAgent, setEditingAgent] = useState<SelectPublicAgent | null>(
+    null,
+  )
+  const [viewingAgent, setViewingAgent] = useState<SelectPublicAgent | null>(
     null,
   )
   const [selectedChatAgentExternalId, setSelectedChatAgentExternalId] =
@@ -366,6 +442,7 @@ function AgentComponent() {
         const data = await response.json()
         // Extract the actual items from the Vespa response structure
         const items = data?.root?.children || []
+
         setCurrentItems(items)
       }
     } catch (error) {
@@ -379,10 +456,13 @@ function AgentComponent() {
     folderId: string,
     folderName: string,
   ) => {
-    setNavigationPath((prev) => [
-      ...prev,
-      { id: folderId, name: folderName, type: "drive-folder" },
-    ])
+    setNavigationPath((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1].id === folderId) {
+        return prev
+      }
+      return [...prev, { id: folderId, name: folderName, type: "drive-folder" }]
+    })
+
     setIsLoadingItems(true)
     try {
       const response = await api.search.driveitem.$post({
@@ -392,6 +472,7 @@ function AgentComponent() {
         const data = await response.json()
         // Extract the actual items from the Vespa response structure
         const items = data?.root?.children || []
+
         setCurrentItems(items)
       }
     } catch (error) {
@@ -426,24 +507,24 @@ function AgentComponent() {
     const newPath =
       navigationPath.length === 1 && navigationPath[0].type === "cl-root"
         ? [
-            {
-              id: "cl-root",
-              name: "Collection",
-              type: "cl-root" as const,
-            },
-            {
-              id: clId,
-              name: clName,
-              type: "cl" as const,
-            },
-          ]
+          {
+            id: "cl-root",
+            name: "Collection",
+            type: "cl-root" as const,
+          },
+          {
+            id: clId,
+            name: clName,
+            type: "cl" as const,
+          },
+        ]
         : [
-            {
-              id: clId,
-              name: clName,
-              type: "cl" as const,
-            },
-          ]
+          {
+            id: clId,
+            name: clName,
+            type: "cl" as const,
+          },
+        ]
 
     setNavigationPath(newPath)
     setIsLoadingItems(true)
@@ -478,12 +559,12 @@ function AgentComponent() {
 
         let response
         if (isInGoogleDriveContext) {
-          // Search Google Drive items
           response = await api.search.$get({
             query: {
               query: dropdownSearchQuery,
               app: Apps.GoogleDrive,
               isAgentIntegSearch: true,
+              entity: Object.values(DriveEntity),
             },
           })
         } else {
@@ -769,6 +850,60 @@ function AgentComponent() {
     fetchInitialAgentForChat()
   }, [agentId, toast])
 
+  const handleEditAgent = useCallback((agent: SelectPublicAgent) => {
+    resetForm()
+    setEditingAgent(agent)
+    setViewMode("create")
+  }, [])// Empty deps because resetForm and setState functions are stable
+
+
+
+  useEffect(() => {
+    const abortController = new AbortController()  // ✅ Create abort controller
+
+    const loadAgentForEdit = async () => {
+      if (agentId && mode === 'edit') {
+        try {
+          const response = await api.agent[":agentExternalId"].$get({
+            param: { agentExternalId: agentId },
+          }, {
+            signal: abortController.signal  // ✅ Pass abort signal to request
+          })
+
+          // ✅ No need to check cancelled flag - request is aborted
+          if (response.ok) {
+            const agentData = (await response.json()) as SelectPublicAgent
+            handleEditAgent(agentData)
+          } else {
+            toast.error({
+              title: "Error",
+              description: `Failed to load agent ${agentId} for editing.`,
+            })
+          }
+        } catch (error) {
+          // ✅ AbortError is thrown when request is cancelled
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.log('Agent fetch was cancelled')
+            return  // Don't show error toast for intentional cancellation
+          }
+
+          toast.error({
+            title: "Error",
+            description: "An error occurred while loading agent for editing.",
+          })
+          console.error("Fetch agent for edit error:", error)
+        }
+      }
+    }
+
+    loadAgentForEdit()
+
+    return () => {
+      abortController.abort()  // ✅ Actually cancel the HTTP request
+    }
+  }, [agentId, mode, handleEditAgent])  // ✅ Include handleEditAgent in deps
+
+
   // Cleanup EventSource on component unmount to prevent memory leaks
   useEffect(() => {
     return () => {
@@ -948,8 +1083,8 @@ function AgentComponent() {
       } catch (err) {
         console.error("Failed to create EventSource:", err)
         toast({
-          title: "Failed to create EventSource",
-          description: "Failed to create EventSource",
+          title: "Error",
+          description: "Something went wrong. Please try again.",
           variant: "destructive",
         })
         return
@@ -1085,10 +1220,10 @@ function AgentComponent() {
     setViewMode("create")
   }
 
-  const handleEditAgent = (agent: SelectPublicAgent) => {
-    resetForm()
-    setEditingAgent(agent)
-    setViewMode("create")
+
+  const handleViewAgent = (agent: SelectPublicAgent) => {
+    setViewingAgent(agent)
+    setViewMode("viewAgent")
   }
 
   const allAvailableIntegrations = useMemo(() => {
@@ -1101,7 +1236,6 @@ function AgentComponent() {
         icon: getIcon(Apps.DataSource, "datasource", { w: 16, h: 16, mr: 8 }),
       }),
     )
-
     const collectionSources: IntegrationSource[] = fetchedCollections.map(
       (cl) => ({
         id: `cl_${cl.id}`,
@@ -1569,6 +1703,7 @@ function AgentComponent() {
             const existingUsers = users.filter((user) =>
               data.userEmails.includes(user.email),
             )
+
             setSelectedUsers(existingUsers)
           }
         } catch (error) {
@@ -1815,7 +1950,10 @@ function AgentComponent() {
   const toggleIntegrationSelection = (integrationId: string) => {
     setSelectedIntegrations((prev) => {
       const newValue = !prev[integrationId]
-
+      if (integrationId === "googledrive" && !newValue) {
+        setSelectedItemsInGoogleDrive(new Set())
+        setSelectedItemDetailsInGoogleDrive({})
+      }
       // If it's a collection integration and we're deselecting it, clear its items
       if (integrationId.startsWith("cl_") && !newValue) {
         const clId = integrationId.replace("cl_", "")
@@ -1987,46 +2125,43 @@ function AgentComponent() {
     }
 
     // Handle Google Drive items
-    if (
-      selectedIntegrations["googledrive"] &&
-      selectedItemsInGoogleDrive.size > 0
-    ) {
-      // If specific Google Drive items are selected, show individual file/folder pills
-      for (const itemId of selectedItemsInGoogleDrive) {
-        const item = selectedItemDetailsInGoogleDrive[itemId]
-        if (item) {
-          // Handle both search results and direct navigation results
-          const itemTitle =
-            item.fields?.title ||
-            item.fields?.name ||
-            item.title ||
-            item.name ||
-            "Untitled"
-          const itemEntity = item.fields?.entity || item.entity
-          const isFolder = itemEntity === DriveEntity.Folder
-
+    if (selectedIntegrations["googledrive"]) {
+      if (selectedItemsInGoogleDrive.size === 0) {
+        const googleDriveIntegration = allAvailableIntegrations.find(
+          (int) => int.id === "googledrive",
+        )
+        if (googleDriveIntegration) {
           result.push({
-            id: `googledrive_${itemId}`,
-            name: itemTitle,
-            icon: getDriveEntityIcon(itemEntity),
-            type: isFolder ? "folder" : "file",
+            ...googleDriveIntegration,
+            type: "integration",
           })
         }
-      }
-    } else if (selectedIntegrations["googledrive"]) {
-      // If no specific items are selected but Google Drive is checked, show the main Google Drive pill
-      const googleDriveIntegration = allAvailableIntegrations.find(
-        (int) => int.id === "googledrive",
-      )
-      if (googleDriveIntegration) {
-        result.push({
-          ...googleDriveIntegration,
-          type: "integration",
-        })
+      } else {
+        // If specific Google Drive items are selected, show individual file/folder pills
+        for (const itemId of selectedItemsInGoogleDrive) {
+          const item = selectedItemDetailsInGoogleDrive[itemId]
+          if (item) {
+            // Handle both search results and direct navigation results
+            const itemTitle =
+              item.fields?.title ||
+              item.fields?.name ||
+              item.title ||
+              item.name ||
+              "Untitled"
+            const itemEntity = item.fields?.entity || item.entity
+            const isFolder = itemEntity === DriveEntity.Folder
+
+            result.push({
+              id: `googledrive_${itemId}`,
+              name: itemTitle,
+              icon: getDriveEntityIcon(itemEntity),
+              type: isFolder ? "folder" : "file",
+            })
+          }
+        }
       }
     }
 
-    // Handle collections
     allAvailableIntegrations.forEach((integration) => {
       if (
         integration.id.startsWith("cl_") &&
@@ -2036,13 +2171,11 @@ function AgentComponent() {
         const selectedItems = selectedItemsInCollection[clId] || new Set()
 
         if (selectedItems.size === 0) {
-          // If no specific items are selected, show the whole CL pill
           result.push({
             ...integration,
             type: "cl",
           })
         } else {
-          // If specific items are selected, show individual file/folder pills
           const itemDetails = selectedItemDetailsInCollection[clId] || {}
 
           selectedItems.forEach((itemId) => {
@@ -2054,53 +2187,7 @@ function AgentComponent() {
 
               // Determine the icon based on the type from the mapping or the item type
               const itemType = integrationIdToNameMap[itemId]?.type || item.type
-              const itemIcon =
-                itemType === "folder" ? (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-gray-700"
-                  >
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                  </svg>
-                ) : itemType === "collection" ? (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-blue-600"
-                  >
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                  </svg>
-                ) : (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-gray-600"
-                  >
-                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-                    <polyline points="13 2 13 9 20 9"></polyline>
-                  </svg>
-                )
-
+              const itemIcon = getItemIcon(itemType)
               result.push({
                 id: `${clId}_${itemId}`,
                 name: displayName,
@@ -2360,8 +2447,8 @@ function AgentComponent() {
     } catch (err) {
       console.error("Failed to create EventSource:", err)
       toast({
-        title: "Failed to create EventSource",
-        description: "Failed to create EventSource",
+        title: "Error",
+        description: "Something went wrong. Please try again.",
         variant: "destructive",
       })
       return
@@ -2391,7 +2478,7 @@ function AgentComponent() {
       }))
     })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.Start, () => {})
+    eventSourceRef.current.addEventListener(ChatSSEvents.Start, () => { })
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
@@ -2641,57 +2728,6 @@ function AgentComponent() {
     container.scrollTop = container.scrollHeight
   }, [messages, currentResp?.resp])
 
-  // Helper function for Google Drive item selection
-  function handleGoogleDriveItemSelection(
-    itemId: string,
-    itemDetail: any,
-    selectedItemsInGoogleDrive: Set<string>,
-    setSelectedItemsInGoogleDrive: React.Dispatch<
-      React.SetStateAction<Set<string>>
-    >,
-    setSelectedItemDetailsInGoogleDrive: React.Dispatch<
-      React.SetStateAction<Record<string, any>>
-    >,
-    setSelectedIntegrations: React.Dispatch<
-      React.SetStateAction<Record<string, boolean>>
-    >,
-  ) {
-    const isCurrentlySelected = selectedItemsInGoogleDrive.has(itemId)
-
-    setSelectedItemsInGoogleDrive((prev) => {
-      const newSet = new Set(prev)
-      if (isCurrentlySelected) {
-        newSet.delete(itemId)
-      } else {
-        newSet.add(itemId)
-      }
-      return newSet
-    })
-
-    setSelectedItemDetailsInGoogleDrive((prev) => {
-      const newState = { ...prev }
-      if (isCurrentlySelected) {
-        delete newState[itemId]
-      } else {
-        newState[itemId] = itemDetail
-      }
-      return newState
-    })
-
-    setSelectedIntegrations((prev) => {
-      const newSelectedSet = new Set(selectedItemsInGoogleDrive)
-      if (isCurrentlySelected) {
-        newSelectedSet.delete(itemId)
-      } else {
-        newSelectedSet.add(itemId)
-      }
-      return {
-        ...prev,
-        googledrive: newSelectedSet.size > 0,
-      }
-    })
-  }
-
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-white dark:bg-[#1E1E1E]">
       <Sidebar
@@ -2721,26 +2757,40 @@ function AgentComponent() {
               <div className="w-full max-w-3xl mx-auto px-4 pt-0 pb-6">
                 <div className="flex flex-col space-y-6">
                   <div className="flex justify-between items-center">
-                    <h1 className="text-4xl tracking-wider font-display text-gray-700 dark:text-gray-100">
+                    <h1 className="text-[32px] tracking-wider font-display text-gray-700 dark:text-gray-100">
                       AGENTS
                     </h1>
                     <div className="flex items-center gap-4 ">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                        <input
-                          type="text"
-                          placeholder="Search agents.."
-                          value={listSearchQuery}
-                          onChange={handleListSearchChange}
-                          className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
-                        />
-                      </div>
-                      <Button
-                        onClick={handleCreateNewAgent}
-                        className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
-                      >
-                        <Plus size={18} /> CREATE
-                      </Button>
+                      {(() => {
+                        // Calculate whether current tab has agents
+                        const agentLists: Record<string, SelectPublicAgent[]> = {
+                          "all": allAgentsList,
+                          "made-by-me": madeByMeAgentsList,
+                          "shared-to-me": sharedToMeAgentsList,
+                        }
+                        const currentTabHasAgents = (agentLists[activeTab]?.length ?? 0) > 0
+
+                        return currentTabHasAgents && (
+                          <>
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                              <input
+                                type="text"
+                                placeholder="Search agents.."
+                                value={listSearchQuery}
+                                onChange={handleListSearchChange}
+                                className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
+                              />
+                            </div>
+                            <Button
+                              onClick={handleCreateNewAgent}
+                              className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
+                            >
+                              <Plus size={18} /> CREATE
+                            </Button>
+                          </>
+                        )
+                      })()}
                     </div>
                   </div>
 
@@ -2794,46 +2844,42 @@ function AgentComponent() {
                     )
                   })()}
 
-                  {(allAgentsList.length > 0 ||
-                    madeByMeAgentsList.length > 0 ||
-                    sharedToMeAgentsList.length > 0) && ( // Only show tabs if there are agents in any list
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex space-x-2">
-                        <TabButton
-                          active={activeTab === "all"}
-                          onClick={() => handleTabChange("all")}
-                          icon="asterisk"
-                          label="ALL"
-                        />
-                        <TabButton
-                          active={activeTab === "shared-to-me"}
-                          onClick={() => handleTabChange("shared-to-me")}
-                          icon="users"
-                          label="SHARED-WITH-ME"
-                        />
-                        <TabButton
-                          active={activeTab === "made-by-me"}
-                          onClick={() => handleTabChange("made-by-me")}
-                          icon="user"
-                          label="MADE-BY-ME"
-                        />
-                      </div>
-                      <div>
-                        <Button
-                          onClick={fetchAllAgentData}
-                          variant="outline"
-                          size="sm"
-                          className="text-xs flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700"
-                          disabled={isLoadingAgents}
-                        >
-                          <RefreshCw
-                            size={14}
-                            className={`${isLoadingAgents ? "animate-spin" : ""}`}
-                          />
-                        </Button>
-                      </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex space-x-2">
+                      <TabButton
+                        active={activeTab === "all"}
+                        onClick={() => handleTabChange("all")}
+                        icon="asterisk"
+                        label="ALL"
+                      />
+                      <TabButton
+                        active={activeTab === "shared-to-me"}
+                        onClick={() => handleTabChange("shared-to-me")}
+                        icon="users"
+                        label="SHARED-WITH-ME"
+                      />
+                      <TabButton
+                        active={activeTab === "made-by-me"}
+                        onClick={() => handleTabChange("made-by-me")}
+                        icon="user"
+                        label="MADE-BY-ME"
+                      />
                     </div>
-                  )}
+                    <div>
+                      <Button
+                        onClick={fetchAllAgentData}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700"
+                        disabled={isLoadingAgents}
+                      >
+                        <RefreshCw
+                          size={14}
+                          className={`${isLoadingAgents ? "animate-spin" : ""}`}
+                        />
+                      </Button>
+                    </div>
+                  </div>
 
                   {(() => {
                     let currentListToDisplay: SelectPublicAgent[] = []
@@ -2884,13 +2930,36 @@ function AgentComponent() {
                     }
 
                     if (currentListToDisplay.length === 0 && !listSearchQuery) {
+                      const isSharedTab = activeTab === "shared-to-me"
+                      const title = isSharedTab
+                        ? "No agents shared with you yet"
+                        : "No agents created yet"
+                      const description = isSharedTab
+                        ? null
+                        : "Click 'Create Agent' to add your first agent"
+
                       return (
-                        <div className="text-center py-10 text-gray-500 dark:text-gray-400">
-                          <p className="text-lg mb-2">
-                            No agents in this category yet.
+                        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+                          <img
+                            src={agentEmptyStateIcon}
+                            alt="No agents"
+                            className="w-32 h-32 mb-6 opacity-60"
+                          />
+                          <p className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            {title}
                           </p>
-                          {activeTab === "all" && (
-                            <p>Click "CREATE" to get started.</p>
+                          {description && (
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                              {description}
+                            </p>
+                          )}
+                          {!isSharedTab && (
+                            <Button
+                              onClick={handleCreateNewAgent}
+                              className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
+                            >
+                              <Plus size={18} /> CREATE AGENT
+                            </Button>
                           )}
                         </div>
                       )
@@ -2899,37 +2968,44 @@ function AgentComponent() {
                     return (
                       <>
                         <div className="space-y-0">
-                          {paginatedList.map((agent) => (
-                            <AgentListItem
-                              key={agent.externalId}
-                              agent={agent}
-                              isFavorite={favoriteAgents.includes(
-                                agent.externalId,
-                              )}
-                              isShared={
-                                activeTab === "all" &&
-                                sharedToMeAgentsList.some(
-                                  (sharedAgent) =>
-                                    sharedAgent.externalId === agent.externalId,
-                                )
-                              }
-                              isMadeByMe={madeByMeAgentsList.some(
-                                (madeByMeAgent) =>
-                                  madeByMeAgent.externalId === agent.externalId,
-                              )}
-                              onToggleFavorite={toggleFavorite}
-                              onEdit={() => handleEditAgent(agent)}
-                              onDelete={() =>
-                                handleDeleteAgent(agent.externalId)
-                              }
-                              onClick={() =>
-                                navigate({
-                                  to: "/",
-                                  search: { agentId: agent.externalId },
-                                })
-                              }
-                            />
-                          ))}
+                          {paginatedList.map((agent) => {
+                            const isShared =
+                              (activeTab === "all" ||
+                                activeTab === "shared-to-me") &&
+                              sharedToMeAgentsList.some(
+                                (sharedAgent) =>
+                                  sharedAgent.externalId === agent.externalId,
+                              )
+
+                            return (
+                              <AgentListItem
+                                key={agent.externalId}
+                                agent={agent}
+                                isFavorite={favoriteAgents.includes(
+                                  agent.externalId,
+                                )}
+                                isAgentPublic={agent.isPublic}
+                                isShared={isShared}
+                                isMadeByMe={madeByMeAgentsList.some(
+                                  (madeByMeAgent) =>
+                                    madeByMeAgent.externalId ===
+                                    agent.externalId,
+                                )}
+                                onToggleFavorite={toggleFavorite}
+                                onEdit={() => handleEditAgent(agent)}
+                                onView={() => handleViewAgent(agent)}
+                                onDelete={() =>
+                                  handleDeleteAgent(agent.externalId)
+                                }
+                                onClick={() =>
+                                  navigate({
+                                    to: "/",
+                                    search: { agentId: agent.externalId },
+                                  })
+                                }
+                              />
+                            )
+                          })}
                         </div>
                         {totalPages > 1 && (
                           <div className="flex justify-between items-center mt-6">
@@ -2968,6 +3044,11 @@ function AgentComponent() {
                 </div>
               </div>
             </div>
+          ) : viewMode === "viewAgent" && viewingAgent ? (
+            <ViewAgent
+              agent={viewingAgent}
+              onBack={() => setViewMode("list")}
+            />
           ) : (
             <>
               <div className="flex items-center mb-4 w-full max-w-xl">
@@ -3040,11 +3121,10 @@ function AgentComponent() {
                             className="h-8 w-8 p-0"
                           >
                             <Sparkles
-                              className={`h-4 w-4 ${
-                                isGeneratingPrompt
-                                  ? "animate-pulse text-blue-600 dark:text-blue-400"
-                                  : ""
-                              }`}
+                              className={`h-4 w-4 ${isGeneratingPrompt
+                                ? "animate-pulse text-blue-600 dark:text-blue-400"
+                                : ""
+                                }`}
                             />
                           </Button>
                         </TooltipTrigger>
@@ -3070,11 +3150,10 @@ function AgentComponent() {
                         setShouldHighlightPrompt(false)
                       }
                     }}
-                    className={`mt-1 bg-white dark:bg-slate-700 border rounded-lg w-full h-36 p-3 text-base dark:text-gray-100 transition-all duration-300 ${
-                      shouldHighlightPrompt
-                        ? "border-blue-400 ring-2 ring-blue-200 dark:border-blue-500 dark:ring-blue-900/50 shadow-lg"
-                        : "border-gray-300 dark:border-slate-600"
-                    }`}
+                    className={`mt-1 bg-white dark:bg-slate-700 border rounded-lg w-full h-36 p-3 text-base dark:text-gray-100 transition-all duration-300 ${shouldHighlightPrompt
+                      ? "border-blue-400 ring-2 ring-blue-200 dark:border-blue-500 dark:ring-blue-900/50 shadow-lg"
+                      : "border-gray-300 dark:border-slate-600"
+                      }`}
                     disabled={isGeneratingPrompt}
                   />
                 </div>
@@ -3130,15 +3209,15 @@ function AgentComponent() {
                       </p>
                     </div>
                     {/* <div className="flex items-center gap-3">
-                      <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        RAG
-                      </Label>
-                      <Switch
-                        checked={isRagOn}
-                        onCheckedChange={setIsRagOn}
-                        id="rag-toggle"
-                      />
-                    </div> */}
+                        <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          RAG
+                        </Label>
+                        <Switch
+                          checked={isRagOn}
+                          onCheckedChange={setIsRagOn}
+                          id="rag-toggle"
+                        />
+                      </div> */}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
                     {currentSelectedIntegrationObjects.length === 0 && (
@@ -3241,7 +3320,7 @@ function AgentComponent() {
                                           // Collections navigation
                                           const parentId =
                                             newPath[newPath.length - 1]?.id ===
-                                            clId
+                                              clId
                                               ? null
                                               : newPath[newPath.length - 1]?.id
 
@@ -3276,7 +3355,7 @@ function AgentComponent() {
                                           // Google Drive navigation
                                           const parentFolderId =
                                             newPath[newPath.length - 1]?.id ===
-                                            "drive-root"
+                                              "drive-root"
                                               ? ""
                                               : newPath[newPath.length - 1]?.id
 
@@ -3295,6 +3374,7 @@ function AgentComponent() {
                                                     // Extract the actual items from the Vespa response structure
                                                     const items =
                                                       data?.root?.children || []
+
                                                     setCurrentItems(items)
                                                     setIsLoadingItems(false)
                                                   })
@@ -3332,11 +3412,13 @@ function AgentComponent() {
                                         navigationPath.length <= 3
                                           ? navigationPath
                                           : navigationPath.slice(
-                                              navigationPath.length - 3,
-                                            )
+                                            navigationPath.length - 3,
+                                          )
 
                                       return itemsToShow.map((item, index) => (
-                                        <React.Fragment key={item.id}>
+                                        <React.Fragment
+                                          key={`${item.id}-${index}`}
+                                        >
                                           <span className="mx-2 flex-shrink-0">
                                             /
                                           </span>
@@ -3353,6 +3435,7 @@ function AgentComponent() {
                                                   navigationPath.findIndex(
                                                     (p) => p.id === item.id,
                                                   )
+
                                                 if (newPathIndex >= 0) {
                                                   const newPath =
                                                     navigationPath.slice(
@@ -3364,11 +3447,13 @@ function AgentComponent() {
                                                   if (
                                                     newPath.length === 1 &&
                                                     newPath[0].type ===
-                                                      "cl-root"
+                                                    "cl-root"
                                                   ) {
                                                     setCurrentItems([])
                                                   } else if (
-                                                    newPath.length > 1
+                                                    newPath.length > 1 &&
+                                                    newPath[0].type ===
+                                                    "cl-root"
                                                   ) {
                                                     const clId = newPath.find(
                                                       (item) =>
@@ -3380,8 +3465,8 @@ function AgentComponent() {
                                                       ]?.id === clId
                                                         ? null
                                                         : newPath[
-                                                            newPath.length - 1
-                                                          ]?.id
+                                                          newPath.length - 1
+                                                        ]?.id
 
                                                     if (clId) {
                                                       setIsLoadingItems(true)
@@ -3420,6 +3505,35 @@ function AgentComponent() {
                                                           ),
                                                         )
                                                     }
+                                                  } else if (
+                                                    newPath.length === 1 &&
+                                                    newPath[0].type ===
+                                                    "drive-root"
+                                                  ) {
+                                                    navigateToGoogleDrive()
+                                                  } else if (
+                                                    newPath.length > 1 &&
+                                                    newPath[0].type ===
+                                                    "drive-root"
+                                                  ) {
+                                                    if (
+                                                      newPath[
+                                                        newPath.length - 1
+                                                      ].type === "drive-folder"
+                                                    ) {
+                                                      const FolderId =
+                                                        newPath[
+                                                          newPath.length - 1
+                                                        ].id
+                                                      const FolderName =
+                                                        newPath[
+                                                          newPath.length - 1
+                                                        ].name
+                                                      navigateToDriveFolder(
+                                                        FolderId,
+                                                        FolderName,
+                                                      )
+                                                    }
                                                   }
                                                 }
                                               }
@@ -3454,21 +3568,48 @@ function AgentComponent() {
                         <div className="bg-white dark:bg-gray-900 max-h-72 min-h-72 overflow-y-auto rounded-lg mx-1 mb-1">
                           {navigationPath.length === 0
                             ? // Main menu
-                              (() => {
-                                const collections =
-                                  allAvailableIntegrations.filter(
-                                    (integration) =>
-                                      integration.id.startsWith("cl_"),
-                                  )
-                                const otherIntegrations =
-                                  allAvailableIntegrations.filter(
-                                    (integration) =>
-                                      !integration.id.startsWith("cl_"),
-                                  )
+                            (() => {
+                              const collections =
+                                allAvailableIntegrations.filter(
+                                  (integration) =>
+                                    integration.id.startsWith("cl_"),
+                                )
+                              const otherIntegrations =
+                                allAvailableIntegrations.filter(
+                                  (integration) =>
+                                    !integration.id.startsWith("cl_"),
+                                )
 
                                 return (
                                   <>
-                                    {/* Regular integrations */}
+                                    {collections.length > 0 && (
+                                      <DropdownMenuItem
+                                        onSelect={(e) => {
+                                          e.preventDefault()
+                                          setNavigationPath([
+                                            {
+                                              id: "cl-root",
+                                              name: "Collections",
+                                              type: "cl-root",
+                                            },
+                                          ])
+                                          setDropdownSearchQuery("")
+                                        }}
+                                        className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                      >
+                                        <div className="flex items-center">
+                                          <div className="w-4 h-4 mr-3"> </div>
+                                          <span className="mr-2 flex items-center">
+                                            <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
+                                          </span>
+                                          <span className="text-gray-700 dark:text-gray-200">
+                                            Collections
+                                          </span>
+                                        </div>
+                                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                                      </DropdownMenuItem>
+                                    )}
+
                                     {otherIntegrations.map((integration) => {
                                       const isGoogleDrive =
                                         integration.app === Apps.GoogleDrive &&
@@ -3521,62 +3662,36 @@ function AgentComponent() {
                                         </DropdownMenuItem>
                                       )
                                     })}
-
-                                    {/* Collections item */}
-                                    {collections.length > 0 && (
-                                      <DropdownMenuItem
-                                        onSelect={(e) => {
-                                          e.preventDefault()
-                                          setNavigationPath([
-                                            {
-                                              id: "cl-root",
-                                              name: "Collections",
-                                              type: "cl-root",
-                                            },
-                                          ])
-                                          setDropdownSearchQuery("")
-                                        }}
-                                        className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                      >
-                                        <div className="flex items-center">
-                                          <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
-                                          <span className="text-gray-700 dark:text-gray-200">
-                                            Collections
-                                          </span>
-                                        </div>
-                                        <ChevronRight className="h-4 w-4 text-gray-400" />
-                                      </DropdownMenuItem>
-                                    )}
                                   </>
                                 )
                               })()
                             : // Unified Collections section - handles both CL listing and file/folder navigation
-                              (() => {
-                                // const knowledgeBases = allAvailableIntegrations.filter(integration =>
-                                //   integration.id.startsWith('cl_')
-                                // )
+                            (() => {
+                              // const knowledgeBases = allAvailableIntegrations.filter(integration =>
+                              //   integration.id.startsWith('cl_')
+                              // )
 
-                                // Determine if we're showing Collection list or Collection contents
-                                const isShowingKbList =
-                                  navigationPath.length === 1 &&
-                                  navigationPath[0].type === "cl-root"
-                                const isShowingKbContents =
-                                  navigationPath.length > 1 ||
-                                  (navigationPath.length === 1 &&
-                                    navigationPath[0].type === "cl")
-                                const isShowingDriveContents =
-                                  navigationPath.length > 0 &&
-                                  (navigationPath[0].type === "drive-root" ||
-                                    navigationPath.some(
-                                      (item) => item.type === "drive-folder",
-                                    ))
+                              // Determine if we're showing Collection list or Collection contents
+                              const isShowingKbList =
+                                navigationPath.length === 1 &&
+                                navigationPath[0].type === "cl-root"
+                              const isShowingKbContents =
+                                navigationPath.length > 1 ||
+                                (navigationPath.length === 1 &&
+                                  navigationPath[0].type === "cl")
+                              const isShowingDriveContents =
+                                navigationPath.length > 0 &&
+                                (navigationPath[0].type === "drive-root" ||
+                                  navigationPath.some(
+                                    (item) => item.type === "drive-folder",
+                                  ))
 
-                                return (
-                                  <>
-                                    {/* Single unified search input */}
-                                    {(isShowingKbList ||
-                                      isShowingKbContents ||
-                                      isShowingDriveContents) && (
+                              return (
+                                <>
+                                  {/* Single unified search input */}
+                                  {(isShowingKbList ||
+                                    isShowingKbContents ||
+                                    isShowingDriveContents) && (
                                       <div className="border-b border-gray-200 dark:border-gray-700">
                                         <div className="relative">
                                           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -3615,6 +3730,12 @@ function AgentComponent() {
                                     {(() => {
                                       // If there's a search query, always show global search results
                                       if (dropdownSearchQuery.trim()) {
+                                        const isInGoogleDriveContext =
+                                          navigationPath.some(
+                                            (item) =>
+                                              item.type === "drive-root" ||
+                                              item.type === "drive-folder",
+                                          )
                                         return (
                                           <div className="max-h-60 overflow-y-auto">
                                             {isSearching ? (
@@ -3622,248 +3743,192 @@ function AgentComponent() {
                                                 Searching...
                                               </div>
                                             ) : searchResults.length > 0 ? (
-                                              searchResults.map(
-                                                (result: any) => {
-                                                  // Check if we're in Google Drive context for proper handling
-                                                  const isInGoogleDriveContext =
-                                                    navigationPath.some(
-                                                      (item) =>
-                                                        item.type ===
-                                                          "drive-root" ||
-                                                        item.type ===
-                                                          "drive-folder",
-                                                    )
+                                              isInGoogleDriveContext ? (
+                                                <GoogleDriveNavigation
+                                                  navigationPath={
+                                                    navigationPath
+                                                  }
+                                                  setNavigationPath={
+                                                    setNavigationPath
+                                                  }
+                                                  currentItems={currentItems}
+                                                  setCurrentItems={
+                                                    setCurrentItems
+                                                  }
+                                                  isLoadingItems={
+                                                    isLoadingItems
+                                                  }
+                                                  setIsLoadingItems={
+                                                    setIsLoadingItems
+                                                  }
+                                                  dropdownSearchQuery={
+                                                    dropdownSearchQuery
+                                                  }
+                                                  setDropdownSearchQuery={
+                                                    setDropdownSearchQuery
+                                                  }
+                                                  searchResults={searchResults}
+                                                  isSearching={isSearching}
+                                                  selectedItemsInGoogleDrive={
+                                                    selectedItemsInGoogleDrive
+                                                  }
+                                                  setSelectedItemsInGoogleDrive={
+                                                    setSelectedItemsInGoogleDrive
+                                                  }
+                                                  selectedItemDetailsInGoogleDrive={
+                                                    selectedItemDetailsInGoogleDrive
+                                                  }
+                                                  setSelectedItemDetailsInGoogleDrive={
+                                                    setSelectedItemDetailsInGoogleDrive
+                                                  }
+                                                  selectedIntegrations={
+                                                    selectedIntegrations
+                                                  }
+                                                  setSelectedIntegrations={
+                                                    setSelectedIntegrations
+                                                  }
+                                                />
+                                              ) : (
+                                                searchResults.map(
+                                                  (result: any) => {
+                                                    // Check if we're in Google Drive context for proper handling
 
-                                                  if (isInGoogleDriveContext) {
-                                                    // Handle Google Drive search results
-                                                    const itemId = result.docId
-                                                    const itemEntity =
-                                                      result.entity
-                                                    const itemTitle =
-                                                      result.title ||
-                                                      result.name ||
-                                                      "Untitled"
-                                                    const isFolder =
-                                                      itemEntity ===
-                                                      DriveEntity.Folder
-
-                                                    const handleFolderNavigation =
-                                                      () => {
-                                                        if (
-                                                          isFolder &&
-                                                          result.fields?.docId
-                                                        ) {
-                                                          // Clear search query and results when navigating
-                                                          setDropdownSearchQuery(
-                                                            "",
-                                                          )
-                                                          setSearchResults([])
-                                                          navigateToDriveFolder(
-                                                            result.fields.docId,
-                                                            itemTitle,
-                                                          )
-                                                        }
-                                                      }
-
-                                                    return (
-                                                      <div
-                                                        key={itemId}
-                                                        className="flex items-center px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
-                                                      >
-                                                        <input
-                                                          type="checkbox"
-                                                          checked={selectedItemsInGoogleDrive.has(
-                                                            itemId,
-                                                          )}
-                                                          onChange={(e) => {
-                                                            e.stopPropagation()
-                                                            // Use helper function
-                                                            handleGoogleDriveItemSelection(
-                                                              itemId,
-                                                              // Normalize the data structure for search results
-                                                              {
-                                                                ...result,
-                                                                fields: {
-                                                                  docId:
-                                                                    result.docId ||
-                                                                    itemId,
-                                                                  title:
-                                                                    result.title ||
-                                                                    result.name ||
-                                                                    itemTitle,
-                                                                  name:
-                                                                    result.name ||
-                                                                    result.title ||
-                                                                    itemTitle,
-                                                                  entity:
-                                                                    result.entity ||
-                                                                    itemEntity,
-                                                                },
-                                                              },
-                                                              selectedItemsInGoogleDrive,
-                                                              setSelectedItemsInGoogleDrive,
-                                                              setSelectedItemDetailsInGoogleDrive,
-                                                              setSelectedIntegrations,
-                                                            )
-                                                          }}
-                                                          className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                                        />
-                                                        {getDriveEntityIcon(
-                                                          itemEntity,
-                                                        )}
-                                                        <span
-                                                          className={`text-gray-700 dark:text-gray-200 truncate flex-1 ${isFolder ? "cursor-pointer hover:text-blue-600 dark:hover:text-blue-400" : ""}`}
-                                                          onClick={
-                                                            handleFolderNavigation
-                                                          }
-                                                        >
-                                                          {itemTitle}
-                                                        </span>
-                                                        <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                                                          {isFolder
-                                                            ? "folder"
-                                                            : itemEntity ||
-                                                              "file"}
-                                                        </span>
-                                                      </div>
-                                                    )
-                                                  } else {
                                                     // Handle regular search results (knowledge-base, etc.)
                                                     // Check if the item is directly selected vs inherited from parent
                                                     const isDirectlySelected =
                                                       result.type ===
                                                       "collection"
-                                                        ? selectedIntegrations[
-                                                            `cl_${result.id}`
-                                                          ]
-                                                        : selectedItemsInCollection[
-                                                            result.collectionId
-                                                          ]?.has(result.id)
+                                                      ? selectedIntegrations[
+                                                      `cl_${result.id}`
+                                                      ]
+                                                      : selectedItemsInCollection[
+                                                        result.collectionId
+                                                      ]?.has(result.id)
 
-                                                    const isSelected =
-                                                      result.type ===
+                                                  const isSelected =
+                                                    result.type ===
                                                       "collection"
-                                                        ? selectedIntegrations[
-                                                            `cl_${result.id}`
-                                                          ]
-                                                        : isItemSelectedWithInheritance(
-                                                            result,
-                                                            selectedItemsInCollection,
-                                                            selectedIntegrations,
-                                                            selectedItemDetailsInCollection,
-                                                          )
+                                                      ? selectedIntegrations[
+                                                      `cl_${result.id}`
+                                                      ]
+                                                      : isItemSelectedWithInheritance(
+                                                        result,
+                                                        selectedItemsInCollection,
+                                                        selectedIntegrations,
+                                                        selectedItemDetailsInCollection,
+                                                      )
 
-                                                    const isInherited =
-                                                      isSelected &&
-                                                      !isDirectlySelected
+                                                  const isInherited =
+                                                    isSelected &&
+                                                    !isDirectlySelected
 
-                                                    const handleResultSelect =
-                                                      () => {
-                                                        // Don't allow selection changes for inherited items
-                                                        if (isInherited) return
+                                                  const handleResultSelect =
+                                                    () => {
+                                                      // Don't allow selection changes for inherited items
+                                                      if (isInherited) return
 
+                                                      if (
+                                                        result.type ===
+                                                        "collection"
+                                                      ) {
+                                                        // Toggle collection selection
+                                                        const integrationId = `cl_${result.id}`
+                                                        toggleIntegrationSelection(
+                                                          integrationId,
+                                                        )
+                                                      } else if (
+                                                        result.type ===
+                                                        "folder" ||
+                                                        result.type === "file"
+                                                      ) {
+                                                        // For folders and files, first make sure the collection is selected
+                                                        const collectionIntegrationId = `cl_${result.collectionId}`
+
+                                                        // Ensure collection is selected
                                                         if (
-                                                          result.type ===
-                                                          "collection"
+                                                          !selectedIntegrations[
+                                                          collectionIntegrationId
+                                                          ]
                                                         ) {
-                                                          // Toggle collection selection
-                                                          const integrationId = `cl_${result.id}`
                                                           toggleIntegrationSelection(
-                                                            integrationId,
-                                                          )
-                                                        } else if (
-                                                          result.type ===
-                                                            "folder" ||
-                                                          result.type === "file"
-                                                        ) {
-                                                          // For folders and files, first make sure the collection is selected
-                                                          const collectionIntegrationId = `cl_${result.collectionId}`
-
-                                                          // Ensure collection is selected
-                                                          if (
-                                                            !selectedIntegrations[
-                                                              collectionIntegrationId
-                                                            ]
-                                                          ) {
-                                                            toggleIntegrationSelection(
-                                                              collectionIntegrationId,
-                                                            )
-                                                          }
-
-                                                          // Then handle the specific item selection
-                                                          const clId =
-                                                            result.collectionId
-                                                          const itemId =
-                                                            result.id
-
-                                                          setSelectedItemsInCollection(
-                                                            (prev) => {
-                                                              const currentSelection =
-                                                                prev[clId] ||
-                                                                new Set()
-                                                              const newSelection =
-                                                                new Set(
-                                                                  currentSelection,
-                                                                )
-
-                                                              if (
-                                                                newSelection.has(
-                                                                  itemId,
-                                                                )
-                                                              ) {
-                                                                newSelection.delete(
-                                                                  itemId,
-                                                                )
-                                                              } else {
-                                                                newSelection.add(
-                                                                  itemId,
-                                                                )
-                                                              }
-
-                                                              return {
-                                                                ...prev,
-                                                                [clId]:
-                                                                  newSelection,
-                                                              }
-                                                            },
-                                                          )
-
-                                                          setSelectedItemDetailsInCollection(
-                                                            (prev) => {
-                                                              const newDetails =
-                                                                {
-                                                                  ...prev,
-                                                                }
-                                                              if (
-                                                                !newDetails[
-                                                                  clId
-                                                                ]
-                                                              ) {
-                                                                newDetails[
-                                                                  clId
-                                                                ] = {}
-                                                              }
-                                                              newDetails[clId][
-                                                                itemId
-                                                              ] = {
-                                                                id: itemId,
-                                                                name: result.name,
-                                                                type: result.type,
-                                                                path: result.path,
-                                                                collectionName:
-                                                                  result.collectionName,
-                                                              }
-                                                              return newDetails
-                                                            },
+                                                            collectionIntegrationId,
                                                           )
                                                         }
 
-                                                        // Close search and clear query
-                                                        setDropdownSearchQuery(
-                                                          "",
+                                                        // Then handle the specific item selection
+                                                        const clId =
+                                                          result.collectionId
+                                                        const itemId =
+                                                          result.id
+
+                                                        setSelectedItemsInCollection(
+                                                          (prev) => {
+                                                            const currentSelection =
+                                                              prev[clId] ||
+                                                              new Set()
+                                                            const newSelection =
+                                                              new Set(
+                                                                currentSelection,
+                                                              )
+
+                                                            if (
+                                                              newSelection.has(
+                                                                itemId,
+                                                              )
+                                                            ) {
+                                                              newSelection.delete(
+                                                                itemId,
+                                                              )
+                                                            } else {
+                                                              newSelection.add(
+                                                                itemId,
+                                                              )
+                                                            }
+
+                                                            return {
+                                                              ...prev,
+                                                              [clId]:
+                                                                newSelection,
+                                                            }
+                                                          },
                                                         )
-                                                        setSearchResults([])
+
+                                                        setSelectedItemDetailsInCollection(
+                                                          (prev) => {
+                                                            const newDetails =
+                                                            {
+                                                              ...prev,
+                                                            }
+                                                            if (
+                                                              !newDetails[
+                                                              clId
+                                                              ]
+                                                            ) {
+                                                              newDetails[
+                                                                clId
+                                                              ] = {}
+                                                            }
+                                                            newDetails[clId][
+                                                              itemId
+                                                            ] = {
+                                                              id: itemId,
+                                                              name: result.name,
+                                                              type: result.type,
+                                                              path: result.path,
+                                                              collectionName:
+                                                                result.collectionName,
+                                                            }
+                                                            return newDetails
+                                                          },
+                                                        )
                                                       }
+
+                                                      // Close search and clear query
+                                                      setDropdownSearchQuery(
+                                                        "",
+                                                      )
+                                                      setSearchResults([])
+                                                    }
 
                                                     return (
                                                       <div
@@ -3920,8 +3985,8 @@ function AgentComponent() {
                                                         </div>
                                                       </div>
                                                     )
-                                                  }
-                                                },
+                                                  },
+                                                )
                                               )
                                             ) : (
                                               <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
@@ -3933,123 +3998,123 @@ function AgentComponent() {
                                         )
                                       }
 
-                                      // If no search query, show navigation-based content
-                                      if (navigationPath.length === 0) {
-                                        // Main menu - show regular integrations and Collections option
-                                        const knowledgeBases =
-                                          allAvailableIntegrations.filter(
-                                            (integration) =>
-                                              integration.id.startsWith("cl_"),
-                                          )
-                                        const otherIntegrations =
-                                          allAvailableIntegrations.filter(
-                                            (integration) =>
-                                              !integration.id.startsWith("cl_"),
-                                          )
-                                        const hasSelectedKB =
-                                          knowledgeBases.some(
-                                            (cl) => selectedIntegrations[cl.id],
-                                          )
-
-                                        return (
-                                          <>
-                                            {/* Regular integrations */}
-                                            {otherIntegrations.map(
-                                              (integration) => {
-                                                const isGoogleDrive =
-                                                  integration.app ===
-                                                    Apps.GoogleDrive &&
-                                                  integration.entity === "file"
-                                                const showChevron =
-                                                  isGoogleDrive
-
-                                                return (
-                                                  <DropdownMenuItem
-                                                    key={integration.id}
-                                                    onSelect={(e) => {
-                                                      e.preventDefault()
-                                                      toggleIntegrationSelection(
-                                                        integration.id,
-                                                      )
-                                                    }}
-                                                    className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                                  >
-                                                    <div className="flex items-center">
-                                                      <input
-                                                        type="checkbox"
-                                                        checked={
-                                                          selectedIntegrations[
-                                                            integration.id
-                                                          ] || false
-                                                        }
-                                                        onChange={() => {}}
-                                                        className="w-4 h-4 mr-3"
-                                                      />
-                                                      <span className="mr-2 flex items-center">
-                                                        {integration.icon}
-                                                      </span>
-                                                      <span className="text-gray-700 dark:text-gray-200">
-                                                        {integration.name}
-                                                      </span>
-                                                    </div>
-                                                    {showChevron && (
-                                                      <ChevronRight className="h-4 w-4 text-gray-400" />
-                                                    )}
-                                                  </DropdownMenuItem>
-                                                )
-                                              },
-                                            )}
-
-                                            {/* Collections item */}
-                                            {knowledgeBases.length > 0 && (
-                                              <DropdownMenuItem
-                                                onSelect={(e) => {
-                                                  e.preventDefault()
-                                                  setNavigationPath([
-                                                    {
-                                                      id: "cl-root",
-                                                      name: "Collections",
-                                                      type: "cl-root",
-                                                    },
-                                                  ])
-                                                  setDropdownSearchQuery("")
-                                                }}
-                                                className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                              >
-                                                <div className="flex items-center">
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={hasSelectedKB}
-                                                    onChange={() => {}}
-                                                    className="w-4 h-4 mr-3"
-                                                  />
-                                                  <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
-                                                  <span className="text-gray-700 dark:text-gray-200">
-                                                    Collections
-                                                  </span>
-                                                </div>
-                                                <ChevronRight className="h-4 w-4 text-gray-400" />
-                                              </DropdownMenuItem>
-                                            )}
-                                          </>
+                                    // If no search query, show navigation-based content
+                                    if (navigationPath.length === 0) {
+                                      // Main menu - show regular integrations and Collections option
+                                      const knowledgeBases =
+                                        allAvailableIntegrations.filter(
+                                          (integration) =>
+                                            integration.id.startsWith("cl_"),
                                         )
-                                      } else if (
-                                        navigationPath.length === 1 &&
-                                        navigationPath[0].type === "cl-root"
-                                      ) {
-                                        // Show collections list
-                                        const knowledgeBases =
-                                          allAvailableIntegrations.filter(
-                                            (integration) =>
-                                              integration.id.startsWith("cl_"),
-                                          )
+                                      const otherIntegrations =
+                                        allAvailableIntegrations.filter(
+                                          (integration) =>
+                                            !integration.id.startsWith("cl_"),
+                                        )
+                                      const hasSelectedKB =
+                                        knowledgeBases.some(
+                                          (cl) => selectedIntegrations[cl.id],
+                                        )
 
-                                        return knowledgeBases.map(
-                                          (integration) => {
-                                            const clId = integration.id.replace(
-                                              "cl_",
-                                              "",
-                                            )
+                                      return (
+                                        <>
+                                          {/* Regular integrations */}
+                                          {otherIntegrations.map(
+                                            (integration) => {
+                                              const isGoogleDrive =
+                                                integration.app ===
+                                                Apps.GoogleDrive &&
+                                                integration.entity === "file"
+                                              const showChevron =
+                                                isGoogleDrive
+
+                                              return (
+                                                <DropdownMenuItem
+                                                  key={integration.id}
+                                                  onSelect={(e) => {
+                                                    e.preventDefault()
+                                                    toggleIntegrationSelection(
+                                                      integration.id,
+                                                    )
+                                                  }}
+                                                  className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                                >
+                                                  <div className="flex items-center">
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={
+                                                        selectedIntegrations[
+                                                        integration.id
+                                                        ] || false
+                                                      }
+                                                      onChange={() => { }}
+                                                      className="w-4 h-4 mr-3"
+                                                    />
+                                                    <span className="mr-2 flex items-center">
+                                                      {integration.icon}
+                                                    </span>
+                                                    <span className="text-gray-700 dark:text-gray-200">
+                                                      {integration.name}
+                                                    </span>
+                                                  </div>
+                                                  {showChevron && (
+                                                    <ChevronRight className="h-4 w-4 text-gray-400" />
+                                                  )}
+                                                </DropdownMenuItem>
+                                              )
+                                            },
+                                          )}
+
+                                          {/* Collections item */}
+                                          {knowledgeBases.length > 0 && (
+                                            <DropdownMenuItem
+                                              onSelect={(e) => {
+                                                e.preventDefault()
+                                                setNavigationPath([
+                                                  {
+                                                    id: "cl-root",
+                                                    name: "Collections",
+                                                    type: "cl-root",
+                                                  },
+                                                ])
+                                                setDropdownSearchQuery("")
+                                              }}
+                                              className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                            >
+                                              <div className="flex items-center">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={hasSelectedKB}
+                                                  onChange={() => { }}
+                                                  className="w-4 h-4 mr-3"
+                                                />
+                                                <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
+                                                <span className="text-gray-700 dark:text-gray-200">
+                                                  Collections
+                                                </span>
+                                              </div>
+                                              <ChevronRight className="h-4 w-4 text-gray-400" />
+                                            </DropdownMenuItem>
+                                          )}
+                                        </>
+                                      )
+                                    } else if (
+                                      navigationPath.length === 1 &&
+                                      navigationPath[0].type === "cl-root"
+                                    ) {
+                                      // Show collections list
+                                      const knowledgeBases =
+                                        allAvailableIntegrations.filter(
+                                          (integration) =>
+                                            integration.id.startsWith("cl_"),
+                                        )
+
+                                      return knowledgeBases.map(
+                                        (integration) => {
+                                          const clId = integration.id.replace(
+                                            "cl_",
+                                            "",
+                                          )
 
                                             return (
                                               <DropdownMenuItem
@@ -4152,6 +4217,9 @@ function AgentComponent() {
                                             setSelectedIntegrations={
                                               setSelectedIntegrations
                                             }
+                                            selectedIntegrations={
+                                              selectedIntegrations
+                                            }
                                           />
                                         )
                                       } else {
@@ -4205,11 +4273,11 @@ function AgentComponent() {
                                         )
                                       }
 
-                                      return null
-                                    })()}
-                                  </>
-                                )
-                              })()}
+                                    return null
+                                  })()}
+                                </>
+                              )
+                            })()}
                         </div>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -4325,11 +4393,10 @@ function AgentComponent() {
                                 filteredUsers.map((user, index) => (
                                   <div
                                     key={user.id}
-                                    className={`flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 last:border-b-0 ${
-                                      index === selectedSearchIndex
-                                        ? "bg-gray-100 dark:bg-slate-700"
-                                        : ""
-                                    }`}
+                                    className={`flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 last:border-b-0 ${index === selectedSearchIndex
+                                      ? "bg-gray-100 dark:bg-slate-700"
+                                      : ""
+                                      }`}
                                     onClick={() => handleSelectUser(user)}
                                   >
                                     <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
@@ -4436,8 +4503,8 @@ function AgentComponent() {
                     >
                       {selectedChatAgentExternalId
                         ? allAgentsList.find(
-                            (a) => a.externalId === selectedChatAgentExternalId,
-                          )?.name || "Select Agent to Test"
+                          (a) => a.externalId === selectedChatAgentExternalId,
+                        )?.name || "Select Agent to Test"
                         : "Test Current Form Config"}
                       <ChevronDown className="ml-2 h-3 w-3" />
                     </Button>
@@ -4494,8 +4561,8 @@ function AgentComponent() {
                   attachments={message.attachments || []}
                   dots={
                     isStreaming &&
-                    index === messages.length - 1 &&
-                    message.messageRole === "assistant"
+                      index === messages.length - 1 &&
+                      message.messageRole === "assistant"
                       ? dots
                       : ""
                   }
@@ -4552,10 +4619,12 @@ interface AgentListItemProps {
   isFavorite: boolean
   onToggleFavorite: (id: string) => void
   onEdit: () => void
+  onView: () => void
   onDelete: () => void
   onClick: () => void
   isShared?: boolean
   isMadeByMe?: boolean // New prop
+  isAgentPublic?: boolean
 }
 
 function AgentListItem({
@@ -4565,8 +4634,10 @@ function AgentListItem({
   isMadeByMe, // Added
   onToggleFavorite,
   onEdit,
+  onView,
   onDelete,
   onClick,
+  isAgentPublic,
 }: AgentListItemProps): JSX.Element {
   return (
     <div
@@ -4603,6 +4674,20 @@ function AgentListItem({
         </div>
       </div>
       <div className="flex items-center gap-3 ml-4 flex-shrink-0">
+        {(isShared || (isAgentPublic && !isMadeByMe)) && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation()
+              onView()
+            }}
+            className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+            title="View Agent"
+          >
+            <Eye size={16} />
+          </Button>
+        )}
         {isMadeByMe && (
           <>
             <Button
@@ -4659,11 +4744,10 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-mono font-medium rounded-full transition-colors ${
-        active
-          ? "bg-gray-200 text-gray-800 dark:bg-slate-700 dark:text-gray-100"
-          : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800/60"
-      }`}
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-mono font-medium rounded-full transition-colors ${active
+        ? "bg-gray-200 text-gray-800 dark:bg-slate-700 dark:text-gray-100"
+        : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800/60"
+        }`}
     >
       {icon === "asterisk" && <span className="text-lg font-semibold">*</span>}
       {icon === "users" && <Users size={16} />}
@@ -4678,7 +4762,7 @@ const textToCitationIndexPattern = textToCitationIndex
 const renderMarkdownLink = ({
   node,
   ...linkProps
-}: { node?: any; [key: string]: any }) => (
+}: { node?: any;[key: string]: any }) => (
   <a
     {...linkProps}
     target="_blank"

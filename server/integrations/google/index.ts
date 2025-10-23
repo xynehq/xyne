@@ -100,8 +100,7 @@ import { unlink } from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
 import {
   MAX_GD_PDF_SIZE,
-  MAX_GD_SHEET_ROWS,
-  MAX_GD_SHEET_TEXT_LEN,
+  MAX_GD_SHEET_SIZE,
   MAX_GD_SLIDES_TEXT_LEN,
   PDFProcessingConcurrency,
   ServiceAccountUserConcurrency,
@@ -863,6 +862,18 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
   // const data: SaaSOAuthJob = job.data as SaaSOAuthJob
   const logger = loggerWithChild({ email: data.email })
   try {
+    // Update status to Connecting when ingestion starts
+    try {
+      await db
+        .update(connectors)
+        .set({
+          status: ConnectorStatus.Connecting,
+        })
+        .where(eq(connectors.id, data.connectorId))
+    } catch (error) {
+      logger.error(error, `Failed to update connector status to Connecting`)
+      throw error
+    }
     // we will first fetch the change token
     // and poll the changes in a new Cron Job
     const connector: SelectConnector = await getOAuthConnectorWithCredentials(
@@ -1074,6 +1085,8 @@ import {
   totalAttachmentIngested,
   totalIngestedMails,
 } from "@/metrics/google/gmail-metrics"
+import { chunkSheetWithHeaders } from "@/sheetChunk"
+import { checkFileSize } from "../dataSource"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -2180,62 +2193,23 @@ export const getSpreadsheet = async (
   }
 }
 
-// Function to chunk rows of text data into manageable batches
-// Excludes numerical data, assuming users do not typically search by numbers
-// Concatenates all textual cells in a row into a single string
-// Adds rows' string data to a chunk until the 512-character limit is exceeded
-// If adding a row exceeds the limit, the chunk is added to the next chunk
-// Otherwise, the row is added to the current chunk
-const chunkFinalRows = (allRows: string[][]): string[] => {
-  const chunks: string[] = []
-  let currentChunk = ""
-  let totalTextLength = 0
-
-  for (const row of allRows) {
-    // Filter out numerical cells and empty strings
-    const textualCells = row.filter(
-      (cell) => isNaN(Number(cell)) && cell.trim().length > 0,
-    )
-
-    if (textualCells.length === 0) continue // Skip if no textual data
-
-    const rowText = textualCells.join(" ")
-
-    // Check if adding this rowText would exceed the maximum text length
-    if (totalTextLength + rowText.length > MAX_GD_SHEET_TEXT_LEN) {
-      // Logger.warn(`Text length excedded, indexing with empty content`)
-      // Return an empty array if the total text length exceeds the limit
-      return []
-    }
-
-    totalTextLength += rowText.length
-
-    if ((currentChunk + " " + rowText).trim().length > 512) {
-      // Add the current chunk to the list and start a new chunk
-      if (currentChunk.trim().length > 0) {
-        chunks.push(currentChunk.trim())
-      }
-      currentChunk = rowText
-    } else {
-      // Append the row text to the current chunk
-      currentChunk += " " + rowText
-    }
-  }
-
-  if (currentChunk.trim().length > 0) {
-    // Add any remaining text as the last chunk
-    chunks.push(currentChunk.trim())
-  }
-
-  return chunks
-}
-
 export const getSheetsListFromOneSpreadsheet = async (
   sheets: sheets_v4.Sheets,
   client: GoogleClient,
   spreadsheet: drive_v3.Schema$File,
   userEmail: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
+  // Early size check before fetching spreadsheet data
+  const sizeInBytes = spreadsheet.size ? parseInt(spreadsheet.size, 10) : 0
+  try {
+    checkFileSize(sizeInBytes, MAX_GD_SHEET_SIZE)
+  } catch (error) {
+    loggerWithChild({ email: userEmail }).warn(
+      `Ignoring ${spreadsheet.name} as its size (${Math.round(sizeInBytes / 1024 / 1024)} MB) exceeds the limit of ${MAX_GD_SHEET_SIZE} MB`,
+    )
+    return []
+  }
+
   const sheetsArr = []
   try {
     const spreadSheetData = await getSpreadsheet(
@@ -2280,21 +2254,13 @@ export const getSheetsListFromOneSpreadsheet = async (
           continue
         }
 
-        let chunks: string[] = []
-
-        if (finalRows?.length > MAX_GD_SHEET_ROWS) {
-          // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-          // Logger.warn(
-          //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-          // )
-          chunks = []
-        } else {
-          chunks = chunkFinalRows(finalRows)
-        }
+        const chunks: string[] = chunkSheetWithHeaders(finalRows)
 
         const sheetDataToBeIngested = {
           title: `${spreadsheet.name} / ${sheet?.sheetTitle}`,
-          url: spreadsheet.webViewLink ?? "",
+          url: sheet?.sheetId 
+            ? `https://docs.google.com/spreadsheets/d/${spreadsheet.id}/edit#gid=${sheet.sheetId}`
+            : spreadsheet.webViewLink ?? "",
           app: Apps.GoogleDrive,
           // TODO Document it eveyrwhere
           // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
@@ -2965,12 +2931,13 @@ export async function* listFiles(
   client: GoogleClient,
   startDate?: string,
   endDate?: string,
+  q?: string,
 ): AsyncIterableIterator<drive_v3.Schema$File[]> {
   const drive = google.drive({ version: "v3", auth: client })
   let nextPageToken = ""
 
   // Build the query with date filters if provided
-  let query = "trashed = false"
+  let query = q ? `(${q}) and trashed = false` : "trashed = false"
   const dateFilters: string[] = []
 
   if (startDate) {

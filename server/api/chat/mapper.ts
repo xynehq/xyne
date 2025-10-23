@@ -37,6 +37,7 @@ import {
   DriveEntity,
   CalendarEntity,
   GooglePeopleEntity,
+  GoogleApps,
 } from "@xyne/vespa-ts/types"
 import type {
   ConversationalParams,
@@ -47,6 +48,7 @@ import type {
   SlackUserProfileParams,
 } from "@/api/chat/types"
 import config from "@/config"
+import { A } from "ollama/dist/shared/ollama.6319775f.mjs"
 
 const getLoggerForMapper = (emailSub: string) =>
   getLoggerWithChild(Subsystem.Chat, { email: emailSub })
@@ -972,4 +974,243 @@ export function createToolParams(
   }
 
   return params
+}
+
+export const searchGlobalTool: ToolDefinition = {
+  name: "searchGlobal",
+  description:
+    "Searches across all available data sources globally. Returns a list of results matching the provided query, with optional controls for sorting, pagination, and filtering by time range.",
+  params: [
+    {
+      name: "query",
+      type: "string",
+      required: true,
+      description: `The search query string that specifies what you want to find.
+         - query should be keywords focus to retireve the most relevant content from corpus.`,
+    },
+    {
+      name: "limit",
+      type: "number",
+      required: false,
+      description:
+        "Maximum number of results to return. Default behavior is to return 10 results.",
+    },
+    {
+      name: "sortBy",
+      type: "asc | desc",
+      required: false,
+      description:
+        "Sort order of the results. Accepts 'asc' for ascending or 'desc' for descending order.",
+    },
+    {
+      name: "offset",
+      type: "number",
+      required: false,
+      description:
+        "Number of results to skip from the beginning, useful for pagination.",
+    },
+    {
+      name: "timeRange",
+      type: "object",
+      required: false,
+      description:
+        "Filter results based on a specific time range. Example: { start: '2025-01-01', end: '2025-12-31' }",
+    },
+  ],
+}
+
+export const googleTools: Record<GoogleApps, ToolDefinition> = {
+  [GoogleApps.Gmail]: {
+    name: "searchGmail",
+    description:
+      "Find and retrieve emails. Can search by keywords, filter by sender/recipient, time period, labels, or simply fetch recent emails when no query is provided.",
+    params: [
+      {
+        name: "query",
+        type: "string",
+        required: false,
+        description: `Extracted search terms from the user's query to find emails if query doesn't contain important semantic terms, will fetch based on different params e.g. timeRange, participants, labels etc.
+           - don't apply filters in the query like "from:sahebjot" or "subject:meeting".
+           - query should be keywords focus to retireve the most relevant content from corpus.
+          `,
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description: "Maximum number of email results to return default is 20.",
+      },
+      {
+        name: "offset",
+        type: "number",
+        required: false,
+        description: "Number of results to skip, for pagination.",
+      },
+      {
+        name: "sortBy",
+        type: "asc | desc",
+        required: false,
+        description: "Sort order of results. Accepts 'asc' or 'desc'.",
+      },
+      {
+        name: "labels",
+        type: "string[]",
+        required: false,
+        description:
+          "Filter emails by Gmail labels. labels are 'IMPORTANT', 'STARRED', 'UNREAD', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS', 'DRAFT', 'SENT', 'INBOX', 'SPAM', 'TRASH'.",
+      },
+      {
+        name: "timeRange",
+        type: "object",
+        required: false,
+        description: `Filter emails within a specific time range. Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
+      },
+      {
+        name: "isAttachmentRequired",
+        type: "boolean",
+        required: false,
+        description:
+          "If true, it also search for the attachments in the emails.",
+      },
+      {
+        name: "participants",
+        type: "object",
+        required: false,
+        description: `Advanced email communication filtering with intelligent resolution of names, organizations, and email addresses. Supports complex multi-participant email queries with automatic name-to-email mapping. 
+           - Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. 
+           - Each field accepts arrays containing email addresses, full names, first names, or organization names. `,
+      },
+    ],
+  },
+  [GoogleApps.Drive]: {
+    name: "searchDriveFiles",
+    description:
+      "Access and search files in Google Drive. Find documents, spreadsheets, presentations, PDFs, and folders by name, content, owner, or file type. Essential for document management and collaboration.",
+    params: [
+      {
+        name: "query",
+        type: "string",
+        required: false,
+        description: `Search terms for file names, content, or metadata. Use specific keywords to find documents, or descriptive terms for content-based search.
+          - don't apply filters in the query like "from:sahebjot" or "subject:meeting" or "*".
+          - query should be keywords focus to retireve the most relevant content from corpus.
+          - if query is empty, will fetch the most recent files for user.
+          - Never use the query to filter, query should be only contain keywords to searchFor otherwise don't select this parameter.
+          `,
+      },
+      {
+        name: "owner",
+        type: "string",
+        required: false,
+        description: "Filter files by owner",
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description: "Maximum number of files to return.",
+      },
+      {
+        name: "sortBy",
+        type: "string",
+        required: false,
+        description: "Sort order of results. Accepts 'asc' or 'desc'.",
+      },
+      {
+        name: "offset",
+        type: "number",
+        required: false,
+        description: "Number of results to skip, for pagination.",
+      },
+      {
+        name: "filetype",
+        type: "string[]",
+        required: false,
+        description: `Filter files by type (e.g., ${Object.values(DriveEntity).map((e) => `- ${e}\n`)}).`,
+      },
+      {
+        name: "timeRange",
+        type: "object",
+        required: false,
+        description: `Filter files within a specific time range.  Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
+      },
+    ],
+  },
+  [GoogleApps.Calendar]: {
+    name: "searchCalendarEvents",
+    description:
+      "Retrieve calendar events and meetings from Google Calendar. Search by event title, attendees, or time period. Ideal for scheduling analysis, meeting preparation, and availability checking.",
+    params: [
+      {
+        name: "query",
+        type: "string",
+        required: true,
+        description:
+          "Search terms for event titles, descriptions, or locations. Use meeting names, project keywords, or attendee names to find relevant events.",
+      },
+      {
+        name: "attendees",
+        type: "string[]",
+        required: false,
+        description: "Filter events by attendee email addresses.",
+      },
+      {
+        name: "status",
+        type: "string",
+        required: false,
+        description:
+          "Filter events by status. available status to select: ['confirmed', 'tentative', 'cancelled'].",
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description: "Maximum number of events to return.",
+      },
+      {
+        name: "sortBy",
+        type: "string",
+        required: false,
+        description: "Sort order of results. Accepts 'asc' or 'desc'.",
+      },
+      {
+        name: "offset",
+        type: "number",
+        required: false,
+        description: "Number of results to skip, for pagination.",
+      },
+      {
+        name: "timeRange",
+        type: "object",
+        required: false,
+        description: `Filter events within a specific time range.  Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
+      },
+    ],
+  },
+  [GoogleApps.Contacts]: {
+    name: "searchGoogleContacts",
+    description:
+      "Find people and contact information from Google Contacts. Search by name, email or organization. Useful for contact lookup, networking, and communication planning.",
+    params: [
+      {
+        name: "query",
+        type: "string",
+        required: true,
+        description:
+          "Search terms for contact names, companies, email addresses, or phone numbers. can also use names or organization keywords for broad matching.",
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description: "Maximum number of contacts to return.",
+      },
+      {
+        name: "offset",
+        type: "number",
+        required: false,
+        description: "Number of results to skip, for pagination.",
+      },
+    ],
+  },
 }

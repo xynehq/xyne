@@ -1,7 +1,7 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 import { fileURLToPath } from "url"
-import type { QAItem } from "./generator"
+import type { QAItem } from "./types"
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url)

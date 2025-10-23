@@ -4,6 +4,7 @@ import {
   cleanContext,
   userContext,
 } from "@/ai/context"
+import { AgentCreationSource } from "@/db/schema"
 import {
   generateAgentStepSummaryPromptJson,
   generateConsolidatedStepSummaryPromptJson,
@@ -69,6 +70,8 @@ import { getTracer, type Tracer } from "@/tracer"
 import {
   GetDocumentsByDocIds,
   getDocumentOrNull,
+  searchVespaAgent,
+  SearchVespaThreads,
   getAllDocumentsForAgent,
   searchSlackInVespa,
 } from "@/search/vespa"
@@ -80,10 +83,10 @@ import {
   VespaChatUserSchema,
   type VespaSearchResult,
   type VespaSearchResults,
+  AttachmentEntity,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import { insertChatTrace } from "@/db/chatTrace"
-import type { AttachmentMetadata } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
@@ -100,9 +103,11 @@ import {
   type MinimalAgentFragment,
 } from "./types"
 import {
+  collectFollowupContext,
   convertReasoningStepToText,
   extractFileIdsFromMessage,
   extractImageFileNames,
+  extractItemIdsFromPath,
   getCitationToImage,
   handleError,
   isMessageWithContext,
@@ -149,6 +154,8 @@ import { getRecordBypath } from "@/db/knowledgeBase"
 import { getDateForAI } from "@/utils/index"
 import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
+import { applyFollowUpContext } from "@/utils/parseAttachment"
+import { expandSheetIds } from "@/search/utils"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -297,6 +304,7 @@ const createMockAgentFromFormData = (
       externalId: `test-agent-${Date.now()}`,
       workspaceId: workspace.id,
       allowWebSearch: formData.allowWebSearch || null,
+      creation_source: AgentCreationSource.DIRECT,
     }
 
     const agentPromptForLLM = JSON.stringify(agentForDb)
@@ -384,7 +392,11 @@ const checkAndYieldCitationsForAgent = async function* (
           }
 
           // we dont want citations for attachments in the chat
-          if (item.source.entity === KnowledgeBaseEntity.Attachment) {
+          if (
+            Object.values(AttachmentEntity).includes(
+              item.source.entity as AttachmentEntity,
+            )
+          ) {
             continue
           }
 
@@ -514,13 +526,21 @@ const checkAndYieldCitationsForAgent = async function* (
   }
 }
 
-const vespaResultToMinimalAgentFragment = (
+const vespaResultToMinimalAgentFragment = async (
   child: VespaSearchResult,
   idx: number,
   userMetadata: UserMetadataType,
-): MinimalAgentFragment => ({
+  query: string,
+): Promise<MinimalAgentFragment> => ({
   id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
-  content: answerContextMap(child as VespaSearchResults, userMetadata, 0, true),
+  content: await answerContextMap(
+    child as VespaSearchResults,
+    userMetadata,
+    0,
+    true,
+    undefined,
+    query,
+  ),
   source: searchToCitation(child as VespaSearchResults),
   confidence: 1.0,
 })
@@ -743,6 +763,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       selectedModelConfig,
       toolsList,
       agentId,
+      isFollowUp,
     }: MessageReqType = body
 
     // Parse the model configuration JSON
@@ -822,16 +843,13 @@ export const MessageWithToolsApi = async (c: Context) => {
       actualModelId = defaultBestModel
     }
 
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    const attachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => m.fileId,
-    )
-    const imageAttachmentFileIds = attachmentMetadata
+    let attachmentMetadata = parseAttachmentMetadata(c)
+    let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
       .filter((m) => !m.isImage)
-      .map((m) => m.fileId)
+      .flatMap((m) => expandSheetIds(m.fileId))
     let attachmentStorageError: Error | null = null
 
     const contextExtractionSpan = initSpan.startSpan("context_extraction")
@@ -850,8 +868,32 @@ export const MessageWithToolsApi = async (c: Context) => {
       extractedInfo?.totalValidFileIdsFromLinkCount
     loggerWithChild({ email: email }).info(`Extracted ${fileIds} extractedInfo`)
     loggerWithChild({ email: email }).info(
-      `Total attachment files received: ${attachmentFileIds.length}`,
+      `Total attachment files received: ${attachmentMetadata.length}`,
     )
+
+    // Handle isFollowUp functionality - get context from previous user message
+    if (isFollowUp && chatId) {
+      try {
+        const updatedContext = await applyFollowUpContext(chatId, email)
+
+        fileIds = [...fileIds, ...updatedContext.fileIds]
+        imageAttachmentFileIds.push(...updatedContext.imageAttachmentFileIds)
+        attachmentMetadata.push(...updatedContext.attachmentMetadata)
+
+        // Dedup
+        fileIds = Array.from(new Set(fileIds))
+        imageAttachmentFileIds = Array.from(new Set(imageAttachmentFileIds))
+        let byId = new Map(attachmentMetadata.map((a) => [a.fileId, a]))
+        attachmentMetadata = Array.from(byId.values())
+      } catch (error) {
+        loggerWithChild({ email: email }).error(
+          error,
+          `Error getting context from previous user message for isFollowUp: ${getErrorMessage(error)}`,
+        )
+        // Continue execution even if we can't get previous context
+      }
+    }
+
     const hasReferencedContext = fileIds && fileIds.length > 0
     contextExtractionSpan.setAttribute("file_ids_count", fileIds?.length || 0)
     contextExtractionSpan.setAttribute(
@@ -1505,11 +1547,13 @@ export const MessageWithToolsApi = async (c: Context) => {
             if (results?.root?.children && results.root.children.length > 0) {
               const contextPromises = results?.root?.children?.map(
                 async (v, i) => {
-                  let content = answerContextMap(
+                  let content = await answerContextMap(
                     v as VespaSearchResults,
                     userMetadata,
                     0,
                     true,
+                    undefined,
+                    message,
                   )
                   const chatContainerFields =
                     isChatContainerFields(v.fields) &&
@@ -1579,22 +1623,45 @@ export const MessageWithToolsApi = async (c: Context) => {
                   "\n" + buildContext(threadContexts, 10, userMetadata)
               }
 
-              gatheredFragments = results.root.children.map(
-                (child: VespaSearchResult, idx) =>
-                  vespaResultToMinimalAgentFragment(child, idx, userMetadata),
+              gatheredFragments = await Promise.all(
+                results.root.children.map(
+                  async (child: VespaSearchResult, idx) =>
+                    await vespaResultToMinimalAgentFragment(
+                      child,
+                      idx,
+                      userMetadata,
+                      message,
+                    ),
+                ),
               )
               if (chatContexts.length > 0) {
                 gatheredFragments.push(
-                  ...chatContexts.map((child, idx) =>
-                    vespaResultToMinimalAgentFragment(child, idx, userMetadata),
-                  ),
+                  ...(await Promise.all(
+                    chatContexts.map(
+                      async (child, idx) =>
+                        await vespaResultToMinimalAgentFragment(
+                          child,
+                          idx,
+                          userMetadata,
+                          message,
+                        ),
+                    ),
+                  )),
                 )
               }
               if (threadContexts.length > 0) {
                 gatheredFragments.push(
-                  ...threadContexts.map((child, idx) =>
-                    vespaResultToMinimalAgentFragment(child, idx, userMetadata),
-                  ),
+                  ...(await Promise.all(
+                    threadContexts.map(
+                      async (child, idx) =>
+                        await vespaResultToMinimalAgentFragment(
+                          child,
+                          idx,
+                          userMetadata,
+                          message,
+                        ),
+                    ),
+                  )),
                 )
               }
               const parseSynthesisOutput = await performSynthesis(
@@ -1758,7 +1825,6 @@ export const MessageWithToolsApi = async (c: Context) => {
             wasStreamClosedPrematurely = true
             break
           }
-          Logger.info(`JAF Event [av]: ${JSON.stringify(evt.type)}`)
           switch (evt.type) {
             case "turn_start": {
               currentTurn = evt.data.turn
@@ -2831,6 +2897,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const allDataSources = await getAllDocumentsForAgent(
             [Apps.DataSource],
             agentForDb?.appIntegrations as string[],
+            400,
+            email,
           )
           dataSourceSpan.end()
           loggerWithChild({ email }).info(
@@ -2866,8 +2934,16 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chunksSpan.end()
             if (allChunks?.root?.children) {
               const startIndex = 0
-              fragments = allChunks.root.children.map((child, idx) =>
-                vespaResultToMinimalAgentFragment(child, idx, userMetadata),
+              fragments = await Promise.all(
+                allChunks.root.children.map(
+                  async (child, idx) =>
+                    await vespaResultToMinimalAgentFragment(
+                      child,
+                      idx,
+                      userMetadata,
+                      message,
+                    ),
+                ),
               )
               context = answerContextMapFromFragments(
                 fragments,
@@ -3108,6 +3184,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const allDataSources = await getAllDocumentsForAgent(
           [Apps.DataSource],
           agentForDb?.appIntegrations as string[],
+          400,
+          email,
         )
         dataSourceSpan.end()
         loggerWithChild({ email }).info(
@@ -3134,8 +3212,16 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         if (docIds.length > 0) {
           const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
           if (allChunks?.root?.children) {
-            fragments = allChunks.root.children.map((child, idx) =>
-              vespaResultToMinimalAgentFragment(child, idx, userMetadata),
+            fragments = await Promise.all(
+              allChunks.root.children.map(
+                async (child, idx) =>
+                  await vespaResultToMinimalAgentFragment(
+                    child,
+                    idx,
+                    userMetadata,
+                    message,
+                  ),
+              ),
             )
             context = answerContextMapFromFragments(
               fragments,
@@ -3344,13 +3430,13 @@ export const AgentMessageApi = async (c: Context) => {
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    const imageAttachmentFileIds = attachmentMetadata
+    let attachmentMetadata = parseAttachmentMetadata(c)
+    let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
       .filter((m) => !m.isImage)
-      .map((m) => m.fileId)
+      .flatMap((m) => expandSheetIds(m.fileId))
     let attachmentStorageError: Error | null = null
     let {
       message,
@@ -3518,16 +3604,17 @@ export const AgentMessageApi = async (c: Context) => {
       }
     }
     const isMsgWithContext = isMessageWithContext(message)
-    const extractedInfo =
-      isMsgWithContext || (path && ids)
-        ? await extractFileIdsFromMessage(message, email, ids)
-        : {
-            totalValidFileIdsFromLinkCount: 0,
-            fileIds: [],
-            collectionFolderIds: [],
-          }
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message, email)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+          collectionFolderIds: [],
+        }
+    const pathExtractedInfo = isValidPath
+      ? await extractItemIdsFromPath(ids ?? "")
+      : { collectionFileIds: [], collectionFolderIds: [], collectionIds: [] }
     let fileIds = extractedInfo?.fileIds
-    let folderIds = extractedInfo?.collectionFolderIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
@@ -3746,9 +3833,6 @@ export const AgentMessageApi = async (c: Context) => {
                 imageAttachmentFileIds,
                 agentPromptForLLM,
                 fileIds.length > 0,
-                actualModelId,
-                Boolean(isValidPath),
-                folderIds,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -4089,16 +4173,17 @@ export const AgentMessageApi = async (c: Context) => {
                 endTime: "",
                 count: 0,
                 sortDirection: "",
-                intent: {},
+                mailParticipants: {},
                 offset: 0,
               }
               let parsed = {
+                isFollowUp: false,
                 answer: "",
                 queryRewrite: "",
                 temporalDirection: null,
                 filter_query: "",
                 type: "",
-                intent: {},
+                mailParticipants: {},
                 filters: queryFilters,
               }
 
@@ -4247,6 +4332,18 @@ export const AgentMessageApi = async (c: Context) => {
                 parsed.queryRewrite,
               )
               conversationSpan.end()
+              let classification: TemporalClassifier & QueryRouterResponse = {
+                direction: parsed.temporalDirection,
+                type: parsed.type as QueryType,
+                filterQuery: parsed.filter_query,
+                isFollowUp: parsed.isFollowUp,
+                filters: {
+                  ...(parsed?.filters ?? {}),
+                  apps: parsed.filters?.apps || [],
+                  entities: parsed.filters?.entities as any,
+                  mailParticipants: parsed.mailParticipants || {},
+                },
+              }
 
               if (parsed.answer === null || parsed.answer === "") {
                 const ragSpan = streamSpan.startSpan("rag_processing")
@@ -4271,26 +4368,111 @@ export const AgentMessageApi = async (c: Context) => {
                       ...(parsed?.filters ?? {}),
                       apps: parsed.filters?.apps || [],
                       entities: parsed.filters?.entities as any,
-                      intent: parsed.intent || {},
+                      mailParticipants: parsed.mailParticipants || {},
                     },
                   }
 
-                Logger.info(
+                loggerWithChild({ email: email }).info(
                   `Classifying the query as:, ${JSON.stringify(classification)}`,
                 )
-                const understandSpan = ragSpan.startSpan("understand_message")
-                const iterator = UnderstandMessageAndAnswer(
-                  email,
-                  ctx,
-                  userMetadata,
-                  message,
-                  classification,
-                  limitedMessages,
-                  0.5,
-                  userRequestsReasoning,
-                  understandSpan,
-                  agentPromptForLLM,
+
+                ragSpan.setAttribute(
+                  "isFollowUp",
+                  classification.isFollowUp ?? false,
                 )
+                const understandSpan = ragSpan.startSpan("understand_message")
+
+                let iterator:
+                  | AsyncIterableIterator<
+                      ConverseResponse & {
+                        citation?: { index: number; item: any }
+                        imageCitation?: ImageCitation
+                      }
+                    >
+                  | undefined = undefined
+
+                if (messages.length < 2) {
+                  classification.isFollowUp = false // First message or not enough history to be a follow-up
+                } else if (classification.isFollowUp) {
+                  // Use the NEW classification that already contains:
+                  // - Updated filters (with proper offset calculation)
+                  // - Preserved app/entity from previous query
+                  // - Updated count/pagination info
+                  // - All the smart follow-up logic from the LLM
+
+                  const filteredMessages = messages
+                    .filter((msg) => !msg?.errorMessage)
+                    .filter(
+                      (msg) =>
+                        !(
+                          msg.messageRole === MessageRole.Assistant &&
+                          !msg.message
+                        ),
+                    )
+
+                  // Check for follow-up context carry-forward
+                  const workingSet = collectFollowupContext(filteredMessages)
+
+                  const hasCarriedContext =
+                    workingSet.fileIds.length > 0 ||
+                    workingSet.attachmentFileIds.length > 0
+                  if (hasCarriedContext) {
+                    fileIds = workingSet.fileIds
+                    imageAttachmentFileIds = workingSet.attachmentFileIds
+                    loggerWithChild({ email: email }).info(
+                      `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
+                    )
+                  }
+
+                  if (
+                    (fileIds && fileIds.length > 0) ||
+                    (imageAttachmentFileIds &&
+                      imageAttachmentFileIds.length > 0)
+                  ) {
+                    loggerWithChild({ email: email }).info(
+                      `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
+                    )
+                    iterator = UnderstandMessageAndAnswerForGivenContext(
+                      email,
+                      ctx,
+                      userMetadata,
+                      message,
+                      0.5,
+                      fileIds as string[],
+                      userRequestsReasoning,
+                      understandSpan,
+                      undefined,
+                      imageAttachmentFileIds as string[],
+                      agentPromptForLLM,
+                      undefined,
+                      actualModelId || config.defaultBestModel,
+                    )
+                  } else {
+                    loggerWithChild({ email: email }).info(
+                      `Follow-up query detected.`,
+                    )
+                    // Use the new classification directly - it already has all the smart follow-up logic
+                    // No need to reuse old classification, the LLM has generated an updated one
+                  }
+                }
+
+                // If no iterator was set above (non-file-context scenario), use the regular flow with the new classification
+                if (!iterator) {
+                  iterator = UnderstandMessageAndAnswer(
+                    email,
+                    ctx,
+                    userMetadata,
+                    message,
+                    classification,
+                    limitedMessages,
+                    0.5,
+                    userRequestsReasoning,
+                    understandSpan,
+                    agentPromptForLLM,
+                    actualModelId,
+                    pathExtractedInfo,
+                  )
+                }
                 stream.writeSSE({
                   event: ChatSSEvents.Start,
                   data: "",

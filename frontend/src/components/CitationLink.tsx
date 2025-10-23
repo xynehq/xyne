@@ -5,13 +5,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { FileType } from "shared/types"
+import { getFileType } from "shared/fileUtils"
 
 export interface Citation {
   url: string
   title: string
+  docId: string
   itemId?: string
   clId?: string
-  chunkIndex?: number
 }
 
 export const createCitationLink =
@@ -32,8 +34,9 @@ export const createCitationLink =
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)
 
     // Extract citation index from children (which should be the citation number like "1", "2", etc.)
-    const citationIndex =
-      typeof children === "string" ? parseInt(children) - 1 : -1
+    const parts = typeof children === "string" ? children.split("_") : []
+    const citationIndex = parts.length > 0 ? parseInt(parts[0]) - 1 : -1
+    let chunkIndex = parts.length > 1 ? parseInt(parts[1]) : undefined
 
     // Get citation by index if valid, otherwise fall back to URL matching
     const citation =
@@ -43,12 +46,16 @@ export const createCitationLink =
           ? citations.find((c) => c.url === href)
           : undefined
 
-    if (
-      citation &&
-      citation.clId &&
-      citation.itemId &&
-      !(citation.title.endsWith(".pdf") && citation.chunkIndex !== undefined)
-    ) {
+    if (chunkIndex !== undefined && citation) {
+      children = (citationIndex + 1).toString()
+      if (
+        getFileType({ type: "", name: citation?.title ?? "" }) ===
+        FileType.SPREADSHEET
+      )
+        chunkIndex = Math.max(chunkIndex - 1, 0)
+    }
+
+    if (citation && citation.clId && citation.itemId) {
       return (
         <TooltipProvider delayDuration={200}>
           <Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen}>
@@ -60,11 +67,7 @@ export const createCitationLink =
                   e.preventDefault()
                   e.stopPropagation()
                   if (onCitationClick) {
-                    if (citation.chunkIndex !== undefined) {
-                      onCitationClick(citation, citation.chunkIndex)
-                    } else {
-                      onCitationClick(citation)
-                    }
+                    onCitationClick(citation, chunkIndex)
                   }
                   setIsTooltipOpen(false)
                 }}
@@ -143,23 +146,17 @@ export const createCitationLink =
     const isNumericChild =
       typeof children === "string" &&
       !isNaN(parseInt(children)) &&
-      parseInt(children).toString() === children.trim()
+      parseInt(children).toString() === children.split("_")[0].trim()
 
     return (
       <a {...linkProps} href={href} target="_blank" rel="noopener noreferrer">
         {isNumericChild ? (
-          !(
-            citation &&
-            citation.title?.endsWith(".pdf") &&
-            citation.chunkIndex !== undefined
-          ) ? (
-            <span
-              className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-900 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150 no-underline"
-              style={{ textDecoration: "none" }}
-            >
-              {children}
-            </span>
-          ) : undefined
+          <span
+            className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150 no-underline"
+            style={{ textDecoration: "none" }}
+          >
+            {children}
+          </span>
         ) : (
           children
         )}

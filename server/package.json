@@ -2,7 +2,7 @@
   "name": "xyne",
   "module": "server/server.ts",
   "type": "module",
-  "version": "0.3.0",
+  "version": "3.20.0",
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@commitlint/cli": "^19.8.1",
@@ -22,6 +22,7 @@
     "cz-conventional-changelog": "^3.3.0",
     "drizzle-kit": "0.31.4",
     "husky": "^9.1.7",
+    "madge": "^8.0.0",
     "p-queue": "^8.0.1",
     "semantic-release": "^24.2.7"
   },
@@ -32,9 +33,13 @@
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
     "migrate:kb": "bun run scripts/backfillclFd.ts",
-    "dev": "bun run --watch server.ts",
-    "dev:sync": "bun run --watch sync-server.ts",
-    "build": "bunx --bun vite build",
+    "check-deps": "madge --circular --extensions ts,tsx ./",
+    "dev": "bun run check-deps && bun run --watch server.ts",
+    "dev:unsafe": "bun run --watch server.ts",
+    "dev:sync": "bun run check-deps && bun run --watch sync-server.ts",
+    "dev:sync-unsafe": "bun run --watch sync-server.ts",
+    "build": "bun run check-deps && bunx --bun vite build",
+    "build:unsafe": "bunx --bun vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "bunx biome format --write ../",
@@ -51,6 +56,7 @@
     "@aws-sdk/client-bedrock": "^3.797.0",
     "@aws-sdk/client-bedrock-runtime": "^3.797.0",
     "@aws-sdk/client-ses": "^3.879.0",
+    "@azure/identity": "^4.12.0",
     "@azure/msal-node": "^3.7.3",
     "@google-cloud/vertexai": "^1.10.0",
     "@google/genai": "^1.9.0",
@@ -60,6 +66,7 @@
     "@jrmdayn/googleapis-batcher": "^0.8.0",
     "@langchain/community": "^0.3.22",
     "@langchain/core": "^0.3.27",
+    "@livekit/components-core": "^0.12.9",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@microsoft/microsoft-graph-types": "^2.40.0",
     "@modelcontextprotocol/sdk": "^1.11.2",
@@ -71,6 +78,7 @@
     "@types/json-schema": "^7.0.15",
     "@types/jszip": "^3.4.1",
     "@types/node": "^24.3.0",
+    "@xyne/vespa-ts": "1.1.8",
     "@xynehq/jaf": "^0.1.4",
     "ai": "^5.0.51",
     "arctic": "^3.3.0",
@@ -80,7 +88,9 @@
     "cors": "^2.8.5",
     "drizzle-orm": "^0.44.5",
     "drizzle-zod": "^0.8.3",
+    "duckdb-async": "1.4.0",
     "fast-xml-parser": "^5.2.5",
+    "file-type": "^21.0.0",
     "google-auth-library": "^9.14.0",
     "googleapis": "^140.0.1",
     "gpt-tokenizer": "^2.8.1",
@@ -90,8 +100,10 @@
     "image-type": "^6.0.0",
     "jszip": "^3.10.1",
     "libreoffice": "^0.4.5",
+    "livekit-server-sdk": "^2.13.3",
     "llama3-tokenizer-js": "^1.2.0",
     "nanoid": "^5.1.5",
+    "node-sql-parser": "^5.3.12",
     "ollama": "^0.5.11",
     "openai": "^5.16.0",
     "ora": "^8.1.1",
@@ -122,13 +134,5 @@
       "jiraPrefix": "XYN-",
       "jiraOptional": false
     }
-  },
-  "trustedDependencies": [
-    "@biomejs/biome",
-    "canvas",
-    "esbuild",
-    "lzo",
-    "protobufjs",
-    "sharp"
-  ]
+  }
 }
