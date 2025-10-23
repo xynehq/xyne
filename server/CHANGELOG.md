@@ -1,3 +1,10 @@
+## [3.19.2](https://github.com/xynehq/xyne/compare/v3.19.1...v3.19.2) (2025-10-23)
+
+
+### Bug Fixes
+
+* **mail:** de-duplicate event mails ([#1128](https://github.com/xynehq/xyne/issues/1128)) ([4a61d61](https://github.com/xynehq/xyne/commit/4a61d61eea3f03dfd815034d89e4d40c7ff912b2))
+
 ## [3.19.1](https://github.com/xynehq/xyne/compare/v3.19.0...v3.19.1) (2025-10-22)
 
 
