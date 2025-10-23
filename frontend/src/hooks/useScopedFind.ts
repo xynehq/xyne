@@ -165,16 +165,14 @@ export function useScopedFind(
             const parentElement = textNode.parentElement
             if (!parentElement) continue
 
-            
-            const isCompleteMatch = startOffset === 0 && endOffset === textNode.nodeValue!.length
+            const isCompleteMatch =
+              startOffset === 0 && endOffset === textNode.nodeValue!.length
 
             if (isCompleteMatch) {
-             
               parentElement.setAttribute("data-match-index", "0")
               parentElement.classList.add("pdf-text-highlight")
               marks.push(parentElement)
             } else {
-         
               try {
                 const range = document.createRange()
                 range.setStart(textNode, startOffset)
@@ -190,8 +188,14 @@ export function useScopedFind(
                 } catch {
                   // Alternative: split text node and insert mark
                   const originalText = textNode.nodeValue!
-                  const beforeText = textNode.nodeValue!.substring(0, startOffset)
-                  const matchText = textNode.nodeValue!.substring(startOffset, endOffset)
+                  const beforeText = textNode.nodeValue!.substring(
+                    0,
+                    startOffset,
+                  )
+                  const matchText = textNode.nodeValue!.substring(
+                    startOffset,
+                    endOffset,
+                  )
                   const afterText = textNode.nodeValue!.substring(endOffset)
 
                   try {
@@ -201,7 +205,10 @@ export function useScopedFind(
                     mark.setAttribute("data-match-index", "0")
                     mark.textContent = matchText
 
-                    textNode.parentNode!.insertBefore(mark, textNode.nextSibling)
+                    textNode.parentNode!.insertBefore(
+                      mark,
+                      textNode.nextSibling,
+                    )
                     marks.push(mark)
 
                     if (afterText) {
@@ -210,11 +217,17 @@ export function useScopedFind(
                     }
                   } catch (fallbackError) {
                     textNode.nodeValue = originalText
-                    console.error("Fallback highlighting approach failed:", fallbackError)
+                    console.error(
+                      "Fallback highlighting approach failed:",
+                      fallbackError,
+                    )
                   }
                 }
               } catch (error) {
-                console.warn("Error processing text node for highlighting:", error)
+                console.warn(
+                  "Error processing text node for highlighting:",
+                  error,
+                )
               }
             }
           }
@@ -241,7 +254,9 @@ export function useScopedFind(
       parent.normalize() // merge adjacent text nodes
     })
 
-    const highlightedSpans = root.querySelectorAll<HTMLElement>(".pdf-text-highlight[data-match-index]")
+    const highlightedSpans = root.querySelectorAll<HTMLElement>(
+      ".pdf-text-highlight[data-match-index]",
+    )
     highlightedSpans.forEach((span) => {
       span.classList.remove("pdf-text-highlight")
       span.removeAttribute("data-match-index")
@@ -452,7 +467,7 @@ export function useScopedFind(
         }
 
         // Create highlight marks for all matches
-       
+      
         const allMarks: HTMLElement[] = []
         let longestMatchIndex = 0
         let longestMatchLength = 0
@@ -466,7 +481,7 @@ export function useScopedFind(
           }
         })
 
-        
+       
         for (let i = result.matches.length - 1; i >= 0; i--) {
           const match = result.matches[i]
           const marks = createHighlightMarks(root, match)
@@ -475,14 +490,14 @@ export function useScopedFind(
             mark.setAttribute("data-match-index", i.toString())
           })
 
-          
           allMarks.unshift(...marks)
-
-          
-          if (i === longestOriginalMatchIndex) {
-            longestMatchIndex = 0 
-          }
         }
+
+       
+        longestMatchIndex = allMarks.findIndex(
+          mark => mark.getAttribute("data-match-index") === longestOriginalMatchIndex.toString()
+        )
+
 
         if (debug) {
           console.log(
