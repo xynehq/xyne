@@ -45,11 +45,7 @@ export function useScopedFind(
   opts: Options = {},
 ) {
   const { documentOperationsRef } = useDocumentOperations()
-  const {
-    caseSensitive = true,
-    debug = false,
-    documentId,
-  } = opts
+  const { caseSensitive = true, debug = false, documentId } = opts
 
   // Cache for API responses
   const cacheRef = useRef<HighlightCache>({})
@@ -152,7 +148,6 @@ export function useScopedFind(
           ({ start, end }) => start < match.endIndex && end > match.startIndex,
         )
 
-      
         for (const { node: textNode, start: nodeStart } of intersectingNodes) {
           const startOffset = Math.max(0, match.startIndex - nodeStart)
           const endOffset = Math.min(
@@ -162,73 +157,71 @@ export function useScopedFind(
 
           if (startOffset < endOffset) {
             try {
-             
               const range = document.createRange()
               range.setStart(textNode, startOffset)
               range.setEnd(textNode, endOffset)
 
-             
               const rects = range.getClientRects()
 
-            
               let pageWrapper: HTMLElement | null = textNode.parentElement
               while (pageWrapper && pageWrapper !== container) {
-                if (pageWrapper.classList.contains('pdf-page-wrapper') ||
-                    pageWrapper.classList.contains('react-pdf__Page')) {
+                if (
+                  pageWrapper.classList.contains("pdf-page-wrapper") ||
+                  pageWrapper.classList.contains("react-pdf__Page")
+                ) {
                   break
                 }
                 pageWrapper = pageWrapper.parentElement
               }
 
-            
               if (!pageWrapper || pageWrapper === container) {
                 pageWrapper = textNode.parentElement
                 while (pageWrapper && pageWrapper !== container) {
                   const style = window.getComputedStyle(pageWrapper)
-                  if (style.position === 'relative' || style.position === 'absolute') {
+                  if (
+                    style.position === "relative" ||
+                    style.position === "absolute"
+                  ) {
                     break
                   }
                   pageWrapper = pageWrapper.parentElement
                 }
               }
 
-              
               if (!pageWrapper || pageWrapper === container) {
-                console.warn('No page wrapper found, using container')
+                console.warn("No page wrapper found, using container")
                 pageWrapper = container
               }
 
-            
               const pageStyle = window.getComputedStyle(pageWrapper)
-              if (pageStyle.position === 'static') {
-                pageWrapper.style.position = 'relative'
+              if (pageStyle.position === "static") {
+                pageWrapper.style.position = "relative"
               }
 
-         
-              let overlayContainer = pageWrapper.querySelector<HTMLElement>('.highlight-overlay-layer')
+              let overlayContainer = pageWrapper.querySelector<HTMLElement>(
+                "[data-highlight-overlay]",
+              )
               if (!overlayContainer) {
-                overlayContainer = document.createElement('div')
-                overlayContainer.className = 'highlight-overlay-layer'
+                overlayContainer = document.createElement("div")
+                overlayContainer.className = "absolute top-0 left-0 pointer-events-none z-[1]"
+                overlayContainer.setAttribute("data-highlight-overlay", "true")
                 pageWrapper.appendChild(overlayContainer)
               }
 
-             
               const pageRect = pageWrapper.getBoundingClientRect()
-
 
               for (let i = 0; i < rects.length; i++) {
                 const rect = rects[i]
 
                 if (rect.width === 0 || rect.height === 0) continue
 
-                const overlay = document.createElement('span')
-                overlay.className = 'pdf-highlight-overlay'
-                overlay.setAttribute('data-match-index', '0')
+                const overlay = document.createElement("span")
+                overlay.className = "pdf-highlight-overlay"
+                overlay.setAttribute("data-match-index", "0")
 
                 const left = rect.left - pageRect.left
                 const top = rect.top - pageRect.top
 
-       
                 overlay.style.cssText = `
                   position: absolute;
                   left: ${left}px;
@@ -245,10 +238,7 @@ export function useScopedFind(
                 marks.push(overlay)
               }
             } catch (error) {
-              console.warn(
-                "Error creating overlay highlight:",
-                error,
-              )
+              console.warn("Error creating overlay highlight:", error)
             }
           }
         }
@@ -265,14 +255,16 @@ export function useScopedFind(
     const root = containerRef.current
     if (!root) return
 
-   
-    const overlayContainers = root.querySelectorAll<HTMLElement>('.highlight-overlay-layer')
+    const overlayContainers = root.querySelectorAll<HTMLElement>(
+      "[data-highlight-overlay]",
+    )
     overlayContainers.forEach((container) => {
       container.remove()
     })
 
-   
-    const individualOverlays = root.querySelectorAll<HTMLElement>('.pdf-highlight-overlay')
+    const individualOverlays = root.querySelectorAll<HTMLElement>(
+      ".pdf-highlight-overlay",
+    )
     individualOverlays.forEach((overlay) => {
       overlay.remove()
     })
@@ -486,7 +478,6 @@ export function useScopedFind(
         let longestMatchIndex = 0
         let longestMatchLength = 0
 
-        
         result.matches.forEach((match, matchIndex) => {
           const marks = createHighlightMarks(root, match)
 
@@ -496,13 +487,11 @@ export function useScopedFind(
 
           allMarks.push(...marks)
 
-          
           if (match.length > longestMatchLength) {
             longestMatchLength = match.length
             longestMatchIndex = allMarks.length - marks.length
           }
         })
-
 
         if (debug) {
           console.log(
