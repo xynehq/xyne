@@ -1,3 +1,10 @@
+# [3.20.0](https://github.com/xynehq/xyne/compare/v3.19.2...v3.20.0) (2025-10-23)
+
+
+### Features
+
+* XYNE-206 added a chats overview for admins ([#1129](https://github.com/xynehq/xyne/issues/1129)) ([2400eb3](https://github.com/xynehq/xyne/commit/2400eb34d18d2ad84dddb3fbd2cecdb92e2efb4f))
+
 ## [3.19.2](https://github.com/xynehq/xyne/compare/v3.19.1...v3.19.2) (2025-10-23)
 
 
