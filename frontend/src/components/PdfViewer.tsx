@@ -11,26 +11,50 @@ import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api'
 pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerSrc()
 ;(globalThis as any).pdfjsWasmDir = `/pdfjs/wasm/`
 
-// Memoized Page component to prevent unnecessary re-renders
-const MemoizedPage = memo(({ 
-  pageNumber, 
-  scale, 
-  loading, 
-  error 
+
+const PageWrapper = memo(({
+  pageNumber,
+  scale,
+  loading,
+  error
 }: {
   pageNumber: number
   scale: number
   loading: React.ReactNode
   error: React.ReactNode
 }) => (
-  <Page
+  <div style={{ position: 'relative' }} className="pdf-page-wrapper">
+    <Page
+      pageNumber={pageNumber}
+      scale={scale}
+      renderTextLayer
+      renderAnnotationLayer
+      loading={loading}
+      error={error}
+      className="shadow-lg"
+    />
+  </div>
+), (prev, next) => (
+   prev.pageNumber === next.pageNumber && prev.scale === next.scale
+))
+
+
+const MemoizedPage = memo(({
+  pageNumber,
+  scale,
+  loading,
+  error
+}: {
+  pageNumber: number
+  scale: number
+  loading: React.ReactNode
+  error: React.ReactNode
+}) => (
+  <PageWrapper
     pageNumber={pageNumber}
     scale={scale}
-    renderTextLayer
-    renderAnnotationLayer
     loading={loading}
     error={error}
-    className="shadow-lg"
   />
 ), (prev, next) => (
    prev.pageNumber === next.pageNumber && prev.scale === next.scale
@@ -613,12 +637,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           >
             {displayMode === "paginated" ? (
               // Paginated view - single page
-              <Page
+              <PageWrapper
                 key={`page_${pageNumber}`}
                 pageNumber={pageNumber}
                 scale={scale}
-                renderTextLayer
-                renderAnnotationLayer
                 loading={
                   <div className="flex items-center justify-center p-8">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
@@ -633,7 +655,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                     </div>
                   </div>
                 }
-                className="shadow-lg"
               />
             ) : (
               // Continuous view - virtualized rendering

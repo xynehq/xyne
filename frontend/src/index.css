@@ -491,3 +491,16 @@ mark[data-match-index] {
 .dark mark[data-match-index] {
   background-color: rgba(250, 204, 21, 0.3) !important;
 }
+
+
+.pdf-page-wrapper {
+  position: relative;
+}
+
+.highlight-overlay-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+}
