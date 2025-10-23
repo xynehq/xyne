@@ -162,68 +162,60 @@ export function useScopedFind(
           )
 
           if (startOffset < endOffset) {
-            try {
-              // Create a range for this text segment
-              const range = document.createRange()
-              range.setStart(textNode, startOffset)
-              range.setEnd(textNode, endOffset)
+            const parentElement = textNode.parentElement
+            if (!parentElement) continue
 
-              // Create and insert the mark
-              const mark = document.createElement("mark")
-              mark.className = `${highlightClass}`
-              mark.setAttribute("data-match-index", "0")
+            
+            const isCompleteMatch = startOffset === 0 && endOffset === textNode.nodeValue!.length
 
+            if (isCompleteMatch) {
+             
+              parentElement.setAttribute("data-match-index", "0")
+              parentElement.classList.add("pdf-text-highlight")
+              marks.push(parentElement)
+            } else {
+         
               try {
-                range.surroundContents(mark)
-                marks.push(mark)
-              } catch (rangeError) {
-                console.warn(
-                  "Failed to wrap range with mark, trying alternative approach:",
-                  rangeError,
-                )
+                const range = document.createRange()
+                range.setStart(textNode, startOffset)
+                range.setEnd(textNode, endOffset)
 
-                // Alternative: split text node and insert mark
-                const originalText = textNode.nodeValue!
-                const beforeText = textNode.nodeValue!.substring(0, startOffset)
-                const matchText = textNode.nodeValue!.substring(
-                  startOffset,
-                  endOffset,
-                )
-                const afterText = textNode.nodeValue!.substring(endOffset)
+                const mark = document.createElement("mark")
+                mark.className = `${highlightClass}`
+                mark.setAttribute("data-match-index", "0")
 
                 try {
-                  // Replace the text node content with before text
-                  textNode.nodeValue = beforeText
-
-                  // Create and insert the mark
-                  const mark = document.createElement("mark")
-                  mark.className = `${highlightClass}`
-                  mark.setAttribute("data-match-index", "0")
-                  mark.textContent = matchText
-
-                  // Insert mark after the text node
-                  textNode.parentNode!.insertBefore(mark, textNode.nextSibling)
+                  range.surroundContents(mark)
                   marks.push(mark)
+                } catch {
+                  // Alternative: split text node and insert mark
+                  const originalText = textNode.nodeValue!
+                  const beforeText = textNode.nodeValue!.substring(0, startOffset)
+                  const matchText = textNode.nodeValue!.substring(startOffset, endOffset)
+                  const afterText = textNode.nodeValue!.substring(endOffset)
 
-                  // Insert remaining text after the mark
-                  if (afterText) {
-                    const afterNode = document.createTextNode(afterText)
-                    mark.parentNode!.insertBefore(afterNode, mark.nextSibling)
+                  try {
+                    textNode.nodeValue = beforeText
+                    const mark = document.createElement("mark")
+                    mark.className = `${highlightClass}`
+                    mark.setAttribute("data-match-index", "0")
+                    mark.textContent = matchText
+
+                    textNode.parentNode!.insertBefore(mark, textNode.nextSibling)
+                    marks.push(mark)
+
+                    if (afterText) {
+                      const afterNode = document.createTextNode(afterText)
+                      mark.parentNode!.insertBefore(afterNode, mark.nextSibling)
+                    }
+                  } catch (fallbackError) {
+                    textNode.nodeValue = originalText
+                    console.error("Fallback highlighting approach failed:", fallbackError)
                   }
-                } catch (fallbackError) {
-                  // Restore original text on error
-                  textNode.nodeValue = originalText
-                  console.error(
-                    "Fallback highlighting approach failed:",
-                    fallbackError,
-                  )
                 }
+              } catch (error) {
+                console.warn("Error processing text node for highlighting:", error)
               }
-            } catch (error) {
-              console.warn(
-                "Error processing text node for highlighting:",
-                error,
-              )
             }
           }
         }
@@ -247,6 +239,12 @@ export function useScopedFind(
       while (m.firstChild) parent.insertBefore(m.firstChild, m)
       parent.removeChild(m)
       parent.normalize() // merge adjacent text nodes
+    })
+
+    const highlightedSpans = root.querySelectorAll<HTMLElement>(".pdf-text-highlight[data-match-index]")
+    highlightedSpans.forEach((span) => {
+      span.classList.remove("pdf-text-highlight")
+      span.removeAttribute("data-match-index")
     })
 
     setMatches([])
@@ -454,22 +452,37 @@ export function useScopedFind(
         }
 
         // Create highlight marks for all matches
+       
         const allMarks: HTMLElement[] = []
         let longestMatchIndex = 0
         let longestMatchLength = 0
 
+       
+        let longestOriginalMatchIndex = 0
         result.matches.forEach((match, matchIndex) => {
-          const marks = createHighlightMarks(root, match)
-          marks.forEach((mark) => {
-            mark.setAttribute("data-match-index", matchIndex.toString())
-          })
-          allMarks.push(...marks)
-
           if (match.length > longestMatchLength) {
             longestMatchLength = match.length
-            longestMatchIndex = allMarks.length - marks.length
+            longestOriginalMatchIndex = matchIndex
           }
         })
+
+        
+        for (let i = result.matches.length - 1; i >= 0; i--) {
+          const match = result.matches[i]
+          const marks = createHighlightMarks(root, match)
+
+          marks.forEach((mark) => {
+            mark.setAttribute("data-match-index", i.toString())
+          })
+
+          
+          allMarks.unshift(...marks)
+
+          
+          if (i === longestOriginalMatchIndex) {
+            longestMatchIndex = 0 
+          }
+        }
 
         if (debug) {
           console.log(

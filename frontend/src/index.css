@@ -425,3 +425,69 @@ html {
     padding-top: 0;
   }
 }
+
+
+
+.pdf-text-highlight[data-match-index] {
+  background-color: rgba(250, 204, 21, 0.4) !important;
+}
+
+.dark .pdf-text-highlight[data-match-index] {
+  background-color: rgba(250, 204, 21, 0.3) !important;
+}
+
+
+mark[data-match-index] {
+
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+
+  display: inline !important;
+
+  position: static !important;
+
+
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  line-height: inherit !important;
+  font-family: inherit !important;
+  letter-spacing: inherit !important;
+  word-spacing: inherit !important;
+  vertical-align: inherit !important;
+  text-align: inherit !important;
+
+ 
+  transform: none !important;
+
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+
+  background-color: rgba(250, 204, 21, 0.4) !important;
+
+  background-clip: border-box !important;
+
+  outline: none !important;
+  box-shadow: none !important;
+
+  text-decoration: inherit !important;
+
+  float: none !important;
+  clear: none !important;
+
+  flex: none !important;
+  grid-area: auto !important;
+}
+
+.dark mark[data-match-index] {
+  background-color: rgba(250, 204, 21, 0.3) !important;
+}
