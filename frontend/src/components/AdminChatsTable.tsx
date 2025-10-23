@@ -118,7 +118,7 @@ const ChatViewDialog = ({ isOpen, onClose, chat }: ChatViewDialogProps) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle className="text-xl font-bold pr-8">
@@ -133,7 +133,7 @@ const ChatViewDialog = ({ isOpen, onClose, chat }: ChatViewDialogProps) => {
           </div>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-6 flex-1 overflow-hidden">
           {/* Chat Title & Status */}
           <div className="flex items-center gap-3">
             <h3 className="text-lg font-semibold">{chat.title}</h3>
@@ -188,14 +188,14 @@ const ChatViewDialog = ({ isOpen, onClose, chat }: ChatViewDialogProps) => {
           )}
 
           {/* Chat Messages */}
-          <Card>
-            <CardHeader className="pb-3">
+          <Card className="flex-1 flex flex-col min-h-0">
+            <CardHeader className="pb-3 flex-shrink-0">
               <CardTitle className="text-base flex items-center gap-2">
                 <MessageSquare className="h-4 w-4" />
                 Messages
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1 flex flex-col min-h-0">
               {loadingMessages ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -224,20 +224,22 @@ const ChatViewDialog = ({ isOpen, onClose, chat }: ChatViewDialogProps) => {
                   <p className="text-sm">No messages found in this chat</p>
                 </div>
               ) : (
-                <div className="space-y-3 max-h-[70vh] overflow-y-auto">
-                  <div className="text-xs text-muted-foreground mb-4 p-2 bg-muted/50 rounded">
+                <div className="flex flex-col flex-1 min-h-0">
+                  <div className="text-xs text-muted-foreground mb-4 p-2 bg-muted/50 rounded flex-shrink-0">
                     <User className="h-3 w-3 inline mr-1" />
                     Showing user messages only ({messages.length} messages)
                   </div>
-                  {messages.map((message, index) => (
-                    <div key={index} className="flex justify-end">
-                      <div className="max-w-[85%] rounded-lg p-3 bg-white dark:bg-blue-600 text-black dark:text-white border border-gray-200 dark:border-transparent">
-                        <div className="text-sm whitespace-pre-wrap break-words">
-                          {message}
+                  <div className="space-y-3 overflow-y-auto pr-4 flex-1 min-h-0 max-h-96">
+                    {messages.map((message, index) => (
+                      <div key={index} className="flex justify-end">
+                        <div className="max-w-[85%] rounded-lg p-3 bg-white dark:bg-blue-600 text-black dark:text-white border border-gray-200 dark:border-transparent">
+                          <div className="text-sm whitespace-pre-wrap break-words">
+                            {message}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </CardContent>
