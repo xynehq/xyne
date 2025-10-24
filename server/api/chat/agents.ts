@@ -124,6 +124,7 @@ import {
   getThreadContext,
   isContextSelected,
   UnderstandMessageAndAnswer,
+  generateAnswerFromDualRag,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
 import { agentTools } from "./tools"
@@ -547,9 +548,9 @@ const vespaResultToMinimalAgentFragment = async (
 
 type SynthesisResponse = {
   synthesisState:
-    | ContextSysthesisState.Complete
-    | ContextSysthesisState.Partial
-    | ContextSysthesisState.NotFound
+  | ContextSysthesisState.Complete
+  | ContextSysthesisState.Partial
+  | ContextSysthesisState.NotFound
   answer: string | null
 }
 
@@ -857,9 +858,9 @@ export const MessageWithToolsApi = async (c: Context) => {
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
       : {
-          totalValidFileIdsFromLinkCount: 0,
-          fileIds: [],
-        }
+        totalValidFileIdsFromLinkCount: 0,
+        fileIds: [],
+      }
     let fileIds = extractedInfo?.fileIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
@@ -1423,11 +1424,11 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                 if (loadedMode === "streamable-http") {
                   const transportOptions: StreamableHTTPClientTransportOptions =
-                    {
-                      requestInit: {
-                        headers: loadedHeaders,
-                      },
-                    }
+                  {
+                    requestInit: {
+                      headers: loadedHeaders,
+                    },
+                  }
                   await client.connect(
                     new StreamableHTTPClientTransport(
                       new URL(loadedUrl),
@@ -1557,7 +1558,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   )
                   const chatContainerFields =
                     isChatContainerFields(v.fields) &&
-                    v.fields.sddocname === chatContainerSchema
+                      v.fields.sddocname === chatContainerSchema
                       ? v.fields
                       : undefined
 
@@ -1583,7 +1584,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 for (const v of results.root.children) {
                   const chatContainerFields =
                     isChatContainerFields(v.fields) &&
-                    v.fields.sddocname === chatContainerSchema
+                      v.fields.sddocname === chatContainerSchema
                       ? v.fields
                       : undefined
                   if (chatContainerFields) {
@@ -1682,9 +1683,8 @@ export const MessageWithToolsApi = async (c: Context) => {
               })
               await logAndStreamReasoning({
                 type: AgentReasoningStepType.LogMessage,
-                message: ` Synthesis: ${
-                  parseSynthesisOutput?.answer || "No Synthesis details"
-                }`,
+                message: ` Synthesis: ${parseSynthesisOutput?.answer || "No Synthesis details"
+                  }`,
               })
               const isContextSufficient =
                 parseSynthesisOutput?.synthesisState ===
@@ -2772,9 +2772,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
       : {
-          totalValidFileIdsFromLinkCount: 0,
-          fileIds: [],
-        }
+        totalValidFileIdsFromLinkCount: 0,
+        fileIds: [],
+      }
     const fileIds = extractedInfo?.fileIds
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
@@ -3607,10 +3607,10 @@ export const AgentMessageApi = async (c: Context) => {
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
       : {
-          totalValidFileIdsFromLinkCount: 0,
-          fileIds: [],
-          collectionFolderIds: [],
-        }
+        totalValidFileIdsFromLinkCount: 0,
+        fileIds: [],
+        collectionFolderIds: [],
+      }
     const pathExtractedInfo = isValidPath
       ? await extractItemIdsFromPath(ids ?? "")
       : { collectionFileIds: [], collectionFolderIds: [], collectionIds: [] }
@@ -3794,8 +3794,302 @@ export const AgentMessageApi = async (c: Context) => {
                 }),
               })
             }
-
             if (
+              (fileIds && fileIds?.length > 0 || imageAttachmentFileIds &&
+                imageAttachmentFileIds?.length > 0) &&
+              (agentForDb?.appIntegrations && agentForDb?.appIntegrations)
+            ) {
+              // Extract app names from appIntegrations (handles both legacy and new format)
+              let agentAppEnums: Apps[] = []
+
+              if (Array.isArray(agentForDb.appIntegrations)) {
+                // Legacy format: string[] - convert each string to Apps enum
+                for (const integration of agentForDb.appIntegrations) {
+                  if (typeof integration === "string") {
+                    const lowerIntegration = integration.toLowerCase()
+                    // Map string names to Apps enum (same logic as chat.ts)
+                    switch (lowerIntegration) {
+                      case Apps.GoogleDrive.toLowerCase():
+                      case "googledrive":
+                      case "googlesheets":
+                        if (!agentAppEnums.includes(Apps.GoogleDrive))
+                          agentAppEnums.push(Apps.GoogleDrive)
+                        break
+                      case Apps.DataSource.toLowerCase():
+                        if (!agentAppEnums.includes(Apps.DataSource))
+                          agentAppEnums.push(Apps.DataSource)
+                        break
+                      case Apps.Gmail.toLowerCase():
+                      case "gmail":
+                        if (!agentAppEnums.includes(Apps.Gmail))
+                          agentAppEnums.push(Apps.Gmail)
+                        break
+                      case Apps.GoogleCalendar.toLowerCase():
+                      case "googlecalendar":
+                        if (!agentAppEnums.includes(Apps.GoogleCalendar))
+                          agentAppEnums.push(Apps.GoogleCalendar)
+                        break
+                      case Apps.Slack.toLowerCase():
+                      case "slack":
+                        if (!agentAppEnums.includes(Apps.Slack))
+                          agentAppEnums.push(Apps.Slack)
+                        break
+                    }
+                  }
+                }
+              } else if (typeof agentForDb.appIntegrations === "object") {
+                // New format: Record<string, {itemIds, selectedAll}>
+                agentAppEnums = Object.keys(agentForDb.appIntegrations) as Apps[]
+              }
+
+              // Only proceed if we have valid app integrations
+              if (agentAppEnums.length > 0) {
+                // PATH 3: DUAL RAG (NEW!)
+                Logger.info(
+                  `[Path3] User has selected context AND agent has ${agentAppEnums.length} 
+  KB integrations, using Dual RAG`
+                )
+                let answer = ""
+                let citations: Citation[] = []
+                let imageCitations: ImageCitation[] = []
+                let citationMap: Record<number, number> = {}
+                let thinking = ""
+                let reasoning =
+                  userRequestsReasoning &&
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+                const conversationSpan = streamSpan.startSpan("conversation_search")
+                conversationSpan.setAttribute("answer", answer)
+                conversationSpan.end()
+
+                const ragSpan = streamSpan.startSpan("rag_processing")
+                const understandSpan = ragSpan.startSpan("understand_message")
+
+                // 🆕 Call our new Dual RAG function!
+                const iterator = generateAnswerFromDualRag(
+                  message,
+                  email,
+                  ctx,
+                  userMetadata,
+                  0.5,
+                  fileIds,
+                  agentAppEnums,  // ✅ Now properly extracted
+                  userRequestsReasoning,
+                  agentPromptForLLM,
+                  understandSpan,
+                  undefined,  // threadIds
+                  imageAttachmentFileIds,
+                  undefined,  // isMsgWithSources
+                  actualModelId || config.defaultBestModel,
+                  isValidPath,
+                  pathExtractedInfo.collectionFolderIds,
+                )
+
+                stream.writeSSE({
+                  event: ChatSSEvents.Start,
+                  data: "",
+                })
+
+                answer = ""
+                thinking = ""
+                reasoning = isReasoning && userRequestsReasoning
+                citations = []
+                imageCitations = []
+                citationMap = {}
+                let citationValues: Record<number, number> = {}
+                let count = 0
+
+                for await (const chunk of iterator) {
+                  if (stream.closed) {
+                    Logger.info(
+                      "[AgentMessageApi][Path3] Stream closed during Dual RAG loop. 
+  Breaking.",
+                    )
+                    wasStreamClosedPrematurely = true
+                    break
+                  }
+                  if (chunk.text) {
+                    if (
+                      totalValidFileIdsFromLinkCount > maxValidLinks &&
+                      count === 0
+                    ) {
+                      stream.writeSSE({
+                        event: ChatSSEvents.ResponseUpdate,
+                        data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks
+                          } links as it exceeds max limit of ${maxValidLinks}. `,
+                      })
+                    }
+                    if (reasoning && chunk.reasoning) {
+                      thinking += chunk.text
+                      stream.writeSSE({
+                        event: ChatSSEvents.Reasoning,
+                        data: chunk.text,
+                      })
+                    }
+                    if (!chunk.reasoning) {
+                      answer += chunk.text
+                      stream.writeSSE({
+                        event: ChatSSEvents.ResponseUpdate,
+                        data: chunk.text,
+                      })
+                    }
+                  }
+                  if (chunk.cost) {
+                    costArr.push(chunk.cost)
+                  }
+                  if (chunk.metadata?.usage) {
+                    tokenArr.push({
+                      inputTokens: chunk.metadata.usage.inputTokens,
+                      outputTokens: chunk.metadata.usage.outputTokens,
+                    })
+                  }
+                  if (chunk.citation) {
+                    const { index, item } = chunk.citation
+                    citations.push(item)
+                    citationMap[index] = citations.length - 1
+                    Logger.info(
+                      `[Path3] Found citations and sending it, current count: 
+  ${citations.length}`,
+                    )
+                    stream.writeSSE({
+                      event: ChatSSEvents.CitationsUpdate,
+                      data: JSON.stringify({
+                        contextChunks: citations,
+                        citationMap,
+                      }),
+                    })
+                    citationValues[index] = citations.length - 1
+                  }
+                  if (chunk.imageCitation) {
+                    loggerWithChild({ email: email }).info(
+                      `[Path3] Found image citation (key: 
+  ${chunk.imageCitation.citationKey}), sending it`,
+                    )
+                    imageCitations.push(chunk.imageCitation)
+                    stream.writeSSE({
+                      event: ChatSSEvents.ImageCitationUpdate,
+                      data: JSON.stringify(chunk.imageCitation),
+                    })
+                  }
+                  count++
+                }
+                understandSpan.setAttribute("citation_count", citations.length)
+                understandSpan.setAttribute(
+                  "citation_map",
+                  JSON.stringify(citationMap),
+                )
+                understandSpan.setAttribute(
+                  "citation_values",
+                  JSON.stringify(citationValues),
+                )
+                understandSpan.end()
+                const answerSpan = ragSpan.startSpan("process_final_answer")
+                answerSpan.setAttribute(
+                  "final_answer",
+                  processMessage(answer, citationMap),
+                )
+                answerSpan.setAttribute("actual_answer", answer)
+                answerSpan.setAttribute("final_answer_length", answer.length)
+                answerSpan.end()
+                ragSpan.end()
+
+                if (answer || wasStreamClosedPrematurely) {
+                  const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+                  const totalTokens = tokenArr.reduce(
+                    (sum, tokens) =>
+                      sum + tokens.inputTokens + tokens.outputTokens,
+                    0,
+                  )
+
+                  const msg = await insertMessage(db, {
+                    chatId: chat.id,
+                    userId: user.id,
+                    workspaceExternalId: workspace.externalId,
+                    chatExternalId: chat.externalId,
+                    messageRole: MessageRole.Assistant,
+                    email: user.email,
+                    sources: citations,
+                    imageCitations: imageCitations,
+                    message: processMessage(answer, citationMap),
+                    thinking: thinking,
+                    modelId:
+                      ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
+                        .modelId,
+                    cost: totalCost.toString(),
+                    tokensUsed: totalTokens,
+                  })
+                  assistantMessageId = msg.externalId
+                  const traceJson = tracer.serializeToJson()
+                  await insertChatTrace({
+                    workspaceId: workspace.id,
+                    userId: user.id,
+                    chatId: chat.id,
+                    messageId: msg.id,
+                    chatExternalId: chat.externalId,
+                    email: user.email,
+                    messageExternalId: msg.externalId,
+                    traceJson,
+                  })
+                  Logger.info(
+                    `[AgentMessageApi][Path3] Inserted trace for message ${msg.externalId} 
+  (premature: ${wasStreamClosedPrematurely}).`,
+                  )
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseMetadata,
+                    data: JSON.stringify({
+                      chatId: chat.externalId,
+                      messageId: assistantMessageId,
+                    }),
+                  })
+                } else {
+                  const errorSpan = streamSpan.startSpan("handle_no_answer")
+                  const allMessages = await getChatMessagesWithAuth(
+                    db,
+                    chat?.externalId,
+                    email,
+                  )
+                  const lastMessage = allMessages[allMessages.length - 1]
+
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseMetadata,
+                    data: JSON.stringify({
+                      chatId: chat.externalId,
+                      messageId: lastMessage.externalId,
+                    }),
+                  })
+                  await stream.writeSSE({
+                    event: ChatSSEvents.Error,
+                    data: "Can you please make your query more specific?",
+                  })
+                  await addErrMessageToMessage(
+                    lastMessage,
+                    "Can you please make your query more specific?",
+                  )
+
+                  const traceJson = tracer.serializeToJson()
+                  await insertChatTrace({
+                    workspaceId: workspace.id,
+                    userId: user.id,
+                    chatId: chat.id,
+                    messageId: lastMessage.id,
+                    chatExternalId: chat.externalId,
+                    email: user.email,
+                    messageExternalId: lastMessage.externalId,
+                    traceJson,
+                  })
+                  errorSpan.end()
+                }
+
+                const endSpan = streamSpan.startSpan("send_end_event")
+                await stream.writeSSE({
+                  data: "",
+                  event: ChatSSEvents.End,
+                })
+                endSpan.end()
+                streamSpan.end()
+                rootSpan.end()
+              }
+            }
+            else if (
               (fileIds && fileIds?.length > 0) ||
               (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
             ) {
@@ -3862,9 +4156,8 @@ export const AgentMessageApi = async (c: Context) => {
                   ) {
                     stream.writeSSE({
                       event: ChatSSEvents.ResponseUpdate,
-                      data: `Skipping last ${
-                        totalValidFileIdsFromLinkCount - maxValidLinks
-                      } links as it exceeds max limit of ${maxValidLinks}. `,
+                      data: `Skipping last ${totalValidFileIdsFromLinkCount - maxValidLinks
+                        } links as it exceeds max limit of ${maxValidLinks}. `,
                     })
                   }
                   if (reasoning && chunk.reasoning) {
@@ -4089,10 +4382,10 @@ export const AgentMessageApi = async (c: Context) => {
                   try {
                     const parsedClassification =
                       typeof previousUserMessage.queryRouterClassification ===
-                      "string"
+                        "string"
                         ? JSON.parse(
-                            previousUserMessage.queryRouterClassification,
-                          )
+                          previousUserMessage.queryRouterClassification,
+                        )
                         : previousUserMessage.queryRouterClassification
                     previousClassification =
                       parsedClassification as QueryRouterLLMResponse
@@ -4360,17 +4653,17 @@ export const AgentMessageApi = async (c: Context) => {
                   )
                 }
                 const classification: TemporalClassifier & QueryRouterResponse =
-                  {
-                    direction: parsed.temporalDirection,
-                    type: parsed.type as QueryType,
-                    filterQuery: parsed.filter_query,
-                    filters: {
-                      ...(parsed?.filters ?? {}),
-                      apps: parsed.filters?.apps || [],
-                      entities: parsed.filters?.entities as any,
-                      mailParticipants: parsed.mailParticipants || {},
-                    },
-                  }
+                {
+                  direction: parsed.temporalDirection,
+                  type: parsed.type as QueryType,
+                  filterQuery: parsed.filter_query,
+                  filters: {
+                    ...(parsed?.filters ?? {}),
+                    apps: parsed.filters?.apps || [],
+                    entities: parsed.filters?.entities as any,
+                    mailParticipants: parsed.mailParticipants || {},
+                  },
+                }
 
                 loggerWithChild({ email: email }).info(
                   `Classifying the query as:, ${JSON.stringify(classification)}`,
@@ -4384,11 +4677,11 @@ export const AgentMessageApi = async (c: Context) => {
 
                 let iterator:
                   | AsyncIterableIterator<
-                      ConverseResponse & {
-                        citation?: { index: number; item: any }
-                        imageCitation?: ImageCitation
-                      }
-                    >
+                    ConverseResponse & {
+                      citation?: { index: number; item: any }
+                      imageCitation?: ImageCitation
+                    }
+                  >
                   | undefined = undefined
 
                 if (messages.length < 2) {
@@ -4707,8 +5000,7 @@ export const AgentMessageApi = async (c: Context) => {
             })
             Logger.error(
               error,
-              `Streaming Error: ${(error as Error).message} ${
-                (error as Error).stack
+              `Streaming Error: ${(error as Error).message} ${(error as Error).stack
               }`,
             )
             streamErrorSpan.end()
@@ -4829,7 +5121,7 @@ export const AgentMessageApi = async (c: Context) => {
             try {
               const parsedClassification =
                 typeof previousUserMessage.queryRouterClassification ===
-                "string"
+                  "string"
                   ? JSON.parse(previousUserMessage.queryRouterClassification)
                   : previousUserMessage.queryRouterClassification
               previousClassification =
