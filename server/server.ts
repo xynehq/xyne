@@ -1458,7 +1458,7 @@ const proxyToSyncServer = async (
     }
 
     // Prepare URL - for GET requests, add query parameters
-    let url = `http://localhost:${config.syncServerPort}${endpoint}`
+    let url = `http://${config.syncServerHost}:${config.syncServerPort}${endpoint}`
     if (method === "GET") {
       const urlObj = new URL(url)
       const queryParams = c.req.query()

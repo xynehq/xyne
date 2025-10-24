@@ -8,6 +8,7 @@ let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
 let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
+let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
 // Centralized database URL construction
 function getDatabaseUrl(): string {
@@ -175,6 +176,7 @@ export default {
   port,
   metricsPort,
   syncServerPort,
+  syncServerHost,
   host,
   vespaPort,
   // slack oauth does not work on http
