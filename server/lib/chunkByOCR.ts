@@ -25,7 +25,8 @@ const LAYOUT_PARSING_TIMEOUT_MS = process.env.LAYOUT_PARSING_TIMEOUT_MS
   ? Number.parseInt(process.env.LAYOUT_PARSING_TIMEOUT_MS, 10) 
   : DEFAULT_LAYOUT_PARSING_TIMEOUT_MS
 
-const DEFAULT_STATUS_ENDPOINT = "http://localhost:8081/instance_status"
+const LOCAL_STATUS_ENDPOINT = "http://localhost:8081/instance_status"
+const DEFAULT_STATUS_ENDPOINT = process.env.STATUS_ENDPOINT || LOCAL_STATUS_ENDPOINT
 const DEFAULT_POLL_INTERVAL_MS = 300
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 const DEFAULT_MAX_RETRIES = 2
@@ -35,7 +36,7 @@ const STATUS_FETCH_MAX_RETRIES = 3
 const BACKOFF_BASE_MS = 500
 const BACKOFF_FACTOR = 2
 const BACKOFF_MAX_MS = 8_000
-const BACKOFF_JITTER_RATIO = 0.2
+const BACKOFF_JITTER_RATIO = 0.2  
 
 type LayoutParsingBlock = {
   block_label?: string
