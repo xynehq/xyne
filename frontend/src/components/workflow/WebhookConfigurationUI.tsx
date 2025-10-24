@@ -118,7 +118,7 @@ export default function WebhookConfigurationUI({
     const isDevelopment = window.location.port === '5173'
     const baseUrl = isDevelopment ? 'http://localhost:3000' : window.location.origin
     const cleanPath = config.path?.startsWith('/') ? config.path : `/${config.path || ''}`
-    let url = `${baseUrl}/webhook${cleanPath}`
+    let url = `${baseUrl}/workflow/webhook${cleanPath}`
     
     // Add query parameters if they exist
     const queryParams = config.queryParams || {}

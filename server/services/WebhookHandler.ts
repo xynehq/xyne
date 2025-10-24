@@ -5,10 +5,11 @@ import {
   workflowStepTemplate, 
   workflowTemplate, 
   workflowExecution, 
-  workflowStepExecution 
+  workflowStepExecution,
+  toolExecution
 } from "@/db/schema/workflows"
-import { ToolType, WorkflowStatus } from "@/types/workflowTypes"
-import { sql, eq } from "drizzle-orm"
+import { ToolType, WorkflowStatus, ToolExecutionStatus } from "@/types/workflowTypes"
+import { sql, eq, and, inArray } from "drizzle-orm"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
@@ -119,7 +120,8 @@ export class WebhookHandler {
         .insert(workflowExecution)
         .values({
           workflowTemplateId: templateId,
-          createdBy: "webhook",
+          userId: template[0].userId,
+          workspaceId: template[0].workspaceId,
           name: `Webhook execution - ${template[0].name} - ${new Date().toLocaleDateString()}`,
           description: `Webhook-triggered execution of ${template[0].name}`,
           metadata: {
@@ -137,35 +139,114 @@ export class WebhookHandler {
       
       Logger.info(`📋 Created workflow execution: ${execution.id}`)
       
-      // Get the root step template
-      const rootStepId = template[0].rootWorkflowStepTemplateId
-      if (!rootStepId) {
-        throw new Error(`No root step found for template: ${templateId}`)
+      Logger.info(`📋 Template found: ${template[0].name} (${template[0].id})`)
+      
+      // Get all step templates
+      const allStepTemplates = await db
+        .select()
+        .from(workflowStepTemplate)
+        .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+      
+      if (!allStepTemplates || allStepTemplates.length === 0) {
+        throw new Error(`No steps found for template: ${templateId}`)
       }
       
-      // Create step execution for the root step
-      const [stepExecution] = await db
-        .insert(workflowStepExecution)
-        .values({
-          workflowExecutionId: execution.id,
-          workflowStepTemplateId: rootStepId,
-          name: `Webhook step - ${webhookData.path}`,
-          status: WorkflowStatus.ACTIVE,
-          metadata: {
-            createdFrom: "webhook",
-            webhookPath: webhookData.path,
-            webhookData: webhookData
-          }
-        })
-        .returning()
+      Logger.info(`📋 Found ${allStepTemplates.length} step templates in workflow:`, allStepTemplates.map(s => ({
+        id: s.id,
+        name: s.name,
+        type: s.type,
+        nextStepIds: s.nextStepIds
+      })))
       
-      Logger.info(`📝 Created step execution: ${stepExecution.id}`)
+      // Create step executions for ALL steps in the workflow
+      const stepExecutions = []
+      for (const stepTemplate of allStepTemplates) {
+        // Determine if this is a webhook step
+        const isWebhookStep = stepTemplate.toolIds && stepTemplate.toolIds.length > 0 && 
+          await this.isWebhookTool(stepTemplate.toolIds[0])
+        
+        const [stepExecution] = await db
+          .insert(workflowStepExecution)
+          .values({
+            workflowExecutionId: execution.id,
+            workflowStepTemplateId: stepTemplate.id,
+            name: stepTemplate.name,
+            type: stepTemplate.type,
+            // Mark webhook steps as completed immediately, others as active
+            status: isWebhookStep ? WorkflowStatus.COMPLETED : WorkflowStatus.ACTIVE,
+            parentStepId: stepTemplate.parentStepId,
+            prevStepIds: stepTemplate.prevStepIds,
+            nextStepIds: stepTemplate.nextStepIds,
+            timeEstimate: stepTemplate.timeEstimate,
+            completedAt: isWebhookStep ? new Date() : null,
+            completedBy: isWebhookStep ? "webhook-trigger" : null,
+            metadata: {
+              createdFrom: "webhook",
+              webhookPath: webhookData.path,
+              webhookData: webhookData,
+              stepOrder: allStepTemplates.indexOf(stepTemplate),
+              triggeredByWebhook: isWebhookStep
+            }
+          })
+          .returning()
+        
+        stepExecutions.push(stepExecution)
+        Logger.info(`📝 Created step execution: ${stepExecution.name} (${stepExecution.id}) - Status: ${stepExecution.status}, IsWebhook: ${isWebhookStep}`)
+        
+        // Create tool executions for this step (with webhook completion logic)
+        if (stepTemplate.toolIds && stepTemplate.toolIds.length > 0) {
+          await this.createToolExecutions(stepExecution.id, stepTemplate.toolIds, webhookData)
+        }
+      }
       
-      // Start execution asynchronously (don't wait for completion in webhook response)
-      this.startWorkflowExecution(execution.id, stepExecution.id, webhookData)
-        .catch(error => {
-          Logger.error(`❌ Async workflow execution failed: ${error}`)
-        })
+      // Use the simpler, direct execution approach to avoid double execution
+      Logger.info(`🚀 Starting direct workflow execution for ${execution.id}`)
+      
+      // Import and call executeWorkflowChain directly with proper webhook data
+      const { executeWorkflowChain } = await import("../api/workflow")
+      
+      // Get all tools for this workflow
+      const tools = await this.getWorkflowTools(templateId, template[0].userId, template[0].workspaceId)
+      
+      // Get the root step to start execution
+      const rootStepId = template[0].rootWorkflowStepTemplateId
+      const rootStepExecution = stepExecutions.find(se => se.workflowStepTemplateId === rootStepId)
+      
+      if (!rootStepExecution) {
+        throw new Error(`Root step execution not found for template ${templateId}`)
+      }
+      
+      Logger.info(`🏁 Starting workflow execution from root step: ${rootStepExecution.name}`)
+      
+      // Execute the workflow chain with empty previous results (webhook is first step)
+      executeWorkflowChain(
+        execution.id,
+        rootStepExecution.id,
+        tools,
+        {}
+      ).then(async () => {
+        // After workflow chain completes, do a final completion check
+        Logger.info(`🔄 Workflow chain completed for ${execution.id}, checking final completion status`)
+        try {
+          const workflowModule = await import("../api/workflow")
+          await workflowModule.checkAndCompleteWorkflow(execution.id)
+        } catch (error) {
+          Logger.error(`❌ Failed final completion check: ${error}`)
+        }
+      }).catch(error => {
+        Logger.error(`❌ Async workflow execution failed: ${error}`)
+      })
+      
+      // Add a delayed completion check as backup (after 10 seconds)
+      setTimeout(async () => {
+        try {
+          Logger.info(`🔄 Running delayed completion check for workflow ${execution.id}`)
+          const workflowModule = await import("../api/workflow")
+          await workflowModule.checkAndCompleteWorkflow(execution.id)
+        } catch (error) {
+          Logger.error(`❌ Delayed completion check failed: ${error}`)
+        }
+      }, 10000)
       
       return execution.id
       
@@ -175,130 +256,10 @@ export class WebhookHandler {
     }
   }
 
-  // Start workflow execution asynchronously
-  async startWorkflowExecution(
-    executionId: string,
-    rootStepId: string,
-    webhookData: Record<string, unknown>
-  ) {
-    try {
-      Logger.info(`🔄 Starting async execution for: ${executionId}`)
-      
-      // Get all tools for the workflow
-      const tools = await db.select().from(workflowTool)
-      
-      // Execute the workflow chain starting from root step
-      await this.executeWorkflowChain(
-        executionId,
-        rootStepId,
-        tools,
-        webhookData
-      )
-      
-      // Update execution status to completed
-      await db
-        .update(workflowExecution)
-        .set({
-          status: WorkflowStatus.COMPLETED,
-          completedAt: new Date()
-        })
-        .where(eq(workflowExecution.id, executionId))
-      
-      Logger.info(`✅ Completed workflow execution: ${executionId}`)
-      
-    } catch (error) {
-      Logger.error(`❌ Workflow execution failed: ${error}`)
-      
-      // Update execution status to failed
-      await db
-        .update(workflowExecution)
-        .set({
-          status: WorkflowStatus.FAILED,
-          completedAt: new Date()
-        })
-        .where(eq(workflowExecution.id, executionId))
-    }
-  }
-
-  // Import the execution chain function from workflow API (simplified version for webhooks)
-  async executeWorkflowChain(
-    _executionId: string,
-    currentStepId: string,
-    _tools: Record<string, unknown>[],
-    previousResults: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
-    try {
-      Logger.info(`🔗 Executing workflow chain step: ${currentStepId}`)
-      
-      // Update step status to running
-      await db
-        .update(workflowStepExecution)
-        .set({
-          status: WorkflowStatus.ACTIVE,
-          updatedAt: new Date()
-        })
-        .where(eq(workflowStepExecution.id, currentStepId))
-      
-      // Get current step execution
-      const stepExecution = await db
-        .select()
-        .from(workflowStepExecution)
-        .where(eq(workflowStepExecution.id, currentStepId))
-      
-      if (!stepExecution || stepExecution.length === 0) {
-        throw new Error(`Step execution not found: ${currentStepId}`)
-      }
-      
-      const step = stepExecution[0]
-      
-      // For webhook triggers, we'll execute the step with the webhook data
-      const result = {
-        stepId: currentStepId,
-        status: 'completed',
-        output: previousResults,
-        timestamp: new Date().toISOString()
-      }
-      
-      // Update step status to completed
-      await db
-        .update(workflowStepExecution)
-        .set({
-          status: WorkflowStatus.COMPLETED,
-          metadata: {
-            ...(step.metadata || {}),
-            result: result
-          },
-          completedAt: new Date()
-        })
-        .where(eq(workflowStepExecution.id, currentStepId))
-      
-      Logger.info(`✅ Completed workflow step: ${currentStepId}`)
-      
-      return result
-      
-    } catch (error) {
-      Logger.error(`❌ Workflow step failed: ${error}`)
-      
-      // Update step status to failed
-      await db
-        .update(workflowStepExecution)
-        .set({
-          status: WorkflowStatus.FAILED,
-          metadata: {
-            error: error instanceof Error ? error.message : String(error),
-            failedAt: new Date().toISOString()
-          },
-          completedAt: new Date()
-        })
-        .where(eq(workflowStepExecution.id, currentStepId))
-      
-      throw error
-    }
-  }
 
   // Dynamic webhook handler
   async handleWebhookRequest(c: Context): Promise<Response> {
-    const path = c.req.path.replace("/webhook", "")
+    const path = c.req.path.replace("/workflow/webhook", "")
     
     // Sanitize and validate webhook path
     if (!path || path.length === 0) {
@@ -730,6 +691,238 @@ export class WebhookHandler {
   // Get webhook registry size for debugging
   getWebhookRegistrySize(): number {
     return webhookRegistry.size
+  }
+
+  // Helper method to check if a tool is a webhook tool
+  private async isWebhookTool(toolId: string): Promise<boolean> {
+    try {
+      const [tool] = await db
+        .select()
+        .from(workflowTool)
+        .where(eq(workflowTool.id, toolId))
+        .limit(1)
+      
+      return tool?.type === 'webhook'
+    } catch (error) {
+      Logger.error(`Failed to check tool type for ${toolId}: ${error}`)
+      return false
+    }
+  }
+
+  // Helper method to create tool executions for webhook steps
+  private async createToolExecutions(stepExecutionId: string, toolIds: string[], webhookData: Record<string, unknown>) {
+    for (const toolId of toolIds) {
+      try {
+        // Get tool details
+        const [tool] = await db
+          .select()
+          .from(workflowTool)
+          .where(eq(workflowTool.id, toolId))
+          .limit(1)
+
+        if (tool) {
+          const isWebhookTool = tool.type === 'webhook'
+          
+          const result = isWebhookTool ? {
+            webhook: {
+              method: webhookData.method || 'POST',
+              path: webhookData.path || "/workflow/webhook",
+              url: webhookData.url || `http://localhost:3000${webhookData.path || "/workflow/webhook"}`,
+              headers: webhookData.headers as Record<string, any> || {},
+              query: webhookData.query as Record<string, any> || {},
+              body: webhookData.body || {},
+              timestamp: webhookData.timestamp || new Date().toISOString(),
+              curl: this.generateCurlCommand({
+                method: (webhookData.method as string) || 'POST',
+                url: (webhookData.url as string) || `http://localhost:3000${webhookData.path || "/workflow/webhook"}`,
+                headers: (webhookData.headers as Record<string, any>) || {},
+                body: webhookData.body || {}
+              })
+            },
+            // Create formatted content for next steps
+            aiOutput: this.formatWebhookContent(webhookData),
+            content: this.formatWebhookContent(webhookData),
+            output: this.formatWebhookContent(webhookData),
+            input: {
+              aiOutput: this.formatWebhookContent(webhookData),
+              content: this.formatWebhookContent(webhookData),
+              summary: `Webhook received: ${webhookData.method || 'POST'} request to ${webhookData.path || "/workflow/webhook"}`,
+              data: webhookData
+            },
+            data: webhookData,
+            status: 'success',
+            message: 'Webhook received and processed successfully',
+            triggeredAt: new Date().toISOString()
+          } : {
+            webhookData: webhookData,
+            queuedAt: new Date().toISOString()
+          }
+          
+          await db
+            .insert(toolExecution)
+            .values({
+              workflowToolId: toolId,
+              workflowExecutionId: stepExecutionId,
+              // Mark webhook tools as completed immediately
+              status: isWebhookTool ? ToolExecutionStatus.COMPLETED : ToolExecutionStatus.PENDING,
+              startedAt: new Date(),
+              completedAt: isWebhookTool ? new Date() : null,
+              result: result
+            })
+            
+          Logger.info(`📝 Created tool execution for ${tool.type} tool (${toolId}) - Status: ${isWebhookTool ? 'COMPLETED' : 'PENDING'}`)
+        }
+      } catch (error) {
+        Logger.error(`Failed to create tool execution for tool ${toolId}: ${error}`)
+      }
+    }
+  }
+
+  // Helper method to get workflow tools
+  private async getWorkflowTools(templateId: string, userId: number, workspaceId: number) {
+    try {
+      Logger.info(`🔧 getWorkflowTools for template: ${templateId}`)
+      
+      // Get all steps for the template
+      const steps = await db
+        .select()
+        .from(workflowStepTemplate)
+        .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+
+      Logger.info(`📋 Found ${steps.length} step templates:`, steps.map(s => ({
+        id: s.id,
+        name: s.name,
+        toolIds: s.toolIds
+      })))
+
+      // Get all tool IDs from steps
+      const allToolIds: string[] = []
+      steps.forEach(step => {
+        if (step.toolIds && Array.isArray(step.toolIds)) {
+          allToolIds.push(...step.toolIds)
+        }
+      })
+
+      Logger.info(`🔨 Collected tool IDs:`, allToolIds)
+      Logger.info(`🔧 Searching for tools with workspace ${workspaceId} and user ${userId}`)
+
+      // Get all tools referenced by steps - fetch from same workspace/user as template
+      if (allToolIds.length === 0) {
+        Logger.warn(`No tool IDs found for template ${templateId}`)
+        return []
+      }
+
+      const tools = await db
+        .select()
+        .from(workflowTool)
+        .where(
+          and(
+            inArray(workflowTool.id, allToolIds),
+            eq(workflowTool.workspaceId, workspaceId),
+            eq(workflowTool.userId, userId)
+          )
+        )
+
+      Logger.info(`🔨 Retrieved ${tools.length} tools for template ${templateId}:`, tools.map(t => ({
+        id: t.id,
+        type: t.type,
+        workspaceId: t.workspaceId,
+        userId: t.userId
+      })))
+
+      // If no tools found with workspace/user restriction, try without restriction for webhook execution
+      if (tools.length === 0) {
+        Logger.warn(`⚠️ No tools found for tool IDs: ${allToolIds.join(', ')} in workspace ${workspaceId} for user ${userId}`)
+        Logger.info(`🔄 Trying to fetch tools without workspace/user restriction for webhook execution...`)
+        
+        // For webhook execution, allow tools from any workspace/user as fallback
+        const allMatchingTools = await db
+          .select()
+          .from(workflowTool)
+          .where(inArray(workflowTool.id, allToolIds))
+        
+        Logger.info(`🔍 Found ${allMatchingTools.length} matching tools without restriction:`, allMatchingTools.map(t => ({
+          id: t.id,
+          type: t.type,
+          workspaceId: t.workspaceId,
+          userId: t.userId
+        })))
+        
+        if (allMatchingTools.length > 0) {
+          Logger.info(`✅ Using tools without workspace/user restriction for webhook execution`)
+          return allMatchingTools
+        }
+      }
+
+      return tools
+
+    } catch (error) {
+      Logger.error(`Failed to get workflow tools for template ${templateId}: ${error}`)
+      return []
+    }
+  }
+
+  // Helper method to format webhook content for AI analysis
+  private formatWebhookContent(requestData: any): string {
+    return `Webhook Request Analysis:
+
+Method: ${requestData.method || 'POST'}
+URL: ${requestData.url || `http://localhost:3000${requestData.path || "/workflow/webhook"}`}
+Path: ${requestData.path || "/workflow/webhook"}
+Timestamp: ${requestData.timestamp || new Date().toISOString()}
+
+Headers:
+${JSON.stringify(requestData.headers || {}, null, 2)}
+
+Query Parameters:
+${JSON.stringify(requestData.query || {}, null, 2)}
+
+Request Body:
+${JSON.stringify(requestData.body || {}, null, 2)}
+
+cURL Command:
+${this.generateCurlCommand({
+  method: (requestData.method as string) || 'POST',
+  url: (requestData.url as string) || `http://localhost:3000${requestData.path || "/workflow/webhook"}`,
+  headers: (requestData.headers as Record<string, any>) || {},
+  body: requestData.body || {}
+})}
+
+Please analyze this webhook request and provide insights.`
+  }
+
+  // Helper method to generate cURL command from webhook data
+  private generateCurlCommand(webhookData: {
+    method: string
+    url: string
+    headers: Record<string, any>
+    body: any
+  }): string {
+    try {
+      let curl = `curl -X ${webhookData.method.toUpperCase()}`
+      
+      // Add headers
+      Object.entries(webhookData.headers || {}).forEach(([key, value]) => {
+        if (value) {
+          curl += ` -H "${key}: ${value}"`
+        }
+      })
+      
+      // Add body for POST/PUT/PATCH requests
+      if (webhookData.body && ["POST", "PUT", "PATCH"].includes(webhookData.method.toUpperCase())) {
+        const bodyStr = typeof webhookData.body === 'string' 
+          ? webhookData.body 
+          : JSON.stringify(webhookData.body)
+        curl += ` -d '${bodyStr}'`
+      }
+      
+      // Add URL (should be last)
+      curl += ` "${webhookData.url}"`
+      
+      return curl
+    } catch (error) {
+      return `curl -X ${webhookData.method.toUpperCase()} "${webhookData.url}"`
+    }
   }
 
   // Initialize webhook handler by loading webhooks from database

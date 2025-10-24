@@ -421,7 +421,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         sources: [],
         message: response.text,
         modelId: actualModel,
-        cost: response.cost?.toString(),
+        cost: (response.cost || 0).toString(),
       })
 
       Logger.info("✅ Agent execution completed successfully (non-streaming)")
@@ -520,7 +520,7 @@ async function* createStreamingWithDBSave(
         sources: [],
         message: answer,  // Full accumulated text
         modelId: dbSaveParams.modelId,
-        cost: totalCost.toString(),
+        cost: (totalCost || 0).toString(),
         tokensUsed: totalTokens,
       })
 
@@ -619,6 +619,14 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
 
     // Determine if we should use RAG
     const shouldUseRAG = agent.isRagOn && uniqueFileIds.length > 0 // RAG enabled and files available
+    
+    Logger.info(`[agentCore] 🔍 RAG Decision:`, {
+      agentIsRagOn: agent.isRagOn,
+      uniqueFileIdsLength: uniqueFileIds.length,
+      shouldUseRAG: shouldUseRAG,
+      agentKBDocs: agentKBDocs.length,
+      kbIntegrationDocIds: kbIntegrationDocIds.length
+    })
 
 
     // ============================================
@@ -744,10 +752,18 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
       // We just call the LLM with the agent's prompt
 
       Logger.info(`[agentCore] 🤖 Starting direct LLM call (no RAG)...`)
+      Logger.info(`[agentCore] 📝 Query parameters:`, {
+        agentId: params.agentId,
+        userQueryLength: params.userQuery.length,
+        userQueryPreview: params.userQuery.substring(0, 200) + "...",
+        userEmail: params.userEmail,
+        workspaceId: params.workspaceId,
+        temperature: params.temperature,
+        hasAttachmentFileIds: (params.attachmentFileIds || []).length > 0,
+        hasNonImageAttachmentFileIds: (params.nonImageAttachmentFileIds || []).length > 0
+      })
 
       const llmSpan = executeAgentSpan?.startSpan("direct_llm_call")
-
-
 
       const result = await ExecuteAgentForWorkflow({
         agentId: params.agentId,
@@ -760,6 +776,32 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
         temperature: params.temperature,
 
       })
+
+      // Extract the response from the result
+      if (result.success && result.type === 'non-streaming') {
+        // The response object structure: { text: string, cost?: number, metadata?: any }
+        finalAnswer = result.response?.text || ""
+        Logger.info(`[agentCore] Extracted AI response: "${finalAnswer.substring(0, 200)}..." (length: ${finalAnswer.length})`)
+        
+        // Log the full response structure for debugging
+        Logger.info(`[agentCore] Full response structure:`, {
+          hasResponse: !!result.response,
+          responseKeys: result.response ? Object.keys(result.response) : [],
+          textValue: result.response?.text,
+          textLength: result.response?.text?.length || 0
+        })
+        
+        if (!finalAnswer) {
+          Logger.error(`[agentCore] AI response is empty! Response object:`, result.response)
+          finalAnswer = "AI response was empty"
+        }
+      } else if (result.success && result.type === 'streaming') {
+        Logger.warn(`[agentCore] Unexpected streaming result in non-streaming mode`)
+        finalAnswer = "AI response was in streaming format but expected non-streaming"
+      } else {
+        Logger.error(`[agentCore] AI execution failed: ${JSON.stringify(result)}`)
+        finalAnswer = `AI execution failed: ${result.error || 'Unknown error'}`
+      }
 
       Logger.info(`[agentCore] Direct LLM call result: ${JSON.stringify(result).substring(0, 700)}...`)
 

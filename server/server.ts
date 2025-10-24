@@ -928,12 +928,12 @@ webhookHandler.initialize()
 
 
 // Dynamic webhook handler
-app.all("/webhook/*", async (c) => {
+app.all("/workflow/webhook/*", async (c) => {
   return await webhookHandler.handleWebhookRequest(c)
 })
 
 // API endpoint to reload webhooks
-app.get("/webhook-api/reload", async (c) => {
+app.get("/workflow/webhook-api/reload", async (c) => {
   try {
     const result = await webhookHandler.reloadWebhooks()
     return c.json(result)
@@ -946,7 +946,7 @@ app.get("/webhook-api/reload", async (c) => {
 })
 
 // API endpoint to list registered webhooks
-app.get("/webhook-api/list", async (c) => {
+app.get("/workflow/webhook-api/list", async (c) => {
   try {
     const result = webhookHandler.listWebhooks()
     return c.json(result)

@@ -33,7 +33,9 @@ export class WebhookIntegrationService {
 
   async createWebhookTool(
     workflowTemplateId: string,
-    config: WebhookToolConfig
+    config: WebhookToolConfig,
+    userId: number,
+    workspaceId: number
   ): Promise<{ toolId: string; webhookUrl: string }> {
     try {
       // Create the webhook tool in the database
@@ -41,6 +43,8 @@ export class WebhookIntegrationService {
         .insert(workflowTool)
         .values({
           type: ToolType.WEBHOOK,
+          userId: userId,
+          workspaceId: workspaceId,
           value: {
             path: config.path,
             webhookUrl: config.webhookUrl

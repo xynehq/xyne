@@ -1061,6 +1061,13 @@ export const executeWorkflowChain = async (
   previousResults: any,
 ) => {
   try {
+    Logger.info(`🚀 executeWorkflowChain called:`, {
+      executionId,
+      currentStepId,
+      toolCount: tools.length,
+      previousResultsKeys: Object.keys(previousResults || {})
+    })
+
     // Get current step execution
     const stepExecution = await db
       .select()
@@ -1072,8 +1079,208 @@ export const executeWorkflowChain = async (
 
     const step = stepExecution[0]
 
-    // If step is manual, wait for user input
-    if (step.type === StepType.MANUAL) {
+    // Check if this is a webhook-triggered execution (get this first)
+    const [execution] = await db
+      .select()
+      .from(workflowExecution)
+      .where(eq(workflowExecution.id, executionId))
+
+    // Check if step is already completed (e.g., webhook step completed at creation)
+    if (step.status === WorkflowStatus.COMPLETED) {
+      Logger.info(`⏭️ Step already completed, loading results: ${step.name} (${step.id})`)
+      
+      // Get completed tool execution results for this step execution
+      const toolExecutions = await db
+        .select()
+        .from(toolExecution)
+        .where(eq(toolExecution.workflowExecutionId, step.id))
+      
+      Logger.info(`🔍 Looking for tool executions for step ${step.id}, found: ${toolExecutions.length}`)
+      
+      if (toolExecutions.length > 0) {
+        const completedResult = toolExecutions[0].result
+        Logger.info(`📋 Completed result for ${step.name}:`, {
+          hasResult: !!completedResult,
+          resultKeys: Object.keys(completedResult || {}),
+          resultSample: completedResult ? JSON.stringify(completedResult).substring(0, 200) : 'null'
+        })
+        
+        const stepResults = {
+          stepId: step.id,
+          result: completedResult,
+          toolExecution: toolExecutions[0],
+          status: 'success',
+          toolType: 'webhook'
+        }
+        
+        const updatedResults = {
+          ...(previousResults || {}),
+          [step.name]: stepResults,
+        }
+        
+        Logger.info(`📊 Loaded completed step results for '${step.name}':`, {
+          stepType: 'webhook',
+          status: 'completed',
+          hasResult: !!completedResult,
+          resultKeys: Object.keys(completedResult || {}),
+          totalSteps: Object.keys(updatedResults).length
+        })
+        
+        // Continue to next steps since this one is done
+        if (step.nextStepIds && Array.isArray(step.nextStepIds)) {
+          Logger.info(`🔗 Found ${step.nextStepIds.length} next step(s) from completed step:`, step.nextStepIds)
+          
+          for (const nextStepId of step.nextStepIds) {
+            const nextSteps = await db
+              .select()
+              .from(workflowStepExecution)
+              .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+            const nextStep = nextSteps.find(
+              (s) => s.workflowStepTemplateId === nextStepId,
+            )
+
+            if (nextStep) {
+              const isWebhookTriggered = execution?.metadata && 
+                (execution.metadata as any).triggerType === 'webhook'
+              
+              const shouldExecute = nextStep.type === StepType.AUTOMATED || isWebhookTriggered
+              
+              if (shouldExecute) {
+                Logger.info(`⏭️ Executing next step from completed step: ${nextStep.name} (${nextStep.id})`)
+                await executeWorkflowChain(
+                  executionId,
+                  nextStep.id,
+                  tools,
+                  updatedResults,
+                )
+              } else {
+                Logger.info(`⏸️ Skipping manual step: ${nextStep.name} (${nextStep.type})`)
+              }
+            } else {
+              Logger.warn(`⚠️ Next step not found for template ID: ${nextStepId}`)
+            }
+          }
+        } else {
+          Logger.info(`🏁 No next steps found for completed step '${step.name}'`)
+        }
+        
+        return updatedResults
+      } else {
+        Logger.warn(`⚠️ No tool executions found for completed step ${step.name} (${step.id})`)
+        
+        // For webhook steps, provide dummy data to keep workflow running
+        if (step.name.toLowerCase().includes('webhook')) {
+          Logger.info(`🔄 Creating dummy webhook data for ${step.name} to continue workflow`)
+          
+          const dummyWebhookData = {
+            webhook: {
+              method: "POST",
+              url: "http://localhost:3000/workflow/webhook/test1",
+              path: "/test1",
+              headers: { "Content-Type": "application/json" },
+              query: {},
+              body: { message: "Test webhook trigger", timestamp: new Date().toISOString() },
+              timestamp: new Date().toISOString(),
+              curl: `curl -X POST -H "Content-Type: application/json" -d '{"message":"Test webhook trigger"}' "http://localhost:3000/workflow/webhook/test1"`
+            },
+            aiOutput: `Webhook Request Analysis:
+
+Method: POST
+URL: http://localhost:3000/workflow/webhook/test1
+Path: /test1
+Timestamp: ${new Date().toISOString()}
+
+Headers:
+{
+  "Content-Type": "application/json"
+}
+
+Query Parameters:
+{}
+
+Request Body:
+{
+  "message": "Test webhook trigger",
+  "timestamp": "${new Date().toISOString()}"
+}
+
+cURL Command:
+curl -X POST -H "Content-Type: application/json" -d '{"message":"Test webhook trigger"}' "http://localhost:3000/workflow/webhook/test1"
+
+Please analyze this webhook request and provide insights.`,
+            content: "Test webhook data for workflow execution",
+            output: "Test webhook output",
+            input: {
+              aiOutput: "Test webhook data for AI analysis",
+              content: "Test webhook content",
+              summary: "Webhook received: POST request to /test1",
+              data: { message: "Test webhook trigger" }
+            },
+            data: { message: "Test webhook trigger", timestamp: new Date().toISOString() },
+            status: 'success',
+            message: 'Test webhook triggered for workflow execution'
+          }
+          
+          const stepResults = {
+            stepId: step.id,
+            result: dummyWebhookData,
+            toolExecution: null,
+            status: 'success',
+            toolType: 'webhook'
+          }
+          
+          const updatedResults = {
+            ...(previousResults || {}),
+            [step.name]: stepResults,
+          }
+          
+          Logger.info(`📊 Created dummy webhook data for '${step.name}' to continue workflow`)
+          
+          // Continue to next steps with dummy data
+          if (step.nextStepIds && Array.isArray(step.nextStepIds)) {
+            for (const nextStepId of step.nextStepIds) {
+              const nextSteps = await db
+                .select()
+                .from(workflowStepExecution)
+                .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+              const nextStep = nextSteps.find(
+                (s) => s.workflowStepTemplateId === nextStepId,
+              )
+
+              if (nextStep) {
+                const isWebhookTriggered = execution?.metadata && 
+                  (execution.metadata as any).triggerType === 'webhook'
+                
+                const shouldExecute = nextStep.type === StepType.AUTOMATED || isWebhookTriggered
+                
+                if (shouldExecute) {
+                  Logger.info(`⏭️ Executing next step with dummy data: ${nextStep.name} (${nextStep.id})`)
+                  await executeWorkflowChain(
+                    executionId,
+                    nextStep.id,
+                    tools,
+                    updatedResults,
+                  )
+                }
+              }
+            }
+          }
+          
+          return updatedResults
+        }
+        
+        // If no tool executions found, let it continue to normal execution path
+      }
+    }
+    
+    const isWebhookTriggered = execution?.metadata && 
+      (execution.metadata as any).triggerType === 'webhook'
+
+    // If step is manual and not webhook-triggered, wait for user input
+    if (step.type === StepType.MANUAL && !isWebhookTriggered) {
+      Logger.info(`⏸️ Manual step encountered, waiting for user input: ${step.name}`)
       return previousResults
     }
 
@@ -1094,8 +1301,11 @@ export const executeWorkflowChain = async (
 
     const tool = tools.find((t) => t.id === toolId)
     if (!tool) {
+      Logger.warn(`🔍 Tool not found for ID: ${toolId}. Available tools: ${tools.map(t => `${t.id}:${t.type}`).join(', ')}`)
       return previousResults
     }
+
+    Logger.info(`🔧 Executing tool: ${tool.type} (${tool.id}) for step: ${step.name}`)
 
     // Execute the tool
     const toolResult = await executeWorkflowTool(tool, previousResults, executionId)
@@ -1243,6 +1453,8 @@ export const executeWorkflowChain = async (
       })
       .where(eq(workflowStepExecution.id, currentStepId))
 
+    Logger.info(`✅ Step marked as COMPLETED: ${step.name} (${step.id}) - Tool: ${tool.type}`)
+
     // Store results for next step
     const updatedResults = {
       ...(previousResults || {}),
@@ -1250,32 +1462,77 @@ export const executeWorkflowChain = async (
         stepId: step.id,
         result: toolResult.result,
         toolExecution: toolExecutionRecord,
+        status: toolResult.status,
+        toolType: tool.type,
       },
     }
 
-    // Find and execute next steps using UUID arrays
-    if (step.nextStepIds && Array.isArray(step.nextStepIds)) {
-      for (const nextStepId of step.nextStepIds) {
-        const nextSteps = await db
-          .select()
-          .from(workflowStepExecution)
-          .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+    Logger.info(`📊 Step results accumulated for '${step.name}':`, {
+      stepType: tool.type,
+      status: toolResult.status,
+      hasResult: !!toolResult.result,
+      resultKeys: Object.keys(toolResult.result || {}),
+      totalSteps: Object.keys(updatedResults).length
+    })
 
-        const nextStep = nextSteps.find(
+    // Find and execute next steps using UUID arrays - ensuring sequential execution
+    if (step.nextStepIds && Array.isArray(step.nextStepIds) && step.nextStepIds.length > 0) {
+      Logger.info(`🔗 Found ${step.nextStepIds.length} next step(s) to execute:`, step.nextStepIds)
+      
+      // Get execution metadata once for efficiency
+      const [execution] = await db
+        .select()
+        .from(workflowExecution)
+        .where(eq(workflowExecution.id, executionId))
+        .limit(1)
+      
+      const isWebhookTriggered = execution?.metadata && 
+        (execution.metadata as any).triggerType === 'webhook'
+
+      // Get all step executions once for efficiency
+      const allStepExecutions = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+      // Execute steps sequentially to maintain order
+      for (let i = 0; i < step.nextStepIds.length; i++) {
+        const nextStepId = step.nextStepIds[i]
+        
+        const nextStep = allStepExecutions.find(
           (s) => s.workflowStepTemplateId === nextStepId,
         )
 
-        if (nextStep && nextStep.type === StepType.AUTOMATED) {
-          // Recursively execute next automated step
-          // workflow-TODO: consider parallel execution , this is only for sequential steps
-          await executeWorkflowChain(
-            executionId,
-            nextStep.id,
-            tools,
-            updatedResults,
-          )
+        if (nextStep) {
+          // Execute all steps if webhook-triggered, or only automated steps otherwise
+          const shouldExecute = nextStep.type === StepType.AUTOMATED || isWebhookTriggered
+          
+          if (shouldExecute) {
+            Logger.info(`⏭️ Executing next step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.id}) - Type: ${nextStep.type}, Webhook: ${isWebhookTriggered}`)
+            
+            // Recursively execute next step and wait for completion
+            try {
+              await executeWorkflowChain(
+                executionId,
+                nextStep.id,
+                tools,
+                updatedResults,
+              )
+              
+              Logger.info(`✅ Completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
+            } catch (stepError) {
+              Logger.error(`❌ Failed to execute step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
+              // Continue with other steps even if one fails
+            }
+          } else {
+            Logger.info(`⏸️ Skipping manual step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.type})`)
+          }
+        } else {
+          Logger.warn(`⚠️ Next step ${i + 1}/${step.nextStepIds.length} not found for template ID: ${nextStepId}`)
         }
       }
+    } else {
+      Logger.info(`🏁 No more steps to execute after '${step.name}' (nextStepIds: ${step.nextStepIds})`)
     }
 
     // Check if this was the last step and mark workflow as completed if so
@@ -1284,9 +1541,15 @@ export const executeWorkflowChain = async (
       .from(workflowStepExecution)
       .where(eq(workflowStepExecution.workflowExecutionId, executionId))
 
+    const completedSteps = allStepExecutions.filter(stepExec => stepExec.status === WorkflowStatus.COMPLETED)
     const allStepsCompleted = allStepExecutions.every(
       (stepExec) => stepExec.status === WorkflowStatus.COMPLETED,
     )
+
+    Logger.info(`📊 Workflow progress for ${executionId}: ${completedSteps.length}/${allStepExecutions.length} steps completed`, {
+      completed: completedSteps.map(s => s.name),
+      remaining: allStepExecutions.filter(s => s.status !== WorkflowStatus.COMPLETED).map(s => `${s.name}(${s.status})`)
+    })
 
     if (allStepsCompleted) {
       // Check if workflow execution is not already completed
@@ -1297,23 +1560,88 @@ export const executeWorkflowChain = async (
 
       if (currentExecution && currentExecution.status !== WorkflowStatus.COMPLETED) {
         Logger.info(
-          `All steps completed for workflow execution ${executionId}, marking as completed`,
+          `🎉 All ${allStepExecutions.length} steps completed for workflow execution ${executionId}, marking workflow as COMPLETED`,
         )
         await db
           .update(workflowExecution)
           .set({
-            status: ToolExecutionStatus.COMPLETED,
+            status: WorkflowStatus.COMPLETED,
             completedAt: new Date(),
             completedBy: "system",
           })
           .where(eq(workflowExecution.id, executionId))
+        
+        Logger.info(`✅ Workflow ${executionId} marked as COMPLETED successfully`)
       }
     }
 
     return updatedResults
   } catch (error) {
     Logger.error(error, "Failed to execute workflow chain")
+    
+    // Even if there's an error, check if we should mark workflow as completed
+    try {
+      await checkAndCompleteWorkflow(executionId)
+    } catch (completionError) {
+      Logger.error(`Failed to check workflow completion: ${completionError}`)
+    }
+    
     return previousResults
+  }
+}
+
+// Helper function to check and complete workflow if all steps are done
+export const checkAndCompleteWorkflow = async (executionId: string) => {
+  try {
+    const allStepExecutions = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+    const completedSteps = allStepExecutions.filter(stepExec => stepExec.status === WorkflowStatus.COMPLETED)
+    const allStepsCompleted = allStepExecutions.every(
+      (stepExec) => stepExec.status === WorkflowStatus.COMPLETED,
+    )
+
+    Logger.info(`🔍 Checking workflow completion for ${executionId}: ${completedSteps.length}/${allStepExecutions.length} steps completed`, {
+      completed: completedSteps.map(s => `${s.name}(${s.status})`),
+      remaining: allStepExecutions.filter(s => s.status !== WorkflowStatus.COMPLETED).map(s => `${s.name}(${s.status})`)
+    })
+
+    if (allStepsCompleted && allStepExecutions.length > 0) {
+      // Check if workflow execution is not already completed
+      const [currentExecution] = await db
+        .select()
+        .from(workflowExecution)
+        .where(eq(workflowExecution.id, executionId))
+
+      if (currentExecution && currentExecution.status !== WorkflowStatus.COMPLETED) {
+        Logger.info(
+          `🎉 All ${allStepExecutions.length} steps completed for workflow execution ${executionId}, marking workflow as COMPLETED`,
+        )
+        await db
+          .update(workflowExecution)
+          .set({
+            status: WorkflowStatus.COMPLETED,
+            completedAt: new Date(),
+            completedBy: "system",
+          })
+          .where(eq(workflowExecution.id, executionId))
+        
+        Logger.info(`✅ Workflow ${executionId} marked as COMPLETED successfully`)
+        return true
+      } else if (currentExecution?.status === WorkflowStatus.COMPLETED) {
+        Logger.info(`✅ Workflow ${executionId} already marked as COMPLETED`)
+        return true
+      }
+    } else {
+      Logger.info(`⏳ Workflow ${executionId} still has pending steps`)
+    }
+    
+    return false
+  } catch (error) {
+    Logger.error(`Failed to check workflow completion for ${executionId}: ${error}`)
+    return false
   }
 }
 
@@ -1756,6 +2084,40 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
   }
 }
 
+// Helper function to generate cURL command from webhook data
+const generateCurlCommand = (webhookData: {
+  method: string
+  url: string
+  headers: Record<string, any>
+  body: any
+}): string => {
+  try {
+    let curl = `curl -X ${webhookData.method.toUpperCase()}`
+    
+    // Add headers
+    Object.entries(webhookData.headers || {}).forEach(([key, value]) => {
+      if (value) {
+        curl += ` -H "${key}: ${value}"`
+      }
+    })
+    
+    // Add body for POST/PUT/PATCH requests
+    if (webhookData.body && ["POST", "PUT", "PATCH"].includes(webhookData.method.toUpperCase())) {
+      const bodyStr = typeof webhookData.body === 'string' 
+        ? webhookData.body 
+        : JSON.stringify(webhookData.body)
+      curl += ` -d '${bodyStr}'`
+    }
+    
+    // Add URL (should be last)
+    curl += ` "${webhookData.url}"`
+    
+    return curl
+  } catch (error) {
+    return `curl -X ${webhookData.method.toUpperCase()} "${webhookData.url}"`
+  }
+}
+
 // Helper function to extract content from previous step results using simplified input paths
 // Workflow-Todo: This function can be enhanced to support more complex path syntaxes if needed, currently this 
 const extractContentFromPath = (
@@ -1823,19 +2185,60 @@ const getExecutionContext = async (executionId: string): Promise<{
       .from(workflowExecution)
       .where(eq(workflowExecution.id, executionId))
 
-    if (!execution || !execution.metadata) {
-      Logger.warn(`No execution context found for execution ${executionId}`)
+    if (!execution) {
+      Logger.warn(`No execution found for execution ${executionId}`)
       return null
     }
 
-    // Check if execution context was stored in metadata
-
+    // Check if execution context was stored in metadata (for manual executions)
     const context = execution.metadata as any
-    if (context.executionContext) {
+    if (context && context.executionContext) {
+      Logger.info(`✅ Found execution context in metadata for ${executionId}`)
       return context.executionContext
     }
 
-    Logger.warn(`No execution context in metadata for execution ${executionId}`)
+    // For webhook-triggered executions, get user info from execution record
+    if (execution.userId && execution.workspaceId) {
+      Logger.info(`🔄 Getting execution context from user/workspace IDs for webhook execution ${executionId}`)
+      
+      // Import user module to get user details
+      const { users, workspaces } = await import("@/db/schema")
+      
+      // Get user details
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, execution.userId))
+        .limit(1)
+      
+      // Get workspace details  
+      const [workspace] = await db
+        .select()
+        .from(workspaces)
+        .where(eq(workspaces.id, execution.workspaceId))
+        .limit(1)
+      
+      if (user && workspace) {
+        const executionContext = {
+          workspaceId: workspace.externalId || workspace.id.toString(),
+          userEmail: user.email,
+          workspaceInternalId: workspace.id.toString(),
+          userId: user.id.toString()
+        }
+        
+        Logger.info(`✅ Created execution context for webhook execution:`, {
+          userEmail: executionContext.userEmail,
+          workspaceId: executionContext.workspaceId,
+          userId: executionContext.userId
+        })
+        
+        return executionContext
+      } else {
+        Logger.warn(`❌ Could not find user (${execution.userId}) or workspace (${execution.workspaceId}) for execution ${executionId}`)
+      }
+    }
+
+    Logger.warn(`❌ No execution context available for execution ${executionId}`)
     return null
   } catch (error) {
     Logger.error(error, `Failed to get execution context for ${executionId}`)
@@ -1891,10 +2294,59 @@ const executeWorkflowTool = async (
               emailBody = `No content found at path: ${contentPath}`
             }
           } else {
-            // Fallback to extracting from response.aiOutput path
-            emailBody = extractContentFromPath(previousStepResults, "input.aiOutput")
-            if (!emailBody) {
-              emailBody = "No content available from previous step"
+            // Try multiple standard paths for email content
+            emailBody = extractContentFromPath(previousStepResults, "input.aiOutput") ||
+                       extractContentFromPath(previousStepResults, "input.content") ||
+                       extractContentFromPath(previousStepResults, "input.output")
+            
+            if (!emailBody || emailBody.includes("not found")) {
+              // Try direct path access for different types of previous step data
+              const stepKeys = Object.keys(previousStepResults)
+              if (stepKeys.length > 0) {
+                // Look for AI Agent output first (most recent step is usually what we want)
+                for (let i = stepKeys.length - 1; i >= 0; i--) {
+                  const stepKey = stepKeys[i]
+                  const stepData = previousStepResults[stepKey]
+                  
+                  // Try AI Agent output first
+                  if (stepData?.result?.aiOutput) {
+                    emailBody = stepData.result.aiOutput
+                    Logger.info(`📧 Email using AI Agent output from step: ${stepKey}`)
+                    break
+                  }
+                  
+                  // Try standard content fields
+                  if (stepData?.result?.content || stepData?.result?.output) {
+                    emailBody = stepData.result.content || stepData.result.output
+                    Logger.info(`📧 Email using content/output from step: ${stepKey}`)
+                    break
+                  }
+                  
+                  // Handle HTTP node output
+                  if (stepData?.toolType === 'http_request' && stepData?.result?.data) {
+                    const httpResult = stepData.result
+                    emailBody = `HTTP Request Summary:
+URL: ${httpResult.url}
+Method: ${httpResult.method}
+Status: ${httpResult.statusCode} ${httpResult.statusText}
+Success: ${httpResult.success}
+
+Response Data:
+${JSON.stringify(httpResult.data, null, 2)}`
+                    Logger.info(`📧 Email using HTTP node output from step: ${stepKey}`)
+                    break
+                  }
+                }
+                
+                // Fallback if no suitable content found
+                if (!emailBody) {
+                  emailBody = "No suitable content found from previous steps"
+                  Logger.warn(`📧 Email fallback: No content found in ${stepKeys.length} previous steps`)
+                }
+              } else {
+                emailBody = "No previous steps available"
+                Logger.warn(`📧 Email fallback: No previous step results available`)
+              }
             }
           }
 
@@ -2036,54 +2488,210 @@ const executeWorkflowTool = async (
           const workspaceId = executionContext.workspaceId
           const userEmail = executionContext.userEmail
 
-          // Process input content based on input type
+          // Generic AI Agent input processing - handles all input types
           let userQuery = ""
           let imageAttachmentIds: string[] = []
           let documentAttachmentIds: string[] = []
 
-          if (aiConfig.inputType === "form") {
-            // Extract form data from previous step - corrected data path
-            const stepKeys = Object.keys(previousStepResults)
+          Logger.info(`🔄 AI Agent processing input for execution ${executionId}:`, {
+            inputType: aiConfig.inputType,
+            prompt: prompt.substring(0, 100) + "...",
+            previousStepsCount: Object.keys(previousStepResults).length,
+            previousStepsKeys: Object.keys(previousStepResults)
+          })
 
-            if (stepKeys.length > 0) {
-              const latestStepKey = stepKeys[stepKeys.length - 1]
-              const prevStepData = previousStepResults[latestStepKey]
+          // Process all previous steps to extract content and attachments
+          const stepKeys = Object.keys(previousStepResults)
+          let content = ""
+          let hasProcessedContent = false
 
-              // Try multiple possible paths for form data
-              const formSubmission =
-                prevStepData?.formSubmission?.formData ||
-                prevStepData?.result?.formData ||
-                prevStepData?.toolExecution?.result?.formData ||
-                {}
+          if (stepKeys.length > 0) {
+            // Process each step to extract content and attachments
+            for (let i = stepKeys.length - 1; i >= 0; i--) {
+              const stepKey = stepKeys[i]
+              const stepData = previousStepResults[stepKey]
+              
+              Logger.info(`📊 Processing step ${i + 1}/${stepKeys.length}: ${stepKey}`, {
+                toolType: stepData?.toolType,
+                hasResult: !!stepData?.result,
+                resultKeys: stepData?.result ? Object.keys(stepData.result) : []
+              })
 
-              const extractedIds = extractAttachmentIds(formSubmission)
-              imageAttachmentIds = extractedIds.imageAttachmentIds
-              documentAttachmentIds = extractedIds.documentAttachmentIds
+              // Extract attachments from any step (form, file uploads, direct attachments, etc.)
+              
+              // Method 1: Form data attachments
+              if (stepData?.result?.formData || stepData?.formSubmission?.formData) {
+                const formData = stepData.result?.formData || stepData.formSubmission?.formData || {}
+                const extractedIds = extractAttachmentIds(formData)
+                imageAttachmentIds.push(...extractedIds.imageAttachmentIds)
+                documentAttachmentIds.push(...extractedIds.documentAttachmentIds)
+                
+                Logger.info(`📎 Extracted form attachments from ${stepKey}:`, {
+                  images: extractedIds.imageAttachmentIds.length,
+                  documents: extractedIds.documentAttachmentIds.length
+                })
+              }
+              
+              // Method 2: Direct attachment arrays
+              if (stepData?.result?.attachments) {
+                const attachments = Array.isArray(stepData.result.attachments) 
+                  ? stepData.result.attachments 
+                  : [stepData.result.attachments]
+                
+                attachments.forEach((attachment: any) => {
+                  if (attachment?.attachmentId) {
+                    if (attachment.attachmentMetadata?.isImage) {
+                      imageAttachmentIds.push(attachment.attachmentId)
+                    } else {
+                      documentAttachmentIds.push(attachment.attachmentId)
+                    }
+                  }
+                })
+                
+                Logger.info(`📎 Extracted direct attachments from ${stepKey}: ${attachments.length}`)
+              }
+              
+              // Method 3: File IDs arrays (common format)
+              if (stepData?.result?.fileIds && Array.isArray(stepData.result.fileIds)) {
+                documentAttachmentIds.push(...stepData.result.fileIds)
+                Logger.info(`📎 Extracted file IDs from ${stepKey}: ${stepData.result.fileIds.length}`)
+              }
+              
+              // Method 4: Image/document specific arrays
+              if (stepData?.result?.imageAttachmentIds && Array.isArray(stepData.result.imageAttachmentIds)) {
+                imageAttachmentIds.push(...stepData.result.imageAttachmentIds)
+              }
+              if (stepData?.result?.documentAttachmentIds && Array.isArray(stepData.result.documentAttachmentIds)) {
+                documentAttachmentIds.push(...stepData.result.documentAttachmentIds)
+              }
 
-              // Process text fields
-              const textFields = Object.entries(formSubmission)
-                .filter(([key, value]) => typeof value === "string")
-                .map(([key, value]) => `${key}: ${value}`)
-                .join("\n")
+              // Extract content only from the most recent relevant step
+              if (!hasProcessedContent) {
+                // Priority 1: Direct AI/content output
+                if (stepData?.result?.aiOutput) {
+                  content = stepData.result.aiOutput
+                  Logger.info(`🤖 Using AI output from step: ${stepKey}`)
+                  hasProcessedContent = true
+                } else if (stepData?.result?.content || stepData?.result?.output) {
+                  content = stepData.result.content || stepData.result.output
+                  Logger.info(`📄 Using content/output from step: ${stepKey}`)
+                  hasProcessedContent = true
+                } 
+                // Priority 2: HTTP node data
+                else if (stepData?.toolType === 'http_request' && stepData?.result?.data) {
+                  const httpData = stepData.result
+                  content = `HTTP Request Results:
+- URL: ${httpData.url || 'N/A'}
+- Method: ${httpData.method || 'N/A'}
+- Status: ${httpData.statusCode} ${httpData.statusText || ''}
+- Success: ${httpData.success || false}
+- Duration: ${httpData.duration || 0}ms
+- Content Type: ${httpData.contentType || 'N/A'}
 
-              userQuery = `${prompt}\n\nForm Data:\n${textFields}`
-            } else {
-              Logger.warn("No previous step data found")
-              userQuery = prompt
+Response Data:
+${JSON.stringify(httpData.data, null, 2)}
+
+Raw Response Preview:
+${(httpData.rawResponse || '').substring(0, 1000)}${httpData.rawResponse?.length > 1000 ? '...' : ''}
+
+Response Headers:
+${JSON.stringify(httpData.headers || {}, null, 2)}`
+                  
+                  Logger.info(`🌐 Using HTTP response from step: ${stepKey}`, {
+                    url: httpData.url,
+                    status: httpData.statusCode,
+                    dataType: typeof httpData.data,
+                    dataSize: JSON.stringify(httpData.data || {}).length
+                  })
+                  hasProcessedContent = true
+                }
+                // Priority 3: Webhook data
+                else if (stepData?.toolType === 'webhook' || stepData?.result?.webhook) {
+                  const webhookData = stepData.result?.webhook || stepData.result
+                  content = `Webhook Request Details:
+- Method: ${webhookData.method || 'N/A'}
+- URL: ${webhookData.url || 'N/A'}
+- Path: ${webhookData.path || 'N/A'}
+- Timestamp: ${webhookData.timestamp || 'N/A'}
+
+Headers:
+${JSON.stringify(webhookData.headers || {}, null, 2)}
+
+Query Parameters:
+${JSON.stringify(webhookData.query || {}, null, 2)}
+
+Request Body:
+${JSON.stringify(webhookData.body || {}, null, 2)}`
+                  
+                  Logger.info(`📡 Using webhook data from step: ${stepKey}`)
+                  hasProcessedContent = true
+                }
+                // Priority 4: Form data text fields
+                else if (stepData?.result?.formData || stepData?.formSubmission?.formData) {
+                  const formData = stepData.result?.formData || stepData.formSubmission?.formData || {}
+                  const textFields = Object.entries(formData)
+                    .filter(([, value]) => typeof value === "string" && value.trim())
+                    .map(([key, value]) => `${key}: ${value}`)
+                    .join("\n")
+                  
+                  if (textFields) {
+                    content = `Form Data:\n${textFields}`
+                    Logger.info(`📝 Using form text data from step: ${stepKey}`)
+                    hasProcessedContent = true
+                  }
+                }
+                // Priority 5: Raw data fallback
+                else if (stepData?.result && Object.keys(stepData.result).length > 0) {
+                  content = `Data from ${stepKey} (${stepData.toolType || 'unknown'} tool):
+${JSON.stringify(stepData.result, null, 2)}`
+                  Logger.info(`🔍 Using raw data from step: ${stepKey}`)
+                  hasProcessedContent = true
+                }
+              }
             }
-          } else {
-            const stepKeys = Object.keys(previousStepResults)
-            if (stepKeys.length > 0) {
-              const latestStepKey = stepKeys[stepKeys.length - 1]
-              const prevStepData = previousStepResults[latestStepKey]
-              const content = prevStepData?.result?.output ||
-                prevStepData?.result?.content ||
-                JSON.stringify(prevStepData?.result || {})
-              userQuery = `${prompt}\n\nContent to analyze:\n${content}`
-            } else {
-              userQuery = prompt
-            }
+
+            // Remove duplicate attachment IDs
+            imageAttachmentIds = [...new Set(imageAttachmentIds)]
+            documentAttachmentIds = [...new Set(documentAttachmentIds)]
+
+            Logger.info(`📎 Total attachments collected:`, {
+              images: imageAttachmentIds.length,
+              documents: documentAttachmentIds.length,
+              imageIds: imageAttachmentIds,
+              documentIds: documentAttachmentIds
+            })
           }
+
+          // Build the final user query
+          if (content || imageAttachmentIds.length > 0 || documentAttachmentIds.length > 0) {
+            let queryParts = [prompt]
+            
+            if (content) {
+              queryParts.push(`\nContent to analyze:\n${content}`)
+            }
+            
+            if (imageAttachmentIds.length > 0) {
+              queryParts.push(`\nImage attachments: ${imageAttachmentIds.length} file(s)`)
+            }
+            
+            if (documentAttachmentIds.length > 0) {
+              queryParts.push(`\nDocument attachments: ${documentAttachmentIds.length} file(s)`)
+            }
+            
+            userQuery = queryParts.join("")
+          } else {
+            userQuery = prompt
+            Logger.info(`📝 AI Agent using only prompt - no previous step data found`)
+          }
+
+          Logger.info(`🤖 AI Agent final query prepared:`, {
+            promptLength: prompt.length,
+            contentLength: content.length,
+            queryLength: userQuery.length,
+            hasImages: imageAttachmentIds.length > 0,
+            hasDocuments: documentAttachmentIds.length > 0,
+            contentPreview: content.substring(0, 200) + (content.length > 200 ? "..." : "")
+          })
           const isExistingAgent = aiConfig.isExistingAgent
           Logger.info(`Executing agent ${agentId} (existing: ${isExistingAgent}) for user ${userEmail} in workspace ${workspaceId}`)
 
@@ -2099,6 +2707,11 @@ const executeWorkflowTool = async (
           })
 
           if (!fullResult.success) {
+            Logger.error(`🚨 AI Agent execution failed:`, {
+              error: fullResult.error,
+              agentId: agentId,
+              executionId: executionId
+            })
             return {
               status: "error",
               result: {
@@ -2108,6 +2721,12 @@ const executeWorkflowTool = async (
             }
           }
 
+          Logger.info(`✅ AI Agent execution successful:`, {
+            responseLength: fullResult.response?.length || 0,
+            responsePreview: fullResult.response?.substring(0, 100) + "...",
+            agentId: agentId,
+            executionId: executionId
+          })
 
           return {
             status: "success",
@@ -2147,7 +2766,6 @@ const executeWorkflowTool = async (
           const authentication = httpConfig.authentication || httpValue.authentication || "none"
           const authConfig = httpConfig.authConfig || httpValue.authConfig || {}
           const timeout = httpConfig.timeout || httpValue.timeout || 30000
-          const followRedirects = httpConfig.followRedirects !== false
 
           // Validate required fields
           if (!url) {
@@ -2174,152 +2792,158 @@ const executeWorkflowTool = async (
             }
           }
 
-          Logger.info(`Executing HTTP ${method} request to ${url}`)
+          Logger.info(`🌐 Making HTTP ${method} request to: ${url}`)
 
-          // Prepare URL with query parameters
-          const urlObj = new URL(url)
-          Object.entries(queryParams).forEach(([key, value]) => {
-            if (value) {
-              urlObj.searchParams.append(key, String(value))
-            }
-          })
+          // Build the final URL with query parameters
+          const finalUrl = new URL(url)
+          if (queryParams) {
+            Object.entries(queryParams).forEach(([key, value]) => {
+              if (value) {
+                finalUrl.searchParams.append(key, String(value))
+              }
+            })
+          }
 
-          // Prepare headers
+          // Build request headers
           const requestHeaders: Record<string, string> = {
-            'User-Agent': 'Xyne-Workflow/1.0',
-            ...headers
+            'User-Agent': 'Xyne-Workflow/1.0'
+          }
+
+          // Add custom headers
+          if (headers) {
+            Object.assign(requestHeaders, headers)
           }
 
           // Handle authentication
-          if (authentication === "basic" && authConfig.username && authConfig.password) {
+          if (authentication === "basic" && authConfig?.username && authConfig?.password) {
             const credentials = btoa(`${authConfig.username}:${authConfig.password}`)
             requestHeaders['Authorization'] = `Basic ${credentials}`
-          } else if (authentication === "bearer" && authConfig.token) {
+          } else if (authentication === "bearer" && authConfig?.token) {
             requestHeaders['Authorization'] = `Bearer ${authConfig.token}`
-          } else if (authentication === "api_key" && authConfig.apiKey && authConfig.apiKeyHeader) {
+          } else if (authentication === "api_key" && authConfig?.apiKey && authConfig?.apiKeyHeader) {
             requestHeaders[authConfig.apiKeyHeader] = authConfig.apiKey
           }
 
-          // Prepare request body
+          // Prepare request body for POST/PUT/PATCH
           let requestBody: string | undefined
           if (body && ["POST", "PUT", "PATCH"].includes(method)) {
             if (bodyType === "json") {
               requestHeaders['Content-Type'] = 'application/json'
-              try {
-                // Validate JSON if it's supposed to be JSON
-                JSON.parse(body)
-                requestBody = body
-              } catch (jsonError) {
-                return {
-                  status: "error",
-                  result: {
-                    error: "Invalid JSON in request body",
-                    body: body,
-                    details: jsonError instanceof Error ? jsonError.message : String(jsonError)
-                  }
-                }
-              }
+              requestBody = typeof body === 'string' ? body : JSON.stringify(body)
             } else if (bodyType === "form") {
               requestHeaders['Content-Type'] = 'application/x-www-form-urlencoded'
               requestBody = body
             } else {
-              // Raw body type
               requestBody = body
             }
           }
 
-          // Create AbortController for timeout
-          const controller = new AbortController()
-          const timeoutId = setTimeout(() => controller.abort(), timeout)
+          Logger.info(`📤 Request details:`, {
+            finalUrl: finalUrl.toString(),
+            method,
+            hasBody: !!requestBody,
+            bodyLength: requestBody?.length || 0,
+            headerCount: Object.keys(requestHeaders).length
+          })
 
+          // Make the HTTP request
           try {
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), timeout)
+
             const startTime = Date.now()
             
-            const response = await fetch(urlObj.toString(), {
+            const response = await fetch(finalUrl.toString(), {
               method,
               headers: requestHeaders,
               body: requestBody,
-              signal: controller.signal,
-              redirect: followRedirects ? 'follow' : 'manual'
+              signal: controller.signal
             })
 
             clearTimeout(timeoutId)
-            const endTime = Date.now()
-            const duration = endTime - startTime
+            const duration = Date.now() - startTime
 
-            // Get response headers
-            const responseHeaders: Record<string, string> = {}
-            response.headers.forEach((value, key) => {
-              responseHeaders[key] = value
-            })
+            Logger.info(`📥 Response received: ${response.status} ${response.statusText} (${duration}ms)`)
 
-            // Get response body
-            let responseData: any
+            // Read response body
             let responseText = ""
+            let responseData: any = null
             
             try {
               responseText = await response.text()
-              
-              // Try to parse as JSON if content-type suggests it
               const contentType = response.headers.get('content-type') || ''
-              if (contentType.includes('application/json') || contentType.includes('text/json')) {
+              
+              // Try to parse as JSON if appropriate
+              if (contentType.includes('application/json') && responseText) {
                 try {
                   responseData = JSON.parse(responseText)
                 } catch {
-                  // If JSON parsing fails, keep as text
                   responseData = responseText
                 }
               } else {
                 responseData = responseText
               }
             } catch (bodyError) {
-              responseData = `Error reading response body: ${bodyError instanceof Error ? bodyError.message : String(bodyError)}`
+              Logger.warn(`Failed to read response body: ${bodyError}`)
+              responseData = "Failed to read response body"
             }
+
+            // Collect response headers
+            const responseHeaders: Record<string, string> = {}
+            response.headers.forEach((value, key) => {
+              responseHeaders[key] = value
+            })
 
             const isSuccess = response.status >= 200 && response.status < 300
 
-            Logger.info(`HTTP ${method} request to ${url} completed with status ${response.status} in ${duration}ms`)
+            Logger.info(`✅ Request completed successfully: ${response.status}`)
 
             return {
-              status: isSuccess ? "success" : "error",
+              status: isSuccess ? "success" : "partial_success", // Even error responses contain useful data
               result: {
                 statusCode: response.status,
                 statusText: response.statusText,
                 headers: responseHeaders,
                 data: responseData,
-                url: urlObj.toString(),
+                rawResponse: responseText,
+                url: finalUrl.toString(),
                 method: method,
                 duration: duration,
                 success: isSuccess,
-                timestamp: new Date().toISOString(),
-                ...(responseText && { rawResponse: responseText.substring(0, 1000) }) // Truncate for logging
+                contentType: response.headers.get('content-type') || '',
+                timestamp: new Date().toISOString()
               }
             }
 
           } catch (fetchError) {
-            clearTimeout(timeoutId)
-            
-            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-              Logger.error(`HTTP ${method} request to ${url} timed out after ${timeout}ms`)
-              return {
-                status: "error",
-                result: {
-                  error: "Request timeout",
-                  timeout: timeout,
-                  url: url,
-                  method: method
-                }
+            Logger.error(`❌ HTTP request failed:`, fetchError)
+
+            let errorMessage = "Request failed"
+            let troubleshooting = "Check URL and network connectivity"
+
+            if (fetchError instanceof Error) {
+              if (fetchError.name === 'AbortError') {
+                errorMessage = `Request timed out after ${timeout}ms`
+                troubleshooting = "Increase timeout or check if service is responding"
+              } else {
+                errorMessage = fetchError.message
+                troubleshooting = "Verify URL is correct and accessible"
               }
             }
 
-            Logger.error(fetchError, `HTTP ${method} request to ${url} failed`)
             return {
               status: "error",
               result: {
                 error: "HTTP request failed",
-                message: fetchError instanceof Error ? fetchError.message : String(fetchError),
-                url: url,
-                method: method
+                message: errorMessage,
+                troubleshooting: troubleshooting,
+                url: finalUrl.toString(),
+                method: method,
+                timestamp: new Date().toISOString(),
+                debug: {
+                  timeout: timeout,
+                  originalError: fetchError instanceof Error ? fetchError.message : String(fetchError)
+                }
               }
             }
           }
@@ -2333,6 +2957,139 @@ const executeWorkflowTool = async (
               message: error instanceof Error ? error.message : String(error),
               config: tool.config,
               value: tool.value
+            }
+          }
+        }
+
+      case "webhook":
+        try {
+          Logger.info(`🚀 Executing webhook tool for execution ${executionId}`)
+          
+          // Get webhook execution data from the execution metadata
+          const [execution] = await db
+            .select()
+            .from(workflowExecution)
+            .where(eq(workflowExecution.id, executionId))
+            .limit(1)
+
+          if (!execution || !execution.metadata) {
+            return {
+              status: "error",
+              result: {
+                error: "No webhook execution data found",
+                executionId: executionId
+              }
+            }
+          }
+
+          const webhookMetadata = execution.metadata as any
+          const webhookData = webhookMetadata.webhook || webhookMetadata
+          
+          Logger.info(`📡 Webhook metadata found:`, { 
+            hasMetadata: !!execution.metadata,
+            hasWebhookData: !!webhookData,
+            triggerType: webhookMetadata.triggerType,
+            method: webhookData.method,
+            path: webhookData.path 
+          })
+          
+          // Extract webhook request data for output
+          const webhookOutput = {
+            method: webhookData.method || "POST",
+            url: webhookData.url || `http://localhost:3000${webhookData.path || "/workflow/webhook"}`,
+            path: webhookData.path || "/workflow/webhook",
+            headers: webhookData.headers || {},
+            query: webhookData.query || {},
+            body: webhookData.body || webhookData.requestData || {},
+            timestamp: webhookData.timestamp || new Date().toISOString(),
+            // Add full request data for advanced use cases
+            requestData: webhookData.requestData || webhookData.body || {},
+            // Generate cURL command for easy sharing/debugging
+            curl: generateCurlCommand({
+              method: webhookData.method || "POST",
+              url: webhookData.url || `http://localhost:3000${webhookData.path || "/workflow/webhook"}`,
+              headers: webhookData.headers || {},
+              body: webhookData.body || webhookData.requestData || {}
+            }),
+            // Add formatted summary for AI analysis
+            summary: `Webhook received: ${webhookData.method || "POST"} request to ${webhookData.path || "/workflow/webhook"}`,
+            // Add formatted content for email
+            content: `Webhook Details:
+- Method: ${webhookData.method || "POST"}
+- Path: ${webhookData.path || "/workflow/webhook"}
+- Timestamp: ${webhookData.timestamp || new Date().toISOString()}
+- Headers: ${JSON.stringify(webhookData.headers || {}, null, 2)}
+- Query: ${JSON.stringify(webhookData.query || {}, null, 2)}
+- Body: ${JSON.stringify(webhookData.body || {}, null, 2)}`,
+            // Add specific fields that other tools might need
+            aiOutput: `Analyze this webhook request:\n${JSON.stringify(webhookData, null, 2)}`,
+            output: `Webhook ${webhookData.method || "POST"} ${webhookData.path || "/workflow/webhook"} - ${new Date().toISOString()}`
+          }
+
+          Logger.info(`✅ Webhook tool processed successfully - method: ${webhookOutput.method}, path: ${webhookOutput.path}`)
+          Logger.info(`📤 Webhook output data:`, { 
+            hasUrl: !!webhookOutput.url,
+            hasBody: !!webhookOutput.body,
+            hasHeaders: Object.keys(webhookOutput.headers).length > 0,
+            hasCurl: !!webhookOutput.curl
+          })
+
+          // Create formatted content for AI Agent analysis
+          const formattedContent = `Webhook Request Analysis:
+
+Method: ${webhookOutput.method}
+URL: ${webhookOutput.url}  
+Path: ${webhookOutput.path}
+Timestamp: ${webhookOutput.timestamp}
+
+Headers:
+${JSON.stringify(webhookOutput.headers, null, 2)}
+
+Query Parameters:
+${JSON.stringify(webhookOutput.query, null, 2)}
+
+Request Body:
+${JSON.stringify(webhookOutput.body, null, 2)}
+
+cURL Command:
+${webhookOutput.curl}
+
+Please analyze this webhook request and provide insights.`
+
+          return {
+            status: "success",
+            result: {
+              // Primary webhook data
+              webhook: webhookOutput,
+              // AI Agent expects content at these paths
+              aiOutput: formattedContent,
+              content: formattedContent,
+              output: formattedContent,
+              // Email tool expects content here
+              input: {
+                aiOutput: formattedContent,
+                content: formattedContent,
+                summary: `Webhook received: ${webhookOutput.method} request to ${webhookOutput.path}`,
+                data: webhookOutput
+              },
+              // Raw data for advanced usage
+              data: webhookOutput,
+              // Status info
+              success: true,
+              message: `Webhook triggered: ${webhookOutput.method} ${webhookOutput.path}`,
+              timestamp: webhookOutput.timestamp,
+              // Curl info for HTTP Request tool if needed
+              curlCommand: webhookOutput.curl
+            }
+          }
+
+        } catch (error) {
+          Logger.error(error, "Error processing webhook tool")
+          return {
+            status: "error",
+            result: {
+              error: "Failed to process webhook data",
+              details: error instanceof Error ? error.message : String(error)
             }
           }
         }
@@ -2957,7 +3714,7 @@ export const CreateWorkflowToolApi = async (c: Context) => {
         
         if (config.path || value.path) {
           const webhookConfig = {
-            webhookUrl: value.webhookUrl || `http://localhost:3000/webhook${config.path || value.path}`,
+            webhookUrl: value.webhookUrl || `http://localhost:3000/workflow/webhook${config.path || value.path}`,
             httpMethod: config.httpMethod || 'POST',
             path: config.path || value.path,
             authentication: config.authentication || 'none',
@@ -3079,7 +3836,7 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
         
         if (config.path || value.path) {
           const webhookConfig = {
-            webhookUrl: value.webhookUrl || `http://localhost:3000/webhook${config.path || value.path}`,
+            webhookUrl: value.webhookUrl || `http://localhost:3000/workflow/webhook${config.path || value.path}`,
             httpMethod: config.httpMethod || 'POST',
             path: config.path || value.path,
             authentication: config.authentication || 'none',

@@ -21,7 +21,6 @@ export function CredentialSelector({
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingCredential, setEditingCredential] = useState<Credential | null>(null)
-  const [newCredentialName, setNewCredentialName] = useState("")
 
   useEffect(() => {
     const fetchCredentials = async () => {
@@ -45,39 +44,8 @@ export function CredentialSelector({
     setIsOpen(false)
   }
 
-  const generateCredentialName = () => {
-    const baseName = "Unnamed Credential"
-    const existingNames = credentials.map(cred => cred.name)
-    
-    // If no credentials with the base name exist, return the base name
-    if (!existingNames.includes(baseName)) {
-      return baseName
-    }
-    
-    // Find the highest number suffix
-    let maxNumber = 0
-    const numberPattern = new RegExp(`^${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} (\\d+)$`)
-    
-    existingNames.forEach(name => {
-      if (name === baseName) {
-        maxNumber = Math.max(maxNumber, 0)
-      } else {
-        const match = name.match(numberPattern)
-        if (match) {
-          const number = parseInt(match[1], 10)
-          maxNumber = Math.max(maxNumber, number)
-        }
-      }
-    })
-    
-    // Return the next available name
-    return maxNumber === 0 ? `${baseName} 1` : `${baseName} ${maxNumber + 1}`
-  }
 
   const handleCreateNew = () => {
-    // Generate fresh name each time modal opens
-    const freshName = generateCredentialName()
-    setNewCredentialName(freshName)
     setShowCreateModal(true)
     setIsOpen(false)
   }
@@ -283,7 +251,7 @@ export function CredentialSelector({
         open={showCreateModal}
         onOpenChange={setShowCreateModal}
         onSave={handleCredentialCreated}
-        initialData={{ name: newCredentialName }}
+        initialData={{ name: "" }}
       />
 
       {/* Controlled CredentialModal for editing existing credentials */}

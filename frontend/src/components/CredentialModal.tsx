@@ -37,17 +37,32 @@ export function CredentialModal({
   variant = "minimal"
 }: CredentialModalProps) {
   const [formData, setFormData] = useState<CredentialData>({
-    name: initialData.name || "Unnamed Credential",
+    name: initialData.name || "",
     user: initialData.user || "",
     password: initialData.password || "",
     allowedDomains: initialData.allowedDomains || "All"
   })
 
+  // Generate credential name based on user input
+  const generateCredentialName = (user: string) => {
+    if (!user.trim()) return "Unnamed Credential"
+    
+    // If it looks like an email, use the username part
+    if (user.includes('@')) {
+      const username = user.split('@')[0]
+      return `${username} (Basic Auth)`
+    }
+    
+    // Otherwise use the username directly
+    return `${user} (Basic Auth)`
+  }
+
   // Update form data when initialData changes or modal opens
   useEffect(() => {
     if (open) {
+      const name = initialData.name || (initialData.user ? generateCredentialName(initialData.user) : "Unnamed Credential")
       setFormData({
-        name: initialData.name || "Unnamed Credential",
+        name: name,
         user: initialData.user || "",
         password: initialData.password || "",
         allowedDomains: initialData.allowedDomains || "All"
@@ -61,7 +76,16 @@ export function CredentialModal({
   }
 
   const updateField = (field: keyof CredentialData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value }
+      
+      // Auto-update credential name when user field changes (only if name wasn't manually edited)
+      if (field === 'user' && (!initialData.name || prev.name === generateCredentialName(prev.user) || prev.name === "Unnamed Credential")) {
+        newData.name = generateCredentialName(value)
+      }
+      
+      return newData
+    })
   }
 
   return (
@@ -96,7 +120,7 @@ export function CredentialModal({
           </div>
           <Button 
             onClick={handleSave}
-            className="bg-orange-500 hover:bg-orange-600 text-white px-6 flex-shrink-0 mr-6"
+            className="bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white px-6 flex-shrink-0 mr-6 rounded-full"
           >
             Save
           </Button>
