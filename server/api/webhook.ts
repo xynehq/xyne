@@ -170,13 +170,23 @@ async function extractRequestData(c: Context, config: WebhookConfig) {
     Logger.warn(`Failed to parse request body: ${error}`)
   }
 
+  // Extract headers (excluding sensitive auth headers)
+  const headers: Record<string, string> = {}
+  c.req.raw.headers.forEach((value, key) => {
+    // Include most headers but exclude sensitive ones
+    if (!key.toLowerCase().includes('authorization') && !key.toLowerCase().includes('cookie')) {
+      headers[key] = value
+    }
+  })
+
   return {
     method: c.req.method,
     path: c.req.path,
-    headers: {},
+    headers: headers,
     query: Object.fromEntries(new URL(c.req.url).searchParams.entries()),
     body,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    url: c.req.url
   }
 }
 
@@ -187,10 +197,23 @@ async function executeWorkflowFromWebhook(
   config: WebhookConfig
 ): Promise<string> {
   try {
+    // Get template to fetch userId and workspaceId
+    const [template] = await db
+      .select()
+      .from(workflowTemplate)
+      .where(eq(workflowTemplate.id, templateId))
+      .limit(1)
+
+    if (!template) {
+      throw new Error(`Workflow template not found: ${templateId}`)
+    }
+
     const executionId = await webhookExecutionService.executeWorkflowFromWebhook({
       workflowTemplateId: templateId,
       webhookPath: config.path,
-      requestData
+      requestData,
+      userId: template.userId,
+      workspaceId: template.workspaceId
     })
 
     Logger.info(`Created workflow execution ${executionId} from webhook ${config.path}`)
@@ -289,7 +312,7 @@ webhookRouter.post('/register', zValidator('json', webhookConfigSchema), async (
     return c.json({ 
       success: true, 
       message: "Webhook registered successfully",
-      webhookUrl: `${new URL(c.req.url).origin}/webhook${config.path}`
+      webhookUrl: `${new URL(c.req.url).origin}/workflow/webhook${config.path}`
     })
   } catch (error) {
     throw new HTTPException(400, { message: `Failed to register webhook: ${error}` })

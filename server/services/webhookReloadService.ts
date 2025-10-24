@@ -15,14 +15,14 @@ export function hasWebhookTools(tools: Array<{ type: string }>): boolean {
 
 /**
  * Makes an internal API call to reload webhooks
- * This triggers the existing /webhook-api/reload endpoint functionality
+ * This triggers the existing /workflow/webhook-api/reload endpoint functionality
  */
 export async function triggerWebhookReload(): Promise<{ success: boolean; count?: number; error?: string }> {
   try {
     Logger.info("🔄 Triggering webhook reload...")
     
     // Make internal HTTP request to the webhook reload endpoint
-    const response = await fetch('http://localhost:3000/webhook-api/reload', {
+    const response = await fetch('http://localhost:3000/workflow/webhook-api/reload', {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json'

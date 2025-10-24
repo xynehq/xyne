@@ -1110,7 +1110,7 @@ const StepNode: React.FC<NodeProps> = ({
                 // Build description from webhook configuration
                 if (webhookConfig?.webhookUrl || webhookConfig?.path) {
                   const method = webhookConfig?.httpMethod || 'POST'
-                  const url = webhookConfig?.webhookUrl || `${window.location.origin}/webhook${webhookConfig?.path || ''}`
+                  const url = webhookConfig?.webhookUrl || `${window.location.origin}/workflow/webhook${webhookConfig?.path || ''}`
                   const auth = webhookConfig?.authentication === 'none' ? 'No authentication' : 
                               webhookConfig?.authentication === 'basic' ? 'Basic authentication' :
                               webhookConfig?.authentication === 'bearer' ? 'Bearer token authentication' :
