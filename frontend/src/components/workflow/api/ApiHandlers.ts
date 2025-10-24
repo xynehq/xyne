@@ -203,24 +203,6 @@ export const userWorkflowsAPI = {
     const response = await api.workflow.templates[templateId].$get()
     return extractResponseData<WorkflowTemplateSimplified>(response)
   },
-
-  /**
-   * Create a complex workflow template from workflow builder
-   */
-  // async createComplexTemplate(workflowData: {
-  //   name: string
-  //   description: string
-  //   version?: string
-  //   config?: any
-  //   nodes: any[]
-  //   edges: any[]
-  //   metadata?: any
-  // }): Promise<WorkflowTemplate2> {
-  //   const response = await api.workflow.templates.complex.$post({
-  //     json: workflowData,
-  //   })
-  //   return extractResponseData<WorkflowTemplate2>(response)
-  // },
 }
 
 // Templates API

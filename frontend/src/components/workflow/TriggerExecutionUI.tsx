@@ -29,19 +29,6 @@ const TriggerExecutionUI: React.FC<TriggerExecutionUIProps> = ({
   const [isTriggering, setIsTriggering] = useState(false)
   const [triggerError, setTriggerError] = useState<string | null>(null)
   const [triggerStatus, setTriggerStatus] = useState<'pending' | 'triggered' | 'error'>('pending')
-  React.useEffect(() => {
-    console.log("🔍 TriggerExecutionUI props changed:", { isVisible, stepExecutionId, stepName, builder, path })
-      // Debug logging
-  console.log("🔍 TriggerExecutionUI render:", { 
-    isVisible, 
-    builder, 
-    stepExecutionId, 
-    triggerStatus 
-  })
-
-  }
-
-)
 
   const handleTrigger = async () => {
     console.log("🔍 Trigger button clicked:", { stepExecutionId })

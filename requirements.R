@@ -8,7 +8,7 @@ install.packages(c(
   "httr",      # HTTP requests for API calls
   "curl",       # Basic HTTP/network operations
   "methods", "datasets", "stringr", "lubridate", "dplyr", 
-  "httr", "RCurl", "curl","digest","tidyverse","glue","bigrquery",
-  "readr","readxl","googlesheets4","stringr","data.table",
+  "RCurl", "digest","tidyverse","glue","bigrquery",
+  "readr","readxl","googlesheets4","data.table",
   "countrycode","foreach","doParallel","googledrive"
 ), dependencies=TRUE, quiet=FALSE)
