@@ -26,7 +26,23 @@ import {
   getToolsByConnectorId as dbGetToolsByConnectorId,
   tools as toolsTable,
 } from "@/db/tool" // Added dbGetToolsByConnectorId and toolsTable
-import { eq, and, inArray, sql, gte, lte, isNull } from "drizzle-orm"
+import {
+  eq,
+  and,
+  inArray,
+  sql,
+  gte,
+  lte,
+  isNull,
+  isNotNull,
+  like,
+  ilike,
+  count,
+  sum,
+  desc,
+  asc,
+  or,
+} from "drizzle-orm"
 import {
   deleteConnector,
   getConnectorByExternalId,
@@ -138,6 +154,8 @@ import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
 import { GetDocument } from "@/search/vespa"
 import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 
+import { fetchUserQueriesForChat } from "@/db/message"
+
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
 
@@ -161,6 +179,29 @@ export const adminQuerySchema = z.object({
     .string()
     .optional()
     .transform((val) => (val ? Number(val) : undefined)),
+  page: z
+    .string()
+    .optional()
+    .refine((val) => !val || (!isNaN(Number(val)) && Number(val) > 0), {
+      message: "Page must be a positive number",
+    })
+    .transform((val) => (val ? Number(val) : 1)),
+  offset: z
+    .string()
+    .optional()
+    .refine((val) => !val || (!isNaN(Number(val)) && Number(val) >= 0), {
+      message: "Offset must be a non-negative number",
+    })
+    .transform((val) => (val ? Number(val) : 20)),
+  search: z
+    .string()
+    .optional()
+    .transform((val) => (val?.trim() ? val.trim() : undefined)),
+  filterType: z.enum(["all", "agent", "normal"]).optional().default("all"),
+  sortBy: z
+    .enum(["created", "messages", "cost", "tokens"])
+    .optional()
+    .default("created"),
 })
 
 // Schema for user agent leaderboard query
@@ -1533,12 +1574,31 @@ export const IngestMoreChannelApi = async (c: Context) => {
 
 export const GetAdminChats = async (c: Context) => {
   try {
-    // Get validated query parameters
-    // @ts-ignore
-    const { from, to, userId } = c.req.valid("query")
+    // Get current user and workspace info
+    const { workspaceId: currentWorkspaceId } = c.get(JwtPayloadKey)
+
+    // Get query parameters directly
+    const query = c.req.query()
+    const from = query.from ? new Date(query.from) : undefined
+    const to = query.to ? new Date(query.to) : undefined
+    const userId = query.userId ? Number(query.userId) : undefined
+    const page = query.page ? Number(query.page) : 1
+    const pageSize = query.offset ? Number(query.offset) : 20
+    const search = query.search?.trim() || undefined
+    const filterType = query.filterType || "all"
+    const sortBy = query.sortBy || "created"
 
     // Build the conditions array
     const conditions = []
+
+    // Always exclude deleted messages
+    conditions.push(isNull(messages.deletedAt))
+
+    // Add workspace filtering unless user is SuperAdmin
+    // if (!isSuperAdmin) {
+    conditions.push(eq(users.workspaceExternalId, currentWorkspaceId))
+    // }
+
     if (from) {
       conditions.push(gte(chats.createdAt, from))
     }
@@ -1548,6 +1608,37 @@ export const GetAdminChats = async (c: Context) => {
     if (userId) {
       conditions.push(eq(chats.userId, userId))
     }
+
+    // Add filterType conditions
+    if (filterType === "agent") {
+      conditions.push(isNotNull(chats.agentId))
+    } else if (filterType === "normal") {
+      conditions.push(isNull(chats.agentId))
+    }
+
+    // Add search functionality using ORM methods
+    if (search) {
+      const searchParam = `%${search}%`
+      const searchCondition = or(
+        ilike(chats.title, searchParam),
+        ilike(users.email, searchParam),
+        ilike(users.name, searchParam),
+      )
+      conditions.push(searchCondition)
+    }
+
+    // First, get the total count using Drizzle count function
+    const totalCountResult = await db
+      .select({
+        count: count(),
+      })
+      .from(chats)
+      .leftJoin(users, eq(chats.userId, users.id))
+      .leftJoin(messages, eq(chats.id, messages.chatId))
+      .where(and(...conditions))
+      .groupBy(chats.id, users.email, users.name, users.role, users.createdAt)
+
+    const totalCount = totalCountResult.length
 
     // Build the query with feedback aggregation and cost tracking
     const baseQuery = db
@@ -1561,35 +1652,68 @@ export const GetAdminChats = async (c: Context) => {
         userEmail: users.email,
         userName: users.name,
         userRole: users.role,
-        userCreatedAt: users.createdAt, // Add user's actual creation date
-        messageCount: sql<number>`COUNT(${messages.id})::int`,
-        likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
-        dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
-        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
-        totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
+        userCreatedAt: users.createdAt,
+        messageCount: count(
+          sql`CASE WHEN ${messages.deletedAt} IS NULL THEN 1 END`,
+        ),
+        likes: count(
+          sql`CASE WHEN ${messages.feedback}->>'type' = 'like' AND ${messages.deletedAt} IS NULL THEN 1 END`,
+        ),
+        dislikes: count(
+          sql`CASE WHEN ${messages.feedback}->>'type' = 'dislike' AND ${messages.deletedAt} IS NULL THEN 1 END`,
+        ),
+        totalCost: sum(
+          sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END`,
+        ),
+        totalTokens: sum(
+          sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.tokensUsed} ELSE 0 END`,
+        ),
       })
       .from(chats)
       .leftJoin(users, eq(chats.userId, users.id))
       .leftJoin(messages, eq(chats.id, messages.chatId))
 
-    const result =
-      conditions.length > 0
-        ? await baseQuery
-            .where(and(...conditions))
-            .groupBy(
-              chats.id,
-              users.email,
-              users.name,
-              users.role,
-              users.createdAt,
-            )
-        : await baseQuery.groupBy(
-            chats.id,
-            users.email,
-            users.name,
-            users.role,
-            users.createdAt,
-          )
+    // Determine sort order based on sortBy parameter
+    let orderByClause
+    switch (sortBy) {
+      case "messages":
+        orderByClause = desc(
+          count(
+            sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.id} END`,
+          ),
+        )
+        break
+      case "cost":
+        orderByClause = desc(
+          sum(
+            sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END`,
+          ),
+        )
+        break
+      case "tokens":
+        orderByClause = desc(
+          sum(
+            sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.tokensUsed} ELSE 0 END`,
+          ),
+        )
+        break
+      case "created":
+      default:
+        orderByClause = desc(chats.createdAt)
+        break
+    }
+
+    // Calculate pagination offsets
+    const limit = pageSize
+    const offsetValue = (page - 1) * limit
+
+    // Execute the query with SQL-based pagination
+    const result = await baseQuery
+      .where(and(...conditions))
+      .groupBy(chats.id, users.email, users.name, users.role, users.createdAt)
+      .orderBy(orderByClause)
+      .limit(limit)
+      .offset(offsetValue)
 
     // Convert totalCost from string to number and totalTokens from bigint to number
     const processedResult = result.map((chat) => ({
@@ -1598,7 +1722,23 @@ export const GetAdminChats = async (c: Context) => {
       totalTokens: Number(chat.totalTokens) || 0, // bigint → string at runtime
     }))
 
-    return c.json(processedResult)
+    // Calculate pagination metadata
+    const hasNextPage = page * pageSize < totalCount
+    const hasPreviousPage = page > 1
+
+    // Return data with pagination metadata
+    const response = {
+      data: processedResult,
+      pagination: {
+        totalCount,
+        currentPage: page,
+        pageSize,
+        hasNextPage,
+        hasPreviousPage,
+      },
+    }
+
+    return c.json(response)
   } catch (error) {
     Logger.error(error, "Error fetching admin chats")
     return c.json(
@@ -2171,5 +2311,38 @@ export const GetKbVespaContent = async (c: Context) => {
       message:
         "Unable to fetch document data at this time. Please try again later.",
     })
+  }
+}
+
+export const GetChatQueriesApi = async (c: Context) => {
+  try {
+    const chatId = c.req.param("chatId")
+    const { workspaceId: currentWorkspaceId } = c.get(JwtPayloadKey)
+
+    const queries = await fetchUserQueriesForChat(
+      db,
+      chatId,
+      currentWorkspaceId,
+    )
+
+    return c.json(
+      {
+        success: true,
+        data: queries,
+      },
+      200,
+    )
+  } catch (error) {
+    Logger.error(error, "Error fetching chat queries")
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
   }
 }

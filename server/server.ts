@@ -44,6 +44,7 @@ import {
   startSlackIngestionSchema,
   microsoftServiceSchema,
   UserRoleChangeSchema,
+  chatIdParamSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -82,6 +83,7 @@ import {
   ListAllLoggedInUsers,
   ListAllIngestedUsers,
   GetKbVespaContent,
+  GetChatQueriesApi,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { initApiServerQueue } from "@/queue/api-server-queue"
@@ -1282,6 +1284,11 @@ export const AppRoutes = app
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetUserAgentLeaderboard,
   )
+  .get(
+    "/chat/queries/:chatId",
+    zValidator("param", chatIdParamSchema),
+    GetChatQueriesApi,
+  )
 
   .get(
     "/agents/:agentId/analysis",
@@ -1646,7 +1653,7 @@ app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 export const init = async () => {
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
-  
+
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
