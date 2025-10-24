@@ -1,3 +1,10 @@
+## [3.21.7](https://github.com/xynehq/xyne/compare/v3.21.6...v3.21.7) (2025-10-24)
+
+
+### Bug Fixes
+
+* **event:** Fix offset value for migrating event mails ([#1147](https://github.com/xynehq/xyne/issues/1147)) ([b66faa4](https://github.com/xynehq/xyne/commit/b66faa452ff7b1f6deea9bb8699eb7d27f2c6126))
+
 ## [3.21.6](https://github.com/xynehq/xyne/compare/v3.21.5...v3.21.6) (2025-10-24)
 
 
