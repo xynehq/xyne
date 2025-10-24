@@ -1,3 +1,10 @@
+## [3.21.2](https://github.com/xynehq/xyne/compare/v3.21.1...v3.21.2) (2025-10-24)
+
+
+### Bug Fixes
+
+* XYN-189 reading path from env ([#1138](https://github.com/xynehq/xyne/issues/1138)) ([43dcc18](https://github.com/xynehq/xyne/commit/43dcc18b7922a2f7ddff04e65670215dce4ff38a))
+
 ## [3.21.1](https://github.com/xynehq/xyne/compare/v3.21.0...v3.21.1) (2025-10-24)
 
 
