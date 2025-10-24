@@ -182,8 +182,38 @@ export const getChannelIdsFromAgentPrompt = (agentPrompt: string) => {
 }
 
 export interface AppSelection {
-  itemIds: string[]
+  // Required fields
+  itemIds: string[] // For Slack: channelIds, for Gmail: message/thread IDs
   selectedAll: boolean
+
+  // Multiple filters array
+  filters?: AppFilter[]
+}
+
+export interface AppFilter {
+  id: number // Numeric identifier for this filter
+  // Gmail-specific filters
+  from?: string[]
+  to?: string[]
+  cc?: string[]
+  bcc?: string[]
+  // Slack-specific filters
+  senderId?: string[]
+  channelId?: string[]
+  // Common filters
+  timeRange?: {
+    startDate: number
+    endDate: number
+  }
+}
+
+export interface AppFilters {
+  gmail?: {
+    filters?: AppFilter[]
+  }
+  slack?: {
+    filters?: AppFilter[]
+  }
 }
 
 export interface AppSelectionMap {
@@ -193,11 +223,13 @@ export interface AppSelectionMap {
 export interface ParsedResult {
   selectedApps: Apps[]
   selectedItems: Partial<Record<Apps, string[]>>
+  appFilters?: Partial<Record<Apps, AppFilters>>
 }
 
 export function parseAppSelections(input: AppSelectionMap): ParsedResult {
   const selectedApps: Apps[] = []
   let selectedItems: Record<Apps, string[]> = {} as Record<Apps, string[]>
+  let appFilters: Record<Apps, AppFilters> = {} as Record<Apps, AppFilters>
 
   for (let [appName, selection] of Object.entries(input)) {
     let app: Apps
@@ -222,6 +254,7 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
     }
 
     selectedApps.push(app)
+
     // If selectedAll is true or itemIds is empty, we infer "all selected"
     // So we don't add anything to selectedItems (empty means all)
     if (
@@ -238,11 +271,35 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
         selectedItems[app] = selection.itemIds
       }
     }
+
+    // Extract app-specific filters from new multiple filters format
+    const filters: AppFilters = {}
+
+    // Check for multiple filters format
+    if (selection.filters && selection.filters.length > 0) {
+      if (app === Apps.Gmail) {
+        filters.gmail = { filters: selection.filters }
+      } else if (app === Apps.Slack) {
+        filters.slack = { filters: selection.filters }
+      }
+    }
+
+    // Only add filters if there are any
+    if (Object.keys(filters).length > 0) {
+      appFilters[app] = filters
+    }
   }
-  return {
+
+  const result: ParsedResult = {
     selectedApps,
     selectedItems,
   }
+
+  // Only add appFilters if there are any
+  if (Object.keys(appFilters).length > 0) {
+    result.appFilters = appFilters
+  }
+  return result
 }
 
 // Interface for email search result fields

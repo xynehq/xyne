@@ -83,9 +83,33 @@ export const insertAgentSchema = createInsertSchema(agents, {
       z.record(
         z.string(),
         z.object({
-          // New AppSelectionMap format
+          // AppSelectionMap format
           itemIds: z.array(z.string()),
           selectedAll: z.boolean(),
+
+          // Multiple filter groups
+          filters: z
+            .array(
+              z.object({
+                id: z.number(), // Numeric identifier for this filter
+                // Gmail-specific filters
+                from: z.array(z.string()).optional(),
+                to: z.array(z.string()).optional(),
+                cc: z.array(z.string()).optional(),
+                bcc: z.array(z.string()).optional(),
+                // Slack-specific filters
+                senderId: z.array(z.string()).optional(),
+                channelId: z.array(z.string()).optional(),
+                // Common filters
+                timeRange: z
+                  .object({
+                    startDate: z.number(),
+                    endDate: z.number(),
+                  })
+                  .optional(),
+              }),
+            )
+            .optional(),
         }),
       ),
     ])
@@ -108,9 +132,33 @@ export const selectAgentSchema = createSelectSchema(agents, {
       z.record(
         z.string(),
         z.object({
-          // New AppSelectionMap format
+          // AppSelectionMap format
           itemIds: z.array(z.string()),
           selectedAll: z.boolean(),
+
+          // Multiple filter groups
+          filters: z
+            .array(
+              z.object({
+                id: z.number(), // Numeric identifier for this filter
+                // Gmail-specific filters
+                from: z.array(z.string()).optional(),
+                to: z.array(z.string()).optional(),
+                cc: z.array(z.string()).optional(),
+                bcc: z.array(z.string()).optional(),
+                // Slack-specific filters
+                senderId: z.array(z.string()).optional(),
+                channelId: z.array(z.string()).optional(),
+                // Common filters
+                timeRange: z
+                  .object({
+                    startDate: z.number(),
+                    endDate: z.number(),
+                  })
+                  .optional(),
+              }),
+            )
+            .optional(),
         }),
       ),
     ])

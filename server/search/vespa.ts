@@ -109,6 +109,7 @@ export const searchVespaAgent = async (
       ...options,
       driveIds,
       processedCollectionSelections,
+      appFilters: options.appFilters, // Explicitly pass appFilters
       recencyDecayRate:
         options.recencyDecayRate || config.defaultRecencyDecayRate,
     },
@@ -171,6 +172,7 @@ export const checkIfDataSourceFileExistsByNameAndId =
 
 // Slack operations
 export const getSlackUserDetails = vespa.getSlackUserDetails.bind(vespa)
+export const fetchSlackEntity = vespa.fetchSlackEntity.bind(vespa)
 
 // Utility operations
 export const getTimestamp = vespa.getTimestamp.bind(vespa)
