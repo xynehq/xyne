@@ -26,6 +26,10 @@ schema kb_items {
       # Database item ID linking to kb_items table
     }
     
+    field pageTitle type string {
+      indexing: summary
+    }
+
     field clFd type string {
       indexing: attribute | summary
       attribute: fast-search

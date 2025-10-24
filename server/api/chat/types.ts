@@ -70,6 +70,7 @@ export const MinimalCitationSchema = z.object({
   app: z.nativeEnum(Apps),
   entity: entitySchema,
   threadId: z.string().optional(),
+  page_title: z.string().optional(),
   itemId: z.string().optional(),
   clId: z.string().optional(),
 })
