@@ -1,3 +1,10 @@
+## [3.21.3](https://github.com/xynehq/xyne/compare/v3.21.2...v3.21.3) (2025-10-24)
+
+
+### Bug Fixes
+
+* **hardcodeApi:** removed the hardcoded value of sync-server endpoint ([#1142](https://github.com/xynehq/xyne/issues/1142)) ([634ad70](https://github.com/xynehq/xyne/commit/634ad704405c92e3e209384403aaecf73a7d7fd1))
+
 ## [3.21.2](https://github.com/xynehq/xyne/compare/v3.21.1...v3.21.2) (2025-10-24)
 
 
