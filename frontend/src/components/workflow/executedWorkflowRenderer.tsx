@@ -1126,7 +1126,7 @@ const ExecutionSidebar = ({
                   Completed:
                 </span>
                 <span className="text-xs text-gray-900">
-                  {new Date(step.completedAt).toLocaleString()}
+                  {new Date(step.completedAt).toLocaleString("en-US", { timeZone: "Asia/Kolkata", hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </span>
               </div>
             )}

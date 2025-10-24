@@ -2812,7 +2812,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
         // Create form data matching the curl command format
         const formData: Record<string, any> = {
-          name: `${currentTemplate?.name || "Workflow"} - ${new Date().toLocaleString()}`,
+          name: `${currentTemplate?.name || "Workflow"} - ${new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata", hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}`,
           description: `Execution of ${currentTemplate?.name || "workflow"} with file: ${file.name}`,
           file_description: `Test document: ${file.name}`,
         }
