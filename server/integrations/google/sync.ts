@@ -515,7 +515,7 @@ export const handleGoogleOAuthChanges = async (
         config,
         oauth2Client,
       )
-      const { changes = [], newStartPageToken = "" } = driveChanges ?? {}
+      const { changes = [], newStartPageToken } = driveChanges ?? {}
       // there are changes
 
       // Potential issues:
@@ -569,7 +569,10 @@ export const handleGoogleOAuthChanges = async (
             0,
             oauth2Client,
           )
-          contactsToken = response.data.nextSyncToken ?? contactsToken
+          contactsToken =
+            response.data.nextSyncToken && response.data.nextSyncToken !== ""
+              ? response.data.nextSyncToken
+              : contactsToken
           nextPageToken = response.data.nextPageToken ?? ""
           if (response.data.connections) {
             let changeStats = await syncContacts(
@@ -614,7 +617,10 @@ export const handleGoogleOAuthChanges = async (
             0,
             oauth2Client,
           )
-          otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
+          otherContactsToken =
+            response.data.nextSyncToken && response.data.nextSyncToken !== ""
+              ? response.data.nextSyncToken
+              : otherContactsToken
           nextPageToken = response.data.nextPageToken ?? ""
           if (response.data.otherContacts) {
             let changeStats = await syncContacts(
@@ -646,7 +652,10 @@ export const handleGoogleOAuthChanges = async (
         config = {
           type: "googleDriveChangeToken",
           lastSyncedAt: new Date(),
-          driveToken: newStartPageToken ?? config.driveToken,
+          driveToken:
+            newStartPageToken && newStartPageToken !== ""
+              ? newStartPageToken
+              : config.driveToken,
           contactsToken,
           otherContactsToken,
         }
@@ -1601,7 +1610,10 @@ export const handleGoogleServiceAccountChanges = async (
           )
 
           // Update tokens from response - CRITICAL: Fix infinite loop
-          contactsToken = response.data.nextSyncToken ?? contactsToken
+          contactsToken =
+            response.data.nextSyncToken && response.data.nextSyncToken !== ""
+              ? response.data.nextSyncToken
+              : contactsToken
           nextPageToken = response.data.nextPageToken ?? ""
 
           if (response.data.connections && response.data.connections.length) {
@@ -1659,7 +1671,10 @@ export const handleGoogleServiceAccountChanges = async (
           )
 
           // Update tokens from response - CRITICAL: Fix infinite loop
-          otherContactsToken = response.data.nextSyncToken ?? otherContactsToken
+          otherContactsToken =
+            response.data.nextSyncToken && response.data.nextSyncToken !== ""
+              ? response.data.nextSyncToken
+              : otherContactsToken
           nextPageToken = response.data.nextPageToken ?? ""
 
           if (
@@ -1708,7 +1723,10 @@ export const handleGoogleServiceAccountChanges = async (
       if (changesExist || tokensUpdated) {
         const newConfig = {
           type: config.type,
-          driveToken: newStartPageToken ?? config.driveToken,
+          driveToken:
+            newStartPageToken && newStartPageToken !== ""
+              ? newStartPageToken
+              : config.driveToken,
           contactsToken,
           otherContactsToken,
           lastSyncedAt: new Date(),
