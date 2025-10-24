@@ -17,7 +17,7 @@ import { updateParentStatus } from "@/db/knowledgeBase"
 
 const Logger = getLogger(Subsystem.Queue)
 
-function extractMarkdownTitle(content: string): string | null {
+function extractMarkdownTitle(content: string): string {
   const lines = content.split("\n")
   let inFrontmatter = false
 
@@ -49,7 +49,7 @@ function extractMarkdownTitle(content: string): string | null {
     break
   }
 
-  return null
+  return ""
 }
 
 export interface FileProcessingJob {
@@ -242,19 +242,23 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     )
 
     // Extract title for markdown files
-    let pageTitle: string | null = null
+    let pageTitle:string=""
     if (getBaseMimeType(file.mimeType || "") === "text/markdown") {
       try {
         const fileContent = fileBuffer.toString("utf-8")
         pageTitle = extractMarkdownTitle(fileContent)
       } catch (error) {
-        Logger.warn(`Failed to extract title from markdown file ${file.fileName}: ${getErrorMessage(error)}`)
+        Logger.warn(
+          `Failed to extract title from markdown file ${file.fileName}: ${getErrorMessage(error)}`,
+        )
       }
-      
+
       // If we failed to get pageTitle from content, use filename as fallback
       if (!pageTitle) {
         pageTitle = ""
-        Logger.info(`Using empty string as pageTitle for ${file.fileName}: ${pageTitle}`)
+        Logger.info(
+          `Using empty string as pageTitle for ${file.fileName}: ${pageTitle}`,
+        )
       }
     }
 
