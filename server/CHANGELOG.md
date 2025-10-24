@@ -1,3 +1,10 @@
+## [3.21.4](https://github.com/xynehq/xyne/compare/v3.21.3...v3.21.4) (2025-10-24)
+
+
+### Bug Fixes
+
+* **vespa:** upgrade package version ([#1143](https://github.com/xynehq/xyne/issues/1143)) ([a6ab0d0](https://github.com/xynehq/xyne/commit/a6ab0d0a30ab7f81d8e5e33c6ca22e0f65e3fd69))
+
 ## [3.21.3](https://github.com/xynehq/xyne/compare/v3.21.2...v3.21.3) (2025-10-24)
 
 
