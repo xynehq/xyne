@@ -4025,10 +4025,7 @@ export const AgentMessageApi = async (c: Context) => {
                     messageExternalId: msg.externalId,
                     traceJson,
                   })
-                  Logger.info(
-                    `[AgentMessageApi][Path3] Inserted trace for message ${msg.externalId} 
-  (premature: ${wasStreamClosedPrematurely}).`,
-                  )
+                  Logger.info(`[AgentMessageApi][Path3] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`)
                   await stream.writeSSE({
                     event: ChatSSEvents.ResponseMetadata,
                     data: JSON.stringify({
