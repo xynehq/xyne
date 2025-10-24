@@ -1,3 +1,10 @@
+## [3.21.6](https://github.com/xynehq/xyne/compare/v3.21.5...v3.21.6) (2025-10-24)
+
+
+### Bug Fixes
+
+* **ingested-user-view:** XYNE-176 showed users with null email for debugging purposes ([#1145](https://github.com/xynehq/xyne/issues/1145)) ([2cf6c46](https://github.com/xynehq/xyne/commit/2cf6c46ccc320d50e67f27545ba0b487f20750f6)), closes [Chinmay-Sin#FQX1](https://github.com/Chinmay-Sin/issues/FQX1)
+
 ## [3.21.5](https://github.com/xynehq/xyne/compare/v3.21.4...v3.21.5) (2025-10-24)
 
 
