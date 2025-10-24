@@ -1,3 +1,10 @@
+## [3.21.1](https://github.com/xynehq/xyne/compare/v3.21.0...v3.21.1) (2025-10-24)
+
+
+### Bug Fixes
+
+* **clfileupload:**  able to Upload Multiple Files via Drag and Drop ([#1137](https://github.com/xynehq/xyne/issues/1137)) ([295aec4](https://github.com/xynehq/xyne/commit/295aec4c02761fa2ac442b120e6d003cf5125664))
+
 # [3.21.0](https://github.com/xynehq/xyne/compare/v3.20.3...v3.21.0) (2025-10-23)
 
 
