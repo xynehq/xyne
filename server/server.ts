@@ -547,13 +547,14 @@ export const CallNotificationWs = app.get(
             case "typing_indicator":
               // Handle typing indicator
               if (
+                userId &&
                 message.targetUserId &&
                 typeof message.isTyping === "boolean"
               ) {
                 callNotificationService.sendTypingIndicator(
                   message.targetUserId,
                   message.isTyping,
-                  userId!,
+                  userId,
                 )
               }
               break
@@ -1211,20 +1212,14 @@ export const AppRoutes = app
     zValidator("query", getIngestionStatusSchema),
     (c) => proxyToSyncServer(c, "/ingestion/status", "GET"),
   )
-  .post(
-    "/ingestion/cancel",
-    zValidator("json", cancelIngestionSchema),
-    (c) => proxyToSyncServer(c, "/ingestion/cancel"),
+  .post("/ingestion/cancel", zValidator("json", cancelIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/cancel"),
   )
-  .post(
-    "/ingestion/pause",
-    zValidator("json", pauseIngestionSchema),
-    (c) => proxyToSyncServer(c, "/ingestion/pause"),
+  .post("/ingestion/pause", zValidator("json", pauseIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/pause"),
   )
-  .post(
-    "/ingestion/resume",
-    zValidator("json", resumeIngestionSchema),
-    (c) => proxyToSyncServer(c, "/ingestion/resume"),
+  .post("/ingestion/resume", zValidator("json", resumeIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/resume"),
   )
   .delete(
     "/oauth/connector/delete",
@@ -1475,7 +1470,11 @@ app
   .post("/cl/poll-status", PollCollectionsStatusApi) // Poll collection items status
 
 // Proxy function to forward ingestion API calls to sync server
-const proxyToSyncServer = async (c: Context, endpoint: string, method: string = "POST") => {
+const proxyToSyncServer = async (
+  c: Context,
+  endpoint: string,
+  method: string = "POST",
+) => {
   try {
     // Get JWT token from cookie
     const token = getCookie(c, AccessTokenCookieName)
@@ -1488,7 +1487,7 @@ const proxyToSyncServer = async (c: Context, endpoint: string, method: string = 
     if (method === "GET") {
       const urlObj = new URL(url)
       const queryParams = c.req.query()
-      Object.keys(queryParams).forEach(key => {
+      Object.keys(queryParams).forEach((key) => {
         if (queryParams[key]) {
           urlObj.searchParams.set(key, queryParams[key])
         }

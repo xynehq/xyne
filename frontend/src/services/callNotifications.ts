@@ -26,7 +26,7 @@ export interface DirectMessage {
   type: "direct_message"
   messageId: number
   messageContent: string
-  createdAt: Date
+  createdAt: string
   sender: {
     id: string
     name: string

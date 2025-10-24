@@ -19,7 +19,7 @@ interface UsersModalProps {
   onClose: () => void
 }
 
-type TabType = "users" | "history" | "chat"
+type TabType = "users" | "history"
 
 export default function UsersModal({ onClose }: UsersModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>("users")

@@ -92,9 +92,12 @@ export const SendMessageApi = async (c: Context) => {
       })
       .returning()
 
-    Logger.info(
-      `Message sent from ${sender.email} to ${targetUser.email}: ${message.id}`,
-    )
+    Logger.info({
+      msg: "DM sent",
+      messageId: message.id,
+      fromUserId: sender.externalId,
+      toUserId: targetUser.externalId,
+    })
 
     // Send real-time notification to target user if they're online
     const messageNotification = {
@@ -292,6 +295,13 @@ export const MarkMessagesAsReadApi = async (c: Context) => {
     }
     const targetUser = targetUsers[0]
 
+    // Enforce workspace scoping
+    if (currentUser.workspaceId !== targetUser.workspaceId) {
+      throw new HTTPException(403, {
+        message: "Users must be in the same workspace",
+      })
+    }
+
     // Mark all unread messages from targetUser to currentUser as read
     await db
       .update(directMessages)
@@ -346,7 +356,7 @@ export const GetUnreadCountsApi = async (c: Context) => {
         count: sql<number>`COUNT(*)::int`,
         senderName: sql<string>`sender.name`,
         senderEmail: sql<string>`sender.email`,
-        senderPhotoLink: sql<string>`sender.photo_link`,
+        senderPhotoLink: sql<string>`sender."photoLink"`,
         senderExternalId: sql<string>`sender.external_id`,
       })
       .from(directMessages)
@@ -365,7 +375,7 @@ export const GetUnreadCountsApi = async (c: Context) => {
         directMessages.sentByUserId,
         sql`sender.name`,
         sql`sender.email`,
-        sql`sender.photo_link`,
+        sql`sender."photoLink"`,
         sql`sender.external_id`,
       )
 

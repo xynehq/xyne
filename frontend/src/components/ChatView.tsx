@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, type KeyboardEvent } from "react"
 import { Phone, Video, Send, Loader2, Check } from "lucide-react"
 import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
@@ -26,7 +26,6 @@ interface Message {
 
 interface ChatViewProps {
   targetUser: User
-  onClose?: () => void
   onInitiateCall: (userId: string, callType: "audio" | "video") => void
 }
 
@@ -34,7 +33,6 @@ const MAX_MESSAGE_LENGTH = 10000
 
 export default function ChatView({
   targetUser,
-  onClose,
   onInitiateCall,
 }: ChatViewProps) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -199,7 +197,7 @@ export default function ChatView({
   }
 
   // Handle Enter key press
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
@@ -221,7 +219,7 @@ export default function ChatView({
               id: message.messageId,
               messageContent: message.messageContent,
               isRead: false,
-              createdAt: message.createdAt.toString(),
+              createdAt: message.createdAt,
               sentByUserId: message.sender.id,
               isMine: false,
               sender: message.sender,
@@ -447,7 +445,7 @@ export default function ChatView({
                 onChange={(e) => {
                   handleMessageChange(e.target.value)
                 }}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyDown}
                 placeholder={`Message ${targetUser.name}...`}
                 className="resize-none"
                 disabled={sending}
