@@ -3846,8 +3846,7 @@ export const AgentMessageApi = async (c: Context) => {
               if (agentAppEnums.length > 0) {
                 // PATH 3: DUAL RAG (NEW!)
                 Logger.info(
-                  `[Path3] User has selected context AND agent has ${agentAppEnums.length} 
-  KB integrations, using Dual RAG`
+                  `[Path3] User has selected context AND agent has ${agentAppEnums.length} KB integrations, using Dual RAG`
                 )
                 let answer = ""
                 let citations: Citation[] = []
@@ -3901,8 +3900,7 @@ export const AgentMessageApi = async (c: Context) => {
                 for await (const chunk of iterator) {
                   if (stream.closed) {
                     Logger.info(
-                      "[AgentMessageApi][Path3] Stream closed during Dual RAG loop. 
-  Breaking.",
+                      "[AgentMessageApi][Path3] Stream closed during Dual RAG loop. Breaking.",
                     )
                     wasStreamClosedPrematurely = true
                     break
@@ -3947,8 +3945,7 @@ export const AgentMessageApi = async (c: Context) => {
                     citations.push(item)
                     citationMap[index] = citations.length - 1
                     Logger.info(
-                      `[Path3] Found citations and sending it, current count: 
-  ${citations.length}`,
+                      `[Path3] Found citations and sending it, current count: ${citations.length}`,
                     )
                     stream.writeSSE({
                       event: ChatSSEvents.CitationsUpdate,
@@ -3961,8 +3958,7 @@ export const AgentMessageApi = async (c: Context) => {
                   }
                   if (chunk.imageCitation) {
                     loggerWithChild({ email: email }).info(
-                      `[Path3] Found image citation (key: 
-  ${chunk.imageCitation.citationKey}), sending it`,
+                      `[Path3] Found image citation (key: ${chunk.imageCitation.citationKey}), sending it`,
                     )
                     imageCitations.push(chunk.imageCitation)
                     stream.writeSSE({
