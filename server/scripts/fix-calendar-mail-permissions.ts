@@ -13,16 +13,26 @@ const logger = getLogger(Subsystem.Vespa).child({
 async function queryCalendarEmails(offset = 0, limit = 100) {
   const yql = `select * from sources mail where mailId matches 'calendar-' limit ${limit} offset ${offset}`
 
-  const params = new URLSearchParams({
+  const payload = {
     yql,
-    hits: limit.toString(),
-  })
+    hits: limit,
+    offset,
+    timeout: "30s",
+    "ranking.profile": "unranked",
+    "presentation.summary": "default",
+    maxHits: limit + 10,
+    maxOffset: offset + 1000,
+  }
 
-  const url = `${config.vespaEndpoint}/search/?${params.toString()}`
+  const url = `${config.vespaEndpoint}/search/`
 
   const response = await fetch(url, {
-    method: "GET",
-    headers: { Accept: "application/json" },
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
   })
 
   if (!response.ok) {
@@ -46,7 +56,10 @@ async function fixCalendarPermissions() {
   logger.info("Starting calendar permissions fix using YQL query...")
 
   while (true) {
-    const { documents, totalCount } = await queryCalendarEmails(offset, limit)
+    const { documents, totalCount } = await queryCalendarEmails(
+      offset,
+      limit + offset,
+    )
 
     if (documents.length === 0) break
 
