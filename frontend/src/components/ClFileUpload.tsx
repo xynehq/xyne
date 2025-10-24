@@ -335,7 +335,7 @@ const CollectionFileUpload = ({
       {/* Upload Queue Section - only show when files are selected */}
       {selectedFiles.length > 0 && (
         <div 
-          className="mt-6"
+          className={`mt-6 rounded-lg transition-colors ${isDragging ? 'ring-2 ring-gray-400' : ''}`}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
