@@ -1,3 +1,10 @@
+## [3.21.5](https://github.com/xynehq/xyne/compare/v3.21.4...v3.21.5) (2025-10-24)
+
+
+### Bug Fixes
+
+* **err:** fix error message ([#1144](https://github.com/xynehq/xyne/issues/1144)) ([7872044](https://github.com/xynehq/xyne/commit/78720444ab8300b1040d98129fca15de6552bc03))
+
 ## [3.21.4](https://github.com/xynehq/xyne/compare/v3.21.3...v3.21.4) (2025-10-24)
 
 
