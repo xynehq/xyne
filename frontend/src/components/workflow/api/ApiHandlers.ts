@@ -51,7 +51,7 @@ interface WorkflowTemplate {
 }
 
 interface ApiTemplate {
-  id: number
+  id: string
   workspaceId: number
   userId: number
   name: string

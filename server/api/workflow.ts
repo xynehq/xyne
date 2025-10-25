@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
-import { type SelectAgent } from "../db/schema"
+import { publicWorkflowTemplateSchema, type SelectAgent, type UpdateWorkflowTemplateRequest } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
 
 
@@ -23,7 +23,9 @@ import {
   workflowStepExecution,
   workflowTool,
   toolExecution,
-} from "@/db/schema/workflows"
+  userWorkflowPermissions,
+  users,
+} from "@/db/schema"
 import { getUserFromJWT } from "@/db/user"
 import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { type CreateAgentPayload } from "./agent"
@@ -74,16 +76,22 @@ import {
 
 import { 
   createWorkflowTemplate, 
-  getAccessibleWorkflowTemplates, 
+  getAccessibleWorkflowTemplatesWithRole, 
   getWorkflowExecutionById, 
   getWorkflowExecutionByIdWithChecks, 
   getWorkflowStepTemplateById, 
   getWorkflowStepTemplatesByTemplateId, 
-  getWorkflowTemplateByIdWithPublicCheck, 
-  updateWorkflowTemplate,
+  getWorkflowTemplateByExternalIdWithPermissionCheck, 
+  updateWorkflowTemplateByExternalId,
   createWorkflowExecution,
   createWorkflowStepExecutionsFromSteps,
+  getWorkflowTemplateByIdWithPermissionCheck,
+  getWorkflowStepExecutionByIdWithChecks,
 } from "@/db/workflow"
+import {
+  getWorkflowUsers,
+  syncWorkflowUserPermissions,
+} from "@/db/userWorkflowPermissions"
 import {
   getAccessibleWorkflowTools,
   getWorkflowToolById,
@@ -147,7 +155,7 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
       db,
       c.get(JwtPayloadKey)
     )
-    const templates = await getAccessibleWorkflowTemplates(
+    const templates = await getAccessibleWorkflowTemplatesWithRole(
       db,
       user.workspaceId,
       user.id,
@@ -156,6 +164,7 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
     // Get step templates and root step details for each workflow
     const templatesWithSteps = await Promise.all(
       templates.map(async (template) => {
+        const role = template.role
         const steps = await getWorkflowStepTemplatesByTemplateId(
           db,
           template.id
@@ -168,7 +177,7 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
             (s) => s.id === template.rootWorkflowStepTemplateId,
           )
           if (rootStepResult) {
-            const rootStepToolIds = rootStepResult.toolIds as string[] || [] 
+            const rootStepToolIds = rootStepResult.toolIds as string[] ?? [] 
             let rootStepTool = null
 
             if (rootStepToolIds.length > 0) {
@@ -193,7 +202,8 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
         }
 
         return {
-          ...template,
+          ...publicWorkflowTemplateSchema.parse(template),
+          role,
           rootStep,
         }
       }),
@@ -218,11 +228,11 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
       db,
       c.get(JwtPayloadKey)
     )
-    const templateId = c.req.param("templateId")
+    const templateExternalId = c.req.param("templateExternalId")
 
-    const template = await getWorkflowTemplateByIdWithPublicCheck(
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
-      templateId,
+      templateExternalId,
       user.workspaceId,
       user.id
     )
@@ -233,7 +243,7 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
 
     const steps = await getWorkflowStepTemplatesByTemplateId(
       db,
-      templateId
+      template.id
     )
 
 
@@ -246,7 +256,7 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
     return c.json({
       success: true,
       data: {
-        ...template,
+        ...publicWorkflowTemplateSchema.parse(template),
         steps,
         workflow_tools: tools,
       },
@@ -271,7 +281,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
     Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${user.workspaceId}, workspaceExternalId=${workspaceExternalId}`)
 
-    const templateId = c.req.param("templateId")
+    const templateExternalId = c.req.param("templateExternalId")
     const contentType = c.req.header("content-type") || ""
 
     let requestData: any = {}
@@ -308,9 +318,9 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     }
 
     // Get template and validate (allow access to user's own or public templates)
-    const template = await getWorkflowTemplateByIdWithPublicCheck(
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
-      templateId,
+      templateExternalId,
       user.workspaceId,
       user.id
     )
@@ -430,7 +440,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     // Get all step templates
     const steps = await getWorkflowStepTemplatesByTemplateId(
       db,
-      templateId
+      template.id
     )
 
     const stepExecutions = await createWorkflowStepExecutionsFromSteps(db, execution.id, steps)
@@ -590,12 +600,9 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       })
       .where(eq(workflowStepExecution.id, rootStepExecution.id))
 
-    // Auto-execute next automated steps
-    const allTools = await getAccessibleWorkflowTools(
-      db,
-      user.workspaceId,
-      user.id
-    )
+    // Get all toolIds from step templates to fetch exactly the tools referenced by this workflow
+    const allToolIds = steps.flatMap((step) => step.toolIds as string[] || [])
+    const allTools = allToolIds.length > 0 ? await getWorkflowToolsByIds(db, allToolIds) : []
     const rootStepName = rootStepExecution.name || "Root Step"
     const currentResults: Record<string, any> = {}
 
@@ -662,12 +669,12 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 export const ExecuteWorkflowTemplateApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const templateId = c.req.param("templateId")
+    const templateExternalId = c.req.param("templateExternalId")
     const requestData = await c.req.json()
 
-    const template = await getWorkflowTemplateByIdWithPublicCheck(
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
-      templateId,
+      templateExternalId,
       user.workspaceId,
       user.id
     )
@@ -679,15 +686,12 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     // Get step templates
     const steps = await getWorkflowStepTemplatesByTemplateId(
       db,
-      templateId
+      template.id
     )
 
-    // Get tools
-    const tools = await getAccessibleWorkflowTools(
-      db,
-      user.workspaceId,
-      user.id
-    )
+    // Get all toolIds from step templates to fetch exactly the tools referenced by this workflow
+    const allToolIds = steps.flatMap((step) => step.toolIds as string[] || [])
+    const tools = allToolIds.length > 0 ? await getWorkflowToolsByIds(db, allToolIds) : []
 
 
 
@@ -1374,18 +1378,20 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       }
 
       // Get step execution to access workflow IDs for file handling
-      const stepExecution = await db
-        .select()
-        .from(workflowStepExecution)
-        .where(eq(workflowStepExecution.id, stepId))
+      const stepExecution = await getWorkflowStepExecutionByIdWithChecks(
+        db,
+        stepId,
+        user.workspaceId,
+        user.id
+      )
 
-      if (!stepExecution || stepExecution.length === 0) {
+      if (!stepExecution) {
         throw new HTTPException(404, {
           message: "Workflow step execution not found",
         })
       }
 
-      currentStepExecution = stepExecution[0]
+      currentStepExecution = stepExecution
 
       // Get step template to access form definition for validation
       const stepTemplate = await getWorkflowStepTemplateById(
@@ -1495,18 +1501,18 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
 
     if (!stepExecution) {
       // Handle JSON case - fetch step execution
-      const stepExecutions = await db
-        .select()
-        .from(workflowStepExecution)
-        .where(eq(workflowStepExecution.id, stepId))
+      stepExecution = await getWorkflowStepExecutionByIdWithChecks(
+        db,
+        stepId,
+        user.workspaceId,
+        user.id
+      )
 
-      if (!stepExecutions || stepExecutions.length === 0) {
+      if (!stepExecution) {
         throw new HTTPException(404, {
           message: "Workflow step execution not found",
         })
       }
-
-      stepExecution = stepExecutions[0]
 
       // Get the form tool for JSON case
       const stepTemplate = await getWorkflowStepTemplateById(
@@ -1605,12 +1611,15 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
 
     console.log("Step execution updated successfully")
 
-    // Continue workflow execution - execute next automated steps
-    const tools = await getAccessibleWorkflowTools(
-      db,
-      user.workspaceId,
-      user.id
-    )
+    // Get all toolIds from workflow step templates to fetch exactly the tools referenced by this workflow
+    const workflowExecution = await getWorkflowExecutionById(db, stepExecution.workflowExecutionId)
+    if (!workflowExecution) {
+      throw new HTTPException(404, { message: "Workflow execution not found" })
+    }
+    
+    const workflowSteps = await getWorkflowStepTemplatesByTemplateId(db, workflowExecution.workflowTemplateId)
+    const allToolIds = workflowSteps.flatMap((step) => step.toolIds as string[] || [])
+    const tools = allToolIds.length > 0 ? await getWorkflowToolsByIds(db, allToolIds) : []
     const stepName = stepExecution.name || "unknown_step"
     const currentResults: Record<string, any> = {}
     currentResults[stepName] = {
@@ -2069,7 +2078,7 @@ const executeWorkflowTool = async (
   }
 }
 
-// List workflow tools
+// List workflow tools that are originally created by user
 export const ListWorkflowToolsApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
@@ -2116,7 +2125,7 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
 
     return c.json({
       success: true,
-      data: template,
+      data: publicWorkflowTemplateSchema.parse(template),
     })
   } catch (error) {
     Logger.error(error, "Failed to create workflow template")
@@ -2172,7 +2181,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       }
     )
 
-    const templateId = template.id
+    const templateExternalId = template.external_id
 
     // Create workflow tools first (needed for step tool references)
     const toolIdMap = new Map<string, string>() // frontend tool ID -> backend tool ID
@@ -2327,7 +2336,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       const [createdStep] = await db
         .insert(workflowStepTemplate)
         .values({
-          workflowTemplateId: templateId,
+          workflowTemplateId: template.id,
           name: stepData.name,
           description: stepData.description || "",
           type: stepData.type === "form_submission" || stepData.type === "manual" ? "manual" : "automated",
@@ -2413,9 +2422,9 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       rootStepId = rootStep?.id || createdSteps[0].id
 
       // Update template with root step ID
-      await updateWorkflowTemplate(
+      await updateWorkflowTemplateByExternalId(
         db,
-        templateId,
+        templateExternalId,
         {
           rootWorkflowStepTemplateId: rootStepId,
         }
@@ -2424,7 +2433,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
     // Return the complete workflow template with steps and tools
     const completeTemplate = {
-      ...template,
+      ...publicWorkflowTemplateSchema.parse(template),
       rootWorkflowStepTemplateId: rootStepId,
       steps: createdSteps,
       workflow_tools: createdTools,
@@ -2449,24 +2458,78 @@ export const ExecuteTemplateApi = ExecuteWorkflowTemplateApi
 // Update workflow template
 export const UpdateWorkflowTemplateApi = async (c: Context) => {
   try {
-    const templateId = c.req.param("templateId")
-    const requestData = await c.req.json()
-
-    const template = await updateWorkflowTemplate(
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
+    const templateExternalId = c.req.param("templateExternalId")
+    const requestData = await c.req.json<UpdateWorkflowTemplateRequest>()
+    
+    const existingTemplate = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
-      templateId,
-      {
-        name: requestData.name,
-        description: requestData.description,
-        version: requestData.version,
-        status: requestData.status,
-        config: requestData.config,
-      }
+      templateExternalId,
+      user.workspaceId,
+      user.id
     )
+
+    if (!existingTemplate || existingTemplate.userId !== user.id) {
+      return c.json({ message: "Workflow not found or access denied"}, 404)
+    }
+
+    // Update workflow and sync user permissions in a transaction
+    const result = await db.transaction(async (trx) => {
+      const updatedTemplate = await updateWorkflowTemplateByExternalId(
+        trx,
+        templateExternalId,
+        {
+          name: requestData.name,
+          description: requestData.description,
+          version: requestData.version,
+          status: requestData.status,
+          config: requestData.config,
+          isPublic: requestData.isPublic,
+        }
+      )
+
+      if (!updatedTemplate) {
+        throw new Error("Workflow template not found or failed to update")
+      }
+
+      // Handle user permissions based on isPublic field
+      if (requestData.isPublic === true) {
+        // If switching to public, clear all non-owner permissions
+        await syncWorkflowUserPermissions(
+          trx,
+          updatedTemplate.id,
+          [], // Empty array clears all non-owner permissions
+          user.workspaceId,
+        )
+      } else if (
+        requestData.isPublic === false &&
+        requestData.userEmails !== undefined
+      ) {
+        // If switching to private or updating private workflow, sync user permissions
+        await syncWorkflowUserPermissions(
+          trx,
+          updatedTemplate.id,
+          requestData.userEmails,
+          user.workspaceId,
+        )
+      } else if (requestData.userEmails !== undefined) {
+        // If userEmails are provided but isPublic not specified, check existing workflow
+        if (!existingTemplate.isPublic) {
+          await syncWorkflowUserPermissions(
+            trx,
+            updatedTemplate.id,
+            requestData.userEmails,
+            user.workspaceId,
+          )
+        }
+      }
+
+      return updatedTemplate
+    })
 
     return c.json({
       success: true,
-      data: template,
+      data: publicWorkflowTemplateSchema.parse(result),
     })
   } catch (error) {
     Logger.error(error, "Failed to update workflow template")
@@ -2485,10 +2548,21 @@ export const CreateWorkflowExecutionApi = async (c: Context) => {
     )
     const requestData = await c.req.json()
 
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+      db,
+      requestData.workflowTemplateExternalId,
+      user.workspaceId,
+      user.id
+    )
+
+    if (!template) {
+      throw new Error("Workflow Template not found or access denied")
+    }
+
     const execution = await createWorkflowExecution(
       db,
       {
-        workflowTemplateId: requestData.workflowTemplateId,
+        workflowTemplateId: template.id,
         workspaceId: user.workspaceId,
         userId: user.id,
         name: requestData.name,
@@ -2803,19 +2877,19 @@ export const DeleteWorkflowToolApi = async (c: Context) => {
 export const AddStepToWorkflowApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const templateId = c.req.param("templateId")
+    const templateId = c.req.param("templateExternalId")
     const requestData = await c.req.json()
 
-    const template = await getWorkflowTemplateByIdWithPublicCheck(
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
       user.id
     )
 
-    if (!template) {
+    if (!template || template.userId !== user.id) {
       throw new HTTPException(404, {
-        message: "Workflow template not found",
+        message: "Workflow template not found or access denied",
       })
     }
 
@@ -2836,7 +2910,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     // 2. Get all existing steps for this template
     const existingSteps = await getWorkflowStepTemplatesByTemplateId(
       db,
-      templateId
+      template.id
     )
     const isFirstStep =
       existingSteps.length === 0 || !template.rootWorkflowStepTemplateId
@@ -2846,7 +2920,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     const [newStep] = await db
       .insert(workflowStepTemplate)
       .values({
-        workflowTemplateId: templateId,
+        workflowTemplateId: template.id,
         name: requestData.stepName,
         description: requestData.stepDescription || `Step ${stepOrder}`,
         type: requestData.stepType || "automated",
@@ -2868,7 +2942,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     // 4. Handle step connections
     if (isFirstStep) {
       // This is the first/root step
-      await updateWorkflowTemplate(
+      await updateWorkflowTemplateByExternalId(
         db,
         templateId,
         {
@@ -2907,7 +2981,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     }
 
     // 5. Return the complete updated template with new step
-    const updatedTemplate = await getWorkflowTemplateByIdWithPublicCheck(
+    const updatedTemplate = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -2922,7 +2996,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     return c.json({
       success: true,
       data: {
-        template: updatedTemplate,
+        template: publicWorkflowTemplateSchema.parse(updatedTemplate),
         newStep: newStep,
         newTool: newTool,
         totalSteps: allSteps.length,
@@ -2973,16 +3047,16 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     const templateId = stepToDelete.workflowTemplateId
 
     // 2. Get the workflow template
-    const template = await getWorkflowTemplateByIdWithPublicCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
       user.id
     )
 
-    if (!template) {
+    if (!template || template.userId !== user.id) {
       throw new HTTPException(404, {
-        message: "Workflow template not found",
+        message: "Workflow template not found or access denied",
       })
     }
 
@@ -3021,9 +3095,9 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       // If no next steps, set to null
       newRootStepId = nextStepIds.length > 0 ? nextStepIds[0] : null
 
-      await updateWorkflowTemplate(
+      await updateWorkflowTemplateByExternalId(
         db,
-        templateId,
+        template.external_id,
         {
           rootWorkflowStepTemplateId: newRootStepId,
         }
@@ -3095,16 +3169,16 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     }
 
     // 9. Get updated workflow data
-    const updatedTemplate = await getWorkflowTemplateByIdWithPublicCheck(
+    const updatedTemplate = await getWorkflowTemplateByExternalIdWithPermissionCheck(
       db,
-      templateId,
+      template.external_id,
       user.workspaceId,
       user.id
     )
 
     const updatedSteps = await getWorkflowStepTemplatesByTemplateId(
       db,
-      template.id
+      templateId
     )
 
     Logger.info(
@@ -3193,6 +3267,10 @@ export const SubmitFormStepApi = SubmitWorkflowFormApi
 export const GetFormDefinitionApi = async (c: Context) => {
   try {
     const stepId = c.req.param("stepId")
+    const user = await getUserFromJWT(
+      db,
+      c.get(JwtPayloadKey)
+    )
 
     const stepExecutions = await db
       .select()
@@ -3220,9 +3298,11 @@ export const GetFormDefinitionApi = async (c: Context) => {
       })
     }
 
-    const formTool = await getWorkflowToolById(
+    const formTool = await getWorkflowToolByIdWithChecks(
       db,
-      toolIds[0]
+      toolIds[0],
+      user.workspaceId,
+      user.id
     )
 
     if (!formTool) {
@@ -3296,6 +3376,49 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
 export const GetGeminiModelEnumsApi = async (c: Context) => {
   Logger.warn("GetGeminiModelEnumsApi is deprecated, use GetVertexAIModelEnumsApi instead")
   return GetVertexAIModelEnumsApi(c)
+}
+
+// Get all users with permissions for a workflow
+export const GetWorkflowUsersApi = async (c: Context) => {
+  try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
+    const templateExternalId = c.req.param("templateExternalId")
+
+    // Get workflow template and validate access
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+      db,
+      templateExternalId,
+      user.workspaceId,
+      user.id
+    )
+
+    if (!template) {
+      throw new HTTPException(404, { message: "Workflow template not found" })
+    }
+
+    // Check if user is the owner (only owners can view user list)
+    if (template.userId !== user.id) {
+      throw new HTTPException(403, { message: "Only workflow owners can view user permissions" })
+    }
+
+    // Get all users with permissions for this workflow
+    const workflowUsers = await getWorkflowUsers(db, template.id)
+
+    return c.json({
+      success: true,
+      data: {
+        workflowId: template.external_id,
+        workflowName: template.name,
+        users: workflowUsers,
+        totalUsers: workflowUsers.length,
+      },
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to get workflow users")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
 }
 
 // Serve workflow file

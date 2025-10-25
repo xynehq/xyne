@@ -17,6 +17,7 @@ export * from "@/db/schema/knowledgeBase"
 export * from "@/db/schema/apiKey"
 export * from "@/db/schema/workflows"
 export * from "@/db/schema/calls"
+export * from "@/db/schema/userWorkflowPermissions"
 
 // Export combined types
 import type { PublicUser, SelectUser } from "@/db/schema/users"
