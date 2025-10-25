@@ -226,6 +226,7 @@ import {
   ServeWorkflowFileApi,
   GetGeminiModelEnumsApi,
   GetVertexAIModelEnumsApi,
+  GetWorkflowUsersApi,
   createWorkflowTemplateSchema,
   createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
@@ -1034,6 +1035,7 @@ export const AppRoutes = app
   )
   .get("/workflow/templates", ListWorkflowTemplatesApi)
   .get("/workflow/templates/:templateExternalId", GetWorkflowTemplateApi)
+  .get("/workflow/templates/:templateExternalId/permissions",GetWorkflowUsersApi)
   .put(
     "/workflow/templates/:templateExternalId",
     zValidator("json", updateWorkflowTemplateSchema),

@@ -544,8 +544,9 @@ export enum UserAgentRole {
 }
 
 export enum UserWorkflowRole {
-  Owner = "owner", 
-  Shared = "shared",
+  Owner = "owner", // User who owns/created the workflow
+  Shared = "shared", // User has been shared the workflow
+  Viewer = "viewer", // User's role if workflow is public
 }
 
 export enum MessageFeedback {

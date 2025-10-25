@@ -84,6 +84,36 @@ export const updateUserWorkflowPermission = async (
   return selectUserWorkflowPermissionSchema.parse(permissionArr[0])
 }
 
+//Get all users (owner + shard + viewer) for a workflow
+export const getWorkflowUsers = async (
+  trx: TxnOrClient,
+  workflowId: number,
+): Promise<UserWorkflowPermissionWithDetails[]> => {
+  const results = await trx
+    .select({
+      user: {
+        externalId: users.externalId,
+        email: users.email,
+        name: users.name,
+        photoLink: users.photoLink,
+      },
+      workflow: {
+        externalId: workflowTemplate.external_id,
+        name: workflowTemplate.name,
+        description: workflowTemplate.description,
+        version: workflowTemplate.version
+      },
+      role: userWorkflowPermissions.role,
+    })
+    .from(userWorkflowPermissions)
+    .innerJoin(users, eq(userWorkflowPermissions.userId, users.id))
+    .innerJoin(workflowTemplate, eq(userWorkflowPermissions.workflowId, workflowTemplate.id))
+    .where(eq(userWorkflowPermissions.workflowId, workflowId))
+
+
+  return z.array(userWorkflowPermissionWithDetailsSchema).parse(results)
+}
+
 //Revoke user's permission for a workflow
 export const revokeUserWorkflowPermission = async (
   trx: TxnOrClient,

@@ -10,6 +10,27 @@ interface User {
   email: string
 }
 
+interface WorkflowUser {
+  id: number
+  userId: number
+  workflowId: number
+  role: string
+  createdAt: string
+  updatedAt: string
+  user: {
+    externalId: string
+    email: string
+    name: string
+    photoLink?: string
+  }
+  workflow: {
+    externalId: string
+    name: string
+    description?: string
+    version: string
+  }
+}
+
 interface WorkflowShareModalProps {
   isOpen: boolean
   onClose: () => void
@@ -31,6 +52,10 @@ export function WorkflowShareModal({
   const [isEmailValid, setIsEmailValid] = useState<boolean>(false)
   const [isLoading, setIsLoading] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  
+  // Current workflow users
+  const [currentUsers, setCurrentUsers] = useState<WorkflowUser[]>([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
 
   // User autocomplete states
   const [users, setUsers] = useState<User[]>([])
@@ -92,7 +117,7 @@ export function WorkflowShareModal({
     return { isValid: true, error: null }
   }
 
-  // Load workspace users
+  // Load workspace users and current workflow users
   useEffect(() => {
     const loadUsers = async () => {
       try {
@@ -105,10 +130,31 @@ export function WorkflowShareModal({
         console.error("Failed to fetch workspace users:", error)
       }
     }
+
+    const loadCurrentWorkflowUsers = async () => {
+      setLoadingUsers(true)
+      try {
+        const response = await api.workflow.templates[workflow.id].permissions.$get()
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success) {
+            setCurrentUsers(data.data.users || [])
+          }
+        } else {
+          console.error("Failed to fetch workflow users:", await response.text())
+        }
+      } catch (error) {
+        console.error("Failed to fetch workflow users:", error)
+      } finally {
+        setLoadingUsers(false)
+      }
+    }
+
     if (isOpen) {
       loadUsers()
+      loadCurrentWorkflowUsers()
     }
-  }, [isOpen])
+  }, [isOpen, workflow.id])
 
   // Filter users based on search query
   useEffect(() => {
@@ -259,8 +305,23 @@ export function WorkflowShareModal({
       setEmailValidationError(null)
       setIsEmailValid(false)
       setSubmitError(null)
+      setCurrentUsers([])
     }
   }, [isOpen])
+
+  // Helper function to get role badge color
+  const getRoleColor = (role: string) => {
+    switch (role.toLowerCase()) {
+      case 'owner':
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+      case 'editor':
+        return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+      case 'viewer':
+        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+      default:
+        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+    }
+  }
 
   // Submit the share request
   const handleSubmit = async () => {
@@ -339,6 +400,65 @@ export function WorkflowShareModal({
 
         {/* Content */}
         <div className="px-6 pb-6">
+          {/* Current Users Section */}
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+              People with access ({currentUsers.length})
+            </h3>
+            
+            {loadingUsers ? (
+              <div className="flex items-center justify-center py-4">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span className="ml-2 text-sm text-gray-500">Loading users...</span>
+              </div>
+            ) : currentUsers.length === 0 ? (
+              <div className="text-center py-4">
+                <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">No users found</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-32 overflow-y-auto">
+                {currentUsers.map((userPermission) => (
+                  <div
+                    key={userPermission.id}
+                    className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                  >
+                    <div className="flex items-center gap-2">
+                      {userPermission.user.photoLink ? (
+                        <img
+                          src={userPermission.user.photoLink}
+                          alt={userPermission.user.name}
+                          className="w-6 h-6 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
+                          <span className="text-xs text-gray-600 dark:text-gray-300">
+                            {userPermission.user.name?.charAt(0) || userPermission.user.email.charAt(0)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {userPermission.user.name || userPermission.user.email}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {userPermission.user.email}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getRoleColor(userPermission.role)}`}>
+                      {userPermission.role}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-gray-200 dark:border-gray-700 mb-6"></div>
           {/* Email Input */}
           <div className="space-y-2 mb-4">
             <label

@@ -78,21 +78,20 @@ export type SelectUserWorkflowPermission = z.infer<
 >
 
 // Schema for user-workflow permission relationship with user and workflow details
-export const userWorkflowPermissionWithDetailsSchema =
-  selectUserWorkflowPermissionSchema.extend({
+export const userWorkflowPermissionWithDetailsSchema = z.object({
     user: z.object({
-      id: z.number(),
+      externalId: z.string(),
       email: z.string(),
       name: z.string(),
       photoLink: z.string().nullable(),
-      externalId: z.string(),
     }),
     workflow: z.object({
-      id: z.number(),
+      externalId: z.string(),
       name: z.string(),
       description: z.string().nullable(),
       version: z.string(),
     }),
+    role: z.enum(UserWorkflowRole)
   })
 export type UserWorkflowPermissionWithDetails = z.infer<
   typeof userWorkflowPermissionWithDetailsSchema

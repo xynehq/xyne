@@ -4,13 +4,7 @@ import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { WorkflowShareModal } from "./WorkflowShareModal"
 import botLogo from "@/assets/bot-logo.svg"
 import { WorkflowCardProps } from "./Types"
-import { Users, Lock, MoreVertical, Share } from "lucide-react"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { Users, Lock, Share } from "lucide-react"
 
 export function WorkflowCard({
   workflow,
@@ -44,6 +38,9 @@ export function WorkflowCard({
 
   // Check if workflow is public
   const isPublic = workflow.isPublic === true
+  
+  // Check if user can share this workflow (owned and not public)
+  const canShare = workflow.role === "owner" && !workflow.isPublic
 
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow rounded-2xl p-6 flex flex-col min-h-56 w-full max-w-[450px]">
@@ -68,23 +65,16 @@ export function WorkflowCard({
               </div>
             )}
 
-            {/* Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
-                  <MoreVertical className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem
-                  onClick={() => setShowShareModal(true)}
-                  className="flex items-center gap-2"
-                >
-                  <Share className="w-4 h-4" />
-                  <span>Share</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Share Icon */}
+            {canShare && (
+              <button 
+                onClick={() => setShowShareModal(true)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                title="Share workflow"
+              >
+                <Share className="w-4 h-4 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300" />
+              </button>
+            )}
           </div>
         </div>
 

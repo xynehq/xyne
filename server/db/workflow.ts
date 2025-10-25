@@ -150,11 +150,15 @@ export const getWorkflowTemplateByIdWithPermissionCheck = async (
   return template ? selectWorkflowTemplateSchema.parse(template) : null
 }
 
-export const getAccessibleWorkflowTemplates = async (
+// gets workflow templates along with the queried user's role for each
+export const getAccessibleWorkflowTemplatesWithRole = async (
   trx: TxnOrClient,
   workspaceId: number,
   userId: number,
-): Promise<SelectWorkflowTemplate[]> => {
+): Promise<(
+  SelectWorkflowTemplate & {
+    role: string
+  })[]> => {
   const templates = await trx
     .selectDistinct({
       id: workflowTemplate.id,
@@ -170,6 +174,7 @@ export const getAccessibleWorkflowTemplates = async (
       rootWorkflowStepTemplateId: workflowTemplate.rootWorkflowStepTemplateId,
       createdAt: workflowTemplate.createdAt,
       updatedAt: workflowTemplate.updatedAt,
+      role: userWorkflowPermissions.role,
     })
     .from(workflowTemplate)
     .leftJoin(
@@ -185,8 +190,16 @@ export const getAccessibleWorkflowTemplates = async (
         ),
       ),
     )
+  
+  if (!templates || templates.length === 0) {
+    return []
+  }
 
-  return z.array(selectWorkflowTemplateSchema).parse(templates)
+  // Add role field based on ownership and permissions
+  return templates.map(template => ({
+    ...selectWorkflowTemplateSchema.parse(template),
+    role: template.role || UserWorkflowRole.Viewer //default user role for public workflow
+  }))
 }
 
 export const updateWorkflowTemplateByExternalId = async (

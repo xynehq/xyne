@@ -76,7 +76,7 @@ import {
 
 import { 
   createWorkflowTemplate, 
-  getAccessibleWorkflowTemplates, 
+  getAccessibleWorkflowTemplatesWithRole, 
   getWorkflowExecutionById, 
   getWorkflowExecutionByIdWithChecks, 
   getWorkflowStepTemplateById, 
@@ -89,6 +89,7 @@ import {
   getWorkflowStepExecutionByIdWithChecks,
 } from "@/db/workflow"
 import {
+  getWorkflowUsers,
   syncWorkflowUserPermissions,
 } from "@/db/userWorkflowPermissions"
 import {
@@ -154,7 +155,7 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
       db,
       c.get(JwtPayloadKey)
     )
-    const templates = await getAccessibleWorkflowTemplates(
+    const templates = await getAccessibleWorkflowTemplatesWithRole(
       db,
       user.workspaceId,
       user.id,
@@ -163,6 +164,7 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
     // Get step templates and root step details for each workflow
     const templatesWithSteps = await Promise.all(
       templates.map(async (template) => {
+        const role = template.role
         const steps = await getWorkflowStepTemplatesByTemplateId(
           db,
           template.id
@@ -201,6 +203,7 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
 
         return {
           ...publicWorkflowTemplateSchema.parse(template),
+          role,
           rootStep,
         }
       }),
@@ -3373,6 +3376,49 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
 export const GetGeminiModelEnumsApi = async (c: Context) => {
   Logger.warn("GetGeminiModelEnumsApi is deprecated, use GetVertexAIModelEnumsApi instead")
   return GetVertexAIModelEnumsApi(c)
+}
+
+// Get all users with permissions for a workflow
+export const GetWorkflowUsersApi = async (c: Context) => {
+  try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
+    const templateExternalId = c.req.param("templateExternalId")
+
+    // Get workflow template and validate access
+    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+      db,
+      templateExternalId,
+      user.workspaceId,
+      user.id
+    )
+
+    if (!template) {
+      throw new HTTPException(404, { message: "Workflow template not found" })
+    }
+
+    // Check if user is the owner (only owners can view user list)
+    if (template.userId !== user.id) {
+      throw new HTTPException(403, { message: "Only workflow owners can view user permissions" })
+    }
+
+    // Get all users with permissions for this workflow
+    const workflowUsers = await getWorkflowUsers(db, template.id)
+
+    return c.json({
+      success: true,
+      data: {
+        workflowId: template.external_id,
+        workflowName: template.name,
+        users: workflowUsers,
+        totalUsers: workflowUsers.length,
+      },
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to get workflow users")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
 }
 
 // Serve workflow file

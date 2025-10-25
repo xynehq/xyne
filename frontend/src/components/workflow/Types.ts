@@ -244,6 +244,7 @@ export interface WorkflowTemplate {
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
+  role?: string
   rootStep?: {
     id: string
     workflowTemplateId: string
