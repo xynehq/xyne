@@ -3,7 +3,7 @@ import { Phone, Video, Send, Loader2, Check } from "lucide-react"
 import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { callNotificationClient } from "@/services/callNotifications"
 
@@ -42,6 +42,7 @@ export default function ChatView({
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageContainerRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isTypingRef = useRef(false)
 
@@ -105,10 +106,16 @@ export default function ChatView({
     isTypingRef.current = isTyping
   }
 
-  // Handle input change with typing indicator
+  // Handle input change with typing indicator and auto-resize
   const handleMessageChange = (text: string) => {
     if (text.length <= MAX_MESSAGE_LENGTH) {
       setMessageText(text)
+
+      // Auto-resize textarea
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto"
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+      }
 
       // Send typing indicator when user starts typing or resumes typing
       if (text.length > 0 && !isTypingRef.current) {
@@ -176,6 +183,10 @@ export default function ChatView({
           },
         ])
         setMessageText("")
+        // Reset textarea height
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto"
+        }
       } else {
         const errorData = await response.json().catch(() => ({}))
         toast({
@@ -197,7 +208,7 @@ export default function ChatView({
   }
 
   // Handle Enter key press
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
@@ -367,26 +378,26 @@ export default function ChatView({
               >
                 <div
                   className={cn(
-                    "max-w-[70%] rounded-lg px-4 py-2",
+                    "max-w-[70%] rounded-2xl px-4 py-2.5 shadow-sm",
                     message.isMine
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 dark:bg-gray-800 text-[#384049] dark:text-[#F1F3F4]",
+                      ? "bg-blue-500 text-white rounded-br-sm"
+                      : "bg-gray-100 dark:bg-gray-800 text-[#384049] dark:text-[#F1F3F4] rounded-bl-sm",
                   )}
                 >
-                  <p className="text-sm break-words whitespace-pre-wrap">
+                  <p className="text-sm break-words whitespace-pre-wrap leading-relaxed">
                     {message.messageContent}
                   </p>
                   <div
                     className={cn(
-                      "flex items-center gap-1 mt-1",
+                      "flex items-center gap-1 mt-1.5",
                       message.isMine ? "justify-end" : "justify-start",
                     )}
                   >
                     <p
                       className={cn(
-                        "text-xs",
+                        "text-[10px]",
                         message.isMine
-                          ? "text-blue-100"
+                          ? "text-blue-50"
                           : "text-gray-500 dark:text-gray-400",
                       )}
                     >
@@ -398,12 +409,12 @@ export default function ChatView({
                         {message.isRead ? (
                           // Double check - message read
                           <div className="flex -space-x-1">
-                            <Check className="h-3 w-3 text-blue-100" />
-                            <Check className="h-3 w-3 text-blue-100" />
+                            <Check className="h-3.5 w-3.5 text-blue-50" />
+                            <Check className="h-3.5 w-3.5 text-blue-50" />
                           </div>
                         ) : (
                           // Single check - message sent but not read
-                          <Check className="h-3 w-3 text-blue-100 opacity-60" />
+                          <Check className="h-3.5 w-3.5 text-blue-50 opacity-60" />
                         )}
                       </div>
                     )}
@@ -414,17 +425,17 @@ export default function ChatView({
             {/* Typing Indicator */}
             {isOtherUserTyping && (
               <div className="flex justify-start">
-                <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-4 py-2 flex items-center gap-1">
+                <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1 shadow-sm">
                   <span
-                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                    className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
                     style={{ animationDelay: "0ms" }}
                   ></span>
                   <span
-                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                    className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
                     style={{ animationDelay: "150ms" }}
                   ></span>
                   <span
-                    className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                    className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
                     style={{ animationDelay: "300ms" }}
                   ></span>
                 </div>
@@ -437,25 +448,27 @@ export default function ChatView({
 
       {/* Message Input */}
       <div className="px-6 py-4 border-t border-[#D7E0E9] dark:border-gray-700">
-        <div className="space-y-2">
-          <div className="flex items-end gap-2">
-            <div className="flex-1 space-y-1">
-              <Input
+        <div className="flex items-end gap-3">
+          <div className="flex-1 space-y-1">
+            <div className="relative">
+              <Textarea
+                ref={textareaRef}
                 value={messageText}
                 onChange={(e) => {
                   handleMessageChange(e.target.value)
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder={`Message ${targetUser.name}...`}
-                className="resize-none"
+                className="resize-none min-h-[80px] max-h-[200px] overflow-y-auto pr-16 py-3 rounded-xl border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all"
+                rows={1}
                 disabled={sending}
               />
               {messageText.length > 0 && (
                 <div
                   className={cn(
-                    "text-xs text-right",
+                    "absolute bottom-2 right-3 text-xs pointer-events-none",
                     messageText.length >= MAX_MESSAGE_LENGTH
-                      ? "text-red-500"
+                      ? "text-red-500 font-medium"
                       : messageText.length >= MAX_MESSAGE_LENGTH * 0.9
                         ? "text-orange-500"
                         : "text-gray-400",
@@ -465,23 +478,23 @@ export default function ChatView({
                 </div>
               )}
             </div>
-            <Button
-              onClick={sendMessage}
-              disabled={
-                !messageText.trim() ||
-                sending ||
-                messageText.length > MAX_MESSAGE_LENGTH
-              }
-              size="sm"
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {sending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
           </div>
+          <Button
+            onClick={sendMessage}
+            disabled={
+              !messageText.trim() ||
+              sending ||
+              messageText.length > MAX_MESSAGE_LENGTH
+            }
+            size="icon"
+            className="h-11 w-11 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+          >
+            {sending ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Send className="h-5 w-5" />
+            )}
+          </Button>
         </div>
       </div>
     </div>
