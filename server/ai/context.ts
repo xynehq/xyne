@@ -277,8 +277,7 @@ ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.metadata ? `parent FolderName: ${folderName}` : ""} 
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
-\nvespa relevance score: ${relevance}\n`
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}`
 }
 
 // TODO: tell if workspace that this is an employee
@@ -290,8 +289,7 @@ ${fields.email ? `Email: ${fields.email}` : ""}
 ${fields.gender ? `Gender: ${fields.gender}` : ""}
 ${fields.orgJobTitle ? `Job Title: ${fields.orgJobTitle}` : ""}
 ${fields.orgDepartment ? `Department: ${fields.orgDepartment}` : ""}
-${fields.orgLocation ? `Location: ${fields.orgLocation}` : ""}
-vespa relevance score: ${relevance}`
+${fields.orgLocation ? `Location: ${fields.orgLocation}` : ""}`
 }
 
 const constructMailContext = (
@@ -344,8 +342,7 @@ ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
 ${fields.cc ? `Cc: ${fields.cc.join(", ")}` : ""}
 ${fields.bcc ? `Bcc: ${fields.bcc.join(", ")}` : ""}
 ${fields.labels ? `Labels: ${fields.labels.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
-vespa relevance score: ${relevance}`
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}`
 }
 
 const constructSlackMessageContext = (
@@ -370,8 +367,7 @@ const constructSlackMessageContext = (
     Message: ${fields.text}
     ${fields.threadId ? "it's a message thread" : ""}
     ${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}
-    User is part of Workspace: ${fields.teamName}
-    vespa relevance score: ${relevance}`
+    User is part of Workspace: ${fields.teamName}`
 }
 
 const constructSlackChannelContext = (
@@ -403,8 +399,7 @@ ${
         fields.createdAt,
       ).toLocaleString("en-US", { timeZone: userTimezone })})`
     : ""
-}
-vespa relevance score: ${relevance}`
+}`
 }
 
 const constructMailAttachmentContext = (
@@ -458,8 +453,7 @@ ${
 }
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
 ${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
-vespa relevance score: ${relevance}`
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}`
 }
 
 const constructEventContext = (
@@ -515,7 +509,7 @@ Cancelled Instances: ${
       ? fields.cancelledInstances.join(", ")
       : "No cancelled instances"
   }
-${relevance ? `vespa relevance score: ${relevance}` : ""}`
+`
 }
 
 // Function for handling file context
@@ -537,8 +531,7 @@ ${fields.parentId ? `Parent FolderId: ${fields.parentId}` : ""}
 ${fields.metadata ? `parent FolderName: ${folderName}` : ""} 
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
-${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
-vespa relevance score: ${relevance}`
+${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}`
 }
 
 // TODO: tell if workspace that this is an employee
@@ -553,8 +546,7 @@ ${fields.email ? `Email: ${fields.email}` : ""}
 ${fields.gender ? `Gender: ${fields.gender}` : ""}
 ${fields.orgJobTitle ? `Job Title: ${fields.orgJobTitle}` : ""}
 ${fields.orgDepartment ? `Department: ${fields.orgDepartment}` : ""}
-${fields.orgLocation ? `Location: ${fields.orgLocation}` : ""}
-vespa relevance score: ${relevance}`
+${fields.orgLocation ? `Location: ${fields.orgLocation}` : ""}`
 }
 
 const constructMailMetadataContext = (
@@ -568,8 +560,7 @@ ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
 ${fields.cc ? `Cc: ${fields.cc.join(", ")}` : ""}
 ${fields.bcc ? `Bcc: ${fields.bcc.join(", ")}` : ""}
-${fields.labels ? `Mailbox Labels: ${fields.labels.join(", ")}` : ""}
-vespa relevance score: ${relevance}`
+${fields.labels ? `Mailbox Labels: ${fields.labels.join(", ")}` : ""}`
 }
 
 const constructMailAttachmentMetadataContext = (
@@ -580,8 +571,7 @@ const constructMailAttachmentMetadataContext = (
 Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\ntimestamp: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.partId ? `Attachment_no: ${fields.partId}` : ""}
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
-${fields.fileType ? `FileType: ${fields.fileType}` : ""}
-vespa relevance score: ${relevance}`
+${fields.fileType ? `FileType: ${fields.fileType}` : ""}`
 }
 
 const constructFileColoredContext = (
@@ -596,8 +586,7 @@ ${fields.owner ? `${pc.green("Owner")}: ${fields.owner}` : ""}
 ${fields.ownerEmail ? `${pc.green("Owner Email")}: ${fields.ownerEmail}` : ""}
 ${fields.mimeType ? `${pc.green("Mime Type")}: ${fields.mimeType}` : ""}
 ${fields.permissions ? `${pc.green("Permissions")}: ${fields.permissions.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")}: ${fields.chunks_summary.join("\n")}` : ""}
-\n${pc.green("vespa relevance score")}: ${relevance}`
+${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")}: ${fields.chunks_summary.join("\n")}` : ""}`
 }
 
 const constructUserColoredContext = (
@@ -611,8 +600,7 @@ ${fields.email ? `${pc.green("Email")}: ${fields.email}` : ""}
 ${fields.gender ? `${pc.green("Gender")}: ${fields.gender}` : ""}
 ${fields.orgJobTitle ? `${pc.green("Job Title")}: ${fields.orgJobTitle}` : ""}
 ${fields.orgDepartment ? `${pc.green("Department")}: ${fields.orgDepartment}` : ""}
-${fields.orgLocation ? `${pc.green("Location")}: ${fields.orgLocation}` : ""}
-\n${pc.green("vespa relevance score")}: ${relevance}`
+${fields.orgLocation ? `${pc.green("Location")}: ${fields.orgLocation}` : ""}`
 }
 
 const constructMailColoredContext = (
@@ -627,8 +615,7 @@ ${fields.to ? `${pc.green("To")}: ${fields.to.join(", ")}` : ""}
 ${fields.cc ? `${pc.green("Cc")}: ${fields.cc.join(", ")}` : ""}
 ${fields.bcc ? `${pc.green("Bcc")}: ${fields.bcc.join(", ")}` : ""}
 ${fields.labels ? `${pc.green("Labels")}: ${fields.labels.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")}: ${fields.chunks_summary.join("\n")}` : ""}
-\n${pc.green("vespa relevance score")}: ${relevance}`
+${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")}: ${fields.chunks_summary.join("\n")}` : ""}`
 }
 
 const constructDataSourceFileContext = (
@@ -728,8 +715,7 @@ const constructDataSourceFileContext = (
   }
   ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
   ${content ? `Content: ${content}` : ""}
-  ${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}
-  \nvespa relevance score: ${relevance}\n`
+  ${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
 }
 
 const constructCollectionFileContext = (
@@ -836,8 +822,7 @@ Mime Type: ${fields.mimeType || "N/A"}
 ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.createdBy ? `Uploaded By: ${fields.createdBy}` : ""}
 ${content ? `Content: ${content}` : ""}
-${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}
-\nvespa relevance score: ${relevance}\n`
+${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
 }
 
 type AiMetadataContext = string
