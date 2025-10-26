@@ -223,7 +223,6 @@ Tool Description: ${description}
 // Function for handling file context
 const constructFileContext = (
   fields: VespaFileSearch,
-  relevance: number,
   userTimezone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
@@ -281,7 +280,7 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` 
 }
 
 // TODO: tell if workspace that this is an employee
-const constructUserContext = (fields: VespaUser, relevance: number): string => {
+const constructUserContext = (fields: VespaUser): string => {
   return `App: ${fields.app}
 Entity: ${fields.entity}${typeof fields.creationTime === "number" && isFinite(fields.creationTime) ? `\nAdded: ${getRelativeTime(fields.creationTime)}` : ""}
 ${fields.name ? `Name: ${fields.name}` : ""}
@@ -294,7 +293,6 @@ ${fields.orgLocation ? `Location: ${fields.orgLocation}` : ""}`
 
 const constructMailContext = (
   fields: VespaMailSearch,
-  relevance: number,
   userTimezone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
@@ -347,7 +345,6 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` 
 
 const constructSlackMessageContext = (
   fields: VespaChatMessageSearch,
-  relevance: number,
   userTimezone: string,
 ): string => {
   let channelCtx = ``
@@ -372,7 +369,6 @@ const constructSlackMessageContext = (
 
 const constructSlackChannelContext = (
   fields: VespaChatContainerSearch,
-  relevance: number,
   userTimezone: string,
 ): string => {
   let channelCtx = ``
@@ -404,7 +400,6 @@ ${
 
 const constructMailAttachmentContext = (
   fields: VespaMailAttachmentSearch,
-  relevance: number,
   userTimeZone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
@@ -458,7 +453,6 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` 
 
 const constructEventContext = (
   fields: VespaEventSearch,
-  relevance: number,
   dateForAI: string,
   userTimeZone: string,
 ): string => {
@@ -513,10 +507,7 @@ Cancelled Instances: ${
 }
 
 // Function for handling file context
-const constructFileMetadataContext = (
-  fields: VespaFileSearch,
-  relevance: number,
-): string => {
+const constructFileMetadataContext = (fields: VespaFileSearch): string => {
   const parsedMetadata =
     typeof fields.metadata === "string"
       ? JSON.parse(fields.metadata)
@@ -535,10 +526,7 @@ ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}`
 }
 
 // TODO: tell if workspace that this is an employee
-const constructUserMetadataContext = (
-  fields: VespaUser,
-  relevance: number,
-): string => {
+const constructUserMetadataContext = (fields: VespaUser): string => {
   return `App: ${fields.app}
 Entity: ${fields.entity}${typeof fields.creationTime === "number" && isFinite(fields.creationTime) ? `\nAdded: ${getRelativeTime(fields.creationTime)}` : ""}
 ${fields.name ? `Name: ${fields.name}` : ""}
@@ -549,10 +537,7 @@ ${fields.orgDepartment ? `Department: ${fields.orgDepartment}` : ""}
 ${fields.orgLocation ? `Location: ${fields.orgLocation}` : ""}`
 }
 
-const constructMailMetadataContext = (
-  fields: VespaMailSearch,
-  relevance: number,
-): string => {
+const constructMailMetadataContext = (fields: VespaMailSearch): string => {
   return `App: ${fields.app}
 Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
@@ -565,7 +550,6 @@ ${fields.labels ? `Mailbox Labels: ${fields.labels.join(", ")}` : ""}`
 
 const constructMailAttachmentMetadataContext = (
   fields: VespaMailAttachmentSearch,
-  relevance: number,
 ): string => {
   return `App: ${fields.app}
 Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\ntimestamp: ${getRelativeTime(fields.timestamp)}` : ""}
@@ -574,10 +558,7 @@ ${fields.filename ? `Filename: ${fields.filename}` : ""}
 ${fields.fileType ? `FileType: ${fields.fileType}` : ""}`
 }
 
-const constructFileColoredContext = (
-  fields: VespaFileSearch,
-  relevance: number,
-): string => {
+const constructFileColoredContext = (fields: VespaFileSearch): string => {
   return `${pc.green("App")}: ${fields.app}
 ${pc.green("Entity")}: ${fields.entity}
 ${fields.title ? `${pc.green("Title")}: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n${pc.green("Created")}: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\n${pc.green("Updated At")}: ${getRelativeTime(fields.updatedAt)}` : ""}
@@ -589,10 +570,7 @@ ${fields.permissions ? `${pc.green("Permissions")}: ${fields.permissions.join(",
 ${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")}: ${fields.chunks_summary.join("\n")}` : ""}`
 }
 
-const constructUserColoredContext = (
-  fields: VespaUser,
-  relevance: number,
-): string => {
+const constructUserColoredContext = (fields: VespaUser): string => {
   return `${pc.green("App")}: ${fields.app}
 ${pc.green("Entity")}: ${fields.entity}${typeof fields.creationTime === "number" && isFinite(fields.creationTime) ? `\n${pc.green("Added")}: ${getRelativeTime(fields.creationTime)}` : ""}
 ${fields.name ? `${pc.green("Name")}: ${fields.name}` : ""}
@@ -603,10 +581,7 @@ ${fields.orgDepartment ? `${pc.green("Department")}: ${fields.orgDepartment}` : 
 ${fields.orgLocation ? `${pc.green("Location")}: ${fields.orgLocation}` : ""}`
 }
 
-const constructMailColoredContext = (
-  fields: VespaMailSearch,
-  relevance: number,
-): string => {
+const constructMailColoredContext = (fields: VespaMailSearch): string => {
   return `${pc.green("App")}: ${fields.app}
 ${pc.green("Entity")}: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\n${pc.green("Sent")}: ${getRelativeTime(fields.timestamp)}` : ""}
 ${fields.subject ? `${pc.green("Subject")}: ${fields.subject}` : ""}
@@ -620,7 +595,6 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")
 
 const constructDataSourceFileContext = (
   fields: VespaDataSourceFileSearch,
-  relevance: number,
   userTimeZone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
@@ -720,7 +694,6 @@ const constructDataSourceFileContext = (
 
 const constructCollectionFileContext = (
   fields: VespaKbFileSearch,
-  relevance: number,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
   isMsgWithKbItems?: boolean,
@@ -832,32 +805,15 @@ export const answerMetadataContextMap = (
   userTimeZone: string,
 ): AiMetadataContext => {
   if (searchResult.fields.sddocname === fileSchema) {
-    return constructFileMetadataContext(
-      searchResult.fields,
-      searchResult.relevance,
-    )
+    return constructFileMetadataContext(searchResult.fields)
   } else if (searchResult.fields.sddocname === userSchema) {
-    return constructUserMetadataContext(
-      searchResult.fields,
-      searchResult.relevance,
-    )
+    return constructUserMetadataContext(searchResult.fields)
   } else if (searchResult.fields.sddocname === mailSchema) {
-    return constructMailMetadataContext(
-      searchResult.fields,
-      searchResult.relevance,
-    )
+    return constructMailMetadataContext(searchResult.fields)
   } else if (searchResult.fields.sddocname === mailAttachmentSchema) {
-    return constructMailAttachmentMetadataContext(
-      searchResult.fields,
-      searchResult.relevance,
-    )
+    return constructMailAttachmentMetadataContext(searchResult.fields)
   } else if (searchResult.fields.sddocname === eventSchema) {
-    return constructEventContext(
-      searchResult.fields,
-      searchResult.relevance,
-      dateForAI,
-      userTimeZone,
-    )
+    return constructEventContext(searchResult.fields, dateForAI, userTimeZone)
   } else {
     throw new Error(
       `Invalid search result type: ${searchResult.fields.sddocname}`,
@@ -869,20 +825,11 @@ export const answerColoredContextMap = (
   searchResult: VespaSearchResults,
 ): string => {
   if (searchResult.fields.sddocname === fileSchema) {
-    return constructFileColoredContext(
-      searchResult.fields,
-      searchResult.relevance,
-    )
+    return constructFileColoredContext(searchResult.fields)
   } else if (searchResult.fields.sddocname === userSchema) {
-    return constructUserColoredContext(
-      searchResult.fields,
-      searchResult.relevance,
-    )
+    return constructUserColoredContext(searchResult.fields)
   } else if (searchResult.fields.sddocname === mailSchema) {
-    return constructMailColoredContext(
-      searchResult.fields,
-      searchResult.relevance,
-    )
+    return constructMailColoredContext(searchResult.fields)
   } else {
     throw new Error(
       `Invalid search result type: ${searchResult.fields.sddocname}`,
@@ -953,17 +900,15 @@ export const answerContextMap = async (
   if (searchResult.fields.sddocname === fileSchema) {
     return constructFileContext(
       searchResult.fields,
-      searchResult.relevance,
       userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === userSchema) {
-    return constructUserContext(searchResult.fields, searchResult.relevance)
+    return constructUserContext(searchResult.fields)
   } else if (searchResult.fields.sddocname === mailSchema) {
     return constructMailContext(
       searchResult.fields,
-      searchResult.relevance,
       userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
@@ -971,14 +916,12 @@ export const answerContextMap = async (
   } else if (searchResult.fields.sddocname === eventSchema) {
     return constructEventContext(
       searchResult.fields,
-      searchResult.relevance,
       userMetadata.dateForAI,
       userMetadata.userTimezone,
     )
   } else if (searchResult.fields.sddocname === mailAttachmentSchema) {
     return constructMailAttachmentContext(
       searchResult.fields,
-      searchResult.relevance,
       userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
@@ -986,19 +929,16 @@ export const answerContextMap = async (
   } else if (searchResult.fields.sddocname === chatMessageSchema) {
     return constructSlackMessageContext(
       searchResult.fields,
-      searchResult.relevance,
       userMetadata.userTimezone,
     )
   } else if (searchResult.fields.sddocname === chatContainerSchema) {
     return constructSlackChannelContext(
       searchResult.fields,
-      searchResult.relevance,
       userMetadata.userTimezone,
     )
   } else if (searchResult.fields.sddocname === dataSourceFileSchema) {
     return constructDataSourceFileContext(
       searchResult.fields as VespaDataSourceFileSearch,
-      searchResult.relevance,
       userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
@@ -1006,7 +946,6 @@ export const answerContextMap = async (
   } else if (searchResult.fields.sddocname === KbItemsSchema) {
     return constructCollectionFileContext(
       searchResult.fields as VespaKbFileSearch,
-      searchResult.relevance,
       maxSummaryChunks,
       isSelectedFiles,
       isMsgWithKbItems,

@@ -47,7 +47,6 @@ Each chunk's metadata includes details such as:
 - **Entity**: Type or category of the document (e.g., File, User, Email).
 - **Title, Subject, To, From, Owner**: Key fields summarizing the content or origin of the chunk.
 - **Permissions**: Visibility or sharing settings.
-- **Relevance score**: Initial relevance rating provided by the system.
 
 Note: If the entity is **Mail**, the metadata will also include **Labels**. Use this field to help determine the relevance of the email.
 
@@ -76,7 +75,6 @@ Metadata includes details like:
 - **Entity**: Type of document (e.g., File, User, Email).
 - **Title, Subject, To, From, Owner**: Key fields describing the chunk.
 - **Permissions**: Sharing settings.
-- **Relevance score**: An initial relevance rating.
 - **Timestamp**: Indicates when the chunk was created or last updated.
 
 When reviewing, use these guidelines:
@@ -383,7 +381,6 @@ The context provided will be formatted with specific fields for each type:
 - Mime type
 - Permissions
 - Content chunks
-- Relevance score
 
 ## User Context Format
 - App and Entity type
@@ -393,7 +390,6 @@ The context provided will be formatted with specific fields for each type:
 - Job title
 - Department
 - Location
-- Relevance score
 
 ## Email Context Format
 - App and Entity type
@@ -402,7 +398,6 @@ The context provided will be formatted with specific fields for each type:
 - From/To/Cc/Bcc
 - Labels
 - Content chunks
-- Relevance score
 
 ## Event Context Format
 - App and Entity type
@@ -412,7 +407,6 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-- Relevance score
 
 # Context of the agent {priority}
 Name: ${agentPromptData.name}
@@ -436,7 +430,6 @@ ${retrievedContext}
 
 # Guidelines for Response
 1. Data Interpretation:
-   - Consider the relevance scores when weighing information
    - Pay attention to timestamps for temporal context only if the query explicitly requests it
    - Respect permission levels indicated in file contexts
    - Note relationships between different content types
@@ -468,13 +461,12 @@ ${retrievedContext}
 4. Quality Assurance:
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
-   - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information, without referencing meetings or events unless explicitly requested
 
 # Response Format
 Analyze: [For RetrieveMetadata email queries, this section MUST be empty. For other queries, provide a brief analysis of the available context, excluding any meeting or event-related information unless explicitly requested. If the query lacks context (e.g., data for another employee like Vipul is not available), this section should note the lack of data and set the answer to null.]
 Answer: [For RetrieveMetadata email queries, list emails in the specified format only, with no additional text. For other queries, provide a direct response following the guidelines above, excluding meeting-related content unless requested. If the query lacks context, set to null.]
-Sources: [List relevant sources with relevance scores, or empty if no data is available]
+Sources: [List relevant sources or empty if no data is available]
 Confidence: [High/Medium/Low based on context quality, or Low if no data is available]
 Suggestions: [Related queries or clarifications if needed, avoiding any meeting or event-related suggestions unless requested]
 
@@ -529,7 +521,6 @@ The context provided will be formatted with specific fields for each type:
 - Mime type
 - Permissions (this field just shows who has access to what, nothing more)
 - Content chunks
-- Relevance score
 ## User Context Format
 - App and Entity type
 - Addition date
@@ -538,7 +529,6 @@ The context provided will be formatted with specific fields for each type:
 - Job title
 - Department
 - Location
-- Relevance score
 ## Email Context Format
 - App and Entity type
 - Timestamp
@@ -546,7 +536,6 @@ The context provided will be formatted with specific fields for each type:
 - From/To/Cc/Bcc
 - Labels
 - Content chunks
-- Relevance score
 ## Event Context Format
 - App and Entity type
 - Event name and description
@@ -555,7 +544,6 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-- Relevance score
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -567,7 +555,6 @@ This includes:
 ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
-   - Consider the relevance scores when weighing information
    - Pay attention to timestamps for temporal context
    - Note relationships between different content types
 2. Response Structure:
@@ -598,7 +585,6 @@ ${retrievedContext}
 4. Quality Assurance:
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
-   - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information.
 # Response Format
 You must respond in valid JSON format with the following structure:
@@ -649,7 +635,7 @@ You have access to the following types of data:
 4. Calendar events
 5. Slack/Chat Messages
 The context provided will be formatted with specific fields for each type:
-- App and Entity type and the relevance score
+- App and Entity type 
 ## File Context Format
 - Title
 - Creation and update timestamps
@@ -701,7 +687,6 @@ This includes:
 ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
-   - Consider the relevance scores when weighing information
    - Pay attention to timestamps for temporal context
    - Note relationships between different content types
 2. Response Structure:
@@ -723,7 +708,6 @@ ${retrievedContext}
 4. Quality Assurance:
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
-   - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information
 
 # Response Format
@@ -777,7 +761,6 @@ The context provided will be formatted with specific fields for each type:
 - Mime type
 - Permissions, this field just shows who has access to what, nothing more
 - Content chunks
-- Relevance score
 ## User Context Format
 - App and Entity type
 - Addition date
@@ -786,7 +769,6 @@ The context provided will be formatted with specific fields for each type:
 - Job title
 - Department
 - Location
-- Relevance score
 ## Email Context Format
 - App and Entity type
 - Timestamp
@@ -794,7 +776,6 @@ The context provided will be formatted with specific fields for each type:
 - From/To/Cc/Bcc
 - Labels
 - Content chunks
-- Relevance score
 ## Event Context Format
 - App and Entity type
 - Event name and description
@@ -803,7 +784,6 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-- Relevance score
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -815,7 +795,6 @@ This includes:
 ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
-   - Consider the relevance scores when weighing information
    - Pay attention to timestamps for temporal context
    - Note relationships between different content types
 2. Response Structure:
@@ -837,7 +816,6 @@ ${retrievedContext}
 4. Quality Assurance:
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
-   - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information
 # Response Format
 You must respond in valid JSON format with the following structure:
@@ -863,7 +841,7 @@ export const agentBaselineKbContextPromptJson = (
   userContext: string,
   dateForAI: string,
   retrievedContext: string,
-  agentPromptData?: AgentPromptData
+  agentPromptData?: AgentPromptData,
 ) => `The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without
 any logic. Be formal as much as possible.
 
@@ -873,7 +851,9 @@ You are an AI assistant with access to some data given as context. You should on
 3. Emails
 4. Calendar events
 
-${agentPromptData ? `
+${
+  agentPromptData
+    ? `
 # Context of the agent {priority}
 Name: ${agentPromptData.name}
 Description: ${agentPromptData.description}
@@ -881,7 +861,9 @@ Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map((source) => `- ${typeof source === "string" ? source : JSON.stringify(source)}`).join("\\n") : "No specific sources provided by agent."}
-This is the context of the agent, it is very important to follow this. You MUST prioritize and filter information based on the # Agent Sources provided. If sources are listed, your response should strictly align with the content and type of these sources. If no specific sources are listed under # Agent Sources, proceed with the general context.` : ""}
+This is the context of the agent, it is very important to follow this. You MUST prioritize and filter information based on the # Agent Sources provided. If sources are listed, your response should strictly align with the content and type of these sources. If no specific sources are listed under # Agent Sources, proceed with the general context.`
+    : ""
+}
 
 ## File & Chunk Formatting (CRITICAL)
 - Each file starts with a header line exactly like:
@@ -899,8 +881,7 @@ The context provided will be formatted with specific fields:
 - File Size
 - Creation and update timestamps
 - Owner information
-- Content chunks with their indices (inline within the file content)
-- Relevance scores
+- Content chunks with their indices (inline within the file content)s
 ## User Context Format
 - App and Entity type
 - Addition date
@@ -909,7 +890,6 @@ The context provided will be formatted with specific fields:
 - Job title
 - Department
 - Location
-- Relevance score
 ## Email Context Format
 - App and Entity type
 - Timestamp
@@ -917,7 +897,6 @@ The context provided will be formatted with specific fields:
 - From/To/Cc/Bcc
 - Labels
 - Content chunks
-- Relevance score
 ## Event Context Format
 - App and Entity type
 - Event name and description
@@ -926,7 +905,6 @@ The context provided will be formatted with specific fields:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-- Relevance score
 # Context of the user talking to you
 ${userContext}
 This includes:
