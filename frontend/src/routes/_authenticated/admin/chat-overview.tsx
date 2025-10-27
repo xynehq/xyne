@@ -5,6 +5,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
+import { useAdminUserSelectionStore } from "@/store/useAdminUserSelectionStore"
 import { api } from "@/api"
 import { errorComponent } from "@/components/error"
 import { Sidebar } from "@/components/Sidebar"
@@ -16,6 +17,7 @@ import { z } from "zod"
 
 const chatOverviewSearchSchema = z.object({
   userName: z.string().optional(),
+  userEmail: z.string().optional(),
   page: z.string().optional(),
   offset: z.string().optional(),
   search: z.string().optional(),
@@ -62,6 +64,7 @@ function ChatOverviewPage({
 }: ChatOverviewPageProps) {
   const navigate = useNavigate()
   const search = Route.useSearch()
+  const { selectedUser, clearSelectedUser } = useAdminUserSelectionStore()
   const [adminChats, setAdminChats] = useState<AdminChat[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -81,7 +84,7 @@ function ChatOverviewPage({
   const [filterType, setFilterType] = useState<"all" | "agent" | "normal">(
     "all",
   )
-  const [userFilter, setUserFilter] = useState<"all" | number>("all")
+  const [userFilter, setUserFilter] = useState<"all" | string>("all")
   const [sortBy, setSortBy] = useState<
     "created" | "messages" | "cost" | "tokens"
   >("created")
@@ -112,6 +115,7 @@ function ChatOverviewPage({
         const query: any = {
           page: currentPage.toString(),
           offset: pageSize.toString(),
+          paginated: "true",
         }
 
         // Add server-side filters
@@ -122,7 +126,11 @@ function ChatOverviewPage({
           query.search = searchQuery.trim()
         }
         if (userFilter !== "all") {
-          query.userId = userFilter.toString()
+          query.userEmail = userFilter
+        }
+        // Use userId from store if available
+        if (selectedUser?.userId) {
+          query.userId = selectedUser.userId.toString()
         }
         if (filterType !== "all") {
           query.filterType = filterType
@@ -186,7 +194,6 @@ function ChatOverviewPage({
             externalId: chat.externalId,
             title: chat.title || "Untitled Chat",
             createdAt: chat.createdAt,
-            userId: chat.userId ?? chat.user?.id ?? 0,
             userName: (chat.userName ??
               chat.user?.name ??
               "Unknown User") as string,
@@ -225,18 +232,24 @@ function ChatOverviewPage({
     filterType,
     userFilter,
     sortBy,
+    selectedUser?.userId,
   ])
 
   const handleBackToDashboard = () => {
+    // Clear selected user when navigating back to dashboard
+    clearSelectedUser()
     navigate({ to: "/dashboard" })
   }
 
-  // Determine page title and description based on filter
+  // Determine page title and description based on filter (check store first, then URL)
   const getPageInfo = () => {
-    if (search.userName) {
+    const userEmail = selectedUser?.userEmail || search.userEmail
+    const userName = selectedUser?.userName || search.userName
+
+    if (userEmail) {
       return {
-        title: `Chats for ${search.userName}`,
-        description: `All chat conversations for user: ${search.userName}`,
+        title: `Chats for ${userName || userEmail}`,
+        description: `All chat conversations for user: ${userEmail}`,
       }
     }
     return {
@@ -256,7 +269,7 @@ function ChatOverviewPage({
         isAgentMode={agentWhiteList}
       />
       <div className="flex flex-col flex-grow h-full ml-[52px]">
-        <div className="p-6 space-y-6 max-w-7xl mx-auto w-full">
+        <div className="p-4 space-y-4 max-w-7xl mx-auto w-full">
           {/* Header with Back Button */}
           <div className="flex items-center gap-4">
             <Button
@@ -300,7 +313,7 @@ function ChatOverviewPage({
             onUserFilterChange={setUserFilter}
             sortBy={sortBy}
             onSortByChange={setSortBy}
-            showUserFilter={!search.userName}
+            showUserFilter={!selectedUser?.userEmail}
             onChatView={(chat: AdminChat) => {
               console.log("Viewing chat:", chat.externalId)
               // You can implement chat viewing functionality here if needed
