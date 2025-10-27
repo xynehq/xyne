@@ -2174,7 +2174,7 @@ export const extractBestDocumentIndexes = async (
       return []
     }
 
-    // Extract indexes block between <indexes> ... <indexes>
+    // Extract indexes block between <indexes> ... </indexes>
     const match = text.match(/<indexes>([\s\S]*?)<\/indexes>/i)
     const extracted = match ? match[1].trim() : text.trim()
 

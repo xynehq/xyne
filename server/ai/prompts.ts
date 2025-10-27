@@ -2448,7 +2448,7 @@ Wrap the output in <indexes> tags as shown below:
 
 <indexes>
 [2, 5, 7, 1, 9]
-<indexes>
+</indexes>
 
 **Remember**: With limited context, favor inclusion over exclusion. It's better to return more potentially relevant documents than to miss important information.
 
