@@ -111,6 +111,7 @@ interface CustomBadgeProps {
   filterValue?: string
   onFilterChange?: (value: string) => void
   filterIndex?: number
+  slackIdToNameMap?: Record<string, string>
 }
 
 interface FetchedDataSource {
@@ -127,6 +128,7 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
   appId,
   filterValue,
   onFilterChange,
+  slackIdToNameMap,
 }) => {
   // Only show filter input for Gmail and Slack
   const showFilterInput = appId === Apps.Gmail || appId === Apps.Slack
@@ -372,6 +374,7 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
               <FilterBadge
                 filters={filterValue?.split(', ').filter(f => f.trim()) || []}
                 onRemoveFilter={handleRemoveFilter}
+                idToNameMap={slackIdToNameMap}
               />
             </div>
           </div>
@@ -635,6 +638,7 @@ function AgentComponent() {
   >({})
   // State for managing multiple filters per app (Gmail and Slack)
   const [appFilters, setAppFilters] = useState<Record<string, string[]>>({})
+  const [slackIdToNameMap, setSlackIdToNameMap] = useState<Record<string, string>>({})
   const [isIntegrationMenuOpen, setIsIntegrationMenuOpen] = useState(false)
   const [selectedItemsInCollection, setSelectedItemsInCollection] = useState<
     Record<string, Set<string>>
@@ -1904,107 +1908,12 @@ function AgentComponent() {
         setSelectedUsers([]) // Clear users for public agents
       }
       
-      // Load existing filters from appIntegrations and fetch Slack names
+      // Load existing filters from appIntegrations and fetch names for Slack IDs
       const loadFiltersWithNames = async () => {
         if (editingAgent.appIntegrations && typeof editingAgent.appIntegrations === 'object') {
           const appIntegrations = editingAgent.appIntegrations as Record<string, any>
           const loadedFilters: Record<string, string[]> = {}
-          
-          // Collect all Slack document IDs that need name resolution
-          const slackDocIdsToFetch: string[] = []
-        
-        // Check for Gmail filters
-        if (appIntegrations.gmail?.filters && Array.isArray(appIntegrations.gmail.filters)) {
-          const gmailFilterStrings: string[] = []
-          
-          for (const filter of appIntegrations.gmail.filters) {
-            const filterParts: string[] = []
-            
-            // Add from emails
-            if (filter.from && Array.isArray(filter.from)) {
-              filterParts.push(...filter.from.map((email: string) => `from:${email}`))
-            }
-            
-            // Add to emails
-            if (filter.to && Array.isArray(filter.to)) {
-              filterParts.push(...filter.to.map((email: string) => `to:${email}`))
-            }
-            
-            // Add cc emails
-            if (filter.cc && Array.isArray(filter.cc)) {
-              filterParts.push(...filter.cc.map((email: string) => `cc:${email}`))
-            }
-            
-            // Add bcc emails
-            if (filter.bcc && Array.isArray(filter.bcc)) {
-              filterParts.push(...filter.bcc.map((email: string) => `bcc:${email}`))
-            }
-            
-            // Add time range
-            if (filter.timeRange) {
-              const { startDate, endDate } = filter.timeRange
-              // Convert timestamps to readable format
-              const start = new Date(startDate * 1000)
-              const end = new Date(endDate * 1000)
-              const formatDate = (date: Date) => {
-                const day = String(date.getDate()).padStart(2, '0')
-                const month = String(date.getMonth() + 1).padStart(2, '0')
-                const year = date.getFullYear()
-                return `${day}/${month}/${year}`
-              }
-              filterParts.push(`~${formatDate(start)} → ${formatDate(end)}`)
-            }
-            
-            if (filterParts.length > 0) {
-              gmailFilterStrings.push(filterParts.join(', '))
-            }
-          }
-          
-          if (gmailFilterStrings.length > 0) {
-            loadedFilters.gmail = gmailFilterStrings
-          }
-        }
-        
-        // Check for Slack filters
-        if (appIntegrations.slack?.filters && Array.isArray(appIntegrations.slack.filters)) {
-          const slackFilterStrings: string[] = []
-          
-          for (const filter of appIntegrations.slack.filters) {
-            const filterParts: string[] = []
-            
-            // Add sender IDs (would need to be converted to names via API)
-            if (filter.senderId && Array.isArray(filter.senderId)) {
-              filterParts.push(...filter.senderId.map((id: string) => `@${id}`))
-            }
-            
-            // Add channel IDs (docIds)
-            if (filter.channelId && Array.isArray(filter.channelId)) {
-              filterParts.push(...filter.channelId.map((id: string) => `#${id}`))
-            }
-            
-            // Add time range
-            if (filter.timeRange) {
-              const { startDate, endDate } = filter.timeRange
-              const start = new Date(startDate * 1000)
-              const end = new Date(endDate * 1000)
-              const formatDate = (date: Date) => {
-                const day = String(date.getDate()).padStart(2, '0')
-                const month = String(date.getMonth() + 1).padStart(2, '0')
-                const year = date.getFullYear()
-                return `${day}/${month}/${year}`
-              }
-              filterParts.push(`~${formatDate(start)} → ${formatDate(end)}`)
-            }
-            
-            if (filterParts.length > 0) {
-              slackFilterStrings.push(filterParts.join(', '))
-            }
-          }
-          
-          if (slackFilterStrings.length > 0) {
-            loadedFilters.slack = slackFilterStrings
-          }
-        }
+          const slackIdsToFetch: string[] = []
           
           // Check for Gmail filters
           if (appIntegrations.gmail?.filters && Array.isArray(appIntegrations.gmail.filters)) {
@@ -2057,65 +1966,23 @@ function AgentComponent() {
             }
           }
           
-          // Check for Slack filters and collect doc IDs
-          if (appIntegrations.slack?.filters && Array.isArray(appIntegrations.slack.filters)) {
-            for (const filter of appIntegrations.slack.filters) {
-              // Collect sender IDs (user doc IDs)
-              if (filter.senderId && Array.isArray(filter.senderId)) {
-                slackDocIdsToFetch.push(...filter.senderId)
-              }
-              
-              // Collect channel IDs (channel doc IDs)
-              if (filter.channelId && Array.isArray(filter.channelId)) {
-                slackDocIdsToFetch.push(...filter.channelId)
-              }
-            }
-          }
-          
-          // Fetch names for all Slack doc IDs
-          let docIdToNameMap: Record<string, string> = {}
-          if (slackDocIdsToFetch.length > 0) {
-            try {
-              const response = await api.slack.documents.$get({
-                query: { docids: slackDocIdsToFetch.join(',') }
-              })
-              
-              if (response.ok) {
-                const data = await response.json()
-                // Create a mapping of docId -> name
-                if (data.documents && Array.isArray(data.documents)) {
-                  docIdToNameMap = data.documents.reduce((acc: Record<string, string>, doc: any) => {
-                    acc[doc.docId] = doc.name
-                    return acc
-                  }, {})
-                }
-              }
-            } catch (error) {
-              console.error('Failed to fetch Slack document names:', error)
-            }
-          }
-          
-          // Now build Slack filter strings with names
+          // Check for Slack filters - keep IDs and collect them for fetching names
           if (appIntegrations.slack?.filters && Array.isArray(appIntegrations.slack.filters)) {
             const slackFilterStrings: string[] = []
             
             for (const filter of appIntegrations.slack.filters) {
               const filterParts: string[] = []
               
-              // Add sender names (convert IDs to names)
+              // Add sender IDs and collect for fetching
               if (filter.senderId && Array.isArray(filter.senderId)) {
-                filterParts.push(...filter.senderId.map((id: string) => {
-                  const name = docIdToNameMap[id] || id
-                  return `@${name}`
-                }))
+                filterParts.push(...filter.senderId.map((id: string) => `@${id}`))
+                slackIdsToFetch.push(...filter.senderId)
               }
               
-              // Add channel names (convert IDs to names)
+              // Add channel IDs and collect for fetching
               if (filter.channelId && Array.isArray(filter.channelId)) {
-                filterParts.push(...filter.channelId.map((id: string) => {
-                  const name = docIdToNameMap[id] || id
-                  return `#${name}`
-                }))
+                filterParts.push(...filter.channelId.map((id: string) => `#${id}`))
+                slackIdsToFetch.push(...filter.channelId)
               }
               
               // Add time range
@@ -2143,6 +2010,28 @@ function AgentComponent() {
           }
           
           setAppFilters(loadedFilters)
+          
+          // Fetch Slack names if we have IDs
+          if (slackIdsToFetch.length > 0) {
+            try {
+              const response = await api.slack.documents.$get({
+                query: { docids: slackIdsToFetch.join(',') }
+              })
+              
+              if (response.ok) {
+                const data = await response.json()
+                if (data.success && data.documents) {
+                  const mapping: Record<string, string> = {}
+                  data.documents.forEach((doc: { docId: string; name: string }) => {
+                    mapping[doc.docId] = doc.name
+                  })
+                  setSlackIdToNameMap(mapping)
+                }
+              }
+            } catch (error) {
+              console.error('Failed to fetch Slack document names:', error)
+            }
+          }
         }
       }
       
@@ -2446,7 +2335,7 @@ function AgentComponent() {
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
 
-    
+        
 
     try {
       let response
@@ -3842,6 +3731,7 @@ function AgentComponent() {
                                 appId={integration.id}
                                 filterValue={filter}
                                 filterIndex={index}
+                                slackIdToNameMap={slackIdToNameMap}
                                 onFilterChange={(value) => {
                                   setAppFilters(prev => {
                                     const newFilters = [...(prev[integration.id] || [''])]
