@@ -569,10 +569,12 @@ export const handleGoogleOAuthChanges = async (
             0,
             oauth2Client,
           )
-          contactsToken =
-            response.data.nextSyncToken && response.data.nextSyncToken !== ""
-              ? response.data.nextSyncToken
-              : contactsToken
+          if (
+            response.data.nextSyncToken &&
+            response.data.nextSyncToken !== ""
+          ) {
+            contactsToken = response.data.nextSyncToken
+          }
           nextPageToken = response.data.nextPageToken ?? ""
           if (response.data.connections) {
             let changeStats = await syncContacts(
@@ -617,10 +619,12 @@ export const handleGoogleOAuthChanges = async (
             0,
             oauth2Client,
           )
-          otherContactsToken =
-            response.data.nextSyncToken && response.data.nextSyncToken !== ""
-              ? response.data.nextSyncToken
-              : otherContactsToken
+          if (
+            response.data.nextSyncToken &&
+            response.data.nextSyncToken !== ""
+          ) {
+            otherContactsToken = response.data.nextSyncToken
+          }
           nextPageToken = response.data.nextPageToken ?? ""
           if (response.data.otherContacts) {
             let changeStats = await syncContacts(
