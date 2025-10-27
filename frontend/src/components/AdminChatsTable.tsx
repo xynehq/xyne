@@ -438,7 +438,7 @@ export const AdminChatsTable = ({
                 >
                   <option value="all">All Users</option>
                   {users.map((user) => (
-                    <option key={user.email} value={user.email}>
+                    <option key={user.id} value={user.id.toString()}>
                       {user.name} ({user.email})
                     </option>
                   ))}
@@ -612,7 +612,7 @@ export const AdminChatsTable = ({
                   {searchQuery && ` • Search: "${searchQuery}"`}
                   {filterType !== "all" && ` • ${filterType} chats only`}
                   {userFilter !== "all" &&
-                    ` • User: ${users.find((u) => u.email === userFilter)?.name || "Unknown"}`}
+                    ` • User: ${users.find((u) => u.id.toString() === userFilter)?.name || "Unknown"}`}
                   {sortBy !== "created" && ` • Sorted by ${sortBy}`}
                 </div>
               )}

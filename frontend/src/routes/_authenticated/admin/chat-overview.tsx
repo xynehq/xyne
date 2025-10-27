@@ -125,12 +125,11 @@ function ChatOverviewPage({
         if (searchQuery.trim()) {
           query.search = searchQuery.trim()
         }
-        if (userFilter !== "all") {
-          query.userEmail = userFilter
-        }
-        // Use userId from store if available
+        // Use userId for filtering - prioritize selectedUser from store, then userFilter
         if (selectedUser?.userId) {
           query.userId = selectedUser.userId.toString()
+        } else if (userFilter !== "all") {
+          query.userId = userFilter
         }
         if (filterType !== "all") {
           query.filterType = filterType
