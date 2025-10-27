@@ -1,3 +1,17 @@
+## [3.22.1](https://github.com/xynehq/xyne/compare/v3.22.0...v3.22.1) (2025-10-27)
+
+
+### Bug Fixes
+
+* **chats:** Remove vespa relevance score from context ([#1148](https://github.com/xynehq/xyne/issues/1148)) ([6631556](https://github.com/xynehq/xyne/commit/66315565d5ab9eea4afcb9cc7a9ec6d6bd7ff44b))
+
+# [3.22.0](https://github.com/xynehq/xyne/compare/v3.21.7...v3.22.0) (2025-10-27)
+
+
+### Features
+
+* **kbPageTitle:** Add page_title extraction for md files  ([#1139](https://github.com/xynehq/xyne/issues/1139)) ([a3a7301](https://github.com/xynehq/xyne/commit/a3a73016ca82451273b2788fd12dee689d1cd72e))
+
 ## [3.21.7](https://github.com/xynehq/xyne/compare/v3.21.6...v3.21.7) (2025-10-24)
 
 
