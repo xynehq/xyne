@@ -1,6 +1,6 @@
 import { Flow, TemplateFlow } from "../Types"
 import { api } from "../../../api"
-import { UserMetadata } from "@/server/shared/types"
+import { UserMetadata, UserWorkflowRole } from "@/server/shared/types"
 
 // API request/response types for workflow templates
 
@@ -27,7 +27,7 @@ interface WorkflowTemplate {
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
-  role?: string
+  role?: UserWorkflowRole
   SharedUserMetadata?: UserMetadata
   rootStep?: {
     id: string

@@ -13,7 +13,7 @@ import vectorIcon from "@/assets/vector.svg"
 import playIcon from "@/assets/play.svg"
 import emptyStateIcon from "@/assets/empty-state.svg"
 import { ChevronDown, Plus, Layout, ChevronRight, Search } from "lucide-react"
-import { UserMetadata } from "@/server/shared/types"
+import { UserMetadata, UserWorkflowRole } from "@/server/shared/types"
 
 interface WorkflowTemplate {
   id: string;
@@ -35,7 +35,7 @@ interface WorkflowTemplate {
   rootWorkflowStepTemplateId: string;
   createdAt: string;
   updatedAt: string;
-  role?: string; // User's role for this workflow (Owner, Editor, Viewer)
+  role?: UserWorkflowRole; // User's role for this workflow (Owner, Editor, Viewer)
   SharedUserMetadata?: UserMetadata;
   steps?: Array<{
     id: string;

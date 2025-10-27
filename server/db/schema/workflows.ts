@@ -10,6 +10,7 @@ import {
   boolean,
   pgEnum,
   customType,
+  uniqueIndex,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -86,7 +87,9 @@ export const workflowTemplate = pgTable("workflow_template", {
     .notNull()
     .default(sql`NOW()`),
   // Removed: workspaceId, deletedAt
-})
+}, (table) => ({
+  workflowExternalIdIndex: uniqueIndex("workflow_external_id_unique_index").on(table.external_id),
+}))
 
 // 2. Workflow Step Templates Table (renamed from workflow_step_templates)
 export const workflowStepTemplate = pgTable("workflow_step_template", {
