@@ -1,3 +1,10 @@
+# [3.22.0](https://github.com/xynehq/xyne/compare/v3.21.7...v3.22.0) (2025-10-27)
+
+
+### Features
+
+* **kbPageTitle:** Add page_title extraction for md files  ([#1139](https://github.com/xynehq/xyne/issues/1139)) ([a3a7301](https://github.com/xynehq/xyne/commit/a3a73016ca82451273b2788fd12dee689d1cd72e))
+
 ## [3.21.7](https://github.com/xynehq/xyne/compare/v3.21.6...v3.21.7) (2025-10-24)
 
 
