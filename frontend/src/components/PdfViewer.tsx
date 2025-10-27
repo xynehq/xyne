@@ -1,49 +1,60 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react"
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  memo,
+} from "react"
 import { Document, Page, pdfjs } from "react-pdf"
 import "react-pdf/dist/Page/TextLayer.css"
 import "react-pdf/dist/Page/AnnotationLayer.css"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { getPdfWorkerSrc, getPdfDocumentOptions } from "@/utils/pdfBunCompat"
 import type { DocumentOperations } from "@/contexts/DocumentOperationsContext"
-import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api'
+import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api"
 
 // Set up the worker and WASM directory with Bun compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerSrc()
 ;(globalThis as any).pdfjsWasmDir = `/pdfjs/wasm/`
 
-// Memoized Page component to prevent unnecessary re-renders
-const MemoizedPage = memo(({ 
-  pageNumber, 
-  scale, 
-  loading, 
-  error,
-  onRenderSuccess,
-  onRenderTextLayerSuccess,
-  onRenderAnnotationLayerSuccess
-}: {
-  pageNumber: number
-  scale: number
-  loading: React.ReactNode
-  error: React.ReactNode
-  onRenderSuccess?: () => void
-  onRenderTextLayerSuccess?: () => void
-  onRenderAnnotationLayerSuccess?: () => void
-}) => (
-  <Page
-    pageNumber={pageNumber}
-    scale={scale}
-    renderTextLayer
-    renderAnnotationLayer
-    onRenderSuccess={onRenderSuccess}
-    onRenderTextLayerSuccess={onRenderTextLayerSuccess}
-    onRenderAnnotationLayerSuccess={onRenderAnnotationLayerSuccess}
-    loading={loading}
-    error={error}
-    className="shadow-lg"
-  />
-), (prev, next) => (
-   prev.pageNumber === next.pageNumber && prev.scale === next.scale
-))
+const PageWrapper = memo(
+  ({
+    pageNumber,
+    scale,
+    loading,
+    error,
+    onRenderSuccess,
+    onRenderTextLayerSuccess,
+    onRenderAnnotationLayerSuccess
+  }: {
+    pageNumber: number
+    scale: number
+    loading: React.ReactNode
+    error: React.ReactNode
+    onRenderSuccess?: () => void
+    onRenderTextLayerSuccess?: () => void
+    onRenderAnnotationLayerSuccess?: () => void
+  }) => (
+    <div className="relative">
+      <Page
+        pageNumber={pageNumber}
+        scale={scale}
+        renderTextLayer
+        renderAnnotationLayer
+        onRenderSuccess={onRenderSuccess}
+        onRenderTextLayerSuccess={onRenderTextLayerSuccess}
+        onRenderAnnotationLayerSuccess={onRenderAnnotationLayerSuccess}
+        loading={loading}
+        error={error}
+        className="shadow-lg"
+      />
+    </div>
+  ),
+  (prev, next) =>
+    prev.pageNumber === next.pageNumber && prev.scale === next.scale,
+)
+
 
 interface PdfViewerProps {
   /** Either a URL or File object */
@@ -82,7 +93,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 }) => {
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageNumber, setPageNumber] = useState<number>(initialPage)
-  const [currentVisiblePage, setCurrentVisiblePage] = useState<number>(initialPage)
+  const [currentVisiblePage, setCurrentVisiblePage] =
+    useState<number>(initialPage)
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   const [scale, setScale] = useState<number>(initialScale)
@@ -93,7 +105,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   } | null>(null)
   const [retryCount, setRetryCount] = useState<number>(0)
   const containerRef = useRef<HTMLDivElement>(null)
-  
+
   // Height map: precomputed heights for all pages at current scale
   const [heightMap, setHeightMap] = useState<number[]>([])
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
@@ -116,7 +128,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   // Create a simple, readable key for the Document component
   const documentKey = useMemo(() => {
     let baseKey = ""
-    
+
     if (docId) {
       baseKey = `doc-${docId}`
     } else if (!source) {
@@ -127,7 +139,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       baseKey = `file-${source.name}-${source.size}`
     } else {
       const sourceAny = source as any
-      
+
       if (sourceAny instanceof ArrayBuffer) {
         baseKey = `buffer-${sourceAny.byteLength}`
       } else if (sourceAny instanceof Uint8Array) {
@@ -138,34 +150,40 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         baseKey = `unknown-${Date.now()}`
       }
     }
-    
+
     return `${baseKey}-retry-${retryCount}`
   }, [docId, source, retryCount])
-  
+
   // Precompute height map from PDF metadata (two-pass layout)
-  const computeHeightMap = useCallback(async (doc: PDFDocumentProxy, currentScale: number) => {
-   if (!doc) return []
-    const pages: number = doc.numPages ?? 0
-    const heights: number[] = await Promise.all(
-      Array.from({ length: pages }, async (_, idx) => {
-        try {
-          const page = await doc.getPage(idx + 1)
-          const vp = page.getViewport({ scale: currentScale })
-          return vp.height
-        } catch (error) {
-          console.warn(`Failed to get page ${idx + 1} dimensions:`, error)
-          return Math.round(792 * scale)
-        }
-      }),
-    )
-    return heights
-  }, [numPages])
-  
+  const computeHeightMap = useCallback(
+    async (doc: PDFDocumentProxy, currentScale: number) => {
+      if (!doc) return []
+      const pages: number = doc.numPages ?? 0
+      const heights: number[] = await Promise.all(
+        Array.from({ length: pages }, async (_, idx) => {
+          try {
+            const page = await doc.getPage(idx + 1)
+            const vp = page.getViewport({ scale: currentScale })
+            return vp.height
+          } catch (error) {
+            console.warn(`Failed to get page ${idx + 1} dimensions:`, error)
+            return Math.round(792 * currentScale)
+          }
+        }),
+      )
+      return heights
+    },
+    [],
+  )
+
   // Get precomputed height for virtualizer
-  const getEstimatedHeight = useCallback((index: number) => {
-    return heightMap[index] ?? Math.round(792 * scale)
-  }, [heightMap, scale])
-  
+  const getEstimatedHeight = useCallback(
+    (index: number) => {
+      return heightMap[index] ?? Math.round(792 * scale)
+    },
+    [heightMap, scale],
+  )
+
   // Setup virtualizer for continuous mode
   const rowVirtualizer = useVirtualizer({
     count: numPages || 0,
@@ -190,17 +208,19 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       for (const it of items) {
         const center = it.start + it.size / 2
         const dist = Math.abs(center - viewportCenter)
-        if (dist < bestDist) { bestDist = dist; best = it }
+        if (dist < bestDist) {
+          bestDist = dist
+          best = it
+        }
       }
       const page = best.index + 1
-      setCurrentVisiblePage(prev => prev === page ? prev : page)
+      setCurrentVisiblePage((prev) => (prev === page ? prev : page))
     }
 
-    el.addEventListener('scroll', onScroll, { passive: true })
+    el.addEventListener("scroll", onScroll, { passive: true })
     onScroll()
-    return () => el.removeEventListener('scroll', onScroll)
+    return () => el.removeEventListener("scroll", onScroll)
   }, [displayMode, rowVirtualizer])
-
 
   // Calculate optimal scale based on page dimensions and container size - FIT TO WIDTH
   const calculateOptimalScale = useCallback(
@@ -228,69 +248,80 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     [initialScale],
   )
 
-  const onDocumentLoadSuccess = useCallback(async (pdfDoc: PDFDocumentProxy) => {
-    const { numPages } = pdfDoc
-    setNumPages(numPages)
-    setPdfDocument(pdfDoc)
-    setError(null)
-    
-    // Get first page to calculate optimal scale BEFORE computing height map
-    let finalScale = scale
-    try {
-      const firstPage = await pdfDoc.getPage(1)
-      const vp = firstPage.getViewport({ scale: 1 })
-      const width = vp.width
-      const height = vp.height
-      
-      // Set page dimensions for window resize calculations
-      setPageDimensions({ width, height })
-      
-      const optimalScale = calculateOptimalScale(width, height)
-      setScale(optimalScale)
-      finalScale = optimalScale
-    } catch (error) {
-      console.warn("Failed to get first page for scale calculation:", error)
-    }
-    
-    // Compute height map with the final scale
-    const heights = await computeHeightMap(pdfDoc, finalScale)
-    setHeightMap(heights)
-    
-    // Only set loading to false after height map is computed
-    setLoading(false)
-    const validInitialPage = Math.min(initialPage, numPages)
-    setPageNumber(validInitialPage)
-    setCurrentVisiblePage(validInitialPage)
-    
-    if (displayMode === "continuous" && validInitialPage > 1) {
-      // Wait for height map to be set before scrolling
-      setTimeout(() => {
-        rowVirtualizer.scrollToIndex(validInitialPage - 1, { align: "start" })
-      }, 0)
-    }
-  }, [computeHeightMap, scale, initialPage, displayMode, rowVirtualizer, calculateOptimalScale])
+  const onDocumentLoadSuccess = useCallback(
+    async (pdfDoc: PDFDocumentProxy) => {
+      const { numPages } = pdfDoc
+      setNumPages(numPages)
+      setPdfDocument(pdfDoc)
+      setError(null)
 
+      // Get first page to calculate optimal scale BEFORE computing height map
+      let finalScale = scale
+      try {
+        const firstPage = await pdfDoc.getPage(1)
+        const vp = firstPage.getViewport({ scale: 1 })
+        const width = vp.width
+        const height = vp.height
+
+        // Set page dimensions for window resize calculations
+        setPageDimensions({ width, height })
+
+        const optimalScale = calculateOptimalScale(width, height)
+        setScale(optimalScale)
+        finalScale = optimalScale
+      } catch (error) {
+        console.warn("Failed to get first page for scale calculation:", error)
+      }
+
+      // Compute height map with the final scale
+      const heights = await computeHeightMap(pdfDoc, finalScale)
+      setHeightMap(heights)
+
+      // Only set loading to false after height map is computed
+      setLoading(false)
+      const validInitialPage = Math.min(initialPage, numPages)
+      setPageNumber(validInitialPage)
+      setCurrentVisiblePage(validInitialPage)
+
+      if (displayMode === "continuous" && validInitialPage > 1) {
+        // Wait for height map to be set before scrolling
+        setTimeout(() => {
+          rowVirtualizer.scrollToIndex(validInitialPage - 1, { align: "start" })
+        }, 0)
+      }
+    },
+    [
+      computeHeightMap,
+      scale,
+      initialPage,
+      displayMode,
+      rowVirtualizer,
+      calculateOptimalScale,
+    ],
+  )
 
   function onDocumentLoadError(error: Error) {
     console.error("PDF load error:", error)
     const srcMeta =
-    typeof source === "string"
-      ? { urlPrefix: source.slice(0, 256) }
-      : source instanceof File
-      ? { file: { name: source.name, size: source.size, type: source.type } }
-      : source instanceof Blob
-      ? { blob: { size: source.size, type: source.type } }
-      : source instanceof ArrayBuffer
-      ? { arrayBuffer: { byteLength: source.byteLength } }
-      : source instanceof Uint8Array
-      ? { uint8Array: { length: source.length } }
-      : { kind: source ? typeof source : "null" }
+      typeof source === "string"
+        ? { urlPrefix: source.slice(0, 256) }
+        : source instanceof File
+          ? {
+              file: { name: source.name, size: source.size, type: source.type },
+            }
+          : source instanceof Blob
+            ? { blob: { size: source.size, type: source.type } }
+            : source instanceof ArrayBuffer
+              ? { arrayBuffer: { byteLength: source.byteLength } }
+              : source instanceof Uint8Array
+                ? { uint8Array: { length: source.length } }
+                : { kind: source ? typeof source : "null" }
 
-  console.error("Error details:", {
-    message: error.message,
-    stack: error.stack,
-    source: srcMeta,
-  })
+    console.error("Error details:", {
+      message: error.message,
+      stack: error.stack,
+      source: srcMeta,
+    })
 
     // Handle specific ArrayBuffer errors
     if (
@@ -325,7 +356,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   // Track if we're in the initial load cycle to prevent redundant computation
   const isInitialLoadRef = useRef(true)
-  
+
   // Recompute height map when scale changes (synchronous)
   useEffect(() => {
     if (displayMode === "continuous" && pdfDocument && numPages) {
@@ -334,7 +365,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         isInitialLoadRef.current = false
         return
       }
-      
+
       const recomputeHeights = async () => {
         const newHeights = await computeHeightMap(pdfDocument, scale)
         setHeightMap(newHeights)
@@ -366,18 +397,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }
   }
 
-  const goToPage = useCallback((page: number) => {
-    if (!numPages || page < 1 || page > numPages) return
+  const goToPage = useCallback(
+    (page: number) => {
+      if (!numPages || page < 1 || page > numPages) return
 
-    if (displayMode === "paginated") {
-      setPageNumber(page)
-    } else {
-      // Use virtualizer's scrollToIndex for navigation (instant for dynamic sizing)
-      const index = page - 1 // Convert to 0-indexed
-      rowVirtualizer.scrollToIndex(index, { align: "start" })
-      setCurrentVisiblePage(page)
-    }
-  }, [numPages, displayMode, rowVirtualizer])
+      if (displayMode === "paginated") {
+        setPageNumber(page)
+      } else {
+        // Use virtualizer's scrollToIndex for navigation (instant for dynamic sizing)
+        const index = page - 1 // Convert to 0-indexed
+        rowVirtualizer.scrollToIndex(index, { align: "start" })
+        setCurrentVisiblePage(page)
+      }
+    },
+    [numPages, displayMode, rowVirtualizer],
+  )
 
   // Register the goToPage function with the DocumentOperations ref
   useEffect(() => {
@@ -401,7 +435,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         }
       }
     }
-    
+
     // Cleanup function to remove the goToPage function when component unmounts
     return () => {
       if (documentOperationsRef?.current) {
@@ -480,7 +514,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     pageReadyRef.current = {} // Reset page readiness tracking
   }, [documentKey, initialPage])
 
-
   return (
     <div
       className={`simple-pdf-viewer ${className}`}
@@ -518,7 +551,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 setError(null)
                 setLoading(true)
                 setPageNumber(initialPage)
-                setRetryCount(prev => prev + 1)
+                setRetryCount((prev) => prev + 1)
               }}
               className="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
             >
@@ -644,19 +677,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               </div>
             }
             className={
-              displayMode === "continuous"
-                ? "w-full"
-                : "flex justify-center"
+              displayMode === "continuous" ? "w-full" : "flex justify-center"
             }
           >
             {displayMode === "paginated" ? (
               // Paginated view - single page
-              <Page
+              <PageWrapper
                 key={`page_${pageNumber}`}
                 pageNumber={pageNumber}
                 scale={scale}
-                renderTextLayer
-                renderAnnotationLayer
                 onRenderSuccess={() => mark(pageNumber, "canvas")}
                 onRenderTextLayerSuccess={() => {
                   // ensure it's actually painted:
@@ -679,11 +708,16 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                     </div>
                   </div>
                 }
-                className="shadow-lg"
               />
             ) : (
               // Continuous view - virtualized rendering
-              <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }} className="flex justify-center">
+              <div
+                style={{
+                  height: rowVirtualizer.getTotalSize(),
+                  position: "relative",
+                }}
+                className="flex justify-center"
+              >
                 {rowVirtualizer.getVirtualItems().map((vi) => {
                   const pageNum = vi.index + 1
                   return (
@@ -701,15 +735,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       }}
                     >
                       <div className="relative flex justify-center">
-                        <div 
-                          style={{ 
+                        <div
+                          style={{
                             height: getEstimatedHeight(vi.index),
-                            position: 'relative',
+                            position: "relative",
                             containIntrinsicSize: `auto ${getEstimatedHeight(vi.index)}px`,
-                            contentVisibility: 'auto'
+                            contentVisibility: "auto",
                           }}
                         >
-                          <MemoizedPage
+                          <PageWrapper
                             pageNumber={pageNum}
                             scale={scale}
                             onRenderSuccess={() => mark(pageNum, "canvas")}

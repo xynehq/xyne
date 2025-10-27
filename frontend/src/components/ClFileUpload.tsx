@@ -334,7 +334,13 @@ const CollectionFileUpload = ({
 
       {/* Upload Queue Section - only show when files are selected */}
       {selectedFiles.length > 0 && (
-        <div className="mt-6">
+        <div 
+          className={`mt-6 rounded-lg transition-colors ${isDragging ? 'ring-2 ring-gray-400' : ''}`}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
           <div className="bg-white dark:bg-slate-800 rounded-lg overflow-hidden h-80 flex flex-col">
             {/* Header */}
             <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-700 flex-shrink-0">

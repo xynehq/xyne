@@ -27,12 +27,7 @@ export function useScopedFind(
   opts: Options = {},
 ) {
   const { documentOperationsRef } = useDocumentOperations()
-  const {
-    caseSensitive = true,
-    highlightClass = "bg-yellow-200/60 dark:bg-yellow-200/40 rounded-sm px-0.5 py-px",
-    debug = false,
-    documentId,
-  } = opts
+  const { caseSensitive = true, debug = false, documentId } = opts
 
   // Cache for API responses
   const cacheRef = useRef<HighlightCache>({})
@@ -135,7 +130,6 @@ export function useScopedFind(
           ({ start, end }) => start < match.endIndex && end > match.startIndex,
         )
 
-        // Create highlights for each intersecting text node
         for (const { node: textNode, start: nodeStart } of intersectingNodes) {
           const startOffset = Math.max(0, match.startIndex - nodeStart)
           const endOffset = Math.min(
@@ -145,67 +139,88 @@ export function useScopedFind(
 
           if (startOffset < endOffset) {
             try {
-              // Create a range for this text segment
               const range = document.createRange()
               range.setStart(textNode, startOffset)
               range.setEnd(textNode, endOffset)
 
-              // Create and insert the mark
-              const mark = document.createElement("mark")
-              mark.className = `${highlightClass}`
-              mark.setAttribute("data-match-index", "0")
+              const rects = range.getClientRects()
 
-              try {
-                range.surroundContents(mark)
-                marks.push(mark)
-              } catch (rangeError) {
-                console.warn(
-                  "Failed to wrap range with mark, trying alternative approach:",
-                  rangeError,
-                )
+              let pageWrapper: HTMLElement | null = textNode.parentElement
+              while (pageWrapper && pageWrapper !== container) {
+                if (
+                  pageWrapper.classList.contains("pdf-page-wrapper") ||
+                  pageWrapper.classList.contains("react-pdf__Page")
+                ) {
+                  break
+                }
+                pageWrapper = pageWrapper.parentElement
+              }
 
-                // Alternative: split text node and insert mark
-                const originalText = textNode.nodeValue!
-                const beforeText = textNode.nodeValue!.substring(0, startOffset)
-                const matchText = textNode.nodeValue!.substring(
-                  startOffset,
-                  endOffset,
-                )
-                const afterText = textNode.nodeValue!.substring(endOffset)
-
-                try {
-                  // Replace the text node content with before text
-                  textNode.nodeValue = beforeText
-
-                  // Create and insert the mark
-                  const mark = document.createElement("mark")
-                  mark.className = `${highlightClass}`
-                  mark.setAttribute("data-match-index", "0")
-                  mark.textContent = matchText
-
-                  // Insert mark after the text node
-                  textNode.parentNode!.insertBefore(mark, textNode.nextSibling)
-                  marks.push(mark)
-
-                  // Insert remaining text after the mark
-                  if (afterText) {
-                    const afterNode = document.createTextNode(afterText)
-                    mark.parentNode!.insertBefore(afterNode, mark.nextSibling)
+              if (!pageWrapper || pageWrapper === container) {
+                pageWrapper = textNode.parentElement
+                while (pageWrapper && pageWrapper !== container) {
+                  const style = window.getComputedStyle(pageWrapper)
+                  if (
+                    style.position === "relative" ||
+                    style.position === "absolute"
+                  ) {
+                    break
                   }
-                } catch (fallbackError) {
-                  // Restore original text on error
-                  textNode.nodeValue = originalText
-                  console.error(
-                    "Fallback highlighting approach failed:",
-                    fallbackError,
-                  )
+                  pageWrapper = pageWrapper.parentElement
                 }
               }
-            } catch (error) {
-              console.warn(
-                "Error processing text node for highlighting:",
-                error,
+
+              if (!pageWrapper || pageWrapper === container) {
+                console.warn("No page wrapper found, using container")
+                pageWrapper = container
+              }
+
+              const pageStyle = window.getComputedStyle(pageWrapper)
+              if (pageStyle.position === "static") {
+                pageWrapper.style.position = "relative"
+              }
+
+              let overlayContainer = pageWrapper.querySelector<HTMLElement>(
+                "[data-highlight-overlay]",
               )
+              if (!overlayContainer) {
+                overlayContainer = document.createElement("div")
+                overlayContainer.className = "absolute top-0 left-0 pointer-events-none z-[1]"
+                overlayContainer.setAttribute("data-highlight-overlay", "true")
+                pageWrapper.appendChild(overlayContainer)
+              }
+
+              const pageRect = pageWrapper.getBoundingClientRect()
+
+              for (let i = 0; i < rects.length; i++) {
+                const rect = rects[i]
+
+                if (rect.width === 0 || rect.height === 0) continue
+
+                const overlay = document.createElement("span")
+                overlay.className = "pdf-highlight-overlay"
+                overlay.setAttribute("data-match-index", "0")
+
+                const left = rect.left - pageRect.left
+                const top = rect.top - pageRect.top
+
+                overlay.style.cssText = `
+                  position: absolute;
+                  left: ${left}px;
+                  top: ${top}px;
+                  width: ${rect.width}px;
+                  height: ${rect.height}px;
+                  background-color: rgba(250, 204, 21, 0.4);
+                  pointer-events: none;
+                  z-index: 10;
+                  border-radius: 2px;
+                `
+
+                overlayContainer.appendChild(overlay)
+                marks.push(overlay)
+              }
+            } catch (error) {
+              console.warn("Error creating overlay highlight:", error)
             }
           }
         }
@@ -215,20 +230,25 @@ export function useScopedFind(
 
       return marks
     },
-    [highlightClass],
+    [],
   )
 
   const clearHighlights = useCallback(() => {
     const root = containerRef.current
     if (!root) return
 
-    const marks = root.querySelectorAll<HTMLElement>("mark[data-match-index]")
-    marks.forEach((m) => {
-      const parent = m.parentNode!
-      // unwrap <mark>
-      while (m.firstChild) parent.insertBefore(m.firstChild, m)
-      parent.removeChild(m)
-      parent.normalize() // merge adjacent text nodes
+    const overlayContainers = root.querySelectorAll<HTMLElement>(
+      "[data-highlight-overlay]",
+    )
+    overlayContainers.forEach((container) => {
+      container.remove()
+    })
+
+    const individualOverlays = root.querySelectorAll<HTMLElement>(
+      ".pdf-highlight-overlay",
+    )
+    individualOverlays.forEach((overlay) => {
+      overlay.remove()
     })
 
     setMatches([])
@@ -427,9 +447,11 @@ export function useScopedFind(
 
         matches.forEach((match, matchIndex) => {
           const marks = createHighlightMarks(root, match)
+
           marks.forEach((mark) => {
             mark.setAttribute("data-match-index", matchIndex.toString())
           })
+
           allMarks.push(...marks)
 
           if (match.length > longestMatchLength) {
