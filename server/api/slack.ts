@@ -46,8 +46,8 @@ export const slackSearchSchema = z.object({
     .optional()
     .default("20")
     .transform((value) => parseInt(value, 10))
-    .refine((value) => !isNaN(value) && value > 0 && value <= 50, {
-      message: "Limit must be a valid number between 1 and 50",
+    .refine((value) => !isNaN(value) && value > 0, {
+      message: "Limit must be a valid number ",
     }),
 })
 

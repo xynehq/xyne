@@ -139,6 +139,7 @@ export const getItems = async (
       collectionFolderIds?: string[]
       collectionFileIds?: string[]
     }>
+    appFilters?: any
   },
 ) => {
   const driveIds = await extractDriveIds(

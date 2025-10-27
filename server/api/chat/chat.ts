@@ -3427,6 +3427,7 @@ async function* generateMetadataQueryAnswer(
           channelIds,
           selectedItem: selectedItem,
           collectionSelections: agentSpecificCollectionSelections,
+          appFilters: agentAppFilters,
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
