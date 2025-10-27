@@ -818,7 +818,7 @@ export function useScopedFind(
       setIndex(bounded)
       return true
     },
-    [matches, containerRef, debug],
+    [matches, containerRef],
   )
 
   // Auto-scroll to the current index (which is set to the longest match) whenever matches update

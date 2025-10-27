@@ -1933,7 +1933,7 @@ export const GetChunkContentApi = async (c: Context) => {
     }
 
     // Get the chunk content from Vespa response
-    const chunkContent = resp.fields.chunks[index]
+    let chunkContent = resp.fields.chunks[index]
     let pageIndex: number | undefined
 
     const isSheetFile =
@@ -1948,6 +1948,10 @@ export const GetChunkContentApi = async (c: Context) => {
       } else {
         pageIndex = 0
       }
+      // chunk content except the first line
+      chunkContent = chunkContent.split("\n").slice(1).map((line) => {
+        return line.split("\t").slice(1).join("\t")
+      }).join("\n")
     } else {
       const pageNums = resp.fields.chunks_map?.[index]?.page_numbers
       pageIndex =
