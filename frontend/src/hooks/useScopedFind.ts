@@ -40,6 +40,9 @@ export function useScopedFind(
   // Cache for API responses
   const cacheRef = useRef<HighlightCache>({})
 
+  // Cancellation token to prevent race conditions
+  const callTokenRef = useRef<number>(0)
+
   const [matches, setMatches] = useState<HTMLElement[]>([])
   const [index, setIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
@@ -513,8 +516,11 @@ export function useScopedFind(
       pageIndex?: number,
       waitForTextLayer: boolean = false,
     ): Promise<boolean> => {
+      // Increment call token to track this invocation
+      const currentToken = ++callTokenRef.current
+      
       if (debug) {
-        console.log("highlightText called with:", text)
+        console.log("highlightText called with:", text, "token:", currentToken)
       }
 
       const root = containerRef.current
@@ -593,6 +599,15 @@ export function useScopedFind(
           if (debug) {
             console.log("Using cached result for key:", cacheKey)
           }
+          
+          // Check if this call is still the latest before using cached results
+          if (currentToken !== callTokenRef.current) {
+            if (debug) {
+              console.log("Stale call detected after cache lookup, aborting")
+            }
+            return false
+          }
+          
           matches = cachedEntry.matches
         } else {
           if (debug) {
@@ -622,6 +637,14 @@ export function useScopedFind(
             return false
           }
 
+          // Check if this call is still the latest before processing results
+          if (currentToken !== callTokenRef.current) {
+            if (debug) {
+              console.log("Stale call detected after computing matches, aborting")
+            }
+            return false
+          }
+
           matches = result.matches
 
           // Only cache successful responses and only when safe
@@ -637,6 +660,14 @@ export function useScopedFind(
           } else if (!canUseCache && debug) {
             console.log("Skipping cache write (no documentId)")
           }
+        }
+
+        // Check if this call is still the latest before creating DOM highlights
+        if (currentToken !== callTokenRef.current) {
+          if (debug) {
+            console.log("Stale call detected before creating highlights, aborting")
+          }
+          return false
         }
 
         // Create highlight marks for all matches
@@ -668,6 +699,29 @@ export function useScopedFind(
           )
         }
 
+        // Final check before updating state
+        if (currentToken !== callTokenRef.current) {
+          if (debug) {
+            console.log("Stale call detected before state update, aborting and cleaning up DOM")
+          }
+          // Clean up the highlights we just created since this call is stale
+          allMarks.forEach((mark) => {
+            if (mark.parentNode) {
+              if (mark.tagName === "MARK") {
+                // Unwrap mark elements
+                while (mark.firstChild) {
+                  mark.parentNode.insertBefore(mark.firstChild, mark)
+                }
+                mark.parentNode.removeChild(mark)
+              } else {
+                // Remove overlay elements
+                mark.remove()
+              }
+            }
+          })
+          return false
+        }
+
         setMatches(allMarks)
         setIndex(longestMatchIndex)
 
@@ -676,7 +730,10 @@ export function useScopedFind(
         console.error("Error during backend highlighting:", error)
         return false
       } finally {
-        setIsLoading(false)
+        // Only update loading state if this is still the latest call
+        if (currentToken === callTokenRef.current) {
+          setIsLoading(false)
+        }
       }
     },
     [
