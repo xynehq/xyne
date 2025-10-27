@@ -154,6 +154,11 @@ export const SlackEntitiesApi = async (c: Context) => {
 export const SlackDocumentsApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   const docids: string[] = c.req.query("docids")?.split(",") || []
+  if(docids.length === 0){
+    throw new HTTPException(400, {
+      message: "No document IDs provided",
+    })
+  }
   try {
     const mockSpan: Span= {
   traceId: "mock-trace-id",
@@ -190,6 +195,7 @@ export const SlackDocumentsApi = async (c: Context) => {
       else{
         return {
         docId:searchResult.fields?.docId,
+        name:searchResult.fields?.sddocname || "unknown",
        
       }
       }
