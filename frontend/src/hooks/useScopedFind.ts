@@ -758,16 +758,47 @@ export function useScopedFind(
       const container = containerRef.current
       const target = matches[bounded]
 
-      if (container.scrollHeight > container.clientHeight) {
-        const containerRect = container.getBoundingClientRect()
+      // Check if container is scrollable, if not find the scrollable parent
+      const isScrollable = (element: HTMLElement): boolean => {
+        const style = window.getComputedStyle(element)
+        return (
+          (style.overflowY === "auto" || 
+           style.overflowY === "scroll" || 
+           style.overflowY === "overlay") &&
+          element.scrollHeight > element.clientHeight
+        )
+      }
+
+      let scrollParent: HTMLElement = container
+      
+      if (!isScrollable(container)) {
+        // Container is not scrollable, find the scrollable parent
+        let parent = container.parentElement
+        while (parent) {
+          if (isScrollable(parent)) {
+            scrollParent = parent
+            break
+          }
+          parent = parent.parentElement
+        }
+        
+        // If no scrollable parent found, use document element
+        if (!parent) {
+          scrollParent = document.documentElement
+        }
+      }
+
+      // Use custom scroll logic for proper centering
+      if (scrollParent !== document.documentElement) {
+        const containerRect = scrollParent.getBoundingClientRect()
         const targetRect = target.getBoundingClientRect()
 
         const targetTop = targetRect.top - containerRect.top
-        const containerHeight = container.clientHeight
+        const containerHeight = scrollParent.clientHeight
         const targetHeight = targetRect.height
 
         const scrollTop =
-          container.scrollTop +
+          scrollParent.scrollTop +
           targetTop -
           containerHeight / 2 +
           targetHeight / 2
@@ -787,15 +818,20 @@ export function useScopedFind(
       setIndex(bounded)
       return true
     },
-    [matches, containerRef],
+    [matches, containerRef, debug],
   )
 
   // Auto-scroll to the current index (which is set to the longest match) whenever matches update
   useEffect(() => {
     if (matches.length) {
-      scrollToMatch(index)
+      // Small delay to ensure DOM is fully updated, especially for mark elements
+      const timeoutId = setTimeout(() => {
+        scrollToMatch(index)
+      }, 50)
+      
+      return () => clearTimeout(timeoutId)
     }
-  }, [matches, index])
+  }, [matches, index, scrollToMatch])
 
   // Clean up when container unmounts
   useEffect(() => () => clearHighlights(), [clearHighlights])
