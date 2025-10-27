@@ -26,6 +26,7 @@ import {
 import { callNotificationService } from "@/services/callNotifications"
 import { HighlightApi, highlightSchema } from "@/api/highlight"
 import {
+  SlackDocumentsApi,
   SlackEntitiesApi,
   slackListSchema,
   slackSearchSchema,
@@ -1003,6 +1004,7 @@ export const AppRoutes = app
   )
   // Slack Entity API routes
   .get("/slack/entities", SlackEntitiesApi)
+  .get('/slack/documents', SlackDocumentsApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/users/api-keys", GetUserApiKeys)
   .post(

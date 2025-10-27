@@ -1,19 +1,21 @@
 import type { Context } from "hono"
-import { z } from "zod"
+import { success, z } from "zod"
 import { HTTPException } from "hono/http-exception"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
-import { Apps, SlackEntity } from "@xyne/vespa-ts/types"
-import { VespaSearchResponseToSearchResult } from "@xyne/vespa-ts/mappers"
+import { Apps, SlackEntity} from "@xyne/vespa-ts/types"
+
+import { type VespaSearchResults, type VespaChatUserSearch,type VespaChatContainerSearch,type Span} from "shared/types"
 import { chunkDocument } from "@/chunks"
 import { getErrorMessage } from "@/utils"
-import { fetchSlackEntity } from "@/search/vespa"
+import { fetchSlackEntity, GetDocumentsByDocIds } from "@/search/vespa"
 import config from "@/config"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 const { JwtPayloadKey } = config
 
 // Schema for listing Slack entities (users or channels)
+
 export const slackListSchema = z.object({
   entity: z.enum([SlackEntity.User, SlackEntity.Channel]),
   limit: z
@@ -146,6 +148,67 @@ export const SlackEntitiesApi = async (c: Context) => {
 
     throw new HTTPException(500, {
       message: "Failed to process Slack entities request",
+    })
+  }
+}
+export const SlackDocumentsApi = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const docids: string[] = c.req.query("docids")?.split(",") || []
+  try {
+    const mockSpan: Span= {
+  traceId: "mock-trace-id",
+  spanId: "mock-span-id",
+  name: "mock-span",
+  startTime: Date.now(),
+  endTime: Date.now(),
+  attributes: {},
+  events: [],
+  duration: 0,
+  setAttribute: () => mockSpan,
+  addEvent: () => mockSpan,
+  startSpan: () => mockSpan,
+  end: () => mockSpan,
+};
+    const response =await GetDocumentsByDocIds(docids,mockSpan)
+    const mappedData= response.root?.children?.map((doc)=>{
+      const searchResult = doc as VespaSearchResults
+      const fields= searchResult.fields
+      if(fields.sddocname === "chat_user"){
+        const chatUserFields= fields as VespaChatUserSearch
+        return {
+          docId:chatUserFields.docId,
+          name:chatUserFields.name,
+        }
+      }
+      else if(fields.sddocname === "chat_container"){
+        const chatContainerFields= fields as VespaChatContainerSearch
+        return {
+          docId:chatContainerFields.docId,
+          name:chatContainerFields.name,
+        }
+      }
+      else{
+        return {
+        docId:searchResult.fields?.docId,
+       
+      }
+      }
+     
+    }) || []
+    return c.json({
+      success:true,
+      totalCount:response.root?.fields?.totalCount || 0,
+      documents:mappedData,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: sub }).error(
+      error,
+      `Error in fetching Slack documents by docIds: ${errMsg}`,
+    )
+
+    throw new HTTPException(500, {
+      message: "Failed to fetch Slack documents",
     })
   }
 }
