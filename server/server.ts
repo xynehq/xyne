@@ -24,7 +24,6 @@ import {
   handleAttachmentDeleteSchema,
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
-import { HighlightApi, highlightSchema } from "@/api/highlight"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
@@ -1160,7 +1159,6 @@ export const AppRoutes = app
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
   .get("/cl/:clId/files/:itemId/download", DownloadFileApi)
   .get("/chunk/:cId/files/:docId/content", GetChunkContentApi)
-  .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
   .post(
     "/oauth/create",
