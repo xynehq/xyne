@@ -25,6 +25,16 @@ type HighlightCache = {
   [key: string]: CacheEntry
 }
 
+const isScrollable = (element: HTMLElement): boolean => {
+  const style = window.getComputedStyle(element)
+  return (
+    (style.overflowY === "auto" || 
+     style.overflowY === "scroll" || 
+     style.overflowY === "overlay") &&
+    element.scrollHeight > element.clientHeight
+  )
+}
+
 export function useScopedFind(
   containerRef: React.RefObject<HTMLElement>,
   opts: Options = {},
@@ -727,7 +737,7 @@ export function useScopedFind(
 
         return allMarks.length > 0
       } catch (error) {
-        console.error("Error during backend highlighting:", error)
+        console.error("Error during client-side highlighting:", error)
         return false
       } finally {
         // Only update loading state if this is still the latest call
@@ -759,15 +769,6 @@ export function useScopedFind(
       const target = matches[bounded]
 
       // Check if container is scrollable, if not find the scrollable parent
-      const isScrollable = (element: HTMLElement): boolean => {
-        const style = window.getComputedStyle(element)
-        return (
-          (style.overflowY === "auto" || 
-           style.overflowY === "scroll" || 
-           style.overflowY === "overlay") &&
-          element.scrollHeight > element.clientHeight
-        )
-      }
 
       let scrollParent: HTMLElement = container
       
@@ -803,7 +804,7 @@ export function useScopedFind(
           containerHeight / 2 +
           targetHeight / 2
 
-        container.scrollTo({
+        scrollParent.scrollTo({
           top: Math.max(0, scrollTop),
           behavior: "smooth",
         })

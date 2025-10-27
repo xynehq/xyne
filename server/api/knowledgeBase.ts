@@ -1948,7 +1948,7 @@ export const GetChunkContentApi = async (c: Context) => {
       } else {
         pageIndex = 0
       }
-      // chunk content except the first line
+      // Remove header row (first line) and column header (first tab-delimited value) from each remaining line
       chunkContent = chunkContent.split("\n").slice(1).map((line) => {
         return line.split("\t").slice(1).join("\t")
       }).join("\n")
