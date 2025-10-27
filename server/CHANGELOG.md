@@ -1,3 +1,10 @@
+## [3.22.2](https://github.com/xynehq/xyne/compare/v3.22.1...v3.22.2) (2025-10-27)
+
+
+### Bug Fixes
+
+* XYNE-223 fixed timing issue in highlight ([#1125](https://github.com/xynehq/xyne/issues/1125)) ([86514a9](https://github.com/xynehq/xyne/commit/86514a908289c8d752b20baef1ae299636962942))
+
 ## [3.22.1](https://github.com/xynehq/xyne/compare/v3.22.0...v3.22.1) (2025-10-27)
 
 
