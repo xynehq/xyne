@@ -1803,7 +1803,7 @@ export const GetAdminChats = async (c: Context) => {
         userName: users.name,
         userRole: users.role,
         userCreatedAt: users.createdAt,
-        messageCount: countDistinct(
+        messageCount: count(
           sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.id} END`,
         ),
         likes: count(
@@ -1857,7 +1857,7 @@ export const GetAdminChats = async (c: Context) => {
     let result
     if (paginated) {
       // Apply pagination when paginated=true
-      const limit = pageSize || 20 // Default to 50 if pageSize is not provided
+      const limit = pageSize || 20
       const offsetValue = (page - 1) * limit
 
       result = await baseQuery
