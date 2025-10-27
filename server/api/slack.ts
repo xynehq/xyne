@@ -1,12 +1,12 @@
 import type { Context } from "hono"
-import { success, z } from "zod"
+import {  z } from "zod"
 import { HTTPException } from "hono/http-exception"
-import { getLogger, getLoggerWithChild } from "@/logger"
+import {  getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { Apps, SlackEntity} from "@xyne/vespa-ts/types"
 
-import { type VespaSearchResults, type VespaChatUserSearch,type VespaChatContainerSearch,type Span} from "shared/types"
-import { chunkDocument } from "@/chunks"
+import { type VespaSearchResults, type VespaChatUserSearch,type VespaChatContainerSearch,type Span} from "@/shared/types"
+
 import { getErrorMessage } from "@/utils"
 import { fetchSlackEntity, GetDocumentsByDocIds } from "@/search/vespa"
 import config from "@/config"
