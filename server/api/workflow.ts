@@ -15,7 +15,7 @@ const listWorkflowExecutionsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional().default(10),
   page: z.coerce.number().min(1).optional().default(1),
 })
-import { ExecuteAgentForWorkflow, executeAgentForWorkflowWithRag } from "./agent/workflowAgentUtils"
+import { executeAgentForWorkflowWithRag, hasUnauthorizedAgent } from "./agent/workflowAgentUtils"
 import { db } from "@/db/client"
 import {
   workflowStepTemplate,
@@ -2264,7 +2264,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
               description: tool.value?.description || "Auto-generated agent for workflow execution",
               prompt: tool.value?.systemPrompt || "You are a helpful assistant that processes workflow data.",
               model: tool.value?.model || "googleai-gemini-2-5-flash",
-              isPublic: false,
+              isPublic: true, // Make auto-generated agents public by default to avoid agent-workflow permission sync during workflow sharing
               appIntegrations: [],
               allowWebSearch: false,
               isRagOn: false,
@@ -2479,6 +2479,38 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
 
     if (!existingTemplate || existingTemplate.userId !== user.id) {
       return c.json({ message: "Workflow not found or access denied"}, 404)
+    }
+
+    // Check for unauthorized agents when updating user permissions
+    if (requestData.userEmails !== undefined && requestData.userEmails.length > 0) {
+      Logger.info(`Checking for unauthorized agents when updating workflow ${templateExternalId} permissions with user emails: ${requestData.userEmails.join(', ')}`)
+      
+      const authorizationCheck = await hasUnauthorizedAgent(
+        existingTemplate.id,
+        requestData.userEmails,
+        user.workspaceId
+      )
+
+      if (authorizationCheck.hasUnauthorized) {
+        Logger.warn(`Unauthorized agents found in workflow ${templateExternalId}`)
+        
+        // Create detailed error message with agent information
+        const unauthorizedDetails = authorizationCheck.unauthorizedAgents.map(agent => 
+          `Agent "${agent.agentName}" (${agent.agentId}) is not accessible to: ${agent.missingUserEmails.join(', ')}`
+        ).join('; ')
+
+        return c.json({
+          success: false,
+          message: "Cannot update workflow permissions due to unauthorized agent access",
+          details: {
+            message: "Some agents in this workflow are not accessible to the users you're trying to share with",
+            unauthorizedAgents: authorizationCheck.unauthorizedAgents,
+            description: unauthorizedDetails
+          }
+        }, 403)
+      }
+
+      Logger.info(`All agents in workflow ${templateExternalId} are properly authorized for the provided users`)
     }
 
     // Update workflow and sync user permissions in a transaction

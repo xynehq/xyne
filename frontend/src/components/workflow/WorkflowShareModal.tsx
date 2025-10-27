@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { X, Plus, Trash2, AlertCircle, Users, UserPlus } from "lucide-react"
+import { X, Plus, Trash2, AlertCircle, Users, UserPlus, Shield, ExternalLink } from "lucide-react"
 import { api } from "../../api"
 import { WorkflowTemplate } from "./Types"
 
@@ -53,9 +53,19 @@ export function WorkflowShareModal({
   const [isLoading, setIsLoading] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   
+  // Unauthorized agents popup state
+  const [showUnauthorizedAgentsPopup, setShowUnauthorizedAgentsPopup] = useState(false)
+  const [unauthorizedAgents, setUnauthorizedAgents] = useState<{
+    agentId: string
+    agentName: string
+    toolId: string
+    missingUserEmails: string[]
+  }[]>([])
+  
   // Current workflow users
   const [currentUsers, setCurrentUsers] = useState<WorkflowUser[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
+  const [removedUserEmails, setRemovedUserEmails] = useState<string[]>([])
 
   // User autocomplete states
   const [users, setUsers] = useState<User[]>([])
@@ -289,6 +299,13 @@ export function WorkflowShareModal({
     setEmails((prev) => prev.filter((email) => email !== emailToRemove))
   }
 
+  // Remove user from current permissions (mark for removal)
+  const handleRemoveCurrentUser = (userEmail: string) => {
+    setRemovedUserEmails((prev) => [...prev, userEmail.toLowerCase()])
+    // Also remove from emails list if they were added
+    setEmails((prev) => prev.filter((email) => email !== userEmail.toLowerCase()))
+  }
+
   // Handle enter key press for adding email
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
@@ -305,7 +322,7 @@ export function WorkflowShareModal({
       setEmailValidationError(null)
       setIsEmailValid(false)
       setSubmitError(null)
-      setCurrentUsers([])
+      setRemovedUserEmails([])
     }
   }, [isOpen])
 
@@ -325,8 +342,15 @@ export function WorkflowShareModal({
 
   // Submit the share request
   const handleSubmit = async () => {
-    if (emails.length === 0) {
-      setSubmitError("Please add at least one email address")
+    // Calculate final list of users: current users (not removed) + new emails
+    const currentUserEmails = currentUsers
+      .filter(user => !removedUserEmails.includes(user.user.email.toLowerCase()))
+      .map(user => user.user.email.toLowerCase())
+    
+    const finalUserEmails = [...new Set([...currentUserEmails, ...emails])]
+    
+    if (finalUserEmails.length === 0 && removedUserEmails.length === 0) {
+      setSubmitError("Please add at least one email address or make changes to existing permissions")
       return
     }
 
@@ -334,22 +358,36 @@ export function WorkflowShareModal({
     setSubmitError(null)
 
     try {
-      // Update the workflow template with the new user emails
+      // Update the workflow template with the final user emails list
       const response = await api.workflow.templates[workflow.id].$put({
         json: {
-          userEmails: emails,
+          userEmails: finalUserEmails,
         },
       })
 
-      if (!response.ok) {
-        throw new Error("Failed to share workflow")
+      if (response.ok) {
+        // Success - call callback and close modal
+        onSuccess?.()
+        onClose()
+        return
       }
 
-      // Call success callback if provided
-      onSuccess?.()
+      // Handle different error responses
+      if (response.status === 403) {
+        const errorData = await response.json()
+        
+        // Check if this is an unauthorized agents error
+        if (errorData.details?.unauthorizedAgents) {
+          setUnauthorizedAgents(errorData.details.unauthorizedAgents)
+          setShowUnauthorizedAgentsPopup(true)
+          return
+        }
+      }
 
-      // Close modal
-      onClose()
+      // Handle other errors
+      const errorText = await response.text()
+      throw new Error(`Failed to share workflow: ${errorText}`)
+
     } catch (error) {
       console.error("Failed to share workflow:", error)
       setSubmitError(
@@ -418,7 +456,9 @@ export function WorkflowShareModal({
               </div>
             ) : (
               <div className="space-y-2 max-h-32 overflow-y-auto">
-                {currentUsers.map((userPermission) => (
+                {currentUsers
+                  .filter(userPermission => !removedUserEmails.includes(userPermission.user.email.toLowerCase()))
+                  .map((userPermission) => (
                   <div
                     key={userPermission.id}
                     className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg"
@@ -448,9 +488,20 @@ export function WorkflowShareModal({
                       </div>
                     </div>
 
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getRoleColor(userPermission.role)}`}>
-                      {userPermission.role}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getRoleColor(userPermission.role)}`}>
+                        {userPermission.role}
+                      </span>
+                      {userPermission.role.toLowerCase() !== 'owner' && (
+                        <button
+                          onClick={() => handleRemoveCurrentUser(userPermission.user.email)}
+                          className="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded transition-colors"
+                          title="Remove user access"
+                        >
+                          <X className="w-3 h-3 text-gray-500 dark:text-red-400" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -581,13 +632,150 @@ export function WorkflowShareModal({
             <Button
               onClick={handleSubmit}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-              disabled={isLoading || emails.length === 0}
+              disabled={isLoading || (emails.length === 0 && removedUserEmails.length === 0)}
             >
               {isLoading ? "Sharing..." : "Share Workflow"}
             </Button>
           </div>
         </div>
       </div>
+      
+      {/* Unauthorized Agents Popup */}
+      {showUnauthorizedAgentsPopup && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-2xl w-full mx-4 relative max-h-[80vh] overflow-hidden">
+            {/* Close Button */}
+            <button
+              onClick={() => setShowUnauthorizedAgentsPopup(false)}
+              className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors z-10"
+            >
+              <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
+            </button>
+
+            {/* Header */}
+            <div className="p-6 pb-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                  <Shield className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                    Agent Access Required
+                  </h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Some agents in this workflow cannot be shared
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <div className="mb-4">
+                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">
+                        Cannot share workflow
+                      </p>
+                      <p className="text-sm text-amber-700 dark:text-amber-300">
+                        This workflow contains AI agents that are not accessible to some of the users you're trying to share with. To share this workflow, those users need access to the following agents:
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Unauthorized Agents List */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  Restricted Agents ({unauthorizedAgents.length})
+                </h3>
+                
+                {unauthorizedAgents.map((agent, index) => (
+                  <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                          <Shield className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {agent.agentName}
+                          </h4>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Agent ID: {agent.agentId}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          // Open agent edit page in a new tab
+                          window.open(`/agent?agentId=${agent.agentId}&mode=edit`, '_blank')
+                        }}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                      >
+                        <span>Manage Access</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </button>
+                    </div>
+                    
+                    <div className="mb-3">
+                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Users who need access:
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {agent.missingUserEmails.map((email, emailIndex) => (
+                          <span
+                            key={emailIndex}
+                            className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                          >
+                            {email}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Instructions */}
+              <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
+                  How to resolve this:
+                </h4>
+                <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1 list-decimal list-inside">
+                  <li>Click "Manage Access" next to each restricted agent</li>
+                  <li>Grant access to the listed users for each agent</li>
+                  <li>Return to this workflow and try sharing again</li>
+                </ol>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => setShowUnauthorizedAgentsPopup(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowUnauthorizedAgentsPopup(false)
+                  }}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

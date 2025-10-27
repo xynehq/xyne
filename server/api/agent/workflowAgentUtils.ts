@@ -25,6 +25,10 @@ import type { Citation, ImageCitation } from "@/shared/types"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 import type { QueryRouterLLMResponse } from "@/ai/types"
 import config from "@/config"
+import { getWorkflowStepTemplatesByTemplateId } from "@/db/workflow"
+import { getWorkflowToolsByIds } from "@/db/workflowTool"
+import { eq } from "drizzle-orm"
+import { userAgentPermissions, users } from "@/db/schema"
 
 const {
   defaultBestModel,
@@ -44,6 +48,12 @@ export const executeAgentSchema = z.object({
   nonImageAttachmentFileIds: z.array(z.string()).optional().default([]), // For PDFs: ["att_789"]
 })
 
+export interface UnauthorizedAgentInfo {
+  agentId: string
+  agentName: string
+  toolId: string
+  missingUserEmails: string[]
+}
 
 export type ExecuteAgentParams = z.infer<typeof executeAgentSchema>
 
@@ -886,5 +896,168 @@ export const createAgentForWorkflow = async (
     // Wrap other errors with more context
     const errMsg = getErrorMessage(error)
     throw new Error(`Failed to create agent: ${errMsg}`)
+  }
+}
+
+/**
+ * Checks if there are any tools in the workflow that are created by the user (isExistingAgent 
+ * set to true) and the permissions of that agent don't match the workflow updated permissions
+ * 
+ * @param workflowTemplateId - The internal ID of the workflow template
+ * @param updatedUserEmails - Array of user emails that will have access to the workflow
+ * @param workspaceId - The workspace ID for the workflow
+ * @returns Object with hasUnauthorized flag and details of unauthorized agents
+ */
+export async function hasUnauthorizedAgent(
+  workflowTemplateId: number,
+  updatedUserEmails: string[],
+  workspaceId: number
+): Promise<{
+  hasUnauthorized: boolean
+  unauthorizedAgents: UnauthorizedAgentInfo[]
+}> {
+  try {
+    Logger.info(`Checking unauthorized agents for workflow ${workflowTemplateId}`)
+
+    // 1. Get all step templates for this workflow
+    const stepTemplates = await getWorkflowStepTemplatesByTemplateId(db, workflowTemplateId)
+
+    if (stepTemplates.length === 0) {
+      Logger.info(`No step templates found for workflow ${workflowTemplateId}`)
+      return { hasUnauthorized: false, unauthorizedAgents: [] }
+    }
+
+    // 2. Get all tool IDs from all steps
+    const allToolIds = stepTemplates.flatMap(step => step.toolIds as string[] || [])
+
+    if (allToolIds.length === 0) {
+      Logger.info(`No tools found in workflow ${workflowTemplateId}`)
+      return { hasUnauthorized: false, unauthorizedAgents: [] }
+    }
+
+    // 3. Get all tools for this workflow
+    const tools = await getWorkflowToolsByIds(db, allToolIds)
+
+    // 4. Filter tools that are AI agents with existing agents
+    const aiAgentTools = tools.filter(tool => {
+      const config = tool.config as any
+      return (
+        tool.type === 'ai_agent' && 
+        config?.isExistingAgent === true && 
+        config?.agentId
+      )
+    })
+
+    if (aiAgentTools.length === 0) {
+      Logger.info(`No existing AI agent tools found in workflow ${workflowTemplateId}`)
+      return { hasUnauthorized: false, unauthorizedAgents: [] }
+    }
+
+    Logger.info(`Found ${aiAgentTools.length} existing AI agent tools to check`)
+
+    const unauthorizedAgents: UnauthorizedAgentInfo[] = []
+
+    // 5. For each AI agent tool, check if agent permissions match workflow permissions
+    for (const tool of aiAgentTools) {
+      const config = tool.config as any
+      const agentExternalId = config.agentId
+
+      try {
+        // Get the agent details
+        const agentRecord = await getAgentByExternalId(db, agentExternalId, workspaceId)
+
+        if (!agentRecord) {
+          Logger.warn(`Agent ${agentExternalId} not found in workspace ${workspaceId}`)
+          continue
+        }
+
+        // If agent is public, no authorization check needed
+        if (agentRecord.isPublic) {
+          Logger.info(`Agent ${agentExternalId} is public, skipping authorization check`)
+          continue
+        }
+
+        // Get all users who have access to this agent
+        const agentPermissions = await db
+          .select({
+            userEmail: users.email,
+            role: userAgentPermissions.role
+          })
+          .from(userAgentPermissions)
+          .innerJoin(users, eq(userAgentPermissions.userId, users.id))
+          .where(eq(userAgentPermissions.agentId, agentRecord.id))
+
+        // Get agent owner
+        const agentOwner = await db
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, agentRecord.userId))
+          .limit(1)
+
+        // Collect all emails that have access to the agent
+        const agentAccessEmails = new Set<string>()
+        
+        // Add owner
+        if (agentOwner.length > 0) {
+          agentAccessEmails.add(agentOwner[0].email.toLowerCase())
+        }
+
+        // Add users with permissions
+        for (const permission of agentPermissions) {
+          agentAccessEmails.add(permission.userEmail.toLowerCase())
+        }
+
+        // Convert updatedUserEmails to lowercase for comparison
+        const normalizedUpdatedEmails = updatedUserEmails.map(email => email.toLowerCase())
+
+        // Check if all workflow users have access to the agent
+        const missingUserEmails: string[] = []
+        for (const workflowUserEmail of normalizedUpdatedEmails) {
+          if (!agentAccessEmails.has(workflowUserEmail)) {
+            missingUserEmails.push(workflowUserEmail)
+          }
+        }
+
+        if (missingUserEmails.length > 0) {
+          Logger.warn(
+            `Agent ${agentExternalId} (${agentRecord.name}) is not accessible to users: ${missingUserEmails.join(', ')}`
+          )
+          unauthorizedAgents.push({
+            agentId: agentExternalId,
+            agentName: agentRecord.name,
+            toolId: tool.id,
+            missingUserEmails
+          })
+        }
+
+      } catch (agentError) {
+        Logger.error(
+          agentError,
+          `Error checking permissions for agent ${agentExternalId} in tool ${tool.id}`
+        )
+        // Continue with other agents instead of failing completely
+      }
+    }
+
+    const hasUnauthorized = unauthorizedAgents.length > 0
+
+    if (hasUnauthorized) {
+      Logger.warn(
+        `Found ${unauthorizedAgents.length} unauthorized agents in workflow ${workflowTemplateId}`
+      )
+    } else {
+      Logger.info(`All agents in workflow ${workflowTemplateId} are properly authorized`)
+    }
+
+    return {
+      hasUnauthorized,
+      unauthorizedAgents
+    }
+
+  } catch (error) {
+    Logger.error(error, `Failed to check unauthorized agents for workflow ${workflowTemplateId}`)
+    // Return false to allow workflow update in case of check failure
+    // This prevents the authorization check from blocking legitimate updates
+    return { hasUnauthorized: false, unauthorizedAgents: [] }
   }
 }

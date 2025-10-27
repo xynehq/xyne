@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { WorkflowShareModal } from "./WorkflowShareModal"
+import { ConfirmationPopup } from "@/components/ui/ConfirmationPopup"
 import botLogo from "@/assets/bot-logo.svg"
 import { WorkflowCardProps } from "./Types"
 import { Users, Lock, Share2 } from "lucide-react"
@@ -13,6 +14,7 @@ export function WorkflowCard({
 }: WorkflowCardProps) {
   const [showExecutionModal, setShowExecutionModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false)
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -148,9 +150,18 @@ export function WorkflowCard({
         onClose={() => setShowShareModal(false)}
         workflow={workflow}
         onSuccess={() => {
-          //TODO: Add a success callback
-          console.log("Workflow shared successfully")
+          setShowSuccessPopup(true)
         }}
+      />
+
+      <ConfirmationPopup
+        isVisible={showSuccessPopup}
+        title="Success"
+        message="Workflow shared successfully"
+        confirmText="OK"
+        cancelText="Close"
+        onConfirm={() => setShowSuccessPopup(false)}
+        onCancel={() => setShowSuccessPopup(false)}
       />
     </div>
   )
