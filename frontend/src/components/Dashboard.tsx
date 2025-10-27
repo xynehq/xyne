@@ -2192,11 +2192,17 @@ const UserDetailPage = ({
   onBack,
   timeRange,
   navigate,
+  setSelectedUserInStore,
 }: {
   user: AdminUserUsage
   onBack: () => void
   timeRange: "today" | "1w" | "1m" | "3m" | "all"
   navigate: ReturnType<typeof useNavigate>
+  setSelectedUserInStore: (user: {
+    userId: number
+    userName: string
+    userEmail: string
+  }) => void
 }) => {
   const [userChats, setUserChats] = useState<any[]>([])
   const [agentLeaderboard, setAgentLeaderboard] = useState<
@@ -2477,11 +2483,13 @@ const UserDetailPage = ({
         {/* View Chats Button */}
         <button
           onClick={() => {
+            setSelectedUserInStore({
+              userId: user.userId,
+              userName: user.userName,
+              userEmail: user.userEmail,
+            })
             navigate({
               to: "/admin/chat-overview" as const,
-              search: {
-                userEmail: user.userEmail,
-              },
             })
           }}
           className="px-4 py-2 text-sm font-medium text-green-600 border border-green-200 rounded-lg hover:bg-green-50 hover:border-green-300 transition-colors flex items-center gap-2"
@@ -3932,6 +3940,7 @@ export const Dashboard = ({
                     onBack={() => handleAdminUserSelect(selectedUser)}
                     timeRange={timeRange}
                     navigate={navigate}
+                    setSelectedUserInStore={setSelectedUserInStore}
                   />
                 </div>
               ) : selectedAgent ? (
