@@ -114,7 +114,12 @@ async function formatSearchToolResponse(
       const citation = searchToCitation(r)
       return {
         id: citation.docId,
-        content: await answerContextMap(r, userMetadata),
+        content: await answerContextMap(
+          r,
+          userMetadata,
+          // Limit to 50 chunks for file documents to prevent exceeding context size with large files
+          r.fields.sddocname === fileSchema ? 50 : undefined,
+        ),
         source: citation,
         confidence: r.relevance || 0.7,
       }
@@ -491,8 +496,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       }
       const citation = searchToCitation(r)
       return {
-        id: `${citation.docId}`,
-        content: await answerContextMap(r, userMetadata, maxDefaultSummary),
+        id: citation.docId,
+        content: await answerContextMap(
+          r,
+          userMetadata,
+          // Limit to 50 chunks for file documents to prevent exceeding context size with large files
+          r.fields.sddocname === fileSchema ? 50 : undefined,
+        ),
         source: citation,
         confidence: r.relevance || 0.7,
       }
@@ -1784,7 +1794,6 @@ export const searchGmail: AgentTool = {
       sortBy?: "asc" | "desc"
       labels?: string[]
       timeRange?: { startTime: string; endTime: string }
-      isAttachmentRequired?: boolean
       participants?: MailParticipant
       excludedIds?: string[]
     },
@@ -1833,7 +1842,6 @@ export const searchGmail: AgentTool = {
         sortBy: params.sortBy || "desc",
         labels: params.labels,
         timeRange: timeRange,
-        isAttachmentRequired: params.isAttachmentRequired,
         participants: params.participants,
         excludeDocIds: params.excludedIds || [],
         docIds: undefined,

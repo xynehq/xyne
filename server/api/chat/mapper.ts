@@ -1119,13 +1119,6 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         description: `Filter emails within a specific time range. Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
       },
       {
-        name: "isAttachmentRequired",
-        type: "boolean",
-        required: false,
-        description:
-          "If true, it also search for the attachments in the emails.",
-      },
-      {
         name: "participants",
         type: "object",
         required: false,
