@@ -2440,23 +2440,31 @@ export const extractBestDocumentsPrompt = (
   context: string[],
 ) => {
   return `
-You are an expert retrieval assistant designed to identify and select the most relevant and useful documents from a retrieved set of contexts.
+You are an expert retrieval assistant designed to identify and select relevant documents from a retrieved set of document contexts.
+
+### Important Context Limitations
+- You are working with **document previews** (first few hundred characters only)
+- These previews may not contain the full relevant information
+- **Be more inclusive** rather than overly strict in your selection
+- When in doubt about relevance, **include the document** rather than exclude it
 
 ### Objective
-Given a **user query** and a list of **retrieved document contexts**, analyze each context carefully and choose the ones that best answer or contribute directly to the query. The goal is to keep only the most relevant and non-redundant documents that truly add value for answering the query.
+Given a **user query** and **document contexts**, select documents that are likely to contain relevant information. Since you only see previews, err on the side of inclusion to avoid missing potentially valuable content.
 
 ### Instructions
 1. **Comprehend the query** — understand its intent, entities, and desired information type.
-2. **Evaluate each context** — determine how directly and strongly it relates to the query.
-3. **Eliminate redundancy** — prefer diversity and complementary information over repetition.
-4. **Prioritize factual completeness and semantic relevance** — select documents that are specific, informative, and contextually aligned with the query.
-5. **Output** — Return a filtered subset of the most relevant contexts.
+2. **Evaluate each context preview** — look for ANY indicators of relevance:
+   - Related topics or concepts
+   - Similar domains or subject areas
+   - Entity names, dates, or other identifiers mentioned in the query
+3. **Remove only obvious non-matches** — exclude only when the preview clearly indicates no relevance
+4. **Prioritize recall over precision** — better to include a potentially relevant document than miss important information
+
 
 ### Input
 - Query: "${query}"
 - Retrieved Contexts:
 ${context.map((c, i) => `  [${i + 1}] ${c}`).join("\n")}
-
 
 ### Output Format
 
@@ -2465,10 +2473,10 @@ Return **only** a JSON array of the most relevant document indexes, ordered by r
 Wrap the output in <indexes> tags as shown below:
 
 <indexes>
-[2, 5, 7]
+[2, 5, 7, 1, 9]
 <indexes>
 
-Now, return the array of indexes for the best matching documents.
+**Remember**: With limited context, favor inclusion over exclusion. It's better to return more potentially relevant documents than to miss important information.
 
   `
 }

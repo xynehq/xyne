@@ -1950,7 +1950,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 const contextStrings = contexts.map(
                   (v: MinimalAgentFragment) => `
                     title: ${v.source.title}
-                    content: ${v.content}
+                    content: ${v.content.substring(0, 600)}...
                     `,
                 )
 

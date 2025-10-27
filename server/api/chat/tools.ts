@@ -114,7 +114,7 @@ async function formatSearchToolResponse(
       const citation = searchToCitation(r)
       return {
         id: citation.docId,
-        content: await answerContextMap(r, userMetadata, maxDefaultSummary),
+        content: await answerContextMap(r, userMetadata),
         source: citation,
         confidence: r.relevance || 0.7,
       }
@@ -1823,13 +1823,13 @@ export const searchGmail: AgentTool = {
             : Date.now(),
         }
       }
-
+      const offset = params.offset || 0
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Gmail,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
+        offset,
         sortBy: params.sortBy || "desc",
         labels: params.labels,
         timeRange: timeRange,
@@ -1927,14 +1927,14 @@ export const searchDriveFiles: AgentTool = {
             : Date.now(),
         }
       }
-
+      const offset = params.offset || 0
       // Call searchGoogleApps with correct parameter structure
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Drive,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
+        offset,
         sortBy: params.sortBy || "desc",
         timeRange: timeRange,
         owner: params.owner,
@@ -2012,13 +2012,13 @@ export const searchCalendarEvents: AgentTool = {
             : Date.now(),
         }
       }
-
+      const offset = params.offset || 0
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Calendar,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
+        offset,
         sortBy: params.sortBy || "desc",
         timeRange: timeRange,
         attendees: params.attendees,
@@ -2072,14 +2072,15 @@ export const searchGoogleContacts: AgentTool = {
         return { result: errorMsg, error: "Missing email" }
       }
 
+      const offset = params.offset || 0
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Contacts,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
         sortBy: "desc",
         excludeDocIds: params.excludedIds || [],
+        offset,
       })
 
       return await formatSearchToolResponse(searchResults, {
