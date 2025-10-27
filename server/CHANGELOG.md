@@ -1,3 +1,10 @@
+## [3.22.1](https://github.com/xynehq/xyne/compare/v3.22.0...v3.22.1) (2025-10-27)
+
+
+### Bug Fixes
+
+* **chats:** Remove vespa relevance score from context ([#1148](https://github.com/xynehq/xyne/issues/1148)) ([6631556](https://github.com/xynehq/xyne/commit/66315565d5ab9eea4afcb9cc7a9ec6d6bd7ff44b))
+
 # [3.22.0](https://github.com/xynehq/xyne/compare/v3.21.7...v3.22.0) (2025-10-27)
 
 
