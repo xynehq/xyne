@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
-import { publicWorkflowTemplateSchema, type SelectAgent, type UpdateWorkflowTemplateRequest } from "../db/schema"
+import { publicWorkflowTemplateSchema, type SelectAgent, type UpdateWorkflowTemplateRequest, type UserMetadata } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
 
 
@@ -26,7 +26,7 @@ import {
   userWorkflowPermissions,
   users,
 } from "@/db/schema"
-import { getUserFromJWT } from "@/db/user"
+import { getUserFromJWT, getUserMetaData } from "@/db/user"
 import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { type CreateAgentPayload } from "./agent"
 import {
@@ -43,7 +43,7 @@ import {
   ne,
 } from "drizzle-orm"
 
-import { type AttachmentMetadata } from "@/shared/types"
+import { UserWorkflowRole, type AttachmentMetadata } from "@/shared/types"
 
 // Re-export schemas for server.ts
 export {
@@ -165,6 +165,13 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
     const templatesWithSteps = await Promise.all(
       templates.map(async (template) => {
         const role = template.role
+        let SharedUserMetadata: UserMetadata | null = null
+        if (role === UserWorkflowRole.Shared) {
+          SharedUserMetadata = await getUserMetaData(
+            db,
+            template.userId
+          )
+        }
         const steps = await getWorkflowStepTemplatesByTemplateId(
           db,
           template.id
@@ -204,6 +211,7 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
         return {
           ...publicWorkflowTemplateSchema.parse(template),
           role,
+          SharedUserMetadata,
           rootStep,
         }
       }),

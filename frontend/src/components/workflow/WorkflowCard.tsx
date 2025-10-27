@@ -83,6 +83,26 @@ export function WorkflowCard({
             {workflow.name}
           </h3>
 
+          {/* Show "shared by" section for shared workflows */}
+          {workflow.SharedUserMetadata && (
+            <div className="relative group">
+              <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                Shared by{' '}
+                <button
+                  className="border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-900/20 px-1.5 py-0.5 rounded-full transition-colors text-gray-600 dark:text-gray-400"
+                >
+                  {workflow.SharedUserMetadata.name}
+                </button>
+              </p>
+              
+              {/* Tooltip on hover */}
+              <div className="absolute bottom-full left-0 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                {workflow.SharedUserMetadata.email}
+                <div className="absolute top-full left-2 w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent border-t-gray-900 dark:border-t-gray-100"></div>
+              </div>
+            </div>
+          )}
+
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Edited at {formatDate(workflow.updatedAt)}
           </p>

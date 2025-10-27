@@ -118,6 +118,7 @@ export type {
   SelectPublicChat,
   PublicWorkspace,
   SelectPublicAgent,
+  UserMetadata
   // @ts-ignore
 } from "@/db/schema"
 
