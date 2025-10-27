@@ -529,6 +529,7 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       title: clFields.fileName || "Collection File",
       url: `/cl/${clFields.clId}`,
       app: Apps.KnowledgeBase,
+      page_title: clFields.pageTitle || "",
       entity: clFields.entity,
       itemId: clFields.itemId,
       clId: clFields.clId,
