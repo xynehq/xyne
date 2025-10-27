@@ -1,3 +1,122 @@
+## [3.22.2](https://github.com/xynehq/xyne/compare/v3.22.1...v3.22.2) (2025-10-27)
+
+
+### Bug Fixes
+
+* XYNE-223 fixed timing issue in highlight ([#1125](https://github.com/xynehq/xyne/issues/1125)) ([86514a9](https://github.com/xynehq/xyne/commit/86514a908289c8d752b20baef1ae299636962942))
+
+## [3.22.1](https://github.com/xynehq/xyne/compare/v3.22.0...v3.22.1) (2025-10-27)
+
+
+### Bug Fixes
+
+* **chats:** Remove vespa relevance score from context ([#1148](https://github.com/xynehq/xyne/issues/1148)) ([6631556](https://github.com/xynehq/xyne/commit/66315565d5ab9eea4afcb9cc7a9ec6d6bd7ff44b))
+
+# [3.22.0](https://github.com/xynehq/xyne/compare/v3.21.7...v3.22.0) (2025-10-27)
+
+
+### Features
+
+* **kbPageTitle:** Add page_title extraction for md files  ([#1139](https://github.com/xynehq/xyne/issues/1139)) ([a3a7301](https://github.com/xynehq/xyne/commit/a3a73016ca82451273b2788fd12dee689d1cd72e))
+
+## [3.21.7](https://github.com/xynehq/xyne/compare/v3.21.6...v3.21.7) (2025-10-24)
+
+
+### Bug Fixes
+
+* **event:** Fix offset value for migrating event mails ([#1147](https://github.com/xynehq/xyne/issues/1147)) ([b66faa4](https://github.com/xynehq/xyne/commit/b66faa452ff7b1f6deea9bb8699eb7d27f2c6126))
+
+## [3.21.6](https://github.com/xynehq/xyne/compare/v3.21.5...v3.21.6) (2025-10-24)
+
+
+### Bug Fixes
+
+* **ingested-user-view:** XYNE-176 showed users with null email for debugging purposes ([#1145](https://github.com/xynehq/xyne/issues/1145)) ([2cf6c46](https://github.com/xynehq/xyne/commit/2cf6c46ccc320d50e67f27545ba0b487f20750f6)), closes [Chinmay-Sin#FQX1](https://github.com/Chinmay-Sin/issues/FQX1)
+
+## [3.21.5](https://github.com/xynehq/xyne/compare/v3.21.4...v3.21.5) (2025-10-24)
+
+
+### Bug Fixes
+
+* **err:** fix error message ([#1144](https://github.com/xynehq/xyne/issues/1144)) ([7872044](https://github.com/xynehq/xyne/commit/78720444ab8300b1040d98129fca15de6552bc03))
+
+## [3.21.4](https://github.com/xynehq/xyne/compare/v3.21.3...v3.21.4) (2025-10-24)
+
+
+### Bug Fixes
+
+* **vespa:** upgrade package version ([#1143](https://github.com/xynehq/xyne/issues/1143)) ([a6ab0d0](https://github.com/xynehq/xyne/commit/a6ab0d0a30ab7f81d8e5e33c6ca22e0f65e3fd69))
+
+## [3.21.3](https://github.com/xynehq/xyne/compare/v3.21.2...v3.21.3) (2025-10-24)
+
+
+### Bug Fixes
+
+* **hardcodeApi:** removed the hardcoded value of sync-server endpoint ([#1142](https://github.com/xynehq/xyne/issues/1142)) ([634ad70](https://github.com/xynehq/xyne/commit/634ad704405c92e3e209384403aaecf73a7d7fd1))
+
+## [3.21.2](https://github.com/xynehq/xyne/compare/v3.21.1...v3.21.2) (2025-10-24)
+
+
+### Bug Fixes
+
+* XYN-189 reading path from env ([#1138](https://github.com/xynehq/xyne/issues/1138)) ([43dcc18](https://github.com/xynehq/xyne/commit/43dcc18b7922a2f7ddff04e65670215dce4ff38a))
+
+## [3.21.1](https://github.com/xynehq/xyne/compare/v3.21.0...v3.21.1) (2025-10-24)
+
+
+### Bug Fixes
+
+* **clfileupload:**  able to Upload Multiple Files via Drag and Drop ([#1137](https://github.com/xynehq/xyne/issues/1137)) ([295aec4](https://github.com/xynehq/xyne/commit/295aec4c02761fa2ac442b120e6d003cf5125664))
+
+# [3.21.0](https://github.com/xynehq/xyne/compare/v3.20.3...v3.21.0) (2025-10-23)
+
+
+### Features
+
+* XYNE-189 instance based requests for large pdfswith retry /backoff ([#1117](https://github.com/xynehq/xyne/issues/1117)) ([edef00c](https://github.com/xynehq/xyne/commit/edef00cca057e6fe6a81cd7bda189c90c79c1e40))
+
+## [3.20.3](https://github.com/xynehq/xyne/compare/v3.20.2...v3.20.3) (2025-10-23)
+
+
+### Bug Fixes
+
+* XYNE-216 fixed pdf highlight ([#1134](https://github.com/xynehq/xyne/issues/1134)) ([9f5eb75](https://github.com/xynehq/xyne/commit/9f5eb75367e73c0b28109af2dd974d76649ca22c))
+
+## [3.20.2](https://github.com/xynehq/xyne/compare/v3.20.1...v3.20.2) (2025-10-23)
+
+
+### Bug Fixes
+
+* **agentic:** fix accumulation logic to include only best documents ([#1115](https://github.com/xynehq/xyne/issues/1115)) ([096ccb1](https://github.com/xynehq/xyne/commit/096ccb15e33bd90ed14a554d4a40bb1f6fab0fc4))
+
+## [3.20.1](https://github.com/xynehq/xyne/compare/v3.20.0...v3.20.1) (2025-10-23)
+
+
+### Bug Fixes
+
+* **vespa:** updated the vespa package version ([#1133](https://github.com/xynehq/xyne/issues/1133)) ([4088e7b](https://github.com/xynehq/xyne/commit/4088e7baedefd3fd4650b50e1b0ab7257587d836))
+
+# [3.20.0](https://github.com/xynehq/xyne/compare/v3.19.2...v3.20.0) (2025-10-23)
+
+
+### Features
+
+* XYNE-206 added a chats overview for admins ([#1129](https://github.com/xynehq/xyne/issues/1129)) ([2400eb3](https://github.com/xynehq/xyne/commit/2400eb34d18d2ad84dddb3fbd2cecdb92e2efb4f))
+
+## [3.19.2](https://github.com/xynehq/xyne/compare/v3.19.1...v3.19.2) (2025-10-23)
+
+
+### Bug Fixes
+
+* **mail:** de-duplicate event mails ([#1128](https://github.com/xynehq/xyne/issues/1128)) ([4a61d61](https://github.com/xynehq/xyne/commit/4a61d61eea3f03dfd815034d89e4d40c7ff912b2))
+
+## [3.19.1](https://github.com/xynehq/xyne/compare/v3.19.0...v3.19.1) (2025-10-22)
+
+
+### Bug Fixes
+
+* **sheet-redirect:** fixed sub-sheet redirect issue ([#1001](https://github.com/xynehq/xyne/issues/1001)) ([6747ea5](https://github.com/xynehq/xyne/commit/6747ea5fac8336d02cb614d6ec1a11e964686454))
+
 # [3.19.0](https://github.com/xynehq/xyne/compare/v3.18.8...v3.19.0) (2025-10-17)
 
 

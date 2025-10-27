@@ -113,7 +113,7 @@ async function formatSearchToolResponse(
     children.map(async (r) => {
       const citation = searchToCitation(r)
       return {
-        id: `${citation.docId}`,
+        id: citation.docId,
         content: await answerContextMap(r, userMetadata, maxDefaultSummary),
         source: citation,
         confidence: r.relevance || 0.7,
@@ -2123,6 +2123,7 @@ export const searchGmail: AgentTool = {
       timeRange?: { startTime: string; endTime: string }
       isAttachmentRequired?: boolean
       participants?: MailParticipant
+      excludedIds?: string[]
     },
     span?: Span,
     email?: string,
@@ -2171,7 +2172,7 @@ export const searchGmail: AgentTool = {
         timeRange: timeRange,
         isAttachmentRequired: params.isAttachmentRequired,
         participants: params.participants,
-        excludeDocIds: undefined,
+        excludeDocIds: params.excludedIds || [],
         docIds: undefined,
       })
 
@@ -2218,6 +2219,7 @@ export const searchDriveFiles: AgentTool = {
       sortBy?: "asc" | "desc"
       filetype?: Entity[]
       timeRange?: { startTime: string; endTime: string }
+      excludedIds?: string[]
     },
     span?: Span,
     email?: string,
@@ -2274,7 +2276,7 @@ export const searchDriveFiles: AgentTool = {
         timeRange: timeRange,
         owner: params.owner,
         driveEntity: params.filetype as DriveEntity | DriveEntity[],
-        excludeDocIds: undefined,
+        excludeDocIds: params.excludedIds || [],
         docIds: driveSourceIds,
       })
 
@@ -2309,6 +2311,7 @@ export const searchCalendarEvents: AgentTool = {
       offset?: number
       sortBy?: "asc" | "desc"
       timeRange?: { startTime: string; endTime: string }
+      excludedIds?: string[]
     },
     span?: Span,
     email?: string,
@@ -2357,7 +2360,7 @@ export const searchCalendarEvents: AgentTool = {
         timeRange: timeRange,
         attendees: params.attendees,
         eventStatus: params.status, // Take first status if provided
-        excludeDocIds: undefined,
+        excludeDocIds: params.excludedIds || [],
         docIds: undefined,
       })
 
@@ -2391,6 +2394,7 @@ export const searchGoogleContacts: AgentTool = {
       query: string
       limit?: number
       offset?: number
+      excludedIds?: string[]
     },
     span?: Span,
     email?: string,
@@ -2412,6 +2416,7 @@ export const searchGoogleContacts: AgentTool = {
         limit: params.limit || config.VespaPageSize,
         offset: params.offset || 0,
         sortBy: "desc",
+        excludeDocIds: params.excludedIds || [],
       })
 
       return await formatSearchToolResponse(searchResults, {

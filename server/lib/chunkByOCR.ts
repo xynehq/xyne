@@ -14,10 +14,29 @@ const DEFAULT_IMAGE_DIR = "downloads/xyne_images_db"
 const DEFAULT_LAYOUT_PARSING_BASE_URL = "http://localhost:8000"
 const DEFAULT_LAYOUT_PARSING_FILE_TYPE = 0
 const DEFAULT_LAYOUT_PARSING_VISUALIZE = false
+const DEFAULT_LAYOUT_PARSING_TIMEOUT_MS = 300000
 const LAYOUT_PARSING_API_PATH = "/v2/models/layout-parsing/infer"
 const DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST = 100
 const TEXT_CHUNK_OVERLAP_CHARS = 32
-const USE_SEQUENTIAL_BATCH_PROCESSING = true
+
+// Configuration constants
+const LAYOUT_PARSING_BASE_URL = process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL
+const LAYOUT_PARSING_TIMEOUT_MS = process.env.LAYOUT_PARSING_TIMEOUT_MS 
+  ? Number.parseInt(process.env.LAYOUT_PARSING_TIMEOUT_MS, 10) 
+  : DEFAULT_LAYOUT_PARSING_TIMEOUT_MS
+
+const LOCAL_STATUS_ENDPOINT = "http://localhost:8081/instance_status"
+const DEFAULT_STATUS_ENDPOINT = process.env.STATUS_ENDPOINT || LOCAL_STATUS_ENDPOINT
+const DEFAULT_POLL_INTERVAL_MS = 300
+const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
+const DEFAULT_MAX_RETRIES = 2
+const DEFAULT_THRESHOLD_FOR_CONCURRENCY = 1
+const STATUS_FETCH_TIMEOUT_MS = 2_000
+const STATUS_FETCH_MAX_RETRIES = 3
+const BACKOFF_BASE_MS = 500
+const BACKOFF_FACTOR = 2
+const BACKOFF_MAX_MS = 8_000
+const BACKOFF_JITTER_RATIO = 0.2  
 
 type LayoutParsingBlock = {
   block_label?: string
@@ -87,6 +106,792 @@ type OcrResponse = Record<string, OcrBlock[]>
 
 type GlobalSeq = {
   value: number
+}
+
+type PdfPageBatch = {
+  buffer: Buffer
+  startPage: number
+  endPage: number
+}
+
+export interface PdfOcrBatch {
+  id: string
+  fileName: string
+  startPage: number
+  endPage: number
+  pdfBuffer: Buffer
+}
+
+export interface DispatchOptions {
+  statusEndpoint?: string
+  pollIntervalMs?: number
+  requestTimeoutMs?: number
+  maxRetries?: number
+  thresholdForConcurrency?: number
+  signal?: AbortSignal
+  logger?: Pick<Console, "info" | "warn" | "error">
+  metrics?: {
+    incr(name: string, tags?: Record<string, string>): void
+    observe(name: string, value: number, tags?: Record<string, string>): void
+  }
+  sendBatch?: (
+    batch: PdfOcrBatch,
+    options: SendPdfBatchOptions,
+  ) => Promise<void>
+}
+
+export interface DispatchReport {
+  total: number
+  succeeded: number
+  failed: number
+  startedAt: number
+  endedAt: number
+  perItem: Array<{
+    id: string
+    status: "ok" | "failed"
+    attempts: number
+    latencyMs: number
+    error?: string
+  }>
+}
+
+type BatchDispatchResult = DispatchReport["perItem"][number]
+
+type InstanceStatusPayload = {
+  active_instances?: unknown
+  configured_instances?: unknown
+  idle_instances?: unknown
+  last_updated?: unknown
+}
+
+
+
+const noopLogger: Pick<Console, "info" | "warn" | "error"> = {
+  info() {},
+  warn() {},
+  error() {},
+}
+
+const noopMetrics = {
+  incr() {},
+  observe() {},
+}
+
+type SendPdfBatchOptions = {
+  timeoutMs: number
+}
+
+// Placeholder implementation for integrating with the OCR service.
+async function sendPdfOcrBatch(
+  batch: PdfOcrBatch,
+  { timeoutMs }: SendPdfBatchOptions,
+): Promise<void> {
+  const baseUrl = LAYOUT_PARSING_BASE_URL.replace(/\/+$/, '')
+  const apiUrl = baseUrl + '/' + LAYOUT_PARSING_API_PATH.replace(/^\/+/, '')
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        // TODO: adjust payload to match OCR batch contract.
+        id: batch.id,
+        fileName: batch.fileName,
+        startPage: batch.startPage,
+        endPage: batch.endPage,
+        pdfBase64: batch.pdfBuffer.toString("base64"),
+      }),
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => "")
+      throw new Error(
+        `OCR batch request failed (${response.status}): ${responseText.slice(0, 200)}`,
+      )
+    }
+
+  } catch (error) {
+    if ((error as Error).name === "AbortError") {
+      throw new Error("OCR batch request aborted due to timeout")
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function isValidStatusNumber(raw: unknown): boolean {
+  if (typeof raw === "number") {
+    return Number.isFinite(raw)
+  }
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (trimmed.length === 0) {
+      return false
+    }
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed)
+  }
+
+  return false
+}
+
+function extractNumber(raw: unknown): number {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw
+  }
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (trimmed.length > 0) {
+      const parsed = Number(trimmed)
+      if (Number.isFinite(parsed)) {
+        return parsed
+      }
+    }
+  }
+
+  return 0
+}
+
+function sanitizeIdleValue(raw: unknown): number {
+  const numericValue = extractNumber(raw)
+  if (numericValue <= 0) {
+    return 0
+  }
+  return Math.floor(numericValue)
+}
+
+function createAbortError(): Error {
+  const error = new Error("aborted")
+  error.name = "AbortError"
+  return error
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.message === "aborted")
+  )
+}
+
+function applyBackoffJitter(durationMs: number): number {
+  const jitter =
+    1 + (Math.random() * 2 - 1) * Math.max(0, Math.min(1, BACKOFF_JITTER_RATIO))
+  return Math.min(BACKOFF_MAX_MS, Math.round(durationMs * jitter))
+}
+
+async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) {
+    if (signal?.aborted) {
+      throw createAbortError()
+    }
+    return
+  }
+
+  if (signal?.aborted) {
+    throw createAbortError()
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const abortHandler = () => {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      if (signal) {
+        signal.removeEventListener("abort", abortHandler)
+      }
+      reject(createAbortError())
+    }
+
+    timer = setTimeout(() => {
+      if (signal) {
+        signal.removeEventListener("abort", abortHandler)
+      }
+      timer = null
+      resolve()
+    }, ms)
+
+    if (signal) {
+      signal.addEventListener("abort", abortHandler)
+    }
+  })
+}
+
+async function fetchIdleInstances(
+  endpoint: string,
+  logger: Pick<Console, "info" | "warn" | "error">,
+  metrics: DispatchOptions["metrics"],
+): Promise<number> {
+  let attempt = 0
+  let lastError: unknown
+
+  while (attempt < STATUS_FETCH_MAX_RETRIES) {
+    attempt += 1
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), STATUS_FETCH_TIMEOUT_MS)
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "GET",
+        signal: controller.signal,
+      })
+
+      clearTimeout(timer)
+
+      if (!response.ok) {
+        throw new Error(`unexpected status ${response.status}`)
+      }
+
+      const payload = (await response.json()) as InstanceStatusPayload
+      const idle = sanitizeIdleValue(payload.idle_instances)
+      const active = isValidStatusNumber(payload.active_instances) 
+        ? extractNumber(payload.active_instances) 
+        : undefined
+      const configured = isValidStatusNumber(payload.configured_instances)
+        ? extractNumber(payload.configured_instances)
+        : undefined
+      const lastUpdated = isValidStatusNumber(payload.last_updated)
+        ? extractNumber(payload.last_updated)
+        : undefined
+
+      metrics?.observe("ocr_dispatch.instances.idle", idle)
+      if (active !== undefined) {
+        metrics?.observe("ocr_dispatch.instances.active", active)
+      }
+      if (configured !== undefined) {
+        metrics?.observe("ocr_dispatch.instances.configured", configured)
+      }
+      if (lastUpdated !== undefined) {
+        metrics?.observe("ocr_dispatch.instances.last_updated", lastUpdated)
+      }
+
+      // Success - return the idle count
+      if (attempt > 1) {
+        logger.info("Successfully fetched OCR instance status after retry", {
+          attempt,
+          idle,
+          endpoint,
+        })
+      }
+
+      return idle
+    } catch (error) {
+      lastError = error
+      clearTimeout(timer)
+      
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      
+      if (attempt < STATUS_FETCH_MAX_RETRIES) {
+        const backoffMs = computeBackoffMs(attempt)
+        logger.warn(
+          `Failed to fetch OCR instance status (attempt ${attempt}/${STATUS_FETCH_MAX_RETRIES}), retrying in ${backoffMs}ms`,
+          {
+            error: errorMessage,
+            endpoint,
+            attempt,
+            backoffMs,
+          },
+        )
+        metrics?.incr("ocr_dispatch.status_fetch_retry")
+        
+        await sleep(backoffMs)
+      } else {
+        // Max retries exceeded
+        logger.error(
+          `Failed to fetch OCR instance status after ${STATUS_FETCH_MAX_RETRIES} attempts`,
+          {
+            error: errorMessage,
+            endpoint,
+            attempts: STATUS_FETCH_MAX_RETRIES,
+          },
+        )
+        metrics?.incr("ocr_dispatch.status_fetch_error")
+        
+        throw new Error(
+          `Instance status server unreachable after ${STATUS_FETCH_MAX_RETRIES} attempts: ${errorMessage}`,
+        )
+      }
+    }
+  }
+
+  // This should never be reached, but TypeScript needs it
+  const finalMessage =
+    lastError instanceof Error ? lastError.message : String(lastError ?? "unknown error")
+  throw new Error(
+    `Instance status server unreachable after ${STATUS_FETCH_MAX_RETRIES} attempts: ${finalMessage}`,
+  )
+}
+
+function computeBackoffMs(attempt: number): number {
+  const exponent = Math.max(0, attempt - 1)
+  const baseDelay = BACKOFF_BASE_MS * Math.pow(BACKOFF_FACTOR, exponent)
+  return applyBackoffJitter(baseDelay)
+}
+
+async function processBatch(
+  batch: PdfOcrBatch,
+  options: {
+    requestTimeoutMs: number
+    maxRetries: number
+    logger: Pick<Console, "info" | "warn" | "error">
+    metrics: DispatchOptions["metrics"]
+    signal?: AbortSignal
+    sendBatch: (
+      batch: PdfOcrBatch,
+      sendOptions: SendPdfBatchOptions,
+    ) => Promise<void>
+  },
+): Promise<BatchDispatchResult> {
+  const {
+    requestTimeoutMs,
+    maxRetries,
+    logger,
+    metrics = noopMetrics,
+    signal,
+    sendBatch,
+  } = options
+
+  const totalAttemptsAllowed = Math.max(0, maxRetries) + 1
+  let attempt = 0
+  let lastError: unknown
+
+  while (attempt < totalAttemptsAllowed) {
+    if (signal?.aborted) {
+      return {
+        id: batch.id,
+        status: "failed",
+        attempts: attempt,
+        latencyMs: 0,
+        error: "aborted",
+      }
+    }
+
+    attempt += 1
+    const attemptStartedAt = Date.now()
+
+    try {
+      await sendBatch(batch, { timeoutMs: requestTimeoutMs })
+      const latencyMs = Date.now() - attemptStartedAt
+      logger.info(
+        `[batch=${batch.id}] attempt=${attempt} latencyMs=${latencyMs} ok`,
+      )
+      metrics.observe("ocr_dispatch.latency_ms", latencyMs, {
+        status: "ok",
+      })
+      metrics.incr("ocr_dispatch.attempts", { status: "ok" })
+      return {
+        id: batch.id,
+        status: "ok",
+        attempts: attempt,
+        latencyMs,
+      }
+    } catch (error) {
+      const latencyMs = Date.now() - attemptStartedAt
+      lastError = error
+      const errorMessage = error instanceof Error ? error.message : String(error)
+
+      logger.warn(
+        `[batch=${batch.id}] attempt=${attempt} latencyMs=${latencyMs} error=${errorMessage}`,
+      )
+      metrics.observe("ocr_dispatch.latency_ms", latencyMs, {
+        status: "failed",
+      })
+      metrics.incr("ocr_dispatch.attempts", { status: "failed" })
+
+      if (attempt >= totalAttemptsAllowed) {
+        return {
+          id: batch.id,
+          status: "failed",
+          attempts: attempt,
+          latencyMs,
+          error: errorMessage,
+        }
+      }
+
+      const backoffMs = computeBackoffMs(attempt)
+      logger.info(
+        `[batch=${batch.id}] attempt=${attempt} error=${errorMessage} backoffMs=${backoffMs}`,
+      )
+
+      try {
+        await sleep(backoffMs, signal)
+      } catch (abortError) {
+        if (isAbortError(abortError)) {
+          return {
+            id: batch.id,
+            status: "failed",
+            attempts: attempt,
+            latencyMs,
+            error: "aborted",
+          }
+        }
+        throw abortError
+      }
+    }
+  }
+
+  const finalMessage =
+    lastError instanceof Error ? lastError.message : String(lastError ?? "")
+  return {
+    id: batch.id,
+    status: "failed",
+    attempts: totalAttemptsAllowed,
+    latencyMs: 0,
+    error: finalMessage || "failed",
+  }
+}
+
+type InFlightState = {
+  batch: PdfOcrBatch
+  promise: Promise<BatchDispatchResult>
+  done: boolean
+  result?: BatchDispatchResult
+}
+
+function createInFlightState(
+  batch: PdfOcrBatch,
+  options: {
+    requestTimeoutMs: number
+    maxRetries: number
+    logger: Pick<Console, "info" | "warn" | "error">
+    metrics: DispatchOptions["metrics"]
+    signal?: AbortSignal
+    sendBatch: (
+      batch: PdfOcrBatch,
+      sendOptions: SendPdfBatchOptions,
+    ) => Promise<void>
+  },
+): InFlightState {
+  const state: InFlightState = {
+    batch,
+    promise: Promise.resolve({} as BatchDispatchResult),
+    done: false,
+  }
+
+  state.promise = processBatch(batch, options)
+    .then((result) => {
+      state.done = true
+      state.result = result
+      return result
+    })
+    .catch((error) => {
+      state.done = true
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const fallback: BatchDispatchResult = {
+        id: batch.id,
+        status: "failed",
+        attempts: 0,
+        latencyMs: 0,
+        error: errorMessage,
+      }
+      state.result = fallback
+      return fallback
+    })
+
+  return state
+}
+
+async function waitForAll(
+  inFlight: InFlightState[],
+): Promise<InFlightState[]> {
+  if (inFlight.length === 0) {
+    return []
+  }
+
+  await Promise.allSettled(inFlight.map((state) => state.promise))
+  return inFlight
+}
+
+function recordOutcome(
+  result: BatchDispatchResult,
+  perItem: DispatchReport["perItem"],
+  counters: { succeeded: number; failed: number },
+): void {
+  perItem.push(result)
+  if (result.status === "ok") {
+    counters.succeeded += 1
+  } else {
+    counters.failed += 1
+  }
+}
+
+async function runSequentialDispatch(
+  batches: PdfOcrBatch[],
+  options: {
+    requestTimeoutMs: number
+    maxRetries: number
+    statusEndpoint: string
+    logger: Pick<Console, "info" | "warn" | "error">
+    metrics: DispatchOptions["metrics"]
+    signal?: AbortSignal
+    sendBatch: (
+      batch: PdfOcrBatch,
+      sendOptions: SendPdfBatchOptions,
+    ) => Promise<void>
+  },
+  perItem: DispatchReport["perItem"],
+  counters: { succeeded: number; failed: number },
+): Promise<void> {
+  const { logger, statusEndpoint, signal, sendBatch } = options
+
+  const idle = await fetchIdleInstances(statusEndpoint, logger, options.metrics)
+  logger.info(
+    `[cycle=sequential] idle=${idle} remaining=${batches.length} inflight=0 dispatching=1`,
+  )
+
+  for (const batch of batches) {
+    if (signal?.aborted) {
+      recordOutcome(
+        {
+          id: batch.id,
+          status: "failed",
+          attempts: 0,
+          latencyMs: 0,
+          error: "aborted",
+        },
+        perItem,
+        counters,
+      )
+      continue
+    }
+
+    const result = await processBatch(batch, {
+      ...options,
+      sendBatch,
+    })
+    recordOutcome(result, perItem, counters)
+  }
+}
+
+async function runConcurrentDispatch(
+  batches: PdfOcrBatch[],
+  options: {
+    requestTimeoutMs: number
+    maxRetries: number
+    statusEndpoint: string
+    pollIntervalMs: number
+    logger: Pick<Console, "info" | "warn" | "error">
+    metrics: DispatchOptions["metrics"]
+    signal?: AbortSignal
+    sendBatch: (
+      batch: PdfOcrBatch,
+      sendOptions: SendPdfBatchOptions,
+    ) => Promise<void>
+  },
+  perItem: DispatchReport["perItem"],
+  counters: { succeeded: number; failed: number },
+): Promise<void> {
+  const {
+    requestTimeoutMs,
+    maxRetries,
+    statusEndpoint,
+    pollIntervalMs,
+    logger,
+    metrics,
+    signal,
+    sendBatch,
+  } = options
+
+  let inFlight: InFlightState[] = []
+  const pendingQueue: PdfOcrBatch[] = [...batches]
+  let cycle = 0
+  let aborted = signal?.aborted ?? false
+
+  const onAbort = () => {
+    if (!aborted) {
+      aborted = true
+      logger.warn("Dispatch aborted by signal; draining in-flight tasks")
+    }
+  }
+
+  signal?.addEventListener("abort", onAbort)
+
+  try {
+    while (pendingQueue.length > 0 || inFlight.length > 0) {
+      cycle += 1
+
+      let idle = 0
+      if (!aborted) {
+        idle = await fetchIdleInstances(statusEndpoint, logger, metrics)
+      }
+
+      const remaining = pendingQueue.length
+      let toDispatch = 0
+      if (!aborted && remaining > 0) {
+        toDispatch = idle > 0 ? Math.min(idle/2, remaining) : 1
+      }
+
+      logger.info(
+        `[cycle=${cycle}] idle=${idle} remaining=${remaining} inflight=${inFlight.length} dispatching=${toDispatch}${aborted ? " aborted=true" : ""}`,
+      )
+
+      for (let index = 0; index < toDispatch; index += 1) {
+        const nextBatch = pendingQueue.shift()
+        if (!nextBatch) {
+          break
+        }
+        const state = createInFlightState(nextBatch, {
+          requestTimeoutMs,
+          maxRetries,
+          logger,
+          metrics,
+          signal,
+          sendBatch,
+        })
+        inFlight.push(state)
+      }
+
+      if (inFlight.length === 0) {
+        if (aborted) {
+          while (pendingQueue.length > 0) {
+            const batch = pendingQueue.shift()
+            if (!batch) {
+              continue
+            }
+            recordOutcome(
+              {
+                id: batch.id,
+                status: "failed",
+                attempts: 0,
+                latencyMs: 0,
+                error: "aborted",
+              },
+              perItem,
+              counters,
+            )
+          }
+        }
+        break
+      }
+
+      const completedStates = await waitForAll(inFlight)
+      if (completedStates.length > 0) {
+        for (const state of completedStates) {
+          if (state.result) {
+            recordOutcome(state.result, perItem, counters)
+          }
+        }
+        inFlight = inFlight.filter((state) => !state.done)
+      }
+
+      if (aborted) {
+        while (pendingQueue.length > 0) {
+          const batch = pendingQueue.shift()
+          if (!batch) {
+            continue
+          }
+          recordOutcome(
+            {
+              id: batch.id,
+              status: "failed",
+              attempts: 0,
+              latencyMs: 0,
+              error: "aborted",
+            },
+            perItem,
+            counters,
+          )
+        }
+      }
+
+      if (
+        (pendingQueue.length > 0 || inFlight.length > 0) &&
+        !aborted &&
+        pollIntervalMs > 0
+      ) {
+        try {
+          await sleep(pollIntervalMs, signal)
+        } catch (error) {
+          if (isAbortError(error)) {
+            aborted = true
+          } else {
+            throw error
+          }
+        }
+      }
+    }
+  } finally {
+    signal?.removeEventListener("abort", onAbort)
+  }
+}
+
+export async function dispatchOCRBatches(
+  batches: PdfOcrBatch[],
+  opts: DispatchOptions = {},
+): Promise<DispatchReport> {
+  const startedAt = Date.now()
+  const total = batches.length
+
+  if (total === 0) {
+    return {
+      total: 0,
+      succeeded: 0,
+      failed: 0,
+      startedAt,
+      endedAt: startedAt,
+      perItem: [],
+    }
+  }
+
+  const {
+    statusEndpoint = DEFAULT_STATUS_ENDPOINT,
+    pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    maxRetries = DEFAULT_MAX_RETRIES,
+    thresholdForConcurrency = DEFAULT_THRESHOLD_FOR_CONCURRENCY,
+    signal,
+    logger: providedLogger,
+    metrics: providedMetrics,
+    sendBatch: providedSendBatch,
+  } = opts
+
+  const logger = providedLogger ?? Logger ?? noopLogger
+  const metrics = providedMetrics ?? noopMetrics
+  const sendBatch =
+    providedSendBatch ??
+    ((batch: PdfOcrBatch, options: SendPdfBatchOptions) =>
+      sendPdfOcrBatch(batch, options))
+
+  const perItem: DispatchReport["perItem"] = []
+  const counters = { succeeded: 0, failed: 0 }
+
+  const dispatchOptions = {
+    requestTimeoutMs,
+    maxRetries,
+    statusEndpoint,
+    pollIntervalMs,
+    logger,
+    metrics,
+    signal,
+    sendBatch,
+  }
+
+  if (total <= thresholdForConcurrency) {
+    await runSequentialDispatch(batches, dispatchOptions, perItem, counters)
+  } else {
+    await runConcurrentDispatch(batches, dispatchOptions, perItem, counters)
+  }
+
+  const endedAt = Date.now()
+
+  return {
+    total,
+    succeeded: counters.succeeded,
+    failed: counters.failed,
+    startedAt,
+    endedAt,
+    perItem,
+  }
 }
 
 function looksLikePdf(buffer: Buffer, fileName: string): boolean {
@@ -289,37 +1094,6 @@ function normalizeBlockContent(block: OcrBlock): string {
   return content.replace(/\s+/g, " ").trim()
 }
 
-function deriveImageFileName(
-  preferredName: string | undefined,
-  bboxKey: string | null | undefined,
-  buffer: Buffer,
-  imageIndex: number,
-  pageIndex: number,
-): string {
-  const ext = detectImageExtension(buffer)
-
-  if (preferredName) {
-    const sanitized = sanitizeFileName(preferredName)
-    const parsed = path.parse(sanitized)
-
-    if (parsed.ext) {
-      const normalizedExt = parsed.ext.replace(/\./, "")
-      if (normalizedExt.toLowerCase() !== ext) {
-        return `${parsed.name || `image_${imageIndex}`}.${ext}`
-      }
-      return sanitized
-    }
-
-    return `${parsed.name || `image_${imageIndex}`}.${ext}`
-  }
-
-  if (bboxKey) {
-    return `img_in_image_box_${bboxKey}.${ext}`
-  }
-
-  return `page_${pageIndex + 1}_image_${imageIndex}.${ext}`
-}
-
 async function callLayoutParsingApi(
   buffer: Buffer,
   fileName: string,
@@ -331,10 +1105,7 @@ async function callLayoutParsingApi(
   const apiUrl = baseUrl + "/" + LAYOUT_PARSING_API_PATH.replace(/^\/+/, "")
   const fileType = DEFAULT_LAYOUT_PARSING_FILE_TYPE
   const visualize = DEFAULT_LAYOUT_PARSING_VISUALIZE
-  const timeoutMs = Number.parseInt(
-    process.env.LAYOUT_PARSING_TIMEOUT_MS ?? "300000",
-    10,
-  )
+  const timeoutMs = LAYOUT_PARSING_TIMEOUT_MS
 
   Logger.info("Calling layout parsing API", {
     apiUrl,
@@ -517,12 +1288,18 @@ async function splitPdfIntoBatches(
   buffer: Buffer,
   maxPagesPerBatch: number = DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST,
   preloadedPdf?: PDFDocument,
-): Promise<Buffer[]> {
+): Promise<PdfPageBatch[]> {
   const sourcePdf = preloadedPdf ?? (await PDFDocument.load(buffer))
   const totalPages = sourcePdf.getPageCount()
 
   if (totalPages <= maxPagesPerBatch) {
-    return [buffer]
+    return [
+      {
+        buffer,
+        startPage: 1,
+        endPage: totalPages,
+      },
+    ]
   }
 
   Logger.info("Splitting large PDF into batches", {
@@ -531,7 +1308,7 @@ async function splitPdfIntoBatches(
     estimatedBatches: Math.ceil(totalPages / maxPagesPerBatch),
   })
 
-  const batches: Buffer[] = []
+  const batches: PdfPageBatch[] = []
 
   for (
     let startPage = 0;
@@ -540,6 +1317,8 @@ async function splitPdfIntoBatches(
   ) {
     const endPage = Math.min(startPage + maxPagesPerBatch, totalPages)
     const pageCount = endPage - startPage
+    const startPageNumber = startPage + 1
+    const endPageNumber = endPage
 
     // Create new PDF with subset of pages
     const newPdf = await PDFDocument.create()
@@ -554,12 +1333,16 @@ async function splitPdfIntoBatches(
     }
 
     const pdfBytes = await newPdf.save()
-    batches.push(Buffer.from(pdfBytes))
+    batches.push({
+      buffer: Buffer.from(pdfBytes),
+      startPage: startPageNumber,
+      endPage: endPageNumber,
+    })
 
     Logger.info("Created PDF batch", {
       batchIndex: batches.length,
-      startPage: startPage + 1,
-      endPage,
+      startPage: startPageNumber,
+      endPage: endPageNumber,
       pagesInBatch: pageCount,
       batchSizeBytes: pdfBytes.length,
     })
@@ -592,75 +1375,85 @@ function mergeLayoutParsingResults(
   }
 }
 
-async function processBatchesConcurrently(
-  batches: Buffer[],
+async function processPdfBatchesWithDispatcher(
+  batches: PdfPageBatch[],
   fileName: string,
 ): Promise<LayoutParsingApiPayload[]> {
-  Logger.info("Processing PDF batches concurrently", {
-    fileName,
-    totalBatches: batches.length,
-  })
-
-  return Promise.all(
-    batches.map(async (batch, index) => {
-      const batchIndex = index + 1
-      Logger.info("Processing PDF batch", {
-        fileName,
-        batchIndex,
-        totalBatches: batches.length,
-        batchSizeBytes: batch.length,
-      })
-      const batchResult = await callLayoutParsingApi(
-        batch,
-        `${fileName}_batch_${batchIndex}`,
-      )
-      Logger.info("Completed PDF batch", {
-        fileName,
-        batchIndex,
-        layoutResultsCount: batchResult.layoutParsingResults?.length ?? 0,
-      })
-      return batchResult
-    }),
-  )
-}
-
-async function processBatchesSequentially(
-  batches: Buffer[],
-  fileName: string,
-): Promise<LayoutParsingApiPayload[]> {
-  Logger.info("Processing PDF batches sequentially", {
-    fileName,
-    totalBatches: batches.length,
-  })
-
-  const batchResults: LayoutParsingApiPayload[] = []
-
-  for (let index = 0; index < batches.length; index++) {
-    const batch = batches[index]
-    const batchIndex = index + 1
-
-    Logger.info("Processing PDF batch sequentially", {
-      fileName,
-      batchIndex,
-      totalBatches: batches.length,
-      batchSizeBytes: batch.length,
-    })
-
-    const batchResult = await callLayoutParsingApi(
-      batch,
-      `${fileName}_batch_${batchIndex}`,
-    )
-
-    Logger.info("Completed PDF batch sequentially", {
-      fileName,
-      batchIndex,
-      layoutResultsCount: batchResult.layoutParsingResults?.length ?? 0,
-    })
-
-    batchResults.push(batchResult)
+  if (batches.length === 0) {
+    return []
   }
 
-  return batchResults
+  if (batches.length === 1) {
+    const singleBatch = batches[0]
+    Logger.info("Processing single PDF batch via OCR pipeline", {
+      fileName,
+      startPage: singleBatch.startPage,
+      endPage: singleBatch.endPage,
+      pagesInBatch: singleBatch.endPage - singleBatch.startPage + 1,
+    })
+
+    const result = await callLayoutParsingApi(
+      singleBatch.buffer,
+      `${fileName}_pages_${singleBatch.startPage}-${singleBatch.endPage}`,
+    )
+
+    Logger.info("Completed single PDF batch", {
+      fileName,
+      layoutResultsCount: result.layoutParsingResults?.length ?? 0,
+    })
+
+    return [result]
+  }
+
+  Logger.info("Dispatching PDF batches via OCR dispatcher", {
+    fileName,
+    totalBatches: batches.length,
+  })
+
+  const resultsByBatchId = new Map<string, LayoutParsingApiPayload>()
+  const dispatchBatches: PdfOcrBatch[] = batches.map((batch, index) => ({
+    id: `${fileName}_batch_${index + 1}`,
+    fileName,
+    startPage: batch.startPage,
+    endPage: batch.endPage,
+    pdfBuffer: batch.buffer,
+  }))
+
+  const dispatchOptions: DispatchOptions = {
+    logger: Logger,
+    sendBatch: async (batch) => {
+      const label = `${batch.fileName}_pages_${batch.startPage}-${batch.endPage}`
+      Logger.info("Sending PDF batch to layout parsing API", {
+        batchId: batch.id,
+        fileName: batch.fileName,
+        startPage: batch.startPage,
+        endPage: batch.endPage,
+        pagesInBatch: batch.endPage - batch.startPage + 1,
+      })
+      const result = await callLayoutParsingApi(batch.pdfBuffer, label)
+      resultsByBatchId.set(batch.id, result)
+      Logger.info("Completed PDF batch", {
+        batchId: batch.id,
+        layoutResultsCount: result.layoutParsingResults?.length ?? 0,
+      })
+    },
+  }
+
+  const report = await dispatchOCRBatches(dispatchBatches, dispatchOptions)
+
+  if (report.failed > 0) {
+    throw new Error(
+      `Failed to process ${report.failed} PDF batch(es) via OCR dispatcher`,
+    )
+  }
+
+  return dispatchBatches.map((batch) => {
+    const batchResult = resultsByBatchId.get(batch.id)
+    if (!batchResult) {
+      throw new Error(`Missing OCR result for batch ${batch.id}`)
+    }
+    return batchResult
+  })
 }
 
 export async function chunkByOCRFromBuffer(
@@ -668,14 +1461,7 @@ export async function chunkByOCRFromBuffer(
   fileName: string,
   docId: string,
 ): Promise<ProcessingResult> {
-  const maxPagesEnv = Number.parseInt(
-    process.env.LAYOUT_PARSING_MAX_PAGES_PER_REQUEST ?? "",
-    10,
-  )
-  const maxPagesPerRequest =
-    Number.isFinite(maxPagesEnv) && maxPagesEnv > 0
-      ? maxPagesEnv
-      : DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST
+  const maxPagesPerRequest = DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST
 
   let finalApiResult: LayoutParsingApiPayload
 
@@ -700,14 +1486,12 @@ export async function chunkByOCRFromBuffer(
           fileName,
           totalPages,
           batches: batches.length,
-          processingMode: USE_SEQUENTIAL_BATCH_PROCESSING
-            ? "sequential"
-            : "concurrent",
         })
 
-        const batchResults = USE_SEQUENTIAL_BATCH_PROCESSING
-          ? await processBatchesSequentially(batches, fileName)
-          : await processBatchesConcurrently(batches, fileName)
+        const batchResults = await processPdfBatchesWithDispatcher(
+          batches,
+          fileName,
+        )
 
         finalApiResult = mergeLayoutParsingResults(batchResults)
         Logger.info("Merged batch results", {
@@ -764,21 +1548,14 @@ export async function chunkByOCR(
   const image_chunks_map: ChunkMetadata[] = []
 
   const globalSeq: GlobalSeq = { value: 0 }
-  const maxChunkBytes = Number.parseInt(
-    process.env.OCR_MAX_CHUNK_BYTES ?? "",
-    1024,
-  )
-  const chunkSizeLimit =
-    Number.isFinite(maxChunkBytes) && maxChunkBytes > 0
-      ? maxChunkBytes
-      : DEFAULT_MAX_CHUNK_BYTES
+  const chunkSizeLimit = DEFAULT_MAX_CHUNK_BYTES
 
   let currentTextBuffer = ""
   let currentBlockLabels: string[] = []
   let currentPageNumbers: Set<number> = new Set()
   let lastTextChunk: string | null = null
 
-  const imageBaseDir = path.resolve(process.env.IMAGE_DIR || DEFAULT_IMAGE_DIR)
+  const imageBaseDir = path.resolve(DEFAULT_IMAGE_DIR)
   const docImageDir = path.join(imageBaseDir, docId)
   await fsPromises.mkdir(docImageDir, { recursive: true })
   const savedImages = new Set<number>()
@@ -890,7 +1667,7 @@ export async function chunkByOCR(
         }
 
         const extension = detectImageExtension(imageBuffer)
-        const fileName = String(globalSeq.value) + "." + extension
+        const fileName = globalSeq.value.toString() + "." + extension
 
         const uniqueFileName = ensureUniqueFileName(fileName, usedFileNames)
         const imagePath = path.join(docImageDir, uniqueFileName)
