@@ -1904,10 +1904,14 @@ function AgentComponent() {
         setSelectedUsers([]) // Clear users for public agents
       }
       
-      // Load existing filters from appIntegrations
-      if (editingAgent.appIntegrations && typeof editingAgent.appIntegrations === 'object') {
-        const appIntegrations = editingAgent.appIntegrations as Record<string, any>
-        const loadedFilters: Record<string, string[]> = {}
+      // Load existing filters from appIntegrations and fetch Slack names
+      const loadFiltersWithNames = async () => {
+        if (editingAgent.appIntegrations && typeof editingAgent.appIntegrations === 'object') {
+          const appIntegrations = editingAgent.appIntegrations as Record<string, any>
+          const loadedFilters: Record<string, string[]> = {}
+          
+          // Collect all Slack document IDs that need name resolution
+          const slackDocIdsToFetch: string[] = []
         
         // Check for Gmail filters
         if (appIntegrations.gmail?.filters && Array.isArray(appIntegrations.gmail.filters)) {
@@ -2001,9 +2005,148 @@ function AgentComponent() {
             loadedFilters.slack = slackFilterStrings
           }
         }
-        
-        setAppFilters(loadedFilters)
+          
+          // Check for Gmail filters
+          if (appIntegrations.gmail?.filters && Array.isArray(appIntegrations.gmail.filters)) {
+            const gmailFilterStrings: string[] = []
+            
+            for (const filter of appIntegrations.gmail.filters) {
+              const filterParts: string[] = []
+              
+              // Add from emails
+              if (filter.from && Array.isArray(filter.from)) {
+                filterParts.push(...filter.from.map((email: string) => `from:${email}`))
+              }
+              
+              // Add to emails
+              if (filter.to && Array.isArray(filter.to)) {
+                filterParts.push(...filter.to.map((email: string) => `to:${email}`))
+              }
+              
+              // Add cc emails
+              if (filter.cc && Array.isArray(filter.cc)) {
+                filterParts.push(...filter.cc.map((email: string) => `cc:${email}`))
+              }
+              
+              // Add bcc emails
+              if (filter.bcc && Array.isArray(filter.bcc)) {
+                filterParts.push(...filter.bcc.map((email: string) => `bcc:${email}`))
+              }
+              
+              // Add time range
+              if (filter.timeRange) {
+                const { startDate, endDate } = filter.timeRange
+                const start = new Date(startDate * 1000)
+                const end = new Date(endDate * 1000)
+                const formatDate = (date: Date) => {
+                  const day = String(date.getDate()).padStart(2, '0')
+                  const month = String(date.getMonth() + 1).padStart(2, '0')
+                  const year = date.getFullYear()
+                  return `${day}/${month}/${year}`
+                }
+                filterParts.push(`~${formatDate(start)} → ${formatDate(end)}`)
+              }
+              
+              if (filterParts.length > 0) {
+                gmailFilterStrings.push(filterParts.join(', '))
+              }
+            }
+            
+            if (gmailFilterStrings.length > 0) {
+              loadedFilters.gmail = gmailFilterStrings
+            }
+          }
+          
+          // Check for Slack filters and collect doc IDs
+          if (appIntegrations.slack?.filters && Array.isArray(appIntegrations.slack.filters)) {
+            for (const filter of appIntegrations.slack.filters) {
+              // Collect sender IDs (user doc IDs)
+              if (filter.senderId && Array.isArray(filter.senderId)) {
+                slackDocIdsToFetch.push(...filter.senderId)
+              }
+              
+              // Collect channel IDs (channel doc IDs)
+              if (filter.channelId && Array.isArray(filter.channelId)) {
+                slackDocIdsToFetch.push(...filter.channelId)
+              }
+            }
+          }
+          
+          // Fetch names for all Slack doc IDs
+          let docIdToNameMap: Record<string, string> = {}
+          if (slackDocIdsToFetch.length > 0) {
+            try {
+              const response = await api.slack.documents.$get({
+                query: { docids: slackDocIdsToFetch.join(',') }
+              })
+              
+              if (response.ok) {
+                const data = await response.json()
+                // Create a mapping of docId -> name
+                if (data.documents && Array.isArray(data.documents)) {
+                  docIdToNameMap = data.documents.reduce((acc: Record<string, string>, doc: any) => {
+                    acc[doc.docId] = doc.name
+                    return acc
+                  }, {})
+                }
+              }
+            } catch (error) {
+              console.error('Failed to fetch Slack document names:', error)
+            }
+          }
+          
+          // Now build Slack filter strings with names
+          if (appIntegrations.slack?.filters && Array.isArray(appIntegrations.slack.filters)) {
+            const slackFilterStrings: string[] = []
+            
+            for (const filter of appIntegrations.slack.filters) {
+              const filterParts: string[] = []
+              
+              // Add sender names (convert IDs to names)
+              if (filter.senderId && Array.isArray(filter.senderId)) {
+                filterParts.push(...filter.senderId.map((id: string) => {
+                  const name = docIdToNameMap[id] || id
+                  return `@${name}`
+                }))
+              }
+              
+              // Add channel names (convert IDs to names)
+              if (filter.channelId && Array.isArray(filter.channelId)) {
+                filterParts.push(...filter.channelId.map((id: string) => {
+                  const name = docIdToNameMap[id] || id
+                  return `#${name}`
+                }))
+              }
+              
+              // Add time range
+              if (filter.timeRange) {
+                const { startDate, endDate } = filter.timeRange
+                const start = new Date(startDate * 1000)
+                const end = new Date(endDate * 1000)
+                const formatDate = (date: Date) => {
+                  const day = String(date.getDate()).padStart(2, '0')
+                  const month = String(date.getMonth() + 1).padStart(2, '0')
+                  const year = date.getFullYear()
+                  return `${day}/${month}/${year}`
+                }
+                filterParts.push(`~${formatDate(start)} → ${formatDate(end)}`)
+              }
+              
+              if (filterParts.length > 0) {
+                slackFilterStrings.push(filterParts.join(', '))
+              }
+            }
+            
+            if (slackFilterStrings.length > 0) {
+              loadedFilters.slack = slackFilterStrings
+            }
+          }
+          
+          setAppFilters(loadedFilters)
+        }
       }
+      
+      loadFiltersWithNames()
     }
   }, [editingAgent, viewMode, users])
 
@@ -2095,9 +2238,6 @@ function AgentComponent() {
       const filters: any[] = []
       let filterId = 1
       
-      // Collect all time ranges first to merge them later
-      const allTimeRanges: Array<{ startDate: number; endDate: number }> = []
-      
       for (const filterString of filterStrings) {
         if (!filterString || !filterString.trim()) continue
         
@@ -2113,6 +2253,9 @@ function AgentComponent() {
         // Parse Slack filters (people and channels) - store docIds
         const senderIds: string[] = []
         const channelIds: string[] = []
+        
+        // Collect time ranges for THIS filter only
+        const filterTimeRanges: Array<{ startDate: number; endDate: number }> = []
         
         for (const part of filterParts) {
           if (part.startsWith('from:')) {
@@ -2130,16 +2273,16 @@ function AgentComponent() {
             const channelId = part.substring(1)
             channelIds.push(channelId)
           } else if (part.startsWith('~')) {
-            // Parse timeline filters and collect them
+            // Parse timeline filters and collect them for this filter
             const timelineValue = part.substring(1)
             const timeRange = parseTimelineValue(timelineValue)
             if (timeRange) {
-              allTimeRanges.push(timeRange)
+              filterTimeRanges.push(timeRange)
             }
           }
         }
         
-        // Add parsed fields to filter object (excluding timeRange for now)
+        // Add parsed fields to filter object
         if (fromEmails.length > 0) filter.from = fromEmails
         if (toEmails.length > 0) filter.to = toEmails
         if (ccEmails.length > 0) filter.cc = ccEmails
@@ -2147,27 +2290,17 @@ function AgentComponent() {
         if (senderIds.length > 0) filter.senderId = senderIds
         if (channelIds.length > 0) filter.channelId = channelIds
         
-        // Only add filter if it has at least one non-timeline field
-        if (Object.keys(filter).length > 1) {
-          filters.push(filter)
-        }
-      }
-      
-      // Merge all time ranges into the longest one (earliest start, latest end)
-      if (allTimeRanges.length > 0) {
-        const mergedTimeRange = {
-          startDate: Math.min(...allTimeRanges.map(r => r.startDate)),
-          endDate: Math.max(...allTimeRanges.map(r => r.endDate))
+        // Merge time ranges for THIS filter (earliest start, latest end)
+        if (filterTimeRanges.length > 0) {
+          filter.timeRange = {
+            startDate: Math.min(...filterTimeRanges.map(r => r.startDate)),
+            endDate: Math.max(...filterTimeRanges.map(r => r.endDate))
+          }
         }
         
-        // Add merged time range to the first filter, or create a new one if no filters exist
-        if (filters.length > 0) {
-          filters[0].timeRange = mergedTimeRange
-        } else {
-          filters.push({
-            id: 1,
-            timeRange: mergedTimeRange
-          })
+        // Add filter if it has at least one field (including timeRange-only filters)
+        if (Object.keys(filter).length > 1) {
+          filters.push(filter)
         }
       }
       
@@ -2313,7 +2446,6 @@ function AgentComponent() {
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
 
-    console.log('Agent Payload:', agentPayload)
     
 
     try {
