@@ -216,49 +216,78 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         ? file.collectionName + targetPath + reconstructedFilePath    // Uses full path for root
         : file.collectionName + targetPath + file.fileName            // Uses filename for nested
 
-    const vespaDoc = {
-      docId: file.vespaDocId,
-      clId: file.collectionId,
-      itemId: file.id,
-      fileName: vespaFileName,
-      app: Apps.KnowledgeBase as const,
-      entity: KnowledgeBaseEntity.File,
-      description: "",
-      storagePath: file.storagePath,
-      chunks: processingResult.chunks,
-      chunks_pos: processingResult.chunks_pos,
-      image_chunks: processingResult.image_chunks,
-      image_chunks_pos: processingResult.image_chunks_pos,
-      chunks_map: processingResult.chunks_map,
-      image_chunks_map: processingResult.image_chunks_map,
-      metadata: JSON.stringify({
-        originalFileName: file.originalName || file.fileName,
-        uploadedBy: file.uploadedByEmail || "system",
-        chunksCount: processingResult.chunks.length,
-        imageChunksCount: processingResult.image_chunks.length,
-        processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
-        lastModified: Date.now(),
-      }),
-      createdBy: file.uploadedByEmail || "system",
-      duration: 0,
-      mimeType: getBaseMimeType(file.mimeType || "text/plain"),
-      fileSize: file.fileSize || 0,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      clFd: file.parentId,
-    }
+      // For sheet processing results, append sheet information to fileName
+      let docId = file.vespaDocId
+      if ('sheetName' in processingResult) {
+        const sheetResult = processingResult as SheetProcessingResult
+        vespaFileName = processingResults.length > 1 
+          ? `${vespaFileName} / ${sheetResult.sheetName}`
+          : vespaFileName
+        docId = sheetResult.docId
+      } else if (processingResults.length > 1) {
+        // For non-sheet files with multiple results, append index
+        vespaFileName = `${vespaFileName} (${resultIndex + 1})`
+        docId = `${file.vespaDocId}_${resultIndex}`
+      }
+
+      const vespaDoc = {
+        docId: docId,
+        clId: file.collectionId,
+        itemId: file.id,
+        fileName: vespaFileName,
+        app: Apps.KnowledgeBase as const,
+        entity: KnowledgeBaseEntity.File,
+        description: "",
+        storagePath: file.storagePath,
+        chunks: processingResult.chunks,
+        chunks_pos: processingResult.chunks_pos,
+        image_chunks: processingResult.image_chunks,
+        image_chunks_pos: processingResult.image_chunks_pos,
+        chunks_map: processingResult.chunks_map,
+        image_chunks_map: processingResult.image_chunks_map,
+        metadata: JSON.stringify({
+          originalFileName: file.originalName || file.fileName,
+          uploadedBy: file.uploadedByEmail || "system",
+          chunksCount: processingResult.chunks.length + processingResult.image_chunks.length,
+          imageChunksCount: processingResult.image_chunks.length,
+          processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
+          ...(processingResult.processingMethod && { pdfProcessingMethod: processingResult.processingMethod }),
+          lastModified: Date.now(),
+          ...(('sheetName' in processingResult) && {
+            sheetName: (processingResult as SheetProcessingResult).sheetName,
+            sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
+            totalSheets: (processingResult as SheetProcessingResult).totalSheets,
+          }),
+        }),
+        createdBy: file.uploadedByEmail || "system",
+        duration: 0,
+        mimeType: getBaseMimeType(file.mimeType || "text/plain"),
+        fileSize: file.fileSize || 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        clFd: file.parentId,
+      }
 
     // Insert into Vespa
     await insert(vespaDoc, KbItemsSchema)
 
-    // Update status to completed
-    const chunksCount =
-      processingResult.chunks.length + processingResult.image_chunks.length
+    // Update status to completed with processing method metadata
+    const chunksCount = totalChunksCount
+    
+    // Prepare metadata for database record - use last processing result for method info
+    const lastResult = processingResults[processingResults.length - 1]
+    const dbMetadata = {
+      chunksCount,
+      imageChunksCount: processingResults.reduce((sum, r) => sum + r.image_chunks.length, 0),
+      ...(lastResult.processingMethod && { pdfProcessingMethod: lastResult.processingMethod }),
+    }
+
     await db
       .update(collectionItems)
       .set({
         uploadStatus: UploadStatus.COMPLETED,
         statusMessage: `Successfully processed: ${chunksCount} chunks extracted from ${file.fileName}`,
+        metadata: dbMetadata,
         processedAt: new Date(),
         updatedAt: new Date(),
       })
