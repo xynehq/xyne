@@ -773,6 +773,12 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
       } else if (!result.success) {
         Logger.error(`[agentCore] Agent execution failed: ${result.error}`)
         finalAnswer = `Error: ${result.error}`
+        llmSpan?.end()
+        executeAgentSpan?.end()
+        return {
+          success: false,
+          error: result.error
+        }
       } else {
         // This case is unexpected since isStreamable is set to false.
         Logger.warn(`[agentCore] Agent execution returned a streaming response unexpectedly.`)
