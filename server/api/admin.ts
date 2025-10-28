@@ -2298,15 +2298,16 @@ export const UpdateUser = async (c: Context) => {
   }
 }
 
-const syncByMailSchema = z.object({
-  email: z.string().email(),
+export const syncByMailSchema = z.object({
+  email: z.string().optional(),
 })
 
 export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
   try {
-    Logger.info("HandlePerUserSync called")
-    const form = await c.req.parseBody()
-    const validatedData = syncByMailSchema.parse(form)
+    Logger.info("HandlePerUserGoogleWorkSpaceSync called")
+    // @ts-ignore
+    const validatedData = c.req.valid("json") as { email: string }
+
     const targetUser = await getUserByEmail(db, validatedData.email)
     if (!targetUser || !targetUser.length) {
       throw new HTTPException(404, { message: "User not found" })
@@ -2322,7 +2323,18 @@ export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
       id: `manual-sync-${Date.now()}`,
     }
 
-    await handleGoogleServiceAccountChanges(boss, mockJob as Job)
+    // Call the appropriate sync function based on AUTH_TYPE from config
+    if (config.CurrentAuthType === AuthType.OAuth) {
+      loggerWithChild({ email: validatedData.email }).info(
+        "Using OAuth-based sync for Google Workspace",
+      )
+      await handleGoogleOAuthChanges(boss, mockJob as Job)
+    } else {
+      loggerWithChild({ email: validatedData.email }).info(
+        "Using Service Account-based sync for Google Workspace",
+      )
+      await handleGoogleServiceAccountChanges(boss, mockJob as Job)
+    }
 
     return c.json({
       success: true,
@@ -2343,8 +2355,8 @@ export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
 export const HandlePerUserSlackSync = async (c: Context) => {
   try {
     Logger.info("HandlePerUserSlackSync called")
-    const form = await c.req.parseBody()
-    const validatedData = syncByMailSchema.parse(form)
+    // @ts-ignore
+    const validatedData = c.req.valid("json") as { email: string }
     const targetUser = await getUserByEmail(db, validatedData.email)
     if (!targetUser || !targetUser.length) {
       throw new HTTPException(404, { message: "User not found" })

@@ -15,6 +15,7 @@ import {
   HandlePerUserSlackSync,
   HandlePerUserGoogleWorkSpaceSync,
   StartGoogleIngestionApi,
+  syncByMailSchema,
 } from "@/api/admin"
 import {
   GetIngestionStatusApi,
@@ -191,8 +192,6 @@ export const sendWebsocketMessageToMainServer = (
   }
 }
 
-
-
 // JWT Authentication middleware
 const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET!
 const AccessTokenCookieName = config.AccessTokenCookie
@@ -263,8 +262,16 @@ app.post(
   StartGoogleIngestionApi,
 )
 // Sync APIs
-app.post("/syncSlackByMail", HandlePerUserSlackSync)
-app.post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
+app.post(
+  "/syncSlackByMail",
+  zValidator("json", syncByMailSchema),
+  HandlePerUserSlackSync,
+)
+app.post(
+  "/syncGoogleWorkSpaceByMail",
+  zValidator("json", syncByMailSchema),
+  HandlePerUserGoogleWorkSpaceSync,
+)
 
 // Ingestion Management APIs
 app.get(
@@ -290,8 +297,6 @@ app.post(
   zValidator("json", resumeIngestionSchema),
   ResumeIngestionApi,
 )
-
-
 
 const startAndMonitorWorkers = (
   workerScript: string,
