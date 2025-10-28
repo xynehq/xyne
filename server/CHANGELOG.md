@@ -1,3 +1,10 @@
+## [3.22.5](https://github.com/xynehq/xyne/compare/v3.22.4...v3.22.5) (2025-10-28)
+
+
+### Bug Fixes
+
+* **syncTrigger:** fix individual sync trigger for oauth based syncJob ([#1154](https://github.com/xynehq/xyne/issues/1154)) ([b826dda](https://github.com/xynehq/xyne/commit/b826dda7f6e736962420d343deccc50733c2d5a1))
+
 ## [3.22.4](https://github.com/xynehq/xyne/compare/v3.22.3...v3.22.4) (2025-10-28)
 
 
