@@ -24,7 +24,6 @@ import {
   handleAttachmentDeleteSchema,
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
-import { HighlightApi, highlightSchema } from "@/api/highlight"
 import {
   SlackDocumentsApi,
   SlackEntitiesApi,
