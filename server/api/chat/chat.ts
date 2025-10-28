@@ -1272,9 +1272,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(
-              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
-            )
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
 
@@ -2517,9 +2515,7 @@ async function* generatePointQueryTimeExpansion(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(
-              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
-            )
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
 
@@ -3132,9 +3128,7 @@ async function* generateMetadataQueryAnswer(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(
-              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
-            )
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
 
