@@ -1,3 +1,10 @@
+# [3.23.0](https://github.com/xynehq/xyne/compare/v3.22.5...v3.23.0) (2025-10-28)
+
+
+### Features
+
+* XYN-211 chats with worspace users ([#1130](https://github.com/xynehq/xyne/issues/1130)) ([3dbd558](https://github.com/xynehq/xyne/commit/3dbd5580bd6483b038b103eb9dda3b064c91e9ab))
+
 ## [3.22.5](https://github.com/xynehq/xyne/compare/v3.22.4...v3.22.5) (2025-10-28)
 
 
