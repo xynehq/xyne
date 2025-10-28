@@ -1148,7 +1148,7 @@ export const AppRoutes = app
   .get("/calls/history", GetCallHistoryApi)
   // Direct message routes
   .post("/messages/send", zValidator("json", sendMessageSchema), SendMessageApi)
-  .get("/messages/conversation", GetConversationApi)
+  .get("/messages/conversation", zValidator("query", getConversationSchema), GetConversationApi)
   .post(
     "/messages/mark-read",
     zValidator("json", markAsReadSchema),
