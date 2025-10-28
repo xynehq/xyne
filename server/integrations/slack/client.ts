@@ -1427,7 +1427,8 @@ export const processSlackEvent = async (event: any) => {
 
       const { dbUser } = validatedUser
       
-      //send a starting thread message if event not from a thread
+      // Send thread starter message for new conversations 
+      // Ensures every bot conversation has clear visual thread header 
       if (!thread_ts || thread_ts === ts) { 
         await webClient.chat.postMessage({
           channel,
@@ -1999,7 +2000,8 @@ const processSlackDM = async (event: any) => {
     // Process the text message to extract the actual command
     const processedText = processSlackText(text)
 
-    //send a starting thread message if event not from a thread
+    // Send thread starter message for new conversations
+    // Ensures every bot conversation has a clear visual thread header
     if (!thread_ts || thread_ts === ts) { 
       await webClient.chat.postMessage({
         channel,
