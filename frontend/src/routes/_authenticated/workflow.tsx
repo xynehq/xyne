@@ -28,7 +28,9 @@ export interface WorkflowTemplate {
     allowed_file_types?: string[];
     supports_file_upload?: boolean;
   };
-  createdBy: string;
+  userId: number;
+  workspaceId: number;
+  isPublic: boolean;
   rootWorkflowStepTemplateId: string;
   createdAt: string;
   updatedAt: string;
@@ -59,7 +61,8 @@ export interface WorkflowTemplate {
     type: string;
     value: any;
     config: any;
-    createdBy: string;
+    workspaceId: number;
+    userId: number;
     createdAt: string;
     updatedAt: string;
   }>;
@@ -81,7 +84,6 @@ export interface WorkflowTemplate {
       type: string;
       value: any;
       config: any;
-      createdBy: string;
       createdAt: string;
       updatedAt: string;
     };
@@ -141,6 +143,7 @@ function WorkflowComponent() {
   const [isBuilderMode, setIsBuilderMode] = useState(true) // true for create/edit, false for view-only
   const [shouldStartPolling, setShouldStartPolling] = useState(false)
 
+  const [workflowFilter, setWorkflowFilter] = useState<"all" | "public">("all")
 
   const fetchWorkflows = async () => {
     try {
@@ -177,6 +180,8 @@ function WorkflowComponent() {
           .map((workflowTemplate) => ({
             id: workflowTemplate.id,
             name: workflowTemplate.name,
+            userId: workflowTemplate.userId,
+            workspaceId: workflowTemplate.workspaceId,
             description: workflowTemplate.description || "",
             icon: getTemplateIcon(workflowTemplate),
             iconBgColor: getTemplateIconBgColor(workflowTemplate),
@@ -512,7 +517,9 @@ function WorkflowComponent() {
               version: '1.0',
               status: executionTemplate?.status || 'unknown',
               config: executionTemplate?.config || {},
-              createdBy: executionTemplate?.createdBy || '',
+              userId: executionTemplate?.userId || 0,
+              workspaceId: executionTemplate?.workspaceId || 0,
+              isPublic: executionTemplate?.isPublic,
               rootWorkflowStepTemplateId: steps[0]?.id || '',
               createdAt: executionTemplate?.createdAt || new Date().toISOString(),
               updatedAt: executionTemplate?.updatedAt || new Date().toISOString(),
@@ -745,6 +752,30 @@ function WorkflowComponent() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Workflow Filter Tabs */}
+                  <div className="flex items-center gap-1 mb-6 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
+                    <button
+                      onClick={() => setWorkflowFilter("all")}
+                      className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                        workflowFilter === "all"
+                          ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+                          : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                      }`}
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setWorkflowFilter("public")}
+                      className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                        workflowFilter === "public"
+                          ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+                          : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                      }`}
+                    >
+                      Public workflows
+                    </button>
+                  </div>
                   
                   {loading ? (
                     <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(327px, 1fr))', justifyContent: 'stretch' }}>
@@ -763,11 +794,16 @@ function WorkflowComponent() {
                       ))}
                     </div>
                   ) : (() => {
-                    // Filter workflows based on search term
-                    const filteredWorkflows = workflows.filter(workflow =>
+                    // Filter workflows based on search term and filter type
+                    let filteredWorkflows = workflows.filter(workflow =>
                       workflow.name.toLowerCase().includes(workflowSearchTerm.toLowerCase())
                     )
-                    
+
+                    // Apply additional filtering based on workflowFilter
+                    if (workflowFilter === "public") {
+                      filteredWorkflows = filteredWorkflows.filter(workflow => workflow.isPublic)
+                    }                     
+
                     if (filteredWorkflows.length > 0) {
                       // If 4 or fewer workflows, show fixed 4-column grid with placeholders
                       if (filteredWorkflows.length <= 4) {
@@ -779,7 +815,6 @@ function WorkflowComponent() {
                           version: '',
                           status: '',
                           config: {},
-                          createdBy: '',
                           rootWorkflowStepTemplateId: '',
                           createdAt: '',
                           updatedAt: '',

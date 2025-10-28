@@ -4,6 +4,7 @@ import {
   Apps,
   DriveEntity,
   type Entity,
+  type GetItemsParams,
   type VespaQueryConfig,
   type VespaSchema,
 } from "@xyne/vespa-ts/types"
@@ -128,9 +129,31 @@ export const updateUserQueryHistory = vespa.updateUserQueryHistory.bind(vespa)
 export const ifMailDocumentsExist = vespa.ifMailDocumentsExist.bind(vespa)
 export const IfMailDocExist = vespa.IfMailDocExist.bind(vespa)
 export const SearchEmailThreads = vespa.SearchEmailThreads.bind(vespa)
-
+export const searchGoogleApps = vespa.searchGoogleApps.bind(vespa)
 // Item operations
-export const getItems = vespa.getItems.bind(vespa)
+export const getItems = async (
+  params: Omit<GetItemsParams, "processedCollectionSelections"> & {
+    collectionSelections?: Array<{
+      collectionIds?: string[]
+      collectionFolderIds?: string[]
+      collectionFileIds?: string[]
+    }>
+  },
+) => {
+  const driveIds = await extractDriveIds(
+    { selectedItem: params.selectedItem },
+    params.email,
+  )
+  const processedCollectionSelections = await extractCollectionVespaIds({
+    collectionSelections: params.collectionSelections,
+  })
+  return await vespa.getItems.bind(vespa)({
+    processedCollectionSelections,
+    driveIds,
+    ...params,
+  })
+}
+
 export const getFolderItems = vespa.getFolderItems.bind(vespa)
 export const getThreadItems = vespa.getThreadItems.bind(vespa)
 export const SearchVespaThreads = vespa.SearchVespaThreads.bind(vespa)

@@ -862,6 +862,18 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
   // const data: SaaSOAuthJob = job.data as SaaSOAuthJob
   const logger = loggerWithChild({ email: data.email })
   try {
+    // Update status to Connecting when ingestion starts
+    try {
+      await db
+        .update(connectors)
+        .set({
+          status: ConnectorStatus.Connecting,
+        })
+        .where(eq(connectors.id, data.connectorId))
+    } catch (error) {
+      logger.error(error, `Failed to update connector status to Connecting`)
+      throw error
+    }
     // we will first fetch the change token
     // and poll the changes in a new Cron Job
     const connector: SelectConnector = await getOAuthConnectorWithCredentials(
@@ -2246,7 +2258,9 @@ export const getSheetsListFromOneSpreadsheet = async (
 
         const sheetDataToBeIngested = {
           title: `${spreadsheet.name} / ${sheet?.sheetTitle}`,
-          url: spreadsheet.webViewLink ?? "",
+          url: sheet?.sheetId 
+            ? `https://docs.google.com/spreadsheets/d/${spreadsheet.id}/edit#gid=${sheet.sheetId}`
+            : spreadsheet.webViewLink ?? "",
           app: Apps.GoogleDrive,
           // TODO Document it eveyrwhere
           // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
@@ -2943,21 +2957,20 @@ export async function* listFiles(
   }
 
   do {
-    const res: any =
-      await retryWithBackoff(
-        () =>
-          drive.files.list({
-            q: query,
-            pageSize: 100,
-            fields:
-              "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
-            pageToken: nextPageToken,
-          }),
-        `Fetching all files from Google Drive`,
-        Apps.GoogleDrive,
-        0,
-        client,
-      )
+    const res: any = await retryWithBackoff(
+      () =>
+        drive.files.list({
+          q: query,
+          pageSize: 100,
+          fields:
+            "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
+          pageToken: nextPageToken,
+        }),
+      `Fetching all files from Google Drive`,
+      Apps.GoogleDrive,
+      0,
+      client,
+    )
 
     if (res.data.files) {
       yield res.data.files
@@ -2994,17 +3007,16 @@ export const googleDocsVespa = async (
         email: userEmail,
       })
       try {
-        const docResponse: any =
-          await retryWithBackoff(
-            () =>
-              docs.documents.get({
-                documentId: doc.id as string,
-              }),
-            `Fetching document with documentId ${doc.id}`,
-            Apps.GoogleDrive,
-            0,
-            client,
-          )
+        const docResponse: any = await retryWithBackoff(
+          () =>
+            docs.documents.get({
+              documentId: doc.id as string,
+            }),
+          `Fetching document with documentId ${doc.id}`,
+          Apps.GoogleDrive,
+          0,
+          client,
+        )
         if (!docResponse || !docResponse.data) {
           throw new DocsParsingError(
             `Could not get document content for file: ${doc.id}`,
@@ -3336,20 +3348,19 @@ export async function countDriveFiles(
   }
 
   do {
-    const res: any =
-      await retryWithBackoff(
-        () =>
-          drive.files.list({
-            q: query,
-            pageSize: 1000,
-            fields: "nextPageToken, files(id)",
-            pageToken: nextPageToken,
-          }),
-        `Counting Drive files (pageToken: ${nextPageToken || "initial"})`,
-        Apps.GoogleDrive,
-        0,
-        client,
-      )
+    const res: any = await retryWithBackoff(
+      () =>
+        drive.files.list({
+          q: query,
+          pageSize: 1000,
+          fields: "nextPageToken, files(id)",
+          pageToken: nextPageToken,
+        }),
+      `Counting Drive files (pageToken: ${nextPageToken || "initial"})`,
+      Apps.GoogleDrive,
+      0,
+      client,
+    )
     fileCount += res.data.files?.length || 0
     nextPageToken = res.data.nextPageToken as string | undefined
   } while (nextPageToken)

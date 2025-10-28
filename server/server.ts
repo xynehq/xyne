@@ -24,7 +24,6 @@ import {
   handleAttachmentDeleteSchema,
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
-import { HighlightApi, highlightSchema } from "@/api/highlight"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
@@ -45,6 +44,7 @@ import {
   startSlackIngestionSchema,
   microsoftServiceSchema,
   UserRoleChangeSchema,
+  chatIdParamSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -62,8 +62,6 @@ import {
   GetConnectorTools, // Added GetConnectorTools
   UpdateToolsStatusApi, // Added for tool status updates
   AdminDeleteUserData,
-  IngestMoreChannelApi,
-  StartSlackIngestionApi,
   GetProviders,
   GetAdminChats,
   GetAdminAgents,
@@ -78,11 +76,10 @@ import {
   agentAnalysisQuerySchema,
   AddServiceConnectionMicrosoft,
   UpdateUser,
-  HandlePerUserSlackSync,
-  HandlePerUserGoogleWorkSpaceSync,
   ListAllLoggedInUsers,
   ListAllIngestedUsers,
   GetKbVespaContent,
+  GetChatQueriesApi,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { initApiServerQueue } from "@/queue/api-server-queue"
@@ -116,16 +113,25 @@ import {
   GetUserApiKeys,
   DeleteUserApiKey,
 } from "@/api/auth"
+import {
+  getIngestionStatusSchema,
+  cancelIngestionSchema,
+  pauseIngestionSchema,
+  resumeIngestionSchema,
+} from "@/api/ingestion"
 import { SearchWorkspaceUsersApi, searchUsersSchema } from "@/api/users"
 import {
   InitiateCallApi,
   JoinCallApi,
   EndCallApi,
+  LeaveCallApi,
   GetActiveCallsApi,
+  GetCallHistoryApi,
   InviteToCallApi,
   initiateCallSchema,
   joinCallSchema,
   endCallSchema,
+  leaveCallSchema,
   inviteToCallSchema,
 } from "@/api/calls"
 import { AuthRedirectError, InitialisationError } from "@/errors"
@@ -174,7 +180,11 @@ import {
   CreateApiKeySchema,
   getDocumentSchema,
 } from "@/shared/types" // Import Apps
-import { wsConnections } from "@/integrations/metricStream"
+import {
+  wsConnections,
+  sendWebsocketMessage,
+} from "@/integrations/metricStream"
+
 import {
   EvaluateHandler,
   ListDatasetsHandler,
@@ -321,7 +331,7 @@ const postOauthRedirect = config.postOauthRedirect
 const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET!
 const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET!
 
-const AccessTokenCookieName = "access-token"
+const AccessTokenCookieName = config.AccessTokenCookie
 const RefreshTokenCookieName = "refresh-token"
 
 const Logger = getLogger(Subsystem.Server)
@@ -901,7 +911,11 @@ export const AppRoutes = app
   .post("/files/upload-attachment", handleAttachmentUpload)
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
-  .post("/files/delete", zValidator("json", handleAttachmentDeleteSchema), handleAttachmentDeleteApi)
+  .post(
+    "/files/delete",
+    zValidator("json", handleAttachmentDeleteSchema),
+    handleAttachmentDeleteApi,
+  )
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/generateTitle",
@@ -1121,7 +1135,9 @@ export const AppRoutes = app
   )
   .post("/calls/join", zValidator("json", joinCallSchema), JoinCallApi)
   .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
+  .post("/calls/leave", zValidator("json", leaveCallSchema), LeaveCallApi)
   .get("/calls/active", GetActiveCallsApi)
+  .get("/calls/history", GetCallHistoryApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
@@ -1156,23 +1172,36 @@ export const AppRoutes = app
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
   .get("/cl/:clId/files/:itemId/download", DownloadFileApi)
-  .get("/chunk/:cId/files/:itemId/content", GetChunkContentApi)
-  .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
+  .get("/chunk/:cId/files/:docId/content", GetChunkContentApi)
 
   .post(
     "/oauth/create",
     zValidator("form", createOAuthProvider),
     CreateOAuthProvider,
   )
-  .post(
-    "/slack/ingest_more_channel",
-    zValidator("json", ingestMoreChannelSchema),
-    IngestMoreChannelApi,
+  .post("/slack/ingest_more_channel", (c) =>
+    proxyToSyncServer(c, "/slack/ingest_more_channel"),
   )
-  .post(
-    "/slack/start_ingestion",
-    zValidator("json", startSlackIngestionSchema),
-    StartSlackIngestionApi,
+  .post("/slack/start_ingestion", (c) =>
+    proxyToSyncServer(c, "/slack/start_ingestion"),
+  )
+  .post("/google/start_ingestion", (c) =>
+    proxyToSyncServer(c, "/google/start_ingestion"),
+  )
+  // Ingestion Management APIs - new polling-based approach for Slack channel ingestion
+  .get(
+    "/ingestion/status",
+    zValidator("query", getIngestionStatusSchema),
+    (c) => proxyToSyncServer(c, "/ingestion/status", "GET"),
+  )
+  .post("/ingestion/cancel", zValidator("json", cancelIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/cancel"),
+  )
+  .post("/ingestion/pause", zValidator("json", pauseIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/pause"),
+  )
+  .post("/ingestion/resume", zValidator("json", resumeIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/resume"),
   )
   .delete(
     "/oauth/connector/delete",
@@ -1196,8 +1225,10 @@ export const AppRoutes = app
   .get("/list_loggedIn_users", ListAllLoggedInUsers)
   .get("/list_ingested_users", ListAllIngestedUsers)
   .post("/change_role", zValidator("form", UserRoleChangeSchema), UpdateUser)
-  .post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
-  .post("syncSlackByMail", HandlePerUserSlackSync)
+  .post("/syncGoogleWorkSpaceByMail", (c) =>
+    proxyToSyncServer(c, "/syncGoogleWorkSpaceByMail"),
+  )
+  .post("syncSlackByMail", (c) => proxyToSyncServer(c, "/syncSlackByMail"))
   // create the provider + connector
   .post(
     "/oauth/create",
@@ -1209,15 +1240,14 @@ export const AppRoutes = app
     zValidator("form", microsoftServiceSchema),
     AddServiceConnectionMicrosoft,
   )
-  .post(
-    "/slack/ingest_more_channel",
-    zValidator("json", ingestMoreChannelSchema),
-    IngestMoreChannelApi,
+  .post("/slack/ingest_more_channel", (c) =>
+    proxyToSyncServer(c, "/slack/ingest_more_channel"),
   )
-  .post(
-    "/slack/start_ingestion",
-    zValidator("json", startSlackIngestionSchema),
-    StartSlackIngestionApi,
+  .post("/slack/start_ingestion", (c) =>
+    proxyToSyncServer(c, "/slack/start_ingestion"),
+  )
+  .post("/google/start_ingestion", (c) =>
+    proxyToSyncServer(c, "/google/start_ingestion"),
   )
   .delete(
     "/oauth/connector/delete",
@@ -1242,10 +1272,8 @@ export const AppRoutes = app
     zValidator("form", updateServiceConnectionSchema),
     UpdateServiceConnection,
   )
-  .post(
-    "/google/service_account/ingest_more",
-    zValidator("json", serviceAccountIngestMoreSchema),
-    ServiceAccountIngestMoreUsersApi,
+  .post("/google/service_account/ingest_more", (c) =>
+    proxyToSyncServer(c, "/google/service_account/ingest_more"),
   )
   // create the provider + connector
   .post(
@@ -1303,6 +1331,11 @@ export const AppRoutes = app
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetUserAgentLeaderboard,
   )
+  .get(
+    "/chat/queries/:chatId",
+    zValidator("param", chatIdParamSchema),
+    GetChatQueriesApi,
+  )
 
   .get(
     "/agents/:agentId/analysis",
@@ -1325,6 +1358,58 @@ export const AppRoutes = app
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetAllUserFeedbackMessages,
   )
+
+// WebSocket endpoint for sync-server connections
+export const SyncServerWsApp = app.get(
+  "/internal/sync-websocket",
+  upgradeWebSocket((c) => {
+    // Verify authentication
+    const authHeader = c.req.header("Authorization")
+    const expectedSecret = process.env.METRICS_SECRET
+
+    if (
+      !authHeader ||
+      !authHeader.startsWith("Bearer ") ||
+      authHeader.slice(7) !== expectedSecret
+    ) {
+      Logger.warn("Unauthorized sync-server WebSocket connection attempt")
+      return {
+        onOpen() {
+          // Close immediately if unauthorized
+        },
+      }
+    }
+
+    return {
+      onOpen(event, ws) {
+        Logger.info("Sync-server WebSocket connected")
+      },
+      onMessage(event, ws) {
+        try {
+          const { message, connectorId } = JSON.parse(event.data.toString())
+
+          // Forward message to the appropriate frontend WebSocket connection
+          const frontendWs = wsConnections.get(connectorId)
+          if (frontendWs) {
+            frontendWs.send(JSON.stringify({ message }))
+            Logger.info(
+              `WebSocket message forwarded from sync-server to frontend for connector ${connectorId}`,
+            )
+          } else {
+            Logger.warn(
+              `No frontend WebSocket connection found for connector ${connectorId}`,
+            )
+          }
+        } catch (error) {
+          Logger.error(error, "Error processing sync-server WebSocket message")
+        }
+      },
+      onClose: (event, ws) => {
+        Logger.info("Sync-server WebSocket connection closed")
+      },
+    }
+  }),
+)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
@@ -1355,6 +1440,7 @@ app
     UpdateAgentApi,
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi) // Delete Agent
+  .get("/agent/:agentExternalId", GetAgentApi) // Get Agent details
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
   .post("/cl", CreateCollectionApi) // Create collection (KB)
   .get("/cl", ListCollectionsApi) // List all collections
@@ -1363,9 +1449,73 @@ app
     zValidator("query", searchKnowledgeBaseSchema), // Search over KB
     SearchKnowledgeBaseApi,
   )
+  .get("/cl/:clId", GetCollectionApi) // Get collection by ID
+  .put("/cl/:clId", UpdateCollectionApi) // Update collection (rename, etc.)
   .delete("/cl/:clId", DeleteCollectionApi) // Delete collection (KB)
-  .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB
-  .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB
+  .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB (supports zip files)
+  .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB by ID
+  .post("/cl/poll-status", PollCollectionsStatusApi) // Poll collection items status
+
+// Proxy function to forward ingestion API calls to sync server
+const proxyToSyncServer = async (
+  c: Context,
+  endpoint: string,
+  method: string = "POST",
+) => {
+  try {
+    // Get JWT token from cookie
+    const token = getCookie(c, AccessTokenCookieName)
+    if (!token) {
+      throw new HTTPException(401, { message: "No authentication token" })
+    }
+
+    // Prepare URL - for GET requests, add query parameters
+    let url = `http://${config.syncServerHost}:${config.syncServerPort}${endpoint}`
+    if (method === "GET") {
+      const urlObj = new URL(url)
+      const queryParams = c.req.query()
+      Object.keys(queryParams).forEach((key) => {
+        if (queryParams[key]) {
+          urlObj.searchParams.set(key, queryParams[key])
+        }
+      })
+      url = urlObj.toString()
+    }
+
+    // Prepare request configuration
+    const requestConfig: RequestInit = {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `${AccessTokenCookieName}=${token}`,
+      },
+    }
+
+    // Add body for non-GET requests
+    if (method !== "GET") {
+      const body = await c.req.json()
+      requestConfig.body = JSON.stringify(body)
+    }
+
+    // Forward to sync server
+    const response = await fetch(url, requestConfig)
+
+    if (!response.ok) {
+      const errorData = await response
+        .json()
+        .catch(() => ({ message: "Proxy request failed" }))
+      throw new HTTPException(response.status as any, {
+        message: errorData.message || "Proxy request failed",
+      })
+    }
+
+    return c.json(await response.json())
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+    Logger.error(error, `Proxy request to ${endpoint} failed`)
+    throw new HTTPException(500, { message: "Proxy request failed" })
+  }
+}
 
 const generateTokens = async (
   email: string,
@@ -1667,7 +1817,7 @@ app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 export const init = async () => {
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
-  
+
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {

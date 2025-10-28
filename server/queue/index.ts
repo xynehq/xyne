@@ -4,6 +4,7 @@ import {
   syncGoogleWorkspace,
 } from "@/integrations/google"
 import { handleToolSync } from "./toolSync"
+import { handleAttachmentCleanup } from "./attachmentCleanup"
 import { Subsystem, type SaaSJob } from "@/types" // ConnectorType removed
 import { ConnectorType, SlackEntity } from "@/shared/types" // ConnectorType added
 import PgBoss from "pg-boss"
@@ -30,6 +31,7 @@ import {
 } from "@/integrations/microsoft/sync"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
+const SYNC_JOB_AUTH_TYPE_CLEANUP = "cleanup"
 
 import { boss } from "./boss"
 
@@ -45,6 +47,7 @@ export const SyncGoogleWorkspace = `sync-${Apps.GoogleWorkspace}-${AuthType.Serv
 export const CheckDownloadsFolderQueue = `check-downloads-folder`
 export const SyncSlackQueue = `sync-${Apps.Slack}-${AuthType.OAuth}`
 export const SyncToolsQueue = `sync-tools`
+export const CleanupAttachmentsQueue = `cleanup-attachments`
 
 const TwiceWeekly = `0 0 * * 0,3`
 const Every10Minutes = `*/10 * * * *`
@@ -53,6 +56,7 @@ const Every6Hours = `0 */6 * * *`
 const EveryWeek = `0 0 */7 * *`
 const EveryMin = `*/1 * * * *`
 const Every15Minutes = `*/15 * * * *`
+const EveryDay = `0 2 * * *` // Run at 2 AM daily
 
 export const init = async () => {
   Logger.info("Queue init")
@@ -64,6 +68,7 @@ export const init = async () => {
   await boss.createQueue(CheckDownloadsFolderQueue)
   await boss.createQueue(SyncSlackQueue)
   await boss.createQueue(SyncToolsQueue)
+  await boss.createQueue(CleanupAttachmentsQueue)
   await initWorkers()
 }
 
@@ -134,6 +139,13 @@ const initWorkers = async () => {
   await boss.schedule(
     SyncToolsQueue,
     EveryWeek,
+    {},
+    { retryLimit: 0, expireInHours: JobExpiryHours },
+  )
+
+  await boss.schedule(
+    CleanupAttachmentsQueue,
+    EveryDay,
     {},
     { retryLimit: 0, expireInHours: JobExpiryHours },
   )
@@ -320,6 +332,46 @@ const initWorkers = async () => {
         {
           sync_job_name: SyncSlackQueue,
           sync_job_auth_type: SlackEntity.User,
+          sync_job_error_type: `${errorMessage}`,
+        },
+        1,
+      )
+    }
+  })
+  await boss.work(CleanupAttachmentsQueue, async () => {
+    const startTime = Date.now()
+    try {
+      const result = await handleAttachmentCleanup()
+      const endTime = Date.now()
+
+      Logger.info(
+        `Attachment cleanup completed: ${result.chatsProcessed} chats, ${result.messagesProcessed} messages, ${result.attachmentsDeleted} attachments deleted`,
+      )
+
+      syncJobSuccess.inc(
+        {
+          sync_job_name: CleanupAttachmentsQueue,
+          sync_job_auth_type: SYNC_JOB_AUTH_TYPE_CLEANUP,
+        },
+        1,
+      )
+      syncJobDuration.observe(
+        {
+          sync_job_name: CleanupAttachmentsQueue,
+          sync_job_auth_type: SYNC_JOB_AUTH_TYPE_CLEANUP,
+        },
+        endTime - startTime,
+      )
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Unhandled Error while cleaning up attachments ${errorMessage} ${(error as Error).stack}`,
+      )
+      syncJobError.inc(
+        {
+          sync_job_name: CleanupAttachmentsQueue,
+          sync_job_auth_type: SYNC_JOB_AUTH_TYPE_CLEANUP,
           sync_job_error_type: `${errorMessage}`,
         },
         1,

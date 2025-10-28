@@ -348,9 +348,6 @@ export function parseGeminiChunkBlocks(raw: string): string[] {
 }
 
 /**
- * Gemini-backed PDF extractor that returns the same shape as
- * extractTextAndImagesWithChunksFromPDF in server/pdfChunks.ts.
- *
  * Notes:
  * - image_chunks and image_chunk_pos are intentionally empty.
  * - Maintains chunk positions sequentially (0..n-1), equivalent to

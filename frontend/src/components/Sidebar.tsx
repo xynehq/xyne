@@ -13,9 +13,7 @@ import {
   BarChart3,
   BookOpen,
   Workflow,
-  // Users,
-  // Phone,
-  // Search,
+  Users,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
@@ -190,7 +188,7 @@ export const Sidebar = ({
             </Tooltip>
           </div>
 
-          {/* <div
+          <div
             onClick={() => setShowUsers((users) => !users)}
             className={cn(
               "flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]",
@@ -207,7 +205,7 @@ export const Sidebar = ({
               </TooltipTrigger>
               <Tip side="right" info="Users & Calls" />
             </Tooltip>
-          </div> */}
+          </div>
 
            <Link
             to="/workflow"

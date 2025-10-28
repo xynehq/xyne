@@ -71,6 +71,39 @@ interface ExecutionWorkflowTemplate extends WorkflowTemplate {
     updatedAt: string
     toolConfig?: any
   }>
+  // For template workflows (fallback)
+  steps?: Array<{
+    id: string
+    workflowTemplateId: string
+    name: string
+    description: string
+    type: string
+    parentStepId: string | null
+    prevStepIds: string[]
+    nextStepIds: string[]
+    toolIds: string[]
+    timeEstimate: number
+    metadata: {
+      icon?: string
+      step_order?: number
+      schema_version?: string
+      user_instructions?: string
+      ai_model?: string
+      automated_description?: string
+    }
+    createdAt: string
+    updatedAt: string
+  }>
+  workflow_tools?: Array<{
+    id: string
+    type: string
+    value: any
+    config: any
+    workspaceId: number
+    userId: number
+    createdAt: string
+    updatedAt: string
+  }>
 }
 
 

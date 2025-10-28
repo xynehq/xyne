@@ -1,7 +1,10 @@
 import { getLogger } from "@/logger"
 import { Subsystem, ProcessingJobType } from "@/types"
 import { getErrorMessage } from "@/utils"
-import { FileProcessorService, type SheetProcessingResult } from "@/services/fileProcessor"
+import {
+  FileProcessorService,
+  type SheetProcessingResult,
+} from "@/services/fileProcessor"
 import { insert } from "@/search/vespa"
 import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
@@ -13,6 +16,41 @@ import { UploadStatus } from "@/shared/types"
 import { updateParentStatus } from "@/db/knowledgeBase"
 
 const Logger = getLogger(Subsystem.Queue)
+
+function extractMarkdownTitle(content: string): string {
+  const lines = content.split("\n")
+  let inFrontmatter = false
+
+  for (const line of lines) {
+    const trimmedLine = line.trim()
+
+    if (!trimmedLine) {
+      continue
+    }
+
+    if (trimmedLine === "---") {
+      inFrontmatter = !inFrontmatter
+      continue
+    }
+
+    // Look for page_title inside frontmatter
+    if (inFrontmatter) {
+      if (trimmedLine.startsWith("page_title:")) {
+        const title = trimmedLine.substring("page_title:".length).trim()
+        if (title) {
+          // Remove quotes if present
+          return title.replace(/^["']|["']$/g, "").trim()
+        }
+      }
+      continue
+    }
+
+    // If we're past frontmatter, stop looking
+    break
+  }
+
+  return ""
+}
 
 export interface FileProcessingJob {
   fileId: string
@@ -203,6 +241,27 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       file.storagePath,
     )
 
+    // Extract title for markdown files
+    let pageTitle:string=""
+    if (getBaseMimeType(file.mimeType || "") === "text/markdown") {
+      try {
+        const fileContent = fileBuffer.toString("utf-8")
+        pageTitle = extractMarkdownTitle(fileContent)
+      } catch (error) {
+        Logger.warn(
+          `Failed to extract title from markdown file ${file.fileName}: ${getErrorMessage(error)}`,
+        )
+      }
+
+      // If we failed to get pageTitle from content, use filename as fallback
+      if (!pageTitle) {
+        pageTitle = ""
+        Logger.info(
+          `Using empty string as pageTitle for ${file.fileName}: ${pageTitle}`,
+        )
+      }
+    }
+
     // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
     let totalChunksCount = 0
     let newVespaDocId = ""
@@ -254,12 +313,15 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         image_chunks_pos: processingResult.image_chunks_pos,
         chunks_map: processingResult.chunks_map,
         image_chunks_map: processingResult.image_chunks_map,
+        pageTitle : pageTitle,
         metadata: JSON.stringify({
           originalFileName: file.originalName || file.fileName,
           uploadedBy: file.uploadedByEmail || "system",
-          chunksCount: processingResult.chunks.length,
+          chunksCount: processingResult.chunks.length + processingResult.image_chunks.length,
           imageChunksCount: processingResult.image_chunks.length,
           processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
+          ...(processingResult.processingMethod && { pdfProcessingMethod: processingResult.processingMethod }),
+          ...(pageTitle && { pageTitle }),
           lastModified: Date.now(),
           ...(('sheetName' in processingResult) && {
             sheetName: (processingResult as SheetProcessingResult).sheetName,
@@ -282,14 +344,24 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       totalChunksCount += processingResult.chunks.length + processingResult.image_chunks.length
     }
 
-    // Update status to completed
+    // Update status to completed with processing method metadata
     const chunksCount = totalChunksCount
+    
+    // Prepare metadata for database record - use last processing result for method info
+    const lastResult = processingResults[processingResults.length - 1]
+    const dbMetadata = {
+      chunksCount,
+      imageChunksCount: processingResults.reduce((sum, r) => sum + r.image_chunks.length, 0),
+      ...(lastResult.processingMethod && { pdfProcessingMethod: lastResult.processingMethod }),
+    }
+
     await db
       .update(collectionItems)
       .set({
         vespaDocId: newVespaDocId,
         uploadStatus: UploadStatus.COMPLETED,
         statusMessage: `Successfully processed: ${chunksCount} chunks extracted from ${file.fileName}`,
+        metadata: dbMetadata,
         processedAt: new Date(),
         updatedAt: new Date(),
       })

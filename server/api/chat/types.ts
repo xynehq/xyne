@@ -70,9 +70,9 @@ export const MinimalCitationSchema = z.object({
   app: z.nativeEnum(Apps),
   entity: entitySchema,
   threadId: z.string().optional(),
+  page_title: z.string().optional(),
   itemId: z.string().optional(),
   clId: z.string().optional(),
-  chunkIndex: z.number().int().min(0).optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>
@@ -151,11 +151,15 @@ export interface MetadataRetrievalParams {
 }
 
 export interface SearchParams {
-  filter_query: string
+  query: string
   limit?: number
-  order_direction?: "asc" | "desc"
+  sortBy?: "asc" | "desc"
   offset?: number
   excludedIds?: string[]
+  timeRange?: {
+    startTime?: string
+    endTime?: string
+  }
 }
 
 export interface ConversationalParams {

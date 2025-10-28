@@ -20,7 +20,9 @@ interface WorkflowTemplateSimplified {
     allowed_file_types?: string[]
     supports_file_upload?: boolean
   }
-  createdBy: string
+  userId: number
+  workspaceId: number
+  isPublic: boolean
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
@@ -42,7 +44,6 @@ interface WorkflowTemplateSimplified {
       type: string
       value: any
       config: any
-      createdBy: string
       createdAt: string
       updatedAt: string
     }
@@ -51,7 +52,8 @@ interface WorkflowTemplateSimplified {
 
 interface ApiTemplate {
   id: number
-  workspaceId: string
+  workspaceId: number
+  userId: number
   name: string
   description: string
   version: string
@@ -71,22 +73,21 @@ interface ApiTemplate {
     supports_file_upload?: boolean
     auto_execution?: boolean
   }
-  createdBy: string
   rootWorkflowStepTemplateId: string | null
   createdAt: string
   updatedAt: string
-  deletedAt: string | null
 }
 
 interface ApiWorkflowExecution {
   id: string
   workflowTemplateId: string
+  workspaceId: number
+  userId: number
   name: string
   description: string
   status: "completed" | "active" | "failed"
   metadata: any
   rootWorkflowStepExeId: string
-  createdBy: string
   completedBy: string | null
   createdAt: string
   updatedAt: string

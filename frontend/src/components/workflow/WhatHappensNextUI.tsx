@@ -9,6 +9,7 @@ import {
   ChevronRight,
   X,
   Play,
+  BoomBox,
 } from "lucide-react"
 
 interface WhatHappensNextUIProps {
@@ -78,6 +79,12 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       description: "Run code or scripts",
       icon: <Code className="w-5 h-5" />,
     },
+    {
+      id: "select_agents",
+      name: "Select Agents",
+      description: "Choose from your existing direct agents",
+      icon: <BoomBox className="w-5 h-5" />,
+    },
   ]
 
   // Coming soon actions (upcoming features)
@@ -133,7 +140,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
           <div
             key={action.id}
             onClick={() => {
-              if (action.id === "ai_agent" || action.id === "email" || action.id === "review" || action.id === "trigger" || action.id === "run_script") {
+              if (action.id === "ai_agent" || action.id === "email" || action.id === "review" || action.id === "trigger" || action.id === "run_script"||action.id === "select_agents") {
                 // Trigger custom event to open respective ConfigUI
                 onSelectAction(action.id)
                 onClose() // Close WhatHappensNextUI
