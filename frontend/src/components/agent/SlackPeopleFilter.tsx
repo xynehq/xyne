@@ -6,11 +6,13 @@ import { SlackEntity } from 'shared/types'
 interface SlackPeopleFilterProps {
   filterValue?: string
   onFilterChange: (value: string) => void
+  onUpdateNameMapping?: (id: string, name: string) => void
 }
 
 export const SlackPeopleFilter: React.FC<SlackPeopleFilterProps> = ({
   filterValue,
   onFilterChange,
+  onUpdateNameMapping,
 }) => {
   const [selectedPeople, setSelectedPeople] = useState<Set<string>>(new Set())
 
@@ -45,6 +47,8 @@ export const SlackPeopleFilter: React.FC<SlackPeopleFilterProps> = ({
       updatedPeople.delete(person.id)
     } else {
       updatedPeople.add(person.id)
+      // Update the ID-to-name mapping when selecting a person
+      onUpdateNameMapping?.(person.id, person.name)
     }
     setSelectedPeople(updatedPeople)
 

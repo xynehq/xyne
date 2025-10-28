@@ -6,11 +6,13 @@ import { SlackEntity } from 'shared/types'
 interface SlackChannelFilterProps {
   filterValue?: string
   onFilterChange: (value: string) => void
+  onUpdateNameMapping?: (id: string, name: string) => void
 }
 
 export const SlackChannelFilter: React.FC<SlackChannelFilterProps> = ({
   filterValue,
   onFilterChange,
+  onUpdateNameMapping,
 }) => {
   const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set())
 
@@ -45,6 +47,8 @@ export const SlackChannelFilter: React.FC<SlackChannelFilterProps> = ({
       updatedChannels.delete(channel.id)
     } else {
       updatedChannels.add(channel.id)
+      // Update the ID-to-name mapping when selecting a channel
+      onUpdateNameMapping?.(channel.id, channel.name)
     }
     setSelectedChannels(updatedChannels)
 

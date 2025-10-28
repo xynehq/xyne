@@ -112,6 +112,7 @@ interface CustomBadgeProps {
   onFilterChange?: (value: string) => void
   filterIndex?: number
   slackIdToNameMap?: Record<string, string>
+  onUpdateSlackNameMapping?: (id: string, name: string) => void
 }
 
 interface FetchedDataSource {
@@ -129,6 +130,7 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
   filterValue,
   onFilterChange,
   slackIdToNameMap,
+  onUpdateSlackNameMapping,
 }) => {
   // Only show filter input for Gmail and Slack
   const showFilterInput = appId === Apps.Gmail || appId === Apps.Slack
@@ -352,12 +354,14 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({
                       <SlackPeopleFilter
                         filterValue={filterValue}
                         onFilterChange={onFilterChange || (() => {})}
+                        onUpdateNameMapping={onUpdateSlackNameMapping}
                       />
                     )
                   ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'channels' ? (
                     <SlackChannelFilter
                       filterValue={filterValue}
                       onFilterChange={onFilterChange || (() => {})}
+                      onUpdateNameMapping={onUpdateSlackNameMapping}
                     />
                   ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'timeline' ? (
                     <TimelineFilter
@@ -2335,7 +2339,7 @@ function AgentComponent() {
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
 
-        
+    
 
     try {
       let response
@@ -3732,6 +3736,12 @@ function AgentComponent() {
                                 filterValue={filter}
                                 filterIndex={index}
                                 slackIdToNameMap={slackIdToNameMap}
+                                onUpdateSlackNameMapping={(id, name) => {
+                                  setSlackIdToNameMap(prev => ({
+                                    ...prev,
+                                    [id]: name
+                                  }))
+                                }}
                                 onFilterChange={(value) => {
                                   setAppFilters(prev => {
                                     const newFilters = [...(prev[integration.id] || [''])]
