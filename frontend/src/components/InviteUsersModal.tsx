@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { X, UserPlus, Search, Phone, Video } from "lucide-react"
 import { api } from "@/api"
 import { useToast } from "@/hooks/use-toast"
+import { CallType } from "@/types"
 
 interface User {
   id: string
@@ -17,7 +18,7 @@ interface InviteUsersModalProps {
   isOpen: boolean
   onClose: () => void
   callId: string
-  callType: "video" | "audio"
+  callType: CallType
 }
 
 export function InviteUsersModal({

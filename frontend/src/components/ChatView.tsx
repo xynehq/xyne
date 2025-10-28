@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { callNotificationClient } from "@/services/callNotifications"
+import { CallType } from "@/types"
 
 interface User {
   id: string
@@ -26,7 +27,7 @@ interface Message {
 
 interface ChatViewProps {
   targetUser: User
-  onInitiateCall: (userId: string, callType: "audio" | "video") => void
+  onInitiateCall: (userId: string, callType: CallType) => void
 }
 
 const MAX_MESSAGE_LENGTH = 10000
@@ -330,7 +331,7 @@ export default function ChatView({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onInitiateCall(targetUser.id, "audio")}
+            onClick={() => onInitiateCall(targetUser.id, CallType.Audio)}
             className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
             title="Audio Call"
           >
@@ -339,7 +340,7 @@ export default function ChatView({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onInitiateCall(targetUser.id, "video")}
+            onClick={() => onInitiateCall(targetUser.id, CallType.Video)}
             className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
             title="Video Call"
           >

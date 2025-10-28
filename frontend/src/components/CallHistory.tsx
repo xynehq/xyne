@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { CallType } from "@/types"
 
 interface User {
   id: string
@@ -30,7 +31,7 @@ interface CallRecord {
   invitedUsers: User[]
 }
 
-type FilterType = "all" | "video" | "audio" | "missed"
+type FilterType = "all" | CallType | "missed"
 type TimeFilter = "all" | "today" | "week" | "month"
 
 export default function CallHistory() {
@@ -134,41 +135,25 @@ export default function CallHistory() {
   // Join an active call
   const handleJoinCall = async (call: CallRecord) => {
     try {
-      const response = await api.calls.join.$post({
-        json: { callId: call.callId },
-      })
+      const callUrl = `${window.location.origin}/call/${call.callId}?type=${call.callType}`
 
-      if (response.ok) {
-        const data = await response.json()
+      // Open the call in a new window
+      const callWindow = window.open(
+        callUrl,
+        "call-window",
+        "width=800,height=600,resizable=yes,scrollbars=no,status=no,location=no,toolbar=no,menubar=no",
+      )
 
-        // Construct the call URL with token
-        const callUrl = `${window.location.origin}/call?callId=${call.callId}&token=${data.token}&type=${call.callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
-
-        // Open the call in a new window
-        const callWindow = window.open(
-          callUrl,
-          "call-window",
-          "width=800,height=600,resizable=yes,scrollbars=no,status=no,location=no,toolbar=no,menubar=no",
-        )
-
-        if (!callWindow) {
-          toast({
-            title: "Popup Blocked",
-            description: "Please allow popups to join calls",
-            variant: "destructive",
-          })
-        } else {
-          toast({
-            title: "Joining Call",
-            description: "Opening call window...",
-          })
-        }
-      } else {
-        const errorData = await response.json()
+      if (!callWindow) {
         toast({
-          title: "Failed to Join",
-          description: errorData.message || "Could not join the call",
+          title: "Popup Blocked",
+          description: "Please allow popups to join calls",
           variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Joining Call",
+          description: "Opening call window...",
         })
       }
     } catch (error) {
