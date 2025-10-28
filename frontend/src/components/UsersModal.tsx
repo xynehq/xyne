@@ -1,18 +1,12 @@
 import { useState, useEffect } from "react"
-import {
-  Search,
-  Phone,
-  Video,
-  X,
-  Users as UsersIcon,
-  History,
-} from "lucide-react"
+import { Search, X, Users as UsersIcon, History } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CLASS_NAMES } from "@/lib/constants"
 import { Input } from "@/components/ui/input"
 import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
 import CallHistory from "./CallHistory"
+import ChatView from "./ChatView"
 
 interface User {
   id: string
@@ -34,6 +28,7 @@ export default function UsersModal({ onClose }: UsersModalProps) {
   const [filteredUsers, setFilteredUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [selectedChatUser, setSelectedChatUser] = useState<User | null>(null)
 
   // Fetch current user info
   const fetchCurrentUser = async () => {
@@ -215,6 +210,15 @@ export default function UsersModal({ onClose }: UsersModalProps) {
     }
   }
 
+  // Handle user click to open chat
+  const handleUserClick = (user: User) => {
+    if (currentUser && currentUser.email === user.email) {
+      // Don't open chat for self
+      return
+    }
+    setSelectedChatUser(user)
+  }
+
   // Load users when component mounts
   useEffect(() => {
     fetchCurrentUser()
@@ -240,7 +244,9 @@ export default function UsersModal({ onClose }: UsersModalProps) {
       >
         <div className="flex flex-col items-center pt-6 gap-2">
           <button
-            onClick={() => setActiveTab("users")}
+            onClick={() => {
+              setActiveTab("users")
+            }}
             className={cn(
               "flex w-10 h-10 rounded-lg items-center justify-center cursor-pointer transition-colors",
               activeTab === "users"
@@ -259,7 +265,10 @@ export default function UsersModal({ onClose }: UsersModalProps) {
             />
           </button>
           <button
-            onClick={() => setActiveTab("history")}
+            onClick={() => {
+              setActiveTab("history")
+              setSelectedChatUser(null)
+            }}
             className={cn(
               "flex w-10 h-10 rounded-lg items-center justify-center cursor-pointer transition-colors",
               activeTab === "history"
@@ -286,118 +295,138 @@ export default function UsersModal({ onClose }: UsersModalProps) {
           <CallHistory />
         </div>
       ) : (
-        <div
-          className={cn(
-            "fixed left-[112px] top-4 bottom-4 w-80 bg-white dark:bg-[#1E1E1E] border border-[#D7E0E9] dark:border-gray-700 rounded-lg shadow-lg z-30 flex flex-col",
-            CLASS_NAMES.HISTORY_MODAL_CONTAINER,
-          )}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-[#D7E0E9] dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-[#384049] dark:text-[#F1F3F4]">
-              Workspace Users
-            </h2>
-            <button
-              onClick={onClose}
-              className="p-1 hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded"
-            >
-              <X size={16} stroke="#384049" className="dark:stroke-[#F1F3F4]" />
-            </button>
-          </div>
-
-          {/* Search */}
-          <div className="p-4 border-b border-[#D7E0E9] dark:border-gray-700">
-            <div className="relative">
-              <Search
-                size={16}
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-              />
-              <Input
-                placeholder="Search users..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+        <>
+          {/* Users List Sidebar - Always visible */}
+          <div
+            className={cn(
+              "fixed left-[112px] top-0 bottom-0 w-80 bg-white dark:bg-[#1E1E1E] border-r border-[#D7E0E9] dark:border-gray-700 z-30 flex flex-col",
+              CLASS_NAMES.HISTORY_MODAL_CONTAINER,
+            )}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-[#D7E0E9] dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-[#384049] dark:text-[#F1F3F4]">
+                Workspace Users
+              </h2>
+              <button
+                onClick={onClose}
+                className="p-1 hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded"
+              >
+                <X
+                  size={16}
+                  stroke="#384049"
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </button>
             </div>
-          </div>
 
-          {/* Users List */}
-          <div className="flex-1 overflow-y-auto p-2">
-            {loading ? (
-              <div className="flex items-center justify-center h-20">
-                <div className="text-sm text-gray-500">Loading users...</div>
+            {/* Search */}
+            <div className="p-4 border-b border-[#D7E0E9] dark:border-gray-700">
+              <div className="relative">
+                <Search
+                  size={16}
+                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                />
+                <Input
+                  placeholder="Search users..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
               </div>
-            ) : !filteredUsers || filteredUsers.length === 0 ? (
-              <div className="flex items-center justify-center h-20">
-                <div className="text-sm text-gray-500">
-                  {searchQuery ? "No users found" : "No users in workspace"}
+            </div>
+
+            {/* Users List */}
+            <div className="flex-1 overflow-y-auto p-2">
+              {loading ? (
+                <div className="flex items-center justify-center h-20">
+                  <div className="text-sm text-gray-500">Loading users...</div>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {(filteredUsers || []).map((user) => (
-                  <div
-                    key={user.id}
-                    className="flex items-center p-3 hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-lg group"
-                  >
-                    {/* User Avatar */}
-                    <div className="flex-shrink-0 mr-3">
-                      {user.photoLink ? (
-                        <img
-                          src={`/api/v1/proxy/${encodeURIComponent(user.photoLink)}`}
-                          alt={user.name}
-                          className="w-8 h-8 rounded-full"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-                          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
-                            {user.name.charAt(0).toUpperCase()}
+              ) : !filteredUsers || filteredUsers.length === 0 ? (
+                <div className="flex items-center justify-center h-20">
+                  <div className="text-sm text-gray-500">
+                    {searchQuery ? "No users found" : "No users in workspace"}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {(filteredUsers || []).map((user) => (
+                    <div
+                      key={user.id}
+                      onClick={() => handleUserClick(user)}
+                      className={cn(
+                        "flex items-center p-3 rounded-lg transition-colors",
+                        selectedChatUser?.id === user.id
+                          ? "bg-[#D8DFE680] dark:bg-gray-700"
+                          : currentUser && currentUser.email === user.email
+                            ? "opacity-50 cursor-not-allowed"
+                            : "hover:bg-[#D8DFE680] dark:hover:bg-gray-700 cursor-pointer",
+                      )}
+                    >
+                      {/* User Avatar */}
+                      <div className="flex-shrink-0 mr-3">
+                        {user.photoLink ? (
+                          <img
+                            src={`/api/v1/proxy/${encodeURIComponent(user.photoLink)}`}
+                            alt={user.name}
+                            className="w-8 h-8 rounded-full"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                            <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                              {user.name.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* User Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-[#384049] dark:text-[#F1F3F4] truncate">
+                          {user.name}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {user.email}
+                        </div>
+                      </div>
+
+                      {/* Indicator for current user */}
+                      {currentUser && currentUser.email === user.email && (
+                        <div className="flex-shrink-0 ml-2">
+                          <span className="text-xs text-gray-500 px-2 py-1">
+                            You
                           </span>
                         </div>
                       )}
                     </div>
-
-                    {/* User Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-[#384049] dark:text-[#F1F3F4] truncate">
-                        {user.name}
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                        {user.email}
-                      </div>
-                    </div>
-
-                    {/* Call Buttons */}
-                    <div className="flex-shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {currentUser && currentUser.email === user.email ? (
-                        <div className="text-xs text-gray-500 px-2 py-1">
-                          You
-                        </div>
-                      ) : (
-                        <div className="flex space-x-1">
-                          <button
-                            onClick={() => initiateCall(user.id, "audio")}
-                            className="p-1.5 hover:bg-green-100 dark:hover:bg-green-900 rounded text-green-600 dark:text-green-400"
-                            title="Audio Call"
-                          >
-                            <Phone size={14} />
-                          </button>
-                          <button
-                            onClick={() => initiateCall(user.id, "video")}
-                            className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900 rounded text-blue-600 dark:text-blue-400"
-                            title="Video Call"
-                          >
-                            <Video size={14} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+
+          {/* Chat View - Right side */}
+          {selectedChatUser ? (
+            <div className="fixed left-[432px] top-0 right-0 bottom-0 z-30">
+              <ChatView
+                targetUser={selectedChatUser}
+                onInitiateCall={initiateCall}
+              />
+            </div>
+          ) : (
+            <div className="fixed left-[432px] top-0 right-0 bottom-0 z-30 flex items-center justify-center bg-white dark:bg-[#1E1E1E]">
+              <div className="text-center text-gray-500 dark:text-gray-400">
+                <UsersIcon className="h-16 w-16 mx-auto mb-4 opacity-20" />
+                <h3 className="text-lg font-medium mb-2">
+                  No conversation selected
+                </h3>
+                <p className="text-sm">
+                  Select a user from the list to start a conversation
+                </p>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </>
   )
