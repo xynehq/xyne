@@ -1,3 +1,10 @@
+## [3.22.4](https://github.com/xynehq/xyne/compare/v3.22.3...v3.22.4) (2025-10-28)
+
+
+### Bug Fixes
+
+* XYNE-253 fixed auto scroll in document preview ([#1153](https://github.com/xynehq/xyne/issues/1153)) ([cbb9b74](https://github.com/xynehq/xyne/commit/cbb9b749c75919c0f22a4b6d5201010a8a7f2dec))
+
 ## [3.22.3](https://github.com/xynehq/xyne/compare/v3.22.2...v3.22.3) (2025-10-27)
 
 
