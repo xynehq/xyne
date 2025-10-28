@@ -1,3 +1,24 @@
+# [3.23.0](https://github.com/xynehq/xyne/compare/v3.22.5...v3.23.0) (2025-10-28)
+
+
+### Features
+
+* XYN-211 chats with worspace users ([#1130](https://github.com/xynehq/xyne/issues/1130)) ([3dbd558](https://github.com/xynehq/xyne/commit/3dbd5580bd6483b038b103eb9dda3b064c91e9ab))
+
+## [3.22.5](https://github.com/xynehq/xyne/compare/v3.22.4...v3.22.5) (2025-10-28)
+
+
+### Bug Fixes
+
+* **syncTrigger:** fix individual sync trigger for oauth based syncJob ([#1154](https://github.com/xynehq/xyne/issues/1154)) ([b826dda](https://github.com/xynehq/xyne/commit/b826dda7f6e736962420d343deccc50733c2d5a1))
+
+## [3.22.4](https://github.com/xynehq/xyne/compare/v3.22.3...v3.22.4) (2025-10-28)
+
+
+### Bug Fixes
+
+* XYNE-253 fixed auto scroll in document preview ([#1153](https://github.com/xynehq/xyne/issues/1153)) ([cbb9b74](https://github.com/xynehq/xyne/commit/cbb9b749c75919c0f22a4b6d5201010a8a7f2dec))
+
 ## [3.22.3](https://github.com/xynehq/xyne/compare/v3.22.2...v3.22.3) (2025-10-27)
 
 

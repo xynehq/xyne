@@ -659,7 +659,7 @@ function UsersListPage({
     try {
       setSyncingUser(user.email)
       const res = await api.admin.syncGoogleWorkSpaceByMail.$post({
-        form: { email: user.email },
+        json: { email: user.email },
       })
 
       if (!res.ok) {
@@ -700,7 +700,7 @@ function UsersListPage({
     try {
       setSyncingSlackUser(user.email)
       const res = await api.admin.syncSlackByMail.$post({
-        form: { email: user.email },
+        json: { email: user.email },
       })
 
       if (!res.ok) {
