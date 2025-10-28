@@ -1426,6 +1426,15 @@ export const processSlackEvent = async (event: any) => {
       }
 
       const { dbUser } = validatedUser
+      
+      //send a starting thread message if event not from a thread
+      if (!thread_ts || thread_ts === ts) { 
+        await webClient.chat.postMessage({
+          channel,
+          thread_ts: ts,
+          text: "🤖 Xyne Bot — Discussion Thread 🧵"
+        })
+      }
 
       // Process the text message to extract the actual command
       const processedText = processSlackText(text)
@@ -1989,6 +1998,15 @@ const processSlackDM = async (event: any) => {
 
     // Process the text message to extract the actual command
     const processedText = processSlackText(text)
+
+    //send a starting thread message if event not from a thread
+    if (!thread_ts || thread_ts === ts) { 
+      await webClient.chat.postMessage({
+        channel,
+        thread_ts: ts,
+        text: "🤖 Xyne Bot — Discussion Thread 🧵"
+      })
+    }
 
     // Handle the command with the shared command handler
     await handleSlackCommand(
