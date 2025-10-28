@@ -2299,7 +2299,7 @@ export const UpdateUser = async (c: Context) => {
 }
 
 export const syncByMailSchema = z.object({
-  email: z.string().optional(),
+  email: z.string(),
 })
 
 export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
