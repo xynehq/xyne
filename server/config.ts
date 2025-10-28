@@ -8,6 +8,7 @@ let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
 let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
+let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
 // Centralized database URL construction
 function getDatabaseUrl(): string {
@@ -63,7 +64,7 @@ let CurrentAuthType: AuthType =
   (process.env.AUTH_TYPE as AuthType) || AuthType.OAuth
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 const MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES = 3 * 1024 // 3KB - generous limit for service account JSON files
-
+const AccessTokenCookie = "access-token"
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
@@ -175,6 +176,7 @@ export default {
   port,
   metricsPort,
   syncServerPort,
+  syncServerHost,
   host,
   vespaPort,
   // slack oauth does not work on http
@@ -230,6 +232,7 @@ export default {
   defaultRecencyDecayRate: 0.1, // Decay rate for recency scoring in Vespa searches
   CurrentAuthType,
   getDatabaseUrl,
+  AccessTokenCookie,
   fileProcessingWorkerThreads,
   fileProcessingTeamSize,
   pdfFileProcessingWorkerThreads,

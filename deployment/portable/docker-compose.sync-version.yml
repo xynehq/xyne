@@ -18,6 +18,7 @@ services:
       - NODE_ENV=production
       - DATABASE_HOST=xyne-db
       - VESPA_HOST=vespa
+      - MAIN_SERVER_HOST=app
     volumes:
       # Application data volumes
       - ${XYNE_DATA_DIR:-./data}/app-uploads:/usr/src/app/server/storage

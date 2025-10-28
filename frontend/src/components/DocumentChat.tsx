@@ -51,8 +51,9 @@ interface DocumentChatProps {
   documentName: string
   initialChatId?: string | null
   onChatCreated?: (chatId: string) => void
-  onChunkIndexChange?: (chunkIndex: number | null, documentId: string) => void
+  onChunkIndexChange?: (chunkIndex: number | null, itemId: string, docId: string) => void
   uploadStatus?: UploadStatus
+  isKnowledgeBaseChat?: boolean 
 }
 
 const ChatMessage = React.memo(
@@ -461,6 +462,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
   onChatCreated,
   onChunkIndexChange,
   uploadStatus,
+  isKnowledgeBaseChat = false,
 }) => {
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -798,7 +800,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
   }
 
   const handleCitationClick = (citation: Citation, chunkIndex?: number) => {
-    onChunkIndexChange?.(chunkIndex ?? null, citation.itemId ?? documentId)
+    onChunkIndexChange?.(chunkIndex ?? null, citation.itemId ?? documentId, citation.docId)
   }
 
   // Populate feedbackMap from loaded messages
@@ -871,6 +873,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
           hideButtons={true}
           chatId={chatId}
           uploadStatus={uploadStatus}
+          isKnowledgeBaseChat={isKnowledgeBaseChat}
         />
       </div>
     </div>

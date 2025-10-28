@@ -449,28 +449,26 @@ function UsersListPage({
         Array.isArray(ingestedData.data)
       ) {
         setIngestedUsers(
-          ingestedData.data
-            .filter((user: { email?: string | null }) => user.email) // Filter out users with empty email
-            .map((user: any) => ({
-              ...user,
-              syncJobs: Object.fromEntries(
-                Object.entries(user.syncJobs || {}).map(([app, value]) => [
-                  app,
-                  value === null
-                    ? { lastSyncDate: null, createdAt: null }
-                    : typeof value === "object" && Object.keys(value).length > 0
-                      ? value // already in correct format
-                      : {
-                          lastSyncDate:
-                            typeof value === "string" ||
-                            typeof value === "number"
-                              ? new Date(value)
-                              : null,
-                          createdAt: null,
-                        },
-                ]),
-              ),
-            })),
+          ingestedData.data.map((user: any) => ({
+            ...user,
+            email: user.email || "", // Ensure email is empty string if null/undefined
+            syncJobs: Object.fromEntries(
+              Object.entries(user.syncJobs || {}).map(([app, value]) => [
+                app,
+                value === null
+                  ? { lastSyncDate: null, createdAt: null }
+                  : typeof value === "object" && Object.keys(value).length > 0
+                    ? value // already in correct format
+                    : {
+                        lastSyncDate:
+                          typeof value === "string" || typeof value === "number"
+                            ? new Date(value)
+                            : null,
+                        createdAt: null,
+                      },
+              ]),
+            ),
+          })),
         )
       } else {
         setIngestedUsers([])
@@ -548,10 +546,11 @@ function UsersListPage({
   ): T[] => {
     // Filter users based on search term
     let filtered = userArray.filter((user) => {
+      if (!searchTerm) return true // If no search term, include all users
       const searchLower = searchTerm.toLowerCase()
       return (
         user.name?.toLowerCase().includes(searchLower) ||
-        user.email.toLowerCase().includes(searchLower)
+        user.email?.toLowerCase().includes(searchLower)
       )
     })
 
@@ -1398,7 +1397,7 @@ function UsersListPage({
                                 <div className="flex items-center space-x-3">
                                   <Avatar className="h-10 w-10">
                                     <AvatarFallback className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium">
-                                      {user?.email[0]?.toUpperCase()}
+                                      {user?.email?.[0]?.toUpperCase() || "?"}
                                     </AvatarFallback>
                                   </Avatar>
                                   <div className="min-w-0 flex-1">

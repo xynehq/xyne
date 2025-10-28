@@ -404,7 +404,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
           }
         }
         throw new Error(
-          `Failed to delete documents: ${response.status} ${response.statusText} - ${errorText}`,
+          `Error fetching search results: ${response.status} ${response.statusText} - ${errorText}`,
         )
       }
     } catch (error) {
