@@ -2111,7 +2111,7 @@ const executeWorkflowTool = async (
             result: {
               aiOutput: fullResult.response,
               agentName: aiConfig.agentName || "Unknown Agent",
-              model: aiConfig.modelId || "gpt-4o",
+              model: aiConfig.model || aiConfig.modelId || "gpt-4o",
               inputType: aiConfig.inputType || "text",
               processedAt: new Date().toISOString(),
               chatId: null
