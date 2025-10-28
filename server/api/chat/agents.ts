@@ -974,6 +974,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
+    let thinking = ""
     if (!chatId) {
       const dbTransactionSpan = chatCreationSpan.startSpan(
         "db_transaction_new_chat",
@@ -1184,16 +1185,17 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         const humanReadableLog = convertReasoningStepToText(enhancedStep)
         structuredReasoningSteps.push(enhancedStep)
-
-        // Stream both summaries
-        await stream.writeSSE({
-          event: ChatSSEvents.Reasoning,
-          data: JSON.stringify({
+        const data = JSON.stringify({
             text: humanReadableLog,
             step: enhancedStep,
             quickSummary: enhancedStep.stepSummary,
             aiSummary: enhancedStep.aiGeneratedSummary,
-          }),
+          })
+        thinking += `${data}\n`
+        // Stream both summaries
+        await stream.writeSSE({
+          event: ChatSSEvents.Reasoning,
+          data: data,
         })
       }
 
@@ -1259,16 +1261,19 @@ export const MessageWithToolsApi = async (c: Context) => {
           // Add to structured reasoning steps so it gets saved to DB
           structuredReasoningSteps.push(iterationSummaryStep)
 
+          const data = JSON.stringify({
+            text: summary,
+            step: iterationSummaryStep,
+            quickSummary: summary,
+            aiSummary: summary,
+            isIterationSummary: true,
+          })
+          thinking += `${data}\n`
+
           // Stream the iteration summary
           await stream.writeSSE({
             event: ChatSSEvents.Reasoning,
-            data: JSON.stringify({
-              text: summary,
-              step: iterationSummaryStep,
-              quickSummary: summary,
-              aiSummary: summary,
-              isIterationSummary: true,
-            }),
+            data: data,
           })
         } catch (error) {
           Logger.error(`Error generating iteration summary: ${error}`)
@@ -1284,15 +1289,19 @@ export const MessageWithToolsApi = async (c: Context) => {
           // Add to structured reasoning steps so it gets saved to DB
           structuredReasoningSteps.push(fallbackSummaryStep)
 
-          await stream.writeSSE({
-            event: ChatSSEvents.Reasoning,
-            data: JSON.stringify({
+          const data = JSON.stringify({
               text: fallbackSummary,
               step: fallbackSummaryStep,
               quickSummary: fallbackSummary,
               aiSummary: fallbackSummary,
               isIterationSummary: true,
-            }),
+            })
+
+          thinking += `${data}\n`
+
+          await stream.writeSSE({
+            event: ChatSSEvents.Reasoning,
+            data: data,
           })
         }
       }
@@ -1852,9 +1861,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               const turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
               turnSpan.setAttribute("turn_number", currentTurn)
               turnSpan.setAttribute("agent_name", evt.data.agentName)
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
+              const data = JSON.stringify({
                   text: `Iteration ${evt.data.turn} started (agent: ${evt.data.agentName})`,
                   step: {
                     type: AgentReasoningStepType.Iteration,
@@ -1862,7 +1869,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     status: "in_progress",
                     stepSummary: `Planning search iteration ${evt.data.turn}`,
                   },
-                }),
+                })
+              thinking += `${data}\n`
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: data, 
               })
               turnSpan.end()
               break
@@ -1886,9 +1897,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   Object.keys(r.args || {}).length,
                 )
 
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
+                let data = JSON.stringify({
                     text: `Tool selected: ${r.name}`,
                     step: {
                       type: AgentReasoningStepType.ToolSelected,
@@ -1896,11 +1905,13 @@ export const MessageWithToolsApi = async (c: Context) => {
                       status: "in_progress",
                       stepSummary: `Executing ${r.name} tool`,
                     },
-                  }),
-                })
+                  })
+                thinking += `${data}\n`
                 await stream.writeSSE({
                   event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
+                  data: data, 
+                })
+                data = JSON.stringify({
                     text: `Parameters: ${JSON.stringify(r.args)}`,
                     step: {
                       type: AgentReasoningStepType.ToolParameters,
@@ -1908,7 +1919,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                       status: "in_progress",
                       stepSummary: "Reviewing tool parameters",
                     },
-                  }),
+                  })
+                  thinking += `${data}\n` 
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: data,
                 })
                 toolSelectionSpan.end()
               }
@@ -1919,9 +1934,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               const toolStartSpan =
                 jafStreamingSpan.startSpan("tool_call_start")
               toolStartSpan.setAttribute("tool_name", evt.data.toolName)
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
+              const data = JSON.stringify({
                   text: `Executing ${evt.data.toolName}...`,
                   step: {
                     type: AgentReasoningStepType.ToolExecuting,
@@ -1929,7 +1942,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     status: "in_progress",
                     stepSummary: `Executing ${evt.data.toolName} tool`,
                   },
-                }),
+                })
+              thinking += `${data}\n`
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: data,
               })
               toolStartSpan.end()
               break
@@ -2005,9 +2022,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 gatheredFragments.length,
               )
 
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
+              const data = JSON.stringify({
                   text: `Tool result: ${evt.data.toolName}`,
                   step: {
                     type: AgentReasoningStepType.ToolResult,
@@ -2017,7 +2032,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     itemsFound: contextsCount,
                     stepSummary: `Found ${contextsCount} results`,
                   },
-                }),
+                })
+              thinking += `${data}\n`
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: data,
               })
               toolEndSpan.end()
               break
@@ -2037,16 +2056,18 @@ export const MessageWithToolsApi = async (c: Context) => {
               if (hasToolCalls) {
                 // Treat assistant content that accompanies tool calls as planning/reasoning,
                 // not as final answer text. Emit as a reasoning step and do not send 'u' updates.
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
+                const data = JSON.stringify({
                     text: content,
                     step: {
                       type: AgentReasoningStepType.LogMessage,
                       status: "in_progress",
                       stepSummary: "Model planned tool usage",
                     },
-                  }),
+                  })
+                thinking += `${data}\n`
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: data,
                 })
                 break
               }
@@ -2161,9 +2182,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               const turnEndSpan = jafStreamingSpan.startSpan("turn_end")
               turnEndSpan.setAttribute("turn_number", evt.data.turn)
               // Emit an iteration summary (fallback version)
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
+              const data = JSON.stringify({
                   text: `Completed iteration ${evt.data.turn}.`,
                   step: {
                     type: AgentReasoningStepType.LogMessage,
@@ -2173,7 +2192,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     stepSummary: `Completed iteration ${evt.data.turn}.`,
                     isIterationSummary: true,
                   },
-                }),
+                })
+              thinking += `${data}\n`
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: data,
               })
               turnEndSpan.end()
               break
@@ -2263,7 +2286,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   sources: citations,
                   imageCitations: imageCitations,
                   message: processMessage(answer, citationMap),
-                  thinking: "",
+                  thinking: thinking,
                   modelId: defaultBestModel,
                   cost: totalCost.toString(),
                   tokensUsed: totalTokens,
@@ -2339,9 +2362,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     case "MaxTurnsExceeded":
                       // Execute fallback tool directly using messages from runState
                       try {
-                        await stream.writeSSE({
-                          event: ChatSSEvents.Reasoning,
-                          data: JSON.stringify({
+                        let data = JSON.stringify({
                             text: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
                             step: {
                               type: AgentReasoningStepType.LogMessage,
@@ -2350,7 +2371,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                               status: "in_progress",
                               stepSummary: "Activating fallback search",
                             },
-                          }),
+                          })
+                        thinking += `${data}\n`
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: data,
                         })
 
                         // Extract all context from runState.messages array
@@ -2386,9 +2411,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                           gatheredFragments: gatheredFragments,
                         }
 
-                        await stream.writeSSE({
-                          event: ChatSSEvents.Reasoning,
-                          data: JSON.stringify({
+                         data = JSON.stringify({
                             text: `Executing fallback tool with context from ${allMessages.length} messages...`,
                             step: {
                               type: AgentReasoningStepType.ToolExecuting,
@@ -2396,7 +2419,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                               status: "in_progress",
                               stepSummary: "Executing fallback tool",
                             },
-                          }),
+                          })
+                         thinking += `${data}\n`
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: data,
                         })
 
                         // Execute fallback tool directly
@@ -2411,9 +2438,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                           message,
                         )
 
-                        await stream.writeSSE({
-                          event: ChatSSEvents.Reasoning,
-                          data: JSON.stringify({
+                        data = JSON.stringify({
                             text: `Fallback tool execution completed`,
                             step: {
                               type: AgentReasoningStepType.ToolResult,
@@ -2426,7 +2451,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                                 fallbackResponse.contexts?.length || 0,
                               stepSummary: `Generated fallback response`,
                             },
-                          }),
+                          })
+                        thinking += `${data}\n`
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: data,
                         })
 
                         // Stream the fallback response if available
@@ -2489,7 +2518,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                                 fallbackAnswer,
                                 citationMap,
                               ),
-                              thinking: "",
+                              thinking: thinking,
                               modelId: modelId || defaultBestModel,
                               cost: totalCost.toString(),
                               tokensUsed: totalTokens,
@@ -2514,9 +2543,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                           fallbackError,
                           "Error during MaxTurnsExceeded fallback tool execution",
                         )
-                        await stream.writeSSE({
-                          event: ChatSSEvents.Reasoning,
-                          data: JSON.stringify({
+
+                        const data = JSON.stringify({
                             text: `Fallback search failed: ${getErrorMessage(fallbackError)}. Will generate best-effort answer.`,
                             step: {
                               type: AgentReasoningStepType.LogMessage,
@@ -2524,7 +2552,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                               status: "error",
                               stepSummary: "Fallback search failed",
                             },
-                          }),
+                          })
+                        thinking += `${data}\n`
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: data,
                         })
                         // Fall through to default error handling if fallback fails
                       }
