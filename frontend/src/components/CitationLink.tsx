@@ -14,22 +14,13 @@ export interface Citation {
   clId?: string
 }
 
-// Shared state for chunk index mapping across all citations
-let globalChunkIndexMap = new Map<string, number>()
-let globalCount = 0
-
-// Function to reset the global chunk index mapping (call this when processing new citations)
-export const resetChunkIndexMapping = () => {
-  globalChunkIndexMap.clear()
-  globalCount = 0
-}
-
-// Internal function that creates citation links without resetting
-const _createCitationLink =
+export const createCitationLink =
   (
     citations: Citation[] = [],
     onCitationClick?: (citation: Citation, chunkIndex?: number) => void,
     showTooltip: boolean = true,
+    globalChunkIndexMap: Map<string, number> = new Map(),
+    globalCount: number = 0,
   ) =>
   ({
     href,
@@ -175,14 +166,3 @@ const _createCitationLink =
       </a>
     )
   }
-
-// Public function that resets mapping and creates citation links
-export const createCitationLink = (
-  citations: Citation[] = [],
-  onCitationClick?: (citation: Citation, chunkIndex?: number) => void,
-  showTooltip: boolean = true,
-) => {
-  // Reset the mapping for each new set of citations
-  resetChunkIndexMapping()
-  return _createCitationLink(citations, onCitationClick, showTooltip)
-}
