@@ -164,13 +164,11 @@ export function buildInternalJAFTools(): Tool<unknown, JAFAdapterCtx>[] {
           if (contexts.length) {
             summary += "\n" + contexts.map((v) => v.content).join("\n")
           }
-          return ToolResponse.success(
-            contexts.map((v) => v.content).join("\n"),
-            {
-              toolName: name,
-              contexts,
-            },
-          )
+          const fullContext = contexts.map((v) => v.content).join("\n")
+          return ToolResponse.success(fullContext, {
+            toolName: name,
+            contexts,
+          })
         } catch (err) {
           return ToolResponse.error(
             "EXECUTION_FAILED",

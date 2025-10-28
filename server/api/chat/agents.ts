@@ -1853,7 +1853,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   const selectedDocs: MinimalAgentFragment[] = []
 
                   bestDocIndexes.forEach((idx) => {
-                    if (idx >= 0 && idx < filteredContexts.length) {
+                    if (idx >= 1 && idx <= filteredContexts.length) {
                       const doc: MinimalAgentFragment =
                         filteredContexts[idx - 1]
                       const key = doc.id
