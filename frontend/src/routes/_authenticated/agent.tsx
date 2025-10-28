@@ -914,7 +914,6 @@ function AgentComponent() {
   type AgentFilter = "all" | "madeByMe" | "sharedToMe"
 
   const fetchAgents = async (filter: AgentFilter = "all") => {
-    setIsLoadingAgents(true)
     try {
       const response = await api.agents.$get({ query: { filter } })
       if (response.ok) {
@@ -938,17 +937,17 @@ function AgentComponent() {
         description: `An error occurred while fetching agents (${filter}).`,
       })
       console.error(`Fetch agents error (${filter}):`, error)
-    } finally {
-      setIsLoadingAgents(false)
-    }
+    } 
   }
 
   const fetchAllAgentData = async () => {
+      setIsLoadingAgents(true)
     await Promise.all([
       fetchAgents("all"),
       fetchAgents("madeByMe"),
       fetchAgents("sharedToMe"),
     ])
+     setIsLoadingAgents(false)
   }
 
   useEffect(() => {
@@ -956,9 +955,11 @@ function AgentComponent() {
       fetchAllAgentData()
     } else {
       // When switching to create/edit view, also fetch all agents for the dropdown
+      setIsLoadingAgents(true)
       fetchAgents("all")
+      setIsLoadingAgents(false)
     }
-  }, [viewMode])
+  }, [viewMode, setIsLoadingAgents])
 
   useEffect(() => {
     const fetchDataSourcesAsync = async () => {
