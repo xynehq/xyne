@@ -141,6 +141,9 @@ import {
   type RunResult as JAFRunResult,
   type TraceEvent as JAFTraceEvent,
   type TraceEvent,
+  ToolResponse,
+  type ToolResult,
+  type ToolCall,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -1533,6 +1536,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         const citationValues: Record<number, Citation> = {}
         let gatheredFragments: MinimalAgentFragment[] = []
         const gatheredFragmentskeys = new Set<string>() // to track uniqueness
+        const seenDocuments = new Set<string>()
         let planningContext = ""
         let parseSynthesisResult = null
 
@@ -1771,10 +1775,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         const initialMessages: JAFMessage[] = messages
           .filter((m) => !m?.errorMessage)
           .map((m) => ({
-            role:
-              m.messageRole === MessageRole.User
-                ? ("user" as const)
-                : ("assistant" as const),
+            role: m.messageRole === MessageRole.User ? "user" : "assistant",
             content: m.message,
           }))
 
@@ -1782,7 +1783,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           name: "xyne-agent",
           instructions: () => agentInstructions(),
           tools: allJAFTools,
-          modelConfig: { name: defaultBestModel as unknown as string },
+          modelConfig: { name: defaultBestModel },
         }
 
         const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
@@ -1805,6 +1806,90 @@ export const MessageWithToolsApi = async (c: Context) => {
           modelProvider,
           maxTurns: 10,
           modelOverride: defaultBestModel as unknown as string,
+          onAfterToolExecution: async (
+            toolName: string,
+            result: any,
+            context: {
+              toolCall: ToolCall
+              args: any
+              state: JAFRunState<JAFAdapterCtx>
+              agentName: string
+              executionTime: number
+              status: string | ToolResult
+            },
+          ) => {
+            // Return only the best document indexes content as string
+            const contexts = result?.metadata?.contexts
+
+            if (Array.isArray(contexts) && contexts.length) {
+              const filteredContexts = contexts.filter(
+                (v) => !gatheredFragmentskeys.has(v.id),
+              )
+
+              const contextStrings = filteredContexts.map(
+                (v: MinimalAgentFragment) => {
+                  seenDocuments.add(v.id)
+                  const truncated = v.content.length > 600
+                  const preview = truncated
+                    ? v.content.slice(0, 600) + "..."
+                    : v.content
+                  return `title: ${v.source.title}\n
+                    content: ${preview}\n                  `
+                },
+              )
+
+              try {
+                const bestDocIndexes = await extractBestDocumentIndexes(
+                  message,
+                  contextStrings,
+                  {
+                    modelId: config.defaultBestModel,
+                    json: false,
+                    stream: false,
+                  },
+                )
+
+                if (bestDocIndexes.length) {
+                  const selectedDocs: MinimalAgentFragment[] = []
+
+                  bestDocIndexes.forEach((idx) => {
+                    if (idx >= 0 && idx < filteredContexts.length) {
+                      const doc: MinimalAgentFragment =
+                        filteredContexts[idx - 1]
+                      const key = doc.id
+                      if (!gatheredFragmentskeys.has(key)) {
+                        gatheredFragments.push(doc)
+                        gatheredFragmentskeys.add(key)
+                      }
+                      selectedDocs.push(doc)
+                    }
+                  })
+
+                  return selectedDocs
+                    .map((doc: MinimalAgentFragment) => doc.content)
+                    .join("\n")
+                } else {
+                  Logger.info(
+                    "Couldn't retrieve good documents for user's query",
+                  )
+                  // If no best documents found, return empty string
+                  return null
+                }
+              } catch (error) {
+                // adding all context if extracting best document fails
+                filteredContexts.forEach((doc: MinimalAgentFragment) => {
+                  const key = doc.id
+                  if (!gatheredFragmentskeys.has(key)) {
+                    gatheredFragments.push(doc)
+                    gatheredFragmentskeys.add(key)
+                  }
+                })
+
+                return null
+              }
+            }
+            return null
+          },
         }
         jafSetupSpan.setAttribute("run_id", runId)
         jafSetupSpan.setAttribute("trace_id", traceId)
@@ -1833,10 +1918,10 @@ export const MessageWithToolsApi = async (c: Context) => {
             const { args = {} } = event.data ?? {}
             const docIds =
               gatheredFragments?.map((v) => v.id).filter(Boolean) ?? []
-
+            const seenDocIds = Array.from(seenDocuments)
             // to exclude docs which already retrieved in prev iteration
             const modifiedArgs = docIds.length
-              ? { ...args, excludedIds: docIds }
+              ? { ...args, excludedIds: [...docIds, ...seenDocIds] }
               : args
 
             return modifiedArgs
@@ -1945,57 +2030,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               const contextsCount = Array.isArray(contexts)
                 ? contexts.length
                 : 0
-
-              if (Array.isArray(contexts) && contexts.length) {
-                const contextStrings = contexts.map(
-                  (v: MinimalAgentFragment) => {
-                    const truncated = v.content.length > 600
-                    const preview = truncated
-                      ? v.content.slice(0, 600) + "..."
-                      : v.content
-                    return `title: ${v.source.title}\n
-                    content: ${preview}\n                  `
-                  },
-                )
-
-                try {
-                  const bestDocIndexes = await extractBestDocumentIndexes(
-                    message,
-                    contextStrings,
-                    {
-                      modelId: config.defaultBestModel,
-                      json: false,
-                      stream: false,
-                    },
-                  )
-
-                  if (bestDocIndexes.length) {
-                    bestDocIndexes.forEach((idx) => {
-                      if (idx >= 0 && idx < contexts.length) {
-                        const doc: MinimalAgentFragment = contexts[idx - 1]
-                        const key = doc.id
-                        if (!gatheredFragmentskeys.has(key)) {
-                          gatheredFragments.push(doc)
-                          gatheredFragmentskeys.add(key)
-                        }
-                      }
-                    })
-                  } else {
-                    Logger.info(
-                      "Couldn't retrieve good documents for user's query",
-                    )
-                  }
-                } catch (error) {
-                  // adding all context if extracting best document fails
-                  contexts.forEach((doc: MinimalAgentFragment) => {
-                    const key = doc.id
-                    if (!gatheredFragmentskeys.has(key)) {
-                      gatheredFragments.push(doc)
-                      gatheredFragmentskeys.add(key)
-                    }
-                  })
-                }
-              }
 
               toolEndSpan.setAttribute("tool_name", evt.data.toolName)
               toolEndSpan.setAttribute("status", evt.data.status || "completed")

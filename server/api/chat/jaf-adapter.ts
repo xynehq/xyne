@@ -90,7 +90,9 @@ function paramsToZod(
     }
   }
 
-  const looseObject = z.looseObject(shape as unknown as ZodRawShape) as unknown as ZodObjectWithRawSchema
+  const looseObject = z.looseObject(
+    shape as unknown as ZodRawShape,
+  ) as unknown as ZodObjectWithRawSchema
 
   const jsonSchema: JSONSchema7 = {
     type: "object",
@@ -123,7 +125,10 @@ function mcpToolSchemaStringToZodObject(
     obj.__xyne_raw_json_schema = inputSchema
     return toToolSchemaParameters(obj)
   } catch (error) {
-    Logger.error({ err: error, schemaStr }, "Failed to parse MCP tool schema string");
+    Logger.error(
+      { err: error, schemaStr },
+      "Failed to parse MCP tool schema string",
+    )
     return toToolSchemaParameters(z.looseObject({}))
   }
 }
@@ -140,7 +145,7 @@ export function buildInternalJAFTools(): Tool<unknown, JAFAdapterCtx>[] {
       schema: {
         name,
         description: at.description,
-        parameters: paramsToZod(at.parameters || {})
+        parameters: paramsToZod(at.parameters || {}),
       },
       async execute(args, context) {
         try {
@@ -154,17 +159,23 @@ export function buildInternalJAFTools(): Tool<unknown, JAFAdapterCtx>[] {
             context.userMessage,
           )
           // Normalize to JAF ToolResult while keeping summary string as data
-          const summary = res?.result ?? ""
+          let summary = res?.result ?? ""
           const contexts = res?.contexts ?? []
-          return ToolResponse.success(summary, {
-            toolName: name,
-            contexts,
-          })
-        } catch (err) { 
-           return ToolResponse.error( 
-             "EXECUTION_FAILED", 
-              `Internal tool ${name} failed: ${err instanceof Error ? err.message : String(err)}`, 
-            ) 
+          if (contexts.length) {
+            summary += "\n" + contexts.map((v) => v.content).join("\n")
+          }
+          return ToolResponse.success(
+            contexts.map((v) => v.content).join("\n"),
+            {
+              toolName: name,
+              contexts,
+            },
+          )
+        } catch (err) {
+          return ToolResponse.error(
+            "EXECUTION_FAILED",
+            `Internal tool ${name} failed: ${err instanceof Error ? err.message : String(err)}`,
+          )
         }
       },
     })
@@ -191,7 +202,9 @@ export type FinalToolsList = Record<
   }
 >
 
-export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFAdapterCtx>[] {
+export function buildMCPJAFTools(
+  finalTools: FinalToolsList,
+): Tool<unknown, JAFAdapterCtx>[] {
   const tools: Tool<unknown, JAFAdapterCtx>[] = []
   for (const [connectorId, info] of Object.entries(finalTools)) {
     for (const t of info.tools) {
@@ -201,16 +214,24 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFA
       if (!toolDescription && t.toolSchema) {
         try {
           const parsed = JSON.parse(t.toolSchema)
-          toolDescription = parsed?.description || parsed?.inputSchema?.description
-        } catch(error) {
-          Logger.warn({ err: error, toolName }, "Could not parse toolSchema to extract description");
+          toolDescription =
+            parsed?.description || parsed?.inputSchema?.description
+        } catch (error) {
+          Logger.warn(
+            { err: error, toolName },
+            "Could not parse toolSchema to extract description",
+          )
         }
       }
-      Logger.info({ connectorId, toolName, descLen: (toolDescription || "").length }, "[MCP] Registering tool for JAF agent")
+      Logger.info(
+        { connectorId, toolName, descLen: (toolDescription || "").length },
+        "[MCP] Registering tool for JAF agent",
+      )
       tools.push({
         schema: {
           name: toolName,
-          description: toolDescription || `MCP tool from connector ${connectorId}`,
+          description:
+            toolDescription || `MCP tool from connector ${connectorId}`,
           // Parse MCP tool JSON schema; ensure an OBJECT at top-level for Vertex/Gemini
           parameters: mcpToolSchemaStringToZodObject(t.toolSchema),
         },
@@ -245,7 +266,10 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFA
                 newFragments = maybeContexts as MinimalAgentFragment[]
               }
             } catch (error) {
-              Logger.warn({ err: error, toolName }, "Could not parse MCP tool response");
+              Logger.warn(
+                { err: error, toolName },
+                "Could not parse MCP tool response",
+              )
             }
 
             return ToolResponse.success(formattedContent, {
@@ -254,7 +278,11 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFA
               connectorId,
             })
           } catch (err) {
-            return ToolResponse.error("EXECUTION_FAILED", `MCP tool ${toolName} failed: ${err instanceof Error ? err.message : String(err)}`, { connectorId })
+            return ToolResponse.error(
+              "EXECUTION_FAILED",
+              `MCP tool ${toolName} failed: ${err instanceof Error ? err.message : String(err)}`,
+              { connectorId },
+            )
           }
         },
       })
@@ -263,7 +291,9 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFA
   return tools
 }
 
-export function buildToolsOverview<A = unknown, Ctx = unknown>(tools: Tool<A, Ctx>[]): string {
+export function buildToolsOverview<A = unknown, Ctx = unknown>(
+  tools: Tool<A, Ctx>[],
+): string {
   if (!tools || tools.length === 0) return "No tools available."
   return tools
     .map((t, idx) => `  ${idx + 1}. ${t.schema.name}: ${t.schema.description}`)
@@ -275,9 +305,6 @@ export function buildContextSection(
   maxItems = 12,
 ): string {
   if (!fragments || fragments.length === 0) return ""
-  const ctx = answerContextMapFromFragments(
-    fragments.slice(0, maxItems),
-    maxItems,
-  )
+  const ctx = answerContextMapFromFragments(fragments, maxItems)
   return `\n\nContext Fragments (use [n] to cite):\n${ctx}`
 }
