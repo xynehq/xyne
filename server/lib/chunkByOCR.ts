@@ -1094,14 +1094,9 @@ function normalizeBlockContent(block: OcrBlock): string {
     return ""
   }
 
-  // if (block.block_label === "table") {
-  //   return content
-  //     .replace(/<\/(td|th)>/gi, " ")
-  //     .replace(/<\/tr>/gi, " \n ")
-  //     .replace(/<[^>]+>/g, " ")
-  //     .replace(/\s+/g, " ")
-  //     .trim()
-  // }
+  if (block.block_label === "table") {
+    return convertTableToTsv(content)
+  }
 
   if (block.block_label === "figure_title") {
     return content.trim()
@@ -1612,10 +1607,6 @@ export async function chunkByOCR(
         (a, b) => a - b,
       )
       const blockLabelsArray = Array.from(new Set(currentBlockLabels))
-
-      if(blockLabelsArray.includes("table")) {
-        chunkContent = convertTableToTsv(chunkContent)
-      }
 
       chunks.push(chunkContent)
       chunks_map.push({
