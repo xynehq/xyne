@@ -951,15 +951,20 @@ function AgentComponent() {
   }
 
   useEffect(() => {
-    if (viewMode === "list") {
-      fetchAllAgentData()
-    } else {
-      // When switching to create/edit view, also fetch all agents for the dropdown
-      setIsLoadingAgents(true)
-      fetchAgents("all")
-      setIsLoadingAgents(false)
+    const run = async () => {
+      if (viewMode === "list") {
+        await fetchAllAgentData()
+      } else {
+        setIsLoadingAgents(true)
+        try {
+          await fetchAgents("all")
+        } finally {
+          setIsLoadingAgents(false)
+        }
+      }
     }
-  }, [viewMode, setIsLoadingAgents])
+    run()
+  }, [viewMode])
 
   useEffect(() => {
     const fetchDataSourcesAsync = async () => {
