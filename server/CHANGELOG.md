@@ -1,3 +1,10 @@
+## [3.23.7](https://github.com/xynehq/xyne/compare/v3.23.6...v3.23.7) (2025-10-29)
+
+
+### Bug Fixes
+
+* **migrate-datasource:** Migrate datasource to knowledgeBase ([#1136](https://github.com/xynehq/xyne/issues/1136)) ([3fa075b](https://github.com/xynehq/xyne/commit/3fa075ba3d26c614f48f058908231aa644bed9d0))
+
 ## [3.23.6](https://github.com/xynehq/xyne/compare/v3.23.5...v3.23.6) (2025-10-29)
 
 
