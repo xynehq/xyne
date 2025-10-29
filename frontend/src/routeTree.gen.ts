@@ -28,11 +28,11 @@ import { Route as AuthenticatedIntegrationsSlackImport } from './routes/_authent
 import { Route as AuthenticatedIntegrationsMicrosoftImport } from './routes/_authenticated/integrations/microsoft'
 import { Route as AuthenticatedIntegrationsMcpImport } from './routes/_authenticated/integrations/mcp'
 import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authenticated/integrations/google'
-import { Route as AuthenticatedIntegrationsFileuploadImport } from './routes/_authenticated/integrations/fileupload'
 import { Route as AuthenticatedIntegrationsApiKeyImport } from './routes/_authenticated/integrations/apiKey'
 import { Route as AuthenticatedDataSourceDocIdImport } from './routes/_authenticated/dataSource.$docId'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
 import { Route as AuthenticatedAdminUserManagementImport } from './routes/_authenticated/admin/userManagement'
+import { Route as AuthenticatedAdminChatOverviewImport } from './routes/_authenticated/admin/chat-overview'
 import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
 import { Route as AuthenticatedTraceChatIdMsgIdImport } from './routes/_authenticated/trace.$chatId.$msgId'
 import { Route as AuthenticatedAdminIntegrationsSlackImport } from './routes/_authenticated/admin/integrations/slack'
@@ -149,13 +149,6 @@ const AuthenticatedIntegrationsGoogleRoute =
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
-const AuthenticatedIntegrationsFileuploadRoute =
-  AuthenticatedIntegrationsFileuploadImport.update({
-    id: '/integrations/fileupload',
-    path: '/integrations/fileupload',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-
 const AuthenticatedIntegrationsApiKeyRoute =
   AuthenticatedIntegrationsApiKeyImport.update({
     id: '/integrations/apiKey',
@@ -180,6 +173,13 @@ const AuthenticatedAdminUserManagementRoute =
   AuthenticatedAdminUserManagementImport.update({
     id: '/admin/userManagement',
     path: '/admin/userManagement',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedAdminChatOverviewRoute =
+  AuthenticatedAdminChatOverviewImport.update({
+    id: '/admin/chat-overview',
+    path: '/admin/chat-overview',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -313,6 +313,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/admin/chat-overview': {
+      id: '/_authenticated/admin/chat-overview'
+      path: '/admin/chat-overview'
+      fullPath: '/admin/chat-overview'
+      preLoaderRoute: typeof AuthenticatedAdminChatOverviewImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/_authenticated/admin/userManagement': {
       id: '/_authenticated/admin/userManagement'
       path: '/admin/userManagement'
@@ -339,13 +346,6 @@ declare module '@tanstack/react-router' {
       path: '/integrations/apiKey'
       fullPath: '/integrations/apiKey'
       preLoaderRoute: typeof AuthenticatedIntegrationsApiKeyImport
-      parentRoute: typeof AuthenticatedImport
-    }
-    '/_authenticated/integrations/fileupload': {
-      id: '/_authenticated/integrations/fileupload'
-      path: '/integrations/fileupload'
-      fullPath: '/integrations/fileupload'
-      preLoaderRoute: typeof AuthenticatedIntegrationsFileuploadImport
       parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/integrations/google': {
@@ -450,10 +450,10 @@ interface AuthenticatedRouteChildren {
   AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
   AuthenticatedWorkflowRoute: typeof AuthenticatedWorkflowRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedAdminChatOverviewRoute: typeof AuthenticatedAdminChatOverviewRoute
   AuthenticatedAdminUserManagementRoute: typeof AuthenticatedAdminUserManagementRoute
   AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
   AuthenticatedIntegrationsApiKeyRoute: typeof AuthenticatedIntegrationsApiKeyRoute
-  AuthenticatedIntegrationsFileuploadRoute: typeof AuthenticatedIntegrationsFileuploadRoute
   AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
   AuthenticatedIntegrationsMcpRoute: typeof AuthenticatedIntegrationsMcpRoute
   AuthenticatedIntegrationsMicrosoftRoute: typeof AuthenticatedIntegrationsMicrosoftRoute
@@ -476,11 +476,10 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedTuningRoute: AuthenticatedTuningRoute,
   AuthenticatedWorkflowRoute: AuthenticatedWorkflowRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAdminChatOverviewRoute: AuthenticatedAdminChatOverviewRoute,
   AuthenticatedAdminUserManagementRoute: AuthenticatedAdminUserManagementRoute,
   AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
   AuthenticatedIntegrationsApiKeyRoute: AuthenticatedIntegrationsApiKeyRoute,
-  AuthenticatedIntegrationsFileuploadRoute:
-    AuthenticatedIntegrationsFileuploadRoute,
   AuthenticatedIntegrationsGoogleRoute: AuthenticatedIntegrationsGoogleRoute,
   AuthenticatedIntegrationsMcpRoute: AuthenticatedIntegrationsMcpRoute,
   AuthenticatedIntegrationsMicrosoftRoute:
@@ -517,11 +516,11 @@ export interface FileRoutesByFullPath {
   '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
+  '/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
   '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
-  '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
   '/integrations/microsoft': typeof AuthenticatedIntegrationsMicrosoftRoute
@@ -547,11 +546,11 @@ export interface FileRoutesByTo {
   '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
+  '/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
   '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
-  '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
   '/integrations/microsoft': typeof AuthenticatedIntegrationsMicrosoftRoute
@@ -579,11 +578,11 @@ export interface FileRoutesById {
   '/_authenticated/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/_authenticated/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
   '/_authenticated/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
-  '/_authenticated/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/_authenticated/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/_authenticated/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
   '/_authenticated/integrations/microsoft': typeof AuthenticatedIntegrationsMicrosoftRoute
@@ -612,11 +611,11 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/oauth/success'
     | '/'
+    | '/admin/chat-overview'
     | '/admin/userManagement'
     | '/chat/$chatId'
     | '/dataSource/$docId'
     | '/integrations/apiKey'
-    | '/integrations/fileupload'
     | '/integrations/google'
     | '/integrations/mcp'
     | '/integrations/microsoft'
@@ -641,11 +640,11 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/oauth/success'
     | '/'
+    | '/admin/chat-overview'
     | '/admin/userManagement'
     | '/chat/$chatId'
     | '/dataSource/$docId'
     | '/integrations/apiKey'
-    | '/integrations/fileupload'
     | '/integrations/google'
     | '/integrations/mcp'
     | '/integrations/microsoft'
@@ -671,11 +670,11 @@ export interface FileRouteTypes {
     | '/_authenticated/workflow'
     | '/oauth/success'
     | '/_authenticated/'
+    | '/_authenticated/admin/chat-overview'
     | '/_authenticated/admin/userManagement'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dataSource/$docId'
     | '/_authenticated/integrations/apiKey'
-    | '/_authenticated/integrations/fileupload'
     | '/_authenticated/integrations/google'
     | '/_authenticated/integrations/mcp'
     | '/_authenticated/integrations/microsoft'
@@ -731,10 +730,10 @@ export const routeTree = rootRoute
         "/_authenticated/tuning",
         "/_authenticated/workflow",
         "/_authenticated/",
+        "/_authenticated/admin/chat-overview",
         "/_authenticated/admin/userManagement",
         "/_authenticated/dataSource/$docId",
         "/_authenticated/integrations/apiKey",
-        "/_authenticated/integrations/fileupload",
         "/_authenticated/integrations/google",
         "/_authenticated/integrations/mcp",
         "/_authenticated/integrations/microsoft",
@@ -792,6 +791,10 @@ export const routeTree = rootRoute
       "filePath": "_authenticated/index.tsx",
       "parent": "/_authenticated"
     },
+    "/_authenticated/admin/chat-overview": {
+      "filePath": "_authenticated/admin/chat-overview.tsx",
+      "parent": "/_authenticated"
+    },
     "/_authenticated/admin/userManagement": {
       "filePath": "_authenticated/admin/userManagement.tsx",
       "parent": "/_authenticated"
@@ -806,10 +809,6 @@ export const routeTree = rootRoute
     },
     "/_authenticated/integrations/apiKey": {
       "filePath": "_authenticated/integrations/apiKey.tsx",
-      "parent": "/_authenticated"
-    },
-    "/_authenticated/integrations/fileupload": {
-      "filePath": "_authenticated/integrations/fileupload.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/integrations/google": {

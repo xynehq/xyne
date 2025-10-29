@@ -15,6 +15,7 @@ import {
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
   agentWithNoIntegrationsQuestion,
+  extractBestDocumentIndexes,
 } from "@/ai/provider"
 import { getConnectorById } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -139,6 +140,7 @@ import {
   type RunState as JAFRunState,
   type RunResult as JAFRunResult,
   type TraceEvent as JAFTraceEvent,
+  type TraceEvent,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -1530,6 +1532,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         const citationMap: Record<number, number> = {}
         const citationValues: Record<number, Citation> = {}
         let gatheredFragments: MinimalAgentFragment[] = []
+        const gatheredFragmentskeys = new Set<string>() // to track uniqueness
         let planningContext = ""
         let parseSynthesisResult = null
 
@@ -1743,8 +1746,12 @@ export const MessageWithToolsApi = async (c: Context) => {
             ? `\n\nAgent Constraints:\n${agentPromptForLLM}`
             : ""
           const synthesisSection = parseSynthesisResult
+          const dateForAI = getDateForAI({ userTimeZone: userTimezone })
           return (
-            `You are Xyne, an enterprise search assistant.\n` +
+            `
+            The current date is: ${dateForAI} \n\n
+
+            You are Xyne, an enterprise search assistant.\n` +
             `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
             `- Do NOT answer from general knowledge. Always retrieve context via tools first.\n` +
             `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
@@ -1820,6 +1827,20 @@ export const MessageWithToolsApi = async (c: Context) => {
         for await (const evt of runStream<JAFAdapterCtx, string>(
           runState,
           runCfg,
+          async (event: TraceEvent) => {
+            if (event.type !== "before_tool_execution") return
+
+            const { args = {} } = event.data ?? {}
+            const docIds =
+              gatheredFragments?.map((v) => v.id).filter(Boolean) ?? []
+
+            // to exclude docs which already retrieved in prev iteration
+            const modifiedArgs = docIds.length
+              ? { ...args, excludedIds: docIds }
+              : args
+
+            return modifiedArgs
+          },
         )) {
           if (stream.closed) {
             wasStreamClosedPrematurely = true
@@ -1926,7 +1947,54 @@ export const MessageWithToolsApi = async (c: Context) => {
                 : 0
 
               if (Array.isArray(contexts) && contexts.length) {
-                gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
+                const contextStrings = contexts.map(
+                  (v: MinimalAgentFragment) => {
+                    const truncated = v.content.length > 600
+                    const preview = truncated
+                      ? v.content.slice(0, 600) + "..."
+                      : v.content
+                    return `title: ${v.source.title}\n
+                    content: ${preview}\n                  `
+                  },
+                )
+
+                try {
+                  const bestDocIndexes = await extractBestDocumentIndexes(
+                    message,
+                    contextStrings,
+                    {
+                      modelId: config.defaultBestModel,
+                      json: false,
+                      stream: false,
+                    },
+                  )
+
+                  if (bestDocIndexes.length) {
+                    bestDocIndexes.forEach((idx) => {
+                      if (idx >= 0 && idx < contexts.length) {
+                        const doc: MinimalAgentFragment = contexts[idx - 1]
+                        const key = doc.id
+                        if (!gatheredFragmentskeys.has(key)) {
+                          gatheredFragments.push(doc)
+                          gatheredFragmentskeys.add(key)
+                        }
+                      }
+                    })
+                  } else {
+                    Logger.info(
+                      "Couldn't retrieve good documents for user's query",
+                    )
+                  }
+                } catch (error) {
+                  // adding all context if extracting best document fails
+                  contexts.forEach((doc: MinimalAgentFragment) => {
+                    const key = doc.id
+                    if (!gatheredFragmentskeys.has(key)) {
+                      gatheredFragments.push(doc)
+                      gatheredFragmentskeys.add(key)
+                    }
+                  })
+                }
               }
 
               toolEndSpan.setAttribute("tool_name", evt.data.toolName)

@@ -242,6 +242,10 @@ export const deleteConnectorSchema = z.object({
   connectorId: z.string(),
 })
 
+export const chatIdParamSchema = z.object({
+  chatId: z.string().min(1, "Chat ID must be a non-empty string"),
+})
+
 export const updateConnectorStatusSchema = z.object({
   connectorId: z.string(),
   status: z.nativeEnum(ConnectorStatus),
@@ -313,7 +317,7 @@ export type SaaSJob = {
 
 export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
-export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
+export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase<any>
 
 export type OAuthCredentials = {
   data: {
@@ -596,6 +600,22 @@ export const UserRoleChangeSchema = z.object({
 })
 
 export type userRoleChange = z.infer<typeof UserRoleChangeSchema>
+
+// Admin pagination response schema
+export const AdminChatsPaginationResponseSchema = z.object({
+  data: z.array(z.any()), // Chat data array
+  pagination: z.object({
+    totalCount: z.number(),
+    currentPage: z.number(),
+    pageSize: z.number(),
+    hasNextPage: z.boolean(),
+    hasPreviousPage: z.boolean(),
+  }),
+})
+
+export type AdminChatsPaginationResponse = z.infer<
+  typeof AdminChatsPaginationResponseSchema
+>
 
 export const UserMetadata = z.object({
   userTimezone: z.string(),

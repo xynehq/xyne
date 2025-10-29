@@ -20,9 +20,9 @@ import { api } from "@/api"
 import { useToast } from "@/hooks/use-toast"
 
 export default function CallPage() {
-  // Get parameters from URL
+  // Get parameters from URL (support both 'room' and 'callId' for backwards compatibility)
   const urlParams = new URLSearchParams(window.location.search)
-  const room = urlParams.get("room") || ""
+  const callId = urlParams.get("callId") || ""
   const token = urlParams.get("token") || ""
   const callType = urlParams.get("type") || "video"
   const LiveKitServerUrl = urlParams.get("serverUrl")
@@ -38,24 +38,24 @@ export default function CallPage() {
   const { toast } = useToast()
 
   // Generate the shareable call link (without token for security)
-  const shareableCallLink = `${window.location.origin}/call?room=${room}&type=${callType}`
+  const shareableCallLink = `${window.location.origin}/call?callId=${callId}&type=${callType}`
 
   // If no token provided, try to join the call
   useEffect(() => {
-    if (room && !token && !isJoining && !joinError) {
+    if (callId && !token && !isJoining && !joinError) {
       joinCall()
     }
-  }, [room, token, isJoining, joinError])
+  }, [callId, token, isJoining, joinError])
 
   const joinCall = async () => {
-    if (!room) return
+    if (!callId) return
 
     setIsJoining(true)
     setJoinError(null)
 
     try {
       const response = await api.calls.join.$post({
-        json: { roomName: room },
+        json: { callId },
       })
 
       if (response.ok) {
@@ -99,7 +99,7 @@ export default function CallPage() {
       try {
         await navigator.share({
           title: `Join ${callType} call`,
-          text: `Join our ${callType} call: ${room}`,
+          text: `Join our ${callType} call`,
           url: shareableCallLink,
         })
       } catch (error) {
@@ -113,11 +113,75 @@ export default function CallPage() {
     }
   }
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
+    // Mark as ended first to prevent duplicate calls
     setIsCallEnded(true)
-    // Close the call window
-    window.close()
+
+    // Notify backend that user is leaving the call
+    if (callId) {
+      try {
+        await api.calls.leave.$post({
+          json: { callId },
+        })
+        console.log("Successfully notified server of disconnect")
+      } catch (error: unknown) {
+        console.error("Error notifying server of disconnect:", error)
+        // Continue with disconnect even if API call fails
+      }
+    }
+
+    // Close the call window after a short delay to ensure API call completes
+    setTimeout(() => {
+      window.close()
+    }, 100)
   }
+
+  // Track when user actually connects to the room (for participants tracking)
+  const handleConnected = async () => {
+    if (!callId) return
+
+    try {
+      // If user had a token (caller), we need to register them as a participant
+      if (token && !isJoining) {
+        await api.calls.join.$post({
+          json: { callId },
+        })
+      }
+    } catch (error) {
+      console.error("Error registering participant:", error)
+      // Don't show error to user - this is background tracking
+    }
+  }
+
+  // Ensure leave API is called when user closes window/tab or navigates away
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (callId && !isCallEnded) {
+        // Use synchronous fetch with keepalive for reliable delivery during page unload
+        // keepalive ensures the request completes even after the page unloads
+        fetch("/api/v1/calls/leave", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({ callId }),
+          keepalive: true, // Critical: keeps request alive after page unload
+        }).catch((error) => {
+          console.error("Error in beforeunload leave call:", error)
+        })
+      }
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    // Also listen to pagehide for better mobile support
+    window.addEventListener("pagehide", handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+      window.removeEventListener("pagehide", handleBeforeUnload)
+    }
+  }, [callId, isCallEnded])
 
   // Show loading state while joining
   if (isJoining) {
@@ -137,7 +201,7 @@ export default function CallPage() {
   }
 
   // Show error if join failed or missing required params
-  if (!room || (!actualToken && joinError)) {
+  if (!callId || (!actualToken && joinError)) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900">
         <div className="text-center">
@@ -192,6 +256,7 @@ export default function CallPage() {
             // Use the default LiveKit styles
             data-lk-theme="default"
             style={{ height: "100%", overflow: "hidden" }}
+            onConnected={handleConnected}
             onDisconnected={handleDisconnect}
           >
             {/* LiveKit provides a complete VideoConference component */}
@@ -239,7 +304,7 @@ export default function CallPage() {
       <InviteUsersModal
         isOpen={showInviteModal}
         onClose={() => setShowInviteModal(false)}
-        roomName={room}
+        callId={callId}
         callType={callType as "video" | "audio"}
       />
 

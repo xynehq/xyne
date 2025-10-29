@@ -26,7 +26,6 @@ import {
   getDriveItemsByDocIdsSchema,
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
-import { HighlightApi, highlightSchema } from "@/api/highlight"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
@@ -47,6 +46,7 @@ import {
   startSlackIngestionSchema,
   microsoftServiceSchema,
   UserRoleChangeSchema,
+  chatIdParamSchema,
   fileUploadSchema,
   attachmentUploadSchema,
   fileServeParamsSchema,
@@ -87,6 +87,7 @@ import {
   ListAllLoggedInUsers,
   ListAllIngestedUsers,
   GetKbVespaContent,
+  GetChatQueriesApi,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { initApiServerQueue } from "@/queue/api-server-queue"
@@ -120,18 +121,36 @@ import {
   GetUserApiKeys,
   DeleteUserApiKey,
 } from "@/api/auth"
+import {
+  getIngestionStatusSchema,
+  cancelIngestionSchema,
+  pauseIngestionSchema,
+  resumeIngestionSchema,
+} from "@/api/ingestion"
 import { SearchWorkspaceUsersApi, searchUsersSchema } from "@/api/users"
 import {
   InitiateCallApi,
   JoinCallApi,
   EndCallApi,
+  LeaveCallApi,
   GetActiveCallsApi,
+  GetCallHistoryApi,
   InviteToCallApi,
   initiateCallSchema,
   joinCallSchema,
   endCallSchema,
+  leaveCallSchema,
   inviteToCallSchema,
 } from "@/api/calls"
+import {
+  SendMessageApi,
+  GetConversationApi,
+  MarkMessagesAsReadApi,
+  GetUnreadCountsApi,
+  sendMessageSchema,
+  getConversationSchema,
+  markAsReadSchema,
+} from "@/api/directMessages"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -544,7 +563,7 @@ export const CallNotificationWs = app.get(
           const message = JSON.parse(event.data.toString())
           Logger.info(`Call notification message from user ${userId}:`, message)
 
-          // Handle different message types (accept call, reject call, etc.)
+          // Handle different message types (accept call, reject call, typing indicator, etc.)
           switch (message.type) {
             case "call_response":
               // Handle call acceptance/rejection
@@ -553,6 +572,20 @@ export const CallNotificationWs = app.get(
                   message.callerId,
                   message.response,
                   { callId: message.callId, targetUserId: userId },
+                )
+              }
+              break
+            case "typing_indicator":
+              // Handle typing indicator
+              if (
+                userId &&
+                message.targetUserId &&
+                typeof message.isTyping === "boolean"
+              ) {
+                callNotificationService.sendTypingIndicator(
+                  message.targetUserId,
+                  message.isTyping,
+                  userId,
                 )
               }
               break
@@ -1197,7 +1230,22 @@ export const AppRoutes = app
   )
   .post("/calls/join", zValidator("json", joinCallSchema), JoinCallApi)
   .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
+  .post("/calls/leave", zValidator("json", leaveCallSchema), LeaveCallApi)
   .get("/calls/active", GetActiveCallsApi)
+  .get("/calls/history", GetCallHistoryApi)
+  // Direct message routes
+  .post("/messages/send", zValidator("json", sendMessageSchema), SendMessageApi)
+  .get(
+    "/messages/conversation",
+    zValidator("query", getConversationSchema),
+    GetConversationApi,
+  )
+  .post(
+    "/messages/mark-read",
+    zValidator("json", markAsReadSchema),
+    MarkMessagesAsReadApi,
+  )
+  .get("/messages/unread-counts", GetUnreadCountsApi)
   .get(
     "/agent/:agentExternalId/permissions",
     zValidator("param", getAgentParamsSchema),
@@ -1306,7 +1354,6 @@ export const AppRoutes = app
     zValidator("param", chunkContentParamsSchema),
     GetChunkContentApi,
   )
-  .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
   .post(
     "/oauth/create",
@@ -1321,6 +1368,21 @@ export const AppRoutes = app
   )
   .post("/google/start_ingestion", (c) =>
     proxyToSyncServer(c, "/google/start_ingestion"),
+  )
+  // Ingestion Management APIs - new polling-based approach for Slack channel ingestion
+  .get(
+    "/ingestion/status",
+    zValidator("query", getIngestionStatusSchema),
+    (c) => proxyToSyncServer(c, "/ingestion/status", "GET"),
+  )
+  .post("/ingestion/cancel", zValidator("json", cancelIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/cancel"),
+  )
+  .post("/ingestion/pause", zValidator("json", pauseIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/pause"),
+  )
+  .post("/ingestion/resume", zValidator("json", resumeIngestionSchema), (c) =>
+    proxyToSyncServer(c, "/ingestion/resume"),
   )
   .delete(
     "/oauth/connector/delete",
@@ -1454,6 +1516,11 @@ export const AppRoutes = app
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetUserAgentLeaderboard,
   )
+  .get(
+    "/chat/queries/:chatId",
+    zValidator("param", chatIdParamSchema),
+    GetChatQueriesApi,
+  )
 
   .get(
     "/agents/:agentId/analysis",
@@ -1562,6 +1629,7 @@ app
     zValidator("param", getAgentParamsSchema),
     DeleteAgentApi,
   ) // Delete Agent
+  .get("/agent/:agentExternalId", GetAgentApi) // Get Agent details
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
   .post("/cl", zValidator("json", createCollectionSchema), CreateCollectionApi) // Create collection (KB)
   .get(
@@ -1574,6 +1642,8 @@ app
     zValidator("query", searchKnowledgeBaseSchema), // Search over KB
     SearchKnowledgeBaseApi,
   )
+  .get("/cl/:clId", GetCollectionApi) // Get collection by ID
+  .put("/cl/:clId", UpdateCollectionApi) // Update collection (rename, etc.)
   .delete(
     "/cl/:clId",
     zValidator("param", collectionParamsSchema),
@@ -1590,9 +1660,14 @@ app
     zValidator("param", deleteItemParamsSchema),
     DeleteItemApi,
   ) // Delete Item in KB
+  .post("/cl/poll-status", PollCollectionsStatusApi) // Poll collection items status
 
 // Proxy function to forward ingestion API calls to sync server
-const proxyToSyncServer = async (c: Context, endpoint: string) => {
+const proxyToSyncServer = async (
+  c: Context,
+  endpoint: string,
+  method: string = "POST",
+) => {
   try {
     // Get JWT token from cookie
     const token = getCookie(c, AccessTokenCookieName)
@@ -1600,21 +1675,36 @@ const proxyToSyncServer = async (c: Context, endpoint: string) => {
       throw new HTTPException(401, { message: "No authentication token" })
     }
 
-    // Get request body
-    const body = await c.req.json()
+    // Prepare URL - for GET requests, add query parameters
+    let url = `http://${config.syncServerHost}:${config.syncServerPort}${endpoint}`
+    if (method === "GET") {
+      const urlObj = new URL(url)
+      const queryParams = c.req.query()
+      Object.keys(queryParams).forEach((key) => {
+        if (queryParams[key]) {
+          urlObj.searchParams.set(key, queryParams[key])
+        }
+      })
+      url = urlObj.toString()
+    }
+
+    // Prepare request configuration
+    const requestConfig: RequestInit = {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `${AccessTokenCookieName}=${token}`,
+      },
+    }
+
+    // Add body for non-GET requests
+    if (method !== "GET") {
+      const body = await c.req.json()
+      requestConfig.body = JSON.stringify(body)
+    }
 
     // Forward to sync server
-    const response = await fetch(
-      `http://localhost:${config.syncServerPort}${endpoint}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `${AccessTokenCookieName}=${token}`,
-        },
-        body: JSON.stringify(body),
-      },
-    )
+    const response = await fetch(url, requestConfig)
 
     if (!response.ok) {
       const errorData = await response

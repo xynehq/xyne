@@ -462,7 +462,44 @@ export const handleGoogleOAuthChanges = async (
 ) => {
   const data = job.data
   loggerWithChild({ email: data.email ?? "" }).info("handleGoogleOAuthChanges")
-  let syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
+  const syncOnlyCurrentUser = job.data.syncOnlyCurrentUser || false
+  let syncJobs, gmailSyncJobs, gCalEventSyncJobs
+
+  if (syncOnlyCurrentUser) {
+    loggerWithChild({ email: data.email }).info(
+      "Syncing for triggered User Only",
+    )
+    syncJobs = await getAppSyncJobsByEmail(
+      db,
+      Apps.GoogleDrive,
+      AuthType.OAuth,
+      data.email,
+    )
+    gmailSyncJobs = await getAppSyncJobsByEmail(
+      db,
+      Apps.Gmail,
+      AuthType.OAuth,
+      data.email,
+    )
+    gCalEventSyncJobs = await getAppSyncJobsByEmail(
+      db,
+      Apps.GoogleCalendar,
+      AuthType.OAuth,
+      data.email,
+    )
+    loggerWithChild({ email: data.email ?? "" }).info(
+      `Value of syncOnlyCurrentUser :${syncOnlyCurrentUser} `,
+    )
+  } else {
+    syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
+    gmailSyncJobs = await getAppSyncJobs(db, Apps.Gmail, AuthType.OAuth)
+    gCalEventSyncJobs = await getAppSyncJobs(
+      db,
+      Apps.GoogleCalendar,
+      AuthType.OAuth,
+    )
+    loggerWithChild({ email: data.email ?? "" }).info(`syncing for Every user `)
+  }
   for (const syncJob of syncJobs) {
     let stats = newStats()
     try {
@@ -679,7 +716,6 @@ export const handleGoogleOAuthChanges = async (
     }
   }
 
-  const gmailSyncJobs = await getAppSyncJobs(db, Apps.Gmail, AuthType.OAuth)
   let stats = newStats()
   for (const syncJob of gmailSyncJobs) {
     try {
@@ -770,11 +806,6 @@ export const handleGoogleOAuthChanges = async (
   }
 
   // For Calendar Events Sync
-  const gCalEventSyncJobs = await getAppSyncJobs(
-    db,
-    Apps.GoogleCalendar,
-    AuthType.OAuth,
-  )
   for (const syncJob of gCalEventSyncJobs) {
     let stats = newStats()
     try {
