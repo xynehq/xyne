@@ -2094,6 +2094,64 @@ export const getDeepResearchResponse = (
   }
 }
 
+export const extractBestDocumentIndexes = async (
+  query: string,
+  contextStrings: string[],
+  params: ModelParams,
+): Promise<number[]> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultFastModel
+    }
+
+    const systemPrompt = `You are an AI assistant that analyzes documents to determine which ones are most relevant to a user's query. 
+
+Given a query and a list of documents, return the indexes (1-based) of the most relevant documents in order of relevance.
+
+Return your response as a JSON array of numbers representing the document indexes that are most relevant to the query. For example: [1, 3, 5]
+
+Only include documents that are directly relevant to the query. If no documents are relevant, return an empty array.`
+
+    params.systemPrompt = systemPrompt
+    params.json = true
+
+    const documentsText = contextStrings
+      .map((doc, index) => `Document ${index + 1}:\n${doc}`)
+      .join('\n\n')
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      [
+        {
+          role: "user",
+          content: [
+            {
+              text: `Query: "${query}"\n\nDocuments:\n${documentsText}`,
+            },
+          ],
+        },
+      ],
+      params,
+    )
+
+    if (text) {
+      try {
+        const jsonVal = jsonParseLLMOutput(text)
+        // Handle both array response and object with indexes property
+        const indexes = Array.isArray(jsonVal) ? jsonVal : (jsonVal.indexes || [])
+        return indexes.filter((idx: any) => typeof idx === 'number' && idx > 0 && idx <= contextStrings.length)
+      } catch (err) {
+        Logger.error(err, `Failed to parse document index response: ${text}`)
+        return []
+      }
+    }
+    
+    return []
+  } catch (error) {
+    Logger.error(error, "Error in extractBestDocumentIndexes")
+    return []
+  }
+}
+
 export const agentWithNoIntegrationsQuestion = (
   query: string,
   userCtx: string,

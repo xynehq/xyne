@@ -564,9 +564,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           <Document
             key={documentKey}
             file={stableSource as any}
-            onLoadSuccess={onDocumentLoadSuccess}
+            onLoadSuccess={onDocumentLoadSuccess as any}
             onLoadError={onDocumentLoadError}
-            options={documentOptions}
+            options={documentOptions as any}
             imageResourcesPath="/pdfjs/images/"
             loading={
               showLoading ? (
