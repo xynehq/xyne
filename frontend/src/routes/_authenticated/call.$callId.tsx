@@ -4,7 +4,7 @@ import { CallType } from "@/types"
 
 // Define the search params type
 type CallSearchParams = {
-  type?: CallType
+  type: CallType
 }
 
 export const Route = createFileRoute("/_authenticated/call/$callId")({

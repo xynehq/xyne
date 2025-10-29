@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import {
   LiveKitRoom,
   VideoConference,
@@ -28,10 +28,10 @@ setLogLevel("warn")
 export default function CallPage() {
   // Get callId from route params: /call/:callId
   const params = useParams({ strict: false }) as { callId?: string }
-  const search = useSearch({ strict: false }) as { type?: string }
+  const search = useSearch({ strict: false }) as { type: CallType }
 
   const callId = params.callId || ""
-  const callType = (search.type || CallType.Video) as CallType
+  const callType = search.type
 
   const [isCallEnded, setIsCallEnded] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
@@ -49,7 +49,7 @@ export default function CallPage() {
     ? `${window.location.origin}/call/${callId}?type=${callType}`
     : ""
 
-  const joinCall = async () => {
+  const joinCall = useCallback(async () => {
     if (!callId) return
 
     setIsJoining(true)
@@ -83,7 +83,7 @@ export default function CallPage() {
     } finally {
       setIsJoining(false)
     }
-  }
+  }, [callId])
 
   // Automatically join the call on mount
   // Use useRef to track if we've already attempted to join
@@ -94,7 +94,7 @@ export default function CallPage() {
       joinAttempted.current = true
       joinCall()
     }
-  }, [callId, token])
+  }, [callId, token, joinCall])
 
   const handleCopyLink = async () => {
     if (!shareableCallLink) {
