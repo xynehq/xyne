@@ -1,3 +1,10 @@
+## [3.23.3](https://github.com/xynehq/xyne/compare/v3.23.2...v3.23.3) (2025-10-29)
+
+
+### Bug Fixes
+
+* XYN-255 fixed the shareable call link with routes ([#1164](https://github.com/xynehq/xyne/issues/1164)) ([148a7cc](https://github.com/xynehq/xyne/commit/148a7cc04c83a0f095694f526e8ef1785637a433))
+
 ## [3.23.2](https://github.com/xynehq/xyne/compare/v3.23.1...v3.23.2) (2025-10-29)
 
 
