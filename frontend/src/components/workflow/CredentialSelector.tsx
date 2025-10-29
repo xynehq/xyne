@@ -8,13 +8,15 @@ interface CredentialSelectorProps {
   selectedCredentialId?: string
   onSelect: (credentialId: string | null) => void
   className?: string
+  existingCredentials?: any[] // Credentials from tool config
 }
 
 export function CredentialSelector({
   authType,
   selectedCredentialId,
   onSelect,
-  className = ""
+  className = "",
+  existingCredentials = []
 }: CredentialSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [credentials, setCredentials] = useState<Credential[]>([])
@@ -25,16 +27,46 @@ export function CredentialSelector({
   useEffect(() => {
     const fetchCredentials = async () => {
       try {
-        const allCredentials = await credentialsAPI.fetchByType(authType)
+        // Start with existing credentials from tool config
+        let allCredentials: Credential[] = []
+        
+        // Convert existing credentials from tool config to Credential format
+        if (existingCredentials && existingCredentials.length > 0) {
+          console.log('🔧 Converting existing credentials from tool config:', existingCredentials)
+          const convertedCredentials = existingCredentials.map((toolCred, index) => ({
+            id: selectedCredentialId || `tool-cred-${index}`, // Use the selectedCredentialId or generate one
+            name: toolCred.name || `${toolCred.user} (Basic Auth)`,
+            type: authType,
+            user: toolCred.user,
+            password: toolCred.password,
+            isValid: true,
+            allowedDomains: toolCred.allowedDomains
+          } as Credential))
+          allCredentials = convertedCredentials
+          console.log('🔧 Converted tool credentials:', allCredentials)
+        }
+        
+        // Also fetch from API (for new credentials that might be created)
+        try {
+          const apiCredentials = await credentialsAPI.fetchByType(authType)
+          // Merge, avoiding duplicates (prefer tool config credentials)
+          const toolCredIds = allCredentials.map(c => c.id)
+          const newApiCredentials = apiCredentials.filter(c => !toolCredIds.includes(c.id))
+          allCredentials = [...allCredentials, ...newApiCredentials]
+          console.log('🔧 Final merged credentials:', allCredentials)
+        } catch (apiError) {
+          console.log('🔧 API fetch failed, using only tool config credentials:', apiError)
+        }
+        
         setCredentials(allCredentials)
       } catch (error) {
-        console.error('Failed to fetch credentials:', error)
+        console.error('Failed to process credentials:', error)
         setCredentials([])
       }
     }
 
     fetchCredentials()
-  }, [authType])
+  }, [authType, existingCredentials, selectedCredentialId])
 
   const selectedCredential = credentials.find(cred => cred.id === selectedCredentialId)
   const hasIssues = selectedCredential && !selectedCredential.isValid

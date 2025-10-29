@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react"
-import { Copy, Check, X } from "lucide-react"
+import { Copy, Check, X, Terminal } from "lucide-react"
 import { WebhookConfig } from "./Types"
 import { BackArrowIcon } from "./WorkflowIcons"
 import Dropdown from "@/components/ui/dropdown"
 import { CredentialSelector } from "./CredentialSelector"
+import { credentialsAPI, type Credential } from "./api/ApiHandlers"
 
 interface WebhookConfigurationUIProps {
   isVisible: boolean
@@ -45,8 +46,10 @@ export default function WebhookConfigurationUI({
   const [newParamKey, setNewParamKey] = useState("")
   const [newParamValue, setNewParamValue] = useState("")
   const [copied, setCopied] = useState(false)
+  const [curlCopied, setCurlCopied] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [originalConfig, setOriginalConfig] = useState<WebhookConfig | null>(null)
+  const [selectedCredentialData, setSelectedCredentialData] = useState<Credential | null>(null)
 
   // Initialize config from initialConfig or toolData
   useEffect(() => {
@@ -104,6 +107,52 @@ export default function WebhookConfigurationUI({
       setHasChanges(configChanged)
     }
   }, [config, originalConfig])
+
+  // Get credential data from tool config or fetch from API
+  useEffect(() => {
+    const getCredentialData = async () => {
+      if (config.selectedCredential && config.authentication !== "none") {
+        try {
+          console.log('🔧 Looking for credential data for:', config.selectedCredential, 'type:', config.authentication)
+          
+          // First check if we have credentials in the tool config (for existing workflows)
+          if (toolData?.config?.credentials && Array.isArray(toolData.config.credentials)) {
+            console.log('🔧 Found credentials in tool config:', toolData.config.credentials)
+            const selectedCred = toolData.config.credentials.find((cred: any) => cred.isSelected === true)
+            if (selectedCred) {
+              console.log('🔧 Found selected credential in tool config:', selectedCred)
+              // Convert tool config credential format to our expected format
+              const credentialData: Credential = {
+                id: config.selectedCredential,
+                name: selectedCred.name,
+                type: config.authentication as "basic" | "bearer" | "api_key",
+                user: selectedCred.user,
+                password: selectedCred.password,
+                isValid: true
+              }
+              setSelectedCredentialData(credentialData)
+              return
+            }
+          }
+          
+          // Fallback to API fetch for new credentials
+          console.log('🔧 Fetching credential data from API for:', config.selectedCredential, 'type:', config.authentication)
+          const credentials = await credentialsAPI.fetchByType(config.authentication as "basic" | "bearer" | "api_key")
+          console.log('🔧 Available credentials from API:', credentials)
+          const credential = credentials.find(cred => cred.id === config.selectedCredential)
+          console.log('🔧 Found credential from API:', credential)
+          setSelectedCredentialData(credential || null)
+        } catch (error) {
+          console.error('Failed to get credential data:', error)
+          setSelectedCredentialData(null)
+        }
+      } else {
+        setSelectedCredentialData(null)
+      }
+    }
+
+    getCredentialData()
+  }, [config.selectedCredential, config.authentication, toolData])
 
   // Generate webhook URL based on the path
   const generateWebhookUrl = () => {
@@ -236,6 +285,80 @@ export default function WebhookConfigurationUI({
     }
   }
 
+  // Generate curl command with authentication
+  const generateCurlCommand = () => {
+    const url = generateWebhookUrl()
+    const method = config.httpMethod
+    let curlCommand = `curl --location --request ${method} '${url}'`
+
+    // Add Content-Type header
+    curlCommand += ` \\\n--header 'Content-Type: application/json'`
+
+    // Add authentication header if present
+    if (config.authentication === "basic" && config.selectedCredential) {
+      // First try to get basic_auth from tool config (for existing workflows)
+      const toolCredentials = toolData?.config?.credentials
+      const selectedToolCred = toolCredentials?.find((cred: any) => cred.isSelected === true)
+      
+      if (selectedToolCred && selectedToolCred.basic_auth) {
+        // Use the pre-encoded basic_auth from tool config
+        console.log('🔧 Using basic_auth from tool config:', selectedToolCred.basic_auth)
+        curlCommand += ` \\\n--header 'Authorization: Basic ${selectedToolCred.basic_auth}'`
+      } else if (selectedCredentialData && selectedCredentialData.user && selectedCredentialData.password) {
+        // Create Basic Auth token from fetched credential data
+        const credentials = `${selectedCredentialData.user}:${selectedCredentialData.password}`
+        const basicAuthToken = btoa(credentials) // Base64 encode
+        console.log('🔧 Creating basic_auth from credential data:', basicAuthToken)
+        curlCommand += ` \\\n--header 'Authorization: Basic ${basicAuthToken}'`
+      } else {
+        // Fallback message if credential data is not available
+        curlCommand += ` \\\n--header 'Authorization: Basic <CREDENTIAL_NOT_LOADED>'`
+      }
+    }
+
+    // Add custom headers
+    if (config.headers && Object.keys(config.headers).length > 0) {
+      Object.entries(config.headers).forEach(([key, value]) => {
+        // Skip Content-Type if already added, and Authorization if auth is handled above
+        if (key.toLowerCase() !== 'content-type' && key.toLowerCase() !== 'authorization') {
+          curlCommand += ` \\\n--header '${key}: ${value}'`
+        }
+      })
+    }
+
+    // Add request body for POST, PUT, PATCH methods
+    if ((method === "POST" || method === "PUT" || method === "PATCH") && config.requestBody) {
+      // Escape single quotes in JSON for shell
+      const escapedBody = config.requestBody.replace(/'/g, "'\"'\"'")
+      curlCommand += ` \\\n--data '${escapedBody}'`
+    } else if (method === "GET") {
+      curlCommand += ` \\\n--data '{}'`
+    }
+
+    return curlCommand
+  }
+
+  // Copy curl command to clipboard
+  const copyCurlCommand = async () => {
+    const curlCommand = generateCurlCommand()
+    try {
+      await navigator.clipboard.writeText(curlCommand)
+      setCurlCopied(true)
+      setTimeout(() => setCurlCopied(false), 2000) // Reset after 2 seconds
+    } catch (err) {
+      console.error('Failed to copy curl command:', err)
+      // Fallback for browsers that don't support clipboard API
+      const textArea = document.createElement('textarea')
+      textArea.value = curlCommand
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      setCurlCopied(true)
+      setTimeout(() => setCurlCopied(false), 2000)
+    }
+  }
+
   const addQueryParam = () => {
     if (newParamKey.trim() && newParamValue.trim()) {
       setConfig(prev => ({
@@ -306,6 +429,7 @@ export default function WebhookConfigurationUI({
         >
           Webhook Configuration
         </h2>
+        
         <button
           onClick={onClose || onBack}
           className="flex items-center justify-center"
@@ -327,9 +451,32 @@ export default function WebhookConfigurationUI({
         <div className="space-y-4 flex-1">
           {/* Webhook URL Display */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
-              Webhook URL
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
+                Webhook URL
+              </label>
+              
+              {/* Copy cURL Button */}
+              <button
+                onClick={copyCurlCommand}
+                disabled={!config.path?.trim()}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-300 dark:border-gray-600 rounded-md transition-colors"
+                title={curlCopied ? "cURL command copied!" : "Copy cURL command for testing"}
+              >
+                {curlCopied ? (
+                  <>
+                    <Check className="w-3 h-3 text-green-600" />
+                    <span className="text-green-600">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Terminal className="w-3 h-3" />
+                    <span>Copy cURL</span>
+                  </>
+                )}
+              </button>
+            </div>
+            
             <div className="space-y-2">
               <div className="relative">
                 <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg pr-12">
@@ -340,7 +487,7 @@ export default function WebhookConfigurationUI({
                 <button
                   onClick={copyWebhookUrl}
                   className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-                  title={copied ? "Copied!" : "Copy URL"}
+                  title={copied ? "URL copied!" : "Copy URL"}
                 >
                   {copied ? (
                     <Check className="w-3 h-3 text-green-600" />
@@ -354,6 +501,7 @@ export default function WebhookConfigurationUI({
               </div>
             </div>
           </div>
+
 
           {/* HTTP Method */}
           <div className="space-y-2">
@@ -421,6 +569,7 @@ export default function WebhookConfigurationUI({
                 authType={config.authentication as "basic" | "bearer" | "api_key"}
                 selectedCredentialId={config.selectedCredential}
                 onSelect={(credentialId) => setConfig(prev => ({ ...prev, selectedCredential: credentialId || undefined }))}
+                existingCredentials={toolData?.config?.credentials || []}
               />
             </div>
           )}
