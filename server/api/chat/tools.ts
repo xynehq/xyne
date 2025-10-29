@@ -114,7 +114,12 @@ async function formatSearchToolResponse(
       const citation = searchToCitation(r)
       return {
         id: citation.docId,
-        content: await answerContextMap(r, userMetadata, maxDefaultSummary),
+        content: await answerContextMap(
+          r,
+          userMetadata,
+          // Limit to 50 chunks for file documents to prevent exceeding context size with large files
+          r.fields.sddocname === fileSchema ? 50 : undefined,
+        ),
         source: citation,
         confidence: r.relevance || 0.7,
       }
@@ -165,8 +170,8 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
   let agentSpecificCollectionIds: string[] = []
   let agentSpecificCollectionFolderIds: string[] = []
   let agentSpecificCollectionFileIds: string[] = []
-  let selectedItem = {}
   let appFilters: any = {}
+  let selectedItem: any = {}
 
   if (!agentPrompt) {
     return {
@@ -183,7 +188,6 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
 
   try {
     agentPromptData = JSON.parse(agentPrompt)
-    let selectedItem: any = {}
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
       const { selectedApps, selectedItems, appFilters } = parseAppSelections(
         agentPromptData.appIntegrations,
@@ -224,80 +228,6 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       agentSpecificCollectionFileIds,
       selectedItems: selectedItem,
       appFilters,
-    }
-  }
-
-  
-
-  if (
-    !agentPromptData.appIntegrations ||
-    !Array.isArray(agentPromptData.appIntegrations)
-  ) {
-    Logger.warn(
-      "agentPromptData.appIntegrations is not an array or is missing",
-      { agentPromptData },
-    )
-    return {
-      agentAppEnums,
-      agentSpecificDataSourceIds,
-      agentSpecificCollectionIds,
-      agentSpecificCollectionFolderIds,
-      agentSpecificCollectionFileIds,
-      selectedItems: selectedItem,
-      appFilters,
-    }
-  }
-
-  for (const integration of agentPromptData.appIntegrations) {
-    if (typeof integration !== "string") {
-      Logger.warn(
-        `Invalid integration item in agent prompt (not a string): ${integration}`,
-      )
-      continue
-    }
-
-    const integrationApp = integration.toLowerCase()
-
-    // Handle data source IDs
-    if (integrationApp.startsWith("ds-") || integrationApp.startsWith("ds_")) {
-      agentSpecificDataSourceIds.push(integration)
-      if (!agentAppEnums.includes(Apps.DataSource)) {
-        agentAppEnums.push(Apps.DataSource)
-      }
-      continue
-    }
-
-    // Handle collection IDs
-    if (integrationApp.startsWith("cl-")) {
-      // Entire collection - remove cl- prefix
-      const collectionId = integration.replace(/^cl[-_]/, "")
-      agentSpecificCollectionIds.push(collectionId)
-      continue
-    }
-
-    // Handle collection folder IDs
-    if (integrationApp.startsWith("clfd-")) {
-      // Collection folder - remove clfd- prefix
-      const collectionFolderId = integration.replace(/^clfd[-_]/, "")
-      agentSpecificCollectionFolderIds.push(collectionFolderId)
-      continue
-    }
-
-    // Handle collection file IDs
-    if (integrationApp.startsWith("clf-")) {
-      // Collection file - remove clf- prefix
-      const collectionFileId = integration.replace(/^clf[-_]/, "")
-      agentSpecificCollectionFileIds.push(collectionFileId)
-      continue
-    }
-
-    const app = integrationApp as Apps
-    if (app) {
-      if (!agentAppEnums.includes(app)) {
-        agentAppEnums.push(app)
-      }
-    } else {
-      Logger.warn(`Unknown integration type in agent prompt: ${integration}`)
     }
   }
 
@@ -573,8 +503,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       }
       const citation = searchToCitation(r)
       return {
-        id: `${citation.docId}`,
-        content: await answerContextMap(r, userMetadata, maxDefaultSummary),
+        id: citation.docId,
+        content: await answerContextMap(
+          r,
+          userMetadata,
+          // Limit to 50 chunks for file documents to prevent exceeding context size with large files
+          r.fields.sddocname === fileSchema ? 50 : undefined,
+        ),
         source: citation,
         confidence: r.relevance || 0.7,
       }
@@ -660,260 +595,6 @@ export const searchGlobal: AgentTool = {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)
       return { result: `Search error: ${errMsg}`, error: errMsg }
-    } finally {
-      execSpan?.end()
-    }
-  },
-}
-
-// Item type mapping configuration
-interface ItemTypeMappingDetails {
-  schema: VespaSchema
-  defaultEntity: Entity | null
-  timestampField: string
-  defaultApp: Apps | null
-}
-
-const meetingEventMapping: ItemTypeMappingDetails = {
-  schema: eventSchema,
-  defaultEntity: CalendarEntity.Event,
-  timestampField: "startTime",
-  defaultApp: Apps.GoogleCalendar,
-}
-
-const emailMessageNotificationMapping: ItemTypeMappingDetails = {
-  schema: mailSchema,
-  defaultEntity: MailEntity.Email,
-  timestampField: "timestamp",
-  defaultApp: Apps.Gmail,
-}
-
-const documentFileMapping: ItemTypeMappingDetails = {
-  schema: fileSchema,
-  defaultEntity: null,
-  timestampField: "updatedAt",
-  defaultApp: Apps.GoogleDrive,
-}
-
-const attachmentMapping: ItemTypeMappingDetails = {
-  schema: mailAttachmentSchema,
-  defaultEntity: null,
-  timestampField: "timestamp",
-  defaultApp: Apps.Gmail,
-}
-
-const userPersonMapping: ItemTypeMappingDetails = {
-  schema: userSchema,
-  defaultEntity: null,
-  timestampField: "creationTime",
-  defaultApp: Apps.GoogleWorkspace,
-}
-
-const contactMapping: ItemTypeMappingDetails = {
-  schema: userSchema,
-  defaultEntity: null,
-  timestampField: "creationTime",
-  defaultApp: null, // Default to null app to target personal contacts via owner field in getItems
-}
-
-interface SchemaMapping {
-  schema: VespaSchema
-  defaultEntity: Entity | null
-  timestampField: string
-}
-
-const appMapping: Record<string, SchemaMapping> = {
-  [Apps.Gmail.toLowerCase()]: {
-    schema: mailSchema,
-    defaultEntity: MailEntity.Email,
-    timestampField: "timestamp",
-  },
-  [Apps.GoogleCalendar.toLowerCase()]: {
-    schema: eventSchema,
-    defaultEntity: CalendarEntity.Event,
-    timestampField: "startTime",
-  },
-  [Apps.GoogleDrive.toLowerCase()]: {
-    schema: fileSchema,
-    defaultEntity: null,
-    timestampField: "updatedAt",
-  },
-  [Apps.GoogleWorkspace.toLowerCase()]: {
-    schema: userSchema,
-    defaultEntity: null,
-    timestampField: "creationTime",
-  },
-  [Apps.DataSource.toLowerCase()]: {
-    schema: datasourceSchema,
-    defaultEntity: null,
-    timestampField: "updatedAt",
-  },
-  // [Apps.Slack.toLowerCase()]: {
-  //   schema: chatMessageSchema,
-  //   defaultEntity: SlackEntity.Message,
-  //   timestampField: "createdAt"
-  // },
-}
-
-// === NEW Metadata Retrieval Tool ===
-export const metadataRetrievalTool: AgentTool = {
-  name: XyneTools.MetadataRetrieval,
-  description: internalTools[XyneTools.MetadataRetrieval].description,
-  parameters: getToolParameters(XyneTools.MetadataRetrieval),
-  execute: async (
-    params: MetadataRetrievalParams,
-    span?: Span,
-    email?: string,
-    userCtx?: string,
-    agentPrompt?: string,
-  ) => {
-    const execSpan = span?.startSpan("execute_metadata_retrieval_tool")
-    if (!email) {
-      const errorMsg = "Email is required for search tool execution."
-      execSpan?.setAttribute("error", errorMsg)
-      return { result: errorMsg, error: "Missing email" }
-    }
-    Logger.debug(
-      { params, excludedIds: params.excludedIds },
-      "[metadata_retrieval] Input Parameters:",
-    )
-    if (params.app) execSpan?.setAttribute("app_param_original", params.app)
-    if (params.entity) execSpan?.setAttribute("entity_param", params.entity)
-    if (params.filter_query)
-      execSpan?.setAttribute("filter_query", params.filter_query)
-    if (params.intent)
-      execSpan?.setAttribute("intent", JSON.stringify(params.intent))
-
-    execSpan?.setAttribute("limit", params.limit || 10)
-    execSpan?.setAttribute("offset", params.offset || 0)
-    if (params.order_direction)
-      execSpan?.setAttribute("order_direction_param", params.order_direction)
-    if (params.app == "googledrive") {
-      params.app = Apps.GoogleDrive
-    }
-    try {
-      let schema: VespaSchema
-      let entity: Entity | null = null
-      let appToUse: Apps | null = isValidApp(params.app || "")
-        ? (params.app as Apps)
-        : null
-      let timestampField: string
-
-      if (!appToUse) {
-        const unknownItemMsg = `Error: Unknown item_type '${params.app}'`
-        execSpan?.setAttribute("error", unknownItemMsg)
-        Logger.error("[metadata_retrieval] Unknown item_type:", unknownItemMsg)
-        return { result: unknownItemMsg, error: `Unknown item_type` }
-      }
-
-      const mapping = appMapping[appToUse.toLowerCase()]
-      if (!mapping) {
-        const unknownItemMsg = `Error: No mapping found for app '${appToUse}'`
-        execSpan?.setAttribute("error", unknownItemMsg)
-        Logger.error("[metadata_retrieval] No mapping found:", unknownItemMsg)
-        return {
-          result: unknownItemMsg,
-          error: `No mapping found for item_type`,
-        }
-      }
-      schema = mapping.schema
-      entity = mapping.defaultEntity
-      timestampField = mapping.timestampField
-
-      Logger.debug(
-        `[metadata_retrieval] Derived from item_type '${appToUse}': schema='${schema.toString()}', initial_entity='${entity ? entity.toString() : "null"}', timestampField='${timestampField}', inferred_appToUse='${appToUse ? appToUse.toString() : "null"}'`,
-      )
-
-      let finalEntity: Entity | null = isValidEntity(entity ?? "")
-        ? entity
-        : null
-      execSpan?.setAttribute(
-        "initial_entity_from_item_type",
-        finalEntity ? finalEntity.toString() : "null",
-      )
-
-      Logger.debug(
-        `[metadata_retrieval] Final determined values before Vespa call: appToUse='${appToUse ? appToUse.toString() : "null"}', schema='${schema.toString()}', finalEntity='${finalEntity ? finalEntity.toString() : "null"}'`,
-      )
-
-      execSpan?.setAttribute("derived_schema", schema.toString())
-      if (entity) execSpan?.setAttribute("derived_entity", entity.toString())
-      execSpan?.setAttribute(
-        "final_app_to_use",
-        appToUse ? appToUse.toString() : "null",
-      )
-
-      const orderByString: string | undefined = params.order_direction
-        ? `${timestampField} ${params.order_direction}`
-        : undefined
-      if (orderByString)
-        execSpan?.setAttribute("orderBy_constructed", orderByString)
-      Logger.debug(
-        `[metadata_retrieval] orderByString for Vespa (if applicable): '${orderByString}'`,
-      )
-      const channelIds = agentPrompt
-        ? await getChannelIdsFromAgentPrompt(agentPrompt)
-        : []
-
-      const {
-        agentAppEnums,
-        agentSpecificDataSourceIds,
-        agentSpecificCollectionIds,
-        agentSpecificCollectionFolderIds,
-        agentSpecificCollectionFileIds,
-        selectedItems,
-        appFilters,
-      } = parseAgentAppIntegrations(agentPrompt)
-
-      let resolvedIntent = params.intent || {}
-      if (
-        resolvedIntent &&
-        Object.keys(resolvedIntent).length > 0 &&
-        appToUse === Apps.Gmail
-      ) {
-        Logger.info(
-          ` Detected names in intent, resolving to emails: ${JSON.stringify(resolvedIntent)}`,
-        )
-        resolvedIntent = await resolveNamesToEmails(
-          resolvedIntent,
-          email,
-          userCtx ?? "",
-          userMetadata,
-          span,
-        )
-        Logger.info(`Resolved intent: ${JSON.stringify(resolvedIntent)}`)
-      }
-
-      return await executeVespaSearch({
-        email,
-        query: params.filter_query,
-        app: appToUse,
-        entity: finalEntity,
-        limit: params.limit,
-        offset: params.offset,
-        orderDirection: params.order_direction,
-        excludedIds: params.excludedIds,
-        agentAppEnums,
-        span: execSpan,
-        schema: params.filter_query ? null : schema, // Only pass schema if no filter_query for getItems
-        dataSourceIds: agentSpecificDataSourceIds,
-        collectionIds: agentSpecificCollectionIds,
-        collectionFolderIds: agentSpecificCollectionFolderIds,
-        collectionFileIds: agentSpecificCollectionFileIds,
-        timestampRange: { from: params.from, to: params.to },
-        intent: resolvedIntent,
-        channelIds: channelIds,
-        selectedItems: selectedItems,
-      })
-    } catch (error) {
-      const errMsg = getErrorMessage(error)
-      execSpan?.setAttribute("error", errMsg)
-      Logger.error(error, `Metadata retrieval tool error: ${errMsg}`)
-      // Ensure this return type matches the interface
-      return {
-        result: `Error retrieving metadata: ${errMsg}`,
-        error: errMsg,
-      }
     } finally {
       execSpan?.end()
     }
@@ -2121,7 +1802,6 @@ export const searchGmail: AgentTool = {
       sortBy?: "asc" | "desc"
       labels?: string[]
       timeRange?: { startTime: string; endTime: string }
-      isAttachmentRequired?: boolean
       participants?: MailParticipant
       excludedIds?: string[]
     },
@@ -2160,17 +1840,16 @@ export const searchGmail: AgentTool = {
             : Date.now(),
         }
       }
-
+      const offset = params.offset || 0
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Gmail,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
+        offset,
         sortBy: params.sortBy || "desc",
         labels: params.labels,
         timeRange: timeRange,
-        isAttachmentRequired: params.isAttachmentRequired,
         participants: params.participants,
         excludeDocIds: params.excludedIds || [],
         docIds: undefined,
@@ -2264,14 +1943,14 @@ export const searchDriveFiles: AgentTool = {
             : Date.now(),
         }
       }
-
+      const offset = params.offset || 0
       // Call searchGoogleApps with correct parameter structure
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Drive,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
+        offset,
         sortBy: params.sortBy || "desc",
         timeRange: timeRange,
         owner: params.owner,
@@ -2349,13 +2028,13 @@ export const searchCalendarEvents: AgentTool = {
             : Date.now(),
         }
       }
-
+      const offset = params.offset || 0
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Calendar,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
+        offset,
         sortBy: params.sortBy || "desc",
         timeRange: timeRange,
         attendees: params.attendees,
@@ -2409,14 +2088,15 @@ export const searchGoogleContacts: AgentTool = {
         return { result: errorMsg, error: "Missing email" }
       }
 
+      const offset = params.offset || 0
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Contacts,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
         sortBy: "desc",
         excludeDocIds: params.excludedIds || [],
+        offset,
       })
 
       return await formatSearchToolResponse(searchResults, {

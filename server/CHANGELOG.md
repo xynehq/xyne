@@ -1,3 +1,10 @@
+## [3.22.3](https://github.com/xynehq/xyne/compare/v3.22.2...v3.22.3) (2025-10-27)
+
+
+### Bug Fixes
+
+* **agentic:** Fix retrieval query prompt ([#1149](https://github.com/xynehq/xyne/issues/1149)) ([f9252d3](https://github.com/xynehq/xyne/commit/f9252d3526ceaa5e64ebabcb6f1c9bfabdf1e182))
+
 ## [3.22.2](https://github.com/xynehq/xyne/compare/v3.22.1...v3.22.2) (2025-10-27)
 
 

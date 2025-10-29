@@ -1948,10 +1948,14 @@ export const MessageWithToolsApi = async (c: Context) => {
 
               if (Array.isArray(contexts) && contexts.length) {
                 const contextStrings = contexts.map(
-                  (v: MinimalAgentFragment) => `
-                    title: ${v.source.title}
-                    content: ${v.content}
-                    `,
+                  (v: MinimalAgentFragment) => {
+                    const truncated = v.content.length > 600
+                    const preview = truncated
+                      ? v.content.slice(0, 600) + "..."
+                      : v.content
+                    return `title: ${v.source.title}\n
+                    content: ${preview}\n                  `
+                  },
                 )
 
                 try {
