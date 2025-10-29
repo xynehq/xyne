@@ -1,3 +1,10 @@
+## [3.23.2](https://github.com/xynehq/xyne/compare/v3.23.1...v3.23.2) (2025-10-29)
+
+
+### Bug Fixes
+
+* **knowledgemanagment:**  added collections loading state ([#1155](https://github.com/xynehq/xyne/issues/1155)) ([4582abe](https://github.com/xynehq/xyne/commit/4582abedb78defdf3c4fb89f175db0bbcb23b91b))
+
 ## [3.23.1](https://github.com/xynehq/xyne/compare/v3.23.0...v3.23.1) (2025-10-29)
 
 
