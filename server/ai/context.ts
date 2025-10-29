@@ -145,11 +145,10 @@ const aggregateTableChunksForPdf = (
     return { chunks_summary: chunks_summary || [], matchfeatures: matchfeatures }
   }
 
-  // Create a map of chunk index to chunk metadata for quick lookup
-  const chunkMetadataMap = new Map<number, ChunkMetadata>()
-  chunks_map.forEach((metadata, index) => {
-    chunkMetadataMap.set(index, metadata)
-  })
+  if (chunks_summary.length !== chunks_map.length) {
+    console.warn('chunks_summary and chunks_map length mismatch; skipping table aggregation')
+    return { chunks_summary: chunks_summary || [], matchfeatures: matchfeatures }
+  }
 
   // Find all chunks that have 'table' in their block_labels
   const tableChunkIndices = new Set<number>()
