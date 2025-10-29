@@ -1,3 +1,10 @@
+## [3.23.4](https://github.com/xynehq/xyne/compare/v3.23.3...v3.23.4) (2025-10-29)
+
+
+### Bug Fixes
+
+* XYNE-252 fixed citation index in document chat ([#1158](https://github.com/xynehq/xyne/issues/1158)) ([76d4089](https://github.com/xynehq/xyne/commit/76d4089a6d60ee0248a347b1ee7fb51c11baa80f))
+
 ## [3.23.3](https://github.com/xynehq/xyne/compare/v3.23.2...v3.23.3) (2025-10-29)
 
 
