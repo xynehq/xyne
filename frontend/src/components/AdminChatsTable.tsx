@@ -253,6 +253,7 @@ interface AdminChatsTableProps {
   onSearchInputChange: (input: string) => void
   onSearch: () => void
   onClearSearch: () => void
+  onClearAllFilters: () => void
   filterType: "all" | "agent" | "normal"
   onFilterTypeChange: (type: "all" | "agent" | "normal") => void
   userFilter: "all" | string
@@ -272,6 +273,7 @@ export const AdminChatsTable = ({
   onSearchInputChange,
   onSearch,
   onClearSearch,
+  onClearAllFilters,
   filterType,
   onFilterTypeChange,
   userFilter,
@@ -295,6 +297,13 @@ export const AdminChatsTable = ({
     setIsDialogOpen(false)
     setSelectedChat(null)
   }
+
+  // Check if any filters are active
+  const hasActiveFilters =
+    searchQuery.trim() !== "" ||
+    filterType !== "all" ||
+    userFilter !== "all" ||
+    sortBy !== "created"
 
   // Fetch users on component mount
   useEffect(() => {
@@ -368,11 +377,6 @@ export const AdminChatsTable = ({
                 onChange={(e) => {
                   const newValue = e.target.value
                   onSearchInputChange(newValue)
-
-                  // If the input becomes empty and there was a previous search, clear it
-                  if (newValue === "" && searchQuery !== "") {
-                    onClearSearch()
-                  }
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -489,6 +493,25 @@ export const AdminChatsTable = ({
                 </svg>
               </div>
             </div>
+
+            {/* Clear All Filters Button */}
+            <button
+              type="button"
+              onClick={onClearAllFilters}
+              disabled={!hasActiveFilters}
+              className={`px-3 py-2 text-sm border border-input rounded-md transition-colors flex items-center gap-2 ${
+                hasActiveFilters
+                  ? "bg-background hover:bg-muted text-foreground"
+                  : "bg-muted/50 text-muted-foreground cursor-not-allowed"
+              }`}
+              title={
+                hasActiveFilters
+                  ? "Clear all filters"
+                  : "No active filters to clear"
+              }
+            >
+              Clear
+            </button>
           </div>
         </CardHeader>
         <CardContent>

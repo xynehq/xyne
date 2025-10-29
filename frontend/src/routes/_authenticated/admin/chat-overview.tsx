@@ -105,6 +105,15 @@ function ChatOverviewPage({
     setSearchQuery("")
   }
 
+  // Function to clear all filters
+  const handleClearAllFilters = () => {
+    setSearchInput("")
+    setSearchQuery("")
+    setFilterType("all")
+    setUserFilter("all")
+    setSortBy("created")
+  }
+
   useEffect(() => {
     const fetchAdminChats = async () => {
       try {
@@ -306,6 +315,7 @@ function ChatOverviewPage({
             onSearchInputChange={setSearchInput}
             onSearch={handleSearch}
             onClearSearch={handleClearSearch}
+            onClearAllFilters={handleClearAllFilters}
             filterType={filterType}
             onFilterTypeChange={setFilterType}
             userFilter={userFilter}
