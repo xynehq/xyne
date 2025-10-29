@@ -357,6 +357,7 @@ function KnowledgeManagementContent() {
   const [showNewCollection, setShowNewCollection] = useState(false)
   const [collectionName, setCollectionName] = useState("")
   const [collections, setCollections] = useState<Collection[]>([])
+  const [loadingCollections, setLoadingCollections] = useState(true)
   const [editingCollection, setEditingCollection] = useState<Collection | null>(
     null,
   )
@@ -478,6 +479,7 @@ function KnowledgeManagementContent() {
 
   useEffect(() => {
     const fetchCollections = async () => {
+      setLoadingCollections(true)
       try {
         const response = await api.cl.$get({
           query: { includeItems: "true" },
@@ -534,6 +536,8 @@ function KnowledgeManagementContent() {
           title: "Error",
           description: "An error occurred while fetching knowledge bases.",
         })
+      } finally {
+        setLoadingCollections(false)
       }
     }
 
@@ -1854,7 +1858,15 @@ function KnowledgeManagementContent() {
                 )}
               </div>
 
-              {collections.length === 0 && !isUploading ? (
+              {loadingCollections ? (
+                // Loading state
+                <div className="flex flex-col items-center justify-center min-h-[70vh]">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 dark:border-gray-300 mb-4"></div>
+                  <p className="text-gray-600 dark:text-gray-300">
+                    Loading collections...
+                  </p>
+                </div>
+              ) : collections.length === 0 && !isUploading ? (
                 // Empty state - centered layout
                 <div className="flex flex-col items-center justify-center min-h-[70vh]">
                   <img
