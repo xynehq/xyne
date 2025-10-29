@@ -2111,7 +2111,7 @@ const executeWorkflowTool = async (
             result: {
               aiOutput: fullResult.response,
               agentName: aiConfig.agentName || "Unknown Agent",
-              model: aiConfig.modelId || "gpt-4o",
+              model: aiConfig.model || aiConfig.modelId || "gpt-4o",
               inputType: aiConfig.inputType || "text",
               processedAt: new Date().toISOString(),
               chatId: null
@@ -2317,6 +2317,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
               inputType: "form",
               agentId: tool.value.agentId,
               agentName: tool.value.name,
+              model: tool.value?.model,
               isExistingAgent: true,
               dynamicallyCreated: false
             }
@@ -2354,6 +2355,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
               agentId: newAgent.externalId,
               createdAgentId: newAgent.externalId,
               agentName: newAgent.name,
+              model: tool.value?.model,
               isExistingAgent: false,
               dynamicallyCreated: true
             }
@@ -2367,6 +2369,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           processedConfig = {
             ...processedConfig,
             inputType: "form",
+            model: tool.value?.model,
             agentCreationFailed: true,
             agentCreationError: agentCreationError instanceof Error ? agentCreationError.message :
               String(agentCreationError)
