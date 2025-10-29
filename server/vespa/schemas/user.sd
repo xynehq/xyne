@@ -5,7 +5,7 @@ schema user {
             indexing: attribute | summary
         }
         field name type string {
-            indexing: index | attribute | summary
+            indexing: attribute | summary
             index {
                 enable-bm25
             }
@@ -13,7 +13,7 @@ schema user {
 
         # primary email
         field email type string {
-            indexing: index | attribute | summary
+            indexing: attribute | summary
             index {
                 enable-bm25
             }

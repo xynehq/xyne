@@ -58,25 +58,25 @@ schema mail {
     }
 
     field from type string {
-      indexing: attribute | summary | index
+      indexing: attribute | summary
       attribute: fast-search
       index: enable-bm25
     }
 
     field to type array<string> {
-      indexing: attribute | summary | index
+      indexing: attribute | summary
       attribute: fast-search
       index: enable-bm25
     }
 
     field cc type array<string> {
-      indexing: attribute | summary | index
+      indexing: attribute | summary
       attribute: fast-search
       index: enable-bm25
     }
 
     field bcc type array<string> {
-      indexing: attribute | summary | index
+      indexing: attribute | summary
       attribute: fast-search
       index: enable-bm25
     }

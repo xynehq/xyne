@@ -80,7 +80,7 @@ schema event {
 
         # Event Attendees
         field attendeesNames type array<string> {
-            indexing: index | attribute | summary
+            indexing: attribute | summary
             index: enable-bm25
         }
 
