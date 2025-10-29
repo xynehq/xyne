@@ -106,12 +106,66 @@ export class WebhookExecutionService {
   }
 
   private async getWorkflowSteps(templateId: string) {
-    const steps = await db
+    const stepsRaw = await db
       .select()
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const steps = this.topologicalSortSteps(stepsRaw)
 
     return steps
+  }
+
+  // Utility function to sort steps based on their dependencies (prevStepIds/nextStepIds)
+  private topologicalSortSteps(steps: any[]): any[] {
+    // Create a map for quick lookup
+    const stepMap = new Map(steps.map(step => [step.id, step]))
+    const sorted: any[] = []
+    const visiting = new Set<string>()
+    const visited = new Set<string>()
+    
+    const visit = (stepId: string) => {
+      if (visited.has(stepId)) return
+      if (visiting.has(stepId)) {
+        // Circular dependency detected, skip for now
+        return
+      }
+      
+      visiting.add(stepId)
+      const step = stepMap.get(stepId)
+      if (step) {
+        // Visit all prerequisites first (prevStepIds)
+        if (step.prevStepIds && Array.isArray(step.prevStepIds)) {
+          for (const prevId of step.prevStepIds) {
+            if (stepMap.has(prevId)) {
+              visit(prevId)
+            }
+          }
+        }
+        
+        visiting.delete(stepId)
+        visited.add(stepId)
+        sorted.push(step)
+      }
+    }
+    
+    // Find root steps (steps with no prevStepIds or empty prevStepIds)
+    const rootSteps = steps.filter(step => 
+      !step.prevStepIds || step.prevStepIds.length === 0
+    )
+    
+    // Start with root steps
+    for (const rootStep of rootSteps) {
+      visit(rootStep.id)
+    }
+    
+    // Visit any remaining unvisited steps (in case of isolated components)
+    for (const step of steps) {
+      if (!visited.has(step.id)) {
+        visit(step.id)
+      }
+    }
+    
+    return sorted
   }
 
   private async createStepExecutions(executionId: string, steps: any[], context: WebhookExecutionContext) {

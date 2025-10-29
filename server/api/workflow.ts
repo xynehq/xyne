@@ -56,6 +56,114 @@ import { webhookRegistry } from "@/services/webhookRegistry"
 import webhookIntegrationService from "@/services/webhookIntegrationService"
 import { hasWebhookTools, triggerWebhookReload } from "@/services/webhookReloadService"
 
+// Utility function to sort steps based on their dependencies (prevStepIds/nextStepIds)
+function topologicalSortSteps(steps: any[]): any[] {
+  // Create a map for quick lookup
+  const stepMap = new Map(steps.map(step => [step.id, step]))
+  const sorted: any[] = []
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  
+  function visit(stepId: string) {
+    if (visited.has(stepId)) return
+    if (visiting.has(stepId)) {
+      // Circular dependency detected, skip for now
+      return
+    }
+    
+    visiting.add(stepId)
+    const step = stepMap.get(stepId)
+    if (step) {
+      // Visit all prerequisites first (prevStepIds)
+      if (step.prevStepIds && Array.isArray(step.prevStepIds)) {
+        for (const prevId of step.prevStepIds) {
+          if (stepMap.has(prevId)) {
+            visit(prevId)
+          }
+        }
+      }
+      
+      visiting.delete(stepId)
+      visited.add(stepId)
+      sorted.push(step)
+    }
+  }
+  
+  // Find root steps (steps with no prevStepIds or empty prevStepIds)
+  const rootSteps = steps.filter(step => 
+    !step.prevStepIds || step.prevStepIds.length === 0
+  )
+  
+  // Start with root steps
+  for (const rootStep of rootSteps) {
+    visit(rootStep.id)
+  }
+  
+  // Visit any remaining unvisited steps (in case of isolated components)
+  for (const step of steps) {
+    if (!visited.has(step.id)) {
+      visit(step.id)
+    }
+  }
+  
+  return sorted
+}
+
+// Utility function to sort step executions based on their template dependencies
+function topologicalSortStepExecutions(stepExecutions: any[]): any[] {
+  // Create a map for quick lookup
+  const execMap = new Map(stepExecutions.map(exec => [exec.id, exec]))
+  const sorted: any[] = []
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  
+  function visit(execId: string) {
+    if (visited.has(execId)) return
+    if (visiting.has(execId)) {
+      // Circular dependency detected, skip for now
+      return
+    }
+    
+    visiting.add(execId)
+    const exec = execMap.get(execId)
+    if (exec) {
+      // Visit all prerequisites first (prevStepIds)
+      if (exec.prevStepIds && Array.isArray(exec.prevStepIds)) {
+        for (const prevTemplateId of exec.prevStepIds) {
+          // Find the execution that corresponds to this template ID
+          const prevExec = stepExecutions.find(e => e.workflowStepTemplateId === prevTemplateId)
+          if (prevExec && execMap.has(prevExec.id)) {
+            visit(prevExec.id)
+          }
+        }
+      }
+      
+      visiting.delete(execId)
+      visited.add(execId)
+      sorted.push(exec)
+    }
+  }
+  
+  // Find root executions (executions with no prevStepIds or empty prevStepIds)
+  const rootExecutions = stepExecutions.filter(exec => 
+    !exec.prevStepIds || exec.prevStepIds.length === 0
+  )
+  
+  // Start with root executions
+  for (const rootExec of rootExecutions) {
+    visit(rootExec.id)
+  }
+  
+  // Visit any remaining unvisited executions (in case of isolated components)
+  for (const exec of stepExecutions) {
+    if (!visited.has(exec.id)) {
+      visit(exec.id)
+    }
+  }
+  
+  return sorted
+}
+
 // Re-export schemas for server.ts
 export {
   createWorkflowTemplateSchema,
@@ -105,28 +213,59 @@ const extractAttachmentIds = (formData: Record<string, any>): {
   const documentIds: string[] = []
 
   Object.entries(formData).forEach(([key, file]) => {
-    // More defensive checking
-    if (file &&
-      typeof file === 'object' &&
-      file !== null &&
-      'attachmentId' in file &&
-      file.attachmentId) {
+    Logger.info(`🔍 Examining form field ${key}:`, {
+      type: typeof file,
+      isObject: typeof file === 'object' && file !== null,
+      keys: file && typeof file === 'object' ? Object.keys(file) : [],
+      value: JSON.stringify(file, null, 2)
+    })
 
-      Logger.info(`Processing field ${key} with attachment ID: ${file.attachmentId}`)
+    // Check for different possible attachment structures
+    let attachmentId = null
+    let isDocument = true
 
-
+    // Structure 1: Direct attachmentId property
+    if (file && typeof file === 'object' && file !== null && 'attachmentId' in file && file.attachmentId) {
+      attachmentId = file.attachmentId
+      Logger.info(`📎 Found attachmentId in direct property: ${attachmentId}`)
+      
       if ('attachmentMetadata' in file && file.attachmentMetadata) {
         const metadata = file.attachmentMetadata as AttachmentMetadata
-        if (metadata.isImage) {
-          imageIds.push(file.attachmentId)
-        } else {
-          documentIds.push(file.attachmentId)
-        }
-      } else {
-        // Fallback: assume non-image if no metadata
-        Logger.warn(`No attachmentMetadata found for ${key}, assuming document`)
-        documentIds.push(file.attachmentId)
+        isDocument = !metadata.isImage
+        Logger.info(`📋 Metadata found - isImage: ${metadata.isImage}, isDocument: ${isDocument}`)
       }
+    }
+    // Structure 2: Check if the file itself is an attachment ID string
+    else if (typeof file === 'string' && file.startsWith('att_')) {
+      attachmentId = file
+      Logger.info(`📎 Found attachment ID as string value: ${attachmentId}`)
+    }
+    // Structure 3: Check for nested structures
+    else if (file && typeof file === 'object' && file !== null) {
+      // Look for nested attachment properties
+      const nestedKeys = Object.keys(file)
+      for (const nestedKey of nestedKeys) {
+        if (nestedKey.includes('attachment') || nestedKey.includes('file')) {
+          const nestedValue = file[nestedKey]
+          if (typeof nestedValue === 'string' && nestedValue.startsWith('att_')) {
+            attachmentId = nestedValue
+            Logger.info(`📎 Found attachment ID in nested property ${nestedKey}: ${attachmentId}`)
+            break
+          }
+        }
+      }
+    }
+
+    if (attachmentId) {
+      if (isDocument) {
+        documentIds.push(attachmentId)
+        Logger.info(`✅ Added document attachment: ${attachmentId}`)
+      } else {
+        imageIds.push(attachmentId)
+        Logger.info(`✅ Added image attachment: ${attachmentId}`)
+      }
+    } else {
+      Logger.warn(`⚠️ Field ${key} does not contain a valid attachment ID`)
     }
   })
 
@@ -155,10 +294,11 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
     // Get step templates and root step details for each workflow
     const templatesWithSteps = await Promise.all(
       templates.map(async (template) => {
-        const steps = await db
+        const stepsRaw = await db
           .select()
           .from(workflowStepTemplate)
           .where(eq(workflowStepTemplate.workflowTemplateId, template.id))
+        const steps = topologicalSortSteps(stepsRaw)
 
         // Get root step details with single tool (not array)
         let rootStep = null
@@ -235,10 +375,11 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Workflow template not found" })
     }
 
-    const steps = await db
+    const stepsRaw = await db
       .select()
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const steps = topologicalSortSteps(stepsRaw)
 
     const toolIds = steps.flatMap((s) => s.toolIds || [])
     const tools =
@@ -440,11 +581,12 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       })
       .returning()
 
-    // Get all step templates
-    const steps = await db
+    // Get all step templates and sort them by dependencies
+    const stepsRaw = await db
       .select()
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const steps = topologicalSortSteps(stepsRaw)
 
     // Create step executions for all template steps
     const stepExecutionsData = steps.map((step) => ({
@@ -717,11 +859,12 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Workflow template not found" })
     }
 
-    // Get step templates
-    const steps = await db
+    // Get step templates and sort them by dependencies
+    const stepsRaw = await db
       .select()
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const steps = topologicalSortSteps(stepsRaw)
 
     // Get tools
     const tools = await db
@@ -1456,15 +1599,33 @@ Please analyze this webhook request and provide insights.`,
     Logger.info(`✅ Step marked as COMPLETED: ${step.name} (${step.id}) - Tool: ${tool.type}`)
 
     // Store results for next step
+    const stepResults: any = {
+      stepId: step.id,
+      result: toolResult.result,
+      toolExecution: toolExecutionRecord,
+      status: toolResult.status,
+      toolType: tool.type,
+    }
+
+    // Special handling for form steps: if this is a form step and the tool execution contains form data,
+    // make sure the form data (including file attachments) is easily accessible
+    if (tool.type === "form" && toolExecutionRecord && toolExecutionRecord.result) {
+      const executionResult = toolExecutionRecord.result as any
+      if (executionResult.formData) {
+        Logger.info(`📋 Form step detected - enhancing step results with form data for: ${step.name}`)
+        // Add form data directly to the step result for easier access by next steps
+        stepResults.formSubmission = {
+          formData: executionResult.formData,
+          submittedAt: executionResult.submittedAt,
+          submittedBy: executionResult.submittedBy
+        }
+        Logger.info(`📎 Form data keys available: ${Object.keys(executionResult.formData).join(', ')}`)
+      }
+    }
+
     const updatedResults = {
       ...(previousResults || {}),
-      [step.name]: {
-        stepId: step.id,
-        result: toolResult.result,
-        toolExecution: toolExecutionRecord,
-        status: toolResult.status,
-        toolType: tool.type,
-      },
+      [step.name]: stepResults,
     }
 
     Logger.info(`📊 Step results accumulated for '${step.name}':`, {
@@ -2031,7 +2192,18 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         submittedBy: "demo",
       },
       toolExecution: toolExecutionRecord,
+      toolType: "form", // Add tool type for consistency
+      status: "success", // Add status for consistency
     }
+
+    Logger.info(`📋 FORM SUBMISSION: Prepared results for next step execution:`, {
+      stepName: stepName,
+      stepId: stepExecution.id,
+      formDataKeys: Object.keys(formData),
+      formDataValues: JSON.stringify(formData, null, 2),
+      resultStructure: JSON.stringify(currentResults, null, 2).substring(0, 500) + "...",
+      nextStepIds: stepExecution.nextStepIds
+    })
 
     // Execute next steps if they are automated using UUID arrays
     if (stepExecution.nextStepIds && Array.isArray(stepExecution.nextStepIds)) {
@@ -2051,12 +2223,29 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         )
 
         if (nextStep && nextStep.type === StepType.AUTOMATED) {
+          Logger.info(`🚀 FORM SUBMISSION: Executing next automated step:`, {
+            nextStepName: nextStep.name,
+            nextStepId: nextStep.id,
+            nextStepType: nextStep.type,
+            workflowExecutionId: stepExecution.workflowExecutionId,
+            currentResultsKeys: Object.keys(currentResults),
+            toolsCount: tools.length
+          })
+          
           await executeWorkflowChain(
             stepExecution.workflowExecutionId,
             nextStep.id,
             tools,
             currentResults,
           )
+          
+          Logger.info(`✅ FORM SUBMISSION: Completed execution of next step: ${nextStep.name}`)
+        } else {
+          Logger.info(`⏸️ FORM SUBMISSION: Skipping next step (not automated):`, {
+            nextStepFound: !!nextStep,
+            nextStepType: nextStep?.type,
+            nextStepName: nextStep?.name
+          })
         }
       }
     }
@@ -2497,7 +2686,8 @@ ${JSON.stringify(httpResult.data, null, 2)}`
             inputType: aiConfig.inputType,
             prompt: prompt.substring(0, 100) + "...",
             previousStepsCount: Object.keys(previousStepResults).length,
-            previousStepsKeys: Object.keys(previousStepResults)
+            previousStepsKeys: Object.keys(previousStepResults),
+            fullPreviousStepResults: JSON.stringify(previousStepResults, null, 2)
           })
 
           // Process all previous steps to extract content and attachments
@@ -2520,15 +2710,39 @@ ${JSON.stringify(httpResult.data, null, 2)}`
               // Extract attachments from any step (form, file uploads, direct attachments, etc.)
               
               // Method 1: Form data attachments
-              if (stepData?.result?.formData || stepData?.formSubmission?.formData) {
-                const formData = stepData.result?.formData || stepData.formSubmission?.formData || {}
+              if (stepData?.result?.formData || stepData?.formSubmission?.formData || stepData?.toolExecution?.result?.formData) {
+                const formData = stepData.result?.formData || 
+                               stepData.formSubmission?.formData || 
+                               stepData.toolExecution?.result?.formData || {}
+                
+                Logger.info(`📋 DETAILED Form data analysis for ${stepKey}:`, {
+                  stepName: stepKey,
+                  formDataKeys: Object.keys(formData),
+                  formDataValues: JSON.stringify(formData, null, 2),
+                  stepDataStructure: {
+                    hasResult: !!stepData?.result,
+                    hasFormSubmission: !!stepData?.formSubmission,
+                    hasToolExecution: !!stepData?.toolExecution,
+                    resultKeys: stepData?.result ? Object.keys(stepData.result) : [],
+                    formSubmissionKeys: stepData?.formSubmission ? Object.keys(stepData.formSubmission) : [],
+                    toolExecutionResultKeys: stepData?.toolExecution?.result ? Object.keys(stepData.toolExecution.result) : []
+                  },
+                  rawStepData: JSON.stringify(stepData, null, 2).substring(0, 1000) + "..."
+                })
+                
+                // Try to extract attachment IDs with enhanced debugging
+                Logger.info(`🔍 Starting attachment extraction for ${stepKey}...`)
                 const extractedIds = extractAttachmentIds(formData)
                 imageAttachmentIds.push(...extractedIds.imageAttachmentIds)
                 documentAttachmentIds.push(...extractedIds.documentAttachmentIds)
                 
-                Logger.info(`📎 Extracted form attachments from ${stepKey}:`, {
+                Logger.info(`📎 FINAL Extracted form attachments from ${stepKey}:`, {
                   images: extractedIds.imageAttachmentIds.length,
-                  documents: extractedIds.documentAttachmentIds.length
+                  documents: extractedIds.documentAttachmentIds.length,
+                  imageIds: extractedIds.imageAttachmentIds,
+                  documentIds: extractedIds.documentAttachmentIds,
+                  totalImagesSoFar: imageAttachmentIds.length,
+                  totalDocumentsSoFar: documentAttachmentIds.length
                 })
               }
               
@@ -2627,8 +2841,10 @@ ${JSON.stringify(webhookData.body || {}, null, 2)}`
                   hasProcessedContent = true
                 }
                 // Priority 4: Form data text fields
-                else if (stepData?.result?.formData || stepData?.formSubmission?.formData) {
-                  const formData = stepData.result?.formData || stepData.formSubmission?.formData || {}
+                else if (stepData?.result?.formData || stepData?.formSubmission?.formData || stepData?.toolExecution?.result?.formData) {
+                  const formData = stepData.result?.formData || 
+                                 stepData.formSubmission?.formData || 
+                                 stepData.toolExecution?.result?.formData || {}
                   const textFields = Object.entries(formData)
                     .filter(([, value]) => typeof value === "string" && value.trim())
                     .map(([key, value]) => `${key}: ${value}`)
@@ -2679,7 +2895,28 @@ ${JSON.stringify(stepData.result, null, 2)}`
             }
             
             userQuery = queryParts.join("")
+            Logger.info(`✅ AI Agent query built with document content/attachments`)
           } else {
+            // If we have previous steps but no content was extracted, this indicates a problem
+            if (stepKeys.length > 0) {
+              Logger.error(`❌ AI Agent ERROR: Previous steps exist but no content/attachments extracted!`, {
+                stepCount: stepKeys.length,
+                stepNames: stepKeys,
+                totalImagesSoFar: imageAttachmentIds.length,
+                totalDocumentsSoFar: documentAttachmentIds.length
+              })
+              
+              return {
+                status: "error",
+                result: {
+                  error: "No document content found from previous steps",
+                  details: `Expected document content from ${stepKeys.join(', ')} but none was extracted`,
+                  stepCount: stepKeys.length,
+                  stepNames: stepKeys
+                }
+              }
+            }
+            
             userQuery = prompt
             Logger.info(`📝 AI Agent using only prompt - no previous step data found`)
           }
@@ -2690,10 +2927,29 @@ ${JSON.stringify(stepData.result, null, 2)}`
             queryLength: userQuery.length,
             hasImages: imageAttachmentIds.length > 0,
             hasDocuments: documentAttachmentIds.length > 0,
-            contentPreview: content.substring(0, 200) + (content.length > 200 ? "..." : "")
+            imageAttachmentIds: imageAttachmentIds,
+            documentAttachmentIds: documentAttachmentIds,
+            contentPreview: content.substring(0, 200) + (content.length > 200 ? "..." : ""),
+            fullQuery: userQuery.substring(0, 500) + (userQuery.length > 500 ? "..." : ""),
+            promptPreview: prompt.substring(0, 200) + (prompt.length > 200 ? "..." : ""),
+            hasContent: content.length > 0,
+            isPromptOnlyQuery: userQuery === prompt,
+            contentSourceDetected: content.includes("Form Data:") || content.includes("Document") || content.includes("PDF") || content.includes("file")
           })
           const isExistingAgent = aiConfig.isExistingAgent
           Logger.info(`Executing agent ${agentId} (existing: ${isExistingAgent}) for user ${userEmail} in workspace ${workspaceId}`)
+
+          Logger.info(`🤖 About to call executeAgentForWorkflowWithRag with:`, {
+            agentId,
+            userEmail,
+            workspaceId,
+            userQueryLength: userQuery.length,
+            userQueryPreview: userQuery.substring(0, 300) + (userQuery.length > 300 ? "..." : ""),
+            imageAttachmentIds: imageAttachmentIds,
+            nonImageAttachmentFileIds: documentAttachmentIds,
+            temperature,
+            isStreamable: false
+          })
 
           const fullResult = await executeAgentForWorkflowWithRag({
             agentId,
@@ -2704,6 +2960,17 @@ ${JSON.stringify(stepData.result, null, 2)}`
             temperature,
             attachmentFileIds: imageAttachmentIds,
             nonImageAttachmentFileIds: documentAttachmentIds,
+          })
+
+          Logger.info(`🔍 executeAgentForWorkflowWithRag response:`, {
+            success: fullResult.success,
+            hasResponse: !!fullResult.response,
+            responseLength: fullResult.response?.length || 0,
+            responsePreview: fullResult.response ? (fullResult.response.substring(0, 300) + (fullResult.response.length > 300 ? "..." : "")) : "No response",
+            error: fullResult.error,
+            fullResultKeys: Object.keys(fullResult),
+            agentId: agentId,
+            executionId: executionId
           })
 
           if (!fullResult.success) {
@@ -4001,11 +4268,12 @@ export const AddStepToWorkflowApi = async (c: Context) => {
 
     Logger.info(`Created new tool: ${newTool.id}`)
 
-    // 2. Get all existing steps for this template
-    const existingSteps = await db
+    // 2. Get all existing steps for this template and sort by dependencies
+    const existingStepsRaw = await db
       .select()
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const existingSteps = topologicalSortSteps(existingStepsRaw)
 
     const isFirstStep =
       existingSteps.length === 0 || !template.rootWorkflowStepTemplateId
@@ -4081,10 +4349,11 @@ export const AddStepToWorkflowApi = async (c: Context) => {
       .from(workflowTemplate)
       .where(eq(workflowTemplate.id, templateId))
 
-    const allSteps = await db
+    const allStepsRaw = await db
       .select()
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const allSteps = topologicalSortSteps(allStepsRaw)
 
     return c.json({
       success: true,
@@ -4236,10 +4505,11 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       .where(eq(workflowStepTemplate.id, stepId))
 
     // 8. Update step orders for remaining steps
-    const remainingSteps = await db
+    const remainingStepsRaw = await db
       .select()
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const remainingSteps = topologicalSortSteps(remainingStepsRaw)
 
     // Reorder remaining steps
     const sortedSteps = remainingSteps.sort((a, b) => {
@@ -4272,10 +4542,11 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       .from(workflowTemplate)
       .where(eq(workflowTemplate.id, templateId))
 
-    const updatedSteps = await db
+    const updatedStepsRaw = await db
       .select()
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const updatedSteps = topologicalSortSteps(updatedStepsRaw)
 
     Logger.info(
       `Successfully deleted step ${stepId} and reconnected workflow chain`,
