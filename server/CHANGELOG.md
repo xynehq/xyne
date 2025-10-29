@@ -1,3 +1,10 @@
+## [3.23.1](https://github.com/xynehq/xyne/compare/v3.23.0...v3.23.1) (2025-10-29)
+
+
+### Bug Fixes
+
+* XYNE-251 moved zustand dependency from root to frontend ([#1161](https://github.com/xynehq/xyne/issues/1161)) ([f97d0fa](https://github.com/xynehq/xyne/commit/f97d0fa930b8b383d9fa6f6eafc98709435152db))
+
 # [3.23.0](https://github.com/xynehq/xyne/compare/v3.22.5...v3.23.0) (2025-10-28)
 
 
