@@ -1805,7 +1805,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentRegistry,
           modelProvider,
           maxTurns: 10,
-          modelOverride: defaultBestModel as unknown as string,
+          modelOverride: defaultBestModel,
           onAfterToolExecution: async (
             toolName: string,
             result: any,
@@ -1829,12 +1829,10 @@ export const MessageWithToolsApi = async (c: Context) => {
               const contextStrings = filteredContexts.map(
                 (v: MinimalAgentFragment) => {
                   seenDocuments.add(v.id)
-                  const truncated = v.content.length > 600
-                  const preview = truncated
-                    ? v.content.slice(0, 600) + "..."
-                    : v.content
-                  return `title: ${v.source.title}\n
-                    content: ${preview}\n                  `
+                  return `
+                    title: ${v.source.title}\n
+                    content: ${v.content}\n
+                    `
                 },
               )
 

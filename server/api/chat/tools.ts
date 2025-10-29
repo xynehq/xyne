@@ -342,10 +342,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     excludedIds,
     span: execSpan?.startSpan("vespa_search_call"),
     offset,
-    rankProfile:
-      orderDirection === "desc"
-        ? SearchModes.GlobalSorted
-        : SearchModes.NativeRank,
+    rankProfile: SearchModes.NativeRank,
     mailParticipants: mailParticipant || null,
     orderBy,
     owner,
