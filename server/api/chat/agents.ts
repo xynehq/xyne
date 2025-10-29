@@ -1759,13 +1759,22 @@ export const MessageWithToolsApi = async (c: Context) => {
             `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
             `- Do NOT answer from general knowledge. Always retrieve context via tools first.\n` +
             `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
-            `- If context is missing or insufficient, use search/metadata tools to fetch more, or ask a brief clarifying question, then search.\n` +
+            `- If context is missing or insufficient, use respective tools to fetch more, or ask a brief clarifying question, then search.\n` +
             `- Be concise, accurate, and avoid hallucinations.\n` +
             `- If there is a parseSynthesisOutput, use it to respond to the user without doing any further tool calls. Add missing citations and return the answer.\n` +
             `\nAvailable Tools:\n${toolOverview}` +
             contextSection +
             agentSection +
-            `\n<parseSynthesisOutput>${synthesisSection}</parseSynthesisOutput>`
+            `
+            #IMPORTANT Citation Format:
+            - Use square brackets with the context index number: [0], [1], etc.
+            - Place citations right after the relevant statement
+            - NEVER group multiple indices in one bracket like [0, 1] or [1, 2, 3] - this is an error
+            - Example: "The project deadline was moved to March [3] and the team agreed to the new timeline [5]"
+            - Only cite information that directly appears in the context
+            - WRONG: "The project deadline was changed and the team agreed to it [0, 2, 4]"
+            - RIGHT: "The project deadline was changed [0] and the team agreed to it [2]"
+            `
           )
         }
 
@@ -1845,6 +1854,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     json: false,
                     stream: false,
                   },
+                  messagesWithNoErrResponse,
                 )
 
                 if (bestDocIndexes.length) {
