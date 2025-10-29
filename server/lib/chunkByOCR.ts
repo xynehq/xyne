@@ -181,6 +181,22 @@ type SendPdfBatchOptions = {
   timeoutMs: number
 }
 
+const TABLE_TAG = "(?:html|body|table|thead|tbody|tfoot|tr|th|td)";
+
+// convert table structure to TSV
+const convertTableToTsv = (html: string): string => {
+  return html
+    .replace(/<\/t[dh]\s*>/gi, "\t")  // </td>, </th> -> tab
+    .replace(/<\/tr\s*>/gi, "\n")     // </tr> -> newline
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(new RegExp(`</?\\s*${TABLE_TAG}\\b[^>]*>`, "gi"), "") // Remove table tags
+    .replace(/&(nbsp|#160);/gi, " ")
+    .replace(/[ \f\r]+/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 // Placeholder implementation for integrating with the OCR service.
 async function sendPdfOcrBatch(
   batch: PdfOcrBatch,
@@ -1596,6 +1612,10 @@ export async function chunkByOCR(
         (a, b) => a - b,
       )
       const blockLabelsArray = Array.from(new Set(currentBlockLabels))
+
+      if(blockLabelsArray.includes("table")) {
+        chunkContent = convertTableToTsv(chunkContent)
+      }
 
       chunks.push(chunkContent)
       chunks_map.push({
