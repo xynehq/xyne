@@ -123,6 +123,13 @@ const MAX_ZIP_FILE_SIZE = 35 // 35MB max zip file size
   }
 })()
 
+// Duplicate handling strategies
+enum DuplicateStrategy {
+  SKIP = "skip",
+  RENAME = "rename",
+  OVERWRITE = "overwrite",
+}
+
 // Schema definitions for Knowledge Base feature
 const createCollectionSchema = z.object({
   name: z.string().min(1).max(255),
@@ -143,6 +150,84 @@ const createFolderSchema = z.object({
   parentId: z.string().uuid().nullable().optional(),
   metadata: z.record(z.any(), z.any()).optional(),
 })
+
+const pollCollectionsStatusSchema = z.object({
+  collectionIds: z.array(z.string()).min(1),
+})
+
+const collectionParamsSchema = z.object({
+  clId: z.string().min(1),
+})
+
+const collectionNameForSharedAgentParamsSchema = z.object({
+  clId: z.string().min(1),
+})
+
+const collectionNameForSharedAgentQuerySchema = z.object({
+  agentExternalId: z.string().min(1),
+})
+
+const listCollectionItemsParamsSchema = z.object({
+  clId: z.string().min(1),
+})
+
+const listCollectionItemsQuerySchema = z.object({
+  parentId: z.string().optional(),
+})
+
+const deleteItemParamsSchema = z.object({
+  clId: z.string().min(1),
+  itemId: z.string().min(1),
+})
+
+const fileOperationParamsSchema = z.object({
+  clId: z.string().min(1),
+  itemId: z.string().min(1),
+})
+
+const chunkContentParamsSchema = z.object({
+  cId: z.string().min(1),
+  docId: z.string().min(1),
+})
+
+const listCollectionsQuerySchema = z.object({
+  ownOnly: z.string().optional(),
+  includeItems: z.string().optional(),
+})
+
+// Form schemas for file upload endpoints
+// Note: 'files' and 'paths' fields are validated manually in the handler
+// because they are File objects and string arrays that can't be effectively
+// validated with Zod schemas (size, MIME type, binary content validation required)
+const uploadFilesFormSchema = z.object({
+  parentId: z.string().optional().nullable(),
+  duplicateStrategy: z
+    .enum([
+      DuplicateStrategy.SKIP,
+      DuplicateStrategy.RENAME,
+      DuplicateStrategy.OVERWRITE,
+    ])
+    .optional(),
+  sessionId: z.string().optional().nullable(),
+})
+
+// Export schemas for use in server.ts
+export {
+  createCollectionSchema,
+  updateCollectionSchema,
+  createFolderSchema,
+  pollCollectionsStatusSchema,
+  collectionParamsSchema,
+  collectionNameForSharedAgentParamsSchema,
+  collectionNameForSharedAgentQuerySchema,
+  listCollectionItemsParamsSchema,
+  listCollectionItemsQuerySchema,
+  deleteItemParamsSchema,
+  fileOperationParamsSchema,
+  chunkContentParamsSchema,
+  listCollectionsQuerySchema,
+  uploadFilesFormSchema,
+}
 
 // Helper functions
 function calculateChecksum(buffer: ArrayBuffer): string {
@@ -950,13 +1035,6 @@ export const CreateFolderApi = async (c: Context) => {
       message: "Failed to create folder",
     })
   }
-}
-
-// Duplicate handling strategies
-enum DuplicateStrategy {
-  SKIP = "skip",
-  RENAME = "rename",
-  OVERWRITE = "overwrite",
 }
 
 // Helper function to generate unique name

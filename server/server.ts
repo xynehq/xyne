@@ -22,6 +22,8 @@ import {
   GetDriveItem,
   GetDriveItemsByDocIds,
   handleAttachmentDeleteSchema,
+  getDriveItemSchema,
+  getDriveItemsByDocIdsSchema,
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
 import { zValidator } from "@hono/zod-validator"
@@ -45,6 +47,11 @@ import {
   microsoftServiceSchema,
   UserRoleChangeSchema,
   chatIdParamSchema,
+  fileUploadSchema,
+  attachmentUploadSchema,
+  fileServeParamsSchema,
+  getUserWorkspaceInfoQuerySchema,
+  deleteUserApiKeyParamsSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -74,6 +81,7 @@ import {
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
+  connectorIdParamsSchema,
   AddServiceConnectionMicrosoft,
   UpdateUser,
   ListAllLoggedInUsers,
@@ -151,6 +159,9 @@ import {
   deleteDocumentSchema,
   GetAgentsForDataSourceApi,
   GetDataSourceFile,
+  getDataSourceFileParamsSchema,
+  listDataSourceFilesParamsSchema,
+  getAgentsForDataSourceParamsSchema,
 } from "@/api/dataSource"
 import {
   ChatBookmarkApi,
@@ -201,6 +212,9 @@ import {
   TuningWsRoute,
   tuneDatasetSchema,
   DeleteDatasetHandler,
+  evaluateSchema,
+  deleteDatasetParamsSchema,
+  tuningWsParamsSchema,
 } from "@/api/tuning"
 import {
   CreateAgentApi,
@@ -214,6 +228,8 @@ import {
   listAgentsSchema,
   updateAgentSchema,
   GetAgentApi,
+  getAgentParamsSchema,
+  generatePromptQuerySchema,
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import {
@@ -282,6 +298,20 @@ import {
   GetChunkContentApi,
   GetCollectionNameForSharedAgentApi,
   PollCollectionsStatusApi,
+  createCollectionSchema,
+  updateCollectionSchema,
+  createFolderSchema,
+  pollCollectionsStatusSchema,
+  collectionParamsSchema,
+  collectionNameForSharedAgentParamsSchema,
+  collectionNameForSharedAgentQuerySchema,
+  listCollectionItemsParamsSchema,
+  listCollectionItemsQuerySchema,
+  deleteItemParamsSchema,
+  fileOperationParamsSchema,
+  chunkContentParamsSchema,
+  listCollectionsQuerySchema,
+  uploadFilesFormSchema,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -304,7 +334,7 @@ import {
   updateWorkflowToolSchema,
   addStepToWorkflowSchema,
 } from "./db/schema"
-import { sendMailHelper } from "@/api/testEmail"
+import { sendMailHelper, sendEmailSchema } from "@/api/testEmail"
 import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
@@ -925,10 +955,22 @@ export const AppRoutes = app
     zValidator("json", autocompleteSchema),
     AutocompleteApi,
   )
-  .post("files/upload", handleFileUpload)
-  .post("/files/upload-attachment", handleAttachmentUpload)
-  .get("/attachments/:fileId", handleAttachmentServe)
-  .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
+  .post("files/upload", zValidator("form", fileUploadSchema), handleFileUpload)
+  .post(
+    "/files/upload-attachment",
+    zValidator("form", attachmentUploadSchema),
+    handleAttachmentUpload,
+  )
+  .get(
+    "/attachments/:fileId",
+    zValidator("param", fileServeParamsSchema),
+    handleAttachmentServe,
+  )
+  .get(
+    "/attachments/:fileId/thumbnail",
+    zValidator("param", fileServeParamsSchema),
+    handleThumbnailServe,
+  )
   .post(
     "/files/delete",
     zValidator("json", handleAttachmentDeleteSchema),
@@ -1020,18 +1062,38 @@ export const AppRoutes = app
     zValidator("query", searchSchema),
     SearchSlackChannels,
   )
-  .get("/me", GetUserWorkspaceInfo)
+  .get(
+    "/me",
+    zValidator("query", getUserWorkspaceInfoQuerySchema),
+    GetUserWorkspaceInfo,
+  )
   .get("/users/api-keys", GetUserApiKeys)
   .post(
     "/users/api-key",
     zValidator("json", CreateApiKeySchema),
     GenerateUserApiKey,
   )
-  .delete("/users/api-keys/:keyId", DeleteUserApiKey)
+  .delete(
+    "/users/api-keys/:keyId",
+    zValidator("param", deleteUserApiKeyParamsSchema),
+    DeleteUserApiKey,
+  )
   .get("/datasources", ListDataSourcesApi)
-  .get("/datasources/:docId", GetDataSourceFile)
-  .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
-  .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
+  .get(
+    "/datasources/:docId",
+    zValidator("param", getDataSourceFileParamsSchema),
+    GetDataSourceFile,
+  )
+  .get(
+    "/datasources/:dataSourceName/files",
+    zValidator("param", listDataSourceFilesParamsSchema),
+    ListDataSourceFilesApi,
+  )
+  .get(
+    "/datasources/:dataSourceId/agents",
+    zValidator("param", getAgentsForDataSourceParamsSchema),
+    GetAgentsForDataSourceApi,
+  )
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post(
@@ -1039,17 +1101,33 @@ export const AppRoutes = app
     zValidator("json", deleteDocumentSchema),
     DeleteDocumentApi,
   )
-  .post("/search/driveitem", GetDriveItem)
-  .post("/search/driveitemsbydocids", GetDriveItemsByDocIds)
-  .post("/tuning/evaluate", EvaluateHandler)
+  .post(
+    "/search/driveitem",
+    zValidator("json", getDriveItemSchema),
+    GetDriveItem,
+  )
+  .post(
+    "/search/driveitemsbydocids",
+    zValidator("json", getDriveItemsByDocIdsSchema),
+    GetDriveItemsByDocIds,
+  )
+  .post("/tuning/evaluate", zValidator("json", evaluateSchema), EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
   .post(
     "/tuning/tuneDataset",
     zValidator("json", tuneDatasetSchema),
     TuneDatasetHandler,
   )
-  .delete("/tuning/datasets/:filename", DeleteDatasetHandler)
-  .get("/tuning/ws/:jobId", TuningWsRoute)
+  .delete(
+    "/tuning/datasets/:filename",
+    zValidator("param", deleteDatasetParamsSchema),
+    DeleteDatasetHandler,
+  )
+  .get(
+    "/tuning/ws/:jobId",
+    zValidator("param", tuningWsParamsSchema),
+    TuningWsRoute,
+  )
 
   // Workflow Routes
   .post(
@@ -1122,9 +1200,17 @@ export const AppRoutes = app
 
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
-  .get("/agent/generate-prompt", GeneratePromptApi)
+  .get(
+    "/agent/generate-prompt",
+    zValidator("query", generatePromptQuerySchema),
+    GeneratePromptApi,
+  )
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
-  .get("/agent/:agentExternalId", GetAgentApi)
+  .get(
+    "/agent/:agentExternalId",
+    zValidator("param", getAgentParamsSchema),
+    GetAgentApi,
+  )
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get(
     "/workspace/users/search",
@@ -1149,48 +1235,125 @@ export const AppRoutes = app
   .get("/calls/history", GetCallHistoryApi)
   // Direct message routes
   .post("/messages/send", zValidator("json", sendMessageSchema), SendMessageApi)
-  .get("/messages/conversation", zValidator("query", getConversationSchema), GetConversationApi)
+  .get(
+    "/messages/conversation",
+    zValidator("query", getConversationSchema),
+    GetConversationApi,
+  )
   .post(
     "/messages/mark-read",
     zValidator("json", markAsReadSchema),
     MarkMessagesAsReadApi,
   )
   .get("/messages/unread-counts", GetUnreadCountsApi)
-  .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
-  .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
+  .get(
+    "/agent/:agentExternalId/permissions",
+    zValidator("param", getAgentParamsSchema),
+    GetAgentPermissionsApi,
+  )
+  .get(
+    "/agent/:agentExternalId/integration-items",
+    zValidator("param", getAgentParamsSchema),
+    GetAgentIntegrationItemsApi,
+  )
   .put(
     "/agent/:agentExternalId",
     zValidator("json", updateAgentSchema),
     UpdateAgentApi,
   )
-  .delete("/agent/:agentExternalId", DeleteAgentApi)
+  .delete(
+    "/agent/:agentExternalId",
+    zValidator("param", getAgentParamsSchema),
+    DeleteAgentApi,
+  )
   .post("/auth/logout", LogOut)
   //send Email Route
-  .post("/email/send", sendMailHelper)
+  .post("/email/send", zValidator("json", sendEmailSchema), sendMailHelper)
 
   // Collection Routes
-  .post("/cl", CreateCollectionApi)
-  .get("/cl", ListCollectionsApi)
+  .post("/cl", zValidator("json", createCollectionSchema), CreateCollectionApi)
+  .get(
+    "/cl",
+    zValidator("query", listCollectionsQuerySchema),
+    ListCollectionsApi,
+  )
   .get(
     "/cl/search",
     zValidator("query", searchKnowledgeBaseSchema),
     SearchKnowledgeBaseApi,
   )
-  .post("/cl/poll-status", PollCollectionsStatusApi)
-  .get("/cl/:clId", GetCollectionApi)
-  .get("/cl/:clId/name", GetCollectionNameForSharedAgentApi)
-  .put("/cl/:clId", UpdateCollectionApi)
-  .delete("/cl/:clId", DeleteCollectionApi)
-  .get("/cl/:clId/items", ListCollectionItemsApi)
-  .post("/cl/:clId/items/folder", CreateFolderApi)
-  .post("/cl/:clId/items/upload", UploadFilesApi)
+  .post(
+    "/cl/poll-status",
+    zValidator("json", pollCollectionsStatusSchema),
+    PollCollectionsStatusApi,
+  )
+  .get(
+    "/cl/:clId",
+    zValidator("param", collectionParamsSchema),
+    GetCollectionApi,
+  )
+  .get(
+    "/cl/:clId/name",
+    zValidator("param", collectionNameForSharedAgentParamsSchema),
+    zValidator("query", collectionNameForSharedAgentQuerySchema),
+    GetCollectionNameForSharedAgentApi,
+  )
+  .put(
+    "/cl/:clId",
+    zValidator("param", collectionParamsSchema),
+    zValidator("json", updateCollectionSchema),
+    UpdateCollectionApi,
+  )
+  .delete(
+    "/cl/:clId",
+    zValidator("param", collectionParamsSchema),
+    DeleteCollectionApi,
+  )
+  .get(
+    "/cl/:clId/items",
+    zValidator("param", listCollectionItemsParamsSchema),
+    zValidator("query", listCollectionItemsQuerySchema),
+    ListCollectionItemsApi,
+  )
+  .post(
+    "/cl/:clId/items/folder",
+    zValidator("param", collectionParamsSchema),
+    zValidator("json", createFolderSchema),
+    CreateFolderApi,
+  )
+  .post(
+    "/cl/:clId/items/upload",
+    zValidator("param", collectionParamsSchema),
+    zValidator("form", uploadFilesFormSchema),
+    UploadFilesApi,
+  )
   .post("/cl/:clId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
   .post("/cl/:clId/items/upload/complete", UploadFilesApi) // Complete batch session
-  .delete("/cl/:clId/items/:itemId", DeleteItemApi)
-  .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
-  .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
-  .get("/cl/:clId/files/:itemId/download", DownloadFileApi)
-  .get("/chunk/:cId/files/:docId/content", GetChunkContentApi)
+  .delete(
+    "/cl/:clId/items/:itemId",
+    zValidator("param", deleteItemParamsSchema),
+    DeleteItemApi,
+  )
+  .get(
+    "/cl/:clId/files/:itemId/preview",
+    zValidator("param", fileOperationParamsSchema),
+    GetFilePreviewApi,
+  )
+  .get(
+    "/cl/:clId/files/:itemId/content",
+    zValidator("param", fileOperationParamsSchema),
+    GetFileContentApi,
+  )
+  .get(
+    "/cl/:clId/files/:itemId/download",
+    zValidator("param", fileOperationParamsSchema),
+    DownloadFileApi,
+  )
+  .get(
+    "/chunk/:cId/files/:docId/content",
+    zValidator("param", chunkContentParamsSchema),
+    GetChunkContentApi,
+  )
 
   .post(
     "/oauth/create",
@@ -1310,7 +1473,11 @@ export const AppRoutes = app
     AddStdioMCPConnector,
   )
 
-  .get("/connector/:connectorId/tools", GetConnectorTools) // Added route for GetConnectorTools
+  .get(
+    "/connector/:connectorId/tools",
+    zValidator("param", connectorIdParamsSchema),
+    GetConnectorTools,
+  ) // Added route for GetConnectorTools
 
   .delete(
     "/connector/delete",
@@ -1457,11 +1624,19 @@ app
     zValidator("json", updateAgentSchema), // Update Agent
     UpdateAgentApi,
   )
-  .delete("/agent/:agentExternalId", DeleteAgentApi) // Delete Agent
+  .delete(
+    "/agent/:agentExternalId",
+    zValidator("param", getAgentParamsSchema),
+    DeleteAgentApi,
+  ) // Delete Agent
   .get("/agent/:agentExternalId", GetAgentApi) // Get Agent details
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
-  .post("/cl", CreateCollectionApi) // Create collection (KB)
-  .get("/cl", ListCollectionsApi) // List all collections
+  .post("/cl", zValidator("json", createCollectionSchema), CreateCollectionApi) // Create collection (KB)
+  .get(
+    "/cl",
+    zValidator("query", listCollectionsQuerySchema),
+    ListCollectionsApi,
+  ) // List all collections
   .get(
     "/cl/search",
     zValidator("query", searchKnowledgeBaseSchema), // Search over KB
@@ -1469,9 +1644,22 @@ app
   )
   .get("/cl/:clId", GetCollectionApi) // Get collection by ID
   .put("/cl/:clId", UpdateCollectionApi) // Update collection (rename, etc.)
-  .delete("/cl/:clId", DeleteCollectionApi) // Delete collection (KB)
-  .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB (supports zip files)
-  .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB by ID
+  .delete(
+    "/cl/:clId",
+    zValidator("param", collectionParamsSchema),
+    DeleteCollectionApi,
+  ) // Delete collection (KB)
+  .post(
+    "/cl/:clId/items/upload",
+    zValidator("param", collectionParamsSchema),
+    zValidator("form", uploadFilesFormSchema),
+    UploadFilesApi,
+  ) // Upload files to KB
+  .delete(
+    "/cl/:clId/items/:itemId",
+    zValidator("param", deleteItemParamsSchema),
+    DeleteItemApi,
+  ) // Delete Item in KB
   .post("/cl/poll-status", PollCollectionsStatusApi) // Poll collection items status
 
 // Proxy function to forward ingestion API calls to sync server

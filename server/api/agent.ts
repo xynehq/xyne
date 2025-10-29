@@ -131,6 +131,15 @@ export const listAgentsSchema = z.object({
   filter: z.enum(["all", "madeByMe", "sharedToMe"]).optional().default("all"),
 })
 
+export const getAgentParamsSchema = z.object({
+  agentExternalId: z.string().min(1),
+})
+
+export const generatePromptQuerySchema = z.object({
+  requirements: z.string().min(1, "Requirements are required"),
+  modelId: z.string().optional(),
+})
+
 export const safeGet = <T>(c: Context, key: string): T | undefined => {
   try {
     return c.get(key) as T
@@ -514,8 +523,8 @@ export const GetWorkspaceUsersApi = async (c: Context) => {
       .where(
         and(
           eq(users.workspaceId, userAndWorkspace.workspace.id),
-          isNull(users.deletedAt)
-        )
+          isNull(users.deletedAt),
+        ),
       )
 
     return c.json(workspaceUsers)

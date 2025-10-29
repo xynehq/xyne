@@ -655,3 +655,49 @@ export interface DuckDBResult {
     rows: unknown[][]
   }
 }
+
+export const fileUploadSchema = z.object({
+  file: z.any(),
+  datasourceName: z.string().min(1, "Datasource name is required"),
+  flag: z.enum(["creation", "addition"], {
+    message: "Flag must be either 'creation' or 'addition'",
+  }),
+  batchIndex: z.string().optional(),
+  totalBatches: z.string().optional(),
+})
+
+export type FileUpload = z.infer<typeof fileUploadSchema>
+
+export const attachmentUploadSchema = z.object({
+  attachment: z.any(),
+})
+
+export type AttachmentUpload = z.infer<typeof attachmentUploadSchema>
+
+export const fileServeParamsSchema = z.object({
+  fileId: z.string().min(1, "File ID is required"),
+})
+
+export type FileServeParams = z.infer<typeof fileServeParamsSchema>
+
+// User info schemas
+export const getUserWorkspaceInfoQuerySchema = z.object({
+  timeZone: z.string().optional(),
+})
+
+export type GetUserWorkspaceInfoQuery = z.infer<
+  typeof getUserWorkspaceInfoQuerySchema
+>
+
+// Note: GetUserApiKeys doesn't need a schema as it doesn't accept any parameters
+
+export const deleteUserApiKeyParamsSchema = z.object({
+  keyId: z
+    .string()
+    .regex(/^\d+$/, "Key ID must be a valid number")
+    .transform(Number),
+})
+
+export type DeleteUserApiKeyParams = z.infer<
+  typeof deleteUserApiKeyParamsSchema
+>

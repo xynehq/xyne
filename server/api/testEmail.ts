@@ -2,20 +2,28 @@ import { type Context } from "hono"
 import { emailService } from "@/services/emailService"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import { z } from "zod"
 
 const Logger = getLogger(Subsystem.Server)
+
+export const sendEmailSchema = z.object({
+  email: z.string(),
+  subject: z.string().optional(),
+  body: z.string().optional(),
+})
 
 export const sendMailHelper = async (c: Context) => {
   try {
     Logger.info("Testing email sending...")
 
     if (process.env.NODE_ENV !== "production") {
-        Logger.debug("SES env debug", {
-          awsAccessKeyIdPrefix: process.env.SES_AWS_ACCESS_KEY_ID?.slice(0, 4) ?? "unset",
-          awsRegion: process.env.SES_AWS_REGION ?? "unset",
-          sesFromEmail: process.env.SES_FROM_EMAIL ?? "unset",
-        })
-      }
+      Logger.debug("SES env debug", {
+        awsAccessKeyIdPrefix:
+          process.env.SES_AWS_ACCESS_KEY_ID?.slice(0, 4) ?? "unset",
+        awsRegion: process.env.SES_AWS_REGION ?? "unset",
+        sesFromEmail: process.env.SES_FROM_EMAIL ?? "unset",
+      })
+    }
     const { email, body, subject } = await c.req.json()
 
     if (!email) {
