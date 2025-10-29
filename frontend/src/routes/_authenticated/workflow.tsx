@@ -14,26 +14,9 @@ import playIcon from "@/assets/play.svg"
 import emptyStateIcon from "@/assets/empty-state.svg"
 import { ChevronDown, Plus, Layout, ChevronRight, Search } from "lucide-react"
 
-export interface WorkflowTemplate {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  status: string;
-  userId: number;
-  workspaceId: number;
-  isPublic: boolean;
-  config: {
-    ai_model?: string;
-    max_file_size?: string;
-    auto_execution?: boolean;
-    schema_version?: string;
-    allowed_file_types?: string[];
-    supports_file_upload?: boolean;
-  };
-  rootWorkflowStepTemplateId: string;
-  createdAt: string;
-  updatedAt: string;
+import { WorkflowTemplate } from "@/components/workflow/Types"
+
+export interface LocalWorkflowTemplate extends WorkflowTemplate {
   steps?: Array<{
     id: string;
     workflowTemplateId: string;
@@ -121,7 +104,7 @@ function WorkflowComponent() {
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const [activeTab, setActiveTab] = useState<"workflow" | "templates" | "executions">("workflow")
   const [viewMode, setViewMode] = useState<"list" | "builder">("list")
-  const [workflows, setWorkflows] = useState<WorkflowTemplate[]>([])
+  const [workflows, setWorkflows] = useState<LocalWorkflowTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
@@ -136,7 +119,7 @@ function WorkflowComponent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false)
-  const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate | null>(null)
+  const [selectedTemplate, setSelectedTemplate] = useState<LocalWorkflowTemplate | null>(null)
   const [isLoadingTemplate, setIsLoadingTemplate] = useState(false)
   const [isExecutionMode, setIsExecutionMode] = useState(false)
   const [workflowSearchTerm, setWorkflowSearchTerm] = useState("")
@@ -998,18 +981,18 @@ function WorkflowComponent() {
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
                   onTemplateUpdate={(executionData) => {
-                    // Convert ExecutionWorkflowData to WorkflowTemplate
-                    const workflowTemplate: WorkflowTemplate = {
+                    // Convert ExecutionWorkflowData to LocalWorkflowTemplate
+                    const workflowTemplate: LocalWorkflowTemplate = {
                       id: executionData.id,
                       name: executionData.name,
                       description: executionData.description || "",
                       version: executionData.version || "",
                       status: executionData.status,
-                      userId: 0, // Default value
-                      workspaceId: 0, // Default value  
+                      userId: 0, // Use default since not available in execution data
+                      workspaceId: 0, // Use default since not available in execution data
                       isPublic: false, // Default value
                       config: executionData.config || {},
-                      // createdBy: executionData.createdBy || "",
+                      createdBy: "", // Use default since not available in execution data
                       rootWorkflowStepTemplateId: "",
                       createdAt: "",
                       updatedAt: "",
@@ -1029,7 +1012,12 @@ function WorkflowComponent() {
                     setShouldStartPolling(false) // Reset polling state
                   }}
                   onRefreshWorkflows={fetchWorkflows}
-                  selectedTemplate={selectedTemplate}
+                  selectedTemplate={selectedTemplate ? {
+                    ...selectedTemplate,
+                    userId: selectedTemplate.userId || 0,
+                    workspaceId: selectedTemplate.workspaceId || 0,
+                    isPublic: selectedTemplate.isPublic || false
+                  } : null}
                   isLoadingTemplate={isLoadingTemplate}
                   isEditableMode={selectedTemplate === null}
                   builder={isBuilderMode}

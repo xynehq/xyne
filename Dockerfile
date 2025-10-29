@@ -94,8 +94,8 @@ RUN bun run build
 WORKDIR /usr/src/app/server
 
 # Create runtime directories and set ownership for bun user
-RUN mkdir -p downloads vespa-data vespa-logs uploads migrations && \
-    chown bun:bun downloads vespa-data vespa-logs uploads migrations
+RUN mkdir -p downloads vespa-data vespa-logs uploads migrations script_executor_utils && \
+    chown bun:bun downloads vespa-data vespa-logs uploads migrations script_executor_utils
 
 # Copy and setup startup script
 COPY --chown=bun:bun start.sh /usr/src/app/start.sh

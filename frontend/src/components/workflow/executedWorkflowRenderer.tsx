@@ -31,11 +31,26 @@ import {
 } from "./Types"
 import { api } from "../../api"
 
-// Import WorkflowTemplate from workflow.tsx
-import type { WorkflowTemplate } from "../../routes/_authenticated/workflow"
+// WorkflowTemplate no longer needed since ExecutionWorkflowTemplate is standalone
 
-// Extended WorkflowTemplate for execution workflows
-interface ExecutionWorkflowTemplate extends WorkflowTemplate {
+// ExecutionWorkflowTemplate for execution workflows
+interface ExecutionWorkflowTemplate {
+  id: string
+  name: string
+  description?: string
+  version?: string
+  status: string
+  config?: any
+  // New fields (may not be present in older data)
+  userId?: number
+  workspaceId?: number
+  isPublic?: boolean
+  // Legacy field (may not be present in newer data)
+  createdBy?: string
+  rootWorkflowStepTemplateId?: string
+  createdAt?: string
+  updatedAt?: string
+  
   rootWorkflowStepExeId?: string // For execution workflows
   // For execution workflows
   stepExecutions?: Array<{
@@ -1535,6 +1550,84 @@ const ExecutionSidebar = ({
     return results
   }
 
+  // Get current step's output data that gets passed to next nodes
+  // This uses the EXACT same logic as getPreviousStepOutput to ensure consistency
+  const getCurrentStepOutputData = () => {
+    if (!step || !workflowData) {
+      console.log("Debug getCurrentStepOutputData: No step or workflowData", { step: !!step, workflowData: !!workflowData })
+      return null
+    }
+
+    // Use the SAME logic as getPreviousStepOutput - find the current step execution in workflowData.stepExecutions
+    // The key insight: we need to find the step execution that matches this step!
+    
+    let currentStepExecution = null
+    
+    // Try to find by step ID first (for execution steps)
+    currentStepExecution = workflowData.stepExecutions?.find(
+      (s: any) => s.id === step.id
+    )
+    
+    // If not found by ID, try by workflowStepTemplateId (for template steps)
+    if (!currentStepExecution) {
+      currentStepExecution = workflowData.stepExecutions?.find(
+        (s: any) => s.workflowStepTemplateId === step.id || s.workflowStepTemplateId === step.workflowStepTemplateId
+      )
+    }
+
+    console.log("Debug getCurrentStepOutputData:", {
+      stepId: step.id,
+      stepName: step.name,
+      stepStatus: step.status,
+      currentStepExecution: currentStepExecution,
+      stepToolIds: currentStepExecution?.workflow_tool_ids,
+      stepToolExecIds: currentStepExecution?.toolExecIds,
+      allToolExecutions: workflowData.toolExecutions?.length
+    })
+
+    if (!currentStepExecution) {
+      console.log("Debug: No matching step execution found")
+      return null
+    }
+
+    // Get current step's tool outputs using the same logic as getPreviousStepOutput
+    const currentStepTools =
+      workflowData.toolExecutions?.filter((toolExec: any) =>
+        currentStepExecution.workflow_tool_ids?.includes(toolExec.workflowToolId),
+      ) || []
+
+    console.log("Debug currentStepTools (by workflow_tool_ids):", currentStepTools)
+
+    if (currentStepTools.length === 0) {
+      // Also try by toolExecIds if workflow_tool_ids matching fails
+      if (currentStepExecution.toolExecIds && currentStepExecution.toolExecIds.length > 0) {
+        const toolsByExecId = workflowData.toolExecutions?.filter((toolExec: any) => 
+          currentStepExecution.toolExecIds.includes(toolExec.id)
+        ) || []
+        
+        console.log("Debug toolsByExecId:", toolsByExecId)
+        
+        if (toolsByExecId.length > 0) {
+          // Return the results from all current step tools (same format as next node input)
+          const results = toolsByExecId
+            .map((tool: any) => tool.result)
+            .filter(Boolean)
+          console.log("Debug results (by execId):", results)
+          return results
+        }
+      }
+      console.log("Debug: No tools found by either method")
+      return null
+    }
+
+    // Return the results from all current step tools (same format as next node input)
+    const results = currentStepTools
+      .map((tool: any) => tool.result)
+      .filter(Boolean)
+    console.log("Debug results (by toolId):", results)
+    return results
+  }
+
   return (
     <div
       className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
@@ -1837,11 +1930,139 @@ const ExecutionSidebar = ({
         {/* Output Section */}
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-gray-700">Output</h3>
+          
+          {/* Step Output Data - What gets passed to next nodes (same display as input section) */}
+          <div className="bg-gray-100 p-3 rounded-lg border max-h-40 overflow-y-auto">
+            {(() => {
+              // Get current step's output data using same logic as input section
+              const currentStepOutput = getCurrentStepOutputData()
+              
+              if (currentStepOutput && currentStepOutput.length > 0) {
+                return (
+                  <div className="space-y-2">
+                    {currentStepOutput.map((output: any, index: number) => (
+                      <div key={index} className="text-xs">
+                        <div className="text-gray-900">
+                          {(() => {
+                            // Use the EXACT same display logic as the input section
+                            
+                            // Check if current step is a script node - if so, show whole output
+                            if (step.type === "script" || (tools && tools.some((tool: any) => tool.type === "script"))) {
+                              return (
+                                <pre className="whitespace-pre-wrap">
+                                  {typeof output === "object"
+                                    ? JSON.stringify(output, null, 2)
+                                    : String(output)}
+                                </pre>
+                              )
+                            }
+
+                            if (typeof output === "object" && output) {
+                              // Check for script tool output - show raw data
+                              if (output.toolType === "script" || output.type === "script") {
+                                return (
+                                  <div className="space-y-2">
+                                    <div>
+                                      <span className="font-medium text-gray-600">Script Output:</span>
+                                      <div className="mt-1 text-gray-900 whitespace-pre-wrap font-mono text-xs bg-gray-50 p-2 rounded border">
+                                        {typeof output === "object"
+                                          ? JSON.stringify(output, null, 2)
+                                          : String(output)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              }
+
+                              // Check for email step response with model and aiOutput
+                              if (output.model && output.aiOutput) {
+                                return (
+                                  <div className="space-y-2">
+                                    <div>
+                                      <span className="font-medium text-gray-600">Model:</span>
+                                      <span className="ml-2 text-gray-900">{output.model}</span>
+                                    </div>
+                                    <div>
+                                      <span className="font-medium text-gray-600">AI Output:</span>
+                                      <div className="mt-1 text-gray-900 whitespace-pre-wrap">
+                                        {output.aiOutput}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              }
+                              
+                              // Check for the exact same path that works in output card
+                              if (
+                                output.formData &&
+                                output.formData.document_file &&
+                                output.formData.document_file.originalFileName
+                              ) {
+                                return (
+                                  <span>
+                                    📁{" "}
+                                    {output.formData.document_file.originalFileName}
+                                  </span>
+                                )
+                              }
+                              // Check for nested path: result.formData.document_file.originalFileName
+                              if (
+                                output.result &&
+                                output.result.formData &&
+                                output.result.formData.document_file &&
+                                output.result.formData.document_file.originalFileName
+                              ) {
+                                return (
+                                  <span>
+                                    📁{" "}
+                                    {output.result.formData.document_file.originalFileName}
+                                  </span>
+                                )
+                              }
+                              // Fallback: Check for direct file_name property
+                              if (output.file_name) {
+                                return <span>📁 {output.file_name}</span>
+                              }
+                              // Fallback: Check for nested file_name in result property
+                              if (
+                                output.result &&
+                                typeof output.result === "object" &&
+                                output.result.file_name
+                              ) {
+                                return <span>📁 {output.result.file_name}</span>
+                              }
+                              // Fallback: Check if this is the full output structure with file_name at root level
+                              if (output.status && output.file_name) {
+                                return <span>📁 {output.file_name}</span>
+                              }
+                            }
+                            // Default to showing full JSON
+                            return (
+                              <pre className="whitespace-pre-wrap">
+                                {typeof output === "object"
+                                  ? JSON.stringify(output, null, 2)
+                                  : String(output)}
+                              </pre>
+                            )
+                          })()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              }
+
+              // No output data available
+              return (
+                <div className="text-xs text-gray-500 italic">
+                  No output data available
+                </div>
+              )
+            })()}
+          </div>
+
+          {/* Tool Execution Results */}
           {(() => {
-
-
-
-
             return tools && tools.length > 0 ? (
               tools.map((tool: any, index: number) => {
 
@@ -2021,12 +2242,13 @@ const ExecutionSidebar = ({
                 )
               })
             ) : (
+              // Show "No tool execution results" message for tool results section
               <div className="text-center py-6">
                 <div className="text-gray-400 mb-2">
                   <FileText className="w-8 h-8 mx-auto" />
                 </div>
                 <p className="text-sm text-gray-500">
-                  No output data available
+                  No tool execution results
                 </p>
               </div>
             )
@@ -2061,6 +2283,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   selectedTemplate,
   isLoadingTemplate,
   onTemplateUpdate,
+  shouldStartPolling,
 }) => {
   const [, setZoomLevel] = useState(100)
   const [showResultModal, setShowResultModal] = useState(false)
@@ -2094,6 +2317,26 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       fetchWorkflowStatus(selectedTemplate.id)
     }
   }, []) // Empty dependency array means this runs only on mount
+
+  // Cleanup polling timeout when component unmounts or shouldStartPolling changes
+  useEffect(() => {
+    return () => {
+      if (pollingTimeoutRef.current) {
+        console.log("🧹 Cleaning up polling timeout on component unmount")
+        clearTimeout(pollingTimeoutRef.current)
+        pollingTimeoutRef.current = null
+      }
+    }
+  }, [])
+
+  // Stop polling when shouldStartPolling becomes false
+  useEffect(() => {
+    if (shouldStartPolling === false && pollingTimeoutRef.current) {
+      console.log("🛑 Stopping polling due to shouldStartPolling = false")
+      clearTimeout(pollingTimeoutRef.current)
+      pollingTimeoutRef.current = null
+    }
+  }, [shouldStartPolling])
 
   // Empty initial state
   const initialNodes: Node[] = []
