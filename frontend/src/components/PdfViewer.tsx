@@ -12,7 +12,6 @@ import "react-pdf/dist/Page/AnnotationLayer.css"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { getPdfWorkerSrc, getPdfDocumentOptions } from "@/utils/pdfBunCompat"
 import type { DocumentOperations } from "@/contexts/DocumentOperationsContext"
-import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api"
 
 // Set up the worker and WASM directory with Bun compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerSrc()
@@ -108,7 +107,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   // Height map: precomputed heights for all pages at current scale
   const [heightMap, setHeightMap] = useState<number[]>([])
-  const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
+  const [pdfDocument, setPdfDocument] = useState<any | null>(null)
   
   // Page readiness tracking for all layers using ref for real-time access
   const pageReadyRef = useRef<Record<number, {canvas?: boolean; text?: boolean; anno?: boolean}>>({})
@@ -156,7 +155,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   // Precompute height map from PDF metadata (two-pass layout)
   const computeHeightMap = useCallback(
-    async (doc: PDFDocumentProxy, currentScale: number) => {
+    async (doc: any, currentScale: number) => {
       if (!doc) return []
       const pages: number = doc.numPages ?? 0
       const heights: number[] = await Promise.all(
@@ -249,7 +248,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   )
 
   const onDocumentLoadSuccess = useCallback(
-    async (pdfDoc: PDFDocumentProxy) => {
+    async (pdfDoc: any) => {
       const { numPages } = pdfDoc
       setNumPages(numPages)
       setPdfDocument(pdfDoc)
@@ -655,7 +654,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             file={stableSource as any}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
-            options={documentOptions}
+            options={documentOptions as any}
             imageResourcesPath="/pdfjs/images/"
             loading={
               showLoading ? (

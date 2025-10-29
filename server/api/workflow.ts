@@ -507,6 +507,16 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
     // Update step statuses to activate steps that are ready
     await updateDownstreamStepStatuses(execution.id)
+    
+    // Ensure root step is activated for non-form tools
+    if (!rootStepTool || rootStepTool.type !== ToolType.FORM) {
+      await db
+        .update(workflowStepExecution)
+        .set({ status: WorkflowStatus.ACTIVE })
+        .where(eq(workflowStepExecution.id, rootStepExecution.id))
+      
+      Logger.info(`Root step ${rootStepExecution.name} activated for user input`)
+    }
 
     // Process file uploads and create tool execution
     let toolExecutionRecord = null

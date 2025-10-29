@@ -20,6 +20,9 @@ export interface WorkflowTemplate {
   description: string;
   version: string;
   status: string;
+  userId: number;
+  workspaceId: number;
+  isPublic: boolean;
   config: {
     ai_model?: string;
     max_file_size?: string;
@@ -28,9 +31,6 @@ export interface WorkflowTemplate {
     allowed_file_types?: string[];
     supports_file_upload?: boolean;
   };
-  userId: number;
-  workspaceId: number;
-  isPublic: boolean;
   rootWorkflowStepTemplateId: string;
   createdAt: string;
   updatedAt: string;
@@ -1005,8 +1005,11 @@ function WorkflowComponent() {
                       description: executionData.description || "",
                       version: executionData.version || "",
                       status: executionData.status,
+                      userId: 0, // Default value
+                      workspaceId: 0, // Default value  
+                      isPublic: false, // Default value
                       config: executionData.config || {},
-                      createdBy: executionData.createdBy || "",
+                      // createdBy: executionData.createdBy || "",
                       rootWorkflowStepTemplateId: "",
                       createdAt: "",
                       updatedAt: "",
