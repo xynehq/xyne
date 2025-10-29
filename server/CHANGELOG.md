@@ -1,3 +1,10 @@
+## [3.23.5](https://github.com/xynehq/xyne/compare/v3.23.4...v3.23.5) (2025-10-29)
+
+
+### Bug Fixes
+
+* XYNE-183 fixed sheetIds of collection files in agent ([#1162](https://github.com/xynehq/xyne/issues/1162)) ([d5b12d6](https://github.com/xynehq/xyne/commit/d5b12d678d47e11354e033a2b02715036c42b979))
+
 ## [3.23.4](https://github.com/xynehq/xyne/compare/v3.23.3...v3.23.4) (2025-10-29)
 
 
