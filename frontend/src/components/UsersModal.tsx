@@ -7,6 +7,7 @@ import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
 import CallHistory from "./CallHistory"
 import ChatView from "./ChatView"
+import { CallType } from "@/types"
 
 interface User {
   id: string
@@ -117,7 +118,7 @@ export default function UsersModal({ onClose }: UsersModalProps) {
   // Initiate a call
   const initiateCall = async (
     targetUserId: string,
-    callType: "video" | "audio" = "video",
+    callType: CallType = CallType.Video,
   ) => {
     console.log(
       "Initiating call with targetUserId:",
@@ -143,11 +144,12 @@ export default function UsersModal({ onClose }: UsersModalProps) {
       if (response.ok) {
         const data = await response.json()
 
-        // Generate caller link (only the caller gets their token directly)
-        const callerLink = `${window.location.origin}/call?callId=${data.callId}&token=${data.callerToken}&type=${callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
+        // Generate caller link using the new cleaner format
+        // Caller will also go through the join API to get a fresh token
+        const callerLink = `${window.location.origin}/call/${data.callId}?type=${callType}`
 
-        // Generate shareable link without token (target user will get token via WebSocket)
-        const shareableLink = `${window.location.origin}/call?callId=${data.callId}&type=${callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
+        // Generate shareable link (same format - no token needed)
+        const shareableLink = `${window.location.origin}/call/${data.callId}?type=${callType}`
 
         // Show simple notification status
         const notificationStatus = data.notificationSent

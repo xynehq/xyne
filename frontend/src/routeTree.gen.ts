@@ -31,6 +31,7 @@ import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authen
 import { Route as AuthenticatedIntegrationsApiKeyImport } from './routes/_authenticated/integrations/apiKey'
 import { Route as AuthenticatedDataSourceDocIdImport } from './routes/_authenticated/dataSource.$docId'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
+import { Route as AuthenticatedCallCallIdImport } from './routes/_authenticated/call.$callId'
 import { Route as AuthenticatedAdminUserManagementImport } from './routes/_authenticated/admin/userManagement'
 import { Route as AuthenticatedAdminChatOverviewImport } from './routes/_authenticated/admin/chat-overview'
 import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
@@ -167,6 +168,12 @@ const AuthenticatedChatChatIdRoute = AuthenticatedChatChatIdImport.update({
   id: '/$chatId',
   path: '/$chatId',
   getParentRoute: () => AuthenticatedChatRoute,
+} as any)
+
+const AuthenticatedCallCallIdRoute = AuthenticatedCallCallIdImport.update({
+  id: '/call/$callId',
+  path: '/call/$callId',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 
 const AuthenticatedAdminUserManagementRoute =
@@ -327,6 +334,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminUserManagementImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/call/$callId': {
+      id: '/_authenticated/call/$callId'
+      path: '/call/$callId'
+      fullPath: '/call/$callId'
+      preLoaderRoute: typeof AuthenticatedCallCallIdImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/_authenticated/chat/$chatId': {
       id: '/_authenticated/chat/$chatId'
       path: '/$chatId'
@@ -452,6 +466,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedAdminChatOverviewRoute: typeof AuthenticatedAdminChatOverviewRoute
   AuthenticatedAdminUserManagementRoute: typeof AuthenticatedAdminUserManagementRoute
+  AuthenticatedCallCallIdRoute: typeof AuthenticatedCallCallIdRoute
   AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
   AuthenticatedIntegrationsApiKeyRoute: typeof AuthenticatedIntegrationsApiKeyRoute
   AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
@@ -478,6 +493,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminChatOverviewRoute: AuthenticatedAdminChatOverviewRoute,
   AuthenticatedAdminUserManagementRoute: AuthenticatedAdminUserManagementRoute,
+  AuthenticatedCallCallIdRoute: AuthenticatedCallCallIdRoute,
   AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
   AuthenticatedIntegrationsApiKeyRoute: AuthenticatedIntegrationsApiKeyRoute,
   AuthenticatedIntegrationsGoogleRoute: AuthenticatedIntegrationsGoogleRoute,
@@ -518,6 +534,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
+  '/call/$callId': typeof AuthenticatedCallCallIdRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
   '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
@@ -548,6 +565,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
+  '/call/$callId': typeof AuthenticatedCallCallIdRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
   '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
@@ -580,6 +598,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/_authenticated/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
+  '/_authenticated/call/$callId': typeof AuthenticatedCallCallIdRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
   '/_authenticated/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
@@ -613,6 +632,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin/chat-overview'
     | '/admin/userManagement'
+    | '/call/$callId'
     | '/chat/$chatId'
     | '/dataSource/$docId'
     | '/integrations/apiKey'
@@ -642,6 +662,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin/chat-overview'
     | '/admin/userManagement'
+    | '/call/$callId'
     | '/chat/$chatId'
     | '/dataSource/$docId'
     | '/integrations/apiKey'
@@ -672,6 +693,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/admin/chat-overview'
     | '/_authenticated/admin/userManagement'
+    | '/_authenticated/call/$callId'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dataSource/$docId'
     | '/_authenticated/integrations/apiKey'
@@ -732,6 +754,7 @@ export const routeTree = rootRoute
         "/_authenticated/",
         "/_authenticated/admin/chat-overview",
         "/_authenticated/admin/userManagement",
+        "/_authenticated/call/$callId",
         "/_authenticated/dataSource/$docId",
         "/_authenticated/integrations/apiKey",
         "/_authenticated/integrations/google",
@@ -797,6 +820,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/admin/userManagement": {
       "filePath": "_authenticated/admin/userManagement.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/call/$callId": {
+      "filePath": "_authenticated/call.$callId.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/chat/$chatId": {

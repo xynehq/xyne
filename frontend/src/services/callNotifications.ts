@@ -599,8 +599,9 @@ export function useCallNotifications() {
     clientRef.current.stopCallNotificationSound()
     setIncomingCall(null)
 
-    // Open call in a new window with the LiveKit server URL
-    const callUrl = `/call?token=${notification.targetToken}&callId=${notification.callId}&type=${notification.callType}&serverUrl=${encodeURIComponent(notification.livekitUrl)}`
+    // Open call using the new cleaner route format
+    // Route will automatically authenticate and fetch token via join API
+    const callUrl = `/call/${notification.callId}?type=${notification.callType}`
     const callWindow = window.open(
       callUrl,
       "call-window-receiver",

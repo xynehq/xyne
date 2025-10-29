@@ -47,6 +47,11 @@ export type Filter = {
   lastUpdated?: LastUpdated
 }
 
+export enum CallType {
+  Video = "video",
+  Audio = "audio",
+}
+
 export enum OAuthIntegrationStatus {
   Provider = "Provider", // yet to create provider
   OAuth = "OAuth", // provider created but OAuth not yet connected
