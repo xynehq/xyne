@@ -85,6 +85,32 @@ import { extractDriveIds } from "@/search/utils"
 const { maxDefaultSummary, defaultFastModel } = config
 const Logger = getLogger(Subsystem.Chat)
 
+function convertParticipantsToLowercase(
+  participants?: MailParticipant,
+): MailParticipant | undefined {
+  if (!participants || Object.keys(participants).length < 1) return participants
+
+  const converted: MailParticipant = {}
+
+  if (participants.from) {
+    converted.from = participants.from.map((email) => email.toLowerCase())
+  }
+
+  if (participants.to) {
+    converted.to = participants.to.map((email) => email.toLowerCase())
+  }
+
+  if (participants.cc) {
+    converted.cc = participants.cc.map((email) => email.toLowerCase())
+  }
+
+  if (participants.bcc) {
+    converted.bcc = participants.bcc.map((email) => email.toLowerCase())
+  }
+
+  return converted
+}
+
 async function formatSearchToolResponse(
   searchResults: VespaSearchResponse | null,
   searchContext: {
@@ -342,10 +368,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     excludedIds,
     span: execSpan?.startSpan("vespa_search_call"),
     offset,
-    rankProfile:
-      orderDirection === "desc"
-        ? SearchModes.GlobalSorted
-        : SearchModes.NativeRank,
+    rankProfile: SearchModes.NativeRank,
     mailParticipants: mailParticipant || null,
     orderBy,
     owner,
@@ -1842,7 +1865,7 @@ export const searchGmail: AgentTool = {
         sortBy: params.sortBy || "desc",
         labels: params.labels,
         timeRange: timeRange,
-        participants: params.participants,
+        participants: convertParticipantsToLowercase(params.participants),
         excludeDocIds: params.excludedIds || [],
         docIds: undefined,
       })

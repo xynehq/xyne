@@ -141,6 +141,9 @@ import {
   type RunResult as JAFRunResult,
   type TraceEvent as JAFTraceEvent,
   type TraceEvent,
+  ToolResponse,
+  type ToolResult,
+  type ToolCall,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -1533,6 +1536,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         const citationValues: Record<number, Citation> = {}
         let gatheredFragments: MinimalAgentFragment[] = []
         const gatheredFragmentskeys = new Set<string>() // to track uniqueness
+        const seenDocuments = new Set<string>()
         let planningContext = ""
         let parseSynthesisResult = null
 
@@ -1755,13 +1759,22 @@ export const MessageWithToolsApi = async (c: Context) => {
             `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
             `- Do NOT answer from general knowledge. Always retrieve context via tools first.\n` +
             `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
-            `- If context is missing or insufficient, use search/metadata tools to fetch more, or ask a brief clarifying question, then search.\n` +
+            `- If context is missing or insufficient, use respective tools to fetch more, or ask a brief clarifying question, then search.\n` +
             `- Be concise, accurate, and avoid hallucinations.\n` +
             `- If there is a parseSynthesisOutput, use it to respond to the user without doing any further tool calls. Add missing citations and return the answer.\n` +
             `\nAvailable Tools:\n${toolOverview}` +
             contextSection +
             agentSection +
-            `\n<parseSynthesisOutput>${synthesisSection}</parseSynthesisOutput>`
+            `
+            #IMPORTANT Citation Format:
+            - Use square brackets with the context index number: [1], [2], etc.
+            - Place citations right after the relevant statement
+            - NEVER group multiple indices in one bracket like [1, 2] or [1, 2, 3] - this is an error
+            - Example: "The project deadline was moved to March [3] and the team agreed to the new timeline [5]"
+            - Only cite information that directly appears in the context
+            - WRONG: "The project deadline was changed and the team agreed to it [0, 2, 4]"
+            - RIGHT: "The project deadline was changed [1] and the team agreed to it [2]"
+            `
           )
         }
 
@@ -1771,10 +1784,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         const initialMessages: JAFMessage[] = messages
           .filter((m) => !m?.errorMessage)
           .map((m) => ({
-            role:
-              m.messageRole === MessageRole.User
-                ? ("user" as const)
-                : ("assistant" as const),
+            role: m.messageRole === MessageRole.User ? "user" : "assistant",
             content: m.message,
           }))
 
@@ -1782,7 +1792,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           name: "xyne-agent",
           instructions: () => agentInstructions(),
           tools: allJAFTools,
-          modelConfig: { name: defaultBestModel as unknown as string },
+          modelConfig: { name: defaultBestModel },
         }
 
         const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
@@ -1804,7 +1814,90 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentRegistry,
           modelProvider,
           maxTurns: 10,
-          modelOverride: defaultBestModel as unknown as string,
+          modelOverride: defaultBestModel,
+          onAfterToolExecution: async (
+            toolName: string,
+            result: any,
+            context: {
+              toolCall: ToolCall
+              args: any
+              state: JAFRunState<JAFAdapterCtx>
+              agentName: string
+              executionTime: number
+              status: string | ToolResult
+            },
+          ) => {
+            // Return only the best document indexes content as string
+            const contexts = result?.metadata?.contexts
+
+            if (Array.isArray(contexts) && contexts.length) {
+              const filteredContexts = contexts.filter(
+                (v) => !gatheredFragmentskeys.has(v.id),
+              )
+
+              const contextStrings = filteredContexts.map(
+                (v: MinimalAgentFragment) => {
+                  seenDocuments.add(v.id)
+                  return `
+                    title: ${v.source.title}\n
+                    content: ${v.content}\n
+                    `
+                },
+              )
+
+              try {
+                const bestDocIndexes = await extractBestDocumentIndexes(
+                  message,
+                  contextStrings,
+                  {
+                    modelId: config.defaultBestModel,
+                    json: false,
+                    stream: false,
+                  },
+                  messagesWithNoErrResponse,
+                )
+
+                if (bestDocIndexes.length) {
+                  const selectedDocs: MinimalAgentFragment[] = []
+
+                  bestDocIndexes.forEach((idx) => {
+                    if (idx >= 1 && idx <= filteredContexts.length) {
+                      const doc: MinimalAgentFragment =
+                        filteredContexts[idx - 1]
+                      const key = doc.id
+                      if (!gatheredFragmentskeys.has(key)) {
+                        gatheredFragments.push(doc)
+                        gatheredFragmentskeys.add(key)
+                      }
+                      selectedDocs.push(doc)
+                    }
+                  })
+
+                  return selectedDocs
+                    .map((doc: MinimalAgentFragment) => doc.content)
+                    .join("\n")
+                } else {
+                  Logger.info(
+                    "Couldn't retrieve good documents for user's query",
+                  )
+                  // If no best documents found, return empty string
+                  return null
+                }
+              } catch (error) {
+                // adding all context if extracting best document fails
+                filteredContexts.forEach((doc: MinimalAgentFragment) => {
+                  const key = doc.id
+                  if (!gatheredFragmentskeys.has(key)) {
+                    gatheredFragments.push(doc)
+                    gatheredFragmentskeys.add(key)
+                  }
+                })
+
+                return null
+              }
+            }
+            return null
+          },
         }
         jafSetupSpan.setAttribute("run_id", runId)
         jafSetupSpan.setAttribute("trace_id", traceId)
@@ -1833,10 +1926,10 @@ export const MessageWithToolsApi = async (c: Context) => {
             const { args = {} } = event.data ?? {}
             const docIds =
               gatheredFragments?.map((v) => v.id).filter(Boolean) ?? []
-
+            const seenDocIds = Array.from(seenDocuments)
             // to exclude docs which already retrieved in prev iteration
             const modifiedArgs = docIds.length
-              ? { ...args, excludedIds: docIds }
+              ? { ...args, excludedIds: [...docIds, ...seenDocIds] }
               : args
 
             return modifiedArgs
@@ -1945,57 +2038,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               const contextsCount = Array.isArray(contexts)
                 ? contexts.length
                 : 0
-
-              if (Array.isArray(contexts) && contexts.length) {
-                const contextStrings = contexts.map(
-                  (v: MinimalAgentFragment) => {
-                    const truncated = v.content.length > 600
-                    const preview = truncated
-                      ? v.content.slice(0, 600) + "..."
-                      : v.content
-                    return `title: ${v.source.title}\n
-                    content: ${preview}\n                  `
-                  },
-                )
-
-                try {
-                  const bestDocIndexes = await extractBestDocumentIndexes(
-                    message,
-                    contextStrings,
-                    {
-                      modelId: config.defaultBestModel,
-                      json: false,
-                      stream: false,
-                    },
-                  )
-
-                  if (bestDocIndexes.length) {
-                    bestDocIndexes.forEach((idx) => {
-                      if (idx >= 0 && idx < contexts.length) {
-                        const doc: MinimalAgentFragment = contexts[idx - 1]
-                        const key = doc.id
-                        if (!gatheredFragmentskeys.has(key)) {
-                          gatheredFragments.push(doc)
-                          gatheredFragmentskeys.add(key)
-                        }
-                      }
-                    })
-                  } else {
-                    Logger.info(
-                      "Couldn't retrieve good documents for user's query",
-                    )
-                  }
-                } catch (error) {
-                  // adding all context if extracting best document fails
-                  contexts.forEach((doc: MinimalAgentFragment) => {
-                    const key = doc.id
-                    if (!gatheredFragmentskeys.has(key)) {
-                      gatheredFragments.push(doc)
-                      gatheredFragmentskeys.add(key)
-                    }
-                  })
-                }
-              }
 
               toolEndSpan.setAttribute("tool_name", evt.data.toolName)
               toolEndSpan.setAttribute("status", evt.data.status || "completed")
