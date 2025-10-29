@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router"
+import { CallType } from "@/types"
 
 // Old route - redirect to new authenticated route format
 export const Route = createFileRoute("/call")({
@@ -8,7 +9,7 @@ export const Route = createFileRoute("/call")({
       throw redirect({
         to: "/call/$callId",
         params: { callId: search.callId },
-        search: { type: search.type || "video" },
+        search: { type: search.type || CallType.Video },
       })
     }
     // Otherwise redirect to home or show error
