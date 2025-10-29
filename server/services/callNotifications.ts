@@ -1,4 +1,4 @@
-// Call notification system using WebSockets
+// Real-time messaging service using WebSockets - handles both calls and direct messages
 import { EventEmitter } from "events"
 import type { WSContext } from "hono/ws"
 import type { ServerWebSocket } from "bun"
@@ -23,13 +23,27 @@ interface CallNotification {
   timestamp: number
 }
 
-class CallNotificationService extends EventEmitter {
+interface DirectMessageNotification {
+  type: "direct_message"
+  messageId: number
+  messageContent: string
+  createdAt: Date
+  sender: {
+    id: string
+    name: string
+    email: string
+    photoLink?: string | null
+  }
+  timestamp: number
+}
+
+class RealtimeMessagingService extends EventEmitter {
   private activeConnections = new Map<string, WSContext<ServerWebSocket>>()
 
   // Register user's WebSocket connection
   registerUser(userId: string, ws: WSContext<ServerWebSocket>) {
     this.activeConnections.set(userId, ws)
-    console.log(`User ${userId} connected for call notifications`)
+    console.log(`User ${userId} connected for real-time messaging`)
 
     // Note: Connection cleanup is handled by the WebSocket upgrade handler
   }
@@ -39,8 +53,13 @@ class CallNotificationService extends EventEmitter {
     const wasConnected = this.activeConnections.has(userId)
     this.activeConnections.delete(userId)
     if (wasConnected) {
-      console.log(`User ${userId} disconnected from call notifications`)
+      console.log(`User ${userId} disconnected from real-time messaging`)
     }
+  }
+
+  // Check if user is online
+  isUserOnline(userId: string): boolean {
+    return this.activeConnections.has(userId)
   }
 
   // Send call invitation to target user
@@ -77,6 +96,74 @@ class CallNotificationService extends EventEmitter {
       )
     }
   }
+
+  // Send direct message notification to target user
+  sendDirectMessage(
+    targetUserId: string,
+    notification: DirectMessageNotification,
+  ) {
+    const targetWs = this.activeConnections.get(targetUserId)
+
+    if (targetWs) {
+      targetWs.send(
+        JSON.stringify({
+          type: "direct_message",
+          data: notification,
+        }),
+      )
+      return true
+    }
+
+    console.log(
+      `Target user ${targetUserId} is not connected for real-time messages`,
+    )
+    return false
+  }
+
+  // Send typing indicator
+  sendTypingIndicator(
+    targetUserId: string,
+    isTyping: boolean,
+    typingUserId: string,
+  ) {
+    const targetWs = this.activeConnections.get(targetUserId)
+
+    if (targetWs) {
+      targetWs.send(
+        JSON.stringify({
+          type: "typing_indicator",
+          data: {
+            isTyping,
+            userId: typingUserId,
+          },
+        }),
+      )
+      return true
+    }
+
+    return false
+  }
+
+  // Send message read receipt
+  sendReadReceipt(targetUserId: string, readByUserId: string) {
+    const targetWs = this.activeConnections.get(targetUserId)
+
+    if (targetWs) {
+      targetWs.send(
+        JSON.stringify({
+          type: "message_read",
+          data: {
+            readByUserId,
+          },
+        }),
+      )
+      return true
+    }
+
+    return false
+  }
 }
 
-export const callNotificationService = new CallNotificationService()
+// Export both the new service and maintain backward compatibility
+export const realtimeMessagingService = new RealtimeMessagingService()
+export const callNotificationService = realtimeMessagingService // Maintain backward compatibility

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState, useRef } from "react"
-import { api } from "@/api"
 import { useDocumentOperations } from "@/contexts/DocumentOperationsContext"
+import {
+  findHighlightMatches,
+  type HighlightMatch as ClientHighlightMatch,
+} from "@/utils/textHighlighting"
 
 type Options = {
   caseSensitive?: boolean
@@ -10,26 +13,11 @@ type Options = {
   documentId?: string // Document ID for caching
 }
 
-type HighlightMatch = {
-  startIndex: number
-  endIndex: number
-  length: number
-  similarity: number
-  highlightedText: string
-  originalLine?: string
-  processedLine?: string
-}
-
-type HighlightResponse = {
-  success: boolean
-  matches?: HighlightMatch[]
-  totalMatches?: number
-  message?: string
-  debug?: any
-}
+// Cache duration constant - defined at module scope to prevent re-declaration on each render
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
 type CacheEntry = {
-  response: HighlightResponse
+  matches: ClientHighlightMatch[]
   timestamp: number
 }
 
@@ -37,18 +25,33 @@ type HighlightCache = {
   [key: string]: CacheEntry
 }
 
-// Cache duration constant - defined at module scope to prevent re-declaration on each render
-const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+const isScrollable = (element: HTMLElement): boolean => {
+  const style = window.getComputedStyle(element)
+  return (
+    (style.overflowY === "auto" || 
+     style.overflowY === "scroll" || 
+     style.overflowY === "overlay") &&
+    element.scrollHeight > element.clientHeight
+  )
+}
 
 export function useScopedFind(
   containerRef: React.RefObject<HTMLElement>,
   opts: Options = {},
 ) {
   const { documentOperationsRef } = useDocumentOperations()
-  const { caseSensitive = true, debug = false, documentId } = opts
+  const {
+    caseSensitive = true,
+    highlightClass = "bg-yellow-200/60 dark:bg-yellow-200/40 rounded-sm px-0.5 py-px",
+    debug = false,
+    documentId,
+  } = opts
 
   // Cache for API responses
   const cacheRef = useRef<HighlightCache>({})
+
+  // Cancellation token to prevent race conditions
+  const callTokenRef = useRef<number>(0)
 
   const [matches, setMatches] = useState<HTMLElement[]>([])
   const [index, setIndex] = useState(0)
@@ -104,9 +107,152 @@ export function useScopedFind(
     return text
   }, [])
 
-  // Create highlight marks based on backend response
-  const createHighlightMarks = useCallback(
-    (container: HTMLElement, match: HighlightMatch): HTMLElement[] => {
+  // Detect if we're in a PDF context
+  const isPDFContext = useCallback((container: HTMLElement): boolean => {
+    // Check if container or any parent has PDF-specific classes
+    let element: HTMLElement | null = container
+    while (element) {
+      if (
+        element.classList.contains("react-pdf__Page") ||
+        element.classList.contains("pdf-page-wrapper") ||
+        element.classList.contains("simple-pdf-viewer") ||
+        element.querySelector(".react-pdf__Page") !== null
+      ) {
+        return true
+      }
+      element = element.parentElement
+    }
+    return false
+  }, [])
+
+  // Create highlight marks using <mark> elements (for non-PDF content)
+  const createMarkHighlights = useCallback(
+    (container: HTMLElement, match: ClientHighlightMatch): HTMLElement[] => {
+      const marks: HTMLElement[] = []
+
+      try {
+        // Find all text nodes and their positions
+        const walker = document.createTreeWalker(
+          container,
+          NodeFilter.SHOW_TEXT,
+          {
+            acceptNode(n) {
+              const p = (n as Text).parentElement
+              if (!p) return NodeFilter.FILTER_REJECT
+              const tag = p.tagName.toLowerCase()
+              if (tag === "script" || tag === "style")
+                return NodeFilter.FILTER_REJECT
+              if (!n.nodeValue?.trim()) return NodeFilter.FILTER_REJECT
+              return NodeFilter.FILTER_ACCEPT
+            },
+          },
+        )
+
+        const textNodes: { node: Text; start: number; end: number }[] = []
+        let currentPos = 0
+        let node: Node | null
+
+        // Build a map of text nodes and their positions
+        while ((node = walker.nextNode())) {
+          const textNode = node as Text
+          const nodeLength = textNode.nodeValue!.length
+          textNodes.push({
+            node: textNode,
+            start: currentPos,
+            end: currentPos + nodeLength,
+          })
+          currentPos += nodeLength
+        }
+
+        // Find all text nodes that intersect with our match
+        const intersectingNodes = textNodes.filter(
+          ({ start, end }) => start < match.endIndex && end > match.startIndex,
+        )
+
+        for (const { node: textNode, start: nodeStart } of intersectingNodes) {
+          const startOffset = Math.max(0, match.startIndex - nodeStart)
+          const endOffset = Math.min(
+            textNode.nodeValue!.length,
+            match.endIndex - nodeStart,
+          )
+
+          if (startOffset < endOffset) {
+            try {
+              const range = document.createRange()
+              range.setStart(textNode, startOffset)
+              range.setEnd(textNode, endOffset)
+
+              // Create and insert the mark
+              const mark = document.createElement("mark")
+              mark.className = `${highlightClass}`
+              mark.setAttribute("data-match-index", "0")
+
+              try {
+                range.surroundContents(mark)
+                marks.push(mark)
+              } catch (rangeError) {
+                console.warn(
+                  "Failed to wrap range with mark, trying alternative approach:",
+                  rangeError,
+                )
+
+                // Alternative: split text node and insert mark
+                const originalText = textNode.nodeValue!
+                const beforeText = textNode.nodeValue!.substring(0, startOffset)
+                const matchText = textNode.nodeValue!.substring(
+                  startOffset,
+                  endOffset,
+                )
+                const afterText = textNode.nodeValue!.substring(endOffset)
+
+                try {
+                  // Replace the text node content with before text
+                  textNode.nodeValue = beforeText
+
+                  // Create and insert the mark
+                  const mark = document.createElement("mark")
+                  mark.className = `${highlightClass}`
+                  mark.setAttribute("data-match-index", "0")
+                  mark.textContent = matchText
+
+                  // Insert mark after the text node
+                  textNode.parentNode!.insertBefore(mark, textNode.nextSibling)
+                  marks.push(mark)
+
+                  // Insert remaining text after the mark
+                  if (afterText) {
+                    const afterNode = document.createTextNode(afterText)
+                    mark.parentNode!.insertBefore(afterNode, mark.nextSibling)
+                  }
+                } catch (fallbackError) {
+                  // Restore original text on error
+                  textNode.nodeValue = originalText
+                  console.error(
+                    "Fallback highlighting approach failed:",
+                    fallbackError,
+                  )
+                }
+              }
+            } catch (error) {
+              console.warn(
+                "Error processing text node for highlighting:",
+                error,
+              )
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error creating highlight marks:", error)
+      }
+
+      return marks
+    },
+    [highlightClass],
+  )
+
+  // Create highlight overlays using positioned spans (for PDF content)
+  const createOverlayHighlights = useCallback(
+    (container: HTMLElement, match: ClientHighlightMatch): HTMLElement[] => {
       const marks: HTMLElement[] = []
 
       try {
@@ -163,7 +309,10 @@ export function useScopedFind(
 
               const rects = range.getClientRects()
 
+              // Find a suitable positioning context for the highlight overlay
               let pageWrapper: HTMLElement | null = textNode.parentElement
+
+              // Look for PDF-specific wrappers first
               while (pageWrapper && pageWrapper !== container) {
                 if (
                   pageWrapper.classList.contains("pdf-page-wrapper") ||
@@ -174,6 +323,7 @@ export function useScopedFind(
                 pageWrapper = pageWrapper.parentElement
               }
 
+              // If no PDF wrapper found, look for any positioned element
               if (!pageWrapper || pageWrapper === container) {
                 pageWrapper = textNode.parentElement
                 while (pageWrapper && pageWrapper !== container) {
@@ -188,8 +338,8 @@ export function useScopedFind(
                 }
               }
 
+              // Fall back to container
               if (!pageWrapper || pageWrapper === container) {
-                console.warn("No page wrapper found, using container")
                 pageWrapper = container
               }
 
@@ -203,8 +353,16 @@ export function useScopedFind(
               )
               if (!overlayContainer) {
                 overlayContainer = document.createElement("div")
-                overlayContainer.className = "absolute top-0 left-0 pointer-events-none z-[1]"
                 overlayContainer.setAttribute("data-highlight-overlay", "true")
+                overlayContainer.style.cssText = `
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  width: 100%;
+                  height: 100%;
+                  pointer-events: none;
+                  z-index: 999;
+                `
                 pageWrapper.appendChild(overlayContainer)
               }
 
@@ -230,7 +388,7 @@ export function useScopedFind(
                   height: ${rect.height}px;
                   background-color: rgba(250, 204, 21, 0.4);
                   pointer-events: none;
-                  z-index: 10;
+                  z-index: 1000;
                   border-radius: 2px;
                 `
 
@@ -243,7 +401,7 @@ export function useScopedFind(
           }
         }
       } catch (error) {
-        console.error("Error creating highlight marks:", error)
+        console.error("Error creating overlay highlights:", error)
       }
 
       return marks
@@ -251,10 +409,37 @@ export function useScopedFind(
     [],
   )
 
+  // Main highlight creation function that chooses the right strategy
+  const createHighlightMarks = useCallback(
+    (container: HTMLElement, match: ClientHighlightMatch): HTMLElement[] => {
+      const isPDF = isPDFContext(container)
+
+      if (debug) {
+        console.log(`Using ${isPDF ? "overlay" : "mark"} highlighting strategy`)
+      }
+
+      return isPDF
+        ? createOverlayHighlights(container, match)
+        : createMarkHighlights(container, match)
+    },
+    [isPDFContext, createOverlayHighlights, createMarkHighlights, debug],
+  )
+
   const clearHighlights = useCallback(() => {
     const root = containerRef.current
     if (!root) return
 
+    // Clear mark-based highlights
+    const marks = root.querySelectorAll<HTMLElement>("mark[data-match-index]")
+    marks.forEach((m) => {
+      const parent = m.parentNode!
+      // unwrap <mark>
+      while (m.firstChild) parent.insertBefore(m.firstChild, m)
+      parent.removeChild(m)
+      parent.normalize() // merge adjacent text nodes
+    })
+
+    // Clear overlay-based highlights (for PDFs)
     const overlayContainers = root.querySelectorAll<HTMLElement>(
       "[data-highlight-overlay]",
     )
@@ -341,8 +526,11 @@ export function useScopedFind(
       pageIndex?: number,
       waitForTextLayer: boolean = false,
     ): Promise<boolean> => {
+      // Increment call token to track this invocation
+      const currentToken = ++callTokenRef.current
+      
       if (debug) {
-        console.log("highlightText called with:", text)
+        console.log("highlightText called with:", text, "token:", currentToken)
       }
 
       const root = containerRef.current
@@ -412,7 +600,7 @@ export function useScopedFind(
 
         // Check cache first (only if safe)
         const cachedEntry = canUseCache ? cacheRef.current[cacheKey] : undefined
-        let result: HighlightResponse
+        let matches: ClientHighlightMatch[]
 
         if (
           cachedEntry &&
@@ -421,54 +609,73 @@ export function useScopedFind(
           if (debug) {
             console.log("Using cached result for key:", cacheKey)
           }
-          result = cachedEntry.response
+          
+          // Check if this call is still the latest before using cached results
+          if (currentToken !== callTokenRef.current) {
+            if (debug) {
+              console.log("Stale call detected after cache lookup, aborting")
+            }
+            return false
+          }
+          
+          matches = cachedEntry.matches
         } else {
           if (debug) {
-            console.log("Cache miss, making API call for key:", cacheKey)
+            console.log(
+              "Cache miss, computing highlights client-side for key:",
+              cacheKey,
+            )
           }
 
-          const response = await api.highlight.$post({
-            json: {
-              chunkText: text,
-              documentContent: containerText,
-              options: {
-                caseSensitive,
-              },
-            },
+          // Use client-side highlighting instead of API call
+          const result = findHighlightMatches(text, containerText, {
+            caseSensitive,
           })
 
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
+          if (debug) {
+            console.log("Client-side highlighting result:", result)
           }
 
-          result = await response.json()
+          if (
+            !result.success ||
+            !result.matches ||
+            result.matches.length === 0
+          ) {
+            if (debug) {
+              console.log("No matches found:", result.message)
+            }
+            return false
+          }
+
+          // Check if this call is still the latest before processing results
+          if (currentToken !== callTokenRef.current) {
+            if (debug) {
+              console.log("Stale call detected after computing matches, aborting")
+            }
+            return false
+          }
+
+          matches = result.matches
 
           // Only cache successful responses and only when safe
-          if (result.success && canUseCache) {
+          if (canUseCache) {
             cacheRef.current[cacheKey] = {
-              response: result,
+              matches,
               timestamp: Date.now(),
             }
 
             if (debug) {
               console.log("Cached successful result for key:", cacheKey)
             }
-          } else if (result.success && !canUseCache && debug) {
+          } else if (!canUseCache && debug) {
             console.log("Skipping cache write (no documentId)")
-          } else {
-            if (debug) {
-              console.log("Not caching failed response for key:", cacheKey)
-            }
           }
         }
 
-        if (debug) {
-          console.log("Backend response:", result)
-        }
-
-        if (!result.success || !result.matches || result.matches.length === 0) {
+        // Check if this call is still the latest before creating DOM highlights
+        if (currentToken !== callTokenRef.current) {
           if (debug) {
-            console.log("No matches found:", result.message)
+            console.log("Stale call detected before creating highlights, aborting")
           }
           return false
         }
@@ -478,7 +685,7 @@ export function useScopedFind(
         let longestMatchIndex = 0
         let longestMatchLength = 0
 
-        result.matches.forEach((match, matchIndex) => {
+        matches.forEach((match, matchIndex) => {
           const marks = createHighlightMarks(root, match)
 
           marks.forEach((mark) => {
@@ -495,11 +702,34 @@ export function useScopedFind(
 
         if (debug) {
           console.log(
-            `Created ${allMarks.length} highlight marks from ${result.matches.length} matches`,
+            `Created ${allMarks.length} highlight marks from ${matches.length} matches`,
           )
           console.log(
             `Longest match index: ${longestMatchIndex} with length: ${longestMatchLength}`,
           )
+        }
+
+        // Final check before updating state
+        if (currentToken !== callTokenRef.current) {
+          if (debug) {
+            console.log("Stale call detected before state update, aborting and cleaning up DOM")
+          }
+          // Clean up the highlights we just created since this call is stale
+          allMarks.forEach((mark) => {
+            if (mark.parentNode) {
+              if (mark.tagName === "MARK") {
+                // Unwrap mark elements
+                while (mark.firstChild) {
+                  mark.parentNode.insertBefore(mark.firstChild, mark)
+                }
+                mark.parentNode.removeChild(mark)
+              } else {
+                // Remove overlay elements
+                mark.remove()
+              }
+            }
+          })
+          return false
         }
 
         setMatches(allMarks)
@@ -507,10 +737,13 @@ export function useScopedFind(
 
         return allMarks.length > 0
       } catch (error) {
-        console.error("Error during backend highlighting:", error)
+        console.error("Error during client-side highlighting:", error)
         return false
       } finally {
-        setIsLoading(false)
+        // Only update loading state if this is still the latest call
+        if (currentToken === callTokenRef.current) {
+          setIsLoading(false)
+        }
       }
     },
     [
@@ -535,21 +768,43 @@ export function useScopedFind(
       const container = containerRef.current
       const target = matches[bounded]
 
-      if (container.scrollHeight > container.clientHeight) {
-        const containerRect = container.getBoundingClientRect()
+      // Check if container is scrollable, if not find the scrollable parent
+
+      let scrollParent: HTMLElement = container
+      
+      if (!isScrollable(container)) {
+        // Container is not scrollable, find the scrollable parent
+        let parent = container.parentElement
+        while (parent) {
+          if (isScrollable(parent)) {
+            scrollParent = parent
+            break
+          }
+          parent = parent.parentElement
+        }
+        
+        // If no scrollable parent found, use document element
+        if (!parent) {
+          scrollParent = document.documentElement
+        }
+      }
+
+      // Use custom scroll logic for proper centering
+      if (scrollParent !== document.documentElement) {
+        const containerRect = scrollParent.getBoundingClientRect()
         const targetRect = target.getBoundingClientRect()
 
         const targetTop = targetRect.top - containerRect.top
-        const containerHeight = container.clientHeight
+        const containerHeight = scrollParent.clientHeight
         const targetHeight = targetRect.height
 
         const scrollTop =
-          container.scrollTop +
+          scrollParent.scrollTop +
           targetTop -
           containerHeight / 2 +
           targetHeight / 2
 
-        container.scrollTo({
+        scrollParent.scrollTo({
           top: Math.max(0, scrollTop),
           behavior: "smooth",
         })
@@ -570,9 +825,14 @@ export function useScopedFind(
   // Auto-scroll to the current index (which is set to the longest match) whenever matches update
   useEffect(() => {
     if (matches.length) {
-      scrollToMatch(index)
+      // Small delay to ensure DOM is fully updated, especially for mark elements
+      const timeoutId = setTimeout(() => {
+        scrollToMatch(index)
+      }, 50)
+      
+      return () => clearTimeout(timeoutId)
     }
-  }, [matches, index])
+  }, [matches, index, scrollToMatch])
 
   // Clean up when container unmounts
   useEffect(() => () => clearHighlights(), [clearHighlights])

@@ -1,3 +1,59 @@
+## [3.23.1](https://github.com/xynehq/xyne/compare/v3.23.0...v3.23.1) (2025-10-29)
+
+
+### Bug Fixes
+
+* XYNE-251 moved zustand dependency from root to frontend ([#1161](https://github.com/xynehq/xyne/issues/1161)) ([f97d0fa](https://github.com/xynehq/xyne/commit/f97d0fa930b8b383d9fa6f6eafc98709435152db))
+
+# [3.23.0](https://github.com/xynehq/xyne/compare/v3.22.5...v3.23.0) (2025-10-28)
+
+
+### Features
+
+* XYN-211 chats with worspace users ([#1130](https://github.com/xynehq/xyne/issues/1130)) ([3dbd558](https://github.com/xynehq/xyne/commit/3dbd5580bd6483b038b103eb9dda3b064c91e9ab))
+
+## [3.22.5](https://github.com/xynehq/xyne/compare/v3.22.4...v3.22.5) (2025-10-28)
+
+
+### Bug Fixes
+
+* **syncTrigger:** fix individual sync trigger for oauth based syncJob ([#1154](https://github.com/xynehq/xyne/issues/1154)) ([b826dda](https://github.com/xynehq/xyne/commit/b826dda7f6e736962420d343deccc50733c2d5a1))
+
+## [3.22.4](https://github.com/xynehq/xyne/compare/v3.22.3...v3.22.4) (2025-10-28)
+
+
+### Bug Fixes
+
+* XYNE-253 fixed auto scroll in document preview ([#1153](https://github.com/xynehq/xyne/issues/1153)) ([cbb9b74](https://github.com/xynehq/xyne/commit/cbb9b749c75919c0f22a4b6d5201010a8a7f2dec))
+
+## [3.22.3](https://github.com/xynehq/xyne/compare/v3.22.2...v3.22.3) (2025-10-27)
+
+
+### Bug Fixes
+
+* **agentic:** Fix retrieval query prompt ([#1149](https://github.com/xynehq/xyne/issues/1149)) ([f9252d3](https://github.com/xynehq/xyne/commit/f9252d3526ceaa5e64ebabcb6f1c9bfabdf1e182))
+
+## [3.22.2](https://github.com/xynehq/xyne/compare/v3.22.1...v3.22.2) (2025-10-27)
+
+
+### Bug Fixes
+
+* XYNE-223 fixed timing issue in highlight ([#1125](https://github.com/xynehq/xyne/issues/1125)) ([86514a9](https://github.com/xynehq/xyne/commit/86514a908289c8d752b20baef1ae299636962942))
+
+## [3.22.1](https://github.com/xynehq/xyne/compare/v3.22.0...v3.22.1) (2025-10-27)
+
+
+### Bug Fixes
+
+* **chats:** Remove vespa relevance score from context ([#1148](https://github.com/xynehq/xyne/issues/1148)) ([6631556](https://github.com/xynehq/xyne/commit/66315565d5ab9eea4afcb9cc7a9ec6d6bd7ff44b))
+
+# [3.22.0](https://github.com/xynehq/xyne/compare/v3.21.7...v3.22.0) (2025-10-27)
+
+
+### Features
+
+* **kbPageTitle:** Add page_title extraction for md files  ([#1139](https://github.com/xynehq/xyne/issues/1139)) ([a3a7301](https://github.com/xynehq/xyne/commit/a3a73016ca82451273b2788fd12dee689d1cd72e))
+
 ## [3.21.7](https://github.com/xynehq/xyne/compare/v3.21.6...v3.21.7) (2025-10-24)
 
 

@@ -976,6 +976,63 @@ export function createToolParams(
   return params
 }
 
+const retrievalQueryDescription = (app?: GoogleApps | Apps) => `
+Create SHORT, targeted search terms optimized for retrieval systems. Focus on 1-3 key terms rather than long descriptive phrases.
+      
+      Step 1: Identify the MOST IMPORTANT specific keywords:
+      - Person names (e.g., "John", "Sarah")
+      - Business/project names (e.g., "uber", "zomato") 
+      - Core topics (e.g., "contract", "invoice", "proposal")
+      - Company names (e.g., "OpenAI", "Google")
+      - Product names or key identifiers
+      
+      Step 2: EXCLUDE these generic terms:
+      - Action words: "find", "show", "get", "search", "give", "recent", "latest"
+      - Pronouns: "my", "your", "their"
+      - Time references: "recent", "latest", "last week", "old", "new"
+      - Quantity words: "5", "10", "most", "all", "some"
+      - Generic types: "emails", "files", "documents", "meetings" (when used alone)
+      - Filler words: "summary", "details", "info", "information", "about", "regarding"
+      
+      Step 3: Create CONCISE query (1-3 key terms max):
+      ${
+        app === GoogleApps.Contacts || !app
+          ? "- Contact queries: Use person/company names, job titles (e.g., 'John Smith', 'OpenAI', 'CEO')"
+          : ""
+      }
+      
+      ${
+        app === GoogleApps.Drive || !app
+          ? "- File queries: Use topic + context (e.g., 'budget report', 'contract legal', 'project alpha')"
+          : ""
+      }
+      ${
+        app === GoogleApps.Calendar || !app
+          ? "- Meeting queries: Use meeting topic + type (e.g., 'standup engineering', 'client demo', 'budget review')"
+          : ""
+      }
+      ${
+        app === Apps.Slack || !app
+          ? "- Slack queries: Use discussion topic + context (e.g., 'deployment issue', 'feature review', 'team sync')"
+          : ""
+      }
+      
+      Examples:
+      - "reimbursement procedure application process policy guidelines" → "reimbursement policy"
+      - "meeting notes from last week about project updates" → "project updates"
+      - "emails from John about the marketing campaign" → "John marketing"
+      
+      Step 4: Apply the rule:
+      ${
+        !app
+          ? `- Global search: query is MANDATORY. Use 1-3 most important terms from available keywords to search across all apps (${Object.values(
+              GoogleApps,
+            )
+              .map((v) => v)
+              .join(",")} and ${Apps.Slack})`
+          : "- IF specific content keywords found → create SHORT semantic query (1-3 terms)\n      - IF no specific content keywords found → set query to null"
+      }
+`
 export const searchGlobalTool: ToolDefinition = {
   name: "searchGlobal",
   description:
@@ -985,8 +1042,7 @@ export const searchGlobalTool: ToolDefinition = {
       name: "query",
       type: "string",
       required: true,
-      description: `The search query string that specifies what you want to find.
-         - query should be keywords focus to retireve the most relevant content from corpus.`,
+      description: retrievalQueryDescription(),
     },
     {
       name: "limit",
@@ -1029,10 +1085,7 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         name: "query",
         type: "string",
         required: false,
-        description: `Extracted search terms from the user's query to find emails if query doesn't contain important semantic terms, will fetch based on different params e.g. timeRange, participants, labels etc.
-           - don't apply filters in the query like "from:sahebjot" or "subject:meeting".
-           - query should be keywords focus to retireve the most relevant content from corpus.
-          `,
+        description: retrievalQueryDescription(GoogleApps.Gmail),
       },
       {
         name: "limit",
@@ -1066,13 +1119,6 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         description: `Filter emails within a specific time range. Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
       },
       {
-        name: "isAttachmentRequired",
-        type: "boolean",
-        required: false,
-        description:
-          "If true, it also search for the attachments in the emails.",
-      },
-      {
         name: "participants",
         type: "object",
         required: false,
@@ -1091,12 +1137,7 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         name: "query",
         type: "string",
         required: false,
-        description: `Search terms for file names, content, or metadata. Use specific keywords to find documents, or descriptive terms for content-based search.
-          - don't apply filters in the query like "from:sahebjot" or "subject:meeting" or "*".
-          - query should be keywords focus to retireve the most relevant content from corpus.
-          - if query is empty, will fetch the most recent files for user.
-          - Never use the query to filter, query should be only contain keywords to searchFor otherwise don't select this parameter.
-          `,
+        description: retrievalQueryDescription(GoogleApps.Drive),
       },
       {
         name: "owner",
@@ -1145,8 +1186,7 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         name: "query",
         type: "string",
         required: true,
-        description:
-          "Search terms for event titles, descriptions, or locations. Use meeting names, project keywords, or attendee names to find relevant events.",
+        description: retrievalQueryDescription(GoogleApps.Calendar),
       },
       {
         name: "attendees",
@@ -1196,8 +1236,7 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         name: "query",
         type: "string",
         required: true,
-        description:
-          "Search terms for contact names, companies, email addresses, or phone numbers. can also use names or organization keywords for broad matching.",
+        description: retrievalQueryDescription(GoogleApps.Contacts),
       },
       {
         name: "limit",
