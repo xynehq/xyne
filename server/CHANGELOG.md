@@ -1,3 +1,10 @@
+## [3.23.6](https://github.com/xynehq/xyne/compare/v3.23.5...v3.23.6) (2025-10-29)
+
+
+### Bug Fixes
+
+* **agentic:** Fix best document selection ([#1160](https://github.com/xynehq/xyne/issues/1160)) ([9fb9076](https://github.com/xynehq/xyne/commit/9fb90769fbb8cccdae61b23c34601370d5b00ae6))
+
 ## [3.23.5](https://github.com/xynehq/xyne/compare/v3.23.4...v3.23.5) (2025-10-29)
 
 
