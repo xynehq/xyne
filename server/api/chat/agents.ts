@@ -1767,13 +1767,13 @@ export const MessageWithToolsApi = async (c: Context) => {
             agentSection +
             `
             #IMPORTANT Citation Format:
-            - Use square brackets with the context index number: [0], [1], etc.
+            - Use square brackets with the context index number: [1], [2], etc.
             - Place citations right after the relevant statement
-            - NEVER group multiple indices in one bracket like [0, 1] or [1, 2, 3] - this is an error
+            - NEVER group multiple indices in one bracket like [1, 2] or [1, 2, 3] - this is an error
             - Example: "The project deadline was moved to March [3] and the team agreed to the new timeline [5]"
             - Only cite information that directly appears in the context
             - WRONG: "The project deadline was changed and the team agreed to it [0, 2, 4]"
-            - RIGHT: "The project deadline was changed [0] and the team agreed to it [2]"
+            - RIGHT: "The project deadline was changed [1] and the team agreed to it [2]"
             `
           )
         }
