@@ -769,13 +769,6 @@ const handleAppleAppValidation = async (c: Context) => {
 
   const identityToken = authHeader.slice("Bearer ".length).trim()
 
-  // Validate that the identity token matches the one in the body
-  if (identityToken !== body.identityToken) {
-    throw new HTTPException(400, {
-      message: "Identity token mismatch between header and body",
-    })
-  }
-
   try {
     const expectedAudience = config.appleBundleId || "com.xynehq.xyne"
 
@@ -795,8 +788,7 @@ const handleAppleAppValidation = async (c: Context) => {
         : body.user?.name,
     })
 
-    // Use email from token claims first, then fall back to provided email
-    const email = tokenClaims.email || body.email || body.user?.email
+    const email = tokenClaims?.email
 
     if (!email) {
       throw new HTTPException(400, {
@@ -812,7 +804,12 @@ const handleAppleAppValidation = async (c: Context) => {
     }
 
     // Extract domain from email
-    let domain = email.split("@")[1]
+    const emailParts = email.split("@")
+    if (emailParts.length !== 2) {
+      throw new HTTPException(400, { message: "Invalid email format" })
+    }
+    let domain = emailParts[1]
+
     const name =
       userInfo.name || userInfo.givenName || userInfo.familyName || ""
     const photoLink = "" // Apple doesn't provide profile pictures in Sign-In
