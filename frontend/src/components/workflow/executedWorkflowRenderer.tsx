@@ -68,6 +68,8 @@ interface ExecutionWorkflowData {
       ai_model?: string
       automated_description?: string
       formSubmission?: any
+      webhookData?: any
+      triggeredByWebhook?: boolean
     }
     createdAt: string
     updatedAt: string
@@ -1341,8 +1343,13 @@ const ExecutionSidebar = ({
 
 
 
-            return tools && tools.length > 0 ? (
-              tools.map((tool: any, index: number) => {
+            // Check if this is a webhook-triggered step with webhook data
+            const webhookData = step.metadata?.webhookData
+            const isWebhookTriggered = step.metadata?.triggeredByWebhook
+
+            // Show tool outputs if available
+            if (tools && tools.length > 0) {
+              return tools.map((tool: any, index: number) => {
 
                 return (
                   <div
@@ -1490,7 +1497,47 @@ const ExecutionSidebar = ({
                   </div>
                 )
               })
-            ) : (
+            }
+
+            // Show webhook data if this is a webhook-triggered step
+            if (isWebhookTriggered && webhookData) {
+              return (
+                <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-900">
+                      Webhook Event Data
+                    </span>
+                    <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">
+                      received
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-semibold text-gray-600">
+                        Event Payload
+                      </h4>
+                      <button
+                        onClick={() => onResultClick?.(webhookData)}
+                        className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                      >
+                        View Full
+                      </button>
+                    </div>
+                    <div
+                      className="text-xs text-gray-900 bg-gray-100 p-3 rounded max-h-32 overflow-y-auto border border-gray-200 cursor-pointer hover:bg-gray-200 transition-colors"
+                      onClick={() => onResultClick?.(webhookData)}
+                    >
+                      <pre className="whitespace-pre-wrap">
+                        {JSON.stringify(webhookData, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
+            // No output available
+            return (
               <div className="text-center py-6">
                 <div className="text-gray-400 mb-2">
                   <FileText className="w-8 h-8 mx-auto" />

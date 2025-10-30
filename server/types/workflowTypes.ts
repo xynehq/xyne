@@ -20,6 +20,7 @@ export enum ToolType {
   FORM = "form",
   EMAIL = "email",
   AI_AGENT = "ai_agent",
+  JIRA = "jira",
 }
 
 export enum ToolExecutionStatus {

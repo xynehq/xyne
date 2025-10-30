@@ -242,6 +242,12 @@ import {
   ServeWorkflowFileApi,
   GetGeminiModelEnumsApi,
   GetVertexAIModelEnumsApi,
+  TestJiraConnectionApi,
+  RegisterJiraWebhookApi,
+  GetJiraWebhooksApi,
+  DeleteJiraWebhookApi,
+  GetJiraMetadataApi,
+  ReceiveJiraWebhookApi,
   createWorkflowTemplateSchema,
   createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
@@ -913,6 +919,10 @@ const getNewAccessRefreshToken = async (c: Context) => {
   }
 }
 
+// Webhook endpoints (public - no auth required) - placed at top level outside AuthMiddleware
+app.post("/api/v1/webhook/jira/:webhookId", ReceiveJiraWebhookApi)
+app.post("/api/v1/webhook-test/jira/:webhookId", ReceiveJiraWebhookApi)
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)
@@ -1107,6 +1117,12 @@ export const AppRoutes = app
     UpdateWorkflowToolApi,
   )
   .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  .post("/workflow/tools/jira/test-connection", TestJiraConnectionApi)
+  .post("/workflow/tools/jira/register-webhook", RegisterJiraWebhookApi)
+  .post("/workflow/tools/jira/webhooks", GetJiraWebhooksApi)
+  .post("/workflow/tools/jira/delete-webhook", DeleteJiraWebhookApi)
+  .post("/workflow/tools/jira/metadata", GetJiraMetadataApi)
+  // Webhook routes moved to before AuthMiddleware (lines 892-893)
   .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
   .put(
     "/workflow/steps/:stepId",
