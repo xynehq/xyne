@@ -227,8 +227,11 @@ export type ChangeStepStatusResponse = {
 export interface WorkflowTemplate {
   id: string
   name: string
-  userId: number
-  workspaceId: number
+  // New fields (may not be present in older data)
+  userId?: number
+  workspaceId?: number
+  // Legacy field (may not be present in newer data)
+  createdBy?: string
   description: string
   version: string
   status: string

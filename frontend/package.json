@@ -16,6 +16,7 @@
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
     "@livekit/components-core": "^0.12.9",
     "@livekit/components-react": "^2.9.14",
     "@livekit/components-styles": "^1.1.6",
@@ -48,6 +49,7 @@
     "livekit-server-sdk": "^2.13.3",
     "lucide-react": "^0.475.0",
     "mermaid": "^11.6.0",
+    "monaco-editor": "^0.52.2",
     "notion-md-crawler": "^1.0.0",
     "papaparse": "^5.5.3",
     "pdfjs-dist": "5.3.93",
@@ -65,8 +67,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "xlsx": "^0.18.5",
-    "zod": "3.23.8",
-    "zustand": "^5.0.8"
+    "zod": "3.23.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

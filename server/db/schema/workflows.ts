@@ -406,6 +406,10 @@ export const formSubmissionSchema = z.object({
   formData: z.record(z.string(), z.any()),
 })
 
+export const reviewSubmissionSchema = z.object({
+  input: z.enum(["approved", "rejected"]),
+})
+
 export const addStepToWorkflowSchema = z.object({
   stepName: z.string().min(1).max(255),
   stepDescription: z.string().optional(),
@@ -441,4 +445,5 @@ export type UpdateWorkflowStepExecutionRequest = z.infer<
   typeof updateWorkflowStepExecutionSchema
 >
 export type FormSubmissionRequest = z.infer<typeof formSubmissionSchema>
+export type ReviewSubmissionRequest = z.infer<typeof reviewSubmissionSchema>
 export type AddStepToWorkflowRequest = z.infer<typeof addStepToWorkflowSchema>
