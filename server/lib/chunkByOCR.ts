@@ -10,7 +10,6 @@ const Logger = getLogger(Subsystem.Integrations).child({
   module: "chunkByOCR",
 })
 
-const STATUS_ENDPOINT = config.paddleStatusEndpoint
 const DEFAULT_MAX_CHUNK_BYTES = 1024
 const DEFAULT_IMAGE_DIR = "downloads/xyne_images_db"
 const DEFAULT_LAYOUT_PARSING_BASE_URL = "http://localhost:8000"
@@ -28,7 +27,7 @@ const LAYOUT_PARSING_TIMEOUT_MS = process.env.LAYOUT_PARSING_TIMEOUT_MS
   : DEFAULT_LAYOUT_PARSING_TIMEOUT_MS
 
 const LOCAL_STATUS_ENDPOINT = "http://localhost:8081/instance_status"
-const DEFAULT_STATUS_ENDPOINT = STATUS_ENDPOINT || LOCAL_STATUS_ENDPOINT
+const DEFAULT_STATUS_ENDPOINT = config.paddleStatusEndpoint || LOCAL_STATUS_ENDPOINT
 const DEFAULT_POLL_INTERVAL_MS = 300
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 const DEFAULT_MAX_RETRIES = 2
