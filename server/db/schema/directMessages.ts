@@ -7,10 +7,23 @@ import {
   timestamp,
   boolean,
   index,
+  jsonb,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { users } from "./users"
+
+// Lexical Editor State JSON Schema
+export const lexicalEditorStateSchema = z.object({
+  root: z.object({
+    children: z.array(z.any()),
+    direction: z.string().nullable().optional(),
+    format: z.string().or(z.number()).optional(),
+    indent: z.number().optional(),
+    type: z.string().optional(),
+    version: z.number().optional(),
+  }),
+})
 
 // Direct Messages Table - for user-to-user messaging
 export const directMessages = pgTable(
@@ -23,7 +36,9 @@ export const directMessages = pgTable(
     sentToUserId: integer("sent_to_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    messageContent: text("message_content").notNull(),
+    messageContent: jsonb("message_content")
+      .notNull()
+      .$type<z.infer<typeof lexicalEditorStateSchema>>(),
     isRead: boolean("is_read").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -45,19 +60,22 @@ export const directMessages = pgTable(
 )
 
 // Zod schemas for direct messages
-export const insertDirectMessageSchema = createInsertSchema(
-  directMessages,
-).omit({
+export const insertDirectMessageSchema = createInsertSchema(directMessages, {
+  messageContent: lexicalEditorStateSchema,
+}).omit({
   id: true,
   isRead: true,
   createdAt: true,
   updatedAt: true,
 })
 
-export const selectDirectMessageSchema = createSelectSchema(directMessages)
+export const selectDirectMessageSchema = createSelectSchema(directMessages, {
+  messageContent: lexicalEditorStateSchema,
+})
 
 export type InsertDirectMessage = z.infer<typeof insertDirectMessageSchema>
-export type SelectDirectMessage = z.infer<typeof selectDirectMessageSchema>
+// export type SelectDirectMessage = z.infer<typeof selectDirectMessageSchema>
+export type LexicalEditorState = z.infer<typeof lexicalEditorStateSchema>
 
 // Relations
 export const directMessagesRelations = relations(directMessages, ({ one }) => ({

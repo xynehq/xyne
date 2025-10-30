@@ -22,10 +22,21 @@ export interface CallNotification {
   timestamp: number
 }
 
+export interface LexicalEditorState {
+  root: {
+    children: any[]
+    direction?: string | null
+    format?: string | number
+    indent?: number
+    type?: string
+    version?: number
+  }
+}
+
 export interface DirectMessage {
   type: "direct_message"
   messageId: number
-  messageContent: string
+  messageContent: LexicalEditorState
   createdAt: string
   sender: {
     id: string

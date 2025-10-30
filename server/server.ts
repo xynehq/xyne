@@ -139,6 +139,7 @@ import {
   GetConversationApi,
   MarkMessagesAsReadApi,
   GetUnreadCountsApi,
+  GetConversationParticipantsApi,
   sendMessageSchema,
   getConversationSchema,
   markAsReadSchema,
@@ -1149,13 +1150,18 @@ export const AppRoutes = app
   .get("/calls/history", GetCallHistoryApi)
   // Direct message routes
   .post("/messages/send", zValidator("json", sendMessageSchema), SendMessageApi)
-  .get("/messages/conversation", zValidator("query", getConversationSchema), GetConversationApi)
+  .get(
+    "/messages/conversation",
+    zValidator("query", getConversationSchema),
+    GetConversationApi,
+  )
   .post(
     "/messages/mark-read",
     zValidator("json", markAsReadSchema),
     MarkMessagesAsReadApi,
   )
   .get("/messages/unread-counts", GetUnreadCountsApi)
+  .get("/messages/participants", GetConversationParticipantsApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(

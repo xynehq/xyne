@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef, type KeyboardEvent } from "react"
-import { Phone, Video, Send, Loader2, Check } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { Phone, Video, Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { callNotificationClient } from "@/services/callNotifications"
 import { CallType } from "@/types"
+import BuzzChatBox from "@/components/BuzzChatBox"
 
 interface User {
   id: string
@@ -15,9 +15,20 @@ interface User {
   photoLink?: string | null
 }
 
+interface LexicalEditorState {
+  root: {
+    children: any[]
+    direction?: string | null
+    format?: string | number
+    indent?: number
+    type?: string
+    version?: number
+  }
+}
+
 interface Message {
   id: number
-  messageContent: string
+  messageContent: LexicalEditorState
   isRead: boolean
   createdAt: string
   sentByUserId: string
@@ -27,25 +38,108 @@ interface Message {
 
 interface ChatViewProps {
   targetUser: User
+  currentUser: User | null
   onInitiateCall: (userId: string, callType: CallType) => void
 }
 
 const MAX_MESSAGE_LENGTH = 10000
 
+// Component to render Lexical JSON content
+function RenderLexicalContent({ content }: { content: LexicalEditorState }) {
+  const renderNode = (node: any, index: number): React.ReactNode => {
+    // Text node
+    if (node.type === "text") {
+      let text = node.text || ""
+      let element: React.ReactNode = text
+
+      // Apply formatting
+      if (node.format) {
+        const format = typeof node.format === "number" ? node.format : 0
+        // Format bits: 1 = bold, 2 = italic, 4 = strikethrough, 8 = underline, 16 = code
+        if (format & 1) element = <strong key={index}>{element}</strong>
+        if (format & 2) element = <em key={index}>{element}</em>
+        if (format & 16)
+          element = (
+            <code
+              key={index}
+              className="text-orange-600 dark:text-orange-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono text-xs"
+            >
+              {element}
+            </code>
+          )
+      }
+
+      return element
+    }
+
+    // Link node
+    if (node.type === "link") {
+      return (
+        <a
+          key={index}
+          href={node.url || "#"}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 dark:text-blue-400 underline hover:text-blue-700"
+        >
+          {node.children?.map(renderNode)}
+        </a>
+      )
+    }
+
+    // List node
+    if (node.type === "list") {
+      const ListTag = node.listType === "number" ? "ol" : "ul"
+      return (
+        <ListTag
+          key={index}
+          className={
+            node.listType === "number"
+              ? "list-decimal list-inside"
+              : "list-disc list-inside"
+          }
+        >
+          {node.children?.map(renderNode)}
+        </ListTag>
+      )
+    }
+
+    // List item node
+    if (node.type === "listitem") {
+      return <li key={index}>{node.children?.map(renderNode)}</li>
+    }
+
+    // Paragraph node
+    if (node.type === "paragraph") {
+      return <p key={index}>{node.children?.map(renderNode)}</p>
+    }
+
+    // Default: render children if they exist
+    if (node.children && Array.isArray(node.children)) {
+      return <span key={index}>{node.children.map(renderNode)}</span>
+    }
+
+    return null
+  }
+
+  return (
+    <div className="space-y-1">
+      {content.root.children.map((node, i) => renderNode(node, i))}
+    </div>
+  )
+}
+
 export default function ChatView({
   targetUser,
+  currentUser,
   onInitiateCall,
 }: ChatViewProps) {
   const [messages, setMessages] = useState<Message[]>([])
-  const [messageText, setMessageText] = useState("")
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageContainerRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const isTypingRef = useRef(false)
 
   // Scroll to bottom when messages change
   const scrollToBottom = () => {
@@ -101,103 +195,70 @@ export default function ChatView({
     }
   }
 
-  // Send typing indicator
-  const handleTypingIndicator = (isTyping: boolean) => {
-    callNotificationClient.sendTypingIndicator(targetUser.id, isTyping)
-    isTypingRef.current = isTyping
-  }
-
-  // Handle input change with typing indicator and auto-resize
-  const handleMessageChange = (text: string) => {
-    if (text.length <= MAX_MESSAGE_LENGTH) {
-      setMessageText(text)
-
-      // Auto-resize textarea
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto"
-        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
-      }
-
-      // Send typing indicator when user starts typing or resumes typing
-      if (text.length > 0 && !isTypingRef.current) {
-        handleTypingIndicator(true)
-      }
-
-      // Clear existing timeout
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current)
-      }
-
-      // Set timeout to send "stopped typing" after 2 seconds of inactivity
-      if (text.length > 0) {
-        typingTimeoutRef.current = setTimeout(() => {
-          handleTypingIndicator(false)
-        }, 2000)
-      } else {
-        // If text is cleared, immediately send "stopped typing"
-        handleTypingIndicator(false)
-      }
-    }
-  }
-
   // Send a message
-  const sendMessage = async () => {
-    if (!messageText.trim() || sending) return
+  // Helper to extract plain text from Lexical JSON
+  const extractPlainText = (editorState: LexicalEditorState): string => {
+    const extractText = (node: any): string => {
+      if (node.type === "text") {
+        return node.text || ""
+      }
+      if (node.children && Array.isArray(node.children)) {
+        return node.children.map(extractText).join("")
+      }
+      return ""
+    }
 
-    if (messageText.length > MAX_MESSAGE_LENGTH) {
+    return editorState.root.children.map(extractText).join("\n")
+  }
+
+  const sendMessage = async (editorState: LexicalEditorState) => {
+    const plainText = extractPlainText(editorState).trim()
+    if (!plainText || sending) return
+
+    if (plainText.length > MAX_MESSAGE_LENGTH) {
       toast({
         title: "Message too long",
-        description: `Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`,
+        description: `Message must be less than ${MAX_MESSAGE_LENGTH} characters`,
         variant: "destructive",
       })
       return
     }
 
-    // Clear typing indicator when sending message
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current)
-    }
-    handleTypingIndicator(false)
-
     setSending(true)
     try {
-      const response = await api.messages.send.$post({
+      const data = await api.messages.send.$post({
         json: {
           targetUserId: targetUser.id,
-          messageContent: messageText.trim(),
+          messageContent: editorState,
         },
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        // Add the new message to the list
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: data.message.id,
-            messageContent: data.message.messageContent,
-            isRead: data.message.isRead,
-            createdAt: data.message.createdAt,
-            sentByUserId: data.message.sentByUserId,
-            isMine: true,
-            sender: data.message.sender,
-          },
-        ])
-        setMessageText("")
-        // Reset textarea height
-        if (textareaRef.current) {
-          textareaRef.current.style.height = "auto"
-        }
-      } else {
-        const errorData = await response.json().catch(() => ({}))
-        toast({
-          title: "Error",
-          description: errorData.message || "Failed to send message",
-          variant: "destructive",
-        })
+      if (!data.ok) {
+        throw new Error("Failed to send message")
       }
+
+      const { message: sentMessage } = await data.json()
+
+      // Add the sent message to the messages list using currentUser info
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: sentMessage.id,
+          messageContent: sentMessage.messageContent,
+          isRead: false,
+          createdAt: sentMessage.createdAt,
+          sentByUserId: sentMessage.sentByUserId,
+          isMine: true,
+          sender: currentUser || {
+            id: String(sentMessage.sentByUserId),
+            name: "You",
+            email: "",
+            photoLink: null,
+          },
+        },
+      ])
     } catch (error) {
-      console.error("Failed to send message:", error)
+      console.error("Error sending message:", error)
       toast({
         title: "Error",
         description: "Failed to send message",
@@ -205,14 +266,6 @@ export default function ChatView({
       })
     } finally {
       setSending(false)
-    }
-  }
-
-  // Handle Enter key press
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
     }
   }
 
@@ -270,31 +323,28 @@ export default function ChatView({
       unsubscribeMessage()
       unsubscribeRead()
       unsubscribeTyping()
-
-      // Clear typing timeout and send final "stopped typing" when unmounting
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current)
-      }
-      handleTypingIndicator(false)
     }
   }, [targetUser.id])
 
   // Format timestamp
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp)
-    const now = new Date()
-    const diff = now.getTime() - date.getTime()
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  }
 
-    if (days === 0) {
-      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    } else if (days === 1) {
-      return "Yesterday"
-    } else if (days < 7) {
-      return date.toLocaleDateString([], { weekday: "short" })
-    } else {
-      return date.toLocaleDateString([], { month: "short", day: "numeric" })
-    }
+  // Check if message should show header (avatar + username)
+  const shouldShowHeader = (
+    currentMsg: Message,
+    prevMsg: Message | null,
+  ): boolean => {
+    if (!prevMsg) return true
+    // Show header if different sender
+    if (prevMsg.sentByUserId !== currentMsg.sentByUserId) return true
+    // Show header if more than 5 minutes apart
+    const timeDiff =
+      new Date(currentMsg.createdAt).getTime() -
+      new Date(prevMsg.createdAt).getTime()
+    return timeDiff > 5 * 60 * 1000 // 5 minutes
   }
 
   return (
@@ -369,76 +419,108 @@ export default function ChatView({
           </div>
         ) : (
           <>
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={cn(
-                  "flex",
-                  message.isMine ? "justify-end" : "justify-start",
-                )}
-              >
+            {messages.map((message, index) => {
+              const prevMessage = index > 0 ? messages[index - 1] : null
+              const showHeader = shouldShowHeader(message, prevMessage)
+
+              return (
                 <div
+                  key={message.id}
                   className={cn(
-                    "max-w-[70%] rounded-2xl px-4 py-2.5 shadow-sm",
-                    message.isMine
-                      ? "bg-blue-500 text-white rounded-br-sm"
-                      : "bg-gray-100 dark:bg-gray-800 text-[#384049] dark:text-[#F1F3F4] rounded-bl-sm",
+                    "group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6",
+                    showHeader ? "py-0.5 mt-2" : "py-0",
                   )}
                 >
-                  <p className="text-sm break-words whitespace-pre-wrap leading-relaxed">
-                    {message.messageContent}
-                  </p>
-                  <div
-                    className={cn(
-                      "flex items-center gap-1 mt-1.5",
-                      message.isMine ? "justify-end" : "justify-start",
-                    )}
-                  >
-                    <p
-                      className={cn(
-                        "text-[10px]",
-                        message.isMine
-                          ? "text-blue-50"
-                          : "text-gray-500 dark:text-gray-400",
-                      )}
-                    >
-                      {formatTime(message.createdAt)}
-                    </p>
-                    {/* Read receipt indicators - only for sent messages */}
-                    {message.isMine && (
-                      <div className="flex items-center">
-                        {message.isRead ? (
-                          // Double check - message read
-                          <div className="flex -space-x-1">
-                            <Check className="h-3.5 w-3.5 text-blue-50" />
-                            <Check className="h-3.5 w-3.5 text-blue-50" />
-                          </div>
+                  <div className="flex gap-3 items-start">
+                    {/* Avatar - only show for first message in group */}
+                    {showHeader ? (
+                      <div className="flex-shrink-0 w-9 h-9">
+                        {message.sender.photoLink ? (
+                          <img
+                            src={`/api/v1/proxy/${encodeURIComponent(message.sender.photoLink)}`}
+                            alt={message.sender.name}
+                            className="w-9 h-9 rounded-md"
+                          />
                         ) : (
-                          // Single check - message sent but not read
-                          <Check className="h-3.5 w-3.5 text-blue-50 opacity-60" />
+                          <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                              {message.sender.name.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
                         )}
+                      </div>
+                    ) : (
+                      <div className="flex-shrink-0 w-9 h-9 flex items-center justify-center">
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {formatTime(message.createdAt)}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex-1 min-w-0">
+                      {/* Header - username and timestamp */}
+                      {showHeader && (
+                        <div className="flex items-center gap-2 mb-0.5 leading-none">
+                          <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 leading-none">
+                            {message.sender.name}
+                          </span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 leading-none">
+                            {formatTime(message.createdAt)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Message content */}
+                      <div className="text-[15px] text-gray-900 dark:text-gray-100 break-words leading-relaxed">
+                        <RenderLexicalContent
+                          content={message.messageContent}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            {/* Typing Indicator */}
+            {isOtherUserTyping && (
+              <div className="group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6 py-0.5">
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0 w-9 h-9">
+                    {targetUser.photoLink ? (
+                      <img
+                        src={`/api/v1/proxy/${encodeURIComponent(targetUser.photoLink)}`}
+                        alt={targetUser.name}
+                        className="w-9 h-9 rounded-md"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                        <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                          {targetUser.name.charAt(0).toUpperCase()}
+                        </span>
                       </div>
                     )}
                   </div>
-                </div>
-              </div>
-            ))}
-            {/* Typing Indicator */}
-            {isOtherUserTyping && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1 shadow-sm">
-                  <span
-                    className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
-                    style={{ animationDelay: "0ms" }}
-                  ></span>
-                  <span
-                    className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
-                    style={{ animationDelay: "150ms" }}
-                  ></span>
-                  <span
-                    className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
-                    style={{ animationDelay: "300ms" }}
-                  ></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                        {targetUser.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span
+                        className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
+                        style={{ animationDelay: "0ms" }}
+                      ></span>
+                      <span
+                        className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
+                        style={{ animationDelay: "150ms" }}
+                      ></span>
+                      <span
+                        className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
+                        style={{ animationDelay: "300ms" }}
+                      ></span>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -448,55 +530,14 @@ export default function ChatView({
       </div>
 
       {/* Message Input */}
-      <div className="px-6 py-4 border-t border-[#D7E0E9] dark:border-gray-700">
-        <div className="flex items-end gap-3">
-          <div className="flex-1 space-y-1">
-            <div className="relative">
-              <Textarea
-                ref={textareaRef}
-                value={messageText}
-                onChange={(e) => {
-                  handleMessageChange(e.target.value)
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder={`Message ${targetUser.name}...`}
-                className="resize-none min-h-[80px] max-h-[200px] overflow-y-auto pr-16 py-3 rounded-xl border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all"
-                rows={1}
-                disabled={sending}
-              />
-              {messageText.length > 0 && (
-                <div
-                  className={cn(
-                    "absolute bottom-2 right-3 text-xs pointer-events-none",
-                    messageText.length >= MAX_MESSAGE_LENGTH
-                      ? "text-red-500 font-medium"
-                      : messageText.length >= MAX_MESSAGE_LENGTH * 0.9
-                        ? "text-orange-500"
-                        : "text-gray-400",
-                  )}
-                >
-                  {messageText.length} / {MAX_MESSAGE_LENGTH}
-                </div>
-              )}
-            </div>
-          </div>
-          <Button
-            onClick={sendMessage}
-            disabled={
-              !messageText.trim() ||
-              sending ||
-              messageText.length > MAX_MESSAGE_LENGTH
-            }
-            size="icon"
-            className="h-11 w-11 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-          >
-            {sending ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <Send className="h-5 w-5" />
-            )}
-          </Button>
-        </div>
+      <div className="px-6 py-4">
+        <BuzzChatBox
+          onSend={(editorState) => {
+            sendMessage(editorState)
+          }}
+          placeholder={`Message ${targetUser.name}...`}
+          disabled={sending}
+        />
       </div>
     </div>
   )

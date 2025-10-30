@@ -412,6 +412,7 @@ export default function UsersModal({ onClose }: UsersModalProps) {
             <div className="fixed left-[432px] top-0 right-0 bottom-0 z-30">
               <ChatView
                 targetUser={selectedChatUser}
+                currentUser={currentUser}
                 onInitiateCall={initiateCall}
               />
             </div>
