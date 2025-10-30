@@ -54,6 +54,7 @@ import {
   isValidEntity,
   parseAppSelections,
   searchToCitation,
+  type AppFilter,
 } from "./utils"
 import config from "@/config"
 import { is } from "drizzle-orm"
@@ -163,14 +164,14 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
   agentSpecificCollectionFolderIds: string[]
   agentSpecificCollectionFileIds: string[]
   selectedItems: {}
-  appFilters: any
+  appFilter: Partial<Record<Apps, AppFilter[]>> | undefined
 } {
   Logger.debug({ agentPrompt }, "Parsing agent prompt for app integrations")
   let agentAppEnums: Apps[] = []
   let agentSpecificCollectionIds: string[] = []
   let agentSpecificCollectionFolderIds: string[] = []
   let agentSpecificCollectionFileIds: string[] = []
-  let appFilters: any = {}
+  let appFilter: Partial<Record<Apps, AppFilter[]>> | undefined = {}
   let selectedItem: any = {}
 
   if (!agentPrompt) {
@@ -180,7 +181,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       agentSpecificCollectionFolderIds,
       agentSpecificCollectionFileIds,
       selectedItems: selectedItem,
-      appFilters,
+      appFilter,
     }
   }
 
@@ -195,6 +196,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       // agentAppEnums = selectedApps.filter(isValidApp);
       selectedItem = selectedItems
       agentAppEnums = [...new Set(selectedApps)]
+      appFilter = appFilters
       // Handle selectedItems logic...
     }
 
@@ -227,7 +229,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       agentSpecificCollectionFolderIds,
       agentSpecificCollectionFileIds,
       selectedItems: selectedItem,
-      appFilters,
+      appFilter,
     }
   }
 
@@ -240,7 +242,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
     agentSpecificCollectionFolderIds,
     agentSpecificCollectionFileIds,
     selectedItems: selectedItem,
-    appFilters,
+    appFilter,
   }
 }
 
@@ -573,7 +575,7 @@ export const searchGlobal: AgentTool = {
         agentSpecificCollectionFolderIds,
         agentSpecificCollectionFileIds,
         selectedItems,
-        appFilters,
+        appFilter,
       } = parseAgentAppIntegrations(agentPrompt)
       const channelIds = agentPrompt
         ? await getChannelIdsFromAgentPrompt(agentPrompt)
@@ -590,6 +592,7 @@ export const searchGlobal: AgentTool = {
         collectionFolderIds: agentSpecificCollectionFolderIds,
         collectionFileIds: agentSpecificCollectionFileIds,
         selectedItems: selectedItems,
+        appFilters:appFilter
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)

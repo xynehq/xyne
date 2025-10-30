@@ -182,6 +182,7 @@ import {
   isValidEntity,
   collectFollowupContext,
   textToKbItemCitationIndex,
+  type AppFilter,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -1167,7 +1168,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   }> = []
   let channelIds: string[] = []
   let selectedItem: Partial<Record<Apps, string[]>> = {}
-  let agentAppFilters: any = {}
+  let agentAppFilters: Partial<Record<Apps, AppFilter[]>> = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
