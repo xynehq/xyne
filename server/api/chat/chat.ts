@@ -1907,6 +1907,7 @@ async function* generateAnswerFromGivenContext(
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
+  messages?: Message[],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2220,6 +2221,7 @@ async function* generateAnswerFromGivenContext(
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
       imageFileNames: finalImageFileNames,
+      messages:messages
     },
     true,
     isMsgWithKbItems,
@@ -3991,6 +3993,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
+  messages?: Message[],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -4025,6 +4028,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     modelId,
     isValidPath,
     folderIds,
+    messages
   )
 }
 
@@ -4540,6 +4544,20 @@ export const MessageApi = async (c: Context) => {
             let reasoning =
               userRequestsReasoning &&
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+              const filteredMessages = messages
+                  
+                  .filter((msg) => !msg?.errorMessage)
+                  .slice(0,messages.length - 1) 
+                  .filter(
+                    (msg) =>
+                      !(
+                        msg.messageRole === MessageRole.Assistant &&
+                        !msg.message
+                      ),
+                  )
+                  const llmFormattedMessages = formatMessagesForLLM(
+                    filteredMessages,
+                  )
 
             const understandSpan = streamSpan.startSpan("understand_message")
             understandSpan?.setAttribute(
@@ -4562,6 +4580,9 @@ export const MessageApi = async (c: Context) => {
               agentPromptValue,
               isMsgWithKbItems,
               actualModelId || config.defaultBestModel,
+              false,
+              [],
+              llmFormattedMessages,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
