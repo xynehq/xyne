@@ -1,3 +1,10 @@
+# [3.24.0](https://github.com/xynehq/xyne/compare/v3.23.9...v3.24.0) (2025-10-30)
+
+
+### Features
+
+* XYN-263 implented enhanced chatting and notification mechanism ([#1172](https://github.com/xynehq/xyne/issues/1172)) ([6beb54f](https://github.com/xynehq/xyne/commit/6beb54f79698ee8aec1b371739ebbffc2a8a77e4))
+
 ## [3.23.9](https://github.com/xynehq/xyne/compare/v3.23.8...v3.23.9) (2025-10-30)
 
 
