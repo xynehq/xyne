@@ -48,7 +48,7 @@ export const createAgentSchema = z.object({
         z.string(),
         z.object({
           // AppSelectionMap format
-          itemIds: z.array(z.string()),
+          itemIds: z.array(z.string()).default([]),
           selectedAll: z.boolean(),
 
           // Multiple filter groups
