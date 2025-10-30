@@ -80,3 +80,14 @@ export interface Reference {
   wholeSheet?: boolean
   threadId?: string // Optional threadId for chat references
 }
+
+export interface LexicalEditorState {
+  root: {
+    children: any[]
+    direction?: string | null
+    format?: string | number
+    indent?: number
+    type?: string
+    version?: number
+  }
+}

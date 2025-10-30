@@ -14,13 +14,13 @@ import { realtimeMessagingService } from "@/services/callNotifications"
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Api).child({ module: "directMessages" })
 
+// Import Lexical schema
+import { lexicalEditorStateSchema } from "@/db/schema/directMessages"
+
 // Schemas
 export const sendMessageSchema = z.object({
   targetUserId: z.string().min(1, "Target user ID is required"),
-  messageContent: z
-    .string()
-    .min(1, "Message content is required")
-    .max(10000, "Message cannot exceed 10,000 characters"),
+  messageContent: lexicalEditorStateSchema,
 })
 
 export const getConversationSchema = z.object({
@@ -99,11 +99,27 @@ export const SendMessageApi = async (c: Context) => {
       toUserId: targetUser.externalId,
     })
 
+    // Extract plain text from Lexical JSON for notifications
+    const extractPlainText = (lexicalJson: any): string => {
+      const traverse = (node: any): string => {
+        if (!node) return ""
+        if (node.text) return node.text
+        if (node.children && Array.isArray(node.children)) {
+          return node.children.map((child: any) => traverse(child)).join("")
+        }
+        return ""
+      }
+      return traverse(lexicalJson.root)
+    }
+
+    const plainTextContent = extractPlainText(message.messageContent)
+
     // Send real-time notification to target user if they're online
     const messageNotification = {
       type: "direct_message" as const,
       messageId: message.id,
       messageContent: message.messageContent,
+      plainTextContent, // For notifications/previews
       createdAt: message.createdAt,
       sender: {
         id: sender.externalId,
@@ -398,5 +414,76 @@ export const GetUnreadCountsApi = async (c: Context) => {
       throw error
     }
     throw new HTTPException(500, { message: "Failed to get unread counts" })
+  }
+}
+
+// Get conversation participants (users you've chatted with)
+export const GetConversationParticipantsApi = async (c: Context) => {
+  try {
+    const { workspaceId, sub: userEmail } = c.get(JwtPayloadKey)
+
+    if (!workspaceId) {
+      throw new HTTPException(400, { message: "Workspace ID is required" })
+    }
+
+    // Get current user info
+    const currentUsers = await getUserByEmail(db, userEmail)
+    if (!currentUsers || currentUsers.length === 0) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
+    const currentUser = currentUsers[0]
+
+    // Get all unique users with their most recent message time
+    // Subquery to get the most recent message timestamp for each conversation
+    const participants = await db
+      .select({
+        userExternalId: sql<string>`other_user.external_id`,
+        userName: sql<string>`other_user.name`,
+        userEmail: sql<string>`other_user.email`,
+        userPhotoLink: sql<string>`other_user."photoLink"`,
+        lastMessageTime: sql<Date>`MAX(${directMessages.createdAt})`,
+      })
+      .from(directMessages)
+      .innerJoin(
+        sql`users AS other_user`,
+        sql`other_user.id = CASE 
+          WHEN ${directMessages.sentByUserId} = ${currentUser.id} THEN ${directMessages.sentToUserId}
+          ELSE ${directMessages.sentByUserId}
+        END`,
+      )
+      .where(
+        and(
+          or(
+            eq(directMessages.sentByUserId, currentUser.id),
+            eq(directMessages.sentToUserId, currentUser.id),
+          ),
+          sql`${directMessages.deletedAt} IS NULL`,
+        ),
+      )
+      .groupBy(
+        sql`other_user.external_id`,
+        sql`other_user.name`,
+        sql`other_user.email`,
+        sql`other_user."photoLink"`,
+      )
+      .orderBy(desc(sql`MAX(${directMessages.createdAt})`))
+
+    return c.json({
+      success: true,
+      participants: participants.map((p) => ({
+        id: p.userExternalId,
+        name: p.userName,
+        email: p.userEmail,
+        photoLink: p.userPhotoLink,
+      })),
+    })
+  } catch (error) {
+    Logger.error(error, "Error getting conversation participants")
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    throw new HTTPException(500, {
+      message: "Failed to get conversation participants",
+    })
   }
 }

@@ -26,7 +26,8 @@ interface CallNotification {
 interface DirectMessageNotification {
   type: "direct_message"
   messageId: number
-  messageContent: string
+  messageContent: any // Lexical JSON structure
+  plainTextContent: string // Extracted plain text for previews
   createdAt: Date
   sender: {
     id: string
