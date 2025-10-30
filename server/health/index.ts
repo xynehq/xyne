@@ -241,7 +241,7 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
 export async function checkPaddleOCRHealth(): Promise<HealthStatusResponse> {
   const start = Date.now()
 
-  const baseURL = config.paddleBaseURL!
+  const baseURL = config.paddleStatusEndpoint!
   try {
     const response = await fetch(`${baseURL}`, {
       method: "GET",
