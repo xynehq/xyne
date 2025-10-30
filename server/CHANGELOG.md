@@ -1,3 +1,10 @@
+## [3.23.9](https://github.com/xynehq/xyne/compare/v3.23.8...v3.23.9) (2025-10-30)
+
+
+### Bug Fixes
+
+* XYNE-254 fixed followup in kb chat ([#1170](https://github.com/xynehq/xyne/issues/1170)) ([a1ba643](https://github.com/xynehq/xyne/commit/a1ba6433a43355c87e13cd525fd408b78aeb30f3))
+
 ## [3.23.8](https://github.com/xynehq/xyne/compare/v3.23.7...v3.23.8) (2025-10-30)
 
 
