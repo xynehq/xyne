@@ -8,7 +8,7 @@ let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
 let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
-let paddleBaseURL = process.env.STATUS_ENDPOINT || "http://localhost:8000/instance_status"
+let paddleStatusEndpoint = process.env.STATUS_ENDPOINT || "http://localhost:8000/instance_status"
 let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
 // Centralized database URL construction
@@ -212,7 +212,7 @@ export default {
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
-  paddleBaseURL,
+  paddleStatusEndpoint,
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute
   defaultBestModel,
