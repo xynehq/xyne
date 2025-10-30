@@ -14,26 +14,9 @@ import playIcon from "@/assets/play.svg"
 import emptyStateIcon from "@/assets/empty-state.svg"
 import { ChevronDown, Plus, Layout, ChevronRight, Search } from "lucide-react"
 
-interface WorkflowTemplate {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  status: string;
-  config: {
-    ai_model?: string;
-    max_file_size?: string;
-    auto_execution?: boolean;
-    schema_version?: string;
-    allowed_file_types?: string[];
-    supports_file_upload?: boolean;
-  };
-  userId: number;
-  workspaceId: number;
-  isPublic: boolean;
-  rootWorkflowStepTemplateId: string;
-  createdAt: string;
-  updatedAt: string;
+import { WorkflowTemplate } from "@/components/workflow/Types"
+
+export interface LocalWorkflowTemplate extends WorkflowTemplate {
   steps?: Array<{
     id: string;
     workflowTemplateId: string;
@@ -121,7 +104,7 @@ function WorkflowComponent() {
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const [activeTab, setActiveTab] = useState<"workflow" | "templates" | "executions">("workflow")
   const [viewMode, setViewMode] = useState<"list" | "builder">("list")
-  const [workflows, setWorkflows] = useState<WorkflowTemplate[]>([])
+  const [workflows, setWorkflows] = useState<LocalWorkflowTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
@@ -136,11 +119,13 @@ function WorkflowComponent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false)
-  const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate | null>(null)
+  const [selectedTemplate, setSelectedTemplate] = useState<LocalWorkflowTemplate | null>(null)
   const [isLoadingTemplate, setIsLoadingTemplate] = useState(false)
   const [isExecutionMode, setIsExecutionMode] = useState(false)
   const [workflowSearchTerm, setWorkflowSearchTerm] = useState("")
   const [isBuilderMode, setIsBuilderMode] = useState(true) // true for create/edit, false for view-only
+  const [shouldStartPolling, setShouldStartPolling] = useState(false)
+
   const [workflowFilter, setWorkflowFilter] = useState<"all" | "public">("all")
 
   const fetchWorkflows = async () => {
@@ -148,9 +133,10 @@ function WorkflowComponent() {
       setLoading(true)
       const workflows = await userWorkflowsAPI.fetchWorkflows()
       if (Array.isArray(workflows.data)) {
-        const filteredWorkflows = workflows.data
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) // Sort by newest first (creation date)
-        setWorkflows(filteredWorkflows)
+        const mappedWorkflows = workflows.data
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .map((wf) => ({ ...wf, description: wf.description || "" }))
+        setWorkflows(mappedWorkflows)
       } else {
         console.error('Workflows response is not an array')
         setWorkflows([])
@@ -179,7 +165,7 @@ function WorkflowComponent() {
             name: workflowTemplate.name,
             userId: workflowTemplate.userId,
             workspaceId: workflowTemplate.workspaceId,
-            description: workflowTemplate.description,
+            description: workflowTemplate.description || "",
             icon: getTemplateIcon(workflowTemplate),
             iconBgColor: getTemplateIconBgColor(workflowTemplate),
             isPlaceholder: false
@@ -349,7 +335,7 @@ function WorkflowComponent() {
   }
 
   // Helper functions to determine template icon and background color
-  const getTemplateIcon = (workflowTemplate: WorkflowTemplate): string => {
+  const getTemplateIcon = (workflowTemplate: any): string => {
     // Use the icon from rootStep metadata if available
     if (workflowTemplate.rootStep?.metadata?.icon) {
       return workflowTemplate.rootStep.metadata.icon
@@ -368,7 +354,7 @@ function WorkflowComponent() {
     return '⚡'
   }
 
-  const getTemplateIconBgColor = (workflowTemplate: WorkflowTemplate): string => {
+  const getTemplateIconBgColor = (workflowTemplate:any): string => {
     if (workflowTemplate.config.allowed_file_types?.includes('pdf')) {
       return '#E8F5E8'
     }
@@ -394,9 +380,10 @@ function WorkflowComponent() {
       // Check if response has a data property that needs to be extracted
       const template = (response as any).data || response
       
-      setSelectedTemplate(template)
+      setSelectedTemplate({ ...template, description: template.description || "" })
       setIsExecutionMode(false)
       setIsBuilderMode(editable) // Set builder mode based on editable parameter
+      setShouldStartPolling(false) // Reset polling for template views
       setViewMode("builder")
     } catch (error) {
       console.error('❌ Failed to fetch template:', error)
@@ -406,7 +393,7 @@ function WorkflowComponent() {
     }
   }
 
-  const handleViewExecution = async (executionId: string) => {
+  const handleViewExecution = async (executionId: string, startPolling: boolean = false) => {
     try {
       setIsLoadingTemplate(true)
       
@@ -434,13 +421,18 @@ function WorkflowComponent() {
           executionTemplate = executionData
         }
 
-        // Check if it has stepExecutions structure (for executions) or steps structure (for templates)
-        if (executionTemplate && (
-          (executionTemplate.stepExecutions && executionTemplate.stepExecutions.length > 0) ||
-          (executionTemplate.steps && executionTemplate.steps.length > 0)
-        )) {
+        // Check if it has stepExecutions structure (for executions only)
+        if (executionTemplate && executionTemplate.stepExecutions && executionTemplate.stepExecutions.length > 0) {
+          // This is a real execution with stepExecutions
           setSelectedTemplate(executionTemplate)
           setIsExecutionMode(true) // Mark as execution mode
+          setShouldStartPolling(startPolling) // Only start polling if explicitly requested
+          setViewMode("builder")
+        } else if (executionTemplate && executionTemplate.steps && executionTemplate.steps.length > 0) {
+          // This is a template with steps - should NOT be execution mode
+          setSelectedTemplate(executionTemplate)
+          setIsExecutionMode(false) // Mark as template mode (no execution mode)
+          setShouldStartPolling(false) // Never start polling for templates
           setViewMode("builder")
         } else {
           // Try to create a workflow structure from execution data
@@ -519,6 +511,7 @@ function WorkflowComponent() {
             }
             setSelectedTemplate(workflowFromExecution)
             setIsExecutionMode(true)
+            setShouldStartPolling(startPolling) // Only start polling if explicitly requested
             setViewMode("builder")
           } else {
             console.error('❌ Could not create workflow structure from execution data')
@@ -965,7 +958,7 @@ function WorkflowComponent() {
                     fetchExecutions(1, size, dateFilter, debouncedSearchTerm);
                   }}
                   onRowClick={(execution) => {
-                    handleViewExecution(execution.id);
+                    handleViewExecution(execution.id, false); // false = do not start polling when viewing existing executions
                   }}
                 />
               </div>
@@ -983,9 +976,30 @@ function WorkflowComponent() {
                     setSelectedTemplate(null)
                     setIsExecutionMode(false)
                     setIsBuilderMode(true) // Reset to builder mode
+                    setShouldStartPolling(false) // Reset polling state
                   }}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
+                  onTemplateUpdate={(executionData) => {
+                    // Convert ExecutionWorkflowData to LocalWorkflowTemplate
+                    const workflowTemplate: LocalWorkflowTemplate = {
+                      id: executionData.id,
+                      name: executionData.name,
+                      description: executionData.description || "",
+                      version: executionData.version || "",
+                      status: executionData.status,
+                      userId: 0, // Use default since not available in execution data
+                      workspaceId: 0, // Use default since not available in execution data
+                      isPublic: false, // Default value
+                      config: executionData.config || {},
+                      createdBy: "", // Use default since not available in execution data
+                      rootWorkflowStepTemplateId: "",
+                      createdAt: "",
+                      updatedAt: "",
+                    }
+                    setSelectedTemplate(workflowTemplate)
+                  }}
+                  shouldStartPolling={shouldStartPolling}
                 />
               ) : (
                 <WorkflowBuilder 
@@ -995,9 +1009,15 @@ function WorkflowComponent() {
                     setSelectedTemplate(null)
                     setIsExecutionMode(false)
                     setIsBuilderMode(true) // Reset to builder mode
+                    setShouldStartPolling(false) // Reset polling state
                   }}
                   onRefreshWorkflows={fetchWorkflows}
-                  selectedTemplate={selectedTemplate}
+                  selectedTemplate={selectedTemplate ? {
+                    ...selectedTemplate,
+                    userId: selectedTemplate.userId || 0,
+                    workspaceId: selectedTemplate.workspaceId || 0,
+                    isPublic: selectedTemplate.isPublic || false
+                  } : null}
                   isLoadingTemplate={isLoadingTemplate}
                   isEditableMode={selectedTemplate === null}
                   builder={isBuilderMode}

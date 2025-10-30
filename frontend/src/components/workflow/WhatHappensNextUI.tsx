@@ -1,3 +1,4 @@
+import React from "react"
 import {
   Bot,
   Mail,
@@ -7,6 +8,7 @@ import {
   Users,
   ChevronRight,
   X,
+  Play,
   BoomBox,
 } from "lucide-react"
 
@@ -14,7 +16,6 @@ interface WhatHappensNextUIProps {
   isVisible: boolean
   onClose: () => void
   onSelectAction: (actionId: string) => void
-  selectedNodeId?: string | null
   toolData?: any
 }
 
@@ -30,8 +31,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
   isVisible,
   onClose,
   onSelectAction,
-  selectedNodeId,
-}) => {
+}: WhatHappensNextUIProps) => {
   // Available actions (currently functional)
   const availableActions: NextAction[] = [
     {
@@ -45,6 +45,39 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       name: "Email",
       description: "Send emails to added mails",
       icon: <Mail className="w-5 h-5" />,
+    },
+    {
+      id: "review",
+      name: "Review",
+      description: "Require manual approval before continuing workflow",
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+          />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+          />
+        </svg>
+      ),
+    },
+    {
+      id: "trigger",
+      name: "Manual Trigger",
+      description: "Add a manual trigger step to pause and wait for user action",
+      icon: <Play className="w-5 h-5" />,
+    },
+    {
+      id: "run_script",
+      name: "Run Script/Code",
+      description: "Run code or scripts",
+      icon: <Code className="w-5 h-5" />,
     },
     {
       id: "select_agents",
@@ -68,13 +101,6 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       name: "Conditionals",
       description: "Branch, merge or loop the flow etc",
       icon: <GitBranch className="w-5 h-5" />,
-      isComingSoon: true,
-    },
-    {
-      id: "run_script",
-      name: "Run Script/Code",
-      description: "Run code or scripts",
-      icon: <Code className="w-5 h-5" />,
       isComingSoon: true,
     },
     {
@@ -114,8 +140,8 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
           <div
             key={action.id}
             onClick={() => {
-              if (action.id === "ai_agent" || action.id === "email" ||action.id === "select_agents") {
-                // For AI Agent and Email, trigger custom event to open respective ConfigUI
+              if (action.id === "ai_agent" || action.id === "email" || action.id === "review" || action.id === "trigger" || action.id === "run_script"||action.id === "select_agents") {
+                // Trigger custom event to open respective ConfigUI
                 onSelectAction(action.id)
                 onClose() // Close WhatHappensNextUI
               }

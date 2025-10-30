@@ -4,12 +4,12 @@ import { api } from "../../../api"
 // API request/response types for workflow templates
 
 interface WorkflowTemplateResponse {
-  data: WorkflowTemplate[]
+  data: WorkflowTemplateSimplified[]
 }
-interface WorkflowTemplate {
+interface WorkflowTemplateSimplified {
   id: string
   name: string
-  description: string
+  description?: string
   version: string
   status: string
   config: {
@@ -193,34 +193,16 @@ export const userWorkflowsAPI = {
    */
   async fetchWorkflows(): Promise<WorkflowTemplateResponse> {
     const response = await api.workflow.templates.$get()
-    const data = await extractResponseData<WorkflowTemplate[]>(response)
+    const data = await extractResponseData<WorkflowTemplateSimplified[]>(response)
     return { data }
   },
 
   /**
    * Fetch a specific workflow template by ID
    */
-  async fetchTemplateById(templateId: string): Promise<WorkflowTemplate> {
+  async fetchTemplateById(templateId: string): Promise<WorkflowTemplateSimplified> {
     const response = await api.workflow.templates[templateId].$get()
-    return extractResponseData<WorkflowTemplate>(response)
-  },
-
-  /**
-   * Create a complex workflow template from workflow builder
-   */
-  async createComplexTemplate(workflowData: {
-    name: string
-    description: string
-    version?: string
-    config?: any
-    nodes: any[]
-    edges: any[]
-    metadata?: any
-  }): Promise<WorkflowTemplate> {
-    const response = await api.workflow.templates.complex.$post({
-      json: workflowData,
-    })
-    return extractResponseData<WorkflowTemplate>(response)
+    return extractResponseData<WorkflowTemplateSimplified>(response)
   },
 }
 
