@@ -5,7 +5,7 @@ import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { callNotificationClient } from "@/services/callNotifications"
-import { CallType } from "@/types"
+import { CallType, LexicalEditorState } from "@/types"
 import BuzzChatBox from "@/components/BuzzChatBox"
 
 interface User {
@@ -13,17 +13,6 @@ interface User {
   name: string
   email: string
   photoLink?: string | null
-}
-
-interface LexicalEditorState {
-  root: {
-    children: any[]
-    direction?: string | null
-    format?: string | number
-    indent?: number
-    type?: string
-    version?: number
-  }
 }
 
 interface Message {
@@ -38,7 +27,7 @@ interface Message {
 
 interface ChatViewProps {
   targetUser: User
-  currentUser: User | null
+  currentUser: User
   onInitiateCall: (userId: string, callType: CallType) => void
 }
 
@@ -112,6 +101,37 @@ function RenderLexicalContent({ content }: { content: LexicalEditorState }) {
     // Paragraph node
     if (node.type === "paragraph") {
       return <p key={index}>{node.children?.map(renderNode)}</p>
+    }
+
+    // Heading node
+    if (node.type === "heading") {
+      const tag = node.tag || "h1"
+      const HeadingTag = tag as keyof JSX.IntrinsicElements
+      const headingClasses: Record<string, string> = {
+        h1: "text-2xl font-bold",
+        h2: "text-xl font-bold",
+        h3: "text-lg font-bold",
+        h4: "text-base font-bold",
+        h5: "text-sm font-bold",
+        h6: "text-xs font-bold",
+      }
+      return (
+        <HeadingTag key={index} className={headingClasses[tag] || ""}>
+          {node.children?.map(renderNode)}
+        </HeadingTag>
+      )
+    }
+
+    // Quote node
+    if (node.type === "quote") {
+      return (
+        <blockquote
+          key={index}
+          className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-700 dark:text-gray-300"
+        >
+          {node.children?.map(renderNode)}
+        </blockquote>
+      )
     }
 
     // Default: render children if they exist
@@ -249,12 +269,7 @@ export default function ChatView({
           createdAt: sentMessage.createdAt,
           sentByUserId: sentMessage.sentByUserId,
           isMine: true,
-          sender: currentUser || {
-            id: String(sentMessage.sentByUserId),
-            name: "You",
-            email: "",
-            photoLink: null,
-          },
+          sender: currentUser,
         },
       ])
     } catch (error) {
@@ -534,6 +549,9 @@ export default function ChatView({
         <BuzzChatBox
           onSend={(editorState) => {
             sendMessage(editorState)
+          }}
+          onTyping={(isTyping) => {
+            callNotificationClient.sendTypingIndicator(targetUser.id, isTyping)
           }}
           placeholder={`Message ${targetUser.name}...`}
           disabled={sending}

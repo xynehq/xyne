@@ -74,7 +74,7 @@ export const selectDirectMessageSchema = createSelectSchema(directMessages, {
 })
 
 export type InsertDirectMessage = z.infer<typeof insertDirectMessageSchema>
-// export type SelectDirectMessage = z.infer<typeof selectDirectMessageSchema>
+export type SelectDirectMessage = z.infer<typeof selectDirectMessageSchema>
 export type LexicalEditorState = z.infer<typeof lexicalEditorStateSchema>
 
 // Relations

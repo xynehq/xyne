@@ -433,7 +433,7 @@ function BuzzChats() {
       </div>
 
       {/* Chat View - Right side */}
-      {selectedChatUser ? (
+      {selectedChatUser && currentUser ? (
         <div className="fixed left-[432px] top-0 right-0 bottom-0 z-10">
           <ChatView
             targetUser={selectedChatUser}

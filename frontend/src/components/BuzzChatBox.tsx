@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import EmojiPicker, { Theme, EmojiClickData } from "emoji-picker-react"
+import { LexicalEditorState } from "@/types"
 
 import { LexicalComposer } from "@lexical/react/LexicalComposer"
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin"
@@ -36,6 +37,7 @@ import {
   EditorState,
   $getRoot,
   $createTextNode,
+  LexicalEditor,
 } from "lexical"
 import {
   INSERT_ORDERED_LIST_COMMAND,
@@ -44,19 +46,9 @@ import {
   $createListItemNode,
 } from "@lexical/list"
 
-interface LexicalEditorState {
-  root: {
-    children: any[]
-    direction?: string | null
-    format?: string | number
-    indent?: number
-    type?: string
-    version?: number
-  }
-}
-
 interface BuzzChatBoxProps {
   onSend: (editorState: LexicalEditorState) => void
+  onTyping?: (isTyping: boolean) => void
   placeholder?: string
   disabled?: boolean
 }
@@ -238,7 +230,9 @@ function ClearEditorPlugin({ clearTrigger }: { clearTrigger: number }) {
 // Emoji Picker Plugin Component
 function EmojiPickerPlugin({
   onEmojiClick,
-}: { onEmojiClick: (emojiData: EmojiClickData, editor: any) => void }) {
+}: {
+  onEmojiClick: (emojiData: EmojiClickData, editor: LexicalEditor) => void
+}) {
   const [editor] = useLexicalComposerContext()
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
@@ -331,6 +325,7 @@ function CodeExitPlugin() {
 // Main component
 export default function BuzzChatBox({
   onSend,
+  onTyping,
   placeholder = "Message...",
   disabled = false,
 }: BuzzChatBoxProps) {
@@ -338,32 +333,74 @@ export default function BuzzChatBox({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const emojiButtonRef = useRef<HTMLButtonElement>(null)
   const emojiPickerRef = useRef<HTMLDivElement>(null)
-  let editorStateRef: EditorState | null = null
+  const editorStateRef = useRef<EditorState | null>(null)
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isTypingRef = useRef(false)
 
   const handleSend = () => {
-    if (!editorStateRef || disabled) return
+    if (!editorStateRef.current || disabled) return
 
     let shouldSend = false
     let jsonToSend: LexicalEditorState | null = null
 
-    editorStateRef.read(() => {
+    editorStateRef.current.read(() => {
       const root = $getRoot()
       const textContent = root.getTextContent().trim()
 
       if (textContent) {
         shouldSend = true
-        jsonToSend = editorStateRef?.toJSON() as LexicalEditorState
+        jsonToSend = editorStateRef.current?.toJSON() as LexicalEditorState
       }
     })
 
     if (shouldSend && jsonToSend) {
+      // Clear typing indicator when sending message
+      if (onTyping && typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+        onTyping(false)
+        isTypingRef.current = false
+      }
+
       onSend(jsonToSend)
       setClearTrigger((prev) => prev + 1)
     }
   }
 
   const onChange = (editorState: EditorState) => {
-    editorStateRef = editorState
+    editorStateRef.current = editorState
+
+    // Handle typing indicator if callback is provided
+    if (onTyping) {
+      let hasContent = false
+      editorState.read(() => {
+        const root = $getRoot()
+        const textContent = root.getTextContent().trim()
+        hasContent = textContent.length > 0
+      })
+
+      // Send typing indicator when user starts typing
+      if (hasContent && !isTypingRef.current) {
+        onTyping(true)
+        isTypingRef.current = true
+      }
+
+      // Clear existing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+
+      // Set timeout to send "stopped typing" after 2 seconds of inactivity
+      if (hasContent) {
+        typingTimeoutRef.current = setTimeout(() => {
+          onTyping(false)
+          isTypingRef.current = false
+        }, 2000)
+      } else {
+        // If content is cleared, immediately send "stopped typing"
+        onTyping(false)
+        isTypingRef.current = false
+      }
+    }
   }
 
   // Close emoji picker when clicking outside
@@ -388,7 +425,20 @@ export default function BuzzChatBox({
     }
   }, [showEmojiPicker])
 
-  const handleEmojiClick = (emojiData: EmojiClickData, editor: any) => {
+  // Cleanup typing indicator on unmount
+  useEffect(() => {
+    return () => {
+      if (onTyping && typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+        onTyping(false)
+      }
+    }
+  }, [onTyping])
+
+  const handleEmojiClick = (
+    emojiData: EmojiClickData,
+    editor: LexicalEditor,
+  ) => {
     editor.update(() => {
       const selection = $getSelection()
       if ($isRangeSelection(selection)) {
@@ -404,7 +454,6 @@ export default function BuzzChatBox({
       e.stopPropagation()
     }
     setShowEmojiPicker((prev) => !prev)
-    console.log("Emoji picker toggled:", !showEmojiPicker)
   }
 
   const initialConfig = {
