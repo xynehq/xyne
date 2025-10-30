@@ -1907,7 +1907,7 @@ async function* generateAnswerFromGivenContext(
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
-  messages?: Message[],
+  messages: Message[] = [],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3993,7 +3993,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
-  messages?: Message[],
+  messages: Message[] = [],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -4531,21 +4531,27 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
-          const filteredMessages = messages
+          // Build conversation history (exclude current message)
+          const filteredMessages = messages.length > 1
+            ? messages
+                .slice(0, messages.length - 1)
+                .filter((msg) => !msg?.errorMessage)
+                .filter(
+                  (msg) =>
+                    !(msg.messageRole === MessageRole.Assistant && !msg.message),
+                )
+            : []
 
-              .filter((msg) => !msg?.errorMessage)
-              .slice(0, messages.length - 1)
-              .filter(
-                (msg) =>
-                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
+          const topicConversationThread = filteredMessages.length > 0
+            ? buildTopicConversationThread(
+                filteredMessages,
+                filteredMessages.length - 1,
               )
-             const topicConversationThread = buildTopicConversationThread(
-              filteredMessages,
-              filteredMessages.length - 1,
-            )
-            const llmFormattedMessages: Message[] = formatMessagesForLLM(
-              topicConversationThread,
-            )
+            : []
+
+          const llmFormattedMessages: Message[] = formatMessagesForLLM(
+            topicConversationThread,
+          )
 
           if (
             (fileIds && fileIds?.length > 0) ||
@@ -4559,7 +4565,6 @@ export const MessageApi = async (c: Context) => {
             let reasoning =
               userRequestsReasoning &&
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-            
 
             const understandSpan = streamSpan.startSpan("understand_message")
             understandSpan?.setAttribute(
@@ -4567,7 +4572,7 @@ export const MessageApi = async (c: Context) => {
               totalValidFileIdsFromLinkCount,
             )
             understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
-          
+
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
@@ -4812,13 +4817,10 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-           
-
             loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
 
-           
             // Extract previous classification for pagination and follow-up queries
             let previousClassification: QueryRouterLLMResponse | null = null
             if (filteredMessages.length >= 1) {
@@ -5281,8 +5283,6 @@ export const MessageApi = async (c: Context) => {
                 // - Preserved app/entity from previous query
                 // - Updated count/pagination info
                 // - All the smart follow-up logic from the LLM
-
-               
 
                 // Check for follow-up context carry-forward
                 const workingSet = collectFollowupContext(filteredMessages)
