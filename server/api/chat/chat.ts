@@ -2221,7 +2221,7 @@ async function* generateAnswerFromGivenContext(
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
       imageFileNames: finalImageFileNames,
-      messages:messages
+      messages: messages,
     },
     true,
     isMsgWithKbItems,
@@ -4028,7 +4028,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     modelId,
     isValidPath,
     folderIds,
-    messages
+    messages,
   )
 }
 
@@ -4531,6 +4531,21 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
+          const filteredMessages = messages
+
+              .filter((msg) => !msg?.errorMessage)
+              .slice(0, messages.length - 1)
+              .filter(
+                (msg) =>
+                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
+              )
+             const topicConversationThread = buildTopicConversationThread(
+              filteredMessages,
+              filteredMessages.length - 1,
+            )
+            const llmFormattedMessages: Message[] = formatMessagesForLLM(
+              topicConversationThread,
+            )
 
           if (
             (fileIds && fileIds?.length > 0) ||
@@ -4544,20 +4559,7 @@ export const MessageApi = async (c: Context) => {
             let reasoning =
               userRequestsReasoning &&
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
-              const filteredMessages = messages
-                  
-                  .filter((msg) => !msg?.errorMessage)
-                  .slice(0,messages.length - 1) 
-                  .filter(
-                    (msg) =>
-                      !(
-                        msg.messageRole === MessageRole.Assistant &&
-                        !msg.message
-                      ),
-                  )
-                  const llmFormattedMessages = formatMessagesForLLM(
-                    filteredMessages,
-                  )
+            
 
             const understandSpan = streamSpan.startSpan("understand_message")
             understandSpan?.setAttribute(
@@ -4565,7 +4567,7 @@ export const MessageApi = async (c: Context) => {
               totalValidFileIdsFromLinkCount,
             )
             understandSpan?.setAttribute("maxValidLinks", maxValidLinks)
-
+          
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
@@ -4810,25 +4812,13 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-            const filteredMessages = messages
-              .slice(0, messages.length - 1)
-              .filter((msg) => !msg?.errorMessage)
-              .filter(
-                (msg) =>
-                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
-              )
+           
 
             loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
 
-            const topicConversationThread = buildTopicConversationThread(
-              filteredMessages,
-              filteredMessages.length - 1,
-            )
-            const llmFormattedMessages: Message[] = formatMessagesForLLM(
-              topicConversationThread,
-            )
+           
             // Extract previous classification for pagination and follow-up queries
             let previousClassification: QueryRouterLLMResponse | null = null
             if (filteredMessages.length >= 1) {
@@ -5292,15 +5282,7 @@ export const MessageApi = async (c: Context) => {
                 // - Updated count/pagination info
                 // - All the smart follow-up logic from the LLM
 
-                const filteredMessages = messages
-                  .filter((msg) => !msg?.errorMessage)
-                  .filter(
-                    (msg) =>
-                      !(
-                        msg.messageRole === MessageRole.Assistant &&
-                        !msg.message
-                      ),
-                  )
+               
 
                 // Check for follow-up context carry-forward
                 const workingSet = collectFollowupContext(filteredMessages)
