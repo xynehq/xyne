@@ -1,3 +1,10 @@
+## [3.23.8](https://github.com/xynehq/xyne/compare/v3.23.7...v3.23.8) (2025-10-30)
+
+
+### Bug Fixes
+
+* **nginx:** increase upload limit, update CSP, switch backend port, adjust proxy settings ([#1146](https://github.com/xynehq/xyne/issues/1146)) ([a8181a0](https://github.com/xynehq/xyne/commit/a8181a0cb80cc2d5e4d395a820e16f70d5ddc01a))
+
 ## [3.23.7](https://github.com/xynehq/xyne/compare/v3.23.6...v3.23.7) (2025-10-29)
 
 
