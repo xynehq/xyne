@@ -23,7 +23,10 @@ import { HTTPException } from "hono/http-exception"
 import { isValidFile, isImageFile, getFileType } from "shared/fileUtils"
 import { generateThumbnail, getThumbnailPath } from "@/utils/image"
 import { attachmentFileTypeMap, type AttachmentMetadata } from "@/shared/types"
-import { FileProcessorService, type SheetProcessingResult } from "@/services/fileProcessor"
+import {
+  FileProcessorService,
+  type SheetProcessingResult,
+} from "@/services/fileProcessor"
 import { Apps, fileSchema, KbItemsSchema } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
 import { isDataSourceError } from "@/integrations/dataSource/errors"
@@ -225,7 +228,7 @@ export const handleAttachmentUpload = async (c: Context) => {
     }
 
     const attachmentMetadata: AttachmentMetadata[] = []
-    
+
     for (const file of files) {
       const fileBuffer = await file.arrayBuffer()
       const fileId = `attf_${crypto.randomUUID()}`
@@ -261,7 +264,10 @@ export const handleAttachmentUpload = async (c: Context) => {
             owner: email,
             photoLink: "",
             ownerEmail: email,
-            entity: attachmentFileTypeMap[getFileType({ type: file.type, name: file.name })],
+            entity:
+              attachmentFileTypeMap[
+                getFileType({ type: file.type, name: file.name })
+              ],
             chunks: [],
             chunks_pos: [],
             image_chunks: [],
@@ -290,20 +296,27 @@ export const handleAttachmentUpload = async (c: Context) => {
             false,
           )
 
-          if(processingResults.length > 0 && 'totalSheets' in processingResults[0]) {
+          if (
+            processingResults.length > 0 &&
+            "totalSheets" in processingResults[0]
+          ) {
             vespaId = `${fileId}_sheet_${(processingResults[0] as SheetProcessingResult).totalSheets}`
           }
           // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
-          for (const [resultIndex, processingResult] of processingResults.entries()) {
+          for (const [
+            resultIndex,
+            processingResult,
+          ] of processingResults.entries()) {
             let docId = fileId
             let fileName = file.name
 
             // For sheet processing results, append sheet information
-            if ('sheetName' in processingResult) {
+            if ("sheetName" in processingResult) {
               const sheetResult = processingResult as SheetProcessingResult
-              fileName = processingResults.length > 1 
-                ? `${file.name} / ${sheetResult.sheetName}`
-                : file.name
+              fileName =
+                processingResults.length > 1
+                  ? `${file.name} / ${sheetResult.sheetName}`
+                  : file.name
               docId = sheetResult.docId
             }
 
@@ -323,7 +336,10 @@ export const handleAttachmentUpload = async (c: Context) => {
               owner: email,
               photoLink: "",
               ownerEmail: email,
-              entity: attachmentFileTypeMap[getFileType({ type: file.type, name: file.name })],
+              entity:
+                attachmentFileTypeMap[
+                  getFileType({ type: file.type, name: file.name })
+                ],
               chunks: chunks,
               chunks_pos: chunks_pos,
               image_chunks: image_chunks,
@@ -339,10 +355,13 @@ export const handleAttachmentUpload = async (c: Context) => {
                 imageChunksCount: image_chunks.length,
                 processingMethod: getBaseMimeType(file.type || "text/plain"),
                 lastModified: Date.now(),
-                ...(('sheetName' in processingResult) && {
-                  sheetName: (processingResult as SheetProcessingResult).sheetName,
-                  sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
-                  totalSheets: (processingResult as SheetProcessingResult).totalSheets,
+                ...("sheetName" in processingResult && {
+                  sheetName: (processingResult as SheetProcessingResult)
+                    .sheetName,
+                  sheetIndex: (processingResult as SheetProcessingResult)
+                    .sheetIndex,
+                  totalSheets: (processingResult as SheetProcessingResult)
+                    .totalSheets,
                 }),
               }),
               createdAt: Date.now(),
@@ -406,7 +425,10 @@ export const handleAttachmentUpload = async (c: Context) => {
   }
 }
 
-export const handleAttachmentDelete = async (attachments: AttachmentMetadata [], email: string) => {
+export const handleAttachmentDelete = async (
+  attachments: AttachmentMetadata[],
+  email: string,
+) => {
   const imageAttachmentFileIds: string[] = []
   const nonImageAttachmentFileIds: string[] = []
 
@@ -455,7 +477,7 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
           await fs.access(imageDir)
           await fs.rm(imageDir, { recursive: true, force: true })
           await DeleteDocument(fileId, fileSchema)
-          
+
           loggerWithChild({ email: email }).info(
             `Deleted image attachment directory: ${imageDir}`,
           )
@@ -484,7 +506,7 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
         const vespaIds = expandSheetIds(fileId)
         for (const vespaId of vespaIds) {
           // Delete from Vespa kb_items or file schema
-          if(vespaId.startsWith("att_")) {
+          if (vespaId.startsWith("att_")) {
             await DeleteDocument(vespaId, KbItemsSchema)
           } else {
             await DeleteDocument(vespaId, fileSchema)
@@ -524,7 +546,10 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
 
   try {
     // Get the attachment document from the file schema
-    const attachmentDoc = await GetDocument(fileSchema, expandSheetIds(fileId)[0])
+    const attachmentDoc = await GetDocument(
+      fileSchema,
+      expandSheetIds(fileId)[0],
+    )
 
     if (!attachmentDoc || !attachmentDoc.fields) {
       return c.json({ success: true, message: "Attachment already deleted" })
@@ -532,18 +557,25 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
 
     // Check permissions - file schema has permissions array
     const fields = attachmentDoc.fields as any
-    const permissions = Array.isArray(fields.permissions) ? fields.permissions as string[] : []
+    const permissions = Array.isArray(fields.permissions)
+      ? (fields.permissions as string[])
+      : []
     if (!permissions.includes(email)) {
-      throw new HTTPException(403, { message: "Access denied to this attachment" })
+      throw new HTTPException(403, {
+        message: "Access denied to this attachment",
+      })
     }
-    
+
     await handleAttachmentDelete([attachment], email)
     return c.json({ success: true, message: "Attachment deleted successfully" })
   } catch (error) {
     if (error instanceof HTTPException) {
       throw error
     }
-    loggerWithChild({ email }).error({ err: error }, "Error checking attachment permissions")
+    loggerWithChild({ email }).error(
+      { err: error },
+      "Error checking attachment permissions",
+    )
     throw new HTTPException(500, { message: "Internal server error" })
   }
 }

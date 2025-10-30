@@ -81,9 +81,7 @@ export const workflowTemplate = pgTable("workflow_template", {
   userId: integer("user_id")
     .notNull()
     .references(() => users.id),
-  isPublic: boolean("is_public")
-    .default(false)
-    .notNull(),
+  isPublic: boolean("is_public").default(false).notNull(),
   description: text("description"),
   version: text("version").notNull().default("1.0.0"),
   status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),

@@ -54,7 +54,6 @@ export type {
   SearchResultsSchema,
   SearchResponse,
   SearchResultDiscriminatedUnion,
-  
 } from "@xyne/vespa-ts/types"
 
 export type VespaFile = z.infer<typeof VespaFileSchema>
@@ -789,6 +788,6 @@ export const getDocumentSchema = z.object({
 export enum UploadStatus {
   PENDING = "pending",
   PROCESSING = "processing",
-  COMPLETED = "completed", 
+  COMPLETED = "completed",
   FAILED = "failed",
 }

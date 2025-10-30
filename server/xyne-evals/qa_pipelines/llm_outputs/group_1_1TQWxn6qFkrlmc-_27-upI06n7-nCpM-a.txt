@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "arshith.balaraju@juspay.in",
+      "User_name": "Arshith Balaraju"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the mandatory format for the reimbursement title when submitting a new request on DarwinBox?",
+    "Answer": "According to the guide, the reimbursement title must be in the format 'Expense_Month Name & Year' (e.g., 'Expense_Aug 2022'). If you are claiming multiple expenses in the same month, you should number them, for example: 'Expense_Aug 2022 No.<1>'."
+  },
+  {
+    "User_data": {
+      "UserID": "arshith.balaraju@juspay.in",
+      "User_name": "Arshith Balaraju"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What documentation and specific bill details are required when managing my finances on Darwinbox, covering both reimbursements and bank account updates?",
+    "Answer": "Based on the provided documents, here are the requirements:\n\nFor Reimbursements:\n- Bills should clearly mention the amount.\n- They should preferably be system-generated.\n- They must include details like invoice number, GSTIN, Date, and amount.\n- The invoice number must be unique to avoid being flagged for duplicacy.\n- Handwritten bills should be avoided, but if necessary, they must be duly stamped and signed by the vendor.\n\nFor Bank Account Updates:\n- An attachment is mandatory.\n- Acceptable attachments include a canceled cheque, a copy of your passbook, or a netbanking snapshot.\n- The attachment must clearly show the IFSC, Account Number, Account Holder Name, and Bank Name."
+  },
+  {
+    "User_data": {
+      "UserID": "arshith.balaraju@juspay.in",
+      "User_name": "Arshith Balaraju"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "If my reimbursement request in Darwinbox shows a status of 'Pending for processing', what does that signify?",
+    "Answer": "A status of 'Pending for processing' indicates that your reimbursement application has been approved and the amount is yet to be processed and paid out."
+  },
+  {
+    "User_data": {
+      "UserID": "arshith.balaraju@juspay.in",
+      "User_name": "Arshith Balaraju"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.6,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the guides, what are the key principles I should follow to ensure my financial submissions, like reimbursements and payroll setup, are processed smoothly?",
+    "Answer": "To ensure smooth processing of your financial submissions, you should adhere to the following principles derived from the documents:\n\n1.  **Timeliness:** Submit reimbursement claims within 10 days of receiving the email from the Admin Team or Shankar J. Complete all payroll setup steps by the specified deadline of 26th Aug 2025.\n2.  **Accuracy and Correct Formatting:** Use the specified 'Expense_Month Name & Year' format for reimbursement titles. Ensure that values declared under Flexi components are also declared under IT declaration Section 10.\n3.  **Complete Documentation:** For reimbursements, provide clear, system-generated bills with unique invoice numbers. For bank account updates, provide a mandatory attachment (like a canceled cheque or passbook copy) where all details are clearly visible.\n4.  **Process Completion:** After saving a reimbursement expense, you must also click 'Submit for approval' for it to be processed. Similarly, ensure all mandatory steps for payroll setup are completed.\n5.  **Avoid Clubbing:** Do not club expenses for different months into a single reimbursement request."
+  },
+  {
+    "User_data": {
+      "UserID": "arshith.balaraju@juspay.in",
+      "User_name": "Arshith Balaraju"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.0,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Who are the points of contact for queries related to the reimbursement process versus discrepancies in CTC details?",
+    "Answer": "The points of contact differ based on the type of query:\n\n-   **For the reimbursement process:** You can reach out to Shankar J or the HR operations team for additional information.\n-   **For discrepancies in CTC details:** You should raise a helpdesk ticket on Darwinbox under the category 'Finance – CTC CHANGE QUERY Subcategory'. The documents also list the following contacts for payroll and HR: Amar KS (Payroll SPOC), Deeksha Gupta (HR SPOC 1), Spoorthi (HR SPOC 2), and Lalitha Sushrutha (Escalation for Juspay)."
+  }
+]
+```

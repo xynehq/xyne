@@ -514,8 +514,8 @@ export const GetWorkspaceUsersApi = async (c: Context) => {
       .where(
         and(
           eq(users.workspaceId, userAndWorkspace.workspace.id),
-          isNull(users.deletedAt)
-        )
+          isNull(users.deletedAt),
+        ),
       )
 
     return c.json(workspaceUsers)

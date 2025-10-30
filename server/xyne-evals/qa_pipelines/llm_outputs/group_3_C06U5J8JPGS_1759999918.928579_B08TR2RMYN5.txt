@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "project.manager@juspay.com",
+      "User_name": "Project Manager"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the ETA for the ticket concerning 'PayU<>Juspay : Post transaction Split API'?",
+    "Answer": "Based on the provided documents, the ETA for the ticket with the subject 'PayU<>Juspay : Post transaction Split API' is 2025-09-26 12:00 PM. This ticket is associated with ticket link ID 743379."
+  },
+  {
+    "User_data": {
+      "UserID": "project.manager@juspay.com",
+      "User_name": "Project Manager"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What is the latest update and status for the GetSimpl ticket being handled by Dhananjai Jagannathan?",
+    "Answer": "The GetSimpl ticket (ID ending in 737497) regarding 'Token Status Webhook' has had several updates. Its initial ETA of 2025-09-12 12:00 PM was breached, which triggered a warning that the 'Snooze Until ETA' option was unavailable and the ETA needed to be updated. A subsequent reminder shows that the ETA has been updated to 2025-10-20 12:00 PM. The most recent reminder indicates it has been pending for 4 days, 14 hours, and 7 minutes."
+  },
+  {
+    "User_data": {
+      "UserID": "project.manager@juspay.com",
+      "User_name": "Project Manager"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Can you list all the tickets that have an ETA-related issue, such as being breached or missing an ETA?",
+    "Answer": "Based on the documents, the following tickets have ETA-related issues:\n1.  **Ticket ...737497 (GetSimpl <> Juspay Clarification...)**: The original ETA of 2025-09-12 12:00 PM was breached, requiring an update.\n2.  **Ticket ...732524 (Re: TALIC l2i UAT/Dev...)**: This ticket has an ETA of 'None' and a warning that an ETA must be updated.\n3.  **Ticket ...730835 (Required Changes on Integration for Dynamic QR)**: This ticket's ETA of 2025-08-15 12:00 PM was breached, and a warning was issued to update the ETA."
+  },
+  {
+    "User_data": {
+      "UserID": "project.manager@juspay.com",
+      "User_name": "Project Manager"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on these reminders, what is the common underlying reason across all these tickets that is prompting these notifications?",
+    "Answer": "The common underlying reason for all the notifications is that a response is pending from our team, and the merchant is waiting for it. Every document provided is a reminder that explicitly begins with 'Reminder ! Merchant is awaiting response'."
+  },
+  {
+    "User_data": {
+      "UserID": "project.manager@juspay.com",
+      "User_name": "Project Manager"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Who took action on the ticket regarding 'Omitting User Phone Number from Order Details' and what was that action?",
+    "Answer": "Ekta Bansal took action on the ticket. The action was to snooze the ticket, as stated in the message: '✅ Ticket snoozed by @Ekta Bansal'."
+  }
+]
+```

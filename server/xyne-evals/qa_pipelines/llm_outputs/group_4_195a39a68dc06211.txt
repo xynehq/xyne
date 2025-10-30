@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "tom.harris@acme.com",
+      "User_name": "Tom Harris"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the specific goal for my team's refactoring work on the payment integration module in Q3?",
+    "Answer": "According to the Project Phoenix Q2 2024 Retrospective, your team is to dedicate the first two sprints of Q3 to refactoring the payment integration module. The specific goal is to reduce its complexity by 50%."
+  },
+  {
+    "User_data": {
+      "UserID": "sarah.jones@acme.com",
+      "User_name": "Sarah Jones"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What was the overall outcome of the Project Phoenix Q2 sprint?",
+    "Answer": "Based on the retrospective document, the Q2 sprint had mixed results. There was a significant success with the smooth launch of the beta user dashboard, which received positive feedback. However, a major challenge was the rushed integration with the legacy payment system, which resulted in significant technical debt that needs to be addressed in Q3."
+  },
+  {
+    "User_data": {
+      "UserID": "mike.brown@acme.com",
+      "User_name": "Mike Brown"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "low",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Who were the key personnel involved in the Q2 retrospective and what were their roles or action items?",
+    "Answer": "The key personnel mentioned in the Q2 2024 retrospective are:\n- **Sarah Jones:** Attended the meeting, led the design team, and is assigned the action item to work with HR to hire a new QA engineer.\n- **Mike Brown:** Attended the meeting, flagged the risk of the legacy system integration, and is assigned to draft the project plan for the public launch phase.\n- **Lisa Green:** Attended the meeting and led the successful effort on the beta user dashboard launch.\n- **Tom Harris:** Attended the meeting, leads the engineering team, and his team is tasked with refactoring the payment integration module to reduce technical debt."
+  },
+  {
+    "User_data": {
+      "UserID": "sarah.jones@acme.com",
+      "User_name": "Sarah Jones"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the retrospective, what was the underlying cause of our recent challenges, and how are we planning to mitigate such issues going forward?",
+    "Answer": "The retrospective indicates the underlying cause of challenges was related to project pressures and resource gaps. The technical debt was incurred because the legacy system integration was 'rushed' due to 'timeline pressures'. Concurrently, the team was 'under-resourced for QA', leading to bugs in the beta release. The plan to mitigate this is to address the resource gap by hiring another dedicated QA engineer, which is an action item for Q3."
+  },
+  {
+    "User_data": {
+      "UserID": "dave.roberts@acme.com",
+      "User_name": "Dave Roberts"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are all the deadlines and date-specific action items from the Project Phoenix retrospective?",
+    "Answer": "The document outlines the following date-specific action items and deadlines for Q3 2024:\n1.  **Project Plan for Public Launch:** Mike Brown is to draft the initial plan, due by June 1, 2024.\n2.  **QA Engineer Hiring:** Sarah Jones is to open a requisition, with a target start date of July 15, 2024.\n3.  **Technical Debt Refactoring:** Tom Harris's team will work on this during the first two sprints of Q3."
+  }
+]
+```

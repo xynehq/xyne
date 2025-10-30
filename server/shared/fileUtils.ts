@@ -7,7 +7,10 @@ export const isImageFile = (fileType: string): boolean => {
   )
 }
 
-export const getFileType = ({ type, name }: { type: string, name: string }): FileType => {
+export const getFileType = ({
+  type,
+  name,
+}: { type: string; name: string }): FileType => {
   const fileName = name.toLowerCase()
   const mimeType = type.toLowerCase()
   const baseMime = mimeType.split(";")[0]
@@ -15,14 +18,14 @@ export const getFileType = ({ type, name }: { type: string, name: string }): Fil
   // Check each file type category using the mappings
   for (const [fileType, mimeTypes] of Object.entries(MIME_TYPE_MAPPINGS)) {
     // Check MIME type first (more reliable)
-    if (mimeTypes.some(mime => baseMime === mime)) {
+    if (mimeTypes.some((mime) => baseMime === mime)) {
       return fileType as FileType
     }
   }
 
   // Fallback to extension-based detection
   for (const [fileType, extensions] of Object.entries(EXTENSION_MAPPINGS)) {
-    if (extensions.some(ext => fileName.endsWith(ext))) {
+    if (extensions.some((ext) => fileName.endsWith(ext))) {
       return fileType as FileType
     }
   }

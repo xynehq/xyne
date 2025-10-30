@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "priya.sharma@glean.com",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the deadline for Sarah Jenkins to submit the 'Analytics Suite' engagement proposal?",
+    "Answer": "According to the 'Project Phoenix - Q3 2024 Retrospective' document, Sarah Jenkins must submit the proposal for the 'Analytics Suite' engagement initiative by the end of the day on October 12, 2024."
+  },
+  {
+    "User_data": {
+      "UserID": "david.chen@glean.com",
+      "User_name": "David Chen"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What's the status of Project Phoenix and what's the main focus for the next quarter?",
+    "Answer": "Based on the Q3 2024 retrospective, the Project Phoenix launch was a success overall, but it highlighted critical performance bottlenecks during user acceptance testing. The main focus for Q4 is stabilization and user engagement. The team's primary objective is to improve the core product experience by addressing the performance issues and boosting adoption for the 'Analytics Suite' feature. No new major features are planned for the quarter."
+  },
+  {
+    "User_data": {
+      "UserID": "leo.kim@glean.com",
+      "User_name": "Leo Kim"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "low",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Can you list the action items that came out of the Q3 retrospective for Project Phoenix?",
+    "Answer": "The action items from the Project Phoenix Q3 2024 retrospective are:\n1.  Leo Kim to lead the performance optimization task force, with a first draft of the plan due October 19, 2024.\n2.  Ben Carter to investigate alternative caching strategies, with an initial findings report due October 21, 2024.\n3.  Sarah Jenkins to submit the 'Analytics Suite' engagement proposal by October 12, 2024."
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@glean.com",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the retrospective notes, what was the underlying technical issue that caused the most critical feedback?",
+    "Answer": "The retrospective notes state that the most critical feedback from user acceptance testing (UAT) was related to performance. The underlying technical issue identified was insufficient database query optimization, which led to slow load times for the main dashboard."
+  },
+  {
+    "User_data": {
+      "UserID": "ben.carter@glean.com",
+      "User_name": "Ben Carter"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Who is responsible for the performance issues and who is looking into feature adoption for Project Phoenix?",
+    "Answer": "According to the Q3 retrospective document:\n- Leo Kim is leading the performance optimization task force to address performance issues.\n- Ben Carter is also involved in performance, specifically investigating alternative caching strategies.\n- Sarah Jenkins is responsible for feature adoption, tasked with creating an engagement proposal for the 'Analytics Suite'."
+  }
+]
+```

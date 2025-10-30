@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "sahil.kumar@juspay.in",
+      "User_name": "Sahil Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the pricing for the new gemini-embedding-001 model?",
+    "Answer": "Based on the email, the gemini-embedding-001 model is priced at $0.15 USD per million tokens."
+  },
+  {
+    "User_data": {
+      "UserID": "sahil.kumar@juspay.in",
+      "User_name": "Sahil Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List the key features of the gemini-embedding-001 model as described in the announcement.",
+    "Answer": "According to the document, the key features of the gemini-embedding-001 model are:\n- It ranks #1 on the Massive Text Embedding Benchmark (MTEB) leaderboard.\n- It supports over 100 languages.\n- It is optimized for tasks like semantic search, document retrieval, and classification.\n- It has a flexible output dimension, with a default size of 3072 that can be truncated to smaller sizes like 768 or 1536 without re-embedding content.\n- It allows specifying a `task_type` for advanced use cases like building a production-ready RAG system."
+  },
+  {
+    "User_data": {
+      "UserID": "sahil.kumar@juspay.in",
+      "User_name": "Sahil Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "How can I optimize for performance and storage costs when using the new Gemini embedding model?",
+    "Answer": "Based on the email, you can optimize for performance and storage costs by utilizing the model's flexible output dimension. You can truncate the default 3072-dimension embedding vector to smaller sizes, such as 768 or 1536, which can be done without needing to re-embed your content."
+  },
+  {
+    "User_data": {
+      "UserID": "sahil.kumar@juspay.in",
+      "User_name": "Sahil Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.0,
+      "Question_Complexity": "low",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "What is the current availability status of the Gemini Embedding model?",
+    "Answer": "The Gemini Embedding model, specifically `gemini-embedding-001`, is now generally available and stable in the Gemini API. The email also states it is ready for at-scale production use."
+  },
+  {
+    "User_data": {
+      "UserID": "sahil.kumar@juspay.in",
+      "User_name": "Sahil Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the announcement, what are the recommended resources and next steps for developers interested in Gemini?",
+    "Answer": "The email provides several resources and next steps for developers:\n- **To start building:** Use the provided Python code snippet with the `embed_content` method.\n- **For beginners:** Check out the recommended embedding crash course.\n- **For advanced use cases:** Specify a `task_type` when generating embeddings for systems like RAG.\n- **To learn about multimodal AI:** Watch the video episode with Gemini’s multimodal product lead, Ani Baddepudi.\n- **For increased usage:** Explore the paid tier to get significantly higher request limits and flexible pay-as-you-go pricing."
+  }
+]
+```

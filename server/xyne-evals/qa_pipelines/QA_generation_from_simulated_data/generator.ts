@@ -254,7 +254,6 @@ async function call_llm(
   throw new Error(errorMsg)
 }
 
-
 // Main generator function (memory-optimized)
 export async function generator(
   group: GroupMetadata,

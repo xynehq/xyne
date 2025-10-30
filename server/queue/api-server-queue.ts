@@ -23,14 +23,16 @@ export const PdfFileProcessingQueue = `file-processing-pdf`
 export const initApiServerQueue = async () => {
   Logger.info("API Server Queue init - starting pg-boss")
   await boss.start()
-  
+
   Logger.info("Creating FileProcessingQueue for API server")
   await boss.createQueue(FileProcessingQueue)
-  
+
   Logger.info("Creating PdfFileProcessingQueue for API server")
   await boss.createQueue(PdfFileProcessingQueue)
-  
-  Logger.info("API Server Queue initialization complete - ready for boss.send()")
+
+  Logger.info(
+    "API Server Queue initialization complete - ready for boss.send()",
+  )
 }
 
 // Error handling

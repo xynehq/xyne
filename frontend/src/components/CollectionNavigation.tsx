@@ -58,7 +58,11 @@ interface CollectionNavigationProps {
 // Helper function to check if an item should be non-selectable based on upload status
 function isItemNonSelectable(item: { uploadStatus?: string }): boolean {
   const uploadStatus = item.uploadStatus
-  return uploadStatus === "pending" || uploadStatus === "processing" || uploadStatus === "failed"
+  return (
+    uploadStatus === "pending" ||
+    uploadStatus === "processing" ||
+    uploadStatus === "failed"
+  )
 }
 
 // Reusable indexing tooltip component
@@ -231,7 +235,7 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                 const handleResultSelect = () => {
                   // Don't allow selection changes for inherited items
                   if (isInherited) return
-                  
+
                   // For non-selectable items, prevent all interactions (no navigation or selection)
                   if (isNonSelectable) return
 
@@ -294,7 +298,11 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                 return (
                   <div
                     key={result.id}
-                    onClick={isInherited || isNonSelectable ? undefined : handleResultSelect}
+                    onClick={
+                      isInherited || isNonSelectable
+                        ? undefined
+                        : handleResultSelect
+                    }
                     className={`flex items-center px-4 py-2 text-sm ${
                       isInherited || isNonSelectable
                         ? "cursor-not-allowed opacity-50"
@@ -310,9 +318,11 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center">
-                      <span className={`truncate ${isNonSelectable ? "text-gray-400 dark:text-gray-500" : "text-gray-700 dark:text-gray-200"}`}>
-                        {result.name}
-                      </span>
+                        <span
+                          className={`truncate ${isNonSelectable ? "text-gray-400 dark:text-gray-500" : "text-gray-700 dark:text-gray-200"}`}
+                        >
+                          {result.name}
+                        </span>
                         <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
                           {result.type}
                         </span>
@@ -405,211 +415,217 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
             ) : currentItems.length > 0 ? (
               currentItems.map((item: any) => {
                 const isNonSelectable = isItemNonSelectable(item)
-                
+
                 return (
-                <div
-                  key={item.id}
-                  className={`flex items-center px-4 py-2 text-sm ${
-                    isNonSelectable 
-                      ? "cursor-not-allowed opacity-50" 
-                      : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
-                  }`}
-                  onClick={() => {
-                    if (item.type === "folder" && !isNonSelectable) {
-                      // Only allow navigation to folder if it's selectable
-                      navigateToFolder(item.id, item.name)
-                    }
-                  }}
-                >
-                  {(() => {
-                    const clId = navigationPath.find(
-                      (item) => item.type === "cl",
-                    )?.id
-                    if (!clId) return null
-
-                    const selectedSet =
-                      selectedItemsInCollection[clId] || new Set()
-                    const isSelected = selectedSet.has(item.id)
-
-                    // Check if any parent folder is selected (which would make this item inherit selection)
-                    const isInheritedFromParent = (() => {
-                      // Get all parent folder IDs from the navigation path
-                      // When we're inside a folder, that folder's ID is in the navigation path
-                      const parentFolders = navigationPath
-                        .filter((pathItem) => pathItem.type === "folder")
-                        .map((pathItem) => pathItem.id)
-
-                      // Also check if the current collection itself is selected (selectAll case)
-                      const currentClId = navigationPath.find(
+                  <div
+                    key={item.id}
+                    className={`flex items-center px-4 py-2 text-sm ${
+                      isNonSelectable
+                        ? "cursor-not-allowed opacity-50"
+                        : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                    }`}
+                    onClick={() => {
+                      if (item.type === "folder" && !isNonSelectable) {
+                        // Only allow navigation to folder if it's selectable
+                        navigateToFolder(item.id, item.name)
+                      }
+                    }}
+                  >
+                    {(() => {
+                      const clId = navigationPath.find(
                         (item) => item.type === "cl",
                       )?.id
-                      const hasCollectionIntegrationSelected =
-                        currentClId &&
-                        !!selectedIntegrations[`cl_${currentClId}`]
-                      const isCollectionSelectAll =
-                        hasCollectionIntegrationSelected &&
-                        selectedSet.size === 0
+                      if (!clId) return null
 
-                      // Check if any parent folder in the current path is selected
-                      const hasSelectedParentFolder = parentFolders.some(
-                        (parentId) => selectedSet.has(parentId),
+                      const selectedSet =
+                        selectedItemsInCollection[clId] || new Set()
+                      const isSelected = selectedSet.has(item.id)
+
+                      // Check if any parent folder is selected (which would make this item inherit selection)
+                      const isInheritedFromParent = (() => {
+                        // Get all parent folder IDs from the navigation path
+                        // When we're inside a folder, that folder's ID is in the navigation path
+                        const parentFolders = navigationPath
+                          .filter((pathItem) => pathItem.type === "folder")
+                          .map((pathItem) => pathItem.id)
+
+                        // Also check if the current collection itself is selected (selectAll case)
+                        const currentClId = navigationPath.find(
+                          (item) => item.type === "cl",
+                        )?.id
+                        const hasCollectionIntegrationSelected =
+                          currentClId &&
+                          !!selectedIntegrations[`cl_${currentClId}`]
+                        const isCollectionSelectAll =
+                          hasCollectionIntegrationSelected &&
+                          selectedSet.size === 0
+
+                        // Check if any parent folder in the current path is selected
+                        const hasSelectedParentFolder = parentFolders.some(
+                          (parentId) => selectedSet.has(parentId),
+                        )
+
+                        // Item should be inherited if:
+                        // 1. Any parent folder is selected, OR
+                        // 2. The collection is in selectAll mode (collection selected but no specific items)
+                        return hasSelectedParentFolder || isCollectionSelectAll
+                      })()
+
+                      const finalIsSelected: boolean = Boolean(
+                        isSelected || isInheritedFromParent,
+                      )
+                      const isDisabled: boolean = Boolean(
+                        (isInheritedFromParent && !isSelected) ||
+                          isNonSelectable,
                       )
 
-                      // Item should be inherited if:
-                      // 1. Any parent folder is selected, OR
-                      // 2. The collection is in selectAll mode (collection selected but no specific items)
-                      return hasSelectedParentFolder || isCollectionSelectAll
-                    })()
+                      return (
+                        <input
+                          type="checkbox"
+                          checked={finalIsSelected}
+                          disabled={isDisabled}
+                          onChange={(e) => {
+                            e.stopPropagation()
+                            if (isDisabled) return // Prevent changes if inherited from parent or non-selectable
 
-                    const finalIsSelected: boolean = Boolean(
-                      isSelected || isInheritedFromParent,
-                    )
-                    const isDisabled: boolean = Boolean(
-                      (isInheritedFromParent && !isSelected) || isNonSelectable,
-                    )
+                            const isCurrentlySelected = selectedSet.has(item.id)
 
-                    return (
-                      <input
-                        type="checkbox"
-                        checked={finalIsSelected}
-                        disabled={isDisabled}
-                        onChange={(e) => {
-                          e.stopPropagation()
-                          if (isDisabled) return // Prevent changes if inherited from parent or non-selectable
+                            if (
+                              item.type === "folder" &&
+                              !isCurrentlySelected
+                            ) {
+                              // When selecting a folder, we need to handle its children
+                              setSelectedItemsInCollection((prev) => {
+                                const newState = { ...prev }
+                                if (!newState[clId]) {
+                                  newState[clId] = new Set()
+                                }
 
-                          const isCurrentlySelected = selectedSet.has(item.id)
-
-                          if (item.type === "folder" && !isCurrentlySelected) {
-                            // When selecting a folder, we need to handle its children
-                            setSelectedItemsInCollection((prev) => {
-                              const newState = { ...prev }
-                              if (!newState[clId]) {
-                                newState[clId] = new Set()
-                              }
-
-                              const selectedSet = new Set(newState[clId])
-                              selectedSet.add(item.id)
-
-                              newState[clId] = selectedSet
-                              return newState
-                            })
-
-                            // Store item details
-                            setSelectedItemDetailsInCollection((prev) => {
-                              const newState = { ...prev }
-                              if (!newState[clId]) {
-                                newState[clId] = {}
-                              }
-                              newState[clId][item.id] = item
-                              return newState
-                            })
-                          } else if (
-                            item.type === "folder" &&
-                            isCurrentlySelected
-                          ) {
-                            // When deselecting a folder, remove it from the selection set
-                            setSelectedItemsInCollection((prev) => {
-                              const newState = { ...prev }
-                              if (!newState[clId]) return newState
-
-                              const selectedSet = new Set(newState[clId])
-                              selectedSet.delete(item.id)
-
-                              newState[clId] = selectedSet
-                              return newState
-                            })
-
-                            // Remove item details
-                            setSelectedItemDetailsInCollection((prev) => {
-                              const newState = { ...prev }
-                              if (newState[clId] && newState[clId][item.id]) {
-                                delete newState[clId][item.id]
-                              }
-                              return newState
-                            })
-                          } else {
-                            // Handle regular file selection
-                            setSelectedItemsInCollection((prev) => {
-                              const newState = { ...prev }
-                              if (!newState[clId]) {
-                                newState[clId] = new Set()
-                              }
-
-                              const selectedSet = new Set(newState[clId])
-                              if (selectedSet.has(item.id)) {
-                                selectedSet.delete(item.id)
-                              } else {
+                                const selectedSet = new Set(newState[clId])
                                 selectedSet.add(item.id)
-                              }
 
-                              newState[clId] = selectedSet
-                              return newState
-                            })
+                                newState[clId] = selectedSet
+                                return newState
+                              })
 
-                            // Also store/remove item details
-                            setSelectedItemDetailsInCollection((prev) => {
-                              const newState = { ...prev }
-                              if (!newState[clId]) {
-                                newState[clId] = {}
-                              }
+                              // Store item details
+                              setSelectedItemDetailsInCollection((prev) => {
+                                const newState = { ...prev }
+                                if (!newState[clId]) {
+                                  newState[clId] = {}
+                                }
+                                newState[clId][item.id] = item
+                                return newState
+                              })
+                            } else if (
+                              item.type === "folder" &&
+                              isCurrentlySelected
+                            ) {
+                              // When deselecting a folder, remove it from the selection set
+                              setSelectedItemsInCollection((prev) => {
+                                const newState = { ...prev }
+                                if (!newState[clId]) return newState
+
+                                const selectedSet = new Set(newState[clId])
+                                selectedSet.delete(item.id)
+
+                                newState[clId] = selectedSet
+                                return newState
+                              })
+
+                              // Remove item details
+                              setSelectedItemDetailsInCollection((prev) => {
+                                const newState = { ...prev }
+                                if (newState[clId] && newState[clId][item.id]) {
+                                  delete newState[clId][item.id]
+                                }
+                                return newState
+                              })
+                            } else {
+                              // Handle regular file selection
+                              setSelectedItemsInCollection((prev) => {
+                                const newState = { ...prev }
+                                if (!newState[clId]) {
+                                  newState[clId] = new Set()
+                                }
+
+                                const selectedSet = new Set(newState[clId])
+                                if (selectedSet.has(item.id)) {
+                                  selectedSet.delete(item.id)
+                                } else {
+                                  selectedSet.add(item.id)
+                                }
+
+                                newState[clId] = selectedSet
+                                return newState
+                              })
+
+                              // Also store/remove item details
+                              setSelectedItemDetailsInCollection((prev) => {
+                                const newState = { ...prev }
+                                if (!newState[clId]) {
+                                  newState[clId] = {}
+                                }
+
+                                if (isCurrentlySelected) {
+                                  delete newState[clId][item.id]
+                                } else {
+                                  newState[clId][item.id] = item
+                                }
+
+                                return newState
+                              })
+                            }
+
+                            // Auto-select/deselect the Collection integration
+                            setSelectedIntegrations((prev) => {
+                              const clIntegrationId = `cl_${clId}`
+                              const currentSelectedSet =
+                                selectedItemsInCollection[clId] || new Set()
+                              const newSelectedSet = new Set(currentSelectedSet)
 
                               if (isCurrentlySelected) {
-                                delete newState[clId][item.id]
+                                newSelectedSet.delete(item.id)
                               } else {
-                                newState[clId][item.id] = item
+                                newSelectedSet.add(item.id)
                               }
 
-                              return newState
+                              return {
+                                ...prev,
+                                [clIntegrationId]: newSelectedSet.size > 0,
+                              }
                             })
-                          }
-
-                          // Auto-select/deselect the Collection integration
-                          setSelectedIntegrations((prev) => {
-                            const clIntegrationId = `cl_${clId}`
-                            const currentSelectedSet =
-                              selectedItemsInCollection[clId] || new Set()
-                            const newSelectedSet = new Set(currentSelectedSet)
-
-                            if (isCurrentlySelected) {
-                              newSelectedSet.delete(item.id)
-                            } else {
-                              newSelectedSet.add(item.id)
-                            }
-
-                            return {
-                              ...prev,
-                              [clIntegrationId]: newSelectedSet.size > 0,
-                            }
-                          })
-                        }}
-                        className={`w-4 h-4 mr-3 ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    )
-                  })()}
-                  {item.type === "folder" && (
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className={`mr-2 ${isNonSelectable ? "text-gray-400" : "text-gray-800"}`}
+                          }}
+                          className={`w-4 h-4 mr-3 ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      )
+                    })()}
+                    {item.type === "folder" && (
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className={`mr-2 ${isNonSelectable ? "text-gray-400" : "text-gray-800"}`}
+                      >
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                      </svg>
+                    )}
+                    <span
+                      className={`truncate flex-1 ${isNonSelectable ? "text-gray-400 dark:text-gray-500" : "text-gray-700 dark:text-gray-200"}`}
                     >
-                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                    </svg>
-                  )}
-                  <span className={`truncate flex-1 ${isNonSelectable ? "text-gray-400 dark:text-gray-500" : "text-gray-700 dark:text-gray-200"}`}>
-                    {item.name}
-                  </span>
-                  {isNonSelectable && <IndexingTooltip />}
-                  {item.type === "folder" && !isNonSelectable && (
-                    <ChevronRight className="h-4 w-4 text-gray-400 ml-2" />
-                  )}
-                </div>
+                      {item.name}
+                    </span>
+                    {isNonSelectable && <IndexingTooltip />}
+                    {item.type === "folder" && !isNonSelectable && (
+                      <ChevronRight className="h-4 w-4 text-gray-400 ml-2" />
+                    )}
+                  </div>
                 )
               })
             ) : (

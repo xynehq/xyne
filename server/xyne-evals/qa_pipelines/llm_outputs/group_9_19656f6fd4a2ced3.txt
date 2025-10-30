@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "anya.sharma@example.com",
+      "User_name": "Anya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the target launch date for the Analytics Dashboard mentioned in the Project Phoenix planning document?",
+    "Answer": "Based on the document 'Project Phoenix - Q3 2024 Retrospective & Q4 Planning', the target launch date for the Analytics Dashboard is November 15, 2024."
+  },
+  {
+    "User_data": {
+      "UserID": "daniel.chen@example.com",
+      "User_name": "Daniel Chen"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What were the main outcomes from the Project Phoenix Q3 retrospective?",
+    "Answer": "According to the Q3 retrospective summary for Project Phoenix, the main outcomes were:\n**Successes:**\n- The Data Pipeline V2 was successfully launched on August 15th, 2024, reducing data processing time by 30%.\n- A redesign of the User Onboarding Flow led to a 15% increase in user activation.\n**Areas for Improvement:**\n- Cross-team communication between backend and frontend teams was identified as a weakness, causing a 1-week delay on the 'User Profile' feature.\n- The 'Analytics Dashboard' feature was under-resourced, which delayed its completion into Q4."
+  },
+  {
+    "User_data": {
+      "UserID": "leo.martinez@example.com",
+      "User_name": "Leo Martinez"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List all the people mentioned in the Q4 planning document for Project Phoenix and their roles.",
+    "Answer": "The following people and their roles are mentioned in the 'Project Phoenix - Q3 2024 Retrospective & Q4 Planning' document:\n- **Anya Sharma:** Project Lead and Document Owner.\n- **Leo Martinez:** Tech Lead, responsible for leading the API Security Audit and finalizing a resource plan.\n- **Chloe Kim:** Backend Engineer and a key contributor to the Data Pipeline V2 launch.\n- **Ben Carter:** Backend Engineer and a key contributor to the Data Pipeline V2 launch."
+  },
+  {
+    "User_data": {
+      "UserID": "anya.sharma@example.com",
+      "User_name": "Anya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the document, how does the Q4 plan for Project Phoenix address the problems identified during the Q3 retrospective?",
+    "Answer": "The Q4 plan for Project Phoenix addresses the issues from the Q3 retrospective in the following ways:\n1.  **Resource Allocation:** The 'Analytics Dashboard', which was previously under-resourced, has been made the top priority for Q4. The plan explicitly calls for 2 backend engineers and 1 frontend engineer to be allocated to it.\n2.  **Cross-team Communication:** While the Q3 retrospective noted misaligned priorities as an issue, the Q4 plan does not explicitly state a new process for communication. However, it establishes clearer ownership (e.g., Leo Martinez leading the API security audit) and specific action items with deadlines, which can help improve alignment."
+  },
+  {
+    "User_data": {
+      "UserID": "leo.martinez@example.com",
+      "User_name": "Leo Martinez"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.0,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is my action item from the planning document and when is it due?",
+    "Answer": "Your action item (AI-1) from the planning document is to 'finalize the resource plan for the Analytics Dashboard'. The due date for this action item is September 30, 2024."
+  }
+]
+```

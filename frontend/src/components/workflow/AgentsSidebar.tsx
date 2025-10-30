@@ -6,7 +6,6 @@ import { SelectPublicAgent } from "shared/types"
 
 const Logger = console
 
-
 interface AgentsSidebarProps {
   isVisible: boolean
   onClose?: () => void
@@ -22,7 +21,6 @@ const SelectPublicAgentSchema = z.object({
   isPublic: z.boolean().optional(),
   isRagOn: z.boolean().optional(),
 }) satisfies z.ZodType<Partial<SelectPublicAgent>>
-
 
 const SelectPublicAgentArraySchema = z.array(SelectPublicAgentSchema)
 
@@ -49,23 +47,22 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({
           const rawData = await response.json()
 
           // ✅ Use safeParse for better error handling
-          const parseResult =
-            SelectPublicAgentArraySchema.safeParse(rawData)
+          const parseResult = SelectPublicAgentArraySchema.safeParse(rawData)
 
           if (parseResult.success) {
-            Logger.info("Agents validated successfully",
-              parseResult.data)
+            Logger.info("Agents validated successfully", parseResult.data)
             setAgents(parseResult.data)
           } else {
-            console.error("Agent validation failed:",
-              parseResult.error)
-            Logger.error("Invalid agent data shape:",
-              parseResult.error.flatten())
-            setAgents([])  // Fallback to empty array
+            console.error("Agent validation failed:", parseResult.error)
+            Logger.error(
+              "Invalid agent data shape:",
+              parseResult.error.flatten(),
+            )
+            setAgents([]) // Fallback to empty array
           }
         }
       } catch (error) {
-        console.error('Failed to fetch agents:', error)
+        console.error("Failed to fetch agents:", error)
       } finally {
         setLoading(false)
       }
@@ -75,17 +72,17 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({
   }, [isVisible])
 
   // Filter agents based on search
-  const filteredAgents = agents.filter(agent =>
-    agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    agent.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredAgents = agents.filter(
+    (agent) =>
+      agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      agent.description?.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
   return (
     <div
       className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l 
   border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-all duration-300 ease-in-out z-40
-   ${isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
-        }`}
+   ${isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"}`}
     >
       {/* Header */}
       <div className="px-6 pt-5 pb-4 border-b border-slate-200 dark:border-gray-700">
@@ -130,7 +127,9 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({
         {loading ? (
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-500 dark:text-gray-400">Loading agents...</p>
+            <p className="text-gray-500 dark:text-gray-400">
+              Loading agents...
+            </p>
           </div>
         ) : filteredAgents.length > 0 ? (
           <div className="space-y-2">
@@ -142,8 +141,10 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({
   bg-transparent hover:bg-slate-50 dark:hover:bg-gray-800 border border-transparent hover:border-slate-200
   dark:hover:border-gray-700"
               >
-                <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center 
-  justify-center flex-shrink-0">
+                <div
+                  className="w-8 h-8 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center 
+  justify-center flex-shrink-0"
+                >
                   <Bot className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -156,7 +157,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({
                     </div>
                   )}
                   <div className="text-xs text-slate-400 dark:text-gray-500 mt-1">
-                    Model: {agent.model || 'Default'}
+                    Model: {agent.model || "Default"}
                   </div>
                 </div>
                 <div className="text-slate-400 dark:text-gray-500">
@@ -176,7 +177,9 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({
         ) : (
           <div className="text-center py-8">
             <p className="text-gray-500 dark:text-gray-400">
-              {searchTerm ? `No agents found matching "${searchTerm}"` : "No direct agents available"}
+              {searchTerm
+                ? `No agents found matching "${searchTerm}"`
+                : "No direct agents available"}
             </p>
           </div>
         )}

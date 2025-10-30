@@ -21,7 +21,6 @@ import { createLabeledImageContent } from "../utils"
 import { calculateCost } from "@/utils/index"
 import { modelDetailsMap } from "../mappers"
 
-
 const { MAX_IMAGE_SIZE_BYTES } = config
 
 const Logger = getLogger(Subsystem.AI)
@@ -672,7 +671,8 @@ export class VertexAiProvider extends BaseProvider {
 
         if (chunkText) {
           const cost =
-            (totalInputTokens > 0 || totalOutputTokens > 0) && modelParams.modelId
+            (totalInputTokens > 0 || totalOutputTokens > 0) &&
+            modelParams.modelId
               ? calculateCost(
                   {
                     inputTokens: totalInputTokens,

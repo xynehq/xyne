@@ -37,7 +37,6 @@ export const resumeIngestionSchema = z.object({
   ingestionId: z.string(),
 })
 
-
 export const pauseIngestionSchema = z.object({
   ingestionId: z.string(),
 })
@@ -65,15 +64,20 @@ export const GetIngestionStatusApi = async (c: Context) => {
     }
 
     // SECURITY: Ensure connector belongs to current user/workspace to prevent cross-tenant access
-    if (connector.userId !== user.id || connector.workspaceId !== user.workspaceId) {
-      throw new HTTPException(403, { message: "Forbidden: connector does not belong to you" })
+    if (
+      connector.userId !== user.id ||
+      connector.workspaceId !== user.workspaceId
+    ) {
+      throw new HTTPException(403, {
+        message: "Forbidden: connector does not belong to you",
+      })
     }
 
     // Check for any active ingestion for this user+connector
     const activeIngestion = await getActiveIngestionForUser(
       db,
       user.id,
-      connector.id
+      connector.id,
     )
 
     // If no active ingestion, check for recent completed/cancelled ingestion for status display
@@ -86,12 +90,12 @@ export const GetIngestionStatusApi = async (c: Context) => {
           and(
             eq(ingestions.userId, user.id),
             eq(ingestions.connectorId, connector.id),
-            sql`status IN ('completed', 'cancelled')`
-          )
+            sql`status IN ('completed', 'cancelled')`,
+          ),
         )
         .orderBy(sql`updated_at DESC`)
         .limit(1)
-      
+
       ingestionToReturn = (recentIngestion[0] as SelectIngestion) || null
     }
 
@@ -104,7 +108,7 @@ export const GetIngestionStatusApi = async (c: Context) => {
   } catch (error) {
     loggerWithChild({ email: sub }).error(
       error,
-      "Failed to get ingestion status"
+      "Failed to get ingestion status",
     )
     if (error instanceof HTTPException) throw error
     throw new HTTPException(500, {
@@ -254,8 +258,13 @@ export const ResumeIngestionApi = async (c: Context) => {
     }
 
     // SECURITY: Additional check - ensure connector belongs to current user/workspace (defense in depth)
-    if (connector.userId !== user.id || connector.workspaceId !== user.workspaceId) {
-      throw new HTTPException(403, { message: "Forbidden: connector does not belong to you" })
+    if (
+      connector.userId !== user.id ||
+      connector.workspaceId !== user.workspaceId
+    ) {
+      throw new HTTPException(403, {
+        message: "Forbidden: connector does not belong to you",
+      })
     }
 
     // Extract original ingestion parameters from stored metadata
@@ -292,11 +301,11 @@ export const ResumeIngestionApi = async (c: Context) => {
       endDate,
       sub,
       includeBotMessage,
-      parseInt(payload.ingestionId)
+      parseInt(payload.ingestionId),
     ).catch((error) => {
       loggerWithChild({ email: sub }).error(
         error,
-        `Background Slack channel ingestion resume failed for ingestion ${payload.ingestionId}: ${getErrorMessage(error)}`
+        `Background Slack channel ingestion resume failed for ingestion ${payload.ingestionId}: ${getErrorMessage(error)}`,
       )
     })
 
@@ -313,4 +322,3 @@ export const ResumeIngestionApi = async (c: Context) => {
     })
   }
 }
-

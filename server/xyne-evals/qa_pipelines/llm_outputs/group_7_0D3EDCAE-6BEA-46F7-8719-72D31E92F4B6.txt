@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "mohd.shoaib@juspay.in",
+      "User_name": "Mohd Shoaib"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Who are all the people involved in the 'Project Pragati daily sync up call' meetings?",
+    "Answer": "Based on the provided calendar invites, the 'Project Pragati daily sync up call' is organized by mohankumar.malapureddy@juspay.in. The attendees listed for these meetings are: saurav.singh@juspay.in, mohd.shoaib@juspay.in, akash.sharma@juspay.in, suraj.kumar1@juspay.in, mohankumar.malapureddy@juspay.in, banala.siva@juspay.in, lalitha.sushrutha@juspay.in, muskan.bararia@juspay.in, aman.jain@juspay.in, ameer.noufil@juspay.in, dharmendra.c@juspay.in, kushal.swamy@juspay.in, and umesh.patil@juspay.in."
+  },
+  {
+    "User_data": {
+      "UserID": "sahil.kumar@juspay.in",
+      "User_name": "Sahil Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What projects are listed on Ravishekhar Yadav's resume and what technologies were used for each?",
+    "Answer": "According to the resume file for Ravishekhar Yadav, two projects are listed:\n1.  **Video Streaming App - GoLive:** The technologies used were Next.js, Redux, MongoDB, Clerk, LiveKit Server, and Shadcn.\n2.  **Real-Time Chat Application:** The technologies used were React, Redux, RTK Query, Express, MongoDB, and Socket.IO."
+  },
+  {
+    "User_data": {
+      "UserID": "banala.siva@juspay.in",
+      "User_name": "Banala Siva"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "From the 'HR Feedback to be worked on' meeting summary, what are the specific action items and who is responsible for each task?",
+    "Answer": "Based on the meeting notes for 'HR Feedback to be worked on', the following action items were assigned:\n*   **Naveen Yallattikar:** Will implement functionality in the table to show one row, display existing data in the profile for updates, and will also implement changes to the reporting manager flow.\n*   **Mohan:** Will create a new column in the employee table to store reporting manager information.\n*   **Aniket:** Will update the full-time date of joining for all employees in the system.\n*   **Shoaib:** Will review the current system to identify potential data inconsistencies related to reporting managers and team assignments.\n*   **Varsha:** Will develop a script to update HR Spock information for employees based on specific criteria."
+  },
+  {
+    "User_data": {
+      "UserID": "arshith.balaraju@juspay.in",
+      "User_name": "Arshith Balaraju"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the documents, what are Banala Siva Sai Prasad's main areas of focus?",
+    "Answer": "Based on the provided documents, Banala Siva Sai Prasad's focus appears to be on project and team management, particularly concerning HR processes. He organized and led the 'HR Feedback to be worked on' meeting, where discussions centered on project dates, reporting structures, sub-teams, and simplifying the HR Spock tool. He is also an attendee in 'Project Pragati' meetings related to talent acquisition and organized the 'Xyne Interaction' meeting, where he was tasked with gathering feedback about a new project. This suggests his work involves streamlining internal processes, managing team structures, and evaluating new projects or platforms."
+  },
+  {
+    "User_data": {
+      "UserID": "sahil.kumar@juspay.in",
+      "User_name": "Sahil Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.0,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "In the email with the subject 'Trending in Juspay: Requested Time Off', who is listed as the creator of the recommended Notion pages?",
+    "Answer": "In the email 'Trending in Juspay: Requested Time Off', the creator listed for the recommended Notion pages such as 'Requested Time Off', 'Office, Health, and Benefits', and 'Reimbursement' is Brian Park."
+  }
+]
+```

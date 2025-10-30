@@ -11,7 +11,11 @@ import { fileSchema, type VespaFile } from "@xyne/vespa-ts/types"
 import type { GoogleServiceAccount, TxnOrClient } from "@/types"
 import { getSpreadsheet, listFiles } from "@/integrations/google"
 import { DriveMime } from "@/integrations/google/utils"
-import { getConnector, getConnectorByExternalId, getOAuthConnectorWithCredentials } from "@/db/connector"
+import {
+  getConnector,
+  getConnectorByExternalId,
+  getOAuthConnectorWithCredentials,
+} from "@/db/connector"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import { getAppSyncJobsByEmail } from "@/db/syncJob"
 import type { OAuthCredentials } from "@/types"
@@ -40,7 +44,7 @@ async function getUsersWithSyncJobs(
   authType?: AuthType,
 ): Promise<Set<string>> {
   const whereConditions = [eq(syncJobs.app, app)]
-  
+
   if (authType) {
     whereConditions.push(eq(syncJobs.authType, authType))
   }
@@ -58,9 +62,17 @@ async function getUsersWithSyncJobs(
 async function getAllUsersWithGoogleDriveJobs(
   trx: TxnOrClient,
 ): Promise<{ serviceAccountUsers: Set<string>; oauthUsers: Set<string> }> {
-  const serviceAccountUsers = await getUsersWithSyncJobs(trx, Apps.GoogleDrive, AuthType.ServiceAccount)
-  const oauthUsers = await getUsersWithSyncJobs(trx, Apps.GoogleDrive, AuthType.OAuth)
-  
+  const serviceAccountUsers = await getUsersWithSyncJobs(
+    trx,
+    Apps.GoogleDrive,
+    AuthType.ServiceAccount,
+  )
+  const oauthUsers = await getUsersWithSyncJobs(
+    trx,
+    Apps.GoogleDrive,
+    AuthType.OAuth,
+  )
+
   return { serviceAccountUsers, oauthUsers }
 }
 
@@ -103,7 +115,10 @@ class SheetsClientManager {
     userEmails: Set<string>,
     serviceAccount: GoogleServiceAccount,
   ): Promise<void> {
-    Logger.info({ userCount: userEmails.size }, "Initializing Service Account Sheets clients")
+    Logger.info(
+      { userCount: userEmails.size },
+      "Initializing Service Account Sheets clients",
+    )
 
     for (const email of userEmails) {
       try {
@@ -113,7 +128,10 @@ class SheetsClientManager {
         this.cache.jwtClients.set(email, jwtClient)
         this.cache.sheetsClients.set(email, sheetsClient)
       } catch (error) {
-        Logger.warn({ email, error }, "Failed to create service account client for user")
+        Logger.warn(
+          { email, error },
+          "Failed to create service account client for user",
+        )
       }
     }
 
@@ -125,10 +143,11 @@ class SheetsClientManager {
     )
   }
 
-  async initializeOAuth(
-    oauthUsers: Set<string>,
-  ): Promise<void> {
-    Logger.info({ userCount: oauthUsers.size }, "Initializing OAuth Sheets clients")
+  async initializeOAuth(oauthUsers: Set<string>): Promise<void> {
+    Logger.info(
+      { userCount: oauthUsers.size },
+      "Initializing OAuth Sheets clients",
+    )
 
     for (const email of oauthUsers) {
       try {
@@ -145,7 +164,10 @@ class SheetsClientManager {
           continue
         }
 
-        const sheetsClient = google.sheets({ version: "v4", auth: oauth2Client })
+        const sheetsClient = google.sheets({
+          version: "v4",
+          auth: oauth2Client,
+        })
 
         this.cache.jwtClients.set(email, oauth2Client)
         this.cache.sheetsClients.set(email, sheetsClient)
@@ -162,11 +184,18 @@ class SheetsClientManager {
     )
   }
 
-  private async getOAuthConnectorForUser(email: string): Promise<SelectConnector | null> {
+  private async getOAuthConnectorForUser(
+    email: string,
+  ): Promise<SelectConnector | null> {
     try {
       // Get sync jobs for this user with OAuth auth type for Google Drive
-      const syncJobs = await getAppSyncJobsByEmail(db, Apps.GoogleDrive, AuthType.OAuth, email)
-      
+      const syncJobs = await getAppSyncJobsByEmail(
+        db,
+        Apps.GoogleDrive,
+        AuthType.OAuth,
+        email,
+      )
+
       if (!syncJobs.length) {
         Logger.debug({ email }, "No OAuth sync jobs found for user")
         return null
@@ -174,8 +203,11 @@ class SheetsClientManager {
 
       // Get the connector from the first sync job
       const syncJob = syncJobs[0]
-      const connector = await getOAuthConnectorWithCredentials(db, syncJob.connectorId)
-      
+      const connector = await getOAuthConnectorWithCredentials(
+        db,
+        syncJob.connectorId,
+      )
+
       return connector
     } catch (error) {
       Logger.error({ email, error }, "Error getting OAuth connector for user")
@@ -183,13 +215,19 @@ class SheetsClientManager {
     }
   }
 
-  private async createOAuthClient(connector: SelectConnector): Promise<any | null> {
+  private async createOAuthClient(
+    connector: SelectConnector,
+  ): Promise<any | null> {
     try {
       const oauthTokens = (connector.oauthCredentials as OAuthCredentials).data
-      const providers: SelectOAuthProvider[] = await getOAuthProviderByConnectorId(db, connector.id)
+      const providers: SelectOAuthProvider[] =
+        await getOAuthProviderByConnectorId(db, connector.id)
 
       if (!providers.length) {
-        Logger.warn({ connectorId: connector.id }, "No OAuth provider found for connector")
+        Logger.warn(
+          { connectorId: connector.id },
+          "No OAuth provider found for connector",
+        )
         return null
       }
 
@@ -208,7 +246,10 @@ class SheetsClientManager {
 
       return oauth2Client
     } catch (error) {
-      Logger.error({ connectorId: connector.id, error }, "Error creating OAuth client")
+      Logger.error(
+        { connectorId: connector.id, error },
+        "Error creating OAuth client",
+      )
       return null
     }
   }
@@ -227,16 +268,18 @@ class SheetsClientManager {
   }
 }
 
-
-
 // Fetch user's spreadsheets using listFiles (same as migration script)
-const fetchUserSpreadsheets = async (jwtClient: any, userEmail: string, limit: number = 100): Promise<any[]> => {
+const fetchUserSpreadsheets = async (
+  jwtClient: any,
+  userEmail: string,
+  limit: number = 100,
+): Promise<any[]> => {
   try {
     Logger.info(`Fetching spreadsheets using listFiles for user: ${userEmail}`)
-    
+
     const allSpreadsheets: any[] = []
     let count = 0
-    
+
     // Use the same listFiles approach as in the migration script
     const fileIterator = listFiles(jwtClient, undefined, undefined)
 
@@ -244,33 +287,44 @@ const fetchUserSpreadsheets = async (jwtClient: any, userEmail: string, limit: n
       if (sheetFiles.length === 0) {
         continue
       }
-      
+
       // Filter for valid spreadsheet files (same as migration script)
-      const validSpreadsheetFiles = sheetFiles.filter(file => 
-        file.mimeType === DriveMime.Sheets ||
-        file.mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-        file.mimeType === 'text/csv'
+      const validSpreadsheetFiles = sheetFiles.filter(
+        (file) =>
+          file.mimeType === DriveMime.Sheets ||
+          file.mimeType ===
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+          file.mimeType === "text/csv",
       )
-      
+
       allSpreadsheets.push(...validSpreadsheetFiles)
       count += validSpreadsheetFiles.length
-      
-      Logger.info(`Found ${validSpreadsheetFiles.length} spreadsheets in this batch for user: ${userEmail} (total: ${count})`)
-      
+
+      Logger.info(
+        `Found ${validSpreadsheetFiles.length} spreadsheets in this batch for user: ${userEmail} (total: ${count})`,
+      )
+
       // Stop if we've reached the limit
       if (count >= limit) {
-        Logger.info(`Reached limit of ${limit} spreadsheets for user: ${userEmail}`)
+        Logger.info(
+          `Reached limit of ${limit} spreadsheets for user: ${userEmail}`,
+        )
         break
       }
     }
-    
+
     // Return up to the limit
     const result = allSpreadsheets.slice(0, limit)
-    Logger.info(`Total spreadsheets found for user ${userEmail}: ${result.length}`)
-    
+    Logger.info(
+      `Total spreadsheets found for user ${userEmail}: ${result.length}`,
+    )
+
     return result
   } catch (error) {
-    Logger.error({ userEmail, error }, `Failed to fetch spreadsheets using listFiles for user: ${userEmail}`)
+    Logger.error(
+      { userEmail, error },
+      `Failed to fetch spreadsheets using listFiles for user: ${userEmail}`,
+    )
     return []
   }
 }
@@ -282,8 +336,21 @@ const processSpreadsheetSheets = async (
   sheetsClient: sheets_v4.Sheets,
   jwtClient: any,
   processedDocIds: Map<string, boolean>,
-  progressLogger?: { logProgress: (processed: number, updated: number, skipped: number, error: number, userEmail?: string) => void }
-): Promise<{ processed: number; updated: number; skipped: number; error: number }> => {
+  progressLogger?: {
+    logProgress: (
+      processed: number,
+      updated: number,
+      skipped: number,
+      error: number,
+      userEmail?: string,
+    ) => void
+  },
+): Promise<{
+  processed: number
+  updated: number
+  skipped: number
+  error: number
+}> => {
   let processed = 0
   let updated = 0
   let skipped = 0
@@ -291,18 +358,27 @@ const processSpreadsheetSheets = async (
 
   try {
     const spreadsheetId = spreadsheet.id
-    Logger.info(`Processing spreadsheet: ${spreadsheet.name} (${spreadsheetId}) for user: ${userEmail}`)
+    Logger.info(
+      `Processing spreadsheet: ${spreadsheet.name} (${spreadsheetId}) for user: ${userEmail}`,
+    )
 
     // Get spreadsheet details to fetch individual sheets
-    const spreadsheetDetails = await getSpreadsheet(sheetsClient, spreadsheetId!, jwtClient, userEmail)
-    
+    const spreadsheetDetails = await getSpreadsheet(
+      sheetsClient,
+      spreadsheetId!,
+      jwtClient,
+      userEmail,
+    )
+
     if (!spreadsheetDetails || !spreadsheetDetails.data.sheets) {
       Logger.warn(`Could not fetch spreadsheet details for: ${spreadsheetId}`)
       return { processed: 0, updated: 0, skipped: 0, error: 1 }
     }
 
     const sheets = spreadsheetDetails.data.sheets
-    Logger.info(`Found ${sheets.length} sheets in spreadsheet: ${spreadsheet.name}`)
+    Logger.info(
+      `Found ${sheets.length} sheets in spreadsheet: ${spreadsheet.name}`,
+    )
 
     // Process each sheet within the spreadsheet
     for (let sheetIndex = 0; sheetIndex < sheets.length; sheetIndex++) {
@@ -323,43 +399,49 @@ const processSpreadsheetSheets = async (
       try {
         // Step 3: Get document from Vespa using docId
         const vespaSheet = await getDocumentOrNull(fileSchema, docId)
-        
+
         if (!vespaSheet) {
-          Logger.info(`Sheet not found in Vespa: "${spreadsheet.name}" / "${sheetTitle}" (${docId}) - sheet ${sheetIndex + 1} of ${sheets.length} - skipping (normal if sheet wasn't ingested)`)
+          Logger.info(
+            `Sheet not found in Vespa: "${spreadsheet.name}" / "${sheetTitle}" (${docId}) - sheet ${sheetIndex + 1} of ${sheets.length} - skipping (normal if sheet wasn't ingested)`,
+          )
           processedDocIds.set(docId, true)
           skipped++
           continue
         }
 
         processed++
-        Logger.info(`Processing sheet: ${sheetTitle} (${docId}) from spreadsheet: ${spreadsheet.name}`)
+        Logger.info(
+          `Processing sheet: ${sheetTitle} (${docId}) from spreadsheet: ${spreadsheet.name}`,
+        )
 
         // Step 4: Update the document URL
         const vespaSheetData = vespaSheet.fields as VespaFile
-        
+
         // Construct the new URL with the correct sheet ID
-        const newUrl = sheetId 
+        const newUrl = sheetId
           ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheetId}`
-          : spreadsheet.webViewLink ?? ""
-        
+          : (spreadsheet.webViewLink ?? "")
+
         // Check if URL needs updating
         const currentUrl = vespaSheetData.url || ""
         const needsUpdate = !currentUrl || newUrl !== currentUrl
-        
+
         if (needsUpdate) {
           const updateReason = !currentUrl ? "Missing URL" : "URL change needed"
           Logger.info(`${updateReason} for sheet: ${vespaSheetData.title}`)
           Logger.info(`Old URL: ${currentUrl || "(missing)"}`)
           Logger.info(`New URL: ${newUrl}`)
-          
+
           // Update the document in Vespa with new URL
           await UpdateDocument(fileSchema, docId, {
             url: newUrl,
-            updatedAt: Date.now()
+            updatedAt: Date.now(),
           })
-          
+
           updated++
-          Logger.info(`Successfully updated URL for sheet: ${vespaSheetData.title}`)
+          Logger.info(
+            `Successfully updated URL for sheet: ${vespaSheetData.title}`,
+          )
         } else {
           Logger.info(`No URL change needed for sheet: ${vespaSheetData.title}`)
           skipped++
@@ -370,20 +452,30 @@ const processSpreadsheetSheets = async (
 
         // Log progress
         if (progressLogger) {
-          progressLogger.logProgress(1, needsUpdate ? 1 : 0, needsUpdate ? 0 : 1, 0, userEmail)
+          progressLogger.logProgress(
+            1,
+            needsUpdate ? 1 : 0,
+            needsUpdate ? 0 : 1,
+            0,
+            userEmail,
+          )
         }
-
       } catch (sheetError) {
-        Logger.error({ docId, userEmail, error: sheetError }, `Failed to process sheet: ${docId}`)
+        Logger.error(
+          { docId, userEmail, error: sheetError },
+          `Failed to process sheet: ${docId}`,
+        )
         processedDocIds.set(docId, true) // Mark as processed to avoid retry
         error++
       }
     }
 
     return { processed, updated, skipped, error }
-
   } catch (spreadsheetError) {
-    Logger.error({ spreadsheetId: spreadsheet.id, userEmail, error: spreadsheetError }, `Failed to process spreadsheet: ${spreadsheet.id}`)
+    Logger.error(
+      { spreadsheetId: spreadsheet.id, userEmail, error: spreadsheetError },
+      `Failed to process spreadsheet: ${spreadsheet.id}`,
+    )
     return { processed: 0, updated: 0, skipped: 0, error: 1 }
   }
 }
@@ -393,8 +485,21 @@ const processUserSheetUrls = async (
   userEmail: string,
   clientManager: SheetsClientManager,
   processedDocIds: Map<string, boolean>,
-  progressLogger?: { logProgress: (processed: number, updated: number, skipped: number, error: number, userEmail?: string) => void }
-): Promise<{ processed: number; updated: number; skipped: number; error: number }> => {
+  progressLogger?: {
+    logProgress: (
+      processed: number,
+      updated: number,
+      skipped: number,
+      error: number,
+      userEmail?: string,
+    ) => void
+  },
+): Promise<{
+  processed: number
+  updated: number
+  skipped: number
+  error: number
+}> => {
   let processedForUser = 0
   let updatedForUser = 0
   let skippedForUser = 0
@@ -416,20 +521,22 @@ const processUserSheetUrls = async (
       Logger.warn({ userEmail }, "No JWT client found for user")
       return { processed: 0, updated: 0, skipped: 0, error: 1 }
     }
-    
+
     const googleSheets = await fetchUserSpreadsheets(jwtClient, userEmail)
-    
+
     if (googleSheets.length === 0) {
       Logger.info(`No spreadsheets found for user: ${userEmail}`)
       return { processed: 0, updated: 0, skipped: 0, error: 0 }
     }
 
-    Logger.info(`Found ${googleSheets.length} spreadsheets for user: ${userEmail}`)
+    Logger.info(
+      `Found ${googleSheets.length} spreadsheets for user: ${userEmail}`,
+    )
 
     // Step 2: Process each spreadsheet and its sheets
     const sheetLimit = pLimit(SPREADSHEET_CONCURRENCY_LIMIT)
-    
-    const sheetPromises = googleSheets.map(spreadsheet =>
+
+    const sheetPromises = googleSheets.map((spreadsheet) =>
       sheetLimit(async () => {
         return await processSpreadsheetSheets(
           spreadsheet,
@@ -437,16 +544,16 @@ const processUserSheetUrls = async (
           sheetsClient,
           jwtClient,
           processedDocIds,
-          progressLogger
+          progressLogger,
         )
-      })
+      }),
     )
 
     const results = await Promise.allSettled(sheetPromises)
-    
+
     // Aggregate results
     for (const result of results) {
-      if (result.status === 'fulfilled') {
+      if (result.status === "fulfilled") {
         const { processed, updated, skipped, error } = result.value
         processedForUser += processed
         updatedForUser += updated
@@ -455,23 +562,27 @@ const processUserSheetUrls = async (
       } else {
         Logger.error(
           { userEmail, error: result.reason },
-          `Failed to process spreadsheet for user: ${userEmail}`
+          `Failed to process spreadsheet for user: ${userEmail}`,
         )
         errorForUser++
       }
     }
 
-    Logger.info(`Completed URL processing for user: ${userEmail}. Processed: ${processedForUser} sheets, Updated: ${updatedForUser} sheets, Skipped: ${skippedForUser} sheets, Errors: ${errorForUser}`)
-    
-    return { 
-      processed: processedForUser, 
-      updated: updatedForUser, 
-      skipped: skippedForUser, 
-      error: errorForUser 
-    }
+    Logger.info(
+      `Completed URL processing for user: ${userEmail}. Processed: ${processedForUser} sheets, Updated: ${updatedForUser} sheets, Skipped: ${skippedForUser} sheets, Errors: ${errorForUser}`,
+    )
 
+    return {
+      processed: processedForUser,
+      updated: updatedForUser,
+      skipped: skippedForUser,
+      error: errorForUser,
+    }
   } catch (error) {
-    Logger.error({ userEmail, error }, `Failed to fetch spreadsheets for user: ${userEmail}`)
+    Logger.error(
+      { userEmail, error },
+      `Failed to fetch spreadsheets for user: ${userEmail}`,
+    )
     return { processed: 0, updated: 0, skipped: 0, error: 1 }
   }
 }
@@ -482,35 +593,45 @@ const updateGoogleSheetUrls = async (): Promise<boolean> => {
 
   try {
     // Get users with Google Drive sync jobs (both Service Account and OAuth)
-    const { serviceAccountUsers, oauthUsers } = await getAllUsersWithGoogleDriveJobs(db)
-    
+    const { serviceAccountUsers, oauthUsers } =
+      await getAllUsersWithGoogleDriveJobs(db)
+
     const totalUsers = serviceAccountUsers.size + oauthUsers.size
     if (totalUsers === 0) {
       Logger.info("No users with Google Drive sync jobs found.")
       return true
     }
 
-    Logger.info(`Found ${totalUsers} users with Google Drive sync jobs (Service Account: ${serviceAccountUsers.size}, OAuth: ${oauthUsers.size}).`)
+    Logger.info(
+      `Found ${totalUsers} users with Google Drive sync jobs (Service Account: ${serviceAccountUsers.size}, OAuth: ${oauthUsers.size}).`,
+    )
 
     // Initialize deduplication map to track processed documents
     const processedDocIds = new Map<string, boolean>()
-    Logger.info("Initialized document deduplication tracking - using Google API first approach")
+    Logger.info(
+      "Initialized document deduplication tracking - using Google API first approach",
+    )
 
     // Initialize client manager
     const clientManager = new SheetsClientManager()
-    
+
     // Initialize Service Account clients if there are any
     if (serviceAccountUsers.size > 0) {
       try {
         const serviceAccount = await getServiceAccountCredentials()
-        await clientManager.initializeServiceAccount(serviceAccountUsers, serviceAccount)
-        Logger.info(`Initialized ${serviceAccountUsers.size} Service Account clients`)
+        await clientManager.initializeServiceAccount(
+          serviceAccountUsers,
+          serviceAccount,
+        )
+        Logger.info(
+          `Initialized ${serviceAccountUsers.size} Service Account clients`,
+        )
       } catch (error) {
         Logger.error(error, "Failed to initialize Service Account clients")
         // Continue with OAuth users even if Service Account fails
       }
     }
-    
+
     // Initialize OAuth clients if there are any
     if (oauthUsers.size > 0) {
       try {
@@ -526,38 +647,48 @@ const updateGoogleSheetUrls = async (): Promise<boolean> => {
     let totalUpdated = 0
     let totalSkipped = 0
     let totalErrors = 0
-    
+
     // Shared counter for global progress tracking
     let globalDocumentCount = 0
     const progressLogger = {
-      logProgress: (processed: number, updated: number, skipped: number, error: number, userEmail?: string) => {
+      logProgress: (
+        processed: number,
+        updated: number,
+        skipped: number,
+        error: number,
+        userEmail?: string,
+      ) => {
         globalDocumentCount += processed
         totalProcessed += processed
         totalUpdated += updated
         totalSkipped += skipped
         totalErrors += error
-        
+
         // Log progress every 100 documents
         if (globalDocumentCount > 0 && globalDocumentCount % 100 === 0) {
           const userInfo = userEmail ? ` for ${userEmail}` : " across all users"
           Logger.info(
-            { 
-              globalDocumentCount, 
-              totalProcessed, 
-              totalUpdated, 
-              totalSkipped, 
+            {
+              globalDocumentCount,
+              totalProcessed,
+              totalUpdated,
+              totalSkipped,
               totalErrors,
-              userEmail 
+              userEmail,
             },
-            `Progress update${userInfo}: Processed ${globalDocumentCount} documents (Totals: Processed: ${totalProcessed}, Updated: ${totalUpdated}, Skipped: ${totalSkipped}, Errors: ${totalErrors})`
+            `Progress update${userInfo}: Processed ${globalDocumentCount} documents (Totals: Processed: ${totalProcessed}, Updated: ${totalUpdated}, Skipped: ${totalSkipped}, Errors: ${totalErrors})`,
           )
         }
-      }
+      },
     }
 
     // Combine all users for processing
-    const allUsers = Array.from(new Set([...serviceAccountUsers, ...oauthUsers]))
-    Logger.info(`Processing ${allUsers.length} total users in batches of ${USER_CONCURRENCY_LIMIT}`)
+    const allUsers = Array.from(
+      new Set([...serviceAccountUsers, ...oauthUsers]),
+    )
+    Logger.info(
+      `Processing ${allUsers.length} total users in batches of ${USER_CONCURRENCY_LIMIT}`,
+    )
 
     // Process users in batches of 3
     const userBatches = []
@@ -568,65 +699,88 @@ const updateGoogleSheetUrls = async (): Promise<boolean> => {
     Logger.info(`Created ${userBatches.length} user batches`)
 
     let batchNumber = 0
-    const userResults: Array<{ userEmail: string; success: boolean; authType: string; stats: any }> = []
+    const userResults: Array<{
+      userEmail: string
+      success: boolean
+      authType: string
+      stats: any
+    }> = []
 
     // Process each batch sequentially
     for (const userBatch of userBatches) {
       batchNumber++
-      Logger.info(`Processing user batch ${batchNumber}/${userBatches.length} with ${userBatch.length} users: [${userBatch.join(', ')}]`)
+      Logger.info(
+        `Processing user batch ${batchNumber}/${userBatches.length} with ${userBatch.length} users: [${userBatch.join(", ")}]`,
+      )
 
       // Create concurrency limiter for this batch
       const batchLimit = pLimit(USER_CONCURRENCY_LIMIT)
 
       // Process users in this batch concurrently
-      const batchPromises = userBatch.map(userEmail =>
+      const batchPromises = userBatch.map((userEmail) =>
         batchLimit(async () => {
           try {
-            const authType = serviceAccountUsers.has(userEmail) ? 'Service Account' : 'OAuth'
-            Logger.info(`Processing ${authType} user: ${userEmail} (batch ${batchNumber})`)
-            
-            const stats = await processUserSheetUrls(userEmail, clientManager, processedDocIds, progressLogger)
+            const authType = serviceAccountUsers.has(userEmail)
+              ? "Service Account"
+              : "OAuth"
+            Logger.info(
+              `Processing ${authType} user: ${userEmail} (batch ${batchNumber})`,
+            )
+
+            const stats = await processUserSheetUrls(
+              userEmail,
+              clientManager,
+              processedDocIds,
+              progressLogger,
+            )
             return { userEmail, success: true, authType, stats }
           } catch (error) {
             Logger.error(
               { userEmail, error },
-              `Failed to process sheet URLs for user: ${userEmail}. Error: ${error instanceof Error ? error.message : String(error)}`
+              `Failed to process sheet URLs for user: ${userEmail}. Error: ${error instanceof Error ? error.message : String(error)}`,
             )
-            return { 
-              userEmail, 
-              success: false, 
-              authType: serviceAccountUsers.has(userEmail) ? 'Service Account' : 'OAuth',
-              stats: { processed: 0, updated: 0, skipped: 0, error: 1 }
+            return {
+              userEmail,
+              success: false,
+              authType: serviceAccountUsers.has(userEmail)
+                ? "Service Account"
+                : "OAuth",
+              stats: { processed: 0, updated: 0, skipped: 0, error: 1 },
             }
           }
-        })
+        }),
       )
 
       const batchResults = await Promise.allSettled(batchPromises)
-      
+
       // Collect results from this batch
       for (const result of batchResults) {
-        if (result.status === 'fulfilled') {
+        if (result.status === "fulfilled") {
           userResults.push(result.value)
         } else {
-          Logger.error(`Batch ${batchNumber} user processing failed:`, result.reason)
+          Logger.error(
+            `Batch ${batchNumber} user processing failed:`,
+            result.reason,
+          )
           userResults.push({
-            userEmail: 'unknown',
+            userEmail: "unknown",
             success: false,
-            authType: 'unknown',
-            stats: { processed: 0, updated: 0, skipped: 0, error: 1 }
+            authType: "unknown",
+            stats: { processed: 0, updated: 0, skipped: 0, error: 1 },
           })
         }
       }
 
-      Logger.info(`Completed batch ${batchNumber}/${userBatches.length}. Processed documents so far: ${processedDocIds.size}`)
-      
+      Logger.info(
+        `Completed batch ${batchNumber}/${userBatches.length}. Processed documents so far: ${processedDocIds.size}`,
+      )
+
       // Small delay between batches to avoid overwhelming systems
       if (batchNumber < userBatches.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        await new Promise((resolve) => setTimeout(resolve, 1000))
       }
     }
-    
+
     // Aggregate final statistics
     let failedUsers = 0
     let successfulServiceAccount = 0
@@ -642,7 +796,7 @@ const updateGoogleSheetUrls = async (): Promise<boolean> => {
 
     for (const result of userResults) {
       if (result.success) {
-        if (result.authType === 'Service Account') {
+        if (result.authType === "Service Account") {
           successfulServiceAccount++
         } else {
           successfulOAuth++
@@ -656,7 +810,7 @@ const updateGoogleSheetUrls = async (): Promise<boolean> => {
         }
       } else {
         failedUsers++
-        if (result.authType === 'Service Account') {
+        if (result.authType === "Service Account") {
           failedServiceAccount++
         } else {
           failedOAuth++
@@ -666,24 +820,31 @@ const updateGoogleSheetUrls = async (): Promise<boolean> => {
         }
       }
     }
-    
+
     Logger.info(`User processing summary: ${allUsers.length} total users`)
-    Logger.info(`Service Account - Successful: ${successfulServiceAccount}, Failed: ${failedServiceAccount}`)
-    Logger.info(`OAuth - Successful: ${successfulOAuth}, Failed: ${failedOAuth}`)
+    Logger.info(
+      `Service Account - Successful: ${successfulServiceAccount}, Failed: ${failedServiceAccount}`,
+    )
+    Logger.info(
+      `OAuth - Successful: ${successfulOAuth}, Failed: ${failedOAuth}`,
+    )
     Logger.info(`Overall - Total failed: ${failedUsers}`)
-    Logger.info(`Document deduplication: ${processedDocIds.size} unique documents processed`)
+    Logger.info(
+      `Document deduplication: ${processedDocIds.size} unique documents processed`,
+    )
 
     // Clean up clients
     clientManager.clear()
 
-    Logger.info(`Google Sheets URL update script completed. Total processed: ${totalProcessed} sheets, Total updated: ${totalUpdated} sheets, Total skipped: ${totalSkipped} sheets, Total errors: ${totalErrors}`)
-    
+    Logger.info(
+      `Google Sheets URL update script completed. Total processed: ${totalProcessed} sheets, Total updated: ${totalUpdated} sheets, Total skipped: ${totalSkipped} sheets, Total errors: ${totalErrors}`,
+    )
+
     return true
-    
   } catch (error) {
     Logger.error(
       error,
-      `Failed to complete URL update: ${error instanceof Error ? error.message : String(error)}`
+      `Failed to complete URL update: ${error instanceof Error ? error.message : String(error)}`,
     )
     throw error
   }
@@ -692,8 +853,10 @@ const updateGoogleSheetUrls = async (): Promise<boolean> => {
 // Execute the URL update
 async function runUrlUpdate() {
   try {
-    Logger.info("Starting URL update process for both OAuth and Service Account users...")
-    
+    Logger.info(
+      "Starting URL update process for both OAuth and Service Account users...",
+    )
+
     const result = await updateGoogleSheetUrls()
     if (result) {
       Logger.info("URL update completed successfully.")
@@ -715,18 +878,17 @@ async function runUrlUpdate() {
 async function cleanup() {
   try {
     Logger.info("Cleaning up resources...")
-    
+
     // Close database connections
-    if (db && db.$client && typeof db.$client.end === 'function') {
+    if (db && db.$client && typeof db.$client.end === "function") {
       await db.$client.end()
       Logger.info("Database connection closed")
     }
-    
+
     // Allow some time for cleanup
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
     Logger.info("Cleanup completed")
-    
   } catch (error) {
     Logger.error(error, "Error during cleanup")
   }
@@ -747,21 +909,21 @@ runUrlUpdate()
   .then(() => {
     clearTimeout(timeoutId)
   })
-  .catch(error => {
+  .catch((error) => {
     clearTimeout(timeoutId)
     Logger.error("Script failed with error:", error)
     process.exit(1)
   })
 
 // Handle process signals for graceful shutdown
-process.on('SIGINT', async () => {
+process.on("SIGINT", async () => {
   Logger.info("Received SIGINT, shutting down gracefully...")
   clearTimeout(timeoutId)
   await cleanup()
   process.exit(0)
 })
 
-process.on('SIGTERM', async () => {
+process.on("SIGTERM", async () => {
   Logger.info("Received SIGTERM, shutting down gracefully...")
   clearTimeout(timeoutId)
   await cleanup()

@@ -191,8 +191,6 @@ export const sendWebsocketMessageToMainServer = (
   }
 }
 
-
-
 // JWT Authentication middleware
 const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET!
 const AccessTokenCookieName = config.AccessTokenCookie
@@ -290,8 +288,6 @@ app.post(
   zValidator("json", resumeIngestionSchema),
   ResumeIngestionApi,
 )
-
-
 
 const startAndMonitorWorkers = (
   workerScript: string,

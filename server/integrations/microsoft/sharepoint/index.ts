@@ -3,7 +3,12 @@ import { insertWithRetry } from "@/search/vespa"
 import { DriveEntity, fileSchema } from "@xyne/vespa-ts"
 import { Apps } from "@/shared/types"
 import { makeGraphApiCall, type MicrosoftGraphClient } from "../client"
-import { getEntityFromMimeType,loggerWithChild, getFilePermissionsSharepoint, processFileContent } from "../utils"
+import {
+  getEntityFromMimeType,
+  loggerWithChild,
+  getFilePermissionsSharepoint,
+  processFileContent,
+} from "../utils"
 import type { Drive, DriveItem, Site } from "@microsoft/microsoft-graph-types"
 import type { drive_v3 } from "googleapis"
 

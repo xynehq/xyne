@@ -55,7 +55,7 @@ async function migrateCollectionItems(trx: TxnOrClient = db) {
               OR ${collectionItems.retryCount} IS NULL
             )
           LIMIT ${BATCH_SIZE}
-        )`
+        )`,
       )
       .returning({ id: collectionItems.id })
 
@@ -122,7 +122,7 @@ async function migrateCollections(trx: TxnOrClient = db) {
               OR ${collections.retryCount} IS NULL
             )
           LIMIT ${BATCH_SIZE}
-        )`
+        )`,
       )
       .returning({ id: collections.id })
 
@@ -161,7 +161,7 @@ async function showStatus(trx: TxnOrClient = db) {
           OR ${collectionItems.uploadStatus} IS NULL 
           OR ${collectionItems.uploadStatus} = ''
           OR ${collectionItems.retryCount} IS NULL
-        )`
+        )`,
     )
 
   // Check collections needing migration using Drizzle schema
@@ -176,7 +176,7 @@ async function showStatus(trx: TxnOrClient = db) {
           OR ${collections.uploadStatus} IS NULL 
           OR ${collections.uploadStatus} = ''
           OR ${collections.retryCount} IS NULL
-        )`
+        )`,
     )
 
   const itemsCount = itemsResult?.count || 0
@@ -244,7 +244,7 @@ export async function updateCollectionStatus(
     uploadStatus?: UploadStatus
     retryCount?: number
   },
-  trx: TxnOrClient = db
+  trx: TxnOrClient = db,
 ) {
   const [result] = await trx
     .update(collections)
@@ -268,7 +268,7 @@ export async function updateCollectionItemStatus(
     uploadStatus?: UploadStatus
     retryCount?: number
   },
-  trx: TxnOrClient = db
+  trx: TxnOrClient = db,
 ) {
   const [result] = await trx
     .update(collectionItems)

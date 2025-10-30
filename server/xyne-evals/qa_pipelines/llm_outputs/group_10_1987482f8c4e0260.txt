@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "sarish.rv@juspay.in",
+      "User_name": "Sarish R V"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What issue was reported for the merchant 'condenast' regarding UDF parameters, and which order IDs were provided as examples?",
+    "Answer": "For the merchant 'condenast', an issue was raised where values in `udf6` and `udf10` were being trimmed and appearing incomplete. Although the Juspay documentation states a character limit of 255, it was observed that for order ID `vg7fd3267e30c2BVtM8bg`, the `udf10` value was trimmed in the internal Euler admin dashboard but appeared complete in the merchant's production dashboard. The example order IDs provided were `ad23afe4c75193CW46BcR` and `vg7fd3267e30c2BVtM8bg`."
+  },
+  {
+    "User_data": {
+      "UserID": "priya.sharma@juspay.in",
+      "User_name": "Priya Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What is the general status of refund-related issues? Summarize the problems mentioned for merchants like 'tatabillpayment' and 'MANAPPURAM FINANCE GOLD AUCTION'.",
+    "Answer": "Based on the documents, there are multiple active issues related to refunds. For merchant 'tatabillpayment', they are not receiving the `Refund Succeeded` webhook despite configuring it. For 'MANAPPURAM FINANCE GOLD AUCTION' (MID 33024), a successful refund that reached the customer is still showing as failed in the dashboard. Similarly, for MID 54360 (Jira EUL-20013), a bulk refund succeeded but the status on the bulk module shows failure due to an API call issue from Euler to the Dashboard. A common root cause for some refund failures is the incorrect passing of the 'split block' by merchants, which leads to decoding failures and subsequent errors in the API flow, as detailed in a pending pull request for `euler-api-txns` (PR 6536)."
+  },
+  {
+    "User_data": {
+      "UserID": "yashasvi.dwivedi@juspay.in",
+      "User_name": "Yashasvi Dwivedi"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the discussions, what are the underlying technical reasons identified for various webhook and API failures?",
+    "Answer": "Several underlying technical reasons for failures have been identified:\n1.  **Decryption Failure:** For merchant 'tvsmotor', webhooks are failing due to decryption issues. It's suspected that the gateway is intermittently using a secondary 'Working Key 2' which is not configured on the dashboard.\n2.  **Incorrect Data Formatting:** Merchants are passing data in the wrong format. For example, one merchant passed 'split_settlement_details' incorrectly, and another passed the 'split block' incorrectly for a refund request, causing decoding to fail.\n3.  **Component Bugs:** There is a bug in `euler-api-txns` where it fails to map and send the `gw_sub_mid` to the api-gateway when a fallback to the original split block occurs during refunds. This causes an error as the api-gateway expects this field.\n4.  **Configuration Mismatches:** For 'tatabillpayment', they are not receiving the `Refund Succeeded` webhook they configured, while simultaneously receiving `order refunded` webhooks they did not configure. For 'flipkartpayin3', webhooks were triggered that the merchant had not enabled.\n5.  **Recent Code Changes:** A recent change in the error handler function in `euler-api-txns` (release v156) is causing all rejected or declined responses from FRMs to result in a 302 response."
+  },
+  {
+    "User_data": {
+      "UserID": "simran.shaik@juspay.in",
+      "User_name": "Simran Shaik"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Compile a list of all identified issues that have associated JIRA tickets or pull requests mentioned in the recent conversations.",
+    "Answer": "Here is a list of issues with their corresponding JIRA tickets and Pull Requests:\n*   **JIRA EUL-20013:** An integration issue where a successful bulk refund shows as failed in the bulk module. Assigned to nagendra.p.\n*   **JIRA EUL-19908:** A request to map the `error_message` from Hyper_PG to Euler's `error_message` instead of `resp_message` for better error visibility on the dashboard.\n*   **JIRA EUL-19633:** An issue where order details for order ID `DI63CCD7D94105` (merchant: digit) could not be fetched.\n*   **JIRA EUL-19773:** A refund for MANAPPURAM FINANCE GOLD AUCTION was successful but showed a failure state in the dashboard.\n*   **Pull Request 6536 (`euler-api-txns`):** A fix for a bug where `gw_sub_mid` is not sent to the api-gateway during refunds with a missing split block.\n*   **Pull Request 6575 (`euler-api-txns`):** A change in the error handler function causing 302 responses for all FRM rejections.\n*   **Pull Request 2459 (`euler-api-gateway`):** A PR referenced in a discussion about why the `gw_sub_mid` key was made mandatory."
+  },
+  {
+    "User_data": {
+      "UserID": "abdul.bari@juspay.in",
+      "User_name": "Abdul Bari K"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.0,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What was the specific webhook issue reported by Abdul Bari K for the merchant 'tatabillpayment' in the Sandbox environment?",
+    "Answer": "Abdul Bari K reported a two-fold webhook issue for the merchant 'tatabillpayment' in the Sandbox environment. First, the merchant had configured a webhook for the `event: Refund Succeeded` from the dashboard but was not receiving it for refund orders. Second, the merchant had not configured the `order refunded` webhook, yet the system was triggering webhooks for this event."
+  }
+]
+```

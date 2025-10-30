@@ -15,7 +15,8 @@ export const PDF_PROCESSING_METHOD = {
   PDFJS: "pdfjs",
 } as const
 
-export type PdfProcessingMethod = typeof PDF_PROCESSING_METHOD[keyof typeof PDF_PROCESSING_METHOD]
+export type PdfProcessingMethod =
+  (typeof PDF_PROCESSING_METHOD)[keyof typeof PDF_PROCESSING_METHOD]
 
 const PDF_GEMINI_PAGE_THRESHOLD = 40
 
@@ -49,9 +50,10 @@ export class PdfProcessor {
     // not the position in this specific array
     if (Array.isArray(metadata) && metadata.length === totalCount) {
       return metadata.map((entry, index) => ({
-        chunk_index: typeof entry?.chunk_index === "number" && entry.chunk_index >= 0
-          ? entry.chunk_index
-          : index,
+        chunk_index:
+          typeof entry?.chunk_index === "number" && entry.chunk_index >= 0
+            ? entry.chunk_index
+            : index,
         page_numbers: Array.isArray(entry?.page_numbers)
           ? entry.page_numbers
           : [],
@@ -180,12 +182,12 @@ export class PdfProcessor {
     )
   }
 
-   /**
+  /**
    * Processes a PDF using the fallback logic:
    * 1. Try OCR first
    * 2. If OCR fails and PDF < 40 pages, try Gemini
    * 3. If Gemini fails or PDF >= 40 pages, use PDF.js
-   * 
+   *
    * @param buffer - PDF file buffer
    * @param fileName - Name of the PDF file
    * @param vespaDocId - Vespa document ID
@@ -220,7 +222,9 @@ export class PdfProcessor {
 
     if (shouldTryGemini) {
       try {
-        Logger.info(`Attempting Gemini processing for ${fileName} (${pageCount} pages)`)
+        Logger.info(
+          `Attempting Gemini processing for ${fileName} (${pageCount} pages)`,
+        )
         const result = await this.processWithGemini(buffer, vespaDocId)
         Logger.info(`Gemini processing successful for ${fileName}`)
         return result

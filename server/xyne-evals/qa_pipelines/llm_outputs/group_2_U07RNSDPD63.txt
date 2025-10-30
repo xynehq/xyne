@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "amit.shukla@juspay.in",
+      "User_name": "Amit Shukla"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Who did Chaitanya Nair specifically ask to take on the new PG integration in the 'one-team' channel?",
+    "Answer": "Based on the message from Chaitanya Nair (username: chaitanya.nair), Anurag Singh was asked to pick up the new PG integration. The message also CC'd Amit Shukla, Manoj, and Shiva Nandan."
+  },
+  {
+    "User_data": {
+      "UserID": "vimal.kumar@juspay.in",
+      "User_name": "Vimal Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What alternative or 'hacky' methods for product development have been suggested in the 'one-team' channel, and what was the reason for this suggestion?",
+    "Answer": "In the 'one-team' channel, Ishan suggested a 'hacky way' to solve a problem by getting settlement files directly from the merchant to build with. The reason provided for this suggestion was that 'Going to respective PGs has not helped us to build products'."
+  },
+  {
+    "User_data": {
+      "UserID": "malyada.goverdhan@juspay.in",
+      "User_name": "Malyada Goverdhan"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What is the urgent task related to Gyftyr, and which team members were asked to get involved?",
+    "Answer": "The urgent task is to provide support for an 'open router' integration that the merchant Gyftyr has requested. Malyada Goverdhan asked Prabu M, Milind Tahalani, and Divya Arora to shadow the product team on a couple of integrations to learn the process and then pick it up themselves. The urgency is due to merchants being 'pressurised by the PAs'."
+  },
+  {
+    "User_data": {
+      "UserID": "ishan.sharma@juspay.in",
+      "User_name": "Ishan Sharma"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the channel's description and recent conversations, what is the primary focus of the 'one-team'?",
+    "Answer": "The primary focus of the 'one-team' is to 'build comprehensive products, improve quality, automate processes, all tightly aligned with the current and long term merchant needs,' with a topic of 'Make payments reliable!'. Recent conversations reflect this by discussing specific merchant-facing tasks like a new PG integration, an urgent 'open router' integration for Gyftyr, and finding workarounds when PGs hinder product development."
+  },
+  {
+    "User_data": {
+      "UserID": "shiva.nandan@juspay.in",
+      "User_name": "Shiva Nandan"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "List all individuals mentioned across the recent messages concerning integrations and product development.",
+    "Answer": "The individuals mentioned are:\n- Anurag Singh (assigned the new PG integration)\n- Amit Shukla (CC'd on the PG integration message)\n- Manoj (CC'd on the PG integration message)\n- Shiva Nandan (CC'd on the PG integration message)\n- Chaitanya Nair (author of the PG integration message)\n- Ishan (author of the message about using merchant settlement files)\n- Prabu M (asked to shadow the product team)\n- Milind Tahalani (asked to shadow the product team)\n- Divya Arora (asked to shadow the product team)\n- Malyada Goverdhan (author of the message about the 'open router' integration for Gyftyr)"
+  }
+]
+```

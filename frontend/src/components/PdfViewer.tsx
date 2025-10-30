@@ -396,7 +396,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         }
       }
     }
-    
+
     // Cleanup function to remove the goToPage function when component unmounts
     return () => {
       if (documentOperationsRef?.current) {

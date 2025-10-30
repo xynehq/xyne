@@ -67,9 +67,9 @@ export const parseAttachmentMetadata = (c: Context): AttachmentMetadata[] => {
 }
 
 interface FollowUpContext {
-  fileIds: string[];
-  imageAttachmentFileIds: string[];
-  attachmentMetadata: AttachmentMetadata[];
+  fileIds: string[]
+  imageAttachmentFileIds: string[]
+  attachmentMetadata: AttachmentMetadata[]
 }
 
 /**
@@ -80,7 +80,7 @@ interface FollowUpContext {
  */
 export async function applyFollowUpContext(
   chatId: string,
-  email: string
+  email: string,
 ): Promise<FollowUpContext> {
   logger.info("isFollowUp is true, getting context from previous user message")
 
@@ -89,11 +89,11 @@ export async function applyFollowUpContext(
     imageAttachmentFileIds: [],
     attachmentMetadata: [],
   }
-  
+
   try {
     // Get all messages from the chat
     const allMessages = await getChatMessagesWithAuth(db, chatId, email)
-    
+
     // Find the last user message by iterating backwards (more efficient)
     let lastUserMessage = null
     for (let i = allMessages.length - 1; i >= 0; i--) {
@@ -102,55 +102,61 @@ export async function applyFollowUpContext(
         break
       }
     }
-    
+
     if (!lastUserMessage) {
       logger.warn("No previous user message found for follow-up context")
       return newContext
     }
-    
+
     // Get and add fileIds from the previous user message
-    const prevFileIds = Array.isArray(lastUserMessage.fileIds) ? lastUserMessage.fileIds : []
+    const prevFileIds = Array.isArray(lastUserMessage.fileIds)
+      ? lastUserMessage.fileIds
+      : []
     if (prevFileIds.length > 0) {
       logger.info(
-        `Found ${prevFileIds.length} fileIds from previous user message`
+        `Found ${prevFileIds.length} fileIds from previous user message`,
       )
       newContext.fileIds.push(...prevFileIds)
     }
-    
+
     // Get attachments from the previous user message
-    const prevAttachments = await getAttachmentsByMessageId(db, lastUserMessage.externalId, email)
+    const prevAttachments = await getAttachmentsByMessageId(
+      db,
+      lastUserMessage.externalId,
+      email,
+    )
     if (prevAttachments.length > 0) {
       logger.info(
-        `Found ${prevAttachments.length} attachments from previous user message`
+        `Found ${prevAttachments.length} attachments from previous user message`,
       )
 
       // Add all previous attachments to attachmentMetadata
       newContext.attachmentMetadata.push(...prevAttachments)
-      
+
       // Add image attachment fileIds
       const prevImageAttachmentFileIds = prevAttachments
         .filter((m) => m.isImage)
         .map((m) => m.fileId)
-      
+
       if (prevImageAttachmentFileIds.length > 0) {
         newContext.imageAttachmentFileIds.push(...prevImageAttachmentFileIds)
       }
-      
+
       // Add non-image attachment fileIds
       const prevNonImageAttachmentFileIds = prevAttachments
         .filter((m) => !m.isImage)
         .map((m) => m.fileId)
-      
+
       if (prevNonImageAttachmentFileIds.length > 0) {
         newContext.fileIds.push(...prevNonImageAttachmentFileIds)
       }
     }
-    
+
     return newContext
   } catch (error) {
     logger.error(
       error,
-      `Error getting context from previous user message for isFollowUp: ${getErrorMessage(error)}`
+      `Error getting context from previous user message for isFollowUp: ${getErrorMessage(error)}`,
     )
     // Continue execution even if we can't get previous context
     return newContext

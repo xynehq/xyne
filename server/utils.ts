@@ -205,15 +205,8 @@ export const retryWithBackoff = async <T>(
           Logger.info(`401 encountered, refreshing OAuth access token...`)
           const { credentials } = await authClient?.refreshAccessToken()!
           authClient?.setCredentials(credentials)
-          return retryWithBackoff(
-            fn,
-            context,
-            app,
-            retries + 1,
-            authClient,
-          )
-        }
-        else {
+          return retryWithBackoff(fn, context, app, retries + 1, authClient)
+        } else {
           throw new Error("Provided AppType is not google")
         }
       } else if (IsMicrosoftApp(app)) {

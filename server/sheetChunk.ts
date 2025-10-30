@@ -2,13 +2,14 @@ import * as XLSX from "xlsx"
 
 // Type checking utilities for spreadsheet data
 function isTimestamp(value: any): boolean {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     // Check for ISO timestamp format (YYYY-MM-DDTHH:mm:ss.sssZ)
-    const timestampRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[+-]\d{2}:\d{2})?$/
+    const timestampRegex =
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[+-]\d{2}:\d{2})?$/
     if (timestampRegex.test(value)) {
       return !isNaN(Date.parse(value))
     }
-    
+
     // Check for Unix timestamp (seconds or milliseconds since epoch)
     const numValue = Number(value)
     if (!isNaN(numValue)) {
@@ -18,51 +19,52 @@ function isTimestamp(value: any): boolean {
       return numValue >= minTimestamp && numValue <= maxTimestamp
     }
   }
-  
+
   // Check if it's a Date object
   if (value instanceof Date) {
     return !isNaN(value.getTime())
   }
-  
+
   return false
 }
 
 function isDate(value: any): boolean {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     // Check for date-only format (YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, etc.)
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$|^\d{1,2}\/\d{1,2}\/\d{4}$|^\d{1,2}-\d{1,2}-\d{4}$/
+    const dateRegex =
+      /^\d{4}-\d{2}-\d{2}$|^\d{1,2}\/\d{1,2}\/\d{4}$|^\d{1,2}-\d{1,2}-\d{4}$/
     if (dateRegex.test(value)) {
       return !isNaN(Date.parse(value))
     }
   }
-  
+
   if (value instanceof Date) {
     return !isNaN(value.getTime())
   }
-  
+
   return false
 }
 
 function isTime(value: any): boolean {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     // Check for time-only format (HH:mm:ss, HH:mm, etc.)
     const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/
     return timeRegex.test(value)
   }
-  
+
   return false
 }
 
 function isBoolean(value: any): boolean {
-  if (typeof value === 'boolean') {
+  if (typeof value === "boolean") {
     return true
   }
-  
-  if (typeof value === 'string') {
+
+  if (typeof value === "string") {
     const lowerValue = value.toLowerCase().trim()
-    return ['true', 'false', 'yes', 'no', 'y', 'n'].includes(lowerValue)
+    return ["true", "false", "yes", "no", "y", "n"].includes(lowerValue)
   }
-  
+
   return false
 }
 
@@ -87,7 +89,7 @@ interface ProcessedSheetData {
 // XLSX Processing Functions
 
 function unmerge(sheet: XLSX.WorkSheet): void {
-  (sheet['!merges'] ?? []).forEach((rng) => {
+  ;(sheet["!merges"] ?? []).forEach((rng) => {
     const v = sheet[XLSX.utils.encode_cell({ r: rng.s.r, c: rng.s.c })]?.v
     for (let R = rng.s.r; R <= rng.e.r; R++) {
       for (let C = rng.s.c; C <= rng.e.c; C++) {
@@ -97,40 +99,43 @@ function unmerge(sheet: XLSX.WorkSheet): void {
   })
 }
 
-function buildHeaders(rows: any[][], headerRows = 1): { header: string[], dataRows: any[][] } {
+function buildHeaders(
+  rows: any[][],
+  headerRows = 1,
+): { header: string[]; dataRows: any[][] } {
   if (rows.length === 0) {
     return { header: [], dataRows: [] }
   }
 
-  const header = rows.slice(0, headerRows)
-    .reduce((acc, row) =>
-      acc.map((prev, i) => `${prev}_${(row[i] ?? "").toString().trim()}`), 
-      new Array(rows[0].length).fill("")
+  const header = rows
+    .slice(0, headerRows)
+    .reduce(
+      (acc, row) =>
+        acc.map((prev, i) => `${prev}_${(row[i] ?? "").toString().trim()}`),
+      new Array(rows[0].length).fill(""),
     )
-    .map(h => h.replace(/_{2,}/g, "_").replace(/^_+|_+$/g, ""))
+    .map((h) => h.replace(/_{2,}/g, "_").replace(/^_+|_+$/g, ""))
 
-  return { 
-    header, 
-    dataRows: rows.slice(headerRows) 
+  return {
+    header,
+    dataRows: rows.slice(headerRows),
   }
 }
 
 function guessHeaderRowsByDataTypes(rows: any[][], maxSearchRows = 3): number {
   const isHeterogeneousRow = (row: any[]) => {
     const types = row
-      .filter(cell => cell !== null && cell !== undefined && cell.toString().trim() !== '')
-      .map(cell => {
-        if (typeof cell === 'number' || !isNaN(Number(cell)))
-          return 'number'
-        if (isDate(cell))
-          return 'date'
-        if (isTimestamp(cell))
-          return 'timestamp'
-        if (isTime(cell))
-          return 'time'
-        if (isBoolean(cell))
-          return 'boolean'
-        return 'string'
+      .filter(
+        (cell) =>
+          cell !== null && cell !== undefined && cell.toString().trim() !== "",
+      )
+      .map((cell) => {
+        if (typeof cell === "number" || !isNaN(Number(cell))) return "number"
+        if (isDate(cell)) return "date"
+        if (isTimestamp(cell)) return "timestamp"
+        if (isTime(cell)) return "time"
+        if (isBoolean(cell)) return "boolean"
+        return "string"
       })
 
     const uniqueTypes = new Set(types)
@@ -146,24 +151,57 @@ function guessHeaderRowsByDataTypes(rows: any[][], maxSearchRows = 3): number {
   return 1
 }
 
-
 function guessHeaderRowsByKeywords(rows: any[][], maxSearchRows = 3): number {
-  const headerKeywords = ['name', 'id', 'date', 'type', 'category', 'description', 'amount', 'total', 'value', 'region', 'country', 'state', 'city', 'zip', 'address', 'phone', 'email', 'website', 'url', 'link', 'title', 'subtitle', 'summary', 'description', 'notes', 'comments', 'remarks', 'details', 'information', 'data', 'statistics', 'metrics', 'measures']
-  const lowerKeywords = headerKeywords.map(k => k.toLowerCase())
-  
+  const headerKeywords = [
+    "name",
+    "id",
+    "date",
+    "type",
+    "category",
+    "description",
+    "amount",
+    "total",
+    "value",
+    "region",
+    "country",
+    "state",
+    "city",
+    "zip",
+    "address",
+    "phone",
+    "email",
+    "website",
+    "url",
+    "link",
+    "title",
+    "subtitle",
+    "summary",
+    "description",
+    "notes",
+    "comments",
+    "remarks",
+    "details",
+    "information",
+    "data",
+    "statistics",
+    "metrics",
+    "measures",
+  ]
+  const lowerKeywords = headerKeywords.map((k) => k.toLowerCase())
+
   for (let i = 0; i < Math.min(maxSearchRows, rows.length); i++) {
     const row = rows[i]
     if (!row) continue
-    
-    const rowText = row.map(cell => (cell ?? '').toString().toLowerCase())
-    
+
+    const rowText = row.map((cell) => (cell ?? "").toString().toLowerCase())
+
     // Count how many cells contain header keywords
-    const keywordMatches = rowText.filter(cell => 
-      lowerKeywords.some(kw => cell.includes(kw))
+    const keywordMatches = rowText.filter((cell) =>
+      lowerKeywords.some((kw) => cell.includes(kw)),
     ).length
-    
+
     // Only consider it a header row if MOST cells contain keywords (not just one)
-    const totalCells = rowText.filter(cell => cell.trim().length > 0).length
+    const totalCells = rowText.filter((cell) => cell.trim().length > 0).length
     if (totalCells > 0 && keywordMatches >= Math.ceil(totalCells * 0.6)) {
       return i + 1
     }
@@ -171,14 +209,18 @@ function guessHeaderRowsByKeywords(rows: any[][], maxSearchRows = 3): number {
   return 1
 }
 
-function inferHeaderRows(input: XLSX.WorkSheet, rows: any[][], isDummyHeader = false): number {
+function inferHeaderRows(
+  input: XLSX.WorkSheet,
+  rows: any[][],
+  isDummyHeader = false,
+): number {
   let mergedHeaderRows = 1
-    
+
   // Check actual merged cells in XLSX
-  const merges = input['!merges'] ?? []
+  const merges = input["!merges"] ?? []
   let maxHeaderMergeRow = -1
-  
-  merges.forEach(rng => {
+
+  merges.forEach((rng) => {
     // Only consider merges that START in the header area
     if (rng.s.r < 4 && rng.s.r > maxHeaderMergeRow) {
       maxHeaderMergeRow = rng.s.r
@@ -186,7 +228,7 @@ function inferHeaderRows(input: XLSX.WorkSheet, rows: any[][], isDummyHeader = f
   })
   mergedHeaderRows = maxHeaderMergeRow >= 0 ? maxHeaderMergeRow + 2 : 1
   mergedHeaderRows += isDummyHeader ? 1 : 0
-  
+
   if (rows.length === 0) return 1
 
   const MAX_HEADER_ROWS = isDummyHeader ? 4 : 3
@@ -198,33 +240,43 @@ function inferHeaderRows(input: XLSX.WorkSheet, rows: any[][], isDummyHeader = f
   const keywordHeaderRows = guessHeaderRowsByKeywords(rows, MAX_HEADER_ROWS)
 
   // Choose the maximum of these heuristics, but cap at reasonable limit
-  const inferredRows = Math.max(mergedHeaderRows, dataTypeHeaderRows, keywordHeaderRows, 1)
+  const inferredRows = Math.max(
+    mergedHeaderRows,
+    dataTypeHeaderRows,
+    keywordHeaderRows,
+    1,
+  )
   return Math.min(inferredRows, MAX_HEADER_ROWS)
 }
 
-function processSheetData(input: XLSX.WorkSheet, headerRowsParam?: number): ProcessedSheetData {
+function processSheetData(
+  input: XLSX.WorkSheet,
+  headerRowsParam?: number,
+): ProcessedSheetData {
   let rows: any[][] = []
   try {
     // Use sheet_to_json with proper options to preserve empty cells and formatting
-    rows = XLSX.utils.sheet_to_json<any[]>(input, { 
-      header: 1,        // Generate array of arrays
-      raw: false,       // Use formatted strings (not raw values)
-      defval: "",       // Use empty string for null/undefined values
+    rows = XLSX.utils.sheet_to_json<any[]>(input, {
+      header: 1, // Generate array of arrays
+      raw: false, // Use formatted strings (not raw values)
+      defval: "", // Use empty string for null/undefined values
     })
   } catch (error) {
     console.error("Error converting sheet to JSON:", error)
     return { headerRow: [], dataRows: [] }
   }
-  
+
   let headerRows = headerRowsParam ?? inferHeaderRows(input, rows)
-  
+
   if (rows.length === 0) {
     return { headerRow: [], dataRows: [] }
   }
 
-  const isHeaderValid = rows.slice(0, headerRows).every(row => isHeaderRowValid(row))
+  const isHeaderValid = rows
+    .slice(0, headerRows)
+    .every((row) => isHeaderRowValid(row))
   if (!isHeaderValid) {
-    const maxColumns = Math.max(...rows.map(row => row.length))
+    const maxColumns = Math.max(...rows.map((row) => row.length))
     const header = Array.from({ length: maxColumns }, (_, i) => `C${i + 1}`)
     rows = [header, ...rows]
     headerRows = inferHeaderRows(input, rows, true)
@@ -234,23 +286,23 @@ function processSheetData(input: XLSX.WorkSheet, headerRowsParam?: number): Proc
   const result = buildHeaders(rows, headerRows)
   const header = result.header
   const dataRows = result.dataRows
-  
+
   // Filter out completely empty rows BEFORE adding row IDs
   const validDataRows = dataRows.filter(isRowValid)
-  
+
   // Add row_id as first column and normalize data
   const fullHeader = ["row_id", ...header]
   const rowsWithId = validDataRows.map((row, index) => [
     (index + 1).toString(),
-    ...row.map(cell => (cell ?? "").toString())
+    ...row.map((cell) => (cell ?? "").toString()),
   ])
-  
+
   // Clear references to help garbage collection
   rows = []
-  
+
   return {
     headerRow: fullHeader,
-    dataRows: rowsWithId
+    dataRows: rowsWithId,
   }
 }
 
@@ -277,7 +329,7 @@ const cleanText = (str: string): string => {
  */
 function normalizeRow(row: string[], columnCount: number): string {
   const normalizedCells: string[] = []
-  
+
   for (let i = 0; i < columnCount; i++) {
     const cell = row[i]
     if (cell === undefined || cell === null) {
@@ -288,7 +340,7 @@ function normalizeRow(row: string[], columnCount: number): string {
       normalizedCells.push(cleanedCell)
     }
   }
-  
+
   return normalizedCells.join("\t")
 }
 
@@ -297,8 +349,8 @@ function normalizeRow(row: string[], columnCount: number): string {
  */
 function isRowValid(row: string[]): boolean {
   if (!Array.isArray(row) || row.length === 0) return false
-  
-  return row.some(cell => {
+
+  return row.some((cell) => {
     if (cell === undefined || cell === null || cell === "") return false
     const cellStr = cell.toString().trim()
     return cellStr.length > 0
@@ -310,8 +362,8 @@ function isRowValid(row: string[]): boolean {
  */
 function isHeaderRowValid(row: any[]): boolean {
   if (!Array.isArray(row) || row.length === 0) return false
-  
-  return row.every(cell => {
+
+  return row.every((cell) => {
     if (cell === undefined || cell === null) return false
     const cellStr = cell.toString().trim()
     return cellStr.length > 0
@@ -323,15 +375,15 @@ function isHeaderRowValid(row: any[]): boolean {
  */
 function truncateToByteLength(str: string, limit: number): string {
   let bytes = 0
-  let result = ''
-  
+  let result = ""
+
   for (const char of str) {
     const charBytes = getByteLength(char)
     if (bytes + charBytes > limit) break
     result += char
     bytes += charBytes
   }
-  
+
   return result
 }
 
@@ -344,23 +396,27 @@ function createChunks(dataRows: string[][], state: ChunkingState): string[] {
 
   for (const row of dataRows) {
     const normalizedRow = normalizeRow(row, state.columnCount)
-    
+
     const potentialChunk = createChunkFromBatch(
       [...currentBatch, normalizedRow],
-      state.headerRow
+      state.headerRow,
     )
 
     const wouldExceedRowLimit = currentBatch.length >= state.maxRowsPerChunk
-    const wouldExceedSizeLimit = getByteLength(potentialChunk) > state.maxChunkSize
+    const wouldExceedSizeLimit =
+      getByteLength(potentialChunk) > state.maxChunkSize
 
-    if ((wouldExceedRowLimit || wouldExceedSizeLimit) && currentBatch.length > 0) {
+    if (
+      (wouldExceedRowLimit || wouldExceedSizeLimit) &&
+      currentBatch.length > 0
+    ) {
       chunks.push(createChunkFromBatch(currentBatch, state.headerRow))
-      
+
       // Handle rows that exceed size limit
       if (getByteLength(normalizedRow) > state.maxChunkSize) {
         const truncatedRow = truncateToByteLength(
-          normalizedRow, 
-          state.maxChunkSize - getByteLength(state.headerRow) - 1
+          normalizedRow,
+          state.maxChunkSize - getByteLength(state.headerRow) - 1,
         )
         chunks.push(createChunkFromBatch([truncatedRow], state.headerRow))
         currentBatch = []
@@ -387,7 +443,9 @@ function createChunkFromBatch(batch: string[], headerRow: string): string {
   return [headerRow, ...batch].join("\n")
 }
 
-function normalizeToWorksheet(input: string[][] | XLSX.WorkSheet): XLSX.WorkSheet {
+function normalizeToWorksheet(
+  input: string[][] | XLSX.WorkSheet,
+): XLSX.WorkSheet {
   if (Array.isArray(input)) {
     return XLSX.utils.aoa_to_sheet(input)
   }
@@ -411,7 +469,7 @@ export function chunkSheetWithHeaders(
 ): string[] {
   let worksheet: XLSX.WorkSheet | null = null
   let processedData: ProcessedSheetData | null = null
-  
+
   try {
     // Process input with unified smart logic
     worksheet = normalizeToWorksheet(input)
@@ -428,11 +486,12 @@ export function chunkSheetWithHeaders(
     const maxRowsPerChunk = config?.maxRowsPerChunk ?? 10
 
     const columnCount = headerRow.length
-    
+
     // Adaptive chunking for wide spreadsheets
-    const adaptiveMaxRowsPerChunk = columnCount > 15 
-      ? Math.max(3, Math.floor(maxRowsPerChunk * 0.6)) 
-      : maxRowsPerChunk
+    const adaptiveMaxRowsPerChunk =
+      columnCount > 15
+        ? Math.max(3, Math.floor(maxRowsPerChunk * 0.6))
+        : maxRowsPerChunk
 
     const state: ChunkingState = {
       headerRow: normalizeRow(headerRow, columnCount),
@@ -446,10 +505,10 @@ export function chunkSheetWithHeaders(
     }
 
     const chunks = createChunks(dataRows, state)
-    
+
     // Clear references to help garbage collection
     processedData = null
-    
+
     return chunks
   } finally {
     // Clean up worksheet reference if it was created from array

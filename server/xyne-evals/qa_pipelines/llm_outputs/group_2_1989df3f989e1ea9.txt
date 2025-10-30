@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "chintan.jethi@juspay.in",
+      "User_name": "Chintan Jethi"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What are the Gocashfree App ID and Secret Key provided for icicipru testing?",
+    "Answer": "Based on the message from Advait Mahesh, the credentials for icicipru testing are:\n- *Gocashfree App ID:* 134541fbcc87ad27253e04c225145431\n- *Gocashfree Secret Key:* cfa358ba1ef09decc8dc59ab1c76133ec0b56860"
+  },
+  {
+    "User_data": {
+      "UserID": "vimal.mathew@juspay.in",
+      "User_name": "Vimal Mathew"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What is the situation regarding the use of a 'secure ID' for the Gocashfree integration? There seems to be conflicting information.",
+    "Answer": "There are conflicting views on the necessity of a 'secure ID' for the integration. \n\nInitially, Advait Mahesh stated that 'secure ID' is not mentioned for the UPI Mapper API and is not relevant for the integration, which requires only the AppID (Client ID) and Secret Key. He believed it was a KYC identifier not needed for integration. Chintan Jethi then questioned where the secure ID is used according to the documentation.\n\nHowever, Fareena later reported that Gocashfree reverted, stating the provided credentials (App ID and Secret Key) won't work for 'get vpa' and specifically asked them to try with a merchant-shared Client secure ID: CF183636D0QLLT6GJ29C73EGDQNG. This indicates that despite initial assessments, the 'secure ID' is required by Gocashfree for at least some functionalities."
+  },
+  {
+    "User_data": {
+      "UserID": "aniket.lawaniya@juspay.in",
+      "User_name": "Aniket"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "high",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "According to the DPIP integration guide, what is the detailed, multi-step JWS procedure required for direct API integration if not using the SDK?",
+    "Answer": "The DPIP integration guide outlines a detailed JWS procedure for teams not using the SDK. The process involves the following steps:\n\n1.  **Pre-requisites (Key Generation & Exchange):**\n    *   Generate a private key using the ED25519 algorithm.\n    *   Generate a corresponding public key from the private key.\n    *   Securely share the generated public key with DPIP for signature verification and receive DPIP's public key in return.\n\n2.  **Step 1: PII Hashing:**\n    *   Before any cryptographic operations, all Personally Identifiable Information (PII) in the JSON payload must be irreversibly hashed using the SHA-256 algorithm.\n\n3.  **Step 2: Request Payload Signing:**\n    *   Create a JWS Header specifying the algorithm (`ED25519`) and the bank's key ID (`kid`). This header must be Base64URL encoded.\n    *   Base64URL encode the hashed payload.\n    *   Create a JWS Signature by signing the dot-separated string of `Base64URL(JWS_HEADER).Base64URL(PAYLOAD)` using the bank's private key.\n\n4.  **Step 3: Transmit the Request:**\n    *   The JWS string serves as the entire body of the API request.\n    *   The request should be a POST to the relevant endpoint (e.g., `/register`).\n    *   The request must include the header `x-auth-type: jws`.\n    *   The request body should be a JSON object structured with the Base64URL encoded `header`, `payload`, and `signature`."
+  },
+  {
+    "User_data": {
+      "UserID": "divya.arora@juspay.in",
+      "User_name": "Divya Arora"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.6,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the underlying issue causing transactions for 'icicilombard' to be stuck in PENDING_VBV status?",
+    "Answer": "The issue, as reported by Vadivel, is that transactions for `icicilombard` are not being moved to a terminal status when payment gateways return specific failure messages. Instead, they remain in the 'PENDING_VBV' state. This has been observed with two gateways:\n\n1.  **Pay10:** When Juspay checks the order status and Pay10 responds with `\"RESPONSE_MESSAGE\":\"No Such Transaction Found\"`, the transaction status is not updated from pending.\n2.  **LSP:** Similarly, when LSP responds with `\"error\":{\"description\":\"Txn not Found...\"}`, the transaction status is kept as 'PENDING_VBV'."
+  },
+  {
+    "User_data": {
+      "UserID": "kalyani.rajput@juspay.in",
+      "User_name": "Kalyani Rajput"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.8,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "Based on the available information, what are the different security mechanisms and authentication requirements discussed for API integrations?",
+    "Answer": "Based on the provided documents, several security mechanisms and authentication requirements are discussed for different integrations:\n\n1.  **Gocashfree Payouts:** For this integration, Advait Mahesh mentions that since IPs have been whitelisted, sharing a public key in the request is not necessary, as it is an alternative to IP whitelisting. The required credentials are the AppID (Client ID) and Secret Key.\n\n2.  **DPIP Integration (Direct API):** This is the most detailed. It requires a multi-layered approach:\n    *   **mTLS (mutual TLS):** All network communication is protected using mTLS, where both client and server authenticate each other with digital certificates.\n    *   **JWS (JSON Web Signature):** All API communication must be signed using JWS to ensure payload integrity and authenticity. This involves creating a signature with a private key (ED25519 algorithm) and exchanging public keys with DPIP beforehand.\n    *   **PII Hashing:** All personally identifiable information must be hashed with SHA-256 before being included in the payload.\n    *   **IP Whitelisting:** Communication must originate from pre-approved, whitelisted IP addresses.\n\n3.  **General API Calls (getsimpl, Pay10, PinePG):** Logs for these services show the use of secure HTTPS endpoints (e.g., `https://secure.getsimpl.com`, `https://secure.pay10.com`, `https://pinepg.in`) and various security-related headers like `Set-Cookie` with `Secure` flags, `Content-Security-Policy`, and `Strict-Transport-Security`, indicating standard web security practices are in place."
+  }
+]
+```

@@ -238,24 +238,28 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
       if (triedRefresh) {
         // After refresh, try up to 3 more times before giving up
         if (retryCount >= maxRetries) {
-          reject(new Error(`Connection failed after token refresh and ${maxRetries} retry attempts`))
+          reject(
+            new Error(
+              `Connection failed after token refresh and ${maxRetries} retry attempts`,
+            ),
+          )
           return
         }
-        
+
         retryCount++
         // Exponential backoff: 100ms, 200ms, 400ms
         const delay = 100 * Math.pow(2, retryCount - 1)
         setTimeout(() => make(), delay)
         return
       }
-      
+
       triedRefresh = true
       try {
         const refresh = await fetch("/api/v1/refresh-token", {
           method: "POST",
           credentials: "include",
         })
-        
+
         if (refresh.ok) {
           // Small delay before retry to avoid rapid reconnection
           setTimeout(() => make(), 100)
@@ -291,7 +295,7 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
 
         es.onerror = async (e) => {
           clearTimeout(connectionTimeout)
-          
+
           if (isResolved) {
             // If already resolved, don't handle the error here
             return
@@ -305,7 +309,11 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
         }
       } catch (error) {
         if (!isResolved) {
-          reject(new Error(`Failed to create EventSource: ${error instanceof Error ? error.message : 'Unknown error'}`))
+          reject(
+            new Error(
+              `Failed to create EventSource: ${error instanceof Error ? error.message : "Unknown error"}`,
+            ),
+          )
         }
       }
     }

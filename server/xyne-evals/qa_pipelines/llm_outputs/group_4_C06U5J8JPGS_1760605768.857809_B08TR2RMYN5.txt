@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "vimal.kumar@juspay.in",
+      "User_name": "Vimal Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the stated goal and topic of the 'one-team' Slack channel?",
+    "Answer": "Based on the provided documents, the 'one-team' channel's topic is 'Make payments reliable!'. Its stated goal is 'to build comprehensive products, improve quality, automate processes, all tightly aligned with the current and long term merchant needs.'"
+  },
+  {
+    "User_data": {
+      "UserID": "pragya.chaturvedi@juspay.in",
+      "User_name": "Pragya Chaturvedi"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "low",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Can you list some of the people who have access to the 'one-team' channel?",
+    "Answer": "Yes, according to the document, the 'one-team' channel has 656 members. Some of the users with access permissions include vimal.kumar@juspay.in, sheetal@juspay.in, boaz.john@juspay.in, parth.vora@juspay.in, and harsharanga@juspay.in."
+  },
+  {
+    "User_data": {
+      "UserID": "nelson.s@juspay.in",
+      "User_name": "Nelson S"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What is the most recent update regarding the work being done in the 'one-team' channel?",
+    "Answer": "The most recent update found in the documents for the 'one-team' channel is a message from the user nelson.s which simply says 'Done'. This message was posted in a thread, suggesting the completion of a task or action."
+  },
+  {
+    "User_data": {
+      "UserID": "aman.saini@juspay.in",
+      "User_name": "Aman Saini"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Summarize the available information about the 'one-team' channel, including its purpose and the latest message posted in it.",
+    "Answer": "The 'one-team' channel is a private Slack channel focused on making payments reliable. Its purpose is to build comprehensive products, improve quality, and automate processes for merchant needs. The latest activity recorded is a message from user 'nelson.s' with the text 'Done'."
+  },
+  {
+    "User_data": {
+      "UserID": "sreeram.narasimhan@juspay.in",
+      "User_name": "Sreeram Narasimhan"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the channel's purpose and the latest activity, what can be inferred about the team's current focus?",
+    "Answer": "The 'one-team' channel's purpose is to 'Make payments reliable!' by building products and automating processes. The latest activity is a message stating 'Done'. From this, one can infer that the team is actively engaged in executing and completing tasks that are aligned with its core objectives of improving payment reliability and quality for merchants."
+  }
+]
+```

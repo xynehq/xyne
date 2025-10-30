@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "project.manager@juspay.net",
+      "User_name": "Project Manager"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are all the pull request numbers mentioned across the messages for the 'euler-api-txns' repository?",
+    "Answer": "Based on the provided messages, the following pull request numbers for the 'euler-api-txns' repository are mentioned: 6487, 6536, 6538, 6707, 6341, and 7009."
+  },
+  {
+    "User_data": {
+      "UserID": "simran.shaik@juspay.net",
+      "User_name": "Simran Shaik"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "What is the status of pull request 6536 that I asked Yashasvi Dwivedi about?",
+    "Answer": "According to the messages, after you asked Yashasvi Dwivedi to reopen pull request 6536, Yashasvi confirmed that it has been reopened. The latest staging branch has been pulled into it, and it is now awaiting your review and testing."
+  },
+  {
+    "User_data": {
+      "UserID": "saurabh.saini@juspay.net",
+      "User_name": "Saurabh Saini"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What action was I, Saurabh Saini, asked to take regarding a script, and who made the request?",
+    "Answer": "Imdad Gayaz requested that you verify a script locally. Imdad shared a pull request (PR 6487) and a curl command with you for this purpose before it is started on production."
+  },
+  {
+    "User_data": {
+      "UserID": "team.lead@juspay.net",
+      "User_name": "Team Lead"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.6,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Based on the conversations, what are the different types of activities currently happening related to pull requests in the euler-api-txns repo?",
+    "Answer": "Based on the messages, the activities surrounding pull requests in the euler-api-txns repository include:\n- **Raising new PRs:** Sourish raised PR 6538, Bowmitha raised PR 6707, and Aklank raised PR 7009.\n- **Requesting verification and review:** Imdad asked Saurabh Saini to verify PR 6487 locally, and Yashasvi Dwivedi asked Simran Shaik to review and test the reopened PR 6536.\n- **Preparing for deployment:** Imdad's script for PR 6487 is pending local verification before being used in production.\n- **Managing PR status:** Yashasvi reopened PR 6536 as per a discussion with Simran.\n- **Investigating issues:** Burri Kalyan flagged a potential issue caused by a recent change and referenced PR 6341."
+  },
+  {
+    "User_data": {
+      "UserID": "burri.kalyan@juspay.net",
+      "User_name": "Burri Kalyan"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Which users were mentioned in relation to specific pull requests and what were their roles in the conversation?",
+    "Answer": "The following users were mentioned in relation to specific pull requests:\n- **Saurabh Saini:** Mentioned by Imdad to verify PR 6487 locally.\n- **Simran Shaik:** Asked by Yashasvi Dwivedi to review and test the reopened PR 6536.\n- **Yashasvi Dwivedi:** Asked by Simran Shaik to reopen PR 6536.\n- **Deepak Sharma & Keerthan Poojari:** Tagged by Burri Kalyan to check on a potential issue related to a recent change, referencing PR 6341."
+  }
+]
+```

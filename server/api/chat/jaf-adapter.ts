@@ -161,6 +161,7 @@ export function buildInternalJAFTools(): Tool<unknown, JAFAdapterCtx>[] {
           // Normalize to JAF ToolResult while keeping summary string as data
           const summary = res?.result ?? ""
           const contexts = res?.contexts ?? []
+
           return ToolResponse.success(summary, {
             toolName: name,
             contexts,

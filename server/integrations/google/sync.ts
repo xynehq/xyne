@@ -372,12 +372,12 @@ export const handleGoogleDriveChange = async (
               const permissionsAsString = toPermissionsList(
                 vespaData.permissions,
                 email,
-              );
+              )
               const vespaDataForInsert = {
                 ...vespaData,
                 permissions: permissionsAsString,
-              };
-              await insertWithRetry(vespaDataForInsert, fileSchema);
+              }
+              await insertWithRetry(vespaDataForInsert, fileSchema)
             }
           }
         } catch (err) {

@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "vivek.nikam@juspay.in",
+      "User_name": "Vivek Nikam"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What was the exact user-facing error message and response code for the failing batch refunds initiated from the dashboard for merchant 'cumta' on October 08, 2025?",
+    "Answer": "The batch refunds for merchant 'cumta' were failing with a response code of 400. The user-facing error message was: \"Could not find gateway id for submid: 00382263\". The developer message in the error info indicated \"Invalid request params.\""
+  },
+  {
+    "User_data": {
+      "UserID": "team.lead@juspay.in",
+      "User_name": "Team Lead"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "List the instances where a refund was successfully processed but its status was incorrectly shown as 'failure' on the dashboard.",
+    "Answer": "There are two reported instances of this issue:\n1. For merchant 'MANAPPURAM FINANCE GOLD AUCTION' (OrderID: odrh_maauc01026065), the refund was successful and reached the customer but was still in a failure state on the dashboard.\n2. For an order with ID '20251024134522000897', the refund became successful, but the bulk module on the dashboard still showed a failure state. This was noted to be due to an API call from 'euler' to 'Dashboard'."
+  },
+  {
+    "User_data": {
+      "UserID": "yashasvi.rana@juspay.in",
+      "User_name": "Yashasvi Rana"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the suspected cause for the intermittent webhook decryption failures for merchant 'tvsmotor' using the 'CCAVENUE_V2' gateway?",
+    "Answer": "The suspected cause is a decryption failure because the gateway might be intermittently using different encryption keys. The hypothesis is that the gateway uses 'Working Key 1' for some webhooks and 'Working Key 2' for others. Since 'Working Key 2' is not configured on the dashboard, decryption fails for the webhooks encrypted with it, leading to the issue. This is supported by the observation that not all webhooks for this merchant and gateway are failing."
+  },
+  {
+    "User_data": {
+      "UserID": "product.manager@juspay.in",
+      "User_name": "Product Manager"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.2,
+      "Question_Complexity": "high",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Provide a list of all reported issues where merchants are experiencing problems with webhook triggers not matching their dashboard configurations.",
+    "Answer": "Based on the documents, here are the reported issues related to incorrect webhook behavior:\n1.  **Merchant `tatabillpayment` (Sandbox):** The merchant has configured a webhook for the `Refund Succeeded` event but is not receiving it. Conversely, they are receiving webhooks for the `order refunded` event, which they have not configured.\n2.  **Merchant `flipkartpayin3` (Prod):** This merchant reported that webhooks were triggered for events that they had not enabled on their dashboard. The merchant confirmed they had not made any changes to their configuration."
+  },
+  {
+    "User_data": {
+      "UserID": "engineering.manager@juspay.in",
+      "User_name": "Engineering Manager"
+    },
+    "Question_weights": {
+      "Coverage_preference": "medium",
+      "Vagueness": 0.8,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What are the main categories of problems being discussed concerning the Euler system and its integrations?",
+    "Answer": "Based on the provided messages, the main categories of problems are:\n1.  **Refund Status Discrepancies:** Multiple merchants (MANAPPURAM FINANCE GOLD AUCTION, and another with OrderID 20251024134522000897) are seeing refunds marked as 'failed' on the dashboard, even when the refund was successfully processed and reached the customer.\n2.  **Webhook Configuration/Triggering Issues:** Merchants like `tatabillpayment` and `flipkartpayin3` are reporting that webhooks are not being triggered for configured events, or are being triggered for events that are not configured on their dashboard.\n3.  **API and Data Errors:** A refund initiation for merchant `cumta` failed due to an `INVALID_INPUT` error ('Could not find gateway id for submid'). Another issue for merchant `condenast` involved UDF parameter values being trimmed, indicating a potential character limit or data handling problem.\n4.  **Gateway Integration and Decryption Failures:** An issue with the `CCAVENUE_V2` gateway for merchant `tvsmotor` is causing decryption failures, suspected to be due to inconsistent use of encryption keys. Another issue with an AMEX card test on the MPGS gateway failed because of an `INVALID_REQUEST` error from the gateway."
+  }
+]
+```

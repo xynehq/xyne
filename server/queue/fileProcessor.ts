@@ -1,7 +1,10 @@
 import { getLogger } from "@/logger"
 import { Subsystem, ProcessingJobType } from "@/types"
 import { getErrorMessage } from "@/utils"
-import { FileProcessorService, type SheetProcessingResult } from "@/services/fileProcessor"
+import {
+  FileProcessorService,
+  type SheetProcessingResult,
+} from "@/services/fileProcessor"
 import { insert } from "@/search/vespa"
 import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
@@ -67,7 +70,11 @@ async function handleRetryFailure(
         .where(eq(collectionItems.id, entityId))
 
       // If it's a file that failed, trigger parent status update
-      if (entityType === ProcessingJobType.FILE && parentId !== undefined && collectionId) {
+      if (
+        entityType === ProcessingJobType.FILE &&
+        parentId !== undefined &&
+        collectionId
+      ) {
         if (parentId) {
           await updateParentStatus(db, parentId, false)
         } else {
@@ -206,7 +213,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
     let totalChunksCount = 0
     let newVespaDocId = ""
-    if(processingResults.length > 0 && 'totalSheets' in processingResults[0]) {
+    if (processingResults.length > 0 && "totalSheets" in processingResults[0]) {
       newVespaDocId = `${file.vespaDocId}_sheet_${(processingResults[0] as SheetProcessingResult).totalSheets}`
     } else {
       newVespaDocId = file.vespaDocId
@@ -214,24 +221,26 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     for (const [resultIndex, processingResult] of processingResults.entries()) {
       // Create Vespa document with proper fileName (matching original logic)
       const targetPath = file.path
-      
+
       // Reconstruct the original filePath (full path from collection root)
-      const reconstructedFilePath = targetPath === "/" 
-        ? file.fileName 
-        : targetPath.substring(1) + file.fileName // Remove leading "/" and add filename
-      
+      const reconstructedFilePath =
+        targetPath === "/"
+          ? file.fileName
+          : targetPath.substring(1) + file.fileName // Remove leading "/" and add filename
+
       let vespaFileName =
         targetPath === "/"
-          ? file.collectionName + targetPath + reconstructedFilePath    // Uses full path for root
-          : file.collectionName + targetPath + file.fileName            // Uses filename for nested
+          ? file.collectionName + targetPath + reconstructedFilePath // Uses full path for root
+          : file.collectionName + targetPath + file.fileName // Uses filename for nested
 
       // For sheet processing results, append sheet information to fileName
       let docId = file.vespaDocId
-      if ('sheetName' in processingResult) {
+      if ("sheetName" in processingResult) {
         const sheetResult = processingResult as SheetProcessingResult
-        vespaFileName = processingResults.length > 1 
-          ? `${vespaFileName} / ${sheetResult.sheetName}`
-          : vespaFileName
+        vespaFileName =
+          processingResults.length > 1
+            ? `${vespaFileName} / ${sheetResult.sheetName}`
+            : vespaFileName
         docId = sheetResult.docId
       } else if (processingResults.length > 1) {
         // For non-sheet files with multiple results, append index
@@ -257,15 +266,20 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         metadata: JSON.stringify({
           originalFileName: file.originalName || file.fileName,
           uploadedBy: file.uploadedByEmail || "system",
-          chunksCount: processingResult.chunks.length + processingResult.image_chunks.length,
+          chunksCount:
+            processingResult.chunks.length +
+            processingResult.image_chunks.length,
           imageChunksCount: processingResult.image_chunks.length,
           processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
-          ...(processingResult.processingMethod && { pdfProcessingMethod: processingResult.processingMethod }),
+          ...(processingResult.processingMethod && {
+            pdfProcessingMethod: processingResult.processingMethod,
+          }),
           lastModified: Date.now(),
-          ...(('sheetName' in processingResult) && {
+          ...("sheetName" in processingResult && {
             sheetName: (processingResult as SheetProcessingResult).sheetName,
             sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
-            totalSheets: (processingResult as SheetProcessingResult).totalSheets,
+            totalSheets: (processingResult as SheetProcessingResult)
+              .totalSheets,
           }),
         }),
         createdBy: file.uploadedByEmail || "system",
@@ -280,18 +294,24 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       // Insert into Vespa
       await insert(vespaDoc, KbItemsSchema)
 
-      totalChunksCount += processingResult.chunks.length + processingResult.image_chunks.length
+      totalChunksCount +=
+        processingResult.chunks.length + processingResult.image_chunks.length
     }
 
     // Update status to completed with processing method metadata
     const chunksCount = totalChunksCount
-    
+
     // Prepare metadata for database record - use last processing result for method info
     const lastResult = processingResults[processingResults.length - 1]
     const dbMetadata = {
       chunksCount,
-      imageChunksCount: processingResults.reduce((sum, r) => sum + r.image_chunks.length, 0),
-      ...(lastResult.processingMethod && { pdfProcessingMethod: lastResult.processingMethod }),
+      imageChunksCount: processingResults.reduce(
+        (sum, r) => sum + r.image_chunks.length,
+        0,
+      ),
+      ...(lastResult.processingMethod && {
+        pdfProcessingMethod: lastResult.processingMethod,
+      }),
     }
 
     await db

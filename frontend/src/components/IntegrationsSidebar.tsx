@@ -5,11 +5,10 @@ import GoogleSvg from "@/assets/google-logo.svg"
 import GithubSvg from "@/assets/github.svg"
 import microsoftSvg from "@/assets/microsoft.svg"
 import { useLocation, useRouter } from "@tanstack/react-router"
-import {  Key } from "lucide-react"
+import { Key } from "lucide-react"
 
 export const IntegrationsSidebar = ({
   role,
- 
 }: { role: string; isAgentMode: boolean }) => {
   const router = useRouter()
   const location = useLocation()
@@ -87,7 +86,7 @@ export const IntegrationsSidebar = ({
                 Github
               </span>
             </li>
-            
+
             <li
               className={`group flex justify-between items-center ${location.pathname.includes("/integrations/apiKey") ? "bg-[#EBEFF2] dark:bg-slate-700" : ""} hover:bg-[#EBEFF2] dark:hover:bg-slate-700 rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px] cursor-pointer`}
               onClick={() => {

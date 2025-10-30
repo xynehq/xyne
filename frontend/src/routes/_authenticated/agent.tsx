@@ -92,7 +92,7 @@ type CurrentResp = {
 export const Route = createFileRoute("/_authenticated/agent")({
   validateSearch: z.object({
     agentId: z.string().optional(),
-    mode: z.enum(['edit', 'view']).optional(),
+    mode: z.enum(["edit", "view"]).optional(),
   }),
   component: AgentComponent,
 })
@@ -507,24 +507,24 @@ function AgentComponent() {
     const newPath =
       navigationPath.length === 1 && navigationPath[0].type === "cl-root"
         ? [
-          {
-            id: "cl-root",
-            name: "Collection",
-            type: "cl-root" as const,
-          },
-          {
-            id: clId,
-            name: clName,
-            type: "cl" as const,
-          },
-        ]
+            {
+              id: "cl-root",
+              name: "Collection",
+              type: "cl-root" as const,
+            },
+            {
+              id: clId,
+              name: clName,
+              type: "cl" as const,
+            },
+          ]
         : [
-          {
-            id: clId,
-            name: clName,
-            type: "cl" as const,
-          },
-        ]
+            {
+              id: clId,
+              name: clName,
+              type: "cl" as const,
+            },
+          ]
 
     setNavigationPath(newPath)
     setIsLoadingItems(true)
@@ -854,21 +854,22 @@ function AgentComponent() {
     resetForm()
     setEditingAgent(agent)
     setViewMode("create")
-  }, [])// Empty deps because resetForm and setState functions are stable
-
-
+  }, []) // Empty deps because resetForm and setState functions are stable
 
   useEffect(() => {
-    const abortController = new AbortController()  // ✅ Create abort controller
+    const abortController = new AbortController() // ✅ Create abort controller
 
     const loadAgentForEdit = async () => {
-      if (agentId && mode === 'edit') {
+      if (agentId && mode === "edit") {
         try {
-          const response = await api.agent[":agentExternalId"].$get({
-            param: { agentExternalId: agentId },
-          }, {
-            signal: abortController.signal  // ✅ Pass abort signal to request
-          })
+          const response = await api.agent[":agentExternalId"].$get(
+            {
+              param: { agentExternalId: agentId },
+            },
+            {
+              signal: abortController.signal, // ✅ Pass abort signal to request
+            },
+          )
 
           // ✅ No need to check cancelled flag - request is aborted
           if (response.ok) {
@@ -882,9 +883,9 @@ function AgentComponent() {
           }
         } catch (error) {
           // ✅ AbortError is thrown when request is cancelled
-          if (error instanceof Error && error.name === 'AbortError') {
-            console.log('Agent fetch was cancelled')
-            return  // Don't show error toast for intentional cancellation
+          if (error instanceof Error && error.name === "AbortError") {
+            console.log("Agent fetch was cancelled")
+            return // Don't show error toast for intentional cancellation
           }
 
           toast.error({
@@ -899,10 +900,9 @@ function AgentComponent() {
     loadAgentForEdit()
 
     return () => {
-      abortController.abort()  // ✅ Actually cancel the HTTP request
+      abortController.abort() // ✅ Actually cancel the HTTP request
     }
-  }, [agentId, mode, handleEditAgent])  // ✅ Include handleEditAgent in deps
-
+  }, [agentId, mode, handleEditAgent]) // ✅ Include handleEditAgent in deps
 
   // Cleanup EventSource on component unmount to prevent memory leaks
   useEffect(() => {
@@ -1219,7 +1219,6 @@ function AgentComponent() {
     resetForm()
     setViewMode("create")
   }
-
 
   const handleViewAgent = (agent: SelectPublicAgent) => {
     setViewingAgent(agent)
@@ -2478,7 +2477,7 @@ function AgentComponent() {
       }))
     })
 
-    eventSourceRef.current.addEventListener(ChatSSEvents.Start, () => { })
+    eventSourceRef.current.addEventListener(ChatSSEvents.Start, () => {})
 
     eventSourceRef.current.addEventListener(
       ChatSSEvents.ResponseUpdate,
@@ -2763,32 +2762,36 @@ function AgentComponent() {
                     <div className="flex items-center gap-4 ">
                       {(() => {
                         // Calculate whether current tab has agents
-                        const agentLists: Record<string, SelectPublicAgent[]> = {
-                          "all": allAgentsList,
-                          "made-by-me": madeByMeAgentsList,
-                          "shared-to-me": sharedToMeAgentsList,
-                        }
-                        const currentTabHasAgents = (agentLists[activeTab]?.length ?? 0) > 0
+                        const agentLists: Record<string, SelectPublicAgent[]> =
+                          {
+                            all: allAgentsList,
+                            "made-by-me": madeByMeAgentsList,
+                            "shared-to-me": sharedToMeAgentsList,
+                          }
+                        const currentTabHasAgents =
+                          (agentLists[activeTab]?.length ?? 0) > 0
 
-                        return currentTabHasAgents && (
-                          <>
-                            <div className="relative">
-                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                              <input
-                                type="text"
-                                placeholder="Search agents.."
-                                value={listSearchQuery}
-                                onChange={handleListSearchChange}
-                                className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
-                              />
-                            </div>
-                            <Button
-                              onClick={handleCreateNewAgent}
-                              className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
-                            >
-                              <Plus size={18} /> CREATE
-                            </Button>
-                          </>
+                        return (
+                          currentTabHasAgents && (
+                            <>
+                              <div className="relative">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                                <input
+                                  type="text"
+                                  placeholder="Search agents.."
+                                  value={listSearchQuery}
+                                  onChange={handleListSearchChange}
+                                  className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
+                                />
+                              </div>
+                              <Button
+                                onClick={handleCreateNewAgent}
+                                className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
+                              >
+                                <Plus size={18} /> CREATE
+                              </Button>
+                            </>
+                          )
                         )
                       })()}
                     </div>
@@ -3121,10 +3124,11 @@ function AgentComponent() {
                             className="h-8 w-8 p-0"
                           >
                             <Sparkles
-                              className={`h-4 w-4 ${isGeneratingPrompt
-                                ? "animate-pulse text-blue-600 dark:text-blue-400"
-                                : ""
-                                }`}
+                              className={`h-4 w-4 ${
+                                isGeneratingPrompt
+                                  ? "animate-pulse text-blue-600 dark:text-blue-400"
+                                  : ""
+                              }`}
                             />
                           </Button>
                         </TooltipTrigger>
@@ -3150,10 +3154,11 @@ function AgentComponent() {
                         setShouldHighlightPrompt(false)
                       }
                     }}
-                    className={`mt-1 bg-white dark:bg-slate-700 border rounded-lg w-full h-36 p-3 text-base dark:text-gray-100 transition-all duration-300 ${shouldHighlightPrompt
-                      ? "border-blue-400 ring-2 ring-blue-200 dark:border-blue-500 dark:ring-blue-900/50 shadow-lg"
-                      : "border-gray-300 dark:border-slate-600"
-                      }`}
+                    className={`mt-1 bg-white dark:bg-slate-700 border rounded-lg w-full h-36 p-3 text-base dark:text-gray-100 transition-all duration-300 ${
+                      shouldHighlightPrompt
+                        ? "border-blue-400 ring-2 ring-blue-200 dark:border-blue-500 dark:ring-blue-900/50 shadow-lg"
+                        : "border-gray-300 dark:border-slate-600"
+                    }`}
                     disabled={isGeneratingPrompt}
                   />
                 </div>
@@ -3320,7 +3325,7 @@ function AgentComponent() {
                                           // Collections navigation
                                           const parentId =
                                             newPath[newPath.length - 1]?.id ===
-                                              clId
+                                            clId
                                               ? null
                                               : newPath[newPath.length - 1]?.id
 
@@ -3355,7 +3360,7 @@ function AgentComponent() {
                                           // Google Drive navigation
                                           const parentFolderId =
                                             newPath[newPath.length - 1]?.id ===
-                                              "drive-root"
+                                            "drive-root"
                                               ? ""
                                               : newPath[newPath.length - 1]?.id
 
@@ -3412,8 +3417,8 @@ function AgentComponent() {
                                         navigationPath.length <= 3
                                           ? navigationPath
                                           : navigationPath.slice(
-                                            navigationPath.length - 3,
-                                          )
+                                              navigationPath.length - 3,
+                                            )
 
                                       return itemsToShow.map((item, index) => (
                                         <React.Fragment
@@ -3447,13 +3452,13 @@ function AgentComponent() {
                                                   if (
                                                     newPath.length === 1 &&
                                                     newPath[0].type ===
-                                                    "cl-root"
+                                                      "cl-root"
                                                   ) {
                                                     setCurrentItems([])
                                                   } else if (
                                                     newPath.length > 1 &&
                                                     newPath[0].type ===
-                                                    "cl-root"
+                                                      "cl-root"
                                                   ) {
                                                     const clId = newPath.find(
                                                       (item) =>
@@ -3465,8 +3470,8 @@ function AgentComponent() {
                                                       ]?.id === clId
                                                         ? null
                                                         : newPath[
-                                                          newPath.length - 1
-                                                        ]?.id
+                                                            newPath.length - 1
+                                                          ]?.id
 
                                                     if (clId) {
                                                       setIsLoadingItems(true)
@@ -3508,13 +3513,13 @@ function AgentComponent() {
                                                   } else if (
                                                     newPath.length === 1 &&
                                                     newPath[0].type ===
-                                                    "drive-root"
+                                                      "drive-root"
                                                   ) {
                                                     navigateToGoogleDrive()
                                                   } else if (
                                                     newPath.length > 1 &&
                                                     newPath[0].type ===
-                                                    "drive-root"
+                                                      "drive-root"
                                                   ) {
                                                     if (
                                                       newPath[
@@ -3568,17 +3573,17 @@ function AgentComponent() {
                         <div className="bg-white dark:bg-gray-900 max-h-72 min-h-72 overflow-y-auto rounded-lg mx-1 mb-1">
                           {navigationPath.length === 0
                             ? // Main menu
-                            (() => {
-                              const collections =
-                                allAvailableIntegrations.filter(
-                                  (integration) =>
-                                    integration.id.startsWith("cl_"),
-                                )
-                              const otherIntegrations =
-                                allAvailableIntegrations.filter(
-                                  (integration) =>
-                                    !integration.id.startsWith("cl_"),
-                                )
+                              (() => {
+                                const collections =
+                                  allAvailableIntegrations.filter(
+                                    (integration) =>
+                                      integration.id.startsWith("cl_"),
+                                  )
+                                const otherIntegrations =
+                                  allAvailableIntegrations.filter(
+                                    (integration) =>
+                                      !integration.id.startsWith("cl_"),
+                                  )
 
                                 return (
                                   <>
@@ -3666,32 +3671,32 @@ function AgentComponent() {
                                 )
                               })()
                             : // Unified Collections section - handles both CL listing and file/folder navigation
-                            (() => {
-                              // const knowledgeBases = allAvailableIntegrations.filter(integration =>
-                              //   integration.id.startsWith('cl_')
-                              // )
+                              (() => {
+                                // const knowledgeBases = allAvailableIntegrations.filter(integration =>
+                                //   integration.id.startsWith('cl_')
+                                // )
 
-                              // Determine if we're showing Collection list or Collection contents
-                              const isShowingKbList =
-                                navigationPath.length === 1 &&
-                                navigationPath[0].type === "cl-root"
-                              const isShowingKbContents =
-                                navigationPath.length > 1 ||
-                                (navigationPath.length === 1 &&
-                                  navigationPath[0].type === "cl")
-                              const isShowingDriveContents =
-                                navigationPath.length > 0 &&
-                                (navigationPath[0].type === "drive-root" ||
-                                  navigationPath.some(
-                                    (item) => item.type === "drive-folder",
-                                  ))
+                                // Determine if we're showing Collection list or Collection contents
+                                const isShowingKbList =
+                                  navigationPath.length === 1 &&
+                                  navigationPath[0].type === "cl-root"
+                                const isShowingKbContents =
+                                  navigationPath.length > 1 ||
+                                  (navigationPath.length === 1 &&
+                                    navigationPath[0].type === "cl")
+                                const isShowingDriveContents =
+                                  navigationPath.length > 0 &&
+                                  (navigationPath[0].type === "drive-root" ||
+                                    navigationPath.some(
+                                      (item) => item.type === "drive-folder",
+                                    ))
 
-                              return (
-                                <>
-                                  {/* Single unified search input */}
-                                  {(isShowingKbList ||
-                                    isShowingKbContents ||
-                                    isShowingDriveContents) && (
+                                return (
+                                  <>
+                                    {/* Single unified search input */}
+                                    {(isShowingKbList ||
+                                      isShowingKbContents ||
+                                      isShowingDriveContents) && (
                                       <div className="border-b border-gray-200 dark:border-gray-700">
                                         <div className="relative">
                                           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -3798,137 +3803,137 @@ function AgentComponent() {
                                                     const isDirectlySelected =
                                                       result.type ===
                                                       "collection"
-                                                      ? selectedIntegrations[
-                                                      `cl_${result.id}`
-                                                      ]
-                                                      : selectedItemsInCollection[
-                                                        result.collectionId
-                                                      ]?.has(result.id)
-
-                                                  const isSelected =
-                                                    result.type ===
-                                                      "collection"
-                                                      ? selectedIntegrations[
-                                                      `cl_${result.id}`
-                                                      ]
-                                                      : isItemSelectedWithInheritance(
-                                                        result,
-                                                        selectedItemsInCollection,
-                                                        selectedIntegrations,
-                                                        selectedItemDetailsInCollection,
-                                                      )
-
-                                                  const isInherited =
-                                                    isSelected &&
-                                                    !isDirectlySelected
-
-                                                  const handleResultSelect =
-                                                    () => {
-                                                      // Don't allow selection changes for inherited items
-                                                      if (isInherited) return
-
-                                                      if (
-                                                        result.type ===
-                                                        "collection"
-                                                      ) {
-                                                        // Toggle collection selection
-                                                        const integrationId = `cl_${result.id}`
-                                                        toggleIntegrationSelection(
-                                                          integrationId,
-                                                        )
-                                                      } else if (
-                                                        result.type ===
-                                                        "folder" ||
-                                                        result.type === "file"
-                                                      ) {
-                                                        // For folders and files, first make sure the collection is selected
-                                                        const collectionIntegrationId = `cl_${result.collectionId}`
-
-                                                        // Ensure collection is selected
-                                                        if (
-                                                          !selectedIntegrations[
-                                                          collectionIntegrationId
+                                                        ? selectedIntegrations[
+                                                            `cl_${result.id}`
                                                           ]
+                                                        : selectedItemsInCollection[
+                                                            result.collectionId
+                                                          ]?.has(result.id)
+
+                                                    const isSelected =
+                                                      result.type ===
+                                                      "collection"
+                                                        ? selectedIntegrations[
+                                                            `cl_${result.id}`
+                                                          ]
+                                                        : isItemSelectedWithInheritance(
+                                                            result,
+                                                            selectedItemsInCollection,
+                                                            selectedIntegrations,
+                                                            selectedItemDetailsInCollection,
+                                                          )
+
+                                                    const isInherited =
+                                                      isSelected &&
+                                                      !isDirectlySelected
+
+                                                    const handleResultSelect =
+                                                      () => {
+                                                        // Don't allow selection changes for inherited items
+                                                        if (isInherited) return
+
+                                                        if (
+                                                          result.type ===
+                                                          "collection"
                                                         ) {
+                                                          // Toggle collection selection
+                                                          const integrationId = `cl_${result.id}`
                                                           toggleIntegrationSelection(
-                                                            collectionIntegrationId,
+                                                            integrationId,
+                                                          )
+                                                        } else if (
+                                                          result.type ===
+                                                            "folder" ||
+                                                          result.type === "file"
+                                                        ) {
+                                                          // For folders and files, first make sure the collection is selected
+                                                          const collectionIntegrationId = `cl_${result.collectionId}`
+
+                                                          // Ensure collection is selected
+                                                          if (
+                                                            !selectedIntegrations[
+                                                              collectionIntegrationId
+                                                            ]
+                                                          ) {
+                                                            toggleIntegrationSelection(
+                                                              collectionIntegrationId,
+                                                            )
+                                                          }
+
+                                                          // Then handle the specific item selection
+                                                          const clId =
+                                                            result.collectionId
+                                                          const itemId =
+                                                            result.id
+
+                                                          setSelectedItemsInCollection(
+                                                            (prev) => {
+                                                              const currentSelection =
+                                                                prev[clId] ||
+                                                                new Set()
+                                                              const newSelection =
+                                                                new Set(
+                                                                  currentSelection,
+                                                                )
+
+                                                              if (
+                                                                newSelection.has(
+                                                                  itemId,
+                                                                )
+                                                              ) {
+                                                                newSelection.delete(
+                                                                  itemId,
+                                                                )
+                                                              } else {
+                                                                newSelection.add(
+                                                                  itemId,
+                                                                )
+                                                              }
+
+                                                              return {
+                                                                ...prev,
+                                                                [clId]:
+                                                                  newSelection,
+                                                              }
+                                                            },
+                                                          )
+
+                                                          setSelectedItemDetailsInCollection(
+                                                            (prev) => {
+                                                              const newDetails =
+                                                                {
+                                                                  ...prev,
+                                                                }
+                                                              if (
+                                                                !newDetails[
+                                                                  clId
+                                                                ]
+                                                              ) {
+                                                                newDetails[
+                                                                  clId
+                                                                ] = {}
+                                                              }
+                                                              newDetails[clId][
+                                                                itemId
+                                                              ] = {
+                                                                id: itemId,
+                                                                name: result.name,
+                                                                type: result.type,
+                                                                path: result.path,
+                                                                collectionName:
+                                                                  result.collectionName,
+                                                              }
+                                                              return newDetails
+                                                            },
                                                           )
                                                         }
 
-                                                        // Then handle the specific item selection
-                                                        const clId =
-                                                          result.collectionId
-                                                        const itemId =
-                                                          result.id
-
-                                                        setSelectedItemsInCollection(
-                                                          (prev) => {
-                                                            const currentSelection =
-                                                              prev[clId] ||
-                                                              new Set()
-                                                            const newSelection =
-                                                              new Set(
-                                                                currentSelection,
-                                                              )
-
-                                                            if (
-                                                              newSelection.has(
-                                                                itemId,
-                                                              )
-                                                            ) {
-                                                              newSelection.delete(
-                                                                itemId,
-                                                              )
-                                                            } else {
-                                                              newSelection.add(
-                                                                itemId,
-                                                              )
-                                                            }
-
-                                                            return {
-                                                              ...prev,
-                                                              [clId]:
-                                                                newSelection,
-                                                            }
-                                                          },
+                                                        // Close search and clear query
+                                                        setDropdownSearchQuery(
+                                                          "",
                                                         )
-
-                                                        setSelectedItemDetailsInCollection(
-                                                          (prev) => {
-                                                            const newDetails =
-                                                            {
-                                                              ...prev,
-                                                            }
-                                                            if (
-                                                              !newDetails[
-                                                              clId
-                                                              ]
-                                                            ) {
-                                                              newDetails[
-                                                                clId
-                                                              ] = {}
-                                                            }
-                                                            newDetails[clId][
-                                                              itemId
-                                                            ] = {
-                                                              id: itemId,
-                                                              name: result.name,
-                                                              type: result.type,
-                                                              path: result.path,
-                                                              collectionName:
-                                                                result.collectionName,
-                                                            }
-                                                            return newDetails
-                                                          },
-                                                        )
+                                                        setSearchResults([])
                                                       }
-
-                                                      // Close search and clear query
-                                                      setDropdownSearchQuery(
-                                                        "",
-                                                      )
-                                                      setSearchResults([])
-                                                    }
 
                                                     return (
                                                       <div
@@ -3998,123 +4003,123 @@ function AgentComponent() {
                                         )
                                       }
 
-                                    // If no search query, show navigation-based content
-                                    if (navigationPath.length === 0) {
-                                      // Main menu - show regular integrations and Collections option
-                                      const knowledgeBases =
-                                        allAvailableIntegrations.filter(
-                                          (integration) =>
-                                            integration.id.startsWith("cl_"),
-                                        )
-                                      const otherIntegrations =
-                                        allAvailableIntegrations.filter(
-                                          (integration) =>
-                                            !integration.id.startsWith("cl_"),
-                                        )
-                                      const hasSelectedKB =
-                                        knowledgeBases.some(
-                                          (cl) => selectedIntegrations[cl.id],
-                                        )
-
-                                      return (
-                                        <>
-                                          {/* Regular integrations */}
-                                          {otherIntegrations.map(
-                                            (integration) => {
-                                              const isGoogleDrive =
-                                                integration.app ===
-                                                Apps.GoogleDrive &&
-                                                integration.entity === "file"
-                                              const showChevron =
-                                                isGoogleDrive
-
-                                              return (
-                                                <DropdownMenuItem
-                                                  key={integration.id}
-                                                  onSelect={(e) => {
-                                                    e.preventDefault()
-                                                    toggleIntegrationSelection(
-                                                      integration.id,
-                                                    )
-                                                  }}
-                                                  className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                                >
-                                                  <div className="flex items-center">
-                                                    <input
-                                                      type="checkbox"
-                                                      checked={
-                                                        selectedIntegrations[
-                                                        integration.id
-                                                        ] || false
-                                                      }
-                                                      onChange={() => { }}
-                                                      className="w-4 h-4 mr-3"
-                                                    />
-                                                    <span className="mr-2 flex items-center">
-                                                      {integration.icon}
-                                                    </span>
-                                                    <span className="text-gray-700 dark:text-gray-200">
-                                                      {integration.name}
-                                                    </span>
-                                                  </div>
-                                                  {showChevron && (
-                                                    <ChevronRight className="h-4 w-4 text-gray-400" />
-                                                  )}
-                                                </DropdownMenuItem>
-                                              )
-                                            },
-                                          )}
-
-                                          {/* Collections item */}
-                                          {knowledgeBases.length > 0 && (
-                                            <DropdownMenuItem
-                                              onSelect={(e) => {
-                                                e.preventDefault()
-                                                setNavigationPath([
-                                                  {
-                                                    id: "cl-root",
-                                                    name: "Collections",
-                                                    type: "cl-root",
-                                                  },
-                                                ])
-                                                setDropdownSearchQuery("")
-                                              }}
-                                              className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                            >
-                                              <div className="flex items-center">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={hasSelectedKB}
-                                                  onChange={() => { }}
-                                                  className="w-4 h-4 mr-3"
-                                                />
-                                                <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
-                                                <span className="text-gray-700 dark:text-gray-200">
-                                                  Collections
-                                                </span>
-                                              </div>
-                                              <ChevronRight className="h-4 w-4 text-gray-400" />
-                                            </DropdownMenuItem>
-                                          )}
-                                        </>
-                                      )
-                                    } else if (
-                                      navigationPath.length === 1 &&
-                                      navigationPath[0].type === "cl-root"
-                                    ) {
-                                      // Show collections list
-                                      const knowledgeBases =
-                                        allAvailableIntegrations.filter(
-                                          (integration) =>
-                                            integration.id.startsWith("cl_"),
-                                        )
-
-                                      return knowledgeBases.map(
-                                        (integration) => {
-                                          const clId = integration.id.replace(
-                                            "cl_",
-                                            "",
+                                      // If no search query, show navigation-based content
+                                      if (navigationPath.length === 0) {
+                                        // Main menu - show regular integrations and Collections option
+                                        const knowledgeBases =
+                                          allAvailableIntegrations.filter(
+                                            (integration) =>
+                                              integration.id.startsWith("cl_"),
                                           )
+                                        const otherIntegrations =
+                                          allAvailableIntegrations.filter(
+                                            (integration) =>
+                                              !integration.id.startsWith("cl_"),
+                                          )
+                                        const hasSelectedKB =
+                                          knowledgeBases.some(
+                                            (cl) => selectedIntegrations[cl.id],
+                                          )
+
+                                        return (
+                                          <>
+                                            {/* Regular integrations */}
+                                            {otherIntegrations.map(
+                                              (integration) => {
+                                                const isGoogleDrive =
+                                                  integration.app ===
+                                                    Apps.GoogleDrive &&
+                                                  integration.entity === "file"
+                                                const showChevron =
+                                                  isGoogleDrive
+
+                                                return (
+                                                  <DropdownMenuItem
+                                                    key={integration.id}
+                                                    onSelect={(e) => {
+                                                      e.preventDefault()
+                                                      toggleIntegrationSelection(
+                                                        integration.id,
+                                                      )
+                                                    }}
+                                                    className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                                  >
+                                                    <div className="flex items-center">
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={
+                                                          selectedIntegrations[
+                                                            integration.id
+                                                          ] || false
+                                                        }
+                                                        onChange={() => {}}
+                                                        className="w-4 h-4 mr-3"
+                                                      />
+                                                      <span className="mr-2 flex items-center">
+                                                        {integration.icon}
+                                                      </span>
+                                                      <span className="text-gray-700 dark:text-gray-200">
+                                                        {integration.name}
+                                                      </span>
+                                                    </div>
+                                                    {showChevron && (
+                                                      <ChevronRight className="h-4 w-4 text-gray-400" />
+                                                    )}
+                                                  </DropdownMenuItem>
+                                                )
+                                              },
+                                            )}
+
+                                            {/* Collections item */}
+                                            {knowledgeBases.length > 0 && (
+                                              <DropdownMenuItem
+                                                onSelect={(e) => {
+                                                  e.preventDefault()
+                                                  setNavigationPath([
+                                                    {
+                                                      id: "cl-root",
+                                                      name: "Collections",
+                                                      type: "cl-root",
+                                                    },
+                                                  ])
+                                                  setDropdownSearchQuery("")
+                                                }}
+                                                className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                              >
+                                                <div className="flex items-center">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={hasSelectedKB}
+                                                    onChange={() => {}}
+                                                    className="w-4 h-4 mr-3"
+                                                  />
+                                                  <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
+                                                  <span className="text-gray-700 dark:text-gray-200">
+                                                    Collections
+                                                  </span>
+                                                </div>
+                                                <ChevronRight className="h-4 w-4 text-gray-400" />
+                                              </DropdownMenuItem>
+                                            )}
+                                          </>
+                                        )
+                                      } else if (
+                                        navigationPath.length === 1 &&
+                                        navigationPath[0].type === "cl-root"
+                                      ) {
+                                        // Show collections list
+                                        const knowledgeBases =
+                                          allAvailableIntegrations.filter(
+                                            (integration) =>
+                                              integration.id.startsWith("cl_"),
+                                          )
+
+                                        return knowledgeBases.map(
+                                          (integration) => {
+                                            const clId = integration.id.replace(
+                                              "cl_",
+                                              "",
+                                            )
 
                                             return (
                                               <DropdownMenuItem
@@ -4273,11 +4278,11 @@ function AgentComponent() {
                                         )
                                       }
 
-                                    return null
-                                  })()}
-                                </>
-                              )
-                            })()}
+                                      return null
+                                    })()}
+                                  </>
+                                )
+                              })()}
                         </div>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -4393,10 +4398,11 @@ function AgentComponent() {
                                 filteredUsers.map((user, index) => (
                                   <div
                                     key={user.id}
-                                    className={`flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 last:border-b-0 ${index === selectedSearchIndex
-                                      ? "bg-gray-100 dark:bg-slate-700"
-                                      : ""
-                                      }`}
+                                    className={`flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 last:border-b-0 ${
+                                      index === selectedSearchIndex
+                                        ? "bg-gray-100 dark:bg-slate-700"
+                                        : ""
+                                    }`}
                                     onClick={() => handleSelectUser(user)}
                                   >
                                     <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
@@ -4503,8 +4509,8 @@ function AgentComponent() {
                     >
                       {selectedChatAgentExternalId
                         ? allAgentsList.find(
-                          (a) => a.externalId === selectedChatAgentExternalId,
-                        )?.name || "Select Agent to Test"
+                            (a) => a.externalId === selectedChatAgentExternalId,
+                          )?.name || "Select Agent to Test"
                         : "Test Current Form Config"}
                       <ChevronDown className="ml-2 h-3 w-3" />
                     </Button>
@@ -4561,8 +4567,8 @@ function AgentComponent() {
                   attachments={message.attachments || []}
                   dots={
                     isStreaming &&
-                      index === messages.length - 1 &&
-                      message.messageRole === "assistant"
+                    index === messages.length - 1 &&
+                    message.messageRole === "assistant"
                       ? dots
                       : ""
                   }
@@ -4744,10 +4750,11 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-mono font-medium rounded-full transition-colors ${active
-        ? "bg-gray-200 text-gray-800 dark:bg-slate-700 dark:text-gray-100"
-        : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800/60"
-        }`}
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-mono font-medium rounded-full transition-colors ${
+        active
+          ? "bg-gray-200 text-gray-800 dark:bg-slate-700 dark:text-gray-100"
+          : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800/60"
+      }`}
     >
       {icon === "asterisk" && <span className="text-lg font-semibold">*</span>}
       {icon === "users" && <Users size={16} />}
@@ -4762,7 +4769,7 @@ const textToCitationIndexPattern = textToCitationIndex
 const renderMarkdownLink = ({
   node,
   ...linkProps
-}: { node?: any;[key: string]: any }) => (
+}: { node?: any; [key: string]: any }) => (
   <a
     {...linkProps}
     target="_blank"

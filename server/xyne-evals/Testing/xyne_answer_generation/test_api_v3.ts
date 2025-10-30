@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 
 import { sign } from "hono/jwt"
-import { db } from "./db/client"
-import { getUserByEmail } from "./db/user"
-import config from "./config"
+import { db } from "../../../db/client"
+import { getUserByEmail } from "../../../db/user"
+import config from "../../../config"
 import { readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 
@@ -109,7 +109,7 @@ function getCookiesFromEnv(): string | null {
  */
 function updateCookiesInEnv(newCookies: string) {
   try {
-    const envPath = join(__dirname, ".env")
+    const envPath = join(process.cwd(), ".env")
     let envContent = readFileSync(envPath, "utf8")
 
     // Replace the TEST_API_COOKIES line
@@ -139,9 +139,9 @@ function updateCookiesInEnv(newCookies: string) {
  * Test API with given cookies
  */
 async function testAPI(query: string, cookies: string): Promise<boolean> {
-  const url = `http://localhost:5173/api/v1/message/create?selectedModelConfig=${encodeURIComponent('{"model":"Claude Sonnet 4","reasoning":false,"websearch":false,"deepResearch":false}')}&message=${encodeURIComponent(query)}`
+  const url = `http://localhost:3000/api/v1/message/create?selectedModelConfig=${encodeURIComponent('{"model":"Claude Sonnet 4","reasoning":false,"websearch":false,"deepResearch":false}')}&message=${encodeURIComponent(query)}`
   const test_url =
-    `http://localhost:5173/api/v1/message/create?` +
+    `http://localhost:3000/api/v1/message/create?` +
     `message=${encodeURIComponent(query)}&` +
     `selectedModelConfig=${encodeURIComponent(
       JSON.stringify({
@@ -157,7 +157,7 @@ async function testAPI(query: string, cookies: string): Promise<boolean> {
   console.log("---")
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(test_url, {
       method: "GET",
       headers: {
         Cookie: cookies,

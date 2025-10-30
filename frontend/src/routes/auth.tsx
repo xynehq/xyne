@@ -23,12 +23,12 @@ const XyneLogo = () => (
 export default function LoginForm() {
   const handleGoogleLogin = async () => {
     try {
-    const redirectUrl = `${window.location.origin}/v1/auth/callback`
-    console.log("Redirecting to:", redirectUrl)
-    window.location.href = redirectUrl
-   }catch (error) {
-    console.error("Failed to load config:", error)
-   }
+      const redirectUrl = `${window.location.origin}/v1/auth/callback`
+      console.log("Redirecting to:", redirectUrl)
+      window.location.href = redirectUrl
+    } catch (error) {
+      console.error("Failed to load config:", error)
+    }
   }
 
   return (

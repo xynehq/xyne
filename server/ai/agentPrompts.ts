@@ -863,7 +863,7 @@ export const agentBaselineKbContextPromptJson = (
   userContext: string,
   dateForAI: string,
   retrievedContext: string,
-  agentPromptData?: AgentPromptData
+  agentPromptData?: AgentPromptData,
 ) => `The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without
 any logic. Be formal as much as possible.
 
@@ -873,7 +873,9 @@ You are an AI assistant with access to some data given as context. You should on
 3. Emails
 4. Calendar events
 
-${agentPromptData ? `
+${
+  agentPromptData
+    ? `
 # Context of the agent {priority}
 Name: ${agentPromptData.name}
 Description: ${agentPromptData.description}
@@ -881,7 +883,9 @@ Prompt: ${agentPromptData.prompt}
 
 # Agent Sources
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map((source) => `- ${typeof source === "string" ? source : JSON.stringify(source)}`).join("\\n") : "No specific sources provided by agent."}
-This is the context of the agent, it is very important to follow this. You MUST prioritize and filter information based on the # Agent Sources provided. If sources are listed, your response should strictly align with the content and type of these sources. If no specific sources are listed under # Agent Sources, proceed with the general context.` : ""}
+This is the context of the agent, it is very important to follow this. You MUST prioritize and filter information based on the # Agent Sources provided. If sources are listed, your response should strictly align with the content and type of these sources. If no specific sources are listed under # Agent Sources, proceed with the general context.`
+    : ""
+}
 
 ## File & Chunk Formatting (CRITICAL)
 - Each file starts with a header line exactly like:

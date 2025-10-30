@@ -3,7 +3,8 @@ import { useCallNotifications } from "@/services/callNotifications"
 import { IncomingCallModal } from "@/components/IncomingCallModal"
 
 function RootComponent() {
-  const { incomingCall, acceptCall, rejectCall, dismissCall } = useCallNotifications()
+  const { incomingCall, acceptCall, rejectCall, dismissCall } =
+    useCallNotifications()
 
   return (
     <>

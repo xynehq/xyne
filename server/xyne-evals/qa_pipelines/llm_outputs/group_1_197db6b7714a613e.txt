@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "vimal.kumar@juspay.in",
+      "User_name": "Vimal Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What are the login details that Prateeth Bharadwaj shared in the 'one-team' channel?",
+    "Answer": "Based on the provided documents, Prateeth Bharadwaj shared the following login details in the 'one-team' channel: phone: 0000000003, otp: 123456."
+  },
+  {
+    "User_data": {
+      "UserID": "chandan.dogra@juspay.in",
+      "User_name": "Chandan Dogra"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Can you provide a list of all the Merchant IDs (MIDs) mentioned across the recent messages in the 'one-team' channel?",
+    "Answer": "Yes, the following Merchant IDs (MIDs) were mentioned in the 'one-team' channel:\n- 'railyatri', shared by Sophia Anjelica.\n- '54360', shared by JIRAffe.\n- '34436', shared by Aniket."
+  },
+  {
+    "User_data": {
+      "UserID": "pragya.chaturvedi@juspay.in",
+      "User_name": "Pragya Chaturvedi"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.6,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the channel's description and the content of the messages, what is the primary purpose of the 'one-team' channel?",
+    "Answer": "The primary purpose of the 'one-team' channel is to facilitate collaboration on making payments reliable. The channel's description states its goal is to 'build comprehensive products, improve quality, automate processes, all tightly aligned with the current and long term merchant needs.' The messages exchanged, which include specific identifiers like Order IDs, Merchant IDs, and Request IDs, indicate that the team uses this channel for technical support, debugging, and sharing information to resolve payment-related issues."
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.kulkarni@juspay.in",
+      "User_name": "Aditya Kulkarni"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Who was the user that shared the Request ID '612da5ee37004416ac3ae1fe7c5d1aa5'?",
+    "Answer": "The user who shared the Request ID '612da5ee37004416ac3ae1fe7c5d1aa5' was Balaji B (username: balaji.b)."
+  },
+  {
+    "User_data": {
+      "UserID": "ankit.jha@juspay.in",
+      "User_name": "Ankit Jha"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.4,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "status"
+    },
+    "Question": "What specific order and merchant information was shared for my attention by Aniket Lawaniya?",
+    "Answer": "Aniket Lawaniya shared a message for your attention containing the order ID 'DCCPVT009' and the merchant ID (mid) '34436'."
+  }
+]
+```

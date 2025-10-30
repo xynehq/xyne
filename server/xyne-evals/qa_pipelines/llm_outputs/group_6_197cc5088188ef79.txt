@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "amit.shukla@company.com",
+      "User_name": "Amit Shukla"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What is the JIRA issue number associated with the order status discrepancy reported by Manvitha MP for the merchant 'flicktv'?",
+    "Answer": "The JIRA issue number for the order status discrepancy on the dashboard for the merchant `flicktv` is EUL-19898, as stated in the message from Manvitha MP."
+  },
+  {
+    "User_data": {
+      "UserID": "product.manager@company.com",
+      "User_name": "Product Manager"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "high",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What is the history and current status of the JIRA ticket EUL-19734, which requests adding the UMRN ID to the dashboard?",
+    "Answer": "Based on the provided documents, the JIRA ticket EUL-19734 has a conflicting history. One message from 'JIRAffe' indicates the issue, reported by Abdul Bari K and assigned to Srishti Chauhan, was `REJECTED`. However, another message for the same JIRA number, also reported by Abdul Bari K, shows it is assigned to 'Arsh ;)' with a status of `IN_PROGRESS` and a stage of `WAITING_FOR_MERGE`. The ETA for this in-progress ticket is October 28th."
+  },
+  {
+    "User_data": {
+      "UserID": "krishnaraj.solanki@company.com",
+      "User_name": "Krishnaraj Solanki"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "What specific change to the request format fixed the failing API calls related to the `UPI_INAPP` flag?",
+    "Answer": "The failing API calls for `UPI_INAPP` were fixed by changing the value of the `payment_method` parameter. The failing request was `payment_method : UPI` & `txn_type : UPI_INAPP`. The successful request format is `payment_method : UPI_INAPP` & `txn_type : UPI_INAPP`."
+  },
+  {
+    "User_data": {
+      "UserID": "vivek.nikam@company.com",
+      "User_name": "Vivek Nikam"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "What were the various causes of issues discussed across the Euler and Dashboard systems?",
+    "Answer": "Based on the documents, the causes of issues discussed for the Euler and Dashboard systems include:\n1.  **Type Mismatch:** A key type mismatch between 'dashboard' and 'euler' was identified on September 3rd.\n2.  **Configuration Error:** An incorrect API request format for `UPI_INAPP` transactions was causing failures.\n3.  **Certificate Expiration:** PRM requests for the HDFC Smart gateway started failing after the annual certificate renewal process.\n4.  **Data Encoding:** An issue was caused by a Utf8 undecodable character at the end of a unique request ID, which was being flagged by the squid proxy.\n5.  **Data Discrepancy:** For the merchant `flicktv`, there was a discrepancy in the order status displayed on the dashboard."
+  },
+  {
+    "User_data": {
+      "UserID": "new.dev@company.com",
+      "User_name": "New Developer"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "List the different software tools, platforms, and services that are mentioned being used for tracking, debugging, and analysis.",
+    "Answer": "The following tools, platforms, and services are mentioned:\n- **JIRA:** Used for tracking issues and enhancement requests under projects like NPD and EUL (e.g., EUL-19898, EUL-19734).\n- **OpenSearch Dashboard:** Used for exploring logs to debug production issues, such as certificate failures and encoding problems.\n- **`godel-big-q.vision`:** A data platform used to run SQL queries against the `euler_api_requests_v2` table for analysis.\n- **BitBot:** A bot mentioned in the context of potentially relaxing a JIRA check.\n- **Squid proxy:** A proxy service that was flagging a URL due to an encoding issue."
+  }
+]
+```

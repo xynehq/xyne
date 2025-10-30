@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "malavs@company.com",
+      "User_name": "malav"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Describe the technical issue reported by Adarsh Pandey regarding the Breeze frontend, including the cause, the incorrect flow, and the ultimate financial impact.",
+    "Answer": "Based on the message from Adarsh Pandey (doc id: b0702de6-ffd5-446a-830e-f35a2e71df3a), the Breeze frontend gets a signature payload from the backend but then adds an outer payload `merchant_id` from its own frontend configuration. The cause of the issue was that the `merchant_id` in the frontend config was mistakenly updated to a wrong MID by an internal team. This created a discrepancy where the `order_details` field contained the correct merchant ID (MID1), but the `merchant_id` field in the outer payload had an incorrect one (MID2). As a result, the Euler system creates an order for MID1 but uses MID2's merchant gateway account (mga) for the transaction. The financial impact is that the order is marked successful, but the money is settled to the wrong merchant. This issue was observed for UPI & NB transactions."
+  },
+  {
+    "User_data": {
+      "UserID": "srikanth.mitra@company.com",
+      "User_name": "Srikanth Mitra"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What were the differences in mandate and refund outcomes for the two UAT orders you posted for merchant SG303, specifically T_1757509353 and T_1756883052?",
+    "Answer": "Based on the two logs provided, there are key differences in the outcomes for the orders:\n\n1.  **Order T_1757509353** (doc id: 8ddc3e8f-14df-451f-9647-9abac21cec4f):\n    *   **Refund Status:** `SUCCESS`. The `sent_to_gateway` flag is `true`.\n    *   **Mandate Status:** `ACTIVE`. The mandate setup was successful.\n\n2.  **Order T_1756883052** (doc id: 47bb564f-6173-4202-9d83-d45b94f3e457):\n    *   **Refund Status:** `PENDING`. The `sent_to_gateway` flag is `false`.\n    *   **Mandate Status:** `FAILURE`. The `pg_response` indicates the reason was, \"Cannot setup mandate, transaction should be successful\"."
+  },
+  {
+    "User_data": {
+      "UserID": "mohd.umar@company.com",
+      "User_name": "Mohd. Umar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the discussions, what is a recurring theme causing discrepancies between Sandbox and Production environments?",
+    "Answer": "Based on the provided documents, a recurring theme is configuration drift between Sandbox (Sbx) and Production (PROD) environments. Mohd. Umar's message (doc id: 0a14f43e-0d51-4eaf-ba30-77c9034a0e1c) explicitly states that a `service config` which controlled whitelisted keys for the `order-status` response was present in the Sandbox config but not in Production. This led to details being accepted in the create/session API but not being shown in the production order-status response. This highlights that differences in service configurations between environments are a source of operational issues."
+  },
+  {
+    "User_data": {
+      "UserID": "ambuj.s@company.com",
+      "User_name": "Ambuj"
+    },
+    "Question_weights":d": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.0,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "For the refund request on Juspay order ID tFtrrR5MW0, what was the merchant ID, requested refund amount, and the resulting refund status?",
+    "Answer": "Based on the logs provided by Vivek Nikam (doc id: 5b0bd676-50d4-4728-9f6b-758292521ef8), for Juspay order ID `tFtrrR5MW0`:\n- The merchant ID is `nammayatriBAP`.\n- The requested refund amount was `80.0`.\n- The resulting refund status is `PENDING`."
+  },
+  {
+    "User_data": {
+      "UserID": "preetesh.shetty@company.com",
+      "User_name": "Preetesh Shetty"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "Summarize the open issues or problems that require attention, based on the provided messages.",
+    "Answer": "Based on the documents, the following issues appear to require attention:\n1.  **Incorrect Merchant Settlement:** An issue with the `breeze` frontend is causing money to be settled to the wrong merchant due to a configuration error with the merchant ID. This was observed for UPI & NB transactions and a request was made to check and reject these requests (doc id: b0702de6-ffd5-446a-830e-f35a2e71df3a).\n2.  **Pending Refund:** A refund for order `tFtrrR5MW0` (merchant `nammayatriBAP`) is in `PENDING` status and has not been sent to the gateway (doc id: 5b0bd676-50d4-4728-9f6b-758292521ef8).\n3.  **Incomplete Transaction:** An order for `icicilombard` (order id `66661113_12535130`) was not initiated to the gateway (doc id: d3aeb321-5d87-4dc6-9cdc-c30893aa6e2b).\n4.  **Failed Mandate:** For merchant `SG303`, order `T_1756883052` resulted in a mandate with a `FAILURE` status, even though the transaction was `AUTO_REFUNDED` (doc id: 47bb564f-6173-4202-9d83-d45b94f3e457).\n5.  **Eligibility API Issue:** For merchant `instaastro`, an eligibility check for order `61530414` returned an empty `payment_methods_eligibility` array, indicating a problem with the eligibility response (doc id: b7a5d367-2d5a-4d9c-882f-36a2702a04f1)."
+  }
+]
+```

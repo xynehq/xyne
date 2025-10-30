@@ -15,8 +15,8 @@ export const createWorkflowTool = async (
   trx: TxnOrClient,
   data: {
     type: ToolType
-    workspaceId: number,
-    userId: number,
+    workspaceId: number
+    userId: number
     value?: string | number | Record<string, any>
     config?: Record<string, any>
   },

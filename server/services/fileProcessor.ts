@@ -3,10 +3,10 @@ import { chunkDocument } from "@/chunks"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import { type ChunkMetadata } from "@/types"
-import { 
-  PdfProcessor, 
+import {
+  PdfProcessor,
   type PdfProcessingMethod,
-  type ProcessingResultDraft 
+  type ProcessingResultDraft,
 } from "@/lib/pdfProcessor"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
 import * as XLSX from "xlsx"
@@ -23,12 +23,10 @@ const Logger = getLogger(Subsystem.Ingest).child({
   module: "fileProcessor",
 })
 
-export { 
-  type PdfProcessingMethod, 
-  type ProcessingResultDraft 
+export {
+  type PdfProcessingMethod,
+  type ProcessingResultDraft,
 } from "@/lib/pdfProcessor"
-
-
 
 export interface ProcessingResult {
   chunks: string[]
@@ -123,7 +121,7 @@ export class FileProcessorService {
 
           // Use the same header-preserving chunking function as dataSource integration
           const sheetChunks = chunkSheetWithHeaders(worksheet)
-          
+
           const filteredChunks = sheetChunks.filter(
             (chunk) => chunk.trim().length > 0,
           )
@@ -178,33 +176,40 @@ export class FileProcessorService {
         }
       }
     } catch (error) {
-      Logger.error(error, `File processing failed for ${fileName} (${baseMimeType}, ${buffer.length} bytes)`)
-      
+      Logger.error(
+        error,
+        `File processing failed for ${fileName} (${baseMimeType}, ${buffer.length} bytes)`,
+      )
+
       // Re-throw the error to ensure proper error handling upstream
-      throw new Error(`Failed to process file "${fileName}": ${getErrorMessage(error)}`)
+      throw new Error(
+        `Failed to process file "${fileName}": ${getErrorMessage(error)}`,
+      )
     }
 
     // For non-PDF files, create empty chunks_map and image_chunks_map for backward compatibility
     const chunks_map: ChunkMetadata[] = chunks.map((_, index) => ({
       chunk_index: index,
-      page_numbers: [], 
-      block_labels: ["text"], 
-    }));
+      page_numbers: [],
+      block_labels: ["text"],
+    }))
 
     const image_chunks_map: ChunkMetadata[] = image_chunks.map((_, index) => ({
-      chunk_index: index, 
-      page_numbers: [], 
-      block_labels: ["image"], 
-    }));
+      chunk_index: index,
+      page_numbers: [],
+      block_labels: ["image"],
+    }))
 
     // Wrap in array to match return type
-    return [{
-      chunks,
-      chunks_pos,
-      image_chunks,
-      image_chunks_pos,
-      chunks_map: chunks_map,
-      image_chunks_map: image_chunks_map,
-    }]
+    return [
+      {
+        chunks,
+        chunks_pos,
+        image_chunks,
+        image_chunks_pos,
+        chunks_map: chunks_map,
+        image_chunks_map: image_chunks_map,
+      },
+    ]
   }
 }

@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "sahil.kumar@juspay.in",
+      "User_name": "Sahil Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What programming languages does Ravishekhar Yadav list under his Technical Skills?",
+    "Answer": "According to the resume, Ravishekhar Yadav lists the following programming languages under his technical skills: C++, JavaScript, TypeScript, and Java."
+  },
+  {
+    "User_data": {
+      "UserID": "arshith.balaraju@juspay.in",
+      "User_name": "Arshith Balaraju"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "definitive"
+    },
+    "Question": "Regarding the 'Real-Time Chat Application' project, what technologies were used and what specific performance improvement was achieved?",
+    "Answer": "For the 'Real-Time Chat Application' project, the technologies used were React, Redux, RTK Query, Express, MongoDB, and Socket.IO. The resume states that integrating WebSockets resulted in reducing chat latency by 30%."
+  },
+  {
+    "User_data": {
+      "UserID": "sahil.kumar@juspay.in",
+      "User_name": "Sahil Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the achievements and profile summary, what can be inferred as Ravishekhar's core competency?",
+    "Answer": "Based on the resume, it can be inferred that Ravishekhar's core competency is in competitive programming and problem-solving. This is supported by his strong foundation in Data Structures and Algorithms, having solved over 2000 DSA problems, and achieving high ranks such as 'Expert' on Codeforces and '4-star' on CodeChef, placing him in the top percentages of participants."
+  },
+  {
+    "User_data": {
+      "UserID": "arshith.balara@juspay.in",
+      "User_name": "Arshith Balara"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.2,
+      "Question_Complexity": "medium",
+      "Realness": "list",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Provide a chronological list of Ravishekhar's certifications, from oldest to most recent.",
+    "Answer": "Based on the document, Ravishekhar's certifications in chronological order are:\n1. C++ Programming—Beginner to Advanced (Udemy): Dec–Jan 2022\n2. Advanced React (Coursera): Mar–Apr 2024\n3. Server-side JavaScript with Node.js (Coursera): Apr–May 2024"
+  },
+  {
+    "User_data": {
+      "UserID": "sahil.kumar@juspay.in",
+      "User_name": "Sahil Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.0,
+      "Question_Complexity": "low",
+      "Realness": "status",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are Ravishekhar's specific ratings and competitive rankings mentioned for Codeforces and CodeChef?",
+    "Answer": "Ravishekhar's achievements on competitive programming platforms are listed as:\n- **Codeforces:** Expert with a max rating of 1611.\n- **CodeChef:** 4-star with a max rating of 1956 (top 0.8% in India).\n- **CodeChef Starters 168 (Div 2):** Global Rank 26 among 1966 participants (top 1.3%).\n- **CodeChef Starters 174 (Div 2):** Global Rank 81 among 1763 participants (top 4.6%)."
+  }
+]
+```

@@ -963,9 +963,15 @@ export const updateParentStatus = async (
     }
 
     if (isCollection) {
-      await trx.update(collections).set(updateData).where(eq(collections.id, parentId))
+      await trx
+        .update(collections)
+        .set(updateData)
+        .where(eq(collections.id, parentId))
     } else {
-      await trx.update(collectionItems).set(updateData).where(eq(collectionItems.id, parentId))
+      await trx
+        .update(collectionItems)
+        .set(updateData)
+        .where(eq(collectionItems.id, parentId))
     }
     return
   }
@@ -987,9 +993,15 @@ export const updateParentStatus = async (
     }
 
     if (isCollection) {
-      await trx.update(collections).set(updateData).where(eq(collections.id, parentId))
+      await trx
+        .update(collections)
+        .set(updateData)
+        .where(eq(collections.id, parentId))
     } else {
-      await trx.update(collectionItems).set(updateData).where(eq(collectionItems.id, parentId))
+      await trx
+        .update(collectionItems)
+        .set(updateData)
+        .where(eq(collectionItems.id, parentId))
 
       // For folders, recursively check the parent folder/collection
       const [folder] = await trx

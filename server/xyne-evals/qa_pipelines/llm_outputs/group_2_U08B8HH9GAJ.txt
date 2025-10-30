@@ -1,0 +1,84 @@
+```json
+[
+  {
+    "User_data": {
+      "UserID": "sarthak.rawal@juspay.in",
+      "User_name": "Sarthak Rawal"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.1,
+      "Question_Complexity": "low",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "What are the specific bank codes and bank names that Ananya Gupta proposed to add?",
+    "Answer": "Based on the message from Ananya Gupta, here is the list of proposed bank codes and their corresponding names:\n- JP_CACORP: Credit Agricole Corporate and Investment Bank\n- JP_DBSCORP: DBS Bank Corporate\n- JP_GSCBL: Gujarat State Co-operative Bank Limited\n- JP_IBCORP: Indian Bank Corporate\n- JP_JPMCORP: JP Morgan Corporate Bank\n- JP_KGB: Kerala Gramin Bank\n- JP_MGB: Maharashtra Gramin Bank\n- JP_RBLCORP: RBL Bank Limited - Corporate Banking\n- JP_SCBCORP: Standard Chartered Bank Corporate\n- JP_TKCCB: The Kalupur Commercial Co-Operative Bank\n- JP_TSCBL: The Sutex Co-op Bank Ltd"
+  },
+  {
+    "User_data": {
+      "UserID": "prashant.khandelwal@juspay.in",
+      "User_name": "Prashant Khandelwal"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.5,
+      "Question_Complexity": "medium",
+      "Realness": "status",
+      "Reasoning": "inferential",
+      "Question_format": "status"
+    },
+    "Question": "What is the current situation with the request to add new bank codes? Summarize who is involved and what actions are being taken or requested.",
+    "Answer": "Ananya Gupta initiated a request to add a list of new bank codes. She has asked Rajarajan to confirm if the proposed values are correct, highlighting a critical constraint: the values for `juspay_bank_code` cannot be deleted from the dashboard once they are inserted. In response, Advait Mahesh has confirmed that he and 'malav' will get these codes added. The pending action is the confirmation from Rajarajan on the exact values before insertion."
+  },
+  {
+    "User_data": {
+      "UserID": "rajarajan.vr.001@juspay.in",
+      "User_name": "Rajarajan"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.7,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "definitive"
+    },
+    "Question": "Based on the conversation where I am mentioned, what is the single most critical constraint that requires my confirmation before proceeding with the bank code insertion?",
+    "Answer": "The most critical constraint, as stated by Ananya Gupta, is that the `juspay_bank_code` values cannot be deleted once they are inserted through the dashboard. This is why she is seeking your confirmation on the exact values to ensure they are correct before the insertion is performed."
+  },
+  {
+    "User_data": {
+      "UserID": "aditya.sridhar@juspay.in",
+      "User_name": "Aditya S Sridhar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.3,
+      "Question_Complexity": "medium",
+      "Realness": "fact",
+      "Reasoning": "fact-based",
+      "Question_format": "listing"
+    },
+    "Question": "Across the provided messages, what are the different subjects Rajarajan is being consulted on?",
+    "Answer": "Based on the documents, Rajarajan is being consulted on two different subjects:\n1.  **Bank Code Insertion:** Ananya Gupta is asking him to confirm a list of new bank codes and provide the exact `juspay_bank_code` values for insertion, as they are permanent once added.\n2.  **Webhooks JWT:** Krupal Panchasara suggests that Karthik Kumar B S connect with Rajarajan (or his team) regarding a knowledge transfer (KT) that was given for webhooks JWT."
+  },
+  {
+    "User_data": {
+      "UserID": "vimal.kumar@juspay.in",
+      "User_name": "Vimal Kumar"
+    },
+    "Question_weights": {
+      "Coverage_preference": "low",
+      "Vagueness": 0.9,
+      "Question_Complexity": "high",
+      "Realness": "infer",
+      "Reasoning": "inferential",
+      "Question_format": "listing"
+    },
+    "Question": "How do the recent activities in the 'one-team' channel reflect its core purpose?",
+    "Answer": "The 'one-team' channel's goal is to \"build comprehensive products, improve quality, automate processes, all tightly aligned with the current and long term merchant needs.\"\n\nThe recent discussion about adding new bank codes directly reflects this purpose. Specifically:\n- **Building comprehensive products:** Adding new bank codes expands the product's capabilities.\n- **Improving quality:** Ananya Gupta's insistence on getting the exact values from Rajarajan because they \"can not delete it once inserted\" demonstrates a focus on data integrity and quality assurance before making system changes."
+  }
+]
+```

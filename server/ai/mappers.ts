@@ -1,9 +1,9 @@
 import { AIProviders, Models, type Cost } from "@/ai/types"
-import { MODEL_CONFIGURATIONS } from "./modelConfig";
-import { get } from "http";
+import { MODEL_CONFIGURATIONS } from "./modelConfig"
+import { get } from "http"
 
-const getActualModelName=(model:Models):string=>{
-  return MODEL_CONFIGURATIONS[model]?.actualName || model;
+const getActualModelName = (model: Models): string => {
+  return MODEL_CONFIGURATIONS[model]?.actualName || model
 }
 export const modelDetailsMap: Record<
   string,
@@ -306,34 +306,33 @@ export const modelDetailsMap: Record<
   //     },
   //   },
   // },
-  [getActualModelName(Models.Vertex_Claude_Sonnet_4)]:{
-    name:"vertex-claude-sonnet-4",
-    cost:{
-      onDemand:{
+  [getActualModelName(Models.Vertex_Claude_Sonnet_4)]: {
+    name: "vertex-claude-sonnet-4",
+    cost: {
+      onDemand: {
         pricePerThousandInputTokens: 0.003,
         pricePerThousandOutputTokens: 0.015,
-      }
-    }
+      },
+    },
   },
-  [getActualModelName(Models.Vertex_Gemini_2_5_Flash)]:{
-    name:"vertex-gemini-2-5-flash",
-    cost:{
-      onDemand:{
+  [getActualModelName(Models.Vertex_Gemini_2_5_Flash)]: {
+    name: "vertex-gemini-2-5-flash",
+    cost: {
+      onDemand: {
         pricePerThousandInputTokens: 0.0003,
         pricePerThousandOutputTokens: 0.0025,
-      }
-    }
+      },
+    },
   },
-  [getActualModelName(Models.Vertex_Gemini_2_5_Pro)]:{
-    name:"vertex-gemini-2-5-pro",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.00125,
-        pricePerThousandOutputTokens:0.01
-      }
-    }
-  }
-
+  [getActualModelName(Models.Vertex_Gemini_2_5_Pro)]: {
+    name: "vertex-gemini-2-5-pro",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.00125,
+        pricePerThousandOutputTokens: 0.01,
+      },
+    },
+  },
 }
 
 export const ModelToProviderMap: Record<Models, AIProviders> = {

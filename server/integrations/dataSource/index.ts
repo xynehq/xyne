@@ -215,7 +215,7 @@ const processPdfContent = async (
       true,
       true,
     )
-    
+
     if (result.chunks.length === 0 && result.image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",

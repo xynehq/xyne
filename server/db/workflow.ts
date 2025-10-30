@@ -51,19 +51,21 @@ export const getWorkflowTemplateByIdWithPublicCheck = async (
   trx: TxnOrClient,
   id: string,
   workspaceId: number,
-  userId: number
+  userId: number,
 ): Promise<SelectWorkflowTemplate | null> => {
   const [template] = await trx
     .select()
     .from(workflowTemplate)
-    .where(and(
-      eq(workflowTemplate.id, id),
-      eq(workflowTemplate.workspaceId, workspaceId),
-      or(
-        eq(workflowTemplate.isPublic, true),
-        eq(workflowTemplate.userId, userId),
-      )
-    ))
+    .where(
+      and(
+        eq(workflowTemplate.id, id),
+        eq(workflowTemplate.workspaceId, workspaceId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(workflowTemplate.userId, userId),
+        ),
+      ),
+    )
     .limit(1)
 
   return template ? selectWorkflowTemplateSchema.parse(template) : null
@@ -77,13 +79,15 @@ export const getAccessibleWorkflowTemplates = async (
   const templates = await trx
     .select()
     .from(workflowTemplate)
-    .where(and(
-      eq(workflowTemplate.workspaceId, workspaceId),
-      or(
-        eq(workflowTemplate.isPublic, true),
-        eq(workflowTemplate.userId, userId),
-      )
-    ))
+    .where(
+      and(
+        eq(workflowTemplate.workspaceId, workspaceId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(workflowTemplate.userId, userId),
+        ),
+      ),
+    )
     .orderBy(desc(workflowTemplate.createdAt))
 
   return templates as SelectWorkflowTemplate[]
@@ -190,11 +194,13 @@ export const getWorkflowExecutionById = async (
   const [execution] = await trx
     .select()
     .from(workflowExecution)
-    .where(and(
-      eq(workflowExecution.workspaceId, workspaceId),
-      eq(workflowExecution.userId, userId),
-      eq(workflowExecution.id, id),
-    ))
+    .where(
+      and(
+        eq(workflowExecution.workspaceId, workspaceId),
+        eq(workflowExecution.userId, userId),
+        eq(workflowExecution.id, id),
+      ),
+    )
     .limit(1)
 
   return execution ? (execution as SelectWorkflowExecution) : null
@@ -208,10 +214,12 @@ export const getAllWorkflowExecutions = async (
   const executions = await trx
     .select()
     .from(workflowExecution)
-    .where(and(
-      eq(workflowExecution.workspaceId, workspaceId),
-      eq(workflowExecution.userId, userId),
-    ))
+    .where(
+      and(
+        eq(workflowExecution.workspaceId, workspaceId),
+        eq(workflowExecution.userId, userId),
+      ),
+    )
     .orderBy(desc(workflowExecution.createdAt))
 
   return executions as SelectWorkflowExecution[]

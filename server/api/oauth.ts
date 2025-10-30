@@ -49,7 +49,9 @@ export const OAuthCallback = async (c: Context) => {
     }
     const { app, random } = JSON.parse(state)
     if (!app) {
-      throw new HTTPException(400, { message: "Invalid 'state': missing 'app'." })
+      throw new HTTPException(400, {
+        message: "Invalid 'state': missing 'app'.",
+      })
     }
     const stateInCookie = getCookie(c, `${app}-state`)
     if (random !== stateInCookie) {

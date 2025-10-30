@@ -474,15 +474,15 @@ export const updateUserTimezone = async (
 
 export const getUserFromJWT = async (
   db: TxnOrClient,
-  jwtPayload: { sub: string; workspaceId: string }
+  jwtPayload: { sub: string; workspaceId: string },
 ): Promise<SelectUser> => {
   const email = jwtPayload.sub
   const userRes = await getUserByEmail(db, email)
-  
+
   if (!userRes?.length) {
     throw new NoUserFound({ message: `User with email ${email} not found.` })
   }
-  
+
   return userRes[0]
 }
 

@@ -140,11 +140,7 @@ export const Sidebar = ({
             onClose={() => setShowHistory(false)}
           />
         )}
-        {showUsers && (
-          <UsersModal
-            onClose={() => setShowUsers(false)}
-          />
-        )}
+        {showUsers && <UsersModal onClose={() => setShowUsers(false)} />}
         <div className="flex flex-col items-center pt-4">
           {photoLink && (
             <img
@@ -210,7 +206,7 @@ export const Sidebar = ({
             </Tooltip>
           </div>
 
-           <Link
+          <Link
             to="/workflow"
             className={cn(
               "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",

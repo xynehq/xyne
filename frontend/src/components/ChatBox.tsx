@@ -210,7 +210,7 @@ interface ChatBoxProps {
   overrideIsRagOn?: boolean
   hideButtons?: boolean // Add prop to hide mark step as done section
   uploadStatus?: UploadStatus
-  isKnowledgeBaseChat?: boolean 
+  isKnowledgeBaseChat?: boolean
 }
 
 const availableSources: SourceItem[] = [
@@ -833,10 +833,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const uploadFiles = useCallback(
       async (files: SelectedFile[]) => {
         if (files.length === 0) return []
-       
+
         setUploadingFilesCount((prev) => prev + files.length)
         const uploadedMetadata: AttachmentMetadata[] = []
-       
+
         files.forEach((file) => {
           fileAbortControllers.current.set(file.id, new AbortController())
         })
@@ -946,7 +946,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     }, [uploadingFilesCount])
     const processFiles = useCallback(
       (files: FileList | File[]) => {
-       
         // Check attachment limit
         if (selectedFiles.length >= MAX_ATTACHMENTS) {
           toast.error({

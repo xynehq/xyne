@@ -5,7 +5,11 @@ import botLogo from "@/assets/bot-logo.svg"
 import { WorkflowCardProps } from "./Types"
 import { Users, Lock } from "lucide-react"
 
-export function WorkflowCard({ workflow, onViewClick, onViewExecution }: WorkflowCardProps) {
+export function WorkflowCard({
+  workflow,
+  onViewClick,
+  onViewExecution,
+}: WorkflowCardProps) {
   const [showExecutionModal, setShowExecutionModal] = useState(false)
 
   const formatDate = (dateString: string) => {
@@ -34,16 +38,14 @@ export function WorkflowCard({ workflow, onViewClick, onViewExecution }: Workflo
   const isPublic = workflow.isPublic === true
 
   return (
-    <div
-      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow rounded-2xl p-6 flex flex-col min-h-52 w-full max-w-[400px]"
-    >
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow rounded-2xl p-6 flex flex-col min-h-52 w-full max-w-[400px]">
       <div className="flex flex-col flex-1">
         {/* Icon and Visibility Badge */}
         <div className="flex items-start justify-between mb-5">
           <div className="w-10 h-10 bg-[#F2F2F3] dark:bg-blue-900/20 rounded-lg flex items-center justify-center">
             {getTemplateIcon()}
           </div>
-          
+
           {/* Visibility Badge */}
           {isPublic ? (
             <div className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700">

@@ -1,3 +1,6 @@
+import { promises as fs } from "fs"
+import path from "path"
+
 import {
   answerContextMap,
   answerContextMapFromFragments,
@@ -1478,6 +1481,8 @@ export const MessageWithToolsApi = async (c: Context) => {
               workspace.id,
               connector.id,
             )
+            // console.log("[AV AV]")
+            // console.dir( tools, { depth: null })
 
             const filteredTools = tools.filter((tool) => {
               const isIncluded = toolExternalIds.includes(tool.externalId!)
@@ -1723,6 +1728,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         }
         const internalJAFTools = buildInternalJAFTools()
         const mcpJAFTools = buildMCPJAFTools(finalToolsList)
+
         const allJAFTools = [...internalJAFTools, ...mcpJAFTools]
         toolsCompositionSpan.setAttribute(
           "internal_tools_count",
@@ -1927,6 +1933,24 @@ export const MessageWithToolsApi = async (c: Context) => {
 
               if (Array.isArray(contexts) && contexts.length) {
                 gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
+                // --- Start of Corrected Code Snippet ---
+
+                // 1. Safely map over the contexts, providing an explicit type for the 'context' parameter.
+                const docIds = contexts
+                  .map(
+                    (context: MinimalAgentFragment) => context?.source?.docId,
+                  )
+                  .filter(Boolean)
+
+                // 2. Set the array as a span attribute.
+                if (docIds.length > 0) {
+                  toolEndSpan.setAttribute(
+                    "context_doc_ids",
+                    JSON.stringify(docIds),
+                  )
+                }
+
+                // --- End of Corrected Code Snippet ---
               }
 
               toolEndSpan.setAttribute("tool_name", evt.data.toolName)
@@ -2210,6 +2234,41 @@ export const MessageWithToolsApi = async (c: Context) => {
                 const traceInsertSpan =
                   runEndSpan.startSpan("insert_chat_trace")
                 const traceJson = tracer.serializeToJson()
+
+                // --- Start of New Code Snippet ---
+
+                // 1. Define the directory and a unique filename. Using the traceId is perfect for this.
+                const logDir = path.join(
+                  process.cwd(),
+                  "xyne-evals",
+                  "data",
+                  "tracer-data",
+                )
+                const logFileName = `${traceId}.json`
+                const logFilePath = path.join(logDir, logFileName)
+
+                // 2. Create a self-executing async function to write the file without blocking the main flow.
+                ;(async () => {
+                  try {
+                    // Ensure the directory exists, creating it if it doesn't.
+                    await fs.mkdir(logDir, { recursive: true })
+
+                    // Write the traceJson string to the specified file.
+                    await fs.writeFile(logFilePath, traceJson)
+
+                    // Optional: Log to the console to confirm the file was saved.
+                    console.log(`Trace saved successfully to: ${logFilePath}`)
+                  } catch (err) {
+                    // If there's an error (e.g., permissions issue), log it but don't crash the application.
+                    console.error(
+                      `Failed to save trace file to ${logFilePath}:`,
+                      err,
+                    )
+                  }
+                })()
+
+                // --- End of New Code Snippet ---
+
                 await insertChatTrace({
                   workspaceId: workspace.id,
                   userId: user.id,

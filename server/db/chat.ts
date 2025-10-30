@@ -236,7 +236,9 @@ export const getInactiveChats = async (
   inactiveSince: Date,
   limit: number,
   offset: number,
-): Promise<Array<{ id: number; externalId: string; email: string; updatedAt: Date }>> => {
+): Promise<
+  Array<{ id: number; externalId: string; email: string; updatedAt: Date }>
+> => {
   const inactiveChats = await trx
     .select({
       id: chats.id,
@@ -245,12 +247,7 @@ export const getInactiveChats = async (
       updatedAt: chats.updatedAt,
     })
     .from(chats)
-    .where(
-      and(
-        lte(chats.updatedAt, inactiveSince),
-        isNull(chats.deletedAt),
-      ),
-    )
+    .where(and(lte(chats.updatedAt, inactiveSince), isNull(chats.deletedAt)))
     .orderBy(asc(chats.updatedAt), asc(chats.id))
     .limit(limit)
     .offset(offset)

@@ -220,8 +220,10 @@ const CollectionFileUpload = ({
     }
   }
 
-  // Calculate supported files count 
-  const supportedFilesCount = selectedFiles.filter(f => isValidFile(f.file)).length
+  // Calculate supported files count
+  const supportedFilesCount = selectedFiles.filter((f) =>
+    isValidFile(f.file),
+  ).length
 
   // Show skeleton loader when uploading
   if (isUploading && batchProgress && batchProgress.total > 0) {
@@ -236,18 +238,15 @@ const CollectionFileUpload = ({
       </div>
     )
   }
-  const getTooltipContent=()=>{
-    if(!collectionName.trim()){
+  const getTooltipContent = () => {
+    if (!collectionName.trim()) {
       return "Enter collection name"
-    }
-    else if(isUploading){
+    } else if (isUploading) {
       return "Uploading files..."
-    }
-    else{
+    } else {
       return "Add files to upload"
     }
   }
-
 
   return (
     <div className="w-full">
@@ -342,7 +341,8 @@ const CollectionFileUpload = ({
                 UPLOAD QUEUE
               </h3>
               <span className="text-xs text-gray-500 dark:text-gray-400">
-                {supportedFilesCount} supported file{supportedFilesCount !== 1 ? "s" : ""}
+                {supportedFilesCount} supported file
+                {supportedFilesCount !== 1 ? "s" : ""}
               </span>
               <Button
                 onClick={onRemoveAllFiles}
@@ -359,7 +359,7 @@ const CollectionFileUpload = ({
             <div className="flex-1 overflow-y-auto min-h-0">
               {selectedFiles.map((selectedFile, index) => {
                 const isSupported = isValidFile(selectedFile.file)
-                
+
                 return (
                   <div
                     key={selectedFile.id}
@@ -373,7 +373,10 @@ const CollectionFileUpload = ({
                     {/* File Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title={selectedFile.file.name}>
+                        <p
+                          className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate"
+                          title={selectedFile.file.name}
+                        >
                           {selectedFile.file.name}
                         </p>
                       </div>
@@ -408,26 +411,37 @@ const CollectionFileUpload = ({
 
             {/* Upload Button - sticks to bottom */}
             <div className="px-4 pt-4 pb-2 flex-shrink-0">
-               { (() => {
-              const isDisabled= selectedFiles.length === 0 || isUploading || !collectionName.trim()
-              const tooltipContent= isDisabled ? getTooltipContent() : undefined
-              
-            const button=(  <Button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onUpload()
-                }}
-                disabled={
-                  isDisabled
-                }
-                className={`w-full bg-slate-800 hover:bg-slate-700 dark:bg-slate-600 dark:hover:bg-slate-500 text-white disabled:opacity-50 disabled:cursor-not-allowed rounded-full h-10 text-sm font-medium `}
-                
-                
-              >
-                {isUploading ? "Uploading..." : "UPLOAD ITEMS"}
-              </Button>
-            )
-            return tooltipContent ? <SmartTooltip content={tooltipContent} className={`w-full block ${isDisabled ? 'cursor-not-allowed' : ''}`} >{button}</SmartTooltip> : button
+              {(() => {
+                const isDisabled =
+                  selectedFiles.length === 0 ||
+                  isUploading ||
+                  !collectionName.trim()
+                const tooltipContent = isDisabled
+                  ? getTooltipContent()
+                  : undefined
+
+                const button = (
+                  <Button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onUpload()
+                    }}
+                    disabled={isDisabled}
+                    className={`w-full bg-slate-800 hover:bg-slate-700 dark:bg-slate-600 dark:hover:bg-slate-500 text-white disabled:opacity-50 disabled:cursor-not-allowed rounded-full h-10 text-sm font-medium `}
+                  >
+                    {isUploading ? "Uploading..." : "UPLOAD ITEMS"}
+                  </Button>
+                )
+                return tooltipContent ? (
+                  <SmartTooltip
+                    content={tooltipContent}
+                    className={`w-full block ${isDisabled ? "cursor-not-allowed" : ""}`}
+                  >
+                    {button}
+                  </SmartTooltip>
+                ) : (
+                  button
+                )
               })()}
             </div>
           </div>
