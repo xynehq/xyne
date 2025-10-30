@@ -207,15 +207,6 @@ export interface AppFilter {
   }
 }
 
-export interface AppFilters {
-  gmail?: {
-    filters?: AppFilter[]
-  }
-  slack?: {
-    filters?: AppFilter[]
-  }
-}
-
 export interface AppSelectionMap {
   [appName: string]: AppSelection
 }
@@ -223,13 +214,13 @@ export interface AppSelectionMap {
 export interface ParsedResult {
   selectedApps: Apps[]
   selectedItems: Partial<Record<Apps, string[]>>
-  appFilters?: Partial<Record<Apps, AppFilters>>
+  appFilters?: Partial<Record<Apps, AppFilter[]>> // Direct mapping - no redundancy!
 }
 
 export function parseAppSelections(input: AppSelectionMap): ParsedResult {
   const selectedApps: Apps[] = []
   let selectedItems: Record<Apps, string[]> = {} as Record<Apps, string[]>
-  let appFilters: Record<Apps, AppFilters> = {} as Record<Apps, AppFilters>
+  let appFilters: Record<Apps, AppFilter[]> = {} as Record<Apps, AppFilter[]>
 
   for (let [appName, selection] of Object.entries(input)) {
     let app: Apps
@@ -272,21 +263,9 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
       }
     }
 
-    // Extract app-specific filters from new multiple filters format
-    const filters: AppFilters = {}
-
-    // Check for multiple filters format
+    // SIMPLIFIED: Direct assignment without redundant nesting
     if (selection.filters && selection.filters.length > 0) {
-      if (app === Apps.Gmail) {
-        filters.gmail = { filters: selection.filters }
-      } else if (app === Apps.Slack) {
-        filters.slack = { filters: selection.filters }
-      }
-    }
-
-    // Only add filters if there are any
-    if (Object.keys(filters).length > 0) {
-      appFilters[app] = filters
+      appFilters[app] = selection.filters // Direct assignment - no redundancy!
     }
   }
 
