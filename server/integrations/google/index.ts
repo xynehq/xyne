@@ -572,10 +572,9 @@ export const getAttendeesOfEvent = (
   const attendeesNames: string[] = []
   const attendeesEmails: string[] = []
   for (const attendee of allAttendes) {
-    if (!attendee.displayName && attendee.email) {
-      attendeesNames.push(attendee.email)
-    } else if (attendee.displayName) {
-      attendeesNames.push(attendee.displayName)
+    const nameToAdd = attendee.displayName || attendee.email
+    if (nameToAdd) {
+      attendeesNames.push(nameToAdd)
     }
 
     if (attendee.email) {
