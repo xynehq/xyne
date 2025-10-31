@@ -151,7 +151,7 @@ export const SlackEntitiesApi = async (c: Context) => {
     })
   }
 }
-export const SlackDocumentsApi = async (c: Context) => {
+export const slackDocumentsApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   const docids: string[] = c.req.query("docids")?.split(",") || []
   if(docids.length === 0){

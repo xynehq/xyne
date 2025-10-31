@@ -25,7 +25,7 @@ import {
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
 import {
-  SlackDocumentsApi,
+  slackDocumentsApi,
   SlackEntitiesApi,
   slackListSchema,
   slackSearchSchema,
@@ -1005,7 +1005,7 @@ export const AppRoutes = app
   )
   // Slack Entity API routes
   .get("/slack/entities", SlackEntitiesApi)
-  .get('/slack/documents', SlackDocumentsApi)
+  .get('/slack/documents', slackDocumentsApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/users/api-keys", GetUserApiKeys)
   .post(
