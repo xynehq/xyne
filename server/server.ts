@@ -257,6 +257,15 @@ import {
   formSubmissionSchema,
   listWorkflowExecutionsQuerySchema,
 } from "@/api/workflow"
+import { 
+  workflowTool, 
+  workflowStepTemplate, 
+  workflowTemplate, 
+  workflowExecution, 
+  workflowStepExecution 
+} from "@/db/schema/workflows"
+import { ToolType, WorkflowStatus, ToolExecutionStatus } from "@/types/workflowTypes"
+import { sql, eq } from "drizzle-orm"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
   handleAttachmentUpload,
@@ -312,7 +321,6 @@ import {
 import { sendMailHelper } from "@/api/testEmail"
 import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
-import { eq } from "drizzle-orm"
 import {
   checkOverallSystemHealth,
   checkPaddleOCRHealth,
@@ -324,6 +332,7 @@ import {
   ServiceName,
   type HealthStatusResponse,
 } from "@/health/type"
+import WebhookHandler from "@/services/WebhookHandler"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -1167,6 +1176,42 @@ const getNewAccessRefreshToken = async (c: Context) => {
   }
 }
 
+// Initialize webhook handler on startup
+const webhookHandler = WebhookHandler
+webhookHandler.initialize()
+
+
+// Dynamic webhook handler
+app.all("/workflow/webhook/*", async (c) => {
+  return await webhookHandler.handleWebhookRequest(c)
+})
+
+// API endpoint to reload webhooks
+app.get("/workflow/webhook-api/reload", async (c) => {
+  try {
+    const result = await webhookHandler.reloadWebhooks()
+    return c.json(result)
+  } catch (error) {
+    return c.json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    }, 500)
+  }
+})
+
+// API endpoint to list registered webhooks
+app.get("/workflow/webhook-api/list", async (c) => {
+  try {
+    const result = webhookHandler.listWebhooks()
+    return c.json(result)
+  } catch (error) {
+    return c.json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    }, 500)
+  }
+})
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)
@@ -1840,8 +1885,6 @@ app.get(
     redirect_uri: redirectURI,
   }),
   async (c: Context) => {
-    const token = c.get("token")
-    const grantedScopes = c.get("granted-scopes")
     const user = c.get("user-google")
 
     const email = user?.email
@@ -2163,6 +2206,8 @@ const metricServer = Bun.serve({
 })
 
 Logger.info(`listening on port: ${config.port}`)
+Logger.info(`metrics server started on port: ${config.metricsPort}`)
+
 
 const errorEvents: string[] = [
   `uncaughtException`,

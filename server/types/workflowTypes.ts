@@ -20,6 +20,8 @@ export enum ToolType {
   FORM = "form",
   EMAIL = "email",
   AI_AGENT = "ai_agent",
+  WEBHOOK = "webhook",
+  HTTP_REQUEST = "http_request",
 }
 
 export enum ToolExecutionStatus {

@@ -19,7 +19,7 @@ import type { CreateAgentPayload } from "@/api/agent"
 import { insertAgent } from "@/db/agent"
 import { getDateForAI } from "@/utils/index"
 import { AgentCreationSource } from "@/db/schema"
-import { UnderstandMessageAndAnswer } from "@/api/chat/chat"
+import { UnderstandMessageAndAnswer, UnderstandMessageAndAnswerForGivenContext } from "@/api/chat/chat"
 import { generateSearchQueryOrAnswerFromConversation, jsonParseLLMOutput } from "@/ai/provider"
 import type { Citation, ImageCitation } from "@/shared/types"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
@@ -421,7 +421,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         sources: [],
         message: response.text,
         modelId: actualModel,
-        cost: response.cost?.toString(),
+        cost: (response.cost || 0).toString(),
       })
 
       Logger.info("✅ Agent execution completed successfully (non-streaming)")
@@ -520,7 +520,7 @@ async function* createStreamingWithDBSave(
         sources: [],
         message: answer,  // Full accumulated text
         modelId: dbSaveParams.modelId,
-        cost: totalCost.toString(),
+        cost: (totalCost || 0).toString(),
         tokensUsed: totalTokens,
       })
 
@@ -605,20 +605,34 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
     // Combine ALL sources
     const agentKBDocIds = [...directDocIds, ...kbIntegrationDocIds]
 
-    // Merge with user attachments
+    // Merge with user attachments from workflow form submissions
     const uniqueFileIds = Array.from(new Set([
       ...agentKBDocIds,
+      ...(params.nonImageAttachmentFileIds || []), // Add PDF/document attachments from workflow
+      ...(params.attachmentFileIds || []),         // Add image attachments from workflow
     ]))
 
 
 
     Logger.info(`[agentCore] 📊 Combined file sources:`)
-
-    Logger.info(`[agentCore]    - Agent KB docs: ${agentKBDocs.length}`)
+    Logger.info(`[agentCore]    - Agent KB docs: ${agentKBDocIds.length}`)
+    Logger.info(`[agentCore]    - Workflow PDF attachments: ${params.nonImageAttachmentFileIds?.length || 0}`)
+    Logger.info(`[agentCore]    - Workflow image attachments: ${params.attachmentFileIds?.length || 0}`)
     Logger.info(`[agentCore]    - Total unique files: ${uniqueFileIds.length}`)
 
     // Determine if we should use RAG
-    const shouldUseRAG = agent.isRagOn && uniqueFileIds.length > 0 // RAG enabled and files available
+    const hasWorkflowAttachments = (params.attachmentFileIds && params.attachmentFileIds.length > 0) ||
+                                  (params.nonImageAttachmentFileIds && params.nonImageAttachmentFileIds.length > 0)
+    const shouldUseRAG = (agent.isRagOn && uniqueFileIds.length > 0) || hasWorkflowAttachments // RAG enabled and files available OR workflow has attachments
+    
+    Logger.info(`[agentCore] 🔍 RAG Decision:`, {
+      agentIsRagOn: agent.isRagOn,
+      uniqueFileIdsLength: uniqueFileIds.length,
+      hasWorkflowAttachments: hasWorkflowAttachments,
+      shouldUseRAG: shouldUseRAG,
+      agentKBDocs: agentKBDocs.length,
+      kbIntegrationDocIds: kbIntegrationDocIds.length
+    })
 
 
     // ============================================
@@ -657,48 +671,119 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
       Logger.info(`[agentCore] 📊 Classification result: ${JSON.stringify(classification)}`)
 
 
-      // this UnderstandMessageAndAnswerForGivenContext is only for the attachment files and do Rag on them not consider the app_integrations
+      // STEP 2: Choose appropriate RAG function based on whether we have attachments
+      // If we have attachment files, use UnderstandMessageAndAnswerForGivenContext
+      // Otherwise, use UnderstandMessageAndAnswer for app_integrations
+      
+      const hasAttachments = (params.attachmentFileIds && params.attachmentFileIds.length > 0) ||
+                           (params.nonImageAttachmentFileIds && params.nonImageAttachmentFileIds.length > 0)
+      
+      let iterator: AsyncIterableIterator<any>
+      
+      if (hasAttachments) {
+        Logger.info(`[agentCore] 🔗 Using UnderstandMessageAndAnswerForGivenContext for ${params.attachmentFileIds?.length || 0} image attachments and ${params.nonImageAttachmentFileIds?.length || 0} document attachments`)
+        
+        // Debug: Validate attachment IDs to ensure they're properly formatted
+        if (params.nonImageAttachmentFileIds && params.nonImageAttachmentFileIds.length > 0) {
+          Logger.info(`[agentCore] 📎 PDF attachment IDs:`, params.nonImageAttachmentFileIds.map(id => ({
+            id: id,
+            type: typeof id,
+            length: id ? id.length : 0,
+            isString: typeof id === 'string',
+            startsWithAtt: typeof id === 'string' && id.startsWith('att_')
+          })))
+        }
+        
+        // CRITICAL: If we have document attachments but they're not in uniqueFileIds, that's a problem
+        if (params.nonImageAttachmentFileIds && params.nonImageAttachmentFileIds.length > 0) {
+          const missingFromFileIds = params.nonImageAttachmentFileIds.filter(id => !uniqueFileIds.includes(id))
+          if (missingFromFileIds.length > 0) {
+            Logger.error(`[agentCore] ❌ CRITICAL: Document attachment IDs missing from uniqueFileIds!`, {
+              missingIds: missingFromFileIds,
+              providedDocumentIds: params.nonImageAttachmentFileIds,
+              uniqueFileIds: uniqueFileIds,
+              uniqueFileIdsCount: uniqueFileIds.length
+            })
+          } else {
+            Logger.info(`[agentCore] ✅ All document attachment IDs found in uniqueFileIds`)
+          }
+        }
+        
+        // Debug: Log exactly what we're passing to the RAG function
+        Logger.info(`[agentCore] 🔍 UnderstandMessageAndAnswerForGivenContext parameters:`, {
+          email: params.userEmail,
+          userCtx: params.userEmail,
+          message: params.userQuery,
+          alpha: 0.5,
+          fileIds: uniqueFileIds,
+          fileIdsCount: uniqueFileIds.length,
+          threadIds: [],
+          attachmentFileIds: params.attachmentFileIds || [],
+          agentPromptType: typeof (agent.prompt || JSON.stringify(agent)),
+          agentPromptLength: (agent.prompt || JSON.stringify(agent)).length,
+          isMsgWithSources: true,
+          modelId: agent.model === "Auto" ? undefined : agent.model,
+          isValidPath: undefined,
+          folderIds: []
+        })
 
-      // const iterator = UnderstandMessageAndAnswerForGivenContext(
-      //     params.userEmail,                     // email
-      //     params.userQuery,                     // userCtx (context from user)
-      //     userMetadata,                         // timezone, date
-      //     params.userQuery,                     // message (the question)
-      //     0.5,                                  // alpha (search confidence threshold)
-      //     uniqueFileIds,                        // fileIds (documents to search)
-      //     false,                                // userRequestsReasoning
-      //     understandSpan,                       // tracing span
-      //     [],                                   // threadIds (empty for workflows)
-      //     imageAttachmentFileIds,               // image attachments
-      //     agent.prompt || undefined,   // agent's system prompt
-      //     true,                                 // isMsgWithSources
-      //     agent.model === "Auto" ? undefined : agent.model,             // model ID
-      //     undefined,                            // isValidPath
-      //     [],                                   // folderIds
-      // )
-
-      // STEP 2: Call UnderstandMessageAndAnswer
-      // Why? This function properly extracts KB from app_integrations
-      // It internally calls generateIterativeTimeFilterAndQueryRewrite which parses the agent JSON
-      const iterator = UnderstandMessageAndAnswer(
-        params.userEmail,           // email
-        params.userEmail,           // userCtx (user context - can be same as email for workflows)
-        userMetadata,               // timezone, date
-        params.userQuery,           // message (the question)
-        classification,             // QueryRouterLLMResponse from classifyUserQuery
-        [],                         // messages (empty array for workflows - no conversation history)
-        0.5,                        // alpha (search confidence threshold)
-        false,                      // userRequestsReasoning
-        understandSpan,             // tracing span
-        JSON.stringify(agent),      // agentPrompt - CRITICAL: Must be stringified full agent with app_integrations!
-        agent.model === "Auto" ? undefined : agent.model,  // modelId
-        undefined,                  // pathExtractedInfo (not needed for workflows)
-      )
+        // Use the attachment-specific RAG function
+        // Note: For PDFs, they should go in fileIds parameter, not attachmentFileIds
+        iterator = UnderstandMessageAndAnswerForGivenContext(
+          params.userEmail,                     // email
+          params.userEmail,                     // userCtx (context from user)
+          userMetadata,                         // timezone, date
+          params.userQuery,                     // message (the question)
+          0.5,                                  // alpha (search confidence threshold)
+          uniqueFileIds,                        // fileIds (ALL documents including PDFs)
+          false,                                // userRequestsReasoning
+          understandSpan,                       // tracing span
+          [],                                   // threadIds (empty for workflows)
+          params.attachmentFileIds || [],       // attachmentFileIds (ONLY for images)
+          agent.prompt || JSON.stringify(agent), // agent's system prompt or full agent
+          true,                                 // isMsgWithSources
+          agent.model === "Auto" ? undefined : agent.model, // model ID
+          undefined,                            // isValidPath
+          [],                                   // folderIds
+        )
+      } else {
+        Logger.info(`[agentCore] 🔗 Using UnderstandMessageAndAnswer for app_integrations (no attachments)`)
+        
+        // Use the standard RAG function for app_integrations
+        iterator = UnderstandMessageAndAnswer(
+          params.userEmail,           // email
+          params.userEmail,           // userCtx (user context - can be same as email for workflows)
+          userMetadata,               // timezone, date
+          params.userQuery,           // message (the question)
+          classification,             // QueryRouterLLMResponse from classifyUserQuery
+          [],                         // messages (empty array for workflows - no conversation history)
+          0.5,                        // alpha (search confidence threshold)
+          false,                      // userRequestsReasoning
+          understandSpan,             // tracing span
+          JSON.stringify(agent),      // agentPrompt - CRITICAL: Must be stringified full agent with app_integrations!
+          agent.model === "Auto" ? undefined : agent.model,  // modelId
+          undefined,                  // pathExtractedInfo (not needed for workflows)
+        )
+      }
 
 
       // Iterate through response chunks
       // Why? The function streams chunks (text, citations, costs)
+      let chunkCount = 0
       for await (const chunk of iterator) {
+        chunkCount++
+        Logger.info(`[agentCore] 📥 Received chunk ${chunkCount}:`, {
+          hasText: !!chunk.text,
+          textLength: chunk.text?.length || 0,
+          textPreview: chunk.text?.substring(0, 100) + (chunk.text?.length > 100 ? "..." : ""),
+          hasReasoning: !!chunk.reasoning,
+          hasCitation: !!chunk.citation,
+          hasImageCitation: !!chunk.imageCitation,
+          hasCost: !!chunk.cost,
+          hasMetadata: !!chunk.metadata,
+          chunkKeys: Object.keys(chunk)
+        })
+
         if (chunk.text) {
           // Regular answer text
           if (!chunk.reasoning) {
@@ -712,6 +797,12 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
         if (chunk.citation) {
           // Document citation
           citations.push(chunk.citation.item)
+          Logger.info(`[agentCore] 📖 Document citation received:`, {
+            index: chunk.citation.index,
+            itemKeys: Object.keys(chunk.citation.item),
+            title: chunk.citation.item.title,
+            relevance: chunk.citation.item.relevance
+          })
         }
 
         if (chunk.imageCitation) {
@@ -730,6 +821,28 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
         }
       }
 
+      Logger.info(`[agentCore] 📦 RAG processing complete:`, {
+        totalChunks: chunkCount,
+        finalAnswerLength: finalAnswer.length,
+        finalAnswerPreview: finalAnswer.substring(0, 200) + (finalAnswer.length > 200 ? "..." : ""),
+        citationsCount: citations.length,
+        imageCitationsCount: imageCitations.length,
+        totalCost: totalCost,
+        totalTokens: totalTokens,
+        citationTitles: citations.map(c => c.title || 'No title'),
+        hadDocumentAttachments: params.nonImageAttachmentFileIds && params.nonImageAttachmentFileIds.length > 0,
+        expectedDocumentCount: params.nonImageAttachmentFileIds?.length || 0
+      })
+
+      // CRITICAL CHECK: If we expected documents but got no citations, that's a problem
+      if (params.nonImageAttachmentFileIds && params.nonImageAttachmentFileIds.length > 0 && citations.length === 0) {
+        Logger.error(`[agentCore] ❌ CRITICAL: Expected ${params.nonImageAttachmentFileIds.length} document(s) but got 0 citations!`, {
+          expectedDocuments: params.nonImageAttachmentFileIds,
+          finalAnswerContainsError: finalAnswer.includes('no content') || finalAnswer.includes('not provided') || finalAnswer.includes('unable to'),
+          answerLength: finalAnswer.length
+        })
+      }
+
       understandSpan?.end()
       ragSpan?.end()
 
@@ -744,10 +857,18 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
       // We just call the LLM with the agent's prompt
 
       Logger.info(`[agentCore] 🤖 Starting direct LLM call (no RAG)...`)
+      Logger.info(`[agentCore] 📝 Query parameters:`, {
+        agentId: params.agentId,
+        userQueryLength: params.userQuery.length,
+        userQueryPreview: params.userQuery.substring(0, 200) + "...",
+        userEmail: params.userEmail,
+        workspaceId: params.workspaceId,
+        temperature: params.temperature,
+        hasAttachmentFileIds: (params.attachmentFileIds || []).length > 0,
+        hasNonImageAttachmentFileIds: (params.nonImageAttachmentFileIds || []).length > 0
+      })
 
       const llmSpan = executeAgentSpan?.startSpan("direct_llm_call")
-
-
 
       const result = await ExecuteAgentForWorkflow({
         agentId: params.agentId,
@@ -760,6 +881,32 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
         temperature: params.temperature,
 
       })
+
+      // Extract the response from the result
+      if (result.success && result.type === 'non-streaming') {
+        // The response object structure: { text: string, cost?: number, metadata?: any }
+        finalAnswer = result.response?.text || ""
+        Logger.info(`[agentCore] Extracted AI response: "${finalAnswer.substring(0, 200)}..." (length: ${finalAnswer.length})`)
+        
+        // Log the full response structure for debugging
+        Logger.info(`[agentCore] Full response structure:`, {
+          hasResponse: !!result.response,
+          responseKeys: result.response ? Object.keys(result.response) : [],
+          textValue: result.response?.text,
+          textLength: result.response?.text?.length || 0
+        })
+        
+        if (!finalAnswer) {
+          Logger.error(`[agentCore] AI response is empty! Response object:`, result.response)
+          finalAnswer = "AI response was empty"
+        }
+      } else if (result.success && result.type === 'streaming') {
+        Logger.warn(`[agentCore] Unexpected streaming result in non-streaming mode`)
+        finalAnswer = "AI response was in streaming format but expected non-streaming"
+      } else {
+        Logger.error(`[agentCore] AI execution failed: ${JSON.stringify(result)}`)
+        finalAnswer = `AI execution failed: ${result.error || 'Unknown error'}`
+      }
 
       Logger.info(`[agentCore] Direct LLM call result: ${JSON.stringify(result).substring(0, 700)}...`)
 

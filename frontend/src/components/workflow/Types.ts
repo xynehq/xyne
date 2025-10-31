@@ -301,6 +301,19 @@ export interface WorkflowExecutionModalProps {
   onViewExecution?: (executionId: string) => void
 }
 
+export interface WebhookConfig {
+  webhookUrl: string
+  httpMethod: "GET" | "POST" | "PUT" | "DELETE" | "PATCH"
+  path: string
+  authentication: "none" | "basic" | "bearer" | "api_key"
+  selectedCredential?: string
+  responseMode: "immediately" | "wait_for_completion" | "custom"
+  options?: Record<string, any>
+  headers?: Record<string, string>
+  queryParams?: Record<string, string>
+  requestBody?: string
+}
+
 export interface LegacyWorkflowTemplate {
   id: string
   name: string
