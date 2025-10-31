@@ -1,3 +1,10 @@
+## [3.25.4](https://github.com/xynehq/xyne/compare/v3.25.3...v3.25.4) (2025-10-31)
+
+
+### Bug Fixes
+
+* **search:** Add attendees email if display name is empty ([#1167](https://github.com/xynehq/xyne/issues/1167)) ([c861801](https://github.com/xynehq/xyne/commit/c86180131bcaaf2e4b690602008cda9f58ae5ce9))
+
 ## [3.25.3](https://github.com/xynehq/xyne/compare/v3.25.2...v3.25.3) (2025-10-31)
 
 
