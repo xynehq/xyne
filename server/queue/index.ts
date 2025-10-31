@@ -88,6 +88,11 @@ export const init = async () => {
 export const setupServiceAccountCronjobs = async () => {
   if (config.usePerUserServiceAccountSync) {
     Logger.info("Using per-user service account sync mode")
+
+    // Unschedule the legacy batch sync if it exists
+    await boss.unschedule(SyncServiceAccountSaaSQueue)
+    Logger.info("Unscheduled legacy batch service account sync")
+
     // Schedule the user job scheduler every 20 minutes
     await boss.schedule(
       SyncServiceAccountSchedulerQueue,
@@ -97,7 +102,12 @@ export const setupServiceAccountCronjobs = async () => {
     )
   } else {
     Logger.info("Using batch service account sync mode (legacy)")
-     await boss.schedule(
+
+    // Unschedule the per-user scheduler if it exists
+    await boss.unschedule(SyncServiceAccountSchedulerQueue)
+    Logger.info("Unscheduled per-user service account scheduler")
+
+    await boss.schedule(
       SyncServiceAccountSaaSQueue,
       Every10Minutes,
       {},
@@ -159,6 +169,11 @@ const initWorkers = async () => {
 
   if (config.usePerUserSlackSync) {
     Logger.info("Using per-user Slack sync mode")
+
+    // Unschedule the legacy batch sync if it exists
+    await boss.unschedule(SyncSlackQueue)
+    Logger.info("Unscheduled legacy batch Slack sync")
+
     await boss.schedule(
       SyncSlackSchedulerQueue,
       Every20Minutes,
@@ -167,6 +182,11 @@ const initWorkers = async () => {
     )
   } else {
     Logger.info("Using batch Slack sync mode (legacy)")
+
+    // Unschedule the per-user scheduler if it exists
+    await boss.unschedule(SyncSlackSchedulerQueue)
+    Logger.info("Unscheduled per-user Slack scheduler")
+
     await boss.schedule(
       SyncSlackQueue,
       Every15Minutes,
@@ -382,95 +402,80 @@ const initWorkers = async () => {
     }
   })
 
-  // NEW: Per-User Service Account sync workers - Worker 1
-  await boss.work(SyncServiceAccountPerUserQueue, async ([job]) => {
-    const startTime = Date.now()
-    const jobData = job.data as any
-    const userEmail = jobData?.email || "unknown"
+  // NEW: Per-User Service Account sync worker (processes 2 jobs concurrently via batchSize)
+  await boss.work(
+    SyncServiceAccountPerUserQueue,
+    { batchSize: 2 },
+    async (jobs) => {
+      // Process all jobs in parallel using Promise.all
+      await Promise.all(
+        jobs.map(async (job) => {
+          const startTime = Date.now()
+          const jobData = job.data as any
 
-    try {
-      Logger.info(`Per-User Worker 1: Starting sync for user ${userEmail}`)
+          // Validate job data
+          if (!jobData || typeof jobData !== "object" || !jobData.email) {
+            Logger.error("Invalid job data for Service Account sync", {
+              jobData,
+            })
+            syncJobError.inc(
+              {
+                sync_job_name: SyncServiceAccountPerUserQueue,
+                sync_job_auth_type: AuthType.ServiceAccount,
+                sync_job_error_type: "invalid_job_data",
+              },
+              1,
+            )
+            return
+          }
 
-      await handleGoogleServiceAccountChanges(boss, job)
+          const userEmail = jobData.email
 
-      Logger.info(`Per-User Worker 1: Completed sync for user ${userEmail}`)
+          try {
+            Logger.info(
+              `Per-User Worker: Starting sync for user ${userEmail}`,
+            )
 
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncServiceAccountPerUserQueue,
-          sync_job_auth_type: AuthType.ServiceAccount,
-        },
-        1,
+            await handleGoogleServiceAccountChanges(boss, job)
+
+            Logger.info(
+              `Per-User Worker: Completed sync for user ${userEmail}`,
+            )
+
+            const endTime = Date.now()
+            syncJobSuccess.inc(
+              {
+                sync_job_name: SyncServiceAccountPerUserQueue,
+                sync_job_auth_type: AuthType.ServiceAccount,
+              },
+              1,
+            )
+            syncJobDuration.observe(
+              {
+                sync_job_name: SyncServiceAccountPerUserQueue,
+                sync_job_auth_type: AuthType.ServiceAccount,
+              },
+              endTime - startTime,
+            )
+          } catch (error) {
+            const errorMessage = getErrorMessage(error)
+            Logger.error(
+              error,
+              `Per-User Worker: Error syncing user ${userEmail}: ${errorMessage} ${(error as Error).stack}`,
+            )
+            syncJobError.inc(
+              {
+                sync_job_name: SyncServiceAccountPerUserQueue,
+                sync_job_auth_type: AuthType.ServiceAccount,
+                sync_job_error_type: `${errorMessage}`,
+              },
+              1,
+            )
+          }
+        }),
       )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncServiceAccountPerUserQueue,
-          sync_job_auth_type: AuthType.ServiceAccount,
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Per-User Worker 1: Error syncing user ${userEmail}: ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncServiceAccountPerUserQueue,
-          sync_job_auth_type: AuthType.ServiceAccount,
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
-  })
-
-  // NEW: Per-User Service Account sync workers - Worker 2
-  await boss.work(SyncServiceAccountPerUserQueue, async ([job]) => {
-    const startTime = Date.now()
-    const jobData = job.data as any
-    const userEmail = jobData?.email || "unknown"
-
-    try {
-      Logger.info(`Per-User Worker 2: Starting sync for user ${userEmail}`)
-
-      await handleGoogleServiceAccountChanges(boss, job)
-
-      Logger.info(`Per-User Worker 2: Completed sync for user ${userEmail}`)
-
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncServiceAccountPerUserQueue,
-          sync_job_auth_type: AuthType.ServiceAccount,
-        },
-        1,
-      )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncServiceAccountPerUserQueue,
-          sync_job_auth_type: AuthType.ServiceAccount,
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Per-User Worker 2: Error syncing user ${userEmail}: ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncServiceAccountPerUserQueue,
-          sync_job_auth_type: AuthType.ServiceAccount,
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
-  })
+    },
+  )
 
   await boss.work(SyncGoogleWorkspace, async ([job]) => {
     const startTime = Date.now()
@@ -579,94 +584,69 @@ const initWorkers = async () => {
     }
   })
 
-  // NEW: Per-User Slack sync workers - Worker 1
-  await boss.work(SyncSlackPerUserQueue, async ([job]) => {
-    const startTime = Date.now()
-    const jobData = job.data as any
-    const userEmail = jobData?.email || "unknown"
+  // NEW: Per-User Slack sync worker (processes 2 jobs concurrently via batchSize)
+  await boss.work(SyncSlackPerUserQueue, { batchSize: 2 }, async (jobs) => {
+    // Process all jobs in parallel using Promise.all
+    await Promise.all(
+      jobs.map(async (job) => {
+        const startTime = Date.now()
+        const jobData = job.data as any
 
-    try {
-      Logger.info(`Slack Worker 1: Starting sync for user ${userEmail}`)
+        // Validate job data
+        if (!jobData || typeof jobData !== "object" || !jobData.email) {
+          Logger.error("Invalid job data for Slack sync", { jobData })
+          syncJobError.inc(
+            {
+              sync_job_name: SyncSlackPerUserQueue,
+              sync_job_auth_type: SlackEntity.User,
+              sync_job_error_type: "invalid_job_data",
+            },
+            1,
+          )
+          return
+        }
 
-      await handleSlackChanges(boss, job)
+        const userEmail = jobData.email
 
-      Logger.info(`Slack Worker 1: Completed sync for user ${userEmail}`)
+        try {
+          Logger.info(`Slack Worker: Starting sync for user ${userEmail}`)
 
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncSlackPerUserQueue,
-          sync_job_auth_type: SlackEntity.User,
-        },
-        1,
-      )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncSlackPerUserQueue,
-          sync_job_auth_type: SlackEntity.User,
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Slack Worker 1: Error syncing user ${userEmail}: ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncSlackPerUserQueue,
-          sync_job_auth_type: SlackEntity.User,
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
-  })
+          await handleSlackChanges(boss, job)
 
-  // NEW: Per-User Slack sync workers - Worker 2
-  await boss.work(SyncSlackPerUserQueue, async ([job]) => {
-    const startTime = Date.now()
-    const jobData = job.data as any
-    const userEmail = jobData?.email || "unknown"
+          Logger.info(`Slack Worker: Completed sync for user ${userEmail}`)
 
-    try {
-      Logger.info(`Slack Worker 2: Starting sync for user ${userEmail}`)
-
-      await handleSlackChanges(boss, job)
-
-      Logger.info(`Slack Worker 2: Completed sync for user ${userEmail}`)
-
-      const endTime = Date.now()
-      syncJobSuccess.inc(
-        {
-          sync_job_name: SyncSlackPerUserQueue,
-          sync_job_auth_type: SlackEntity.User,
-        },
-        1,
-      )
-      syncJobDuration.observe(
-        {
-          sync_job_name: SyncSlackPerUserQueue,
-          sync_job_auth_type: SlackEntity.User,
-        },
-        endTime - startTime,
-      )
-    } catch (error) {
-      const errorMessage = getErrorMessage(error)
-      Logger.error(
-        error,
-        `Slack Worker 2: Error syncing user ${userEmail}: ${errorMessage} ${(error as Error).stack}`,
-      )
-      syncJobError.inc(
-        {
-          sync_job_name: SyncSlackPerUserQueue,
-          sync_job_auth_type: SlackEntity.User,
-          sync_job_error_type: `${errorMessage}`,
-        },
-        1,
-      )
-    }
+          const endTime = Date.now()
+          syncJobSuccess.inc(
+            {
+              sync_job_name: SyncSlackPerUserQueue,
+              sync_job_auth_type: SlackEntity.User,
+            },
+            1,
+          )
+          syncJobDuration.observe(
+            {
+              sync_job_name: SyncSlackPerUserQueue,
+              sync_job_auth_type: SlackEntity.User,
+            },
+            endTime - startTime,
+          )
+        } catch (error) {
+          const errorMessage = getErrorMessage(error)
+          Logger.error(
+            error,
+            `Slack Worker: Error syncing user ${userEmail}: ${errorMessage} ${(error as Error).stack}`,
+          )
+          syncJobError.inc(
+            {
+              sync_job_name: SyncSlackPerUserQueue,
+              sync_job_auth_type: SlackEntity.User,
+              sync_job_error_type: `${errorMessage}`,
+            },
+            1,
+          )
+        }
+      }),
+    )
   })
 
   await boss.work(SyncSlackQueue, async ([job]) => {
