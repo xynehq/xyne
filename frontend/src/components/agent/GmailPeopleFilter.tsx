@@ -13,6 +13,11 @@ interface GmailPeopleFilterProps {
   onFilterChange: (value: string) => void
 }
 
+const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+export const isValidEmail = (email: string): boolean => {
+  return emailRegex.test(email.trim())
+}
+
 export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
   filterValue,
   onFilterChange,
@@ -34,6 +39,18 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
     to: '',
     cc: '',
     bcc: '',
+  })
+
+  const [showError, setShowError] = useState<{
+    from: boolean
+    to: boolean
+    cc: boolean
+    bcc: boolean
+  }>({
+    from: false,
+    to: false,
+    cc: false,
+    bcc: false,
   })
 
   // Parse existing filter values on mount or when filterValue changes
@@ -82,6 +99,15 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
     const email = peopleInputs[field].trim()
     if (!email) return
 
+    // Validate email for cc and bcc fields
+    if (!isValidEmail(email)) {
+      setShowError(prev => ({ ...prev, [field]: true }))
+      return
+    }
+
+    // Clear error and add email
+    setShowError(prev => ({ ...prev, [field]: false }))
+
     const newFields = {
       ...peopleFields,
       [field]: [...peopleFields[field], email],
@@ -120,21 +146,36 @@ export const GmailPeopleFilter: React.FC<GmailPeopleFilterProps> = ({
             {field}
           </label>
           <div className="flex items-center gap-2">
-            <input
-              type="text"
-              placeholder={`Enter ${field} address`}
-              value={peopleInputs[field]}
-              onChange={(e) => {
-                setPeopleInputs(prev => ({
-                  ...prev,
-                  [field]: e.target.value,
-                }))
-              }}
-              onKeyDown={(e) => handleKeyDown(field, e)}
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
-            />
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder={`Enter ${field} address`}
+                value={peopleInputs[field]}
+                onChange={(e) => {
+                  setPeopleInputs(prev => ({
+                    ...prev,
+                    [field]: e.target.value,
+                  }))
+                  // Clear error when user starts typing
+                  if (showError[field]) {
+                    setShowError(prev => ({ ...prev, [field]: false }))
+                  }
+                }}
+                onKeyDown={(e) => handleKeyDown(field, e)}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={`flex-1 w-full px-3 py-2 text-sm border rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-0 ${
+                  showError[field]
+                    ? 'border-red-500 dark:border-red-500 focus:border-red-500 dark:focus:border-red-500'
+                    : 'border-gray-300 dark:border-gray-600 focus:border-gray-300 dark:focus:border-gray-600'
+                }`}
+              />
+              {showError[field] && (
+                <p className="mt-1 text-xs text-red-500 dark:text-red-400">
+                  Please enter a valid email address
+                </p>
+              )}
+            </div>
             <button
               onClick={(e) => {
                 e.stopPropagation()
