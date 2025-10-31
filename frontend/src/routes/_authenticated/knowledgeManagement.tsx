@@ -379,7 +379,6 @@ function KnowledgeManagementContent() {
     file: FileNode
     collection: Collection
     content?: Blob
-    uploadStatus?: UploadStatus
   } | null>(null)
   const [loadingDocument, setLoadingDocument] = useState(false)
 
@@ -1379,7 +1378,6 @@ function KnowledgeManagementContent() {
         file,
         collection,
         content: blob,
-        uploadStatus: file.uploadStatus,
       })
     } catch (error) {
       console.error("Error loading document:", error)
@@ -1548,6 +1546,35 @@ function KnowledgeManagementContent() {
     setIsVespaModalOpen(true)
   }
 
+  // Derive the current upload status from collections state
+  const currentUploadStatus = useMemo(() => {
+    if (!selectedDocument) return undefined;
+
+    const currentCollection = collections.find(
+      (c) => c.id === selectedDocument.collection.id
+    );
+
+    if (!currentCollection) return undefined;
+
+    // Iteratively find the file's current status 
+    const stack: FileNode[] = [...currentCollection.items];
+    while (stack.length > 0) {
+      const item = stack.pop();
+      if (!item) continue;
+
+      if (item.id === selectedDocument.file.id) {
+        return item.uploadStatus;
+      }
+
+      if (item.children) {
+        stack.push(...item.children);
+      }
+    }
+
+    return undefined;
+  }, [selectedDocument, collections]);
+
+
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-white dark:bg-[#1E1E1E]">
       <Sidebar
@@ -1637,7 +1664,7 @@ function KnowledgeManagementContent() {
                     initialChatId={currentInitialChatId}
                     onChatCreated={handleChatCreated}
                     onChunkIndexChange={handleChunkIndexChange}
-                    uploadStatus={selectedDocument.uploadStatus}
+                    uploadStatus={currentUploadStatus}
                     isKnowledgeBaseChat={true}
                   />
                 </div>
@@ -1700,7 +1727,7 @@ function KnowledgeManagementContent() {
                       initialChatId={currentInitialChatId}
                       onChatCreated={handleChatCreated}
                       onChunkIndexChange={handleChunkIndexChange}
-                      uploadStatus={selectedDocument.uploadStatus}
+                      uploadStatus={currentUploadStatus}
                     />
                   </div>
                 </div>
