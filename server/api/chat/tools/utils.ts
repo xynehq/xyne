@@ -8,13 +8,18 @@ import {
   type VespaSearchResponse,
   type VespaSearchResults,
 } from "@xyne/vespa-ts"
-import { searchToCitation } from "@/api/chat/utils"
+import {
+  isAppSelectionMap,
+  parseAppSelections,
+  searchToCitation,
+} from "@/api/chat/utils"
 
 import { answerContextMap } from "@/ai/context"
 import type { UserMetadataType } from "@/types"
 import { getDateForAI } from "@/utils/index"
 import type { MinimalAgentFragment } from "@/api/chat/types"
-
+import { getLogger, Subsystem } from "@/logger"
+const Logger = getLogger(Subsystem.Chat)
 const userMetadata: UserMetadataType = {
   userTimezone: "Asia/Kolkata",
   dateForAI: getDateForAI({ userTimeZone: "Asia/Kolkata" }),
@@ -98,5 +103,87 @@ export async function formatSearchToolResponse(
     result: fragments.map((v) => v.content).join("\n"),
     contexts: fragments,
     summary: summaryText,
+  }
+}
+
+export function parseAgentAppIntegrations(agentPrompt?: string): {
+  agentAppEnums: Apps[]
+  agentSpecificCollectionIds: string[]
+  agentSpecificCollectionFolderIds: string[]
+  agentSpecificCollectionFileIds: string[]
+  selectedItems: {}
+} {
+  Logger.debug({ agentPrompt }, "Parsing agent prompt for app integrations")
+  let agentAppEnums: Apps[] = []
+  let agentSpecificCollectionIds: string[] = []
+  let agentSpecificCollectionFolderIds: string[] = []
+  let agentSpecificCollectionFileIds: string[] = []
+  let selectedItem: any = {}
+
+  if (!agentPrompt) {
+    return {
+      agentAppEnums,
+      agentSpecificCollectionIds,
+      agentSpecificCollectionFolderIds,
+      agentSpecificCollectionFileIds,
+      selectedItems: selectedItem,
+    }
+  }
+
+  let agentPromptData: { appIntegrations?: string[] } = {}
+
+  try {
+    agentPromptData = JSON.parse(agentPrompt)
+    if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+      const { selectedApps, selectedItems } = parseAppSelections(
+        agentPromptData.appIntegrations,
+      )
+      // agentAppEnums = selectedApps.filter(isValidApp);
+      selectedItem = selectedItems
+      agentAppEnums = [...new Set(selectedApps)]
+      // Handle selectedItems logic...
+    }
+
+    if (selectedItem[Apps.KnowledgeBase]) {
+      const source = selectedItem[Apps.KnowledgeBase]
+      for (const itemId of source) {
+        if (itemId.startsWith("cl-")) {
+          // Entire collection - remove cl- prefix
+          agentSpecificCollectionIds.push(itemId.replace(/^cl[-_]/, ""))
+        } else if (itemId.startsWith("clfd-")) {
+          // Collection folder - remove clfd- prefix
+          agentSpecificCollectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
+        } else if (itemId.startsWith("clf-")) {
+          // Collection file - remove clf- prefix
+          agentSpecificCollectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+        }
+      }
+    } else {
+      Logger.info("No selected items found ")
+    }
+    Logger.debug({ agentPromptData }, "Parsed agent prompt data")
+  } catch (error) {
+    Logger.warn("Failed to parse agentPrompt JSON", {
+      error,
+      agentPrompt,
+    })
+    return {
+      agentAppEnums,
+      agentSpecificCollectionIds,
+      agentSpecificCollectionFolderIds,
+      agentSpecificCollectionFileIds,
+      selectedItems: selectedItem,
+    }
+  }
+
+  // Remove duplicates
+  agentAppEnums = [...new Set(agentAppEnums)]
+
+  return {
+    agentAppEnums,
+    agentSpecificCollectionIds,
+    agentSpecificCollectionFolderIds,
+    agentSpecificCollectionFileIds,
+    selectedItems: selectedItem,
   }
 }

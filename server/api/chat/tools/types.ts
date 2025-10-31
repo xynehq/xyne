@@ -4,3 +4,5 @@ export type Ctx = {
   userMessage: string
   agentPrompt?: string
 }
+
+export type WithExcludedIds<T> = T & { excludedIds?: string[] }

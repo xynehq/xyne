@@ -49,7 +49,9 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
     schema: JsonSchema,
     node: ZodSchema | undefined,
   ): JsonSchema => {
-    const description = getDefinition(node)?.description
+    // Check for description in the node itself
+    const description =
+      (node as any)?.description || getDefinition(node)?.description
     return typeof description === "string" && description.length > 0
       ? { ...schema, description }
       : schema
@@ -79,8 +81,11 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
   if (typeName === "ZodEffects") {
     return unwrap(def.schema ?? def.innerType ?? def.type)
   }
-  if (typeName === "ZodBranded" || typeName === "ZodReadonly") {
+  if (typeName === "ZodBranded") {
     return unwrap(def.type ?? def.innerType)
+  }
+  if (typeName === "ZodReadonly") {
+    return unwrap(def.innerType ?? def.type)
   }
 
   if (typeName === "ZodObject") {
@@ -156,7 +161,7 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
     return attachDesc(recordSchema, zodSchema)
   }
   if (typeName === "ZodArray") {
-    const itemSchema = schemaFromCandidate(def.type)
+    const itemSchema = schemaFromCandidate(def.element ?? def.type)
     const arraySchema: JsonSchema = { type: "array", items: itemSchema }
     return attachDesc(arraySchema, zodSchema)
   }
@@ -214,8 +219,12 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
       if (!isRecord(check)) {
         return false
       }
-      const kind = check.kind
-      return typeof kind === "string" && kind === "int"
+      const checkDef = (check as any)._zod?.def
+      return (
+        check.isInt === true ||
+        check.kind === "int" ||
+        checkDef?.check === "int"
+      )
     })
 
     const numberSchema: JsonSchema = {
@@ -226,16 +235,28 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
     for (const check of checks) {
       if (!isRecord(check)) continue
 
-      const kind = check.kind
-      const value = check.value
+      const checkDef = (check as any)._zod?.def
+      if (!checkDef) continue
 
-      if (typeof kind === "string" && typeof value === "number") {
-        switch (kind) {
-          case "min":
-            numberSchema.minimum = value
+      const checkType = checkDef.check
+      const value = checkDef.value
+      const inclusive = checkDef.inclusive
+
+      if (typeof checkType === "string" && typeof value === "number") {
+        switch (checkType) {
+          case "greater_than":
+            if (inclusive) {
+              numberSchema.minimum = value
+            } else {
+              numberSchema.exclusiveMinimum = value
+            }
             break
-          case "max":
-            numberSchema.maximum = value
+          case "less_than":
+            if (inclusive) {
+              numberSchema.maximum = value
+            } else {
+              numberSchema.exclusiveMaximum = value
+            }
             break
         }
       }
@@ -243,7 +264,7 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
 
     return attachDesc(numberSchema, zodSchema)
   }
-  if (typeName === "ZodBigInt") {
+  if (typeName === "ZodBigInt" || typeName === "ZodBigint") {
     return attachDesc({ type: "integer" }, zodSchema)
   }
   if (typeName === "ZodBoolean") {
@@ -257,30 +278,230 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
     return attachDesc({ type: "null" }, zodSchema)
   }
   if (typeName === "ZodEnum") {
-    const enumValuesRaw: unknown[] = Array.isArray(def.values) ? def.values : []
-    const enumValues = enumValuesRaw.filter(
-      (value): value is string => typeof value === "string",
+    // Handle both z.enum() (uses def.values) and z.nativeEnum() (uses def.entries)
+    let enumValues: (string | number)[] = []
+
+    if (Array.isArray(def.values)) {
+      // Standard z.enum() case
+      enumValues = def.values.filter(
+        (value): value is string | number =>
+          typeof value === "string" || typeof value === "number",
+      )
+    } else if (isRecord(def.entries)) {
+      // z.nativeEnum() case - apply the same logic as the other handlers
+      const entries = def.entries as Record<string | number, string | number>
+
+      const allValues = Object.values(entries).filter(
+        (value): value is string | number =>
+          typeof value === "string" || typeof value === "number",
+      )
+
+      const numberValues = allValues.filter((v) => typeof v === "number")
+      const stringValues = allValues.filter((v) => typeof v === "string")
+
+      // Check if this is a pure numeric enum by seeing if:
+      // 1. We have numeric values
+      // 2. All string values are actually reverse mappings (found as values for numeric keys)
+      const numericKeys = Object.keys(entries).filter(
+        (key) => !isNaN(Number(key)),
+      )
+      const reverseStringMappings = numericKeys
+        .map((key) => entries[key])
+        .filter((v) => typeof v === "string")
+
+      const isPureNumericEnum =
+        numberValues.length > 0 &&
+        stringValues.length === reverseStringMappings.length &&
+        stringValues.every((str) => reverseStringMappings.includes(str))
+
+      if (isPureNumericEnum) {
+        // Pure numeric enum - only use the numeric values
+        enumValues = numberValues
+      } else {
+        // Mixed or string enum - filter out reverse mappings
+        const actualValues = allValues.filter((value) => {
+          // Include if it's not a reverse mapping
+          return !reverseStringMappings.includes(value as string)
+        })
+        enumValues = actualValues
+      }
+    }
+
+    // Determine the type based on the enum values
+    const hasStringValues = enumValues.some(
+      (value) => typeof value === "string",
     )
-    const enumSchema: JsonSchema = { type: "string" }
+    const hasNumberValues = enumValues.some(
+      (value) => typeof value === "number",
+    )
+
+    let enumSchema: JsonSchema
+
+    if (hasStringValues && hasNumberValues) {
+      // Mixed enum - use anyOf
+      enumSchema = {
+        anyOf: [{ type: "string" }, { type: "number" }],
+      }
+    } else if (hasStringValues) {
+      enumSchema = { type: "string" }
+    } else if (hasNumberValues) {
+      enumSchema = { type: "number" }
+    } else {
+      enumSchema = { type: "string" } // fallback
+    }
+
     if (enumValues.length > 0) {
       enumSchema.enum = enumValues
     }
+
     return attachDesc(enumSchema, zodSchema)
   }
   if (typeName === "ZodNativeEnum") {
-    const rawValues = isRecord(def.values) ? Object.values(def.values) : []
-    const nativeEnumValues = rawValues.filter(
+    // For z.nativeEnum, the values are stored in def.entries, not def.values
+    const entries = isRecord(def.entries)
+      ? (def.entries as Record<string | number, string | number>)
+      : {}
+
+    // Get all values from the enum
+    const allValues = Object.values(entries).filter(
       (value): value is string | number =>
         typeof value === "string" || typeof value === "number",
     )
-    const nativeEnumSchema: JsonSchema = {}
-    if (nativeEnumValues.length > 0) {
-      nativeEnumSchema.enum = nativeEnumValues
+
+    const numberValues = allValues.filter((v) => typeof v === "number")
+    const stringValues = allValues.filter((v) => typeof v === "string")
+
+    // Check if this is a pure numeric enum by seeing if:
+    // 1. We have numeric values
+    // 2. All string values are actually reverse mappings (found as values for numeric keys)
+    const numericKeys = Object.keys(entries).filter(
+      (key) => !isNaN(Number(key)),
+    )
+    const reverseStringMappings = numericKeys
+      .map((key) => entries[key])
+      .filter((v) => typeof v === "string")
+
+    const isPureNumericEnum =
+      numberValues.length > 0 &&
+      stringValues.length === reverseStringMappings.length &&
+      stringValues.every((str) => reverseStringMappings.includes(str))
+
+    let enumValues: (string | number)[]
+    let hasStringType: boolean
+    let hasNumberType: boolean
+
+    if (isPureNumericEnum) {
+      // Pure numeric enum - only use the numeric values
+      enumValues = numberValues
+      hasStringType = false
+      hasNumberType = true
+    } else {
+      // Mixed or string enum - use the actual values
+      enumValues = allValues
+      hasStringType = stringValues.length > 0
+      hasNumberType = numberValues.length > 0
     }
+
+    let nativeEnumSchema: JsonSchema
+
+    if (hasStringType && hasNumberType) {
+      // Mixed enum
+      nativeEnumSchema = {
+        anyOf: [{ type: "string" }, { type: "number" }],
+      }
+    } else if (hasStringType) {
+      nativeEnumSchema = { type: "string" }
+    } else if (hasNumberType) {
+      nativeEnumSchema = { type: "number" }
+    } else {
+      nativeEnumSchema = { type: "string" } // fallback
+    }
+
+    if (enumValues.length > 0) {
+      nativeEnumSchema.enum = enumValues.sort((a, b) => {
+        if (typeof a === typeof b) {
+          return a < b ? -1 : a > b ? 1 : 0
+        }
+        return typeof a === "number" ? 1 : -1
+      })
+    }
+
+    return attachDesc(nativeEnumSchema, zodSchema)
+  }
+
+  // Handle the case where typeName might be calculated differently for native enums
+  if (def?.type === "enum" && isRecord(def.entries)) {
+    // This handles z.nativeEnum() when typeName is not "ZodNativeEnum"
+    const entries = def.entries as Record<string | number, string | number>
+
+    // Get all values from the enum
+    const allValues = Object.values(entries).filter(
+      (value): value is string | number =>
+        typeof value === "string" || typeof value === "number",
+    )
+
+    const numberValues = allValues.filter((v) => typeof v === "number")
+    const stringValues = allValues.filter((v) => typeof v === "string")
+
+    // Check if this is a pure numeric enum by seeing if:
+    // 1. We have numeric values
+    // 2. All string values are actually reverse mappings (found as values for numeric keys)
+    const numericKeys = Object.keys(entries).filter(
+      (key) => !isNaN(Number(key)),
+    )
+    const reverseStringMappings = numericKeys
+      .map((key) => entries[key])
+      .filter((v) => typeof v === "string")
+
+    const isPureNumericEnum =
+      numberValues.length > 0 &&
+      stringValues.length === reverseStringMappings.length &&
+      stringValues.every((str) => reverseStringMappings.includes(str))
+
+    let enumValues: (string | number)[]
+    let hasStringType: boolean
+    let hasNumberType: boolean
+
+    if (isPureNumericEnum) {
+      // Pure numeric enum - only use the numeric values
+      enumValues = numberValues
+      hasStringType = false
+      hasNumberType = true
+    } else {
+      // Mixed or string enum - use the actual values
+      enumValues = allValues
+      hasStringType = stringValues.length > 0
+      hasNumberType = numberValues.length > 0
+    }
+
+    let nativeEnumSchema: JsonSchema
+
+    if (hasStringType && hasNumberType) {
+      // Mixed enum
+      nativeEnumSchema = {
+        anyOf: [{ type: "string" }, { type: "number" }],
+      }
+    } else if (hasStringType) {
+      nativeEnumSchema = { type: "string" }
+    } else if (hasNumberType) {
+      nativeEnumSchema = { type: "number" }
+    } else {
+      nativeEnumSchema = { type: "string" } // fallback
+    }
+
+    if (enumValues.length > 0) {
+      nativeEnumSchema.enum = enumValues.sort((a, b) => {
+        if (typeof a === typeof b) {
+          return a < b ? -1 : a > b ? 1 : 0
+        }
+        return typeof a === "number" ? 1 : -1
+      })
+    }
+
     return attachDesc(nativeEnumSchema, zodSchema)
   }
   if (typeName === "ZodLiteral") {
-    const literalValue = def.value
+    const literalValue = Array.isArray(def.values) ? def.values[0] : def.value
     if (!isJsonSchemaPrimitive(literalValue)) {
       return attachDesc(createStringSchema(), zodSchema)
     }

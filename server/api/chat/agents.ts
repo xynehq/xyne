@@ -148,7 +148,6 @@ import {
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
 import {
-  buildInternalJAFTools,
   buildMCPJAFTools,
   type FinalToolsList as JAFinalToolsList,
   type JAFAdapterCtx,
@@ -161,6 +160,7 @@ import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
 import { applyFollowUpContext } from "@/utils/parseAttachment"
 import { expandSheetIds } from "@/search/utils"
+import { googleTools } from "@/api/chat/tools/index"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -1728,12 +1728,12 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentPrompt: agentPromptForLLM,
           userMessage: message,
         }
-        const internalJAFTools = buildInternalJAFTools()
+        const internalTools = [...googleTools]
         const mcpJAFTools = buildMCPJAFTools(finalToolsList)
-        const allJAFTools = [...internalJAFTools, ...mcpJAFTools]
+        const allJAFTools = [...internalTools, ...mcpJAFTools]
         toolsCompositionSpan.setAttribute(
           "internal_tools_count",
-          internalJAFTools.length,
+          internalTools.length,
         )
         toolsCompositionSpan.setAttribute("mcp_tools_count", mcpJAFTools.length)
         toolsCompositionSpan.setAttribute(
@@ -1744,7 +1744,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         // Build dynamic instructions that include tools + current context fragments
         const agentInstructions = () => {
-          const toolOverview = buildToolsOverview(allJAFTools)
+          const toolOverview = buildToolsOverview(internalTools)
           const contextSection = buildContextSection(gatheredFragments)
           const agentSection = agentPromptForLLM
             ? `\n\nAgent Constraints:\n${agentPromptForLLM}`

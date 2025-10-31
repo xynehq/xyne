@@ -5,13 +5,16 @@ import { Apps, GoogleApps } from "@xyne/vespa-ts"
 import { getErrorMessage } from "@/utils"
 import { expandEmailThreadsInResults } from "@/api/chat/utils"
 import { searchGoogleApps } from "@/search/vespa"
-import { parseAgentAppIntegrations } from "@/api/chat/tools"
 import config from "@/config"
-import { retrievalQueryDescription } from "@/api/chat/mapper"
-import { formatSearchToolResponse } from "../utils"
-import type { Ctx } from "../types"
+import { formatSearchToolResponse, parseAgentAppIntegrations } from "../utils"
+import type { Ctx, WithExcludedIds } from "../types"
+import {
+  baseToolParams,
+  createQuerySchema,
+  createTimeRangeSchema,
+} from "../schemas"
 
-const participantsSchema = z
+export const participantsSchema = z
   .object({
     from: z.array(z.string().describe("From email addresses")).optional(),
     to: z.array(z.string().describe("To email addresses")).optional(),
@@ -20,50 +23,18 @@ const participantsSchema = z
   })
   .describe("Email participants filter")
 
-const timeRangeSchema = z
-  .object({
-    startTime: z
-      .string()
-      .describe(`Start time in ${config.llmTimeFormat} format`),
-    endTime: z.string().describe(`End time in ${config.llmTimeFormat} format`),
-  })
-  .describe("Time range filter")
-
 const gmailSearchToolSchema = z.object({
-  query: z
-    .string()
-    .describe(retrievalQueryDescription(GoogleApps.Gmail))
-    .optional(),
-  limit: z
-    .number()
-    .min(1)
-    .max(100)
-    .describe(
-      "Maximum number of results to return. Default behavior is to return 20 results.",
-    )
-    .default(20),
-  offset: z
-    .number()
-    .min(0)
-    .describe(
-      "Number of results to skip from the beginning, useful for pagination.",
-    )
-    .optional(),
-  sortBy: z
-    .enum(["asc", "desc"])
-    .describe("Sort order of results. Accepts 'asc' or 'desc'.")
-    .optional(),
+  query: createQuerySchema(GoogleApps.Gmail),
+  ...baseToolParams,
   labels: z
     .array(z.string().describe("Gmail label"))
     .describe(
       "Filter emails by Gmail labels. labels are 'IMPORTANT', 'STARRED', 'UNREAD', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS', 'DRAFT', 'SENT', 'INBOX', 'SPAM', 'TRASH'.",
     )
     .optional(),
-  timeRange: timeRangeSchema
-    .describe(
-      `Filter emails within a specific time range. Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
-    )
-    .optional(),
+  timeRange: createTimeRangeSchema(
+    `Filter emails within a specific time range. Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
+  ),
   participants: participantsSchema
     .describe(
       `Advanced email communication filtering with intelligent resolution of names, organizations, and email addresses. Supports complex multi-participant email queries with automatic name-to-email mapping. - Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. - Each field accepts arrays containing email addresses, full names, first names, or organization names.`,
@@ -87,10 +58,7 @@ export const searchGmailTool: Tool<GmailSearchToolParams, Ctx> = {
       "Find and retrieve emails. Can search by keywords, filter by sender/recipient, time period, labels, or simply fetch recent emails when no query is provided.",
     parameters: toToolSchemaParameters(gmailSearchToolSchema),
   },
-  async execute(
-    params: GmailSearchToolParams & { excludedIds?: string[] },
-    context: Ctx,
-  ) {
+  async execute(params: WithExcludedIds<GmailSearchToolParams>, context: Ctx) {
     const { email, agentPrompt } = context
 
     try {
