@@ -1,3 +1,10 @@
+## [3.24.1](https://github.com/xynehq/xyne/compare/v3.24.0...v3.24.1) (2025-10-31)
+
+
+### Bug Fixes
+
+* XYNE-260 fixed the UI to show correct button during google ingestion post oauth ([#1171](https://github.com/xynehq/xyne/issues/1171)) ([8a641a3](https://github.com/xynehq/xyne/commit/8a641a36f59c0841b77e38a45df872c61b749134)), closes [Chinmay-Sin#FQX1](https://github.com/Chinmay-Sin/issues/FQX1)
+
 # [3.24.0](https://github.com/xynehq/xyne/compare/v3.23.9...v3.24.0) (2025-10-30)
 
 
