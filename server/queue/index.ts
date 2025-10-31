@@ -86,7 +86,7 @@ export const init = async () => {
 
 // when the Service account is connected
 export const setupServiceAccountCronjobs = async () => {
-  if (config.usePerUserServiceAccountSync) {
+  if (!config.useLegacyServiceAccountSync) {
     Logger.info("Using per-user service account sync mode")
 
     // Unschedule the legacy batch sync if it exists
@@ -167,7 +167,7 @@ const initWorkers = async () => {
   )
   // Slack sync scheduling - conditional based on per-user mode
 
-  if (config.usePerUserSlackSync) {
+  if (!config.useLegacySlackSync) {
     Logger.info("Using per-user Slack sync mode")
 
     // Unschedule the legacy batch sync if it exists
