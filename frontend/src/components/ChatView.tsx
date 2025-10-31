@@ -1,6 +1,20 @@
 import { useState, useEffect, useRef } from "react"
-import { Phone, Video, Loader2 } from "lucide-react"
+import {
+  Phone,
+  Video,
+  Loader2,
+  MoreVertical,
+  Pencil,
+  Trash2,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { ConfirmModal } from "@/components/ui/confirmModal"
 import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
@@ -20,6 +34,7 @@ interface Message {
   id: number
   messageContent: LexicalEditorState
   isRead: boolean
+  isEdited?: boolean
   createdAt: string
   sentByUserId: string
   isMine: boolean
@@ -188,6 +203,15 @@ export default function ChatView({
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false)
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
+  const [editingContent, setEditingContent] =
+    useState<LexicalEditorState | null>(null)
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState({
+    open: false,
+    title: "",
+    description: "",
+    messageId: null as number | null,
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageContainerRef = useRef<HTMLDivElement>(null)
 
@@ -217,6 +241,48 @@ export default function ChatView({
   // Handle mention call action
   const handleMentionCall = (userId: string, callType: CallType) => {
     onInitiateCall(userId, callType)
+  }
+
+  // Helper function to extract plain text from Lexical content for comparison
+  const extractTextContent = (content: LexicalEditorState): string => {
+    try {
+      const extractText = (node: any): string => {
+        if (!node) return ""
+        if (node.text) return node.text
+        if (node.type === "mention" && node.mentionUser) {
+          return `@${node.mentionUser.name || "unknown"}`
+        }
+        if (node.children && Array.isArray(node.children)) {
+          return node.children.map((child: any) => extractText(child)).join("")
+        }
+        return ""
+      }
+      return content.root.children.map(extractText).join("\n").trim()
+    } catch (error) {
+      console.error("Error extracting text content:", error)
+      return ""
+    }
+  }
+
+  // Helper function to compare Lexical editor states by text content
+  const isContentEqual = (
+    content1: LexicalEditorState,
+    content2: LexicalEditorState,
+  ): boolean => {
+    try {
+      // First try exact JSON comparison for perfect match
+      const str1 = JSON.stringify(content1)
+      const str2 = JSON.stringify(content2)
+      if (str1 === str2) return true
+
+      // If JSON doesn't match, compare by text content
+      const text1 = extractTextContent(content1)
+      const text2 = extractTextContent(content2)
+      return text1 === text2
+    } catch (error) {
+      console.error("Error comparing content:", error)
+      return false
+    }
   }
 
   // Scroll to bottom when messages change
@@ -271,6 +337,130 @@ export default function ChatView({
     } catch (error) {
       console.error("Failed to mark messages as read:", error)
     }
+  }
+
+  // Handle edit message
+  const handleEditMessage = async (
+    messageId: number,
+    newContent: LexicalEditorState,
+  ) => {
+    // Check if content has actually changed
+    if (editingContent && isContentEqual(editingContent, newContent)) {
+      // Content is the same, just cancel editing without any API call or state update
+      setEditingMessageId(null)
+      setEditingContent(null)
+      return
+    }
+
+    try {
+      const response = await api.messages.edit.$put({
+        json: {
+          messageId,
+          messageContent: newContent,
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        // Update the message in the local state
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId
+              ? {
+                  ...msg,
+                  messageContent: data.message.messageContent,
+                  isEdited: data.message.isEdited,
+                }
+              : msg,
+          ),
+        )
+        setEditingMessageId(null)
+        setEditingContent(null)
+        // Removed success toast - edit is silent when successful
+      } else {
+        throw new Error("Failed to edit message")
+      }
+    } catch (error) {
+      console.error("Error editing message:", error)
+      toast({
+        title: "Error",
+        description: "Failed to edit message",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Handle delete message
+  const handleDeleteMessage = async (messageId: number) => {
+    try {
+      const response = await api.messages.delete.$delete({
+        json: { messageId },
+      })
+
+      if (response.ok) {
+        // Remove the message from the local state
+        setMessages((prev) => prev.filter((msg) => msg.id !== messageId))
+        toast({
+          title: "Success",
+          description: "Message deleted successfully",
+        })
+      } else {
+        throw new Error("Failed to delete message")
+      }
+    } catch (error) {
+      console.error("Error deleting message:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete message",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Show delete confirmation
+  const showDeleteConfirmation = (messageId: number) => {
+    setDeleteConfirmModal({
+      open: true,
+      title: "Delete Message",
+      description:
+        "Are you sure you want to delete this message? This action cannot be undone.",
+      messageId,
+    })
+  }
+
+  // Handle confirmed delete
+  const handleConfirmDelete = () => {
+    if (deleteConfirmModal.messageId) {
+      handleDeleteMessage(deleteConfirmModal.messageId)
+    }
+    setDeleteConfirmModal({
+      open: false,
+      title: "",
+      description: "",
+      messageId: null,
+    })
+  }
+
+  // Handle cancel delete
+  const handleCancelDelete = () => {
+    setDeleteConfirmModal({
+      open: false,
+      title: "",
+      description: "",
+      messageId: null,
+    })
+  }
+
+  // Start editing a message
+  const startEditingMessage = (message: Message) => {
+    setEditingMessageId(message.id)
+    setEditingContent(message.messageContent)
+  }
+
+  // Cancel editing
+  const cancelEditing = () => {
+    setEditingMessageId(null)
+    setEditingContent(null)
   }
 
   // Send a message
@@ -361,6 +551,7 @@ export default function ChatView({
               id: message.messageId,
               messageContent: message.messageContent,
               isRead: false,
+              isEdited: false,
               createdAt: message.createdAt,
               sentByUserId: message.sender.id,
               isMine: false,
@@ -509,8 +700,10 @@ export default function ChatView({
                 <div
                   key={message.id}
                   className={cn(
-                    "group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6",
+                    "group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6 transition-colors duration-150",
                     showHeader ? "py-0.5 mt-2" : "py-0",
+                    message.isMine &&
+                      "hover:bg-blue-50/30 dark:hover:bg-blue-900/10",
                   )}
                 >
                   <div className="flex gap-3 items-start">
@@ -553,15 +746,76 @@ export default function ChatView({
                       )}
 
                       {/* Message content */}
-                      <div className="text-[15px] text-gray-900 dark:text-gray-100 break-words leading-relaxed">
-                        <RenderLexicalContent
-                          content={message.messageContent}
-                          onMentionMessage={handleMentionMessage}
-                          onMentionCall={handleMentionCall}
-                          currentUserId={currentUser.id}
-                        />
-                      </div>
+                      {editingMessageId === message.id ? (
+                        <div className="mt-1">
+                          <BuzzChatBox
+                            key={`edit-${message.id}`}
+                            onSend={(newContent) => {
+                              handleEditMessage(message.id, newContent)
+                            }}
+                            onTyping={() => {}}
+                            placeholder="Edit your message..."
+                            disabled={false}
+                            initialContent={editingContent || undefined}
+                          />
+                          <div className="flex gap-2 mt-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={cancelEditing}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[15px] text-gray-900 dark:text-gray-100 break-words leading-relaxed">
+                          <RenderLexicalContent
+                            content={message.messageContent}
+                            onMentionMessage={handleMentionMessage}
+                            onMentionCall={handleMentionCall}
+                            currentUserId={currentUser.id}
+                          />
+                          {message.isEdited && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                              (edited)
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
+
+                    {/* Three-dot menu - only show for own messages */}
+                    {message.isMine && editingMessageId !== message.id && (
+                      <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-all duration-200 hover:shadow-sm border border-transparent hover:border-gray-300 dark:hover:border-gray-600"
+                            >
+                              <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => startEditingMessage(message)}
+                            >
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Edit message
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => showDeleteConfirmation(message.id)}
+                              className="text-red-600 focus:text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete message
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
                   </div>
                 </div>
               )
@@ -627,6 +881,19 @@ export default function ChatView({
           disabled={sending}
         />
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        showModal={deleteConfirmModal.open}
+        setShowModal={(value) => {
+          if (value.open === false) {
+            handleCancelDelete()
+          }
+        }}
+        modalTitle={deleteConfirmModal.title}
+        modalMessage={deleteConfirmModal.description}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   )
 }

@@ -140,9 +140,13 @@ import {
   MarkMessagesAsReadApi,
   GetUnreadCountsApi,
   GetConversationParticipantsApi,
+  EditMessageApi,
+  DeleteMessageApi,
   sendMessageSchema,
   getConversationSchema,
   markAsReadSchema,
+  editMessageSchema,
+  deleteMessageSchema,
 } from "@/api/directMessages"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
@@ -1162,6 +1166,12 @@ export const AppRoutes = app
   )
   .get("/messages/unread-counts", GetUnreadCountsApi)
   .get("/messages/participants", GetConversationParticipantsApi)
+  .put("/messages/edit", zValidator("json", editMessageSchema), EditMessageApi)
+  .delete(
+    "/messages/delete",
+    zValidator("json", deleteMessageSchema),
+    DeleteMessageApi,
+  )
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(

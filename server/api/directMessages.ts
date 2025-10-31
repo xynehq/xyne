@@ -33,6 +33,15 @@ export const markAsReadSchema = z.object({
   targetUserId: z.string().min(1, "Target user ID is required"),
 })
 
+export const editMessageSchema = z.object({
+  messageId: z.number().int().positive("Message ID is required"),
+  messageContent: lexicalEditorStateSchema,
+})
+
+export const deleteMessageSchema = z.object({
+  messageId: z.number().int().positive("Message ID is required"),
+})
+
 // Send a direct message
 export const SendMessageApi = async (c: Context) => {
   try {
@@ -211,6 +220,7 @@ export const GetConversationApi = async (c: Context) => {
         id: directMessages.id,
         messageContent: directMessages.messageContent,
         isRead: directMessages.isRead,
+        isEdited: directMessages.isEdited,
         createdAt: directMessages.createdAt,
         sentByUserId: directMessages.sentByUserId,
         sentToUserId: directMessages.sentToUserId,
@@ -249,6 +259,7 @@ export const GetConversationApi = async (c: Context) => {
         id: msg.id,
         messageContent: msg.messageContent,
         isRead: msg.isRead,
+        isEdited: msg.isEdited,
         createdAt: msg.createdAt,
         sentByUserId: msg.senderExternalId,
         isMine: msg.sentByUserId === currentUser.id,
@@ -481,5 +492,169 @@ export const GetConversationParticipantsApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: "Failed to get conversation participants",
     })
+  }
+}
+
+// Edit a direct message
+export const EditMessageApi = async (c: Context) => {
+  try {
+    const { workspaceId, sub: userEmail } = c.get(JwtPayloadKey)
+    const requestBody = await c.req.json()
+    const { messageId, messageContent } = requestBody
+
+    if (!workspaceId) {
+      throw new HTTPException(400, { message: "Workspace ID is required" })
+    }
+
+    // Validate input
+    const validatedData = editMessageSchema.parse({
+      messageId,
+      messageContent,
+    })
+
+    // Get current user info
+    const currentUsers = await getUserByEmail(db, userEmail)
+    if (!currentUsers || currentUsers.length === 0) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
+    const currentUser = currentUsers[0]
+
+    // Get the message and verify ownership
+    const [message] = await db
+      .select()
+      .from(directMessages)
+      .where(eq(directMessages.id, validatedData.messageId))
+      .limit(1)
+
+    if (!message) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+
+    if (message.sentByUserId !== currentUser.id) {
+      throw new HTTPException(403, {
+        message: "You can only edit your own messages",
+      })
+    }
+
+    if (message.deletedAt) {
+      throw new HTTPException(400, { message: "Cannot edit deleted message" })
+    }
+
+    // Update the message
+    const [updatedMessage] = await db
+      .update(directMessages)
+      .set({
+        messageContent: validatedData.messageContent,
+        isEdited: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(directMessages.id, validatedData.messageId))
+      .returning()
+
+    Logger.info({
+      msg: "DM edited",
+      messageId: updatedMessage.id,
+      userId: currentUser.externalId,
+    })
+
+    // Get recipient info for real-time notification
+    const [recipient] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, message.sentToUserId))
+      .limit(1)
+
+    return c.json({
+      success: true,
+      message: {
+        id: updatedMessage.id,
+        messageContent: updatedMessage.messageContent,
+        isEdited: updatedMessage.isEdited,
+        updatedAt: updatedMessage.updatedAt,
+      },
+    })
+  } catch (error) {
+    Logger.error(error, "Error editing message")
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    throw new HTTPException(500, { message: "Failed to edit message" })
+  }
+}
+
+// Delete a direct message (soft delete)
+export const DeleteMessageApi = async (c: Context) => {
+  try {
+    const { workspaceId, sub: userEmail } = c.get(JwtPayloadKey)
+    const requestBody = await c.req.json()
+    const { messageId } = requestBody
+
+    if (!workspaceId) {
+      throw new HTTPException(400, { message: "Workspace ID is required" })
+    }
+
+    // Validate input
+    const validatedData = deleteMessageSchema.parse({ messageId })
+
+    // Get current user info
+    const currentUsers = await getUserByEmail(db, userEmail)
+    if (!currentUsers || currentUsers.length === 0) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
+    const currentUser = currentUsers[0]
+
+    // Get the message and verify ownership
+    const [message] = await db
+      .select()
+      .from(directMessages)
+      .where(eq(directMessages.id, validatedData.messageId))
+      .limit(1)
+
+    if (!message) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+
+    if (message.sentByUserId !== currentUser.id) {
+      throw new HTTPException(403, {
+        message: "You can only delete your own messages",
+      })
+    }
+
+    if (message.deletedAt) {
+      throw new HTTPException(400, { message: "Message already deleted" })
+    }
+
+    // Soft delete the message
+    await db
+      .update(directMessages)
+      .set({
+        deletedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(directMessages.id, validatedData.messageId))
+
+    Logger.info({
+      msg: "DM deleted",
+      messageId: validatedData.messageId,
+      userId: currentUser.externalId,
+    })
+
+    // Get recipient info for real-time notification
+    const [recipient] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, message.sentToUserId))
+      .limit(1)
+
+    return c.json({
+      success: true,
+      message: "Message deleted successfully",
+    })
+  } catch (error) {
+    Logger.error(error, "Error deleting message")
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    throw new HTTPException(500, { message: "Failed to delete message" })
   }
 }

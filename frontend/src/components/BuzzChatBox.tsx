@@ -49,11 +49,32 @@ import {
 import { MentionNode } from "./lexical/MentionNode"
 import { MentionPlugin } from "./lexical/MentionPlugin"
 
+// Plugin to set initial content
+function InitialContentPlugin({
+  initialContent,
+}: { initialContent?: LexicalEditorState }) {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => {
+    if (initialContent) {
+      editor.update(() => {
+        const editorState = editor.parseEditorState(
+          JSON.stringify(initialContent),
+        )
+        editor.setEditorState(editorState)
+      })
+    }
+  }, [editor, initialContent])
+
+  return null
+}
+
 interface BuzzChatBoxProps {
   onSend: (editorState: LexicalEditorState) => void
   onTyping?: (isTyping: boolean) => void
   placeholder?: string
   disabled?: boolean
+  initialContent?: LexicalEditorState
 }
 
 // Inline Toolbar Component (inside the editor area)
@@ -349,6 +370,7 @@ export default function BuzzChatBox({
   onTyping,
   placeholder = "Message...",
   disabled = false,
+  initialContent,
 }: BuzzChatBoxProps) {
   const [clearTrigger, setClearTrigger] = useState(0)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
@@ -549,6 +571,7 @@ export default function BuzzChatBox({
             <ClearEditorPlugin clearTrigger={clearTrigger} />
             <CodeExitPlugin />
             <MentionPlugin />
+            <InitialContentPlugin initialContent={initialContent} />
           </div>
 
           {/* Bottom Actions */}
