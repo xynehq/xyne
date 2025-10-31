@@ -33,7 +33,7 @@ export const FilterBadge: React.FC<FilterBadgeProps> = ({
       <input
         type="text"
         placeholder='Add filters'
-        className="flex-1 bg-transparent border-0 outline-none text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 min-w-[100px]"
+        className="flex-1 bg-transparent border-0 outline-none text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 min-w-[100px] focus:outline-none focus:ring-0"
         readOnly
       />
     )

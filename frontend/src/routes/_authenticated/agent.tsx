@@ -2147,8 +2147,8 @@ function AgentComponent() {
         const senderIds: string[] = []
         const channelIds: string[] = []
         
-        // Collect time ranges for THIS filter only
-        const filterTimeRanges: Array<{ startDate: number; endDate: number }> = []
+        // Single timeline filter (not an array anymore)
+        let timeRange: { startDate: number; endDate: number } | null = null
         
         for (const part of filterParts) {
           if (part.startsWith('from:')) {
@@ -2166,12 +2166,12 @@ function AgentComponent() {
             const channelId = part.substring(1)
             channelIds.push(channelId)
           } else if (part.startsWith('~')) {
-            // Parse timeline filters and collect them for this filter
-            const timelineValue = part.substring(1)
-            const timeRange = parseTimelineValue(timelineValue)
-            if (timeRange) {
-              filterTimeRanges.push(timeRange)
+            // Only parse the FIRST timeline filter found
+            if (!timeRange) {
+              const timelineValue = part.substring(1)
+              timeRange = parseTimelineValue(timelineValue)
             }
+            // Ignore any additional timeline filters in the same filter string
           }
         }
         
@@ -2183,12 +2183,9 @@ function AgentComponent() {
         if (senderIds.length > 0) filter.senderId = senderIds
         if (channelIds.length > 0) filter.channelId = channelIds
         
-        // Merge time ranges for THIS filter (earliest start, latest end)
-        if (filterTimeRanges.length > 0) {
-          filter.timeRange = {
-            startDate: Math.min(...filterTimeRanges.map(r => r.startDate)),
-            endDate: Math.max(...filterTimeRanges.map(r => r.endDate))
-          }
+        // Add single timeRange if found
+        if (timeRange) {
+          filter.timeRange = timeRange
         }
         
         // Add filter if it has at least one field (including timeRange-only filters)
@@ -2339,6 +2336,8 @@ function AgentComponent() {
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
 
+
+    console.log("Agent payload to be sent:", agentPayload)
     
 
     try {
