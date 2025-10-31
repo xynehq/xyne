@@ -1,3 +1,10 @@
+## [3.25.3](https://github.com/xynehq/xyne/compare/v3.25.2...v3.25.3) (2025-10-31)
+
+
+### Bug Fixes
+
+* XYNE-259 fixed chunk index load error ([#1178](https://github.com/xynehq/xyne/issues/1178)) ([6e79a73](https://github.com/xynehq/xyne/commit/6e79a7361cdcfc316ed07ba94ed8321fe428f90c))
+
 ## [3.25.2](https://github.com/xynehq/xyne/compare/v3.25.1...v3.25.2) (2025-10-31)
 
 
