@@ -1,3 +1,10 @@
+## [3.25.1](https://github.com/xynehq/xyne/compare/v3.25.0...v3.25.1) (2025-10-31)
+
+
+### Bug Fixes
+
+* XYNE-156 tool box disappear fix ([#1157](https://github.com/xynehq/xyne/issues/1157)) ([ae16427](https://github.com/xynehq/xyne/commit/ae164273af57408dbdda9b82a5c068c411992833))
+
 # [3.25.0](https://github.com/xynehq/xyne/compare/v3.24.1...v3.25.0) (2025-10-31)
 
 
