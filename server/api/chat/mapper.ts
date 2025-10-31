@@ -976,7 +976,7 @@ export function createToolParams(
   return params
 }
 
-const retrievalQueryDescription = (app?: GoogleApps | Apps) => `
+export const retrievalQueryDescription = (app?: GoogleApps | Apps) => `
 Create SHORT, targeted search terms optimized for retrieval systems. Focus on 1-3 key terms rather than long descriptive phrases.
       
       Step 1: Identify the MOST IMPORTANT specific keywords:
