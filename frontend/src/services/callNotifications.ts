@@ -1,4 +1,4 @@
-// WebSocket client for call notifications
+// WebSocket client for call notifications and direct messages
 import { useEffect, useRef, useState } from "react"
 
 export interface CallNotification {
@@ -22,6 +22,42 @@ export interface CallNotification {
   timestamp: number
 }
 
+export interface LexicalEditorState {
+  root: {
+    children: any[]
+    direction?: string | null
+    format?: string | number
+    indent?: number
+    type?: string
+    version?: number
+  }
+}
+
+export interface DirectMessage {
+  type: "direct_message"
+  messageId: number
+  messageContent: LexicalEditorState
+  createdAt: string
+  sender: {
+    id: string
+    name: string
+    email: string
+    photoLink?: string | null
+  }
+  timestamp: number
+}
+
+export interface TypingIndicator {
+  type: "typing_indicator"
+  userId: string
+  isTyping: boolean
+}
+
+export interface MessageRead {
+  type: "message_read"
+  readByUserId: string
+}
+
 export interface CallStatusUpdate {
   type: "call_status"
   status: string
@@ -30,6 +66,9 @@ export interface CallStatusUpdate {
 
 type CallNotificationHandler = (notification: CallNotification) => void
 type CallStatusHandler = (status: CallStatusUpdate) => void
+type DirectMessageHandler = (message: DirectMessage) => void
+type TypingIndicatorHandler = (indicator: TypingIndicator) => void
+type MessageReadHandler = (readStatus: MessageRead) => void
 
 class CallNotificationClient {
   private ws: WebSocket | null = null
@@ -38,6 +77,9 @@ class CallNotificationClient {
   private reconnectDelay = 1000
   private onNotificationCallbacks: CallNotificationHandler[] = []
   private onStatusCallbacks: CallStatusHandler[] = []
+  private onDirectMessageCallbacks: DirectMessageHandler[] = []
+  private onTypingIndicatorCallbacks: TypingIndicatorHandler[] = []
+  private onMessageReadCallbacks: MessageReadHandler[] = []
   private soundInterval: ReturnType<typeof setInterval> | null = null
   private audioContextInitialized = false
   private connectionInitialized = false
@@ -354,6 +396,21 @@ class CallNotificationClient {
             this.onStatusCallbacks.forEach((callback) => {
               callback(message)
             })
+          } else if (message.type === "direct_message") {
+            // Handle incoming direct message
+            this.onDirectMessageCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "typing_indicator") {
+            // Handle typing indicator
+            this.onTypingIndicatorCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "message_read") {
+            // Handle message read receipt
+            this.onMessageReadCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
           }
         } catch (error) {
           console.error("Error parsing notification message:", error)
@@ -434,6 +491,33 @@ class CallNotificationClient {
     }
   }
 
+  onDirectMessage(callback: DirectMessageHandler) {
+    this.onDirectMessageCallbacks.push(callback)
+    return () => {
+      this.onDirectMessageCallbacks = this.onDirectMessageCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
+  onTypingIndicator(callback: TypingIndicatorHandler) {
+    this.onTypingIndicatorCallbacks.push(callback)
+    return () => {
+      this.onTypingIndicatorCallbacks = this.onTypingIndicatorCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
+  onMessageRead(callback: MessageReadHandler) {
+    this.onMessageReadCallbacks.push(callback)
+    return () => {
+      this.onMessageReadCallbacks = this.onMessageReadCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
   sendCallResponse(
     callId: string,
     callerId: string,
@@ -446,6 +530,18 @@ class CallNotificationClient {
           callId,
           callerId,
           response,
+        }),
+      )
+    }
+  }
+
+  sendTypingIndicator(targetUserId: string, isTyping: boolean) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: "typing_indicator",
+          targetUserId,
+          isTyping,
         }),
       )
     }
@@ -514,8 +610,9 @@ export function useCallNotifications() {
     clientRef.current.stopCallNotificationSound()
     setIncomingCall(null)
 
-    // Open call in a new window with the LiveKit server URL
-    const callUrl = `/call?token=${notification.targetToken}&callId=${notification.callId}&type=${notification.callType}&serverUrl=${encodeURIComponent(notification.livekitUrl)}`
+    // Open call using the new cleaner route format
+    // Route will automatically authenticate and fetch token via join API
+    const callUrl = `/call/${notification.callId}?type=${notification.callType}`
     const callWindow = window.open(
       callUrl,
       "call-window-receiver",

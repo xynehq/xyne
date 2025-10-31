@@ -1272,9 +1272,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(
-              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
-            )
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
 
@@ -1907,6 +1905,7 @@ async function* generateAnswerFromGivenContext(
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
+  messages: Message[] = [],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2220,6 +2219,7 @@ async function* generateAnswerFromGivenContext(
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
       imageFileNames: finalImageFileNames,
+      messages: messages,
     },
     true,
     isMsgWithKbItems,
@@ -2517,9 +2517,7 @@ async function* generatePointQueryTimeExpansion(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(
-              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
-            )
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
 
@@ -3132,9 +3130,7 @@ async function* generateMetadataQueryAnswer(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(
-              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
-            )
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
 
@@ -3991,6 +3987,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
+  messages: Message[] = [],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -4025,6 +4022,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     modelId,
     isValidPath,
     folderIds,
+    messages,
   )
 }
 
@@ -4527,6 +4525,27 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
+          // Build conversation history (exclude current message)
+          const filteredMessages = messages.length > 1
+            ? messages
+                .slice(0, messages.length - 1)
+                .filter((msg) => !msg?.errorMessage)
+                .filter(
+                  (msg) =>
+                    !(msg.messageRole === MessageRole.Assistant && !msg.message),
+                )
+            : []
+
+          const topicConversationThread = filteredMessages.length > 0
+            ? buildTopicConversationThread(
+                filteredMessages,
+                filteredMessages.length - 1,
+              )
+            : []
+
+          const llmFormattedMessages: Message[] = formatMessagesForLLM(
+            topicConversationThread,
+          )
 
           if (
             (fileIds && fileIds?.length > 0) ||
@@ -4562,6 +4581,9 @@ export const MessageApi = async (c: Context) => {
               agentPromptValue,
               isMsgWithKbItems,
               actualModelId || config.defaultBestModel,
+              false,
+              [],
+              llmFormattedMessages,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -4789,25 +4811,10 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-            const filteredMessages = messages
-              .slice(0, messages.length - 1)
-              .filter((msg) => !msg?.errorMessage)
-              .filter(
-                (msg) =>
-                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
-              )
-
             loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
 
-            const topicConversationThread = buildTopicConversationThread(
-              filteredMessages,
-              filteredMessages.length - 1,
-            )
-            const llmFormattedMessages: Message[] = formatMessagesForLLM(
-              topicConversationThread,
-            )
             // Extract previous classification for pagination and follow-up queries
             let previousClassification: QueryRouterLLMResponse | null = null
             if (filteredMessages.length >= 1) {
@@ -5270,16 +5277,6 @@ export const MessageApi = async (c: Context) => {
                 // - Preserved app/entity from previous query
                 // - Updated count/pagination info
                 // - All the smart follow-up logic from the LLM
-
-                const filteredMessages = messages
-                  .filter((msg) => !msg?.errorMessage)
-                  .filter(
-                    (msg) =>
-                      !(
-                        msg.messageRole === MessageRole.Assistant &&
-                        !msg.message
-                      ),
-                  )
 
                 // Check for follow-up context carry-forward
                 const workingSet = collectFollowupContext(filteredMessages)

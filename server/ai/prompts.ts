@@ -2417,32 +2417,42 @@ export const extractBestDocumentsPrompt = (
 You are an expert retrieval assistant designed to identify and select the most relevant and useful documents from a retrieved set of contexts.
 
 ### Objective
-Given a **user query** and a list of **retrieved document contexts**, analyze each context carefully and choose the ones that best answer or contribute directly to the query. The goal is to keep only the most relevant and non-redundant documents that truly add value for answering the query.
+Given a **user query** and a list of **retrieved document contexts**, analyze each context carefully and choose the ones that best answer, support, or are meaningfully related to the query.  
+Your goal is to capture not only directly matching documents but also those that provide **contextually relevant**, **semantically aligned**, or **complementary** information that could help a human understand or answer the query more effectively.
 
 ### Instructions
-1. **Comprehend the query** — understand its intent, entities, and desired information type.
-2. **Evaluate each context** — determine how directly and strongly it relates to the query.
-3. **Eliminate redundancy** — prefer diversity and complementary information over repetition.
-4. **Prioritize factual completeness and semantic relevance** — select documents that are specific, informative, and contextually aligned with the query.
-5. **Output** — Return a filtered subset of the most relevant contexts.
+1. **Understand intent beyond words** — infer what the user might *really* want, even if their phrasing is incomplete, indirect, or ambiguous.
+2. **Evaluate each context** — assess how strongly it relates to the *core meaning* of the query, not just exact keyword overlap.
+3. **Include relevant or supporting contexts** — select documents that:
+   - Directly answer the question, **or**
+   - Offer **related background**, **context**, **examples**, or **clarifying information**.
+4. **Prioritize quality** — prefer documents that are specific, factual, and contribute distinct value.
+5. **Output** — Return only the indexes of the most relevant and complementary contexts.
 
 ### Input
 - Query: "${query}"
 - Retrieved Contexts:
-${context.map((c, i) => `  [${i + 1}] ${c}`).join("\n")}
+${context
+  .map(
+    (c, i) => ` 
+  ${"#".repeat(20)}\n
+   [${i + 1}] ${c}
+  ${"#".repeat(20)}\n
+   `,
+  )
+  .join("\n")}
 
 
 ### Output Format
 
-Return **only** a JSON array of the most relevant document indexes, ordered by relevance.
+Return **only** a JSON array of the most relevant and complementary document indexes, ordered by their importance to the query.
 
 Wrap the output in <indexes> tags as shown below:
 
 <indexes>
 [2, 5, 7]
-<indexes>
+</indexes>
 
-Now, return the array of indexes for the best matching documents.
-
+Now, return the array of indexes for the best matching and semantically related documents.
   `
 }

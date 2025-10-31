@@ -128,7 +128,8 @@ export const InitiateCallApi = async (c: Context) => {
     // Generate unique call ID (this will also be the LiveKit room name)
     const callExternalId = randomUUID()
     // Store shareable link with call type (no token - tokens are generated per user when they join)
-    const roomLink = `${LIVEKIT_CLIENT_URL || "http://localhost:5173"}/call?callId=${callExternalId}&type=${validatedData.callType}`
+    // Using the new cleaner route format: /call/:callId
+    const roomLink = `${LIVEKIT_CLIENT_URL || "http://localhost:5173"}/call/${callExternalId}?type=${validatedData.callType}`
 
     // Create room in LiveKit using externalId as room name
     await roomService.createRoom({

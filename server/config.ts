@@ -8,12 +8,14 @@ let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
 let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
+let paddleStatusEndpoint = process.env.STATUS_ENDPOINT || "http://localhost:8000/instance_status"
 let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
 // Centralized database URL construction
 function getDatabaseUrl(): string {
     return process.env.DATABASE_URL || `postgres://xyne:xyne@${postgresBaseHost}:5432/xyne`
 }
+
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
 let appleBundleId = process.env.APPLE_BUNDLE_ID || ""
@@ -53,10 +55,22 @@ let isReasoning = false
 let sqlInferenceModel = ""
 
 // File processing worker configuration
-let fileProcessingWorkerThreads = parseInt(process.env.FILE_PROCESSING_WORKER_THREADS || "4", 10)
-let fileProcessingTeamSize = parseInt(process.env.FILE_PROCESSING_TEAM_SIZE || "4", 10)
-let pdfFileProcessingWorkerThreads = parseInt(process.env.PDF_FILE_PROCESSING_WORKER_THREADS || "2", 10)
-let pdfFileProcessingTeamSize = parseInt(process.env.PDF_FILE_PROCESSING_TEAM_SIZE || "2", 10)
+let fileProcessingWorkerThreads = parseInt(
+  process.env.FILE_PROCESSING_WORKER_THREADS || "4",
+  10,
+)
+let fileProcessingTeamSize = parseInt(
+  process.env.FILE_PROCESSING_TEAM_SIZE || "4",
+  10,
+)
+let pdfFileProcessingWorkerThreads = parseInt(
+  process.env.PDF_FILE_PROCESSING_WORKER_THREADS || "2",
+  10,
+)
+let pdfFileProcessingTeamSize = parseInt(
+  process.env.PDF_FILE_PROCESSING_TEAM_SIZE || "2",
+  10,
+)
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
@@ -199,6 +213,7 @@ export default {
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
+  paddleStatusEndpoint,
   appleBundleId,
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute

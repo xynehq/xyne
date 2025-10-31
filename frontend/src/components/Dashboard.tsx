@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
+import { useAdminUserSelectionStore } from "@/store/useAdminUserSelectionStore"
 import {
   Users,
   Activity,
@@ -2191,11 +2192,17 @@ const UserDetailPage = ({
   onBack,
   timeRange,
   navigate,
+  setSelectedUserInStore,
 }: {
   user: AdminUserUsage
   onBack: () => void
   timeRange: "today" | "1w" | "1m" | "3m" | "all"
   navigate: ReturnType<typeof useNavigate>
+  setSelectedUserInStore: (user: {
+    userId: number
+    userName: string
+    userEmail: string
+  }) => void
 }) => {
   const [userChats, setUserChats] = useState<any[]>([])
   const [agentLeaderboard, setAgentLeaderboard] = useState<
@@ -2476,9 +2483,13 @@ const UserDetailPage = ({
         {/* View Chats Button */}
         <button
           onClick={() => {
+            setSelectedUserInStore({
+              userId: user.userId,
+              userName: user.userName,
+              userEmail: user.userEmail,
+            })
             navigate({
               to: "/admin/chat-overview" as const,
-              search: { userName: user.userName },
             })
           }}
           className="px-4 py-2 text-sm font-medium text-green-600 border border-green-200 rounded-lg hover:bg-green-50 hover:border-green-300 transition-colors flex items-center gap-2"
@@ -2658,6 +2669,11 @@ export const Dashboard = ({
   isAgentMode?: boolean
 } = {}) => {
   const navigate = useNavigate()
+  const {
+    setSelectedUser: setSelectedUserInStore,
+    setDashboardTab,
+    dashboardTab,
+  } = useAdminUserSelectionStore()
   const [stats, setStats] = useState<DashboardStats>({
     totalChats: 0,
     totalMessages: 0,
@@ -2697,7 +2713,7 @@ export const Dashboard = ({
   const [activeTab, setActiveTab] = useState<"normal" | "agent">("agent")
   const [mainTab, setMainTab] = useState<
     "my-activity" | "shared-agents" | "admin-overview"
-  >("my-activity")
+  >(dashboardTab || "my-activity")
   const [timeRange, setTimeRange] = useState<
     "today" | "1w" | "1m" | "3m" | "all"
   >("1m")
@@ -3714,7 +3730,10 @@ export const Dashboard = ({
               {/* Main Tabs - My Activity vs Shared Agent Usage vs Admin */}
               <div className="flex items-center gap-1 p-1 bg-muted rounded-lg">
                 <button
-                  onClick={() => setMainTab("my-activity")}
+                  onClick={() => {
+                    setMainTab("my-activity")
+                    setDashboardTab("my-activity")
+                  }}
                   className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                     mainTab === "my-activity"
                       ? "bg-white dark:bg-gray-800 shadow-sm"
@@ -3727,7 +3746,10 @@ export const Dashboard = ({
                   </div>
                 </button>
                 <button
-                  onClick={() => setMainTab("shared-agents")}
+                  onClick={() => {
+                    setMainTab("shared-agents")
+                    setDashboardTab("shared-agents")
+                  }}
                   className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                     mainTab === "shared-agents"
                       ? "bg-white dark:bg-gray-800 shadow-sm"
@@ -3742,7 +3764,10 @@ export const Dashboard = ({
                 {isAdmin && (
                   <>
                     <button
-                      onClick={() => setMainTab("admin-overview")}
+                      onClick={() => {
+                        setMainTab("admin-overview")
+                        setDashboardTab("admin-overview")
+                      }}
                       className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                         mainTab === "admin-overview"
                           ? "bg-white dark:bg-gray-800 shadow-sm"
@@ -3915,6 +3940,7 @@ export const Dashboard = ({
                     onBack={() => handleAdminUserSelect(selectedUser)}
                     timeRange={timeRange}
                     navigate={navigate}
+                    setSelectedUserInStore={setSelectedUserInStore}
                   />
                 </div>
               ) : selectedAgent ? (
@@ -4078,10 +4104,23 @@ export const Dashboard = ({
                       navigate({ to: "/admin/chat-overview" as const })
                     }}
                     onUserChatsClick={(userId: number, userName: string) => {
-                      // Navigate to user-specific chats view
+                      // Find the user from the admin users list
+                      const selectedUser = adminStats.topUsers.find(
+                        (u) => u.userId === userId,
+                      )
+
+                      if (selectedUser) {
+                        // Set user in store
+                        setSelectedUserInStore({
+                          userId: selectedUser.userId,
+                          userName: selectedUser.userName,
+                          userEmail: selectedUser.userEmail,
+                        })
+                      }
+
+                      // Navigate to user-specific chats view (without URL params)
                       navigate({
                         to: "/admin/chat-overview" as const,
-                        search: { userName: userName },
                       })
                     }}
                   />

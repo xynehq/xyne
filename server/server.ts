@@ -138,6 +138,16 @@ import {
   leaveCallSchema,
   inviteToCallSchema,
 } from "@/api/calls"
+import {
+  SendMessageApi,
+  GetConversationApi,
+  MarkMessagesAsReadApi,
+  GetUnreadCountsApi,
+  GetConversationParticipantsApi,
+  sendMessageSchema,
+  getConversationSchema,
+  markAsReadSchema,
+} from "@/api/directMessages"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -305,6 +315,7 @@ import { AgentMessageApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
 import {
   checkOverallSystemHealth,
+  checkPaddleOCRHealth,
   checkPostgresHealth,
   checkVespaHealth,
 } from "./health"
@@ -528,7 +539,7 @@ export const CallNotificationWs = app.get(
           const message = JSON.parse(event.data.toString())
           Logger.info(`Call notification message from user ${userId}:`, message)
 
-          // Handle different message types (accept call, reject call, etc.)
+          // Handle different message types (accept call, reject call, typing indicator, etc.)
           switch (message.type) {
             case "call_response":
               // Handle call acceptance/rejection
@@ -537,6 +548,20 @@ export const CallNotificationWs = app.get(
                   message.callerId,
                   message.response,
                   { callId: message.callId, targetUserId: userId },
+                )
+              }
+              break
+            case "typing_indicator":
+              // Handle typing indicator
+              if (
+                userId &&
+                message.targetUserId &&
+                typeof message.isTyping === "boolean"
+              ) {
+                callNotificationService.sendTypingIndicator(
+                  message.targetUserId,
+                  message.isTyping,
+                  userId,
                 )
               }
               break
@@ -1377,6 +1402,20 @@ export const AppRoutes = app
   .post("/calls/leave", zValidator("json", leaveCallSchema), LeaveCallApi)
   .get("/calls/active", GetActiveCallsApi)
   .get("/calls/history", GetCallHistoryApi)
+  // Direct message routes
+  .post("/messages/send", zValidator("json", sendMessageSchema), SendMessageApi)
+  .get(
+    "/messages/conversation",
+    zValidator("query", getConversationSchema),
+    GetConversationApi,
+  )
+  .post(
+    "/messages/mark-read",
+    zValidator("json", markAsReadSchema),
+    MarkMessagesAsReadApi,
+  )
+  .get("/messages/unread-counts", GetUnreadCountsApi)
+  .get("/messages/participants", GetConversationParticipantsApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
@@ -2024,6 +2063,12 @@ app.get(
 app.get(
   "/health/vespa",
   createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
+)
+
+// PaddleOCR health check endpoint
+app.get(
+  "/health/paddle",
+  createHealthCheckHandler(checkPaddleOCRHealth, ServiceName.paddleOCR),
 )
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed

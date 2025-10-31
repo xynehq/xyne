@@ -85,7 +85,6 @@ interface Collection {
   isPrivate?: boolean
 }
 
-
 // Memoized Document Viewer Container to prevent re-renders on sidebar resize
 const DocumentViewerContainer = memo(
   ({
@@ -253,15 +252,21 @@ const DocumentViewerContainer = memo(
       selectedDocument?.content,
     ])
 
-    const { highlightText, clearHighlights, scrollToMatch } =
-      useScopedFind(containerRef, {
+    const { highlightText, clearHighlights, scrollToMatch } = useScopedFind(
+      containerRef,
+      {
         documentId: selectedDocument?.file.id,
-      })
+      },
+    )
 
     // Expose the highlight functions via the document operations ref
     useEffect(() => {
       if (documentOperationsRef?.current) {
-        documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number, pageIndex?: number) => {
+        documentOperationsRef.current.highlightText = async (
+          text: string,
+          chunkIndex: number,
+          pageIndex?: number,
+        ) => {
           if (!containerRef.current) {
             const container = document.querySelector(
               '[data-container-ref="true"]',
@@ -352,6 +357,7 @@ function KnowledgeManagementContent() {
   const [showNewCollection, setShowNewCollection] = useState(false)
   const [collectionName, setCollectionName] = useState("")
   const [collections, setCollections] = useState<Collection[]>([])
+  const [loadingCollections, setLoadingCollections] = useState(true)
   const [editingCollection, setEditingCollection] = useState<Collection | null>(
     null,
   )
@@ -391,23 +397,37 @@ function KnowledgeManagementContent() {
   // Chat overlay state - only used when isChatHidden is true
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false)
 
-   
   // Vespa data modal state
   const [isVespaModalOpen, setIsVespaModalOpen] = useState(false)
-        
-  // Use global upload progress context with selectors
-  const startUpload = useUploadProgress(state => state.startUpload)
-  const updateProgress = useUploadProgress(state => state.updateProgress)
-  const updateFileStatus = useUploadProgress(state => state.updateFileStatus)
-  const finishUpload = useUploadProgress(state => state.finishUpload)
-  
-  // Derived state from global context - select only what we need
-  const isUploading = useUploadProgress(state => state.currentUpload?.isUploading ?? false)
-  const batchProgress = useUploadProgress(state => state.currentUpload?.batchProgress ?? { total: 0, current: 0, batch: 0, totalBatches: 0 })
-  const uploadingCollectionName = useUploadProgress(state => state.currentUpload?.collectionName ?? "")
-  const isNewCollectionUpload = useUploadProgress(state => state.currentUpload?.isNewCollection ?? false)
-  const targetCollectionId = useUploadProgress(state => state.currentUpload?.targetCollectionId)
 
+  // Use global upload progress context with selectors
+  const startUpload = useUploadProgress((state) => state.startUpload)
+  const updateProgress = useUploadProgress((state) => state.updateProgress)
+  const updateFileStatus = useUploadProgress((state) => state.updateFileStatus)
+  const finishUpload = useUploadProgress((state) => state.finishUpload)
+  const defaultBatchProgress = {
+    total: 0,
+    current: 0,
+    batch: 0,
+    totalBatches: 0,
+  }
+
+  // Derived state from global context - select only what we need
+  const isUploading = useUploadProgress(
+    (state) => state.currentUpload?.isUploading ?? false,
+  )
+  const batchProgress = useUploadProgress(
+    (state) => state.currentUpload?.batchProgress ?? defaultBatchProgress,
+  )
+  const uploadingCollectionName = useUploadProgress(
+    (state) => state.currentUpload?.collectionName ?? "",
+  )
+  const isNewCollectionUpload = useUploadProgress(
+    (state) => state.currentUpload?.isNewCollection ?? false,
+  )
+  const targetCollectionId = useUploadProgress(
+    (state) => state.currentUpload?.targetCollectionId,
+  )
 
   // Zoom detection for chat component
   useEffect(() => {
@@ -457,10 +477,9 @@ function KnowledgeManagementContent() {
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
 
-
-
   useEffect(() => {
     const fetchCollections = async () => {
+      setLoadingCollections(true)
       try {
         const response = await api.cl.$get({
           query: { includeItems: "true" },
@@ -517,6 +536,8 @@ function KnowledgeManagementContent() {
           title: "Error",
           description: "An error occurred while fetching knowledge bases.",
         })
+      } finally {
+        setLoadingCollections(false)
       }
     }
 
@@ -529,7 +550,7 @@ function KnowledgeManagementContent() {
   useEffect(() => {
     if (collections.length === 0) return
 
-    const pollInterval = 5000 
+    const pollInterval = 5000
 
     const pollStatuses = async () => {
       try {
@@ -561,8 +582,9 @@ function KnowledgeManagementContent() {
 
           // Check if any files are still processing or pending
           const hasProcessingFiles = data.items.some(
-            (item) => item.uploadStatus === UploadStatus.PROCESSING ||
-                     item.uploadStatus === UploadStatus.PENDING
+            (item) =>
+              item.uploadStatus === UploadStatus.PROCESSING ||
+              item.uploadStatus === UploadStatus.PENDING,
           )
 
           // Update collections with new statuses
@@ -574,8 +596,10 @@ function KnowledgeManagementContent() {
                   const statusUpdate = item.id ? statusMap.get(item.id) : null
                   return {
                     ...item,
-                    uploadStatus: statusUpdate?.uploadStatus ?? item.uploadStatus,
-                    statusMessage: statusUpdate?.statusMessage ?? item.statusMessage,
+                    uploadStatus:
+                      statusUpdate?.uploadStatus ?? item.uploadStatus,
+                    statusMessage:
+                      statusUpdate?.statusMessage ?? item.statusMessage,
                     retryCount: statusUpdate?.retryCount ?? item.retryCount,
                     children: item.children
                       ? updateItemStatuses(item.children)
@@ -619,21 +643,23 @@ function KnowledgeManagementContent() {
 
     const hasProcessingFiles = collections.some((collection) => {
       const checkItems = (items: FileNode[]): boolean => {
-        return items.some(
-          (item) => {
-            console.log(`Checking file: ${item.name}, status: ${item.uploadStatus}`)
-            return (
-              item.uploadStatus === UploadStatus.PROCESSING ||
-              item.uploadStatus === UploadStatus.PENDING ||
-              (item.children && checkItems(item.children))
-            )
-          }
-        )
+        return items.some((item) => {
+          console.log(
+            `Checking file: ${item.name}, status: ${item.uploadStatus}`,
+          )
+          return (
+            item.uploadStatus === UploadStatus.PROCESSING ||
+            item.uploadStatus === UploadStatus.PENDING ||
+            (item.children && checkItems(item.children))
+          )
+        })
       }
       return checkItems(collection.items)
     })
 
-    console.log(`hasProcessingFiles: ${hasProcessingFiles}, isPolling: ${isPolling}`)
+    console.log(
+      `hasProcessingFiles: ${hasProcessingFiles}, isPolling: ${isPolling}`,
+    )
 
     if (hasProcessingFiles && !isPolling) {
       console.log("Starting polling: Files in processing state detected")
@@ -652,16 +678,17 @@ function KnowledgeManagementContent() {
 
   // Utility function to filter valid files and show error if none are valid
   const getValidFilesOrShowError = (files: FileUploadSelectedFile[]) => {
-    const validFiles = files.filter(f => isValidFile(f.file))
-    
+    const validFiles = files.filter((f) => isValidFile(f.file))
+
     if (validFiles.length === 0) {
       toast.error({
         title: "Unsupported Files",
-        description: "No valid files to upload. All selected files are unsupported.",
+        description:
+          "No valid files to upload. All selected files are unsupported.",
       })
       return null
     }
-    
+
     return validFiles
   }
 
@@ -693,8 +720,13 @@ function KnowledgeManagementContent() {
 
     // Start the global upload progress with only valid files
     const batches = createBatches(validFiles, collectionName.trim())
-    const files = validFiles.map(f => ({ file: f.file, id: f.id }))
-    const { uploadId, abortController } = startUpload(collectionName.trim(), files, batches.length, true)
+    const files = validFiles.map((f) => ({ file: f.file, id: f.id }))
+    const { uploadId, abortController } = startUpload(
+      collectionName.trim(),
+      files,
+      batches.length,
+      true,
+    )
 
     // Close the modal immediately after starting upload
     handleCloseModal()
@@ -712,26 +744,37 @@ function KnowledgeManagementContent() {
         const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
 
         // Mark batch files as uploading
-        batchFiles.forEach(file => {
-          updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
+        batchFiles.forEach((file) => {
+          updateFileStatus(uploadId, file.file.name, file.id, "uploading")
         })
 
-        const uploadResult = await uploadFileBatch(batchFiles.map((f) => f.file), cl.id, null, abortController.signal)
+        const uploadResult = await uploadFileBatch(
+          batchFiles.map((f) => f.file),
+          cl.id,
+          null,
+          abortController.signal,
+        )
 
         // Update individual file statuses based on results
         if (uploadResult.results) {
           uploadResult.results.forEach((result: any, index: number) => {
             const file = batchFiles[index]
             if (result.success) {
-              updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+              updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
             } else {
-              updateFileStatus(uploadId, file.file.name, file.id, 'failed', result.error || 'Upload failed')
+              updateFileStatus(
+                uploadId,
+                file.file.name,
+                file.id,
+                "failed",
+                result.error || "Upload failed",
+              )
             }
           })
         } else {
           // Fallback: mark all as uploaded if no individual results available
-          batchFiles.forEach(file => {
-            updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+          batchFiles.forEach((file) => {
+            updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
           })
         }
 
@@ -831,9 +874,9 @@ function KnowledgeManagementContent() {
       })
     } catch (error) {
       console.error("Upload failed:", error)
-      
+
       // Check if the error is due to cancellation
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         toast({
           title: "Upload Cancelled",
           description: "File upload was cancelled by user.",
@@ -893,8 +936,14 @@ function KnowledgeManagementContent() {
 
     // Start the global upload progress with only valid files
     const batches = createBatches(validFiles, addingToCollection.name)
-    const files = validFiles.map(f => ({ file: f.file, id: f.id }))
-    const { uploadId, abortController } = startUpload(addingToCollection.name, files, batches.length, false, addingToCollection.id)
+    const files = validFiles.map((f) => ({ file: f.file, id: f.id }))
+    const { uploadId, abortController } = startUpload(
+      addingToCollection.name,
+      files,
+      batches.length,
+      false,
+      addingToCollection.id,
+    )
 
     // Close the modal immediately after starting upload
     handleCloseModal()
@@ -910,12 +959,12 @@ function KnowledgeManagementContent() {
         const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
 
         // Mark batch files as uploading
-        batchFiles.forEach(file => {
-          updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
+        batchFiles.forEach((file) => {
+          updateFileStatus(uploadId, file.file.name, file.id, "uploading")
         })
-        
+
         const uploadedResult = await uploadFileBatch(
-          batchFiles.map(f => f.file),
+          batchFiles.map((f) => f.file),
           addingToCollection.id,
           targetFolder?.id,
           abortController.signal,
@@ -926,15 +975,21 @@ function KnowledgeManagementContent() {
           uploadedResult.results.forEach((result: any, index: number) => {
             const file = batchFiles[index]
             if (result.success) {
-              updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+              updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
             } else {
-              updateFileStatus(uploadId, file.file.name, file.id, 'failed', result.error || 'Upload failed')
+              updateFileStatus(
+                uploadId,
+                file.file.name,
+                file.id,
+                "failed",
+                result.error || "Upload failed",
+              )
             }
           })
         } else {
           // Fallback: mark all as uploaded if no individual results available
-          batchFiles.forEach(file => {
-            updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+          batchFiles.forEach((file) => {
+            updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
           })
         }
 
@@ -1035,9 +1090,9 @@ function KnowledgeManagementContent() {
       handleCloseModal()
     } catch (error) {
       console.error("Add files failed:", error)
-      
+
       // Check if the error is due to cancellation
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         toast({
           title: "Upload Cancelled",
           description: "File upload was cancelled by user.",
@@ -1720,7 +1775,8 @@ function KnowledgeManagementContent() {
                                             item.lastUpdatedByEmail ||
                                             user?.email ||
                                             "Unknown",
-                                          uploadStatus: item.uploadStatus as UploadStatus,
+                                          uploadStatus:
+                                            item.uploadStatus as UploadStatus,
                                           statusMessage: item.statusMessage,
                                           retryCount: item.retryCount,
                                           isOpen: false,
@@ -1802,19 +1858,28 @@ function KnowledgeManagementContent() {
                 )}
               </div>
 
-              {collections.length === 0 && !isUploading ? (
+              {loadingCollections ? (
+                // Loading state
+                <div className="flex flex-col items-center justify-center min-h-[70vh]">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 dark:border-gray-300 mb-4"></div>
+                  <p className="text-gray-600 dark:text-gray-300">
+                    Loading collections...
+                  </p>
+                </div>
+              ) : collections.length === 0 && !isUploading ? (
                 // Empty state - centered layout
                 <div className="flex flex-col items-center justify-center min-h-[70vh]">
-                  <img 
-                    src={kbEmptyStateIcon} 
-                    alt="No collections" 
+                  <img
+                    src={kbEmptyStateIcon}
+                    alt="No collections"
                     className="w-32 h-32 mb-6 opacity-60"
                   />
                   <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
                     No collections available yet
                   </h2>
                   <p className="text-gray-500 dark:text-gray-400 mb-8 text-center ">
-                    Add your first collection to structure and manage information
+                    Add your first collection to structure and manage
+                    information
                   </p>
                   <Button
                     onClick={() => setShowNewCollection(true)}
@@ -1829,287 +1894,296 @@ function KnowledgeManagementContent() {
                 </div>
               ) : (
                 <div className="mt-12">
-                {/* Show skeleton loader when uploading to NEW collection */}
-                {isUploading && batchProgress.total > 0 && isNewCollectionUpload && (
-                  <div className="mb-8">
-                    <div className="flex justify-between items-center mb-4">
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                          {uploadingCollectionName}
-                        </h2>
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          uploading files...
-                        </span>
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {batchProgress.current} / {batchProgress.total} files
-                        processed
-                      </div>
-                    </div>
-                    <FileUploadSkeleton
-                      totalFiles={batchProgress.total}
-                      processedFiles={batchProgress.current}
-                      currentBatch={batchProgress.batch}
-                      totalBatches={batchProgress.totalBatches}
-                      showHeaders={true}
-                    />
-                  </div>
-                )}
-
-                {collections.map((collection) => (
-                  <div key={collection.id} className="mb-8">
-                    <div
-                      className="sticky mb-2 cursor-pointer top-0 bg-white dark:bg-[#1E1E1E] py-1"
-                      onClick={async () => {
-                        const updatedCollections = [...collections]
-                        const coll = updatedCollections.find(
-                          (c) => c.id === collection.id,
-                        )
-                        if (coll) {
-                          coll.isOpen = !coll.isOpen
-                          if (coll.isOpen) {
-                            const response = await api.cl[":id"].items.$get({
-                              param: { id: collection.id },
-                            })
-                            const data = await response.json()
-                            coll.items = buildFileTree(
-                              data.map((item: CollectionItem) => ({
-                                name: item.name,
-                                type: item.type as "file" | "folder",
-                                totalFileCount: item.totalFileCount,
-                                updatedAt: item.updatedAt,
-                                id: item.id,
-                                updatedBy:
-                                  item.lastUpdatedByEmail ||
-                                  user?.email ||
-                                  "Unknown",
-                                uploadStatus: item.uploadStatus as UploadStatus,
-                                statusMessage: item.statusMessage,
-                                retryCount: item.retryCount,
-                              })),
-                            )
-                          } else {
-                            // coll.items = []; // This would clear the items, maybe not desired
-                          }
-                          setCollections(updatedCollections)
-                        }
-                      }}
-                    >
-                      <div className="absolute left-[-24px] top-1/2 transform -translate-y-1/2">
-                        {collection.isOpen ? (
-                          <ChevronDown
-                            size={16}
-                            className="text-gray-600 dark:text-gray-400"
-                          />
-                        ) : (
-                          <ChevronRight
-                            size={16}
-                            className="text-gray-600 dark:text-gray-400"
-                          />
-                        )}
-                      </div>
-
-                      {/* Collection header aligned with table grid */}
-                      <div className="grid grid-cols-12 gap-4 items-center">
-                        <div className="col-span-5">
-                          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                            {collection.name}
-                          </h2>
+                  {/* Show skeleton loader when uploading to NEW collection */}
+                  {isUploading &&
+                    batchProgress.total > 0 &&
+                    isNewCollectionUpload && (
+                      <div className="mb-8">
+                        <div className="flex justify-between items-center mb-4">
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                              {uploadingCollectionName}
+                            </h2>
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              uploading files...
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-600 dark:text-gray-400">
+                            {batchProgress.current} / {batchProgress.total}{" "}
+                            files processed
+                          </div>
                         </div>
-                        <div className="col-span-7 flex justify-end items-center gap-4">
-                          <Plus
-                            size={16}
-                            className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              !isUploading &&
-                                handleOpenAddFilesModal(collection)
+                        <FileUploadSkeleton
+                          totalFiles={batchProgress.total}
+                          processedFiles={batchProgress.current}
+                          currentBatch={batchProgress.batch}
+                          totalBatches={batchProgress.totalBatches}
+                          showHeaders={true}
+                        />
+                      </div>
+                    )}
+
+                  {collections.map((collection) => (
+                    <div key={collection.id} className="mb-8">
+                      <div
+                        className="sticky mb-2 cursor-pointer top-0 bg-white dark:bg-[#1E1E1E] py-1"
+                        onClick={async () => {
+                          const updatedCollections = [...collections]
+                          const coll = updatedCollections.find(
+                            (c) => c.id === collection.id,
+                          )
+                          if (coll) {
+                            coll.isOpen = !coll.isOpen
+                            if (coll.isOpen) {
+                              const response = await api.cl[":id"].items.$get({
+                                param: { id: collection.id },
+                              })
+                              const data = await response.json()
+                              coll.items = buildFileTree(
+                                data.map((item: CollectionItem) => ({
+                                  name: item.name,
+                                  type: item.type as "file" | "folder",
+                                  totalFileCount: item.totalFileCount,
+                                  updatedAt: item.updatedAt,
+                                  id: item.id,
+                                  updatedBy:
+                                    item.lastUpdatedByEmail ||
+                                    user?.email ||
+                                    "Unknown",
+                                  uploadStatus:
+                                    item.uploadStatus as UploadStatus,
+                                  statusMessage: item.statusMessage,
+                                  retryCount: item.retryCount,
+                                })),
+                              )
+                            } else {
+                              // coll.items = []; // This would clear the items, maybe not desired
+                            }
+                            setCollections(updatedCollections)
+                          }
+                        }}
+                      >
+                        <div className="absolute left-[-24px] top-1/2 transform -translate-y-1/2">
+                          {collection.isOpen ? (
+                            <ChevronDown
+                              size={16}
+                              className="text-gray-600 dark:text-gray-400"
+                            />
+                          ) : (
+                            <ChevronRight
+                              size={16}
+                              className="text-gray-600 dark:text-gray-400"
+                            />
+                          )}
+                        </div>
+
+                        {/* Collection header aligned with table grid */}
+                        <div className="grid grid-cols-12 gap-4 items-center">
+                          <div className="col-span-5">
+                            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                              {collection.name}
+                            </h2>
+                          </div>
+                          <div className="col-span-7 flex justify-end items-center gap-4">
+                            <Plus
+                              size={16}
+                              className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                !isUploading &&
+                                  handleOpenAddFilesModal(collection)
+                              }}
+                            />
+                            <DropdownMenu
+                              open={openDropdown === collection.id}
+                              onOpenChange={(open) =>
+                                setOpenDropdown(open ? collection.id : null)
+                              }
+                            >
+                              <DropdownMenuTrigger asChild>
+                                <MoreHorizontal
+                                  size={16}
+                                  className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent>
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    !isUploading &&
+                                      handleEditCollection(collection)
+                                  }}
+                                  disabled={isUploading}
+                                >
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  <span>Edit</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (!isUploading) {
+                                      setDeletingCollection(collection)
+                                      setOpenDropdown(null)
+                                    }
+                                  }}
+                                  disabled={isUploading}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  <span>Delete</span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      </div>
+                      {collection.isOpen && (
+                        <>
+                          <div className="grid grid-cols-12 gap-4 text-sm font-mono text-gray-500 dark:text-gray-400 pb-2 border-b border-gray-200 dark:border-gray-700">
+                            <div className="col-span-5">FOLDER</div>
+                            <div className="col-span-2"></div>
+                            <div className="col-span-1 text-center">FILES</div>
+                            <div className="col-span-2">LAST UPDATED</div>
+                            <div className="col-span-2">UPDATED&nbsp;BY</div>
+                          </div>
+                          <FileTree
+                            items={collection.items}
+                            onFileClick={(file: FileNode) =>
+                              handleFileClick(file, collection)
+                            }
+                            onDownload={(file: FileNode, path: string) =>
+                              handleDownload(file, collection)
+                            }
+                            onAddFiles={(node, path) => {
+                              const collection = collections.find((c) =>
+                                c.items.some((item) => findNode(item, node)),
+                              )
+                              if (collection) {
+                                handleOpenAddFilesModal(collection, node)
+                              }
+                            }}
+                            onDelete={(node, path) => {
+                              const collection = collections.find((c) =>
+                                c.items.some((item) => findNode(item, node)),
+                              )
+                              if (collection) {
+                                if (
+                                  node.type === "folder" &&
+                                  node.name === collection.name
+                                ) {
+                                  setDeletingCollection(collection)
+                                } else {
+                                  setDeletingItem({ collection, node, path })
+                                }
+                              }
+                            }}
+                            onRetry={(node, path) => {
+                              // TODO: Implement retry logic here
+                            }}
+                            onToggle={async (node) => {
+                              if (node.type !== "folder") return
+
+                              const updatedCollections = [...collections]
+                              const coll = updatedCollections.find(
+                                (c) => c.id === collection.id,
+                              )
+                              if (coll) {
+                                // Toggle the folder state
+                                const toggleNode = async (
+                                  nodes: FileNode[],
+                                ): Promise<FileNode[]> => {
+                                  const updatedNodes = [...nodes]
+                                  for (
+                                    let i = 0;
+                                    i < updatedNodes.length;
+                                    i++
+                                  ) {
+                                    const n = updatedNodes[i]
+                                    if (n === node) {
+                                      n.isOpen = !n.isOpen
+
+                                      // If opening the folder and it has an ID, fetch its contents
+                                      if (n.isOpen && n.id) {
+                                        try {
+                                          const response = await api.cl[
+                                            ":id"
+                                          ].items.$get({
+                                            param: { id: collection.id },
+                                            query: { parentId: n.id },
+                                          })
+                                          if (response.ok) {
+                                            const items = await response.json()
+
+                                            // Build the children structure
+                                            n.children = items.map(
+                                              (item: CollectionItem) => ({
+                                                id: item.id,
+                                                name: item.name,
+                                                type: item.type as
+                                                  | "file"
+                                                  | "folder",
+                                                files: item.totalFileCount,
+                                                lastUpdated: item.updatedAt,
+                                                updatedBy:
+                                                  item.lastUpdatedByEmail ||
+                                                  user?.email ||
+                                                  "Unknown",
+                                                uploadStatus:
+                                                  item.uploadStatus as UploadStatus,
+                                                statusMessage:
+                                                  item.statusMessage,
+                                                retryCount: item.retryCount,
+                                                isOpen: false,
+                                                children:
+                                                  item.type === "folder"
+                                                    ? []
+                                                    : undefined,
+                                              }),
+                                            )
+                                          }
+                                        } catch (error) {
+                                          console.error(
+                                            `Failed to fetch folder contents for ${n.name}:`,
+                                            error,
+                                          )
+                                          toast.error({
+                                            title: "Error",
+                                            description: `Failed to load folder contents`,
+                                          })
+                                        }
+                                      } else if (!n.isOpen) {
+                                        // Optionally clear children when closing
+                                        // n.children = [];
+                                      }
+                                    } else if (n.children) {
+                                      n.children = await toggleNode(n.children)
+                                    }
+                                  }
+                                  return updatedNodes
+                                }
+
+                                coll.items = await toggleNode(coll.items)
+                                setCollections(updatedCollections)
+                              }
                             }}
                           />
-                          <DropdownMenu
-                            open={openDropdown === collection.id}
-                            onOpenChange={(open) =>
-                              setOpenDropdown(open ? collection.id : null)
-                            }
-                          >
-                            <DropdownMenuTrigger asChild>
-                              <MoreHorizontal
-                                size={16}
-                                className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
-                                onClick={(e) => e.stopPropagation()}
+                          {/* Show skeleton for existing collection uploads */}
+                          {isUploading &&
+                            !isNewCollectionUpload &&
+                            targetCollectionId === collection.id &&
+                            batchProgress.total > 0 && (
+                              <FileUploadSkeleton
+                                totalFiles={batchProgress.total}
+                                processedFiles={batchProgress.current}
+                                currentBatch={batchProgress.batch}
+                                totalBatches={batchProgress.totalBatches}
+                                showHeaders={false}
                               />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                              <DropdownMenuItem
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  !isUploading &&
-                                    handleEditCollection(collection)
-                                }}
-                                disabled={isUploading}
-                              >
-                                <Edit className="mr-2 h-4 w-4" />
-                                <span>Edit</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  if (!isUploading) {
-                                    setDeletingCollection(collection)
-                                    setOpenDropdown(null)
-                                  }
-                                }}
-                                disabled={isUploading}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                <span>Delete</span>
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
+                            )}
+                        </>
+                      )}
                     </div>
-                    {collection.isOpen && (
-                      <>
-                        <div className="grid grid-cols-12 gap-4 text-sm font-mono text-gray-500 dark:text-gray-400 pb-2 border-b border-gray-200 dark:border-gray-700">
-                          <div className="col-span-5">FOLDER</div>
-                          <div className="col-span-2"></div>
-                          <div className="col-span-1 text-center">FILES</div>
-                          <div className="col-span-2">LAST UPDATED</div>
-                          <div className="col-span-2">UPDATED&nbsp;BY</div>
-                        </div>
-                        <FileTree
-                          items={collection.items}
-                          onFileClick={(file: FileNode) =>
-                            handleFileClick(file, collection)
-                          }
-                          onDownload={(file: FileNode, path: string) =>
-                            handleDownload(file, collection)
-                          }
-                          onAddFiles={(node, path) => {
-                            const collection = collections.find((c) =>
-                              c.items.some((item) => findNode(item, node)),
-                            )
-                            if (collection) {
-                              handleOpenAddFilesModal(collection, node)
-                            }
-                          }}
-                          onDelete={(node, path) => {
-                            const collection = collections.find((c) =>
-                              c.items.some((item) => findNode(item, node)),
-                            )
-                            if (collection) {
-                              if (
-                                node.type === "folder" &&
-                                node.name === collection.name
-                              ) {
-                                setDeletingCollection(collection)
-                              } else {
-                                setDeletingItem({ collection, node, path })
-                              }
-                            }
-                          }}
-                          onRetry={(node, path) => {
-                            // TODO: Implement retry logic here
-                          }}
-                          onToggle={async (node) => {
-                            if (node.type !== "folder") return
-
-                            const updatedCollections = [...collections]
-                            const coll = updatedCollections.find(
-                              (c) => c.id === collection.id,
-                            )
-                            if (coll) {
-                              // Toggle the folder state
-                              const toggleNode = async (
-                                nodes: FileNode[],
-                              ): Promise<FileNode[]> => {
-                                const updatedNodes = [...nodes]
-                                for (let i = 0; i < updatedNodes.length; i++) {
-                                  const n = updatedNodes[i]
-                                  if (n === node) {
-                                    n.isOpen = !n.isOpen
-
-                                    // If opening the folder and it has an ID, fetch its contents
-                                    if (n.isOpen && n.id) {
-                                      try {
-                                        const response = await api.cl[
-                                          ":id"
-                                        ].items.$get({
-                                          param: { id: collection.id },
-                                          query: { parentId: n.id },
-                                        })
-                                        if (response.ok) {
-                                          const items = await response.json()
-
-                                          // Build the children structure
-                                          n.children = items.map(
-                                            (item: CollectionItem) => ({
-                                              id: item.id,
-                                              name: item.name,
-                                              type: item.type as
-                                                | "file"
-                                                | "folder",
-                                              files: item.totalFileCount,
-                                              lastUpdated: item.updatedAt,
-                                              updatedBy:
-                                                item.lastUpdatedByEmail ||
-                                                user?.email ||
-                                                "Unknown",
-                                              uploadStatus: item.uploadStatus as UploadStatus,
-                                              statusMessage: item.statusMessage,
-                                              retryCount: item.retryCount,
-                                              isOpen: false,
-                                              children:
-                                                item.type === "folder"
-                                                  ? []
-                                                  : undefined,
-                                            }),
-                                          )
-                                        }
-                                      } catch (error) {
-                                        console.error(
-                                          `Failed to fetch folder contents for ${n.name}:`,
-                                          error,
-                                        )
-                                        toast.error({
-                                          title: "Error",
-                                          description: `Failed to load folder contents`,
-                                        })
-                                      }
-                                    } else if (!n.isOpen) {
-                                      // Optionally clear children when closing
-                                      // n.children = [];
-                                    }
-                                  } else if (n.children) {
-                                    n.children = await toggleNode(n.children)
-                                  }
-                                }
-                                return updatedNodes
-                              }
-
-                              coll.items = await toggleNode(coll.items)
-                              setCollections(updatedCollections)
-                            }
-                          }}
-                        />
-                        {/* Show skeleton for existing collection uploads */}
-                        {isUploading && 
-                         !isNewCollectionUpload && 
-                         targetCollectionId === collection.id && 
-                         batchProgress.total > 0 && (
-                          <FileUploadSkeleton
-                            totalFiles={batchProgress.total}
-                            processedFiles={batchProgress.current}
-                            currentBatch={batchProgress.batch}
-                            totalBatches={batchProgress.totalBatches}
-                            showHeaders={false}
-                          />
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
+                  ))}
                 </div>
               )}
             </div>

@@ -42,6 +42,7 @@ import {
   desc,
   asc,
   or,
+  countDistinct,
 } from "drizzle-orm"
 import {
   deleteConnector,
@@ -205,6 +206,11 @@ export const adminQuerySchema = z.object({
     .enum(["created", "messages", "cost", "tokens"])
     .optional()
     .default("created"),
+  paginated: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((val) => val === "true"),
 })
 
 // Schema for user agent leaderboard query
@@ -1716,22 +1722,27 @@ export const GetAdminChats = async (c: Context) => {
     // Get current user and workspace info
     const { workspaceId: currentWorkspaceId } = c.get(JwtPayloadKey)
 
-    // Get query parameters directly
+    // Use validated query parameters from schema
     const query = c.req.query()
-    const from = query.from ? new Date(query.from) : undefined
-    const to = query.to ? new Date(query.to) : undefined
-    const userId = query.userId ? Number(query.userId) : undefined
-    const page = query.page ? Number(query.page) : 1
-    const pageSize = query.offset ? Number(query.offset) : 20
-    const search = query.search?.trim() || undefined
-    const filterType = query.filterType || "all"
-    const sortBy = query.sortBy || "created"
+    const validatedParams = adminQuerySchema.parse(query)
+    const {
+      from,
+      to,
+      userId,
+      page,
+      offset: pageSize,
+      search,
+      filterType,
+      sortBy,
+      paginated,
+    } = validatedParams
 
     // Build the conditions array
     const conditions = []
 
     // Always exclude deleted messages
     conditions.push(isNull(messages.deletedAt))
+    conditions.push(isNull(chats.deletedAt))
 
     // Add workspace filtering unless user is SuperAdmin
     // if (!isSuperAdmin) {
@@ -1793,7 +1804,7 @@ export const GetAdminChats = async (c: Context) => {
         userRole: users.role,
         userCreatedAt: users.createdAt,
         messageCount: count(
-          sql`CASE WHEN ${messages.deletedAt} IS NULL THEN 1 END`,
+          sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.id} END`,
         ),
         likes: count(
           sql`CASE WHEN ${messages.feedback}->>'type' = 'like' AND ${messages.deletedAt} IS NULL THEN 1 END`,
@@ -1842,17 +1853,26 @@ export const GetAdminChats = async (c: Context) => {
         break
     }
 
-    // Calculate pagination offsets
-    const limit = pageSize
-    const offsetValue = (page - 1) * limit
+    // Execute the query with conditional pagination
+    let result
+    if (paginated) {
+      // Apply pagination when paginated=true
+      const limit = pageSize || 20
+      const offsetValue = (page - 1) * limit
 
-    // Execute the query with SQL-based pagination
-    const result = await baseQuery
-      .where(and(...conditions))
-      .groupBy(chats.id, users.email, users.name, users.role, users.createdAt)
-      .orderBy(orderByClause)
-      .limit(limit)
-      .offset(offsetValue)
+      result = await baseQuery
+        .where(and(...conditions))
+        .groupBy(chats.id, users.email, users.name, users.role, users.createdAt)
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset(offsetValue)
+    } else {
+      // Fetch all results when paginated=false
+      result = await baseQuery
+        .where(and(...conditions))
+        .groupBy(chats.id, users.email, users.name, users.role, users.createdAt)
+        .orderBy(orderByClause)
+    }
 
     // Convert totalCost from string to number and totalTokens from bigint to number
     const processedResult = result.map((chat) => ({
@@ -1861,20 +1881,33 @@ export const GetAdminChats = async (c: Context) => {
       totalTokens: Number(chat.totalTokens) || 0, // bigint → string at runtime
     }))
 
-    // Calculate pagination metadata
-    const hasNextPage = page * pageSize < totalCount
-    const hasPreviousPage = page > 1
+    // Calculate pagination metadata based on paginated parameter
+    let response
+    if (paginated) {
+      const currentPageSize = pageSize || 50
+      const hasNextPage = page * currentPageSize < totalCount
+      const hasPreviousPage = page > 1
 
-    // Return data with pagination metadata
-    const response = {
-      data: processedResult,
-      pagination: {
-        totalCount,
-        currentPage: page,
-        pageSize,
-        hasNextPage,
-        hasPreviousPage,
-      },
+      response = {
+        data: processedResult,
+        pagination: {
+          totalCount,
+          currentPage: page,
+          pageSize: currentPageSize,
+          hasNextPage,
+          hasPreviousPage,
+          paginated: true,
+        },
+      }
+    } else {
+      // For non-paginated queries, return all data without pagination metadata
+      response = {
+        data: processedResult,
+        pagination: {
+          totalCount,
+          paginated: false,
+        },
+      }
     }
 
     return c.json(response)
@@ -2298,15 +2331,16 @@ export const UpdateUser = async (c: Context) => {
   }
 }
 
-const syncByMailSchema = z.object({
-  email: z.string().email(),
+export const syncByMailSchema = z.object({
+  email: z.string(),
 })
 
 export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
   try {
-    Logger.info("HandlePerUserSync called")
-    const form = await c.req.parseBody()
-    const validatedData = syncByMailSchema.parse(form)
+    Logger.info("HandlePerUserGoogleWorkSpaceSync called")
+    // @ts-ignore
+    const validatedData = c.req.valid("json") as { email: string }
+
     const targetUser = await getUserByEmail(db, validatedData.email)
     if (!targetUser || !targetUser.length) {
       throw new HTTPException(404, { message: "User not found" })
@@ -2322,7 +2356,18 @@ export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
       id: `manual-sync-${Date.now()}`,
     }
 
-    await handleGoogleServiceAccountChanges(boss, mockJob as Job)
+    // Call the appropriate sync function based on AUTH_TYPE from config
+    if (config.CurrentAuthType === AuthType.OAuth) {
+      loggerWithChild({ email: validatedData.email }).info(
+        "Using OAuth-based sync for Google Workspace",
+      )
+      await handleGoogleOAuthChanges(boss, mockJob as Job)
+    } else {
+      loggerWithChild({ email: validatedData.email }).info(
+        "Using Service Account-based sync for Google Workspace",
+      )
+      await handleGoogleServiceAccountChanges(boss, mockJob as Job)
+    }
 
     return c.json({
       success: true,
@@ -2343,8 +2388,8 @@ export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
 export const HandlePerUserSlackSync = async (c: Context) => {
   try {
     Logger.info("HandlePerUserSlackSync called")
-    const form = await c.req.parseBody()
-    const validatedData = syncByMailSchema.parse(form)
+    // @ts-ignore
+    const validatedData = c.req.valid("json") as { email: string }
     const targetUser = await getUserByEmail(db, validatedData.email)
     if (!targetUser || !targetUser.length) {
       throw new HTTPException(404, { message: "User not found" })

@@ -287,7 +287,7 @@ const StepNode: React.FC<NodeProps> = ({
             <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
               {step.description ||
                 aiConfig?.description ||
-                `AI agent to analyze and summarize documents using ${aiConfig?.model || "gpt-oss-120b"}.`}
+                `AI agent to analyze and summarize documents using model ${aiConfig?.model || "gpt-oss-120b"}.`}
             </p>
           </div>
 

@@ -85,6 +85,32 @@ import { extractDriveIds } from "@/search/utils"
 const { maxDefaultSummary, defaultFastModel } = config
 const Logger = getLogger(Subsystem.Chat)
 
+function convertParticipantsToLowercase(
+  participants?: MailParticipant,
+): MailParticipant | undefined {
+  if (!participants || Object.keys(participants).length < 1) return participants
+
+  const converted: MailParticipant = {}
+
+  if (participants.from) {
+    converted.from = participants.from.map((email) => email.toLowerCase())
+  }
+
+  if (participants.to) {
+    converted.to = participants.to.map((email) => email.toLowerCase())
+  }
+
+  if (participants.cc) {
+    converted.cc = participants.cc.map((email) => email.toLowerCase())
+  }
+
+  if (participants.bcc) {
+    converted.bcc = participants.bcc.map((email) => email.toLowerCase())
+  }
+
+  return converted
+}
+
 async function formatSearchToolResponse(
   searchResults: VespaSearchResponse | null,
   searchContext: {
@@ -114,7 +140,12 @@ async function formatSearchToolResponse(
       const citation = searchToCitation(r)
       return {
         id: citation.docId,
-        content: await answerContextMap(r, userMetadata, maxDefaultSummary),
+        content: await answerContextMap(
+          r,
+          userMetadata,
+          // Limit to 50 chunks for file documents to prevent exceeding context size with large files
+          r.fields.sddocname === fileSchema ? 50 : undefined,
+        ),
         source: citation,
         confidence: r.relevance || 0.7,
       }
@@ -337,10 +368,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     excludedIds,
     span: execSpan?.startSpan("vespa_search_call"),
     offset,
-    rankProfile:
-      orderDirection === "desc"
-        ? SearchModes.GlobalSorted
-        : SearchModes.NativeRank,
+    rankProfile: SearchModes.NativeRank,
     mailParticipants: mailParticipant || null,
     orderBy,
     owner,
@@ -491,8 +519,13 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       }
       const citation = searchToCitation(r)
       return {
-        id: `${citation.docId}`,
-        content: await answerContextMap(r, userMetadata, maxDefaultSummary),
+        id: citation.docId,
+        content: await answerContextMap(
+          r,
+          userMetadata,
+          // Limit to 50 chunks for file documents to prevent exceeding context size with large files
+          r.fields.sddocname === fileSchema ? 50 : undefined,
+        ),
         source: citation,
         confidence: r.relevance || 0.7,
       }
@@ -1784,7 +1817,6 @@ export const searchGmail: AgentTool = {
       sortBy?: "asc" | "desc"
       labels?: string[]
       timeRange?: { startTime: string; endTime: string }
-      isAttachmentRequired?: boolean
       participants?: MailParticipant
       excludedIds?: string[]
     },
@@ -1823,18 +1855,17 @@ export const searchGmail: AgentTool = {
             : Date.now(),
         }
       }
-
+      const offset = params.offset || 0
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Gmail,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
+        offset,
         sortBy: params.sortBy || "desc",
         labels: params.labels,
         timeRange: timeRange,
-        isAttachmentRequired: params.isAttachmentRequired,
-        participants: params.participants,
+        participants: convertParticipantsToLowercase(params.participants),
         excludeDocIds: params.excludedIds || [],
         docIds: undefined,
       })
@@ -1927,14 +1958,14 @@ export const searchDriveFiles: AgentTool = {
             : Date.now(),
         }
       }
-
+      const offset = params.offset || 0
       // Call searchGoogleApps with correct parameter structure
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Drive,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
+        offset,
         sortBy: params.sortBy || "desc",
         timeRange: timeRange,
         owner: params.owner,
@@ -2012,13 +2043,13 @@ export const searchCalendarEvents: AgentTool = {
             : Date.now(),
         }
       }
-
+      const offset = params.offset || 0
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Calendar,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
+        offset,
         sortBy: params.sortBy || "desc",
         timeRange: timeRange,
         attendees: params.attendees,
@@ -2072,14 +2103,15 @@ export const searchGoogleContacts: AgentTool = {
         return { result: errorMsg, error: "Missing email" }
       }
 
+      const offset = params.offset || 0
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Contacts,
         email: email,
         query: params.query,
-        limit: params.limit || config.VespaPageSize,
-        offset: params.offset || 0,
+        limit: (params.limit || config.VespaPageSize) + offset,
         sortBy: "desc",
         excludeDocIds: params.excludedIds || [],
+        offset,
       })
 
       return await formatSearchToolResponse(searchResults, {

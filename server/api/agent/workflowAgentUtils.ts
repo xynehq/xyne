@@ -762,6 +762,37 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
       })
 
       Logger.info(`[agentCore] Direct LLM call result: ${JSON.stringify(result).substring(0, 700)}...`)
+
+      // Extract the response text from the result
+      if (result.success && result.type === "non-streaming") {
+        finalAnswer = result.response?.text || ""
+        totalCost = result.response?.cost || 0
+        totalTokens = (result.response?.metadata?.usage?.inputTokens || 0) +
+                      (result.response?.metadata?.usage?.outputTokens || 0)
+        Logger.info(`[agentCore] ✅ Successfully extracted response text (${finalAnswer.length} chars)`)
+      } else if (!result.success) {
+        Logger.error(`[agentCore] Agent execution failed: ${result.error}`)
+        finalAnswer = `Error: ${result.error}`
+        llmSpan?.end()
+        executeAgentSpan?.end()
+        return {
+          success: false,
+          error: result.error
+        }
+      } else {
+        // This case is unexpected since isStreamable is set to false.
+        Logger.warn(`[agentCore] Agent execution returned a streaming response unexpectedly.`)
+        finalAnswer = "Error: Unexpected streaming response from agent."
+        llmSpan?.end()
+        executeAgentSpan?.end()
+        return {
+          success: false,
+          error: "Unexpected streaming response from agent"
+        }
+      }
+
+      llmSpan?.end()
+
       Logger.info(`[agentCore] ✅ Direct LLM call completed`)
       Logger.info(`[agentCore] 📊 Answer length: ${finalAnswer.length} characters`)
       Logger.info(`[agentCore] 💰 Cost: $${totalCost.toFixed(6)}`)

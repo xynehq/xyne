@@ -1,7 +1,7 @@
-import { Phone, PhoneOff, Video } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import type { CallNotification } from '@/services/callNotifications'
+import { Phone, PhoneOff, Video } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import type { CallNotification } from "@/services/callNotifications"
 
 interface IncomingCallModalProps {
   notification: CallNotification | null
@@ -10,7 +10,12 @@ interface IncomingCallModalProps {
   onDismiss: () => void
 }
 
-export function IncomingCallModal({ notification, onAccept, onReject, onDismiss }: IncomingCallModalProps) {
+export function IncomingCallModal({
+  notification,
+  onAccept,
+  onReject,
+  onDismiss,
+}: IncomingCallModalProps) {
   if (!notification) return null
 
   const { caller, callType } = notification
@@ -23,13 +28,16 @@ export function IncomingCallModal({ notification, onAccept, onReject, onDismiss 
           <div className="flex justify-center">
             <div className="h-20 w-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-semibold ring-4 ring-blue-500">
               {caller.photoLink ? (
-                <img 
-                  src={caller.photoLink} 
+                <img
+                  src={caller.photoLink}
                   alt={caller.name}
                   className="h-20 w-20 rounded-full object-cover"
                 />
               ) : (
-                caller.name.split(' ').map(n => n[0]).join('')
+                caller.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
               )}
             </div>
           </div>
@@ -37,7 +45,7 @@ export function IncomingCallModal({ notification, onAccept, onReject, onDismiss 
           {/* Call Info */}
           <div className="space-y-2">
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-              Incoming {callType === 'video' ? 'Video' : 'Audio'} Call
+              Incoming {callType === "video" ? "Video" : "Audio"} Call
             </h3>
             <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
               {caller.name}
@@ -49,7 +57,7 @@ export function IncomingCallModal({ notification, onAccept, onReject, onDismiss 
 
           {/* Call Type Icon */}
           <div className="flex justify-center">
-            {callType === 'video' ? (
+            {callType === "video" ? (
               <Video className="h-8 w-8 text-blue-500 animate-pulse" />
             ) : (
               <Phone className="h-8 w-8 text-green-500 animate-pulse" />
@@ -66,7 +74,7 @@ export function IncomingCallModal({ notification, onAccept, onReject, onDismiss 
             >
               <PhoneOff className="h-6 w-6" />
             </Button>
-            
+
             <Button
               onClick={() => onAccept(notification)}
               variant="default"
