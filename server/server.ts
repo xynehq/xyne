@@ -105,6 +105,10 @@ import { serveStatic } from "hono/bun"
 import config from "@/config"
 import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
+import {
+  validateAppleToken,
+  extractUserInfoFromToken,
+} from "@/utils/apple-auth"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import {
@@ -773,6 +777,254 @@ const handleAppValidation = async (c: Context) => {
   )
 }
 
+// Apple Sign-In validation endpoint
+const handleAppleAppValidation = async (c: Context) => {
+  const authHeader = c.req.header("Authorization")
+  const body = await c.req.json()
+
+  if (!authHeader) {
+    throw new HTTPException(401, {
+      message: "Missing Authorization header",
+    })
+  }
+
+  if (!authHeader.startsWith("Bearer ")) {
+    throw new HTTPException(400, { message: "Malformed Authorization header" })
+  }
+
+  const identityToken = authHeader.slice("Bearer ".length).trim()
+
+  try {
+    const expectedAudience = config.appleBundleId
+
+    if (!expectedAudience) {
+      throw new HTTPException(500, {
+        message: "Apple Bundle ID is not configured",
+      })
+    }
+
+    // Validate the Apple identity token
+    const tokenClaims = await validateAppleToken(
+      identityToken,
+      expectedAudience,
+    )
+
+    // Extract user information from token and request body
+    const userInfo = extractUserInfoFromToken(tokenClaims, {
+      name: body.fullName
+        ? {
+            firstName: body.fullName.givenName,
+            lastName: body.fullName.familyName,
+          }
+        : body.user?.name,
+    })
+
+    const email = tokenClaims?.email
+
+    if (!email) {
+      throw new HTTPException(400, {
+        message: "Could not extract email from Apple token or request body",
+      })
+    }
+
+    // Check if email is verified (Apple tokens should always have verified emails)
+    if (!userInfo.emailVerified) {
+      throw new HTTPException(403, {
+        message: "Apple ID email is not verified",
+      })
+    }
+
+    // Extract domain from email
+    const emailParts = email.split("@")
+    if (emailParts.length !== 2) {
+      throw new HTTPException(400, { message: "Invalid email format" })
+    }
+    let domain = emailParts[1]
+
+    const name =
+      userInfo.name || userInfo.givenName || userInfo.familyName || ""
+
+    Logger.info(
+      {
+        requestId: c.var.requestId,
+        user: {
+          id: userInfo.id,
+          email: email,
+          email_verified: userInfo.emailVerified,
+          name: name,
+        },
+      },
+      "Apple Sign-In token validated successfully",
+    )
+
+    // Check if user already exists
+    const existingUserRes = await getUserByEmail(db, email)
+
+    // if user exists then workspace exists too
+    if (existingUserRes && existingUserRes.length) {
+      Logger.info(
+        {
+          requestId: c.var.requestId,
+          user: {
+            email: email,
+            name: name,
+            verified_email: userInfo.emailVerified,
+          },
+        },
+        "Existing user found and authenticated with Apple Sign-In",
+      )
+
+      const existingUser = existingUserRes[0]
+      const workspaceId = existingUser.workspaceExternalId
+
+      const accessToken = await generateTokens(
+        email,
+        existingUser.role,
+        existingUser.workspaceExternalId,
+      )
+      const refreshToken = await generateTokens(
+        email,
+        existingUser.role,
+        existingUser.workspaceExternalId,
+        true,
+      )
+
+      // Save refresh token to database
+      await saveRefreshTokenToDB(db, email, refreshToken)
+
+      return c.json({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        workspace_id: workspaceId,
+        user: {
+          id: userInfo.id,
+          email: email,
+          name: name,
+          apple_user_id: userInfo.id,
+        },
+      })
+    }
+
+    // check if workspace exists
+    // just create the user
+    const existingWorkspaceRes = await getWorkspaceByDomain(domain)
+    if (existingWorkspaceRes && existingWorkspaceRes.length) {
+      Logger.info("Workspace found, creating user for Apple Sign-In")
+      const existingWorkspace = existingWorkspaceRes[0]
+      const [user] = await createUser(
+        db,
+        existingWorkspace.id,
+        email,
+        name,
+        "",
+        UserRole.User,
+        existingWorkspace.externalId,
+      )
+
+      const accessToken = await generateTokens(
+        user.email,
+        user.role,
+        user.workspaceExternalId,
+      )
+      const refreshToken = await generateTokens(
+        user.email,
+        user.role,
+        user.workspaceExternalId,
+        true,
+      )
+      // save refresh token generated in user schema
+      await saveRefreshTokenToDB(db, email, refreshToken)
+      const emailSent = await emailService.sendWelcomeEmail(
+        user.email,
+        user.name,
+      )
+      if (emailSent) {
+        Logger.info(`Welcome email sent to ${user.email} and ${user.name}`)
+      }
+
+      return c.json({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        workspace_id: user.workspaceExternalId,
+        user: {
+          id: userInfo.id,
+          email: user.email,
+          name: user.name,
+          apple_user_id: userInfo.id,
+        },
+      })
+    }
+
+    // we could not find the user and the workspace
+    // creating both
+    Logger.info("Creating workspace and user for Apple Sign-In")
+    const userAcc = await db.transaction(async (trx) => {
+      const [workspace] = await createWorkspace(trx, email, domain)
+      const [user] = await createUser(
+        trx,
+        workspace.id,
+        email,
+        name,
+        "",
+        UserRole.SuperAdmin,
+        workspace.externalId,
+      )
+      return user
+    })
+
+    const accessToken = await generateTokens(
+      userAcc.email,
+      userAcc.role,
+      userAcc.workspaceExternalId,
+    )
+    const refreshToken = await generateTokens(
+      userAcc.email,
+      userAcc.role,
+      userAcc.workspaceExternalId,
+      true,
+    )
+    // save refresh token generated in user schema
+    await saveRefreshTokenToDB(db, email, refreshToken)
+    const emailSent = await emailService.sendWelcomeEmail(
+      userAcc.email,
+      userAcc.name,
+    )
+    if (emailSent) {
+      Logger.info(
+        `Welcome email sent to new workspace creator ${userAcc.email}`,
+      )
+    }
+
+    return c.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      workspace_id: userAcc.workspaceExternalId,
+      user: {
+        id: userInfo.id,
+        email: userAcc.email,
+        name: userAcc.name,
+        apple_user_id: userInfo.id,
+      },
+    })
+  } catch (error) {
+    Logger.error(
+      {
+        requestId: c.var.requestId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Apple Sign-In validation failed",
+    )
+
+    if (error instanceof HTTPException) {
+      throw error
+    }
+
+    throw new HTTPException(401, {
+      message: "Apple Sign-In validation failed",
+    })
+  }
+}
+
 const handleAppRefreshToken = async (c: Context) => {
   let body
   try {
@@ -918,6 +1170,7 @@ const getNewAccessRefreshToken = async (c: Context) => {
 export const AppRoutes = app
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)
+  .post("/validate-apple-token", handleAppleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
   .use("*", AuthMiddleware)

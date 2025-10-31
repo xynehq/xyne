@@ -18,6 +18,7 @@ function getDatabaseUrl(): string {
 
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
+let appleBundleId = process.env.APPLE_BUNDLE_ID || ""
 
 // Vespa configuration constants
 export const NAMESPACE = "namespace"
@@ -213,6 +214,7 @@ export default {
   redirectUri,
   postOauthRedirect,
   paddleStatusEndpoint,
+  appleBundleId,
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute
   defaultBestModel,
