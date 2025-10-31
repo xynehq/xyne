@@ -1,3 +1,10 @@
+## [3.26.1](https://github.com/xynehq/xyne/compare/v3.26.0...v3.26.1) (2025-10-31)
+
+
+### Bug Fixes
+
+* **fix/Sync-1:** inserting single user job in queue ([#1175](https://github.com/xynehq/xyne/issues/1175)) ([8c8008d](https://github.com/xynehq/xyne/commit/8c8008d2a1ab2eb4e2af9181e42655482da68ead))
+
 # [3.26.0](https://github.com/xynehq/xyne/compare/v3.25.4...v3.26.0) (2025-10-31)
 
 
