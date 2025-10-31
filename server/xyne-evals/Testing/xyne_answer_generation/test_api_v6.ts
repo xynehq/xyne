@@ -24,7 +24,7 @@ const AccessTokenCookieName = "access-token"
 const RefreshTokenCookieName = "refresh-token"
 
 // Configuration constants
-const TRACER_TIMEOUT_MS = 30000 // 30 seconds
+const TRACER_TIMEOUT_MS = 90000 // 30 seconds
 const POLLING_INTERVAL_MS = 1500 // Check every 1.5 seconds
 const TRACER_DIR = join(process.cwd(), "xyne-evals", "data", "tracer-data")
 
@@ -586,7 +586,7 @@ async function main() {
       "xyne-evals",
       "Testing",
       "xyne_answer_generation",
-      "test_api_v5_results.json",
+      "test_api_v6_results.json",
     )
 
     console.log(`📂 Reading QA data from: ${qaInputPath}`)
@@ -602,21 +602,25 @@ async function main() {
     // Get slice parameters from command line arguments or use defaults
     const startIndex = parseInt(process.argv[2]) || 0
     const count = parseInt(process.argv[3]) || 3 // Process 3 questions by default
+    const batchSize = parseInt(process.argv[4]) || 10 // Process in batches of 10 by default
     const endIndex = Math.min(startIndex + count, qaData.length)
     const questionsToProcess = qaData.slice(startIndex, endIndex)
 
     console.log(`🔪 Slice Configuration:`)
     console.log(`   Start Index: ${startIndex}`)
     console.log(`   Count: ${count}`)
+    console.log(`   Batch Size: ${batchSize}`)
     console.log(`   End Index: ${endIndex}`)
     console.log(
       `   Processing ${
         questionsToProcess.length
       } questions (from index ${startIndex} to ${endIndex - 1})`,
     )
-    console.log(`   Usage: bun run test_api_v5.ts <startIndex> <count>`)
     console.log(
-      `   Example: bun run test_api_v5.ts 0 5 (process 5 questions starting from index 0)`,
+      `   Usage: bun run test_api_v6.ts <startIndex> <count> <batchSize>`,
+    )
+    console.log(
+      `   Example: bun run test_api_v6.ts 0 100 10 (process 100 questions in batches of 10)`,
     )
     console.log("")
 
@@ -669,97 +673,79 @@ async function main() {
       console.log(`📄 No existing results file found, starting fresh`)
     }
 
-    const results: any[] = []
-    console.log(
-      `\n✨ Initialized results array for ${questionsToProcess.length} new questions`,
-    )
+    let allNewResults: any[] = []
 
-    // --- Sequential Processing Loop ---
-    for (let i = 0; i < questionsToProcess.length; i++) {
-      const item = questionsToProcess[i]
-      const query = item.Question
-      const questionId = item.question_id || `q_${i + 1}`
-
-      console.log("\n" + "=".repeat(100))
+    // --- Batch Processing Loop ---
+    for (let i = 0; i < questionsToProcess.length; i += batchSize) {
+      const batch = questionsToProcess.slice(i, i + batchSize)
       console.log(
-        `🚀 Processing Question ${i + 1}/${
-          questionsToProcess.length
-        } (ID: ${questionId})`,
-      )
-      console.log("=".repeat(100))
-
-      // Call API and wait for tracer file
-      const result = await testAPIAndWaitForTracer(query, cookies, questionId)
-
-      // Create combined result object with the specified format
-      const combinedResult = {
-        ...item, // Original question data (question_id, User_data, Question_weights, Question, Answer, Citations, source, generatedAt)
-        Agentic_answer: result.tracerInfo.agenticAnswer || "",
-        Tool_results: result.tracerInfo.toolResults || [],
-      }
-
-      results.push(combinedResult)
-
-      // Log result summary
-      if (result.success && result.tracerInfo.agenticAnswer) {
-        console.log(`✅ Question ${i + 1} completed successfully`)
-        console.log(
-          `📝 Agentic answer length: ${
-            result.tracerInfo.agenticAnswer.length
-          } chars`,
-        )
-        console.log(
-          `🔧 Tools used: ${result.tracerInfo.toolResults?.length || 0}`,
-        )
-        console.log(
-          `🔍 Tracer info: ${
-            result.tracerInfo.error
-              ? "Error - " + result.tracerInfo.error
-              : "Success"
-          }`,
-        )
-      } else {
-        console.log(`❌ Question ${i + 1} failed`)
-        console.log(`🔍 Reason: ${result.tracerInfo.error || "Unknown error"}`)
-      }
-
-      // Save intermediate results after each question (append to existing data)
-      const allResults = [...existingResults, ...results]
-      writeFileSync(outputPath, JSON.stringify(allResults, null, 2), "utf-8")
-      console.log(
-        `💾 Saved intermediate results to: ${outputPath} (${
-          existingResults.length
-        } existing + ${results.length} new = ${allResults.length} total)`,
+        `\n✨ Processing batch ${i / batchSize + 1} (questions ${i + 1} to ${
+          i + batch.length
+        })`,
       )
 
-      // Add small delay between questions to avoid overwhelming the API
-      if (i < questionsToProcess.length - 1) {
-        console.log(`⏳ Waiting 2 seconds before next question...`)
-        await new Promise((resolve) => setTimeout(resolve, 2000))
-      }
+      const promises = batch.map(async (item: any, j: number) => {
+        const questionIndex = i + j
+        const query = item.Question
+        const questionId = item.question_id || `q_${questionIndex + 1}`
+
+        console.log("-".repeat(50))
+        console.log(
+          `  🚀 Starting Question ${questionIndex + 1}/${
+            questionsToProcess.length
+          } (ID: ${questionId})`,
+        )
+
+        const result = await testAPIAndWaitForTracer(query, cookies, questionId)
+
+        return {
+          ...item,
+          Agentic_answer: result.tracerInfo.agenticAnswer || "",
+          Tool_results: result.tracerInfo.toolResults || [],
+        }
+      })
+
+      const batchResults = await Promise.all(promises)
+      allNewResults.push(...batchResults)
+
+      // Save intermediate results after each batch
+      const combinedIntermediate = [...existingResults, ...allNewResults]
+      writeFileSync(
+        outputPath,
+        JSON.stringify(combinedIntermediate, null, 2),
+        "utf-8",
+      )
+      console.log(
+        `\n💾 Saved intermediate results for batch ${
+          i / batchSize + 1
+        }. Total entries: ${combinedIntermediate.length}`,
+      )
     }
 
     // --- Final Summary ---
-    const successCount = results.filter(
+    const successCount = allNewResults.filter(
       (r) => r.Agentic_answer && r.Agentic_answer.length > 0,
     ).length
-    const toolsCount = results.filter(
+    const toolsCount = allNewResults.filter(
       (r) => r.Tool_results && r.Tool_results.length > 0,
     ).length
 
     console.log("\n" + "=".repeat(100))
     console.log("🎉 PROCESSING COMPLETE")
     console.log("=".repeat(100))
-    const finalResults = [...existingResults, ...results]
-    console.log(`📊 Total questions processed this run: ${results.length}`)
     console.log(
-      `✅ Successful answers extracted: ${successCount}/${results.length}`,
+      `📊 Total questions processed this run: ${allNewResults.length}`,
     )
-    console.log(`🔧 Questions with tool usage: ${toolsCount}/${results.length}`)
     console.log(
-      `📁 Total entries in final file: ${finalResults.length} (${
-        existingResults.length
-      } existing + ${results.length} new)`,
+      `✅ Successful answers extracted: ${successCount}/${allNewResults.length}`,
+    )
+    console.log(
+      `🔧 Questions with tool usage: ${toolsCount}/${allNewResults.length}`,
+    )
+    console.log(
+      `📁 Total entries in final file: ${
+        existingResults.length + allNewResults.length
+      }`,
     )
     console.log(`💾 Final results saved to: ${outputPath}`)
     console.log("=".repeat(100))

@@ -1,0 +1,8 @@
+S.No,Tool Name,Total Times Called,Total Intersection Docs,Average Recall
+1,searchGlobal,79,26,0.0729113924050633
+2,getSlackMessages,91,164,0.21527472527472524
+3,getUserSlackProfile,0,0,0.0
+4,searchGmail,13,10,0.08307692307692308
+5,searchDriveFiles,19,5,0.037368421052631585
+6,searchCalendarEvents,8,8,0.14375
+7,searchGoogleContacts,0,0,0.0

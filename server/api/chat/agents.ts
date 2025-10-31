@@ -2237,6 +2237,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                 // --- Start of New Code Snippet ---
 
+                const correlationId = c.req.query("correlationId")
                 // 1. Define the directory and a unique filename. Using the traceId is perfect for this.
                 const logDir = path.join(
                   process.cwd(),
@@ -2244,7 +2245,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   "data",
                   "tracer-data",
                 )
-                const logFileName = `${traceId}.json`
+                const logFileName = `${correlationId || traceId}.json`
                 const logFilePath = path.join(logDir, logFileName)
 
                 // 2. Create a self-executing async function to write the file without blocking the main flow.
@@ -3091,8 +3092,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
             if (chunk.imageCitation) {
               loggerWithChild({ email: email }).info(
-                `Found image citation, sending it`,
                 { citationKey: chunk.imageCitation.citationKey },
+                `Found image citation, sending it`,
               )
               imageCitations.push(chunk.imageCitation)
               stream.writeSSE({
@@ -3968,8 +3969,8 @@ export const AgentMessageApi = async (c: Context) => {
                 }
                 if (chunk.imageCitation) {
                   loggerWithChild({ email: email }).info(
-                    `Found image citation, sending it`,
                     { citationKey: chunk.imageCitation.citationKey },
+                    `Found image citation, sending it`,
                   )
                   imageCitations.push(chunk.imageCitation)
                   stream.writeSSE({
@@ -4595,8 +4596,8 @@ export const AgentMessageApi = async (c: Context) => {
                   }
                   if (chunk.imageCitation) {
                     loggerWithChild({ email: email }).info(
-                      `Found image citation, sending it`,
                       { citationKey: chunk.imageCitation.citationKey },
+                      `Found image citation, sending it`,
                     )
                     imageCitations.push(chunk.imageCitation)
                     stream.writeSSE({
