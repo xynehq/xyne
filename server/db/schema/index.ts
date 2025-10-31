@@ -18,6 +18,7 @@ export * from "@/db/schema/apiKey"
 export * from "@/db/schema/workflows"
 export * from "@/db/schema/calls"
 export * from "@/db/schema/directMessages"
+export * from "@/db/schema/channels"
 export * from "@/db/schema/ingestions"
 
 // Export combined types

@@ -19,7 +19,6 @@ interface CallNotification {
     photoLink?: string | null
   }
   callType: "video" | "audio"
-  targetToken: string
   timestamp: number
 }
 
@@ -36,6 +35,29 @@ interface DirectMessageNotification {
     photoLink?: string | null
   }
   timestamp: number
+}
+
+interface ChannelMessageNotification {
+  type: "channel_message"
+  messageId: number
+  channelId: number
+  channelName: string
+  messageContent: any // Lexical JSON structure
+  plainTextContent: string // Extracted plain text for previews
+  createdAt: Date
+  sender: {
+    id: string
+    name: string
+    email: string
+    photoLink?: string | null
+  }
+  timestamp: number
+}
+
+interface ChannelTypingIndicator {
+  channelId: number
+  userId: string
+  isTyping: boolean
 }
 
 class RealtimeMessagingService extends EventEmitter {
@@ -159,6 +181,147 @@ class RealtimeMessagingService extends EventEmitter {
         }),
       )
       return true
+    }
+
+    return false
+  }
+
+  // Send channel message to all members
+  sendChannelMessage(
+    memberUserIds: string[],
+    notification: ChannelMessageNotification,
+  ) {
+    let sentCount = 0
+
+    for (const userId of memberUserIds) {
+      const userWs = this.activeConnections.get(userId)
+      if (userWs) {
+        try {
+          userWs.send(
+            JSON.stringify({
+              type: "channel_message",
+              data: notification,
+            }),
+          )
+          sentCount++
+        } catch (error) {
+          console.error(
+            `Failed to send channel message to user ${userId}:`,
+            error,
+          )
+        }
+      }
+    }
+
+    console.log(
+      `Channel message sent to ${sentCount}/${memberUserIds.length} online members`,
+    )
+    return sentCount
+  }
+
+  // Send channel typing indicator to all members
+  sendChannelTypingIndicator(
+    memberUserIds: string[],
+    channelId: number,
+    typingUserId: string,
+    isTyping: boolean,
+  ) {
+    let sentCount = 0
+
+    for (const userId of memberUserIds) {
+      // Don't send typing indicator back to the person typing
+      if (userId === typingUserId) continue
+
+      const userWs = this.activeConnections.get(userId)
+      if (userWs) {
+        try {
+          userWs.send(
+            JSON.stringify({
+              type: "channel_typing_indicator",
+              data: {
+                channelId,
+                userId: typingUserId,
+                isTyping,
+              },
+            }),
+          )
+          sentCount++
+        } catch (error) {
+          console.error(
+            `Failed to send channel typing indicator to user ${userId}:`,
+            error,
+          )
+        }
+      }
+    }
+
+    return sentCount
+  }
+
+  // Send channel update notification (e.g., channel renamed, archived)
+  sendChannelUpdate(
+    memberUserIds: string[],
+    channelId: number,
+    updateType: string,
+    updateData: any,
+  ) {
+    let sentCount = 0
+
+    for (const userId of memberUserIds) {
+      const userWs = this.activeConnections.get(userId)
+      if (userWs) {
+        try {
+          userWs.send(
+            JSON.stringify({
+              type: "channel_update",
+              data: {
+                channelId,
+                updateType,
+                updateData,
+              },
+            }),
+          )
+          sentCount++
+        } catch (error) {
+          console.error(
+            `Failed to send channel update to user ${userId}:`,
+            error,
+          )
+        }
+      }
+    }
+
+    return sentCount
+  }
+
+  // Notify specific user about channel membership change
+  sendChannelMembershipUpdate(
+    userId: string,
+    channelId: number,
+    updateType: "added" | "removed" | "role_changed",
+    channelData?: any,
+  ) {
+    const userWs = this.activeConnections.get(userId)
+
+    if (userWs) {
+      try {
+        userWs.send(
+          JSON.stringify({
+            type: "channel_membership_update",
+            data: {
+              channelId,
+              updateType,
+              channelData,
+            },
+          }),
+        )
+        return true
+      } catch (error) {
+        console.error(
+          `Failed to send channel membership update to user ${userId}:`,
+          error,
+        )
+      }
     }
 
     return false

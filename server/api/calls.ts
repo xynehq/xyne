@@ -14,6 +14,8 @@ import {
   callInvitedUsers,
   CallType,
 } from "@/db/schema/calls"
+import { channels, channelMembers } from "@/db/schema/channels"
+import { users } from "@/db/schema"
 import { eq, desc, and, isNull, or, sql, inArray } from "drizzle-orm"
 import { randomUUID } from "node:crypto"
 
@@ -40,10 +42,15 @@ const roomService = new RoomServiceClient(
 )
 
 // Schemas
-export const initiateCallSchema = z.object({
-  targetUserId: z.string().min(1, "Target user ID is required"),
-  callType: z.nativeEnum(CallType).default(CallType.Audio),
-})
+export const initiateCallSchema = z
+  .object({
+    targetUserId: z.string().min(1).optional(),
+    channelId: z.number().int().positive().optional(),
+    callType: z.nativeEnum(CallType).default(CallType.Audio),
+  })
+  .refine((data) => data.targetUserId || data.channelId, {
+    message: "Either targetUserId or channelId is required",
+  })
 
 export const joinCallSchema = z.object({
   callId: z.string().uuid("Invalid call ID format"),
@@ -87,19 +94,18 @@ const generateAccessToken = async (
   return await at.toJwt()
 }
 
-// Initiate a call between two users
+// Initiate a call (1-on-1 or channel)
 export const InitiateCallApi = async (c: Context) => {
   try {
     const { workspaceId, sub: callerEmail } = c.get(JwtPayloadKey)
     const requestBody = await c.req.json()
-    const { targetUserId, callType } = requestBody
 
     if (!workspaceId) {
       throw new HTTPException(400, { message: "Workspace ID is required" })
     }
 
     // Validate input
-    const validatedData = initiateCallSchema.parse({ targetUserId, callType })
+    const validatedData = initiateCallSchema.parse(requestBody)
 
     // Get caller info
     const callerUsers = await getUserByEmail(db, callerEmail)
@@ -108,12 +114,138 @@ export const InitiateCallApi = async (c: Context) => {
     }
     const caller = callerUsers[0]
 
-    // Check if caller is trying to call themselves before making DB queries
+    // Handle channel call
+    if (validatedData.channelId) {
+      // Get channel
+      const [channel] = await db
+        .select()
+        .from(channels)
+        .where(eq(channels.id, validatedData.channelId))
+        .limit(1)
+
+      if (!channel) {
+        throw new HTTPException(404, { message: "Channel not found" })
+      }
+
+      // Check if caller is a member of the channel
+      const [membership] = await db
+        .select()
+        .from(channelMembers)
+        .where(
+          and(
+            eq(channelMembers.channelId, channel.id),
+            eq(channelMembers.userId, caller.id),
+          ),
+        )
+        .limit(1)
+
+      if (!membership) {
+        throw new HTTPException(403, {
+          message: "You are not a member of this channel",
+        })
+      }
+
+      // Generate unique call ID
+      const callExternalId = randomUUID()
+      const roomLink = `${LIVEKIT_CLIENT_URL || "http://localhost:5173"}/call/${callExternalId}?type=${validatedData.callType}`
+
+      // Create room in LiveKit
+      await roomService.createRoom({
+        name: callExternalId,
+        maxParticipants: 100,
+        emptyTimeout: 300,
+      })
+
+      // Save call record to database
+      const [newCall] = await db
+        .insert(calls)
+        .values({
+          externalId: callExternalId,
+          createdByUserId: caller.id,
+          roomLink,
+          callType: validatedData.callType,
+        })
+        .returning()
+
+      // Get all channel members to invite
+      const members = await db
+        .select({
+          userId: users.id,
+          userExternalId: users.externalId,
+          userName: users.name,
+          userEmail: users.email,
+          userPhotoLink: users.photoLink,
+        })
+        .from(channelMembers)
+        .innerJoin(users, eq(users.id, channelMembers.userId))
+        .where(eq(channelMembers.channelId, channel.id))
+
+      // Add all members to invited users (except caller)
+      const invitedUserValues = members
+        .filter((m) => m.userId !== caller.id)
+        .map((m) => ({
+          callId: newCall.id,
+          userId: m.userId,
+        }))
+
+      if (invitedUserValues.length > 0) {
+        await db.insert(callInvitedUsers).values(invitedUserValues)
+      }
+
+      // Send notifications to all channel members (except caller)
+      // No token generation - tokens will be generated when they join via /call/:callId
+      for (const member of members) {
+        if (member.userId !== caller.id) {
+          callNotificationService.sendCallInvitation({
+            type: "incoming_call" as const,
+            callId: callExternalId,
+            caller: {
+              id: caller.externalId,
+              name: `${caller.name} (in #${channel.name})`,
+              email: caller.email,
+              photoLink: caller.photoLink,
+            },
+            target: {
+              id: member.userExternalId,
+              name: member.userName,
+              email: member.userEmail,
+              photoLink: member.userPhotoLink,
+            },
+            callType: validatedData.callType,
+            timestamp: Date.now(),
+          })
+        }
+      }
+
+      Logger.info(
+        `Channel call initiated by ${caller.name} in channel ${channel.name}`,
+      )
+
+      return c.json({
+        success: true,
+        callId: callExternalId,
+        callType: validatedData.callType,
+        roomLink,
+        channel: {
+          id: channel.id,
+          name: channel.name,
+        },
+      })
+    }
+
+    // Handle 1-on-1 call
+    if (!validatedData.targetUserId) {
+      throw new HTTPException(400, {
+        message: "Target user ID is required for 1-on-1 calls",
+      })
+    }
+
+    // Check if caller is trying to call themselves
     if (caller.externalId === validatedData.targetUserId) {
       throw new HTTPException(400, { message: "Cannot call yourself" })
     }
 
-    // Get target user directly with external ID filter (scoped to current workspace)
+    // Get target user
     const targetUsers = await getUsersByWorkspace(
       db,
       workspaceId,
@@ -156,20 +288,9 @@ export const InitiateCallApi = async (c: Context) => {
       userId: targetUser.id,
     })
 
-    // Generate access tokens for both users
-    const callerToken = await generateAccessToken(
-      caller.externalId,
-      callExternalId,
-      caller.name,
-    )
-    const targetToken = await generateAccessToken(
-      targetUser.externalId,
-      callExternalId,
-      targetUser.name,
-    )
-
     // Send real-time notification to target user
-    const callNotification = {
+    // No token generation - token will be generated when they join via /call/:callId
+    const notificationSent = callNotificationService.sendCallInvitation({
       type: "incoming_call" as const,
       callId: callExternalId,
       caller: {
@@ -185,14 +306,8 @@ export const InitiateCallApi = async (c: Context) => {
         photoLink: targetUser.photoLink,
       },
       callType: validatedData.callType,
-      targetToken,
-      livekitUrl: LIVEKIT_CLIENT_URL,
       timestamp: Date.now(),
-    }
-
-    // Send notification via WebSocket
-    const notificationSent =
-      callNotificationService.sendCallInvitation(callNotification)
+    })
 
     Logger.info(`Call initiated by ${caller.name} to ${targetUser.name}`)
     Logger.info(`Real-time notification sent: ${notificationSent}`)
@@ -200,10 +315,9 @@ export const InitiateCallApi = async (c: Context) => {
     return c.json({
       success: true,
       callId: callExternalId,
-      callerToken,
       callType: validatedData.callType,
-      livekitUrl: LIVEKIT_CLIENT_URL,
-      notificationSent, // Include whether notification was sent
+      roomLink,
+      notificationSent,
       caller: {
         id: caller.externalId,
         name: caller.name,

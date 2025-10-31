@@ -17,8 +17,8 @@ export interface CallNotification {
     photoLink?: string | null
   }
   callType: "video" | "audio"
-  targetToken: string
-  livekitUrl: string
+  targetToken?: string // Optional - token generated on join
+  livekitUrl?: string // Optional
   timestamp: number
 }
 
@@ -64,11 +64,54 @@ export interface CallStatusUpdate {
   data?: any
 }
 
+// Channel notification interfaces
+export interface ChannelMessage {
+  type: "channel_message"
+  messageId: number
+  channelId: number
+  channelName: string
+  messageContent: LexicalEditorState
+  plainTextContent: string
+  createdAt: string
+  sender: {
+    id: string
+    name: string
+    email: string
+    photoLink?: string | null
+  }
+  timestamp: number
+}
+
+export interface ChannelTypingIndicator {
+  type: "channel_typing_indicator"
+  channelId: number
+  userId: string
+  isTyping: boolean
+}
+
+export interface ChannelUpdate {
+  type: "channel_update"
+  channelId: number
+  updateType: string
+  updateData: any
+}
+
+export interface ChannelMembershipUpdate {
+  type: "channel_membership_update"
+  channelId: number
+  updateType: "added" | "removed" | "role_changed"
+  channelData?: any
+}
+
 type CallNotificationHandler = (notification: CallNotification) => void
 type CallStatusHandler = (status: CallStatusUpdate) => void
 type DirectMessageHandler = (message: DirectMessage) => void
 type TypingIndicatorHandler = (indicator: TypingIndicator) => void
 type MessageReadHandler = (readStatus: MessageRead) => void
+type ChannelMessageHandler = (message: ChannelMessage) => void
+type ChannelTypingIndicatorHandler = (indicator: ChannelTypingIndicator) => void
+type ChannelUpdateHandler = (update: ChannelUpdate) => void
+type ChannelMembershipUpdateHandler = (update: ChannelMembershipUpdate) => void
 
 class CallNotificationClient {
   private ws: WebSocket | null = null
@@ -80,6 +123,12 @@ class CallNotificationClient {
   private onDirectMessageCallbacks: DirectMessageHandler[] = []
   private onTypingIndicatorCallbacks: TypingIndicatorHandler[] = []
   private onMessageReadCallbacks: MessageReadHandler[] = []
+  private onChannelMessageCallbacks: ChannelMessageHandler[] = []
+  private onChannelTypingIndicatorCallbacks: ChannelTypingIndicatorHandler[] =
+    []
+  private onChannelUpdateCallbacks: ChannelUpdateHandler[] = []
+  private onChannelMembershipUpdateCallbacks: ChannelMembershipUpdateHandler[] =
+    []
   private soundInterval: ReturnType<typeof setInterval> | null = null
   private audioContextInitialized = false
   private connectionInitialized = false
@@ -411,6 +460,26 @@ class CallNotificationClient {
             this.onMessageReadCallbacks.forEach((callback) => {
               callback(message.data)
             })
+          } else if (message.type === "channel_message") {
+            // Handle incoming channel message
+            this.onChannelMessageCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_typing_indicator") {
+            // Handle channel typing indicator
+            this.onChannelTypingIndicatorCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_update") {
+            // Handle channel update
+            this.onChannelUpdateCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_membership_update") {
+            // Handle channel membership update
+            this.onChannelMembershipUpdateCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
           }
         } catch (error) {
           console.error("Error parsing notification message:", error)
@@ -515,6 +584,40 @@ class CallNotificationClient {
       this.onMessageReadCallbacks = this.onMessageReadCallbacks.filter(
         (cb) => cb !== callback,
       )
+    }
+  }
+
+  onChannelMessage(callback: ChannelMessageHandler) {
+    this.onChannelMessageCallbacks.push(callback)
+    return () => {
+      this.onChannelMessageCallbacks = this.onChannelMessageCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
+  onChannelTypingIndicator(callback: ChannelTypingIndicatorHandler) {
+    this.onChannelTypingIndicatorCallbacks.push(callback)
+    return () => {
+      this.onChannelTypingIndicatorCallbacks =
+        this.onChannelTypingIndicatorCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
+  onChannelUpdate(callback: ChannelUpdateHandler) {
+    this.onChannelUpdateCallbacks.push(callback)
+    return () => {
+      this.onChannelUpdateCallbacks = this.onChannelUpdateCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
+  onChannelMembershipUpdate(callback: ChannelMembershipUpdateHandler) {
+    this.onChannelMembershipUpdateCallbacks.push(callback)
+    return () => {
+      this.onChannelMembershipUpdateCallbacks =
+        this.onChannelMembershipUpdateCallbacks.filter((cb) => cb !== callback)
     }
   }
 

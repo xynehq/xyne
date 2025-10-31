@@ -1,4 +1,4 @@
-import { Users as UsersIcon, History } from "lucide-react"
+import { Users as UsersIcon, History, Hash } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useNavigate, useMatchRoute } from "@tanstack/react-router"
 import { useUnreadCount } from "@/contexts/UnreadCountContext"
@@ -9,6 +9,7 @@ export default function BuzzSidebar() {
   const { totalUnreadCount } = useUnreadCount()
 
   const isChatsActive = matchRoute({ to: "/buzz/chats" })
+  const isChannelsActive = matchRoute({ to: "/buzz/channels" })
   const isHistoryActive = matchRoute({ to: "/buzz/history" })
 
   return (
@@ -46,6 +47,27 @@ export default function BuzzSidebar() {
               </span>
             </div>
           )}
+        </button>
+        <button
+          onClick={() => {
+            navigate({ to: "/buzz/channels" })
+          }}
+          className={cn(
+            "flex w-10 h-10 rounded-lg items-center justify-center cursor-pointer transition-colors",
+            isChannelsActive
+              ? "bg-[#D8DFE680] dark:bg-gray-700"
+              : "hover:bg-[#D8DFE680] dark:hover:bg-gray-700",
+          )}
+          title="Channels"
+        >
+          <Hash
+            size={20}
+            className={cn(
+              isChannelsActive
+                ? "text-[#384049] dark:text-[#F1F3F4]"
+                : "text-gray-500 dark:text-gray-400",
+            )}
+          />
         </button>
         <button
           onClick={() => {

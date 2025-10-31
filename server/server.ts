@@ -148,6 +148,44 @@ import {
   editMessageSchema,
   deleteMessageSchema,
 } from "@/api/directMessages"
+import {
+  CreateChannelApi,
+  GetChannelDetailsApi,
+  UpdateChannelApi,
+  ArchiveChannelApi,
+  GetUserChannelsApi,
+  BrowsePublicChannelsApi,
+  JoinChannelApi,
+  AddChannelMembersApi,
+  RemoveChannelMemberApi,
+  UpdateMemberRoleApi,
+  LeaveChannelApi,
+  GetChannelMembersApi,
+  DeleteChannelApi,
+  SendChannelMessageApi,
+  GetChannelMessagesApi,
+  EditChannelMessageApi,
+  DeleteChannelMessageApi,
+  PinMessageApi,
+  UnpinMessageApi,
+  GetPinnedMessagesApi,
+  createChannelSchema,
+  updateChannelSchema,
+  archiveChannelSchema,
+  addMembersSchema,
+  removeMemberSchema,
+  updateMemberRoleSchema,
+  leaveChannelSchema,
+  sendChannelMessageSchema,
+  getChannelMessagesSchema,
+  editChannelMessageSchema,
+  deleteChannelMessageSchema,
+  pinMessageSchema,
+  unpinMessageSchema,
+  joinChannelSchema,
+  getPinnedMessagesSchema,
+  getChannelMembersSchema,
+} from "@/api/channels"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -1172,6 +1210,88 @@ export const AppRoutes = app
     zValidator("json", deleteMessageSchema),
     DeleteMessageApi,
   )
+  // Channel routes
+  .post("/channels", zValidator("json", createChannelSchema), CreateChannelApi)
+  .post(
+    "/channels/create",
+    zValidator("json", createChannelSchema),
+    CreateChannelApi,
+  )
+  .put(
+    "/channels/update",
+    zValidator("json", updateChannelSchema),
+    UpdateChannelApi,
+  )
+  .post(
+    "/channels/archive",
+    zValidator("json", archiveChannelSchema),
+    ArchiveChannelApi,
+  )
+  .get("/channels", GetUserChannelsApi)
+  .get("/channels/browse", BrowsePublicChannelsApi)
+  .post("/channels/join", zValidator("json", joinChannelSchema), JoinChannelApi)
+  .get(
+    "/channels/members",
+    zValidator("query", getChannelMembersSchema),
+    GetChannelMembersApi,
+  )
+  .post(
+    "/channels/members/add",
+    zValidator("json", addMembersSchema),
+    AddChannelMembersApi,
+  )
+  .post(
+    "/channels/members/remove",
+    zValidator("json", removeMemberSchema),
+    RemoveChannelMemberApi,
+  )
+  .put(
+    "/channels/members/role",
+    zValidator("json", updateMemberRoleSchema),
+    UpdateMemberRoleApi,
+  )
+  .post(
+    "/channels/leave",
+    zValidator("json", leaveChannelSchema),
+    LeaveChannelApi,
+  )
+  .get(
+    "/channels/messages",
+    zValidator("query", getChannelMessagesSchema),
+    GetChannelMessagesApi,
+  )
+  .post(
+    "/channels/messages/send",
+    zValidator("json", sendChannelMessageSchema),
+    SendChannelMessageApi,
+  )
+  .put(
+    "/channels/messages/edit",
+    zValidator("json", editChannelMessageSchema),
+    EditChannelMessageApi,
+  )
+  .delete(
+    "/channels/messages/delete",
+    zValidator("json", deleteChannelMessageSchema),
+    DeleteChannelMessageApi,
+  )
+  .post(
+    "/channels/messages/pin",
+    zValidator("json", pinMessageSchema),
+    PinMessageApi,
+  )
+  .post(
+    "/channels/messages/unpin",
+    zValidator("json", unpinMessageSchema),
+    UnpinMessageApi,
+  )
+  .get(
+    "/channels/messages/pinned",
+    zValidator("query", getPinnedMessagesSchema),
+    GetPinnedMessagesApi,
+  )
+  .delete("/channels/:channelId", DeleteChannelApi)
+  .get("/channels/:channelId", GetChannelDetailsApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
