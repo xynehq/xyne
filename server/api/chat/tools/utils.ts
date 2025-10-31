@@ -20,7 +20,8 @@ import { getDateForAI } from "@/utils/index"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getLogger, Subsystem } from "@/logger"
 const Logger = getLogger(Subsystem.Chat)
-const userMetadata: UserMetadataType = {
+
+export const userMetadata: UserMetadataType = {
   userTimezone: "Asia/Kolkata",
   dateForAI: getDateForAI({ userTimeZone: "Asia/Kolkata" }),
 }

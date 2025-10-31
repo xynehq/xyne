@@ -160,7 +160,7 @@ import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
 import { applyFollowUpContext } from "@/utils/parseAttachment"
 import { expandSheetIds } from "@/search/utils"
-import { googleTools } from "@/api/chat/tools/index"
+import { googleTools, searchGlobalTool } from "@/api/chat/tools/index"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -1728,7 +1728,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentPrompt: agentPromptForLLM,
           userMessage: message,
         }
-        const internalTools = [...googleTools]
+        const internalTools = [...googleTools, searchGlobalTool]
         const mcpJAFTools = buildMCPJAFTools(finalToolsList)
         const allJAFTools = [...internalTools, ...mcpJAFTools]
         toolsCompositionSpan.setAttribute(

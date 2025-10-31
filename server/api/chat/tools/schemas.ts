@@ -36,7 +36,7 @@ export const timeRangeSchema = z
   })
   .describe("Time range filter")
 
-export const createQuerySchema = (app: GoogleApps, required = false) => {
+export const createQuerySchema = (app?: GoogleApps, required = false) => {
   const baseSchema = z.string().describe(retrievalQueryDescription(app))
   return required
     ? baseSchema.min(1, `Query is required for ${app} search`)

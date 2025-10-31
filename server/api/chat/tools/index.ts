@@ -4,6 +4,7 @@ import {
   searchGmailTool,
   searchGoogleContactsTool,
 } from "./google"
+import { searchGlobalTool } from "./global"
 
 const googleTools = [
   searchGmailTool,
@@ -12,4 +13,4 @@ const googleTools = [
   searchGoogleContactsTool,
 ]
 
-export { googleTools }
+export { googleTools, searchGlobalTool }
