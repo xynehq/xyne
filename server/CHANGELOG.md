@@ -1,3 +1,10 @@
+# [3.26.0](https://github.com/xynehq/xyne/compare/v3.25.4...v3.26.0) (2025-10-31)
+
+
+### Features
+
+* Webhook Registration and execution service with dynamic webhook… ([#1071](https://github.com/xynehq/xyne/issues/1071)) ([5478db1](https://github.com/xynehq/xyne/commit/5478db11d67e9d39c38277c160bcad0777805955))
+
 ## [3.25.4](https://github.com/xynehq/xyne/compare/v3.25.3...v3.25.4) (2025-10-31)
 
 
