@@ -1942,9 +1942,6 @@ const metricServer = Bun.serve({
 Logger.info(`listening on port: ${config.port}`)
 Logger.info(`metrics server started on port: ${config.metricsPort}`)
 
-// Keep references to servers for potential future use
-void server
-void metricServer
 
 const errorEvents: string[] = [
   `uncaughtException`,
