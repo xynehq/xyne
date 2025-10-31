@@ -1,5 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import { jwtVerify, createRemoteJWKSet } from "jose"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
 
 interface AppleTokenClaims {
   iss: string
@@ -12,6 +14,8 @@ interface AppleTokenClaims {
   nonce?: string
   nonce_supported?: boolean
 }
+
+const Logger = getLogger(Subsystem.Auth)
 
 // Apple's JWKS endpoint - jose will handle caching automatically
 const APPLE_JWKS = createRemoteJWKSet(
@@ -39,7 +43,7 @@ export async function validateAppleToken(
 
     return payload as AppleTokenClaims
   } catch (error) {
-    console.error("Apple token validation failed:", error)
+    Logger.error("Apple token validation failed", error)
     throw new HTTPException(401, {
       message: "Invalid Apple identity token",
     })
@@ -51,7 +55,12 @@ export async function validateAppleToken(
  */
 export function extractUserInfoFromToken(
   claims: AppleTokenClaims,
-  userInfo?: any,
+  userInfo?: {
+    name?: {
+      firstName?: string
+      lastName?: string
+    }
+  },
 ): {
   id: string
   email?: string

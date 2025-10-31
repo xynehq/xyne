@@ -770,7 +770,13 @@ const handleAppleAppValidation = async (c: Context) => {
   const identityToken = authHeader.slice("Bearer ".length).trim()
 
   try {
-    const expectedAudience = config.appleBundleId || "com.xynehq.xyne"
+    const expectedAudience = config.appleBundleId
+
+    if (!expectedAudience) {
+      throw new HTTPException(500, {
+        message: "Apple Bundle ID is not configured",
+      })
+    }
 
     // Validate the Apple identity token
     const tokenClaims = await validateAppleToken(
@@ -812,7 +818,6 @@ const handleAppleAppValidation = async (c: Context) => {
 
     const name =
       userInfo.name || userInfo.givenName || userInfo.familyName || ""
-    const photoLink = "" // Apple doesn't provide profile pictures in Sign-In
 
     Logger.info(
       {
@@ -886,7 +891,7 @@ const handleAppleAppValidation = async (c: Context) => {
         existingWorkspace.id,
         email,
         name,
-        photoLink,
+        "",
         UserRole.User,
         existingWorkspace.externalId,
       )
@@ -935,7 +940,7 @@ const handleAppleAppValidation = async (c: Context) => {
         workspace.id,
         email,
         name,
-        photoLink,
+        "",
         UserRole.SuperAdmin,
         workspace.externalId,
       )
@@ -1140,10 +1145,7 @@ const getNewAccessRefreshToken = async (c: Context) => {
 export const AppRoutes = app
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)
-  .post(
-    "/validate-apple-token",
-    handleAppleAppValidation,
-  )
+  .post("/validate-apple-token", handleAppleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
   .use("*", AuthMiddleware)
