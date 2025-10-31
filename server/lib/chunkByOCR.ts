@@ -4,6 +4,7 @@ import { PDFDocument } from "pdf-lib"
 import { getLogger } from "../logger"
 import { Subsystem, type ChunkMetadata } from "../types"
 import type { ProcessingResult } from "../services/fileProcessor"
+import config from "@/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "chunkByOCR",
@@ -26,7 +27,7 @@ const LAYOUT_PARSING_TIMEOUT_MS = process.env.LAYOUT_PARSING_TIMEOUT_MS
   : DEFAULT_LAYOUT_PARSING_TIMEOUT_MS
 
 const LOCAL_STATUS_ENDPOINT = "http://localhost:8081/instance_status"
-const DEFAULT_STATUS_ENDPOINT = process.env.STATUS_ENDPOINT || LOCAL_STATUS_ENDPOINT
+const DEFAULT_STATUS_ENDPOINT = config.paddleStatusEndpoint || LOCAL_STATUS_ENDPOINT
 const DEFAULT_POLL_INTERVAL_MS = 300
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 const DEFAULT_MAX_RETRIES = 2
