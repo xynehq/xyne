@@ -68,14 +68,10 @@ export const SendMessageApi = async (c: Context) => {
     }
     const targetUser = targetUsers[0]
 
-    // Check if sender is trying to message themselves
-    if (sender.id === targetUser.id) {
-      throw new HTTPException(400, {
-        message: "Cannot send message to yourself",
-      })
-    }
+    // Allow self-messaging (useful for notes/reminders)
+    // No restriction on messaging yourself
 
-    // Check if both users are in the same workspace
+    // Check if both users are in the same workspace (skip for self-messages)
     if (sender.workspaceId !== targetUser.workspaceId) {
       throw new HTTPException(403, {
         message: "Users must be in the same workspace",

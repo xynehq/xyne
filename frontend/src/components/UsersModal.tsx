@@ -214,10 +214,7 @@ export default function UsersModal({ onClose }: UsersModalProps) {
 
   // Handle user click to open chat
   const handleUserClick = (user: User) => {
-    if (currentUser && currentUser.email === user.email) {
-      // Don't open chat for self
-      return
-    }
+    // Allow chatting with yourself
     setSelectedChatUser(user)
   }
 

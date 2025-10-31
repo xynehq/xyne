@@ -43,7 +43,7 @@ function BuzzChats() {
       if (response.ok) {
         const data = await response.json()
         setCurrentUser({
-          id: data.user.id,
+          id: data.user.id || data.user.externalId,
           name: data.user.name,
           email: data.user.email,
           photoLink: data.user.photoLink,
@@ -201,10 +201,7 @@ function BuzzChats() {
 
   // Handle user click to open chat
   const handleUserClick = async (user: User) => {
-    if (currentUser && currentUser.email === user.email) {
-      // Don't open chat for self
-      return
-    }
+    // Allow opening chat with yourself
     setSelectedChatUser(user)
 
     // Mark messages as read if there are unread messages from this user
@@ -219,6 +216,52 @@ function BuzzChats() {
       } catch (error) {
         console.error("Failed to mark messages as read:", error)
       }
+    }
+  }
+
+  // Handle switching to a user from mention
+  const handleSwitchToUser = async (userId: string) => {
+    try {
+      // First, check if user is already in conversation list
+      const existingUser = conversationParticipants.find((u) => u.id === userId)
+
+      if (existingUser) {
+        // User exists, just switch to them
+        handleUserClick(existingUser)
+      } else {
+        // Need to fetch user info
+        const response = await api.workspace.users.$get()
+        if (response.ok) {
+          const data = await response.json()
+          const targetUser = data.find((u: User) => u.id === userId)
+
+          if (targetUser) {
+            // Add to conversation participants if not there
+            setConversationParticipants((prev) => {
+              if (!prev.find((p) => p.id === userId)) {
+                return [targetUser, ...prev]
+              }
+              return prev
+            })
+
+            // Switch to this user
+            setSelectedChatUser(targetUser)
+          } else {
+            toast({
+              title: "Error",
+              description: "User not found",
+              variant: "destructive",
+            })
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to switch to user:", error)
+      toast({
+        title: "Error",
+        description: "Failed to open chat with user",
+        variant: "destructive",
+      })
     }
   }
 
@@ -439,6 +482,7 @@ function BuzzChats() {
             targetUser={selectedChatUser}
             currentUser={currentUser}
             onInitiateCall={initiateCall}
+            onSwitchToUser={handleSwitchToUser}
           />
         </div>
       ) : (

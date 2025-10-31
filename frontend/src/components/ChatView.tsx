@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { callNotificationClient } from "@/services/callNotifications"
 import { CallType, LexicalEditorState } from "@/types"
 import BuzzChatBox from "@/components/BuzzChatBox"
+import { MentionPill } from "@/components/MentionPill"
 
 interface User {
   id: string
@@ -29,12 +30,23 @@ interface ChatViewProps {
   targetUser: User
   currentUser: User
   onInitiateCall: (userId: string, callType: CallType) => void
+  onSwitchToUser?: (userId: string) => void
 }
 
 const MAX_MESSAGE_LENGTH = 10000
 
 // Component to render Lexical JSON content
-function RenderLexicalContent({ content }: { content: LexicalEditorState }) {
+function RenderLexicalContent({
+  content,
+  onMentionMessage,
+  onMentionCall,
+  currentUserId,
+}: {
+  content: LexicalEditorState
+  onMentionMessage?: (userId: string) => void
+  onMentionCall?: (userId: string, callType: CallType) => void
+  currentUserId?: string
+}) {
   const renderNode = (node: any, index: number): React.ReactNode => {
     // Text node
     if (node.type === "text") {
@@ -59,6 +71,19 @@ function RenderLexicalContent({ content }: { content: LexicalEditorState }) {
       }
 
       return element
+    }
+
+    // Mention node
+    if (node.type === "mention" && node.mentionUser) {
+      return (
+        <MentionPill
+          key={index}
+          user={node.mentionUser}
+          onMessage={onMentionMessage}
+          onCall={onMentionCall}
+          currentUserId={currentUserId}
+        />
+      )
     }
 
     // Link node
@@ -100,7 +125,11 @@ function RenderLexicalContent({ content }: { content: LexicalEditorState }) {
 
     // Paragraph node
     if (node.type === "paragraph") {
-      return <p key={index}>{node.children?.map(renderNode)}</p>
+      return (
+        <div key={index} className="paragraph">
+          {node.children?.map(renderNode)}
+        </div>
+      )
     }
 
     // Heading node
@@ -153,6 +182,7 @@ export default function ChatView({
   targetUser,
   currentUser,
   onInitiateCall,
+  onSwitchToUser,
 }: ChatViewProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
@@ -160,6 +190,34 @@ export default function ChatView({
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageContainerRef = useRef<HTMLDivElement>(null)
+
+  // Handle mention message action
+  const handleMentionMessage = async (userId: string) => {
+    // If clicking on the current chat user, don't do anything
+    if (userId === targetUser.id) {
+      toast({
+        title: "Info",
+        description: "You are already chatting with this user",
+      })
+      return
+    }
+
+    // Call the parent callback to switch user
+    if (onSwitchToUser) {
+      onSwitchToUser(userId)
+    } else {
+      // Fallback: show toast
+      toast({
+        title: "Info",
+        description: "Message feature requires navigation support",
+      })
+    }
+  }
+
+  // Handle mention call action
+  const handleMentionCall = (userId: string, callType: CallType) => {
+    onInitiateCall(userId, callType)
+  }
 
   // Scroll to bottom when messages change
   const scrollToBottom = () => {
@@ -221,6 +279,10 @@ export default function ChatView({
     const extractText = (node: any): string => {
       if (node.type === "text") {
         return node.text || ""
+      }
+      if (node.type === "mention") {
+        // Extract mention as @username
+        return `@${node.mentionUser?.name || "unknown"}`
       }
       if (node.children && Array.isArray(node.children)) {
         return node.children.map(extractText).join("")
@@ -362,6 +424,9 @@ export default function ChatView({
     return timeDiff > 5 * 60 * 1000 // 5 minutes
   }
 
+  // Check if chatting with yourself
+  const isSelfChat = currentUser.id === targetUser.id
+
   return (
     <div className="h-full w-full bg-white dark:bg-[#1E1E1E] flex flex-col">
       {/* Header */}
@@ -391,27 +456,29 @@ export default function ChatView({
           </div>
         </div>
 
-        {/* Call Actions */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onInitiateCall(targetUser.id, CallType.Audio)}
-            className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
-            title="Audio Call"
-          >
-            <Phone className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onInitiateCall(targetUser.id, CallType.Video)}
-            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-            title="Video Call"
-          >
-            <Video className="h-5 w-5" />
-          </Button>
-        </div>
+        {/* Call Actions - Hide when chatting with yourself */}
+        {!isSelfChat && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onInitiateCall(targetUser.id, CallType.Audio)}
+              className="text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+              title="Audio Call"
+            >
+              <Phone className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onInitiateCall(targetUser.id, CallType.Video)}
+              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+              title="Video Call"
+            >
+              <Video className="h-5 w-5" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Messages Container */}
@@ -489,6 +556,9 @@ export default function ChatView({
                       <div className="text-[15px] text-gray-900 dark:text-gray-100 break-words leading-relaxed">
                         <RenderLexicalContent
                           content={message.messageContent}
+                          onMentionMessage={handleMentionMessage}
+                          onMentionCall={handleMentionCall}
+                          currentUserId={currentUser.id}
                         />
                       </div>
                     </div>

@@ -7,6 +7,7 @@ import {
   ListOrdered,
   ArrowUp,
   Smile,
+  AtSign,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import EmojiPicker, { Theme, EmojiClickData } from "emoji-picker-react"
@@ -45,6 +46,8 @@ import {
   $isListItemNode,
   $createListItemNode,
 } from "@lexical/list"
+import { MentionNode } from "./lexical/MentionNode"
+import { MentionPlugin } from "./lexical/MentionPlugin"
 
 interface BuzzChatBoxProps {
   onSend: (editorState: LexicalEditorState) => void
@@ -92,6 +95,15 @@ function InlineToolbarPlugin({ disabled }: { disabled: boolean }) {
 
   const insertNumberedList = () => {
     editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined)
+  }
+
+  const insertMention = () => {
+    editor.update(() => {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection)) {
+        selection.insertText("@")
+      }
+    })
   }
 
   return (
@@ -155,6 +167,15 @@ function InlineToolbarPlugin({ disabled }: { disabled: boolean }) {
         disabled={disabled}
       >
         <ListOrdered size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={insertMention}
+        className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400"
+        title="Mention user (@)"
+        disabled={disabled}
+      >
+        <AtSign size={16} />
       </button>
     </div>
   )
@@ -346,8 +367,9 @@ export default function BuzzChatBox({
     editorStateRef.current.read(() => {
       const root = $getRoot()
       const textContent = root.getTextContent().trim()
+      const hasContent = textContent.length > 0 || root.getChildrenSize() > 0
 
-      if (textContent) {
+      if (hasContent) {
         shouldSend = true
         jsonToSend = editorStateRef.current?.toJSON() as LexicalEditorState
       }
@@ -487,6 +509,7 @@ export default function BuzzChatBox({
       LinkNode,
       AutoLinkNode,
       CodeNode,
+      MentionNode,
     ],
   }
 
@@ -525,6 +548,7 @@ export default function BuzzChatBox({
             <EnterKeyPlugin onSend={handleSend} disabled={disabled} />
             <ClearEditorPlugin clearTrigger={clearTrigger} />
             <CodeExitPlugin />
+            <MentionPlugin />
           </div>
 
           {/* Bottom Actions */}
