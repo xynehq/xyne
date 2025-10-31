@@ -17,16 +17,40 @@ const Logger = getLogger(Subsystem.Api).child({ module: "directMessages" })
 // Import Lexical schema
 import { lexicalEditorStateSchema } from "@/db/schema/directMessages"
 
+// Helper functions for cursor-based pagination
+const encodeCursor = (id: number): string => {
+  return Buffer.from(id.toString()).toString("base64")
+}
+
+const decodeCursor = (cursor: string): number | null => {
+  try {
+    const decoded = Buffer.from(cursor, "base64").toString("utf-8")
+    const id = parseInt(decoded, 10)
+    return isNaN(id) ? null : id
+  } catch {
+    return null
+  }
+}
+
 // Schemas
 export const sendMessageSchema = z.object({
   targetUserId: z.string().min(1, "Target user ID is required"),
   messageContent: lexicalEditorStateSchema,
 })
 
+/**
+ * Cursor-based pagination schema for conversations
+ * Following Slack's approach:
+ * - Uses cursor instead of offset for efficient pagination
+ * - Default limit of 100, max 200 (as recommended by Slack)
+ * - Cursor is base64-encoded message ID
+ * - Empty cursor means start from beginning
+ * - Empty nextCursor in response means no more results
+ */
 export const getConversationSchema = z.object({
   targetUserId: z.string().min(1, "Target user ID is required"),
-  limit: z.number().optional().default(50),
-  offset: z.number().optional().default(0),
+  limit: z.coerce.number().min(1).max(200).optional().default(50),
+  cursor: z.string().optional(),
 })
 
 export const markAsReadSchema = z.object({
@@ -170,23 +194,29 @@ export const SendMessageApi = async (c: Context) => {
 export const GetConversationApi = async (c: Context) => {
   try {
     const { workspaceId, sub: userEmail } = c.get(JwtPayloadKey)
-    const targetUserId = c.req.query("targetUserId")
-    const limit = parseInt(c.req.query("limit") || "50")
-    const offset = parseInt(c.req.query("offset") || "0")
 
     if (!workspaceId) {
       throw new HTTPException(400, { message: "Workspace ID is required" })
     }
 
-    if (!targetUserId) {
-      throw new HTTPException(400, { message: "Target user ID is required" })
-    }
+    // Get query parameters - already validated by zValidator middleware
+    const targetUserId = c.req.query("targetUserId")!
+    const limitStr = c.req.query("limit")
+    const cursor = c.req.query("cursor")
 
-    // Validate input
+    // Parse and validate with schema (applies defaults)
     const validatedData = getConversationSchema.parse({
       targetUserId,
-      limit,
-      offset,
+      limit: limitStr, // z.coerce.number() will convert this
+      cursor,
+    })
+
+    // Log pagination parameters for debugging
+    console.log("[GetConversation] Pagination params:", {
+      targetUserId: validatedData.targetUserId,
+      limit: validatedData.limit,
+      cursor: validatedData.cursor,
+      cursorProvided: !!validatedData.cursor,
     })
 
     // Get current user info
@@ -214,6 +244,41 @@ export const GetConversationApi = async (c: Context) => {
       })
     }
 
+    // Decode cursor to get the message ID to start from
+    let cursorId: number | null = null
+    if (validatedData.cursor) {
+      cursorId = decodeCursor(validatedData.cursor)
+      console.log("[GetConversation] Decoded cursor ID:", cursorId)
+      if (cursorId === null) {
+        throw new HTTPException(400, { message: "invalid_cursor" })
+      }
+    }
+
+    // Fetch limit + 1 to determine if there are more results
+    const fetchLimit = validatedData.limit + 1
+    console.log(
+      "[GetConversation] Fetching messages with limit:",
+      fetchLimit,
+      "(limit + 1)",
+    )
+
+    // Build the where clause
+    const conversationCondition = and(
+      or(
+        and(
+          eq(directMessages.sentByUserId, currentUser.id),
+          eq(directMessages.sentToUserId, targetUser.id),
+        ),
+        and(
+          eq(directMessages.sentByUserId, targetUser.id),
+          eq(directMessages.sentToUserId, currentUser.id),
+        ),
+      ),
+      sql`${directMessages.deletedAt} IS NULL`,
+      // Add cursor condition: fetch messages with ID less than cursor (for descending order - older messages)
+      cursorId ? sql`${directMessages.id} < ${cursorId}` : sql`1=1`,
+    )
+
     // Get messages between the two users
     const messages = await db
       .select({
@@ -234,28 +299,39 @@ export const GetConversationApi = async (c: Context) => {
         sql`users AS sender`,
         sql`sender.id = ${directMessages.sentByUserId}`,
       )
-      .where(
-        and(
-          or(
-            and(
-              eq(directMessages.sentByUserId, currentUser.id),
-              eq(directMessages.sentToUserId, targetUser.id),
-            ),
-            and(
-              eq(directMessages.sentByUserId, targetUser.id),
-              eq(directMessages.sentToUserId, currentUser.id),
-            ),
-          ),
-          sql`${directMessages.deletedAt} IS NULL`,
-        ),
-      )
-      .orderBy(asc(directMessages.createdAt))
-      .limit(validatedData.limit)
-      .offset(validatedData.offset)
+      .where(conversationCondition)
+      .orderBy(desc(directMessages.id)) // Order by ID DESC to get newest first, then paginate to older
+      .limit(fetchLimit)
+
+    // Determine if there are more results
+    const hasMore = messages.length > validatedData.limit
+    const messagesToReturn = hasMore ? messages.slice(0, -1) : messages
+
+    console.log("[GetConversation] Query results:", {
+      fetchedCount: messages.length,
+      returningCount: messagesToReturn.length,
+      hasMore,
+      firstMessageId: messagesToReturn[0]?.id,
+      lastMessageId: messagesToReturn[messagesToReturn.length - 1]?.id,
+    })
+
+    // Generate next cursor from the last (oldest) message's ID
+    let nextCursor = ""
+    if (hasMore && messagesToReturn.length > 0) {
+      const oldestMessage = messagesToReturn[messagesToReturn.length - 1]
+      nextCursor = encodeCursor(oldestMessage.id)
+      console.log("[GetConversation] Next cursor generated:", {
+        messageId: oldestMessage.id,
+        encodedCursor: nextCursor,
+      })
+    }
+
+    // Reverse the messages to display oldest to newest (bottom to top in chat UI)
+    const messagesInDisplayOrder = messagesToReturn.reverse()
 
     return c.json({
       success: true,
-      messages: messages.map((msg) => ({
+      messages: messagesInDisplayOrder.map((msg) => ({
         id: msg.id,
         messageContent: msg.messageContent,
         isRead: msg.isRead,
@@ -275,6 +351,10 @@ export const GetConversationApi = async (c: Context) => {
         name: targetUser.name,
         email: targetUser.email,
         photoLink: targetUser.photoLink,
+      },
+      responseMetadata: {
+        nextCursor, // Empty string when no more results
+        hasMore,
       },
     })
   } catch (error) {

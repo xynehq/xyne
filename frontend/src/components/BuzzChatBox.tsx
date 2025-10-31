@@ -77,6 +77,32 @@ interface BuzzChatBoxProps {
   initialContent?: LexicalEditorState
 }
 
+// Mention Button Component (for bottom toolbar)
+function MentionButton({ disabled }: { disabled: boolean }) {
+  const [editor] = useLexicalComposerContext()
+
+  const insertMention = () => {
+    editor.update(() => {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection)) {
+        selection.insertText("@")
+      }
+    })
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={insertMention}
+      className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-gray-500 dark:text-gray-400"
+      title="Mention user (@)"
+      disabled={disabled}
+    >
+      <AtSign size={16} />
+    </button>
+  )
+}
+
 // Inline Toolbar Component (inside the editor area)
 function InlineToolbarPlugin({ disabled }: { disabled: boolean }) {
   const [editor] = useLexicalComposerContext()
@@ -116,15 +142,6 @@ function InlineToolbarPlugin({ disabled }: { disabled: boolean }) {
 
   const insertNumberedList = () => {
     editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined)
-  }
-
-  const insertMention = () => {
-    editor.update(() => {
-      const selection = $getSelection()
-      if ($isRangeSelection(selection)) {
-        selection.insertText("@")
-      }
-    })
   }
 
   return (
@@ -188,15 +205,6 @@ function InlineToolbarPlugin({ disabled }: { disabled: boolean }) {
         disabled={disabled}
       >
         <ListOrdered size={16} />
-      </button>
-      <button
-        type="button"
-        onClick={insertMention}
-        className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400"
-        title="Mention user (@)"
-        disabled={disabled}
-      >
-        <AtSign size={16} />
       </button>
     </div>
   )
@@ -576,30 +584,35 @@ export default function BuzzChatBox({
 
           {/* Bottom Actions */}
           <div className="flex items-center justify-between px-3 py-1.5 relative">
-            {/* Left side - emoji only */}
-            <div className="relative">
-              <button
-                ref={emojiButtonRef}
-                type="button"
-                onClick={toggleEmojiPicker}
-                className={cn(
-                  "p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-gray-500 dark:text-gray-400",
-                  showEmojiPicker && "bg-gray-100 dark:bg-gray-700",
-                )}
-                title="Add emoji"
-                disabled={disabled}
-              >
-                <Smile size={18} />
-              </button>
-
-              {showEmojiPicker && (
-                <div
-                  ref={emojiPickerRef}
-                  className="absolute bottom-full left-0 mb-2 z-[100]"
+            {/* Left side - emoji and mention buttons */}
+            <div className="flex items-center gap-1">
+              <div className="relative">
+                <button
+                  ref={emojiButtonRef}
+                  type="button"
+                  onClick={toggleEmojiPicker}
+                  className={cn(
+                    "p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-gray-500 dark:text-gray-400",
+                    showEmojiPicker && "bg-gray-100 dark:bg-gray-700",
+                  )}
+                  title="Add emoji"
+                  disabled={disabled}
                 >
-                  <EmojiPickerPlugin onEmojiClick={handleEmojiClick} />
-                </div>
-              )}
+                  <Smile size={16} />
+                </button>
+
+                {showEmojiPicker && (
+                  <div
+                    ref={emojiPickerRef}
+                    className="absolute bottom-full left-0 mb-2 z-[100]"
+                  >
+                    <EmojiPickerPlugin onEmojiClick={handleEmojiClick} />
+                  </div>
+                )}
+              </div>
+
+              {/* Mention button */}
+              <MentionButton disabled={disabled} />
             </div>
 
             {/* Send button */}

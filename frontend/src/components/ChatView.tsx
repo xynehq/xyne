@@ -201,11 +201,15 @@ export default function ChatView({
 }: ChatViewProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [sending, setSending] = useState(false)
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false)
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
   const [editingContent, setEditingContent] =
     useState<LexicalEditorState | null>(null)
+  const [nextCursor, setNextCursor] = useState<string>("")
+  const [hasMore, setHasMore] = useState(false)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [deleteConfirmModal, setDeleteConfirmModal] = useState({
     open: false,
     title: "",
@@ -214,6 +218,7 @@ export default function ChatView({
   })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageContainerRef = useRef<HTMLDivElement>(null)
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
 
   // Handle mention message action
   const handleMentionMessage = async (userId: string) => {
@@ -285,27 +290,115 @@ export default function ChatView({
     }
   }
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom naturally by setting scrollTop to scrollHeight
+  // This is the Slack approach - no animation, just position at bottom
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    const container = messageContainerRef.current
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
   }
 
+  // Initial load: position at bottom (Slack's CSS-first approach)
   useEffect(() => {
-    scrollToBottom()
-  }, [messages, isOtherUserTyping])
+    if (isInitialLoad && messages.length > 0 && messageContainerRef.current) {
+      // Use requestAnimationFrame to ensure DOM is fully rendered
+      requestAnimationFrame(() => {
+        scrollToBottom()
+        setIsInitialLoad(false)
+      })
+    }
+  }, [messages, isInitialLoad])
 
-  // Fetch conversation history
+  // Auto-scroll to bottom when new messages arrive or typing indicator appears
+  // But only if user is already near the bottom (to respect user's scroll position)
+  useEffect(() => {
+    const container = messageContainerRef.current
+    if (!container || loadingMore || isInitialLoad) return
+
+    // Check if user is scrolled near the bottom (within 100px)
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      100
+
+    if (isNearBottom) {
+      // User is at bottom, keep them there when new content arrives
+      requestAnimationFrame(() => {
+        scrollToBottom()
+      })
+    }
+  }, [messages.length, isOtherUserTyping, loadingMore, isInitialLoad])
+
+  // Infinite scroll: Automatically load more messages when scrolling near top
+  useEffect(() => {
+    const trigger = loadMoreTriggerRef.current
+    const container = messageContainerRef.current
+
+    if (!trigger || !container || !hasMore) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        // When the trigger element is visible and we have more messages, load them
+        if (entry.isIntersecting && hasMore && !loadingMore && !loading) {
+          loadMoreMessages()
+        }
+      },
+      {
+        root: container,
+        rootMargin: "200px", // Start loading 200px before reaching the trigger for smoother UX
+        threshold: 0,
+      },
+    )
+
+    observer.observe(trigger)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [hasMore, loadingMore, loading, nextCursor])
+
+  /**
+   * Cursor-based pagination with infinite scroll (Slack-style)
+   * - Initial load fetches most recent 100 messages (newest first, then reversed for display)
+   * - IntersectionObserver detects when user scrolls near the top
+   * - Automatically fetches older messages and prepends them smoothly
+   * - Uses requestAnimationFrame to maintain scroll position during load
+   * - nextCursor is a base64-encoded message ID for pagination
+   * - Empty cursor means no more older messages to load
+   * - Loading indicator shown while fetching more messages
+   */
+
+  // Fetch conversation history (initial load)
   const fetchConversation = async () => {
     setLoading(true)
+    setIsInitialLoad(true)
     try {
+      console.log(
+        "[ChatView] Fetching initial conversation for user:",
+        targetUser.id,
+      )
+
       const response = await api.messages.conversation.$get({
-        query: { targetUserId: targetUser.id },
+        query: {
+          targetUserId: targetUser.id,
+          limit: "50",
+        },
       })
 
       if (response.ok) {
         const data = await response.json()
-        setMessages(data.messages || [])
+        console.log("[ChatView] Initial load response:", {
+          messageCount: data.messages?.length || 0,
+          hasMore: data.responseMetadata?.hasMore,
+          nextCursor: data.responseMetadata?.nextCursor,
+          firstMessageId: data.messages?.[0]?.id,
+          lastMessageId: data.messages?.[data.messages?.length - 1]?.id,
+        })
 
+        setMessages(data.messages || [])
+        setNextCursor(data.responseMetadata?.nextCursor || "")
+        setHasMore(data.responseMetadata?.hasMore || false)
         // Mark messages as read
         await markMessagesAsRead()
       } else {
@@ -325,6 +418,74 @@ export default function ChatView({
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Load more messages (infinite scroll)
+  const loadMoreMessages = async () => {
+    if (!hasMore || loadingMore || !nextCursor || loading) return
+
+    console.log("[ChatView] Loading more messages with cursor:", nextCursor)
+
+    // Save current scroll position and first message to maintain smooth scroll
+    const container = messageContainerRef.current
+    if (!container) return
+
+    const scrollHeightBefore = container.scrollHeight
+    const scrollTopBefore = container.scrollTop
+
+    setLoadingMore(true)
+    try {
+      const response = await api.messages.conversation.$get({
+        query: {
+          targetUserId: targetUser.id,
+          limit: "50", // Send limit as string in query parameter
+          cursor: nextCursor,
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+
+        console.log("[ChatView] Load more response:", {
+          messageCount: data.messages?.length || 0,
+          hasMore: data.responseMetadata?.hasMore,
+          nextCursor: data.responseMetadata?.nextCursor,
+          firstMessageId: data.messages?.[0]?.id,
+          lastMessageId: data.messages?.[data.messages?.length - 1]?.id,
+        })
+
+        // Prepend older messages to the beginning of the list
+        setMessages((prev) => [...(data.messages || []), ...prev])
+        setNextCursor(data.responseMetadata?.nextCursor || "")
+        setHasMore(data.responseMetadata?.hasMore || false)
+
+        // Use requestAnimationFrame for smooth scroll position restoration
+        requestAnimationFrame(() => {
+          if (container) {
+            const scrollHeightAfter = container.scrollHeight
+            const scrollDiff = scrollHeightAfter - scrollHeightBefore
+            // Maintain the user's view position
+            container.scrollTop = scrollTopBefore + scrollDiff
+          }
+        })
+      } else {
+        console.error("Failed to load more messages")
+        toast({
+          title: "Error",
+          description: "Failed to load more messages",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Failed to load more messages:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load more messages",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -524,6 +685,11 @@ export default function ChatView({
           sender: currentUser,
         },
       ])
+
+      // Always scroll to bottom after sending (user initiated action)
+      requestAnimationFrame(() => {
+        scrollToBottom()
+      })
     } catch (error) {
       console.error("Error sending message:", error)
       toast({
@@ -536,8 +702,9 @@ export default function ChatView({
     }
   }
 
-  // Load conversation on mount
+  // Load conversation on mount or when target user changes
   useEffect(() => {
+    setIsInitialLoad(true) // Reset initial load flag when switching users
     fetchConversation()
 
     // Subscribe to real-time messages
@@ -560,7 +727,7 @@ export default function ChatView({
           ])
           // Auto-mark as read since user is viewing the chat
           markMessagesAsRead()
-          scrollToBottom()
+          // Note: Auto-scroll is handled by the useEffect that watches messages.length
         }
       },
     )
@@ -675,7 +842,11 @@ export default function ChatView({
       {/* Messages Container */}
       <div
         ref={messageContainerRef}
-        className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
+        className="flex-1 overflow-y-auto px-6 py-4"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+        }}
       >
         {loading ? (
           <div className="flex items-center justify-center h-full">
@@ -691,7 +862,21 @@ export default function ChatView({
             </div>
           </div>
         ) : (
-          <>
+          <div className="space-y-4 flex-grow">
+            {/* Infinite scroll trigger - invisible element at the top */}
+            <div
+              ref={loadMoreTriggerRef}
+              className="h-1 w-full"
+              aria-hidden="true"
+            />
+
+            {/* Loading indicator for infinite scroll */}
+            {loadingMore && (
+              <div className="flex justify-center py-3">
+                <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+              </div>
+            )}
+
             {messages.map((message, index) => {
               const prevMessage = index > 0 ? messages[index - 1] : null
               const showHeader = shouldShowHeader(message, prevMessage)
@@ -864,7 +1049,7 @@ export default function ChatView({
               </div>
             )}
             <div ref={messagesEndRef} />
-          </>
+          </div>
         )}
       </div>
 
