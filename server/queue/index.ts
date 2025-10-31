@@ -351,23 +351,34 @@ const initWorkers = async () => {
 
       // Queue individual jobs for each user
       let queuedCount = 0
+      let failedCount = 0
       for (const userEmail of uniqueUsers) {
-        await boss.send(
-          SyncServiceAccountPerUserQueue,
-          {
-            email: userEmail,
-            syncOnlyCurrentUser: true,
-          },
-          {
-            retryLimit: 0,
-            expireInHours: JobExpiryHours,
-          },
-        )
-        queuedCount++
+        try {
+          await boss.send(
+            SyncServiceAccountPerUserQueue,
+            {
+              email: userEmail,
+              syncOnlyCurrentUser: true,
+            },
+            {
+              retryLimit: 0,
+              expireInHours: JobExpiryHours,
+              singletonKey: userEmail,
+            },
+          )
+          queuedCount++
+        } catch (error) {
+          failedCount++
+          Logger.error(
+            error,
+            `Service Account Scheduler: Failed to queue sync job for user ${userEmail}: ${getErrorMessage(error)}`,
+          )
+          // Continue to next user instead of failing the entire scheduler
+        }
       }
 
       Logger.info(
-        `Service Account Scheduler: Successfully queued ${queuedCount} user sync jobs`,
+        `Service Account Scheduler: Successfully queued ${queuedCount} user sync jobs, ${failedCount} failed`,
       )
 
       const endTime = Date.now()
@@ -533,23 +544,34 @@ const initWorkers = async () => {
 
       // Queue individual jobs for each user
       let queuedCount = 0
+      let failedCount = 0
       for (const userEmail of uniqueUsers) {
-        await boss.send(
-          SyncSlackPerUserQueue,
-          {
-            email: userEmail,
-            syncOnlyCurrentUser: true,
-          },
-          {
-            retryLimit: 0,
-            expireInHours: JobExpiryHours,
-          },
-        )
-        queuedCount++
+        try {
+          await boss.send(
+            SyncSlackPerUserQueue,
+            {
+              email: userEmail,
+              syncOnlyCurrentUser: true,
+            },
+            {
+              retryLimit: 0,
+              expireInHours: JobExpiryHours,
+              singletonKey: userEmail,
+            },
+          )
+          queuedCount++
+        } catch (error) {
+          failedCount++
+          Logger.error(
+            error,
+            `Slack Scheduler: Failed to queue sync job for user ${userEmail}: ${getErrorMessage(error)}`,
+          )
+          // Continue to next user instead of failing the entire scheduler
+        }
       }
 
       Logger.info(
-        `Slack Scheduler: Successfully queued ${queuedCount} user sync jobs`,
+        `Slack Scheduler: Successfully queued ${queuedCount} user sync jobs, ${failedCount} failed`,
       )
 
       const endTime = Date.now()
