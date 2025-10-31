@@ -75,6 +75,8 @@ let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
 let ragOffFeature = true
+let useLegacyServiceAccountSync = process.env.USE_LEGACY_SERVICE_ACCOUNT_SYNC === "true"
+let useLegacySlackSync = process.env.USE_LEGACY_SLACK_SYNC === "true"
 let CurrentAuthType: AuthType =
   (process.env.AUTH_TYPE as AuthType) || AuthType.OAuth
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
@@ -254,4 +256,6 @@ export default {
   fileProcessingTeamSize,
   pdfFileProcessingWorkerThreads,
   pdfFileProcessingTeamSize,
+  useLegacyServiceAccountSync,
+  useLegacySlackSync,
 }
