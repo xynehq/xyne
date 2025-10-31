@@ -1548,30 +1548,32 @@ function KnowledgeManagementContent() {
 
   // Derive the current upload status from collections state
   const currentUploadStatus = useMemo(() => {
-    if (!selectedDocument) return undefined
-    
+    if (!selectedDocument) return undefined;
+
     const currentCollection = collections.find(
-      c => c.id === selectedDocument.collection.id
-    )
-    
-    if (!currentCollection) return undefined
-    
-    // Recursively find the file's current status
-    const findFileStatus = (items: FileNode[]): UploadStatus | undefined => {
-      for (const item of items) {
-        if (item.id === selectedDocument.file.id) {
-          return item.uploadStatus
-        }
-        if (item.children) {
-          const found = findFileStatus(item.children)
-          if (found !== undefined) return found
-        }
+      (c) => c.id === selectedDocument.collection.id
+    );
+
+    if (!currentCollection) return undefined;
+
+    // Iteratively find the file's current status 
+    const stack: FileNode[] = [...currentCollection.items];
+    while (stack.length > 0) {
+      const item = stack.pop();
+      if (!item) continue;
+
+      if (item.id === selectedDocument.file.id) {
+        return item.uploadStatus;
       }
-      return undefined
+
+      if (item.children) {
+        stack.push(...item.children);
+      }
     }
-    
-    return findFileStatus(currentCollection.items)
-  }, [selectedDocument, collections])
+
+    return undefined;
+  }, [selectedDocument, collections]);
+
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-white dark:bg-[#1E1E1E]">
