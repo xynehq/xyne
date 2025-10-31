@@ -31,7 +31,7 @@ import {
   getSortedScoredChunks,
   getSortedScoredImageChunks,
 } from "@xyne/vespa-ts/mappers"
-import type { UserMetadataType } from "@/types"
+import type { ChunkMetadata, UserMetadataType } from "@/types"
 import { querySheetChunks } from "@/lib/duckdb"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
 
@@ -127,6 +127,153 @@ const extractHeaderAndDataChunks = (
   }
 
   return { chunks_summary: processedChunks, matchfeatures: newMatchfeatures }
+}
+
+const aggregateTableChunksForPdf = (
+  chunks_summary:
+  | (string | { chunk: string; score: number; index: number })[]
+  | undefined,
+  chunks_map: 
+  | ChunkMetadata[]
+  | undefined,
+  matchfeatures?: any,
+  ): {
+    chunks_summary: (string | { chunk: string; score: number; index: number })[]
+    matchfeatures: any
+  } => {
+  if (!chunks_summary || !chunks_map || chunks_summary.length === 0) {
+    return { chunks_summary: chunks_summary || [], matchfeatures: matchfeatures }
+  }
+
+  if (chunks_summary.length !== chunks_map.length) {
+    console.warn('chunks_summary and chunks_map length mismatch; skipping table aggregation')
+    return { chunks_summary: chunks_summary || [], matchfeatures: matchfeatures }
+  }
+
+  // Find all chunks that have 'table' in their block_labels
+  const tableChunkIndices = new Set<number>()
+  chunks_map.forEach((metadata, index) => {
+    if (metadata.block_labels.includes('table')) {
+      tableChunkIndices.add(index)
+    }
+  })
+
+  if (tableChunkIndices.size === 0) {
+    return { chunks_summary: chunks_summary || [], matchfeatures: matchfeatures }
+  }
+
+  // Group consecutive table chunks
+  const tableGroups: number[][] = []
+  let currentGroup: number[] = []
+  let lastTableIndex = -1
+
+  for (let i = 0; i < chunks_summary.length; i++) {
+    if (tableChunkIndices.has(i)) {
+      if (lastTableIndex === -1 || i === lastTableIndex + 1) {
+        // First table chunk or consecutive table chunk
+        currentGroup.push(i)
+      } else {
+        // Non-consecutive table chunk, start new group
+        if (currentGroup.length > 0) {
+          tableGroups.push([...currentGroup])
+        }
+        currentGroup = [i]
+      }
+      lastTableIndex = i
+    } else {
+      // Non-table chunk, end current group if exists
+      if (currentGroup.length > 0) {
+        tableGroups.push([...currentGroup])
+        currentGroup = []
+      }
+      lastTableIndex = -1
+    }
+  }
+
+  // Add the last group if it exists
+  if (currentGroup.length > 0) {
+    tableGroups.push(currentGroup)
+  }
+
+  // Process each table group
+  const processedChunks: (string | { chunk: string; score: number; index: number })[] = chunks_summary || []
+  const existingCells = matchfeatures?.chunk_scores?.cells || {}
+  const newChunkScores: Record<string, number> = {}
+  Object.entries(existingCells).forEach(([idx, score]) => {
+    newChunkScores[parseInt(idx).toString()] = score as number
+  })
+  
+  // Process each table group
+  tableGroups.forEach((group) => {
+    if (group.length === 0) return
+
+    // Get scores for chunks in this group from matchfeatures
+    const groupScores: { index: number; score: number }[] = []
+    
+    if (matchfeatures?.chunk_scores?.cells) {
+      group.forEach((chunkIndex) => {
+        const score = matchfeatures.chunk_scores.cells[chunkIndex.toString()] || 0
+        groupScores.push({ index: chunkIndex, score })
+      })
+    } else {
+      // If no matchfeatures, use chunk scores from chunks_summary
+      group.forEach((chunkIndex) => {
+        const chunk = chunks_summary[chunkIndex]
+        const score = typeof chunk === 'string' ? 0 : chunk.score
+        groupScores.push({ index: chunkIndex, score })
+      })
+    }
+
+    // Find the chunk with the highest score
+    const highestScoreChunk = groupScores.reduce((max, current) => 
+      current.score > max.score ? current : max
+    )
+
+    // Concatenate all chunks in the group
+    const concatenatedContent = group
+      .map((chunkIndex) => {
+        const chunk = chunks_summary[chunkIndex]
+        return typeof chunk === 'string' ? chunk : chunk.chunk
+      })
+      .join('\n')
+
+    // Clear out all chunks in this group except the highest scoring one
+    group.forEach((chunkIndex) => {
+      if (chunkIndex !== highestScoreChunk.index) {
+        processedChunks[chunkIndex] = typeof processedChunks[chunkIndex] === 'string' ? "" : {
+          chunk: "",
+          score: 0,
+          index: chunkIndex,
+        }
+        newChunkScores[chunkIndex.toString()] = 0
+      }
+    })
+
+    // Create the merged chunk using the highest scoring chunk's structure
+    const originalChunk = chunks_summary[highestScoreChunk.index]
+    const mergedChunk = typeof originalChunk === 'string' 
+      ? concatenatedContent
+      : {
+          chunk: concatenatedContent,
+          score: highestScoreChunk.score,
+          index: highestScoreChunk.index,
+        }
+
+    processedChunks[highestScoreChunk.index] = mergedChunk
+    newChunkScores[highestScoreChunk.index.toString()] = highestScoreChunk.score
+  })
+
+  const newMatchfeatures = {
+    ...matchfeatures,
+    chunk_scores: {
+      cells: newChunkScores,
+    },
+  }
+
+  return {
+    chunks_summary: processedChunks,
+    matchfeatures: newMatchfeatures,
+  }
 }
 
 // Utility function to process sheet queries for spreadsheet files
@@ -894,6 +1041,16 @@ export const answerContextMap = async (
             100,
           )
         }
+      }
+    } else if (mimeType === "application/pdf") {
+      const result = aggregateTableChunksForPdf(
+        searchResult.fields.chunks_summary,
+        (searchResult.fields as any).chunks_map,
+        searchResult.fields.matchfeatures,
+      )
+      searchResult.fields.chunks_summary = result.chunks_summary
+      if (result.matchfeatures) {
+        searchResult.fields.matchfeatures = result.matchfeatures
       }
     }
   }

@@ -182,6 +182,22 @@ type SendPdfBatchOptions = {
   timeoutMs: number
 }
 
+const TABLE_TAG = "(?:html|body|table|thead|tbody|tfoot|tr|th|td)";
+
+// convert table structure to TSV
+const convertTableToTsv = (html: string): string => {
+  return html
+    .replace(/<\/t[dh]\s*>/gi, "\t")  // </td>, </th> -> tab
+    .replace(/<\/tr\s*>/gi, "\n")     // </tr> -> newline
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(new RegExp(`</?\\s*${TABLE_TAG}\\b[^>]*>`, "gi"), "") // Remove table tags
+    .replace(/&(nbsp|#160);/gi, " ")
+    .replace(/[ \f\r]+/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 // Placeholder implementation for integrating with the OCR service.
 async function sendPdfOcrBatch(
   batch: PdfOcrBatch,
@@ -1079,14 +1095,9 @@ function normalizeBlockContent(block: OcrBlock): string {
     return ""
   }
 
-  // if (block.block_label === "table") {
-  //   return content
-  //     .replace(/<\/(td|th)>/gi, " ")
-  //     .replace(/<\/tr>/gi, " \n ")
-  //     .replace(/<[^>]+>/g, " ")
-  //     .replace(/\s+/g, " ")
-  //     .trim()
-  // }
+  if (block.block_label === "table") {
+    return convertTableToTsv(content)
+  }
 
   if (block.block_label === "figure_title") {
     return content.trim()
