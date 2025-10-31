@@ -1,9 +1,16 @@
-export { searchGmailTool } from "./gmail"
-export { searchDriveFilesTool } from "./drive"
-export { searchCalendarEventsTool } from "./calendar"
-export { searchGoogleContactsTool } from "./contacts"
+import { searchGmailTool } from "./gmail"
+import { searchDriveFilesTool } from "./drive"
+import { searchCalendarEventsTool } from "./calendar"
+import { searchGoogleContactsTool } from "./contacts"
 
 export type { GmailSearchToolParams } from "./gmail"
 export type { DriveSearchToolParams } from "./drive"
 export type { CalendarSearchToolParams } from "./calendar"
 export type { ContactsSearchToolParams } from "./contacts"
+
+export default [
+  searchGmailTool,
+  searchDriveFilesTool,
+  searchCalendarEventsTool,
+  searchGoogleContactsTool,
+]
