@@ -1,3 +1,10 @@
+## [3.25.2](https://github.com/xynehq/xyne/compare/v3.25.1...v3.25.2) (2025-10-31)
+
+
+### Bug Fixes
+
+* **kb:** XYNE-270 fixed chat button state in basis of poll status ([#1177](https://github.com/xynehq/xyne/issues/1177)) ([43d516f](https://github.com/xynehq/xyne/commit/43d516f5433e162f4725936fb96135d5ff7f4825))
+
 ## [3.25.1](https://github.com/xynehq/xyne/compare/v3.25.0...v3.25.1) (2025-10-31)
 
 
