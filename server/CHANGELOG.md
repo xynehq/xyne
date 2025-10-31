@@ -1,3 +1,10 @@
+# [3.25.0](https://github.com/xynehq/xyne/compare/v3.24.1...v3.25.0) (2025-10-31)
+
+
+### Features
+
+* **apple-signin:** Add Apple Sign-in validation endpoint for mobile app ([#1168](https://github.com/xynehq/xyne/issues/1168)) ([40810a8](https://github.com/xynehq/xyne/commit/40810a8054c7ca2be577bfd3b963859fdc1d9362))
+
 ## [3.24.1](https://github.com/xynehq/xyne/compare/v3.24.0...v3.24.1) (2025-10-31)
 
 
