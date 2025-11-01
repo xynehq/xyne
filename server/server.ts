@@ -186,6 +186,15 @@ import {
   getPinnedMessagesSchema,
   getChannelMembersSchema,
 } from "@/api/channels"
+import {
+  getThread,
+  sendThreadReply,
+  updateThreadReply,
+  deleteThreadReply,
+  getThreadSchema,
+  sendThreadReplySchema,
+  updateThreadReplySchema,
+} from "@/api/threads"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -1292,6 +1301,19 @@ export const AppRoutes = app
   )
   .delete("/channels/:channelId", DeleteChannelApi)
   .get("/channels/:channelId", GetChannelDetailsApi)
+  // Thread routes
+  .get("/threads/:messageId", zValidator("query", getThreadSchema), getThread)
+  .post(
+    "/threads/:messageId/reply",
+    zValidator("json", sendThreadReplySchema),
+    sendThreadReply,
+  )
+  .patch(
+    "/threads/replies/:replyId",
+    zValidator("json", updateThreadReplySchema),
+    updateThreadReply,
+  )
+  .delete("/threads/replies/:replyId", deleteThreadReply)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(

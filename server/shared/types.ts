@@ -558,6 +558,11 @@ export enum ChannelMemberRole {
   Member = "member",
 }
 
+export enum MessageType {
+  Channel = "channel",
+  Direct = "direct",
+}
+
 export enum MessageMode {
   Ask = "ask",
   Agentic = "agentic",

@@ -326,6 +326,27 @@ class RealtimeMessagingService extends EventEmitter {
 
     return false
   }
+
+  // Send thread reply notification to a specific user
+  sendThreadReply(userId: string, notification: any) {
+    const userWs = this.activeConnections.get(userId)
+
+    if (userWs) {
+      try {
+        userWs.send(
+          JSON.stringify({
+            type: "thread_reply",
+            data: notification,
+          }),
+        )
+        return true
+      } catch (error) {
+        console.error(`Failed to send thread reply to user ${userId}:`, error)
+      }
+    }
+
+    return false
+  }
 }
 
 // Export both the new service and maintain backward compatibility

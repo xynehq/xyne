@@ -103,6 +103,25 @@ export interface ChannelMembershipUpdate {
   channelData?: any
 }
 
+export interface ThreadReply {
+  type: "thread_reply"
+  threadId: number
+  parentMessageId: number
+  messageType: "channel" | "direct"
+  reply: {
+    id: number
+    messageContent: LexicalEditorState
+    createdAt: string
+    isEdited: boolean
+    sender: {
+      externalId: string
+      name: string
+      email: string
+      photoLink?: string | null
+    }
+  }
+}
+
 type CallNotificationHandler = (notification: CallNotification) => void
 type CallStatusHandler = (status: CallStatusUpdate) => void
 type DirectMessageHandler = (message: DirectMessage) => void
@@ -112,6 +131,7 @@ type ChannelMessageHandler = (message: ChannelMessage) => void
 type ChannelTypingIndicatorHandler = (indicator: ChannelTypingIndicator) => void
 type ChannelUpdateHandler = (update: ChannelUpdate) => void
 type ChannelMembershipUpdateHandler = (update: ChannelMembershipUpdate) => void
+type ThreadReplyHandler = (reply: ThreadReply) => void
 
 class CallNotificationClient {
   private ws: WebSocket | null = null
@@ -129,6 +149,7 @@ class CallNotificationClient {
   private onChannelUpdateCallbacks: ChannelUpdateHandler[] = []
   private onChannelMembershipUpdateCallbacks: ChannelMembershipUpdateHandler[] =
     []
+  private onThreadReplyCallbacks: ThreadReplyHandler[] = []
   private soundInterval: ReturnType<typeof setInterval> | null = null
   private audioContextInitialized = false
   private connectionInitialized = false
@@ -480,6 +501,11 @@ class CallNotificationClient {
             this.onChannelMembershipUpdateCallbacks.forEach((callback) => {
               callback(message.data)
             })
+          } else if (message.type === "thread_reply") {
+            // Handle thread reply
+            this.onThreadReplyCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
           }
         } catch (error) {
           console.error("Error parsing notification message:", error)
@@ -618,6 +644,15 @@ class CallNotificationClient {
     return () => {
       this.onChannelMembershipUpdateCallbacks =
         this.onChannelMembershipUpdateCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
+  onThreadReply(callback: ThreadReplyHandler) {
+    this.onThreadReplyCallbacks.push(callback)
+    return () => {
+      this.onThreadReplyCallbacks = this.onThreadReplyCallbacks.filter(
+        (cb) => cb !== callback,
+      )
     }
   }
 

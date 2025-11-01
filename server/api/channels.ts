@@ -14,6 +14,7 @@ import {
   lexicalEditorStateSchema,
 } from "@/db/schema"
 import { users } from "@/db/schema/users"
+import { threads, threadReplies } from "@/db/schema/threads"
 import { eq, and, or, desc, sql, asc, inArray, not } from "drizzle-orm"
 import { getUserByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
@@ -1416,7 +1417,6 @@ export const SendChannelMessageApi = async (c: Context) => {
         channelId: channelId,
         sentByUserId: sender.id,
         messageContent: validatedData.messageContent,
-        parentMessageId: validatedData.parentMessageId,
       })
       .returning()
 
@@ -1553,9 +1553,20 @@ export const GetChannelMessagesApi = async (c: Context) => {
         senderName: users.name,
         senderEmail: users.email,
         senderPhotoLink: users.photoLink,
+        // Thread information
+        threadId: threads.id,
+        replyCount: threads.replyCount,
+        lastReplyAt: threads.lastReplyAt,
       })
       .from(channelMessages)
       .innerJoin(users, eq(users.id, channelMessages.sentByUserId))
+      .leftJoin(
+        threads,
+        and(
+          eq(threads.parentMessageId, channelMessages.id),
+          eq(threads.messageType, "channel"),
+        ),
+      )
       .where(
         and(
           eq(channelMessages.channelId, validatedData.channelId),
@@ -1579,6 +1590,59 @@ export const GetChannelMessagesApi = async (c: Context) => {
     // Reverse messages for display (oldest to newest)
     const displayMessages = resultMessages.reverse()
 
+    // Fetch repliers for messages with threads (limit to 3 most recent unique repliers per thread)
+    const threadIds = displayMessages
+      .filter((msg) => msg.threadId)
+      .map((msg) => msg.threadId!)
+
+    let repliersMap = new Map<
+      number,
+      Array<{ name: string; photoLink: string | null }>
+    >()
+
+    if (threadIds.length > 0) {
+      // Get distinct repliers for each thread (limit 3 most recent unique repliers per thread)
+      // We need to get all replies, then group by thread and get unique senders
+      const allReplies = await db
+        .select({
+          threadId: threadReplies.threadId,
+          senderId: threadReplies.senderId,
+          senderName: users.name,
+          senderPhotoLink: users.photoLink,
+          createdAt: threadReplies.createdAt,
+        })
+        .from(threadReplies)
+        .innerJoin(users, eq(users.id, threadReplies.senderId))
+        .where(
+          and(
+            inArray(threadReplies.threadId, threadIds),
+            sql`${threadReplies.deletedAt} IS NULL`,
+          ),
+        )
+        .orderBy(desc(threadReplies.createdAt))
+
+      // Group by thread ID and get up to 3 unique senders per thread
+      for (const reply of allReplies) {
+        if (!repliersMap.has(reply.threadId)) {
+          repliersMap.set(reply.threadId, [])
+        }
+        const threadRepliers = repliersMap.get(reply.threadId)!
+
+        // Check if this sender is already in the list
+        const alreadyAdded = threadRepliers.some(
+          (r) => r.name === reply.senderName,
+        )
+
+        // Add if not already added and we haven't reached the limit of 3
+        if (!alreadyAdded && threadRepliers.length < 3) {
+          threadRepliers.push({
+            name: reply.senderName,
+            photoLink: reply.senderPhotoLink,
+          })
+        }
+      }
+    }
+
     return c.json({
       success: true,
       messages: displayMessages.map((msg) => ({
@@ -1594,6 +1658,11 @@ export const GetChannelMessagesApi = async (c: Context) => {
           email: msg.senderEmail,
           photoLink: msg.senderPhotoLink,
         },
+        // Thread information
+        threadId: msg.threadId,
+        replyCount: msg.replyCount || 0,
+        lastReplyAt: msg.lastReplyAt,
+        repliers: msg.threadId ? repliersMap.get(msg.threadId) || [] : [],
       })),
       responseMetadata: {
         hasMore,

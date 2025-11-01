@@ -12,6 +12,7 @@ import {
   MoreVertical,
   Pencil,
   Trash2,
+  MessageSquare,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,6 +24,7 @@ import {
 import BuzzChatBox from "./BuzzChatBox"
 import { ConfirmModal } from "./ui/confirmModal"
 import { MentionPill } from "@/components/MentionPill"
+import ThreadPanel from "./ThreadPanel"
 import { CallType } from "@/types"
 import { cn } from "@/lib/utils"
 import type { Channel, ChannelMessage, LexicalEditorState } from "@/types"
@@ -117,8 +119,8 @@ function RenderLexicalContent({
       }
     }
 
-    // Link node
-    if (node.type === "link") {
+    // Link node (handles both "link" and "autolink" types)
+    if (node.type === "link" || node.type === "autolink") {
       return (
         <a
           key={index}
@@ -239,6 +241,7 @@ export default function ChannelView({
   const [memberCount, setMemberCount] = useState<number>(
     channel.memberCount || 0,
   )
+  const [openThread, setOpenThread] = useState<ChannelMessage | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageContainerRef = useRef<HTMLDivElement>(null)
@@ -303,6 +306,32 @@ export default function ChannelView({
       description:
         "Call feature is not yet implemented for mentions in channels",
     })
+  }
+
+  // Handle reply added in thread
+  const handleReplyAdded = (parentMessageId: number) => {
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id === parentMessageId) {
+          return {
+            ...msg,
+            replyCount: (msg.replyCount || 0) + 1,
+            lastReplyAt: new Date().toISOString(),
+            // Add current user to repliers list (keep last 3 unique repliers)
+            repliers: [
+              ...(msg.repliers || []).filter(
+                (r) => r.name !== currentUser.name,
+              ),
+              {
+                name: currentUser.name,
+                photoLink: currentUser.photoLink || null,
+              },
+            ].slice(-3),
+          }
+        }
+        return msg
+      }),
+    )
   }
 
   // Scroll to bottom
@@ -796,10 +825,42 @@ export default function ChannelView({
       },
     )
 
+    // Subscribe to thread replies to update reply counts
+    const unsubscribeThreadReply = callNotificationClient.onThreadReply(
+      (data) => {
+        // Update the reply count and last reply time for the parent message
+        if (data.messageType === "channel") {
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.id === data.parentMessageId) {
+                return {
+                  ...msg,
+                  replyCount: (msg.replyCount || 0) + 1,
+                  lastReplyAt: data.reply.createdAt,
+                  // Update repliers list (keep last 3 unique repliers)
+                  repliers: [
+                    ...(msg.repliers || []).filter(
+                      (r) => r.name !== data.reply.sender.name,
+                    ),
+                    {
+                      name: data.reply.sender.name,
+                      photoLink: data.reply.sender.photoLink || null,
+                    },
+                  ].slice(-3),
+                }
+              }
+              return msg
+            }),
+          )
+        }
+      },
+    )
+
     return () => {
       unsubscribeMessage()
       unsubscribeTyping()
       unsubscribeUpdate()
+      unsubscribeThreadReply()
     }
   }, [channel.id])
 
@@ -1067,9 +1128,21 @@ export default function ChannelView({
                       )}
                     </div>
 
-                    {/* Message Actions Dropdown (show on hover) */}
+                    {/* Message Actions (show on hover) */}
                     {!isEditing && (
-                      <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0">
+                      <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0 flex items-center gap-1">
+                        {/* Reply in Thread Button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => setOpenThread(message)}
+                          title="Reply in thread"
+                        >
+                          <MessageSquare className="h-4 w-4" />
+                        </Button>
+
+                        {/* More Options Dropdown */}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
@@ -1127,6 +1200,59 @@ export default function ChannelView({
                       </div>
                     )}
                   </div>
+
+                  {/* Reply Count - Show if message has replies */}
+                  {message.replyCount !== undefined &&
+                    message.replyCount > 0 && (
+                      <div
+                        onClick={() => setOpenThread(message)}
+                        className="ml-12 mt-1 flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 cursor-pointer hover:opacity-80 transition-opacity group/reply"
+                      >
+                        {/* Profile Icons of Repliers */}
+                        {message.repliers && message.repliers.length > 0 && (
+                          <div className="flex -space-x-2">
+                            {message.repliers
+                              .slice(0, 3)
+                              .map((replier, idx) => (
+                                <div
+                                  key={idx}
+                                  className="relative w-6 h-6 rounded border-2 border-white dark:border-gray-900"
+                                  title={replier.name}
+                                >
+                                  {replier.photoLink ? (
+                                    <img
+                                      src={`/api/v1/proxy/${encodeURIComponent(replier.photoLink)}`}
+                                      alt={replier.name}
+                                      className="w-full h-full rounded object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full rounded bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                                      <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                                        {replier.name.charAt(0).toUpperCase()}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                        )}
+
+                        <span className="font-medium">
+                          {message.replyCount}{" "}
+                          {message.replyCount === 1 ? "reply" : "replies"}
+                        </span>
+
+                        {message.lastReplyAt && (
+                          <span className="text-gray-500 dark:text-gray-400 font-normal">
+                            Last reply{" "}
+                            {new Date(message.lastReplyAt).toLocaleTimeString(
+                              [],
+                              { hour: "2-digit", minute: "2-digit" },
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    )}
                 </div>
               )
             })}
@@ -1174,6 +1300,26 @@ export default function ChannelView({
         modalMessage={deleteConfirmModal.description}
         onConfirm={handleConfirmDelete}
       />
+
+      {/* Thread Panel */}
+      {openThread && (
+        <ThreadPanel
+          parentMessage={{
+            id: openThread.id,
+            senderId: openThread.sender.id,
+            senderName: openThread.sender.name,
+            senderPhoto: openThread.sender.photoLink || undefined,
+            messageContent: openThread.messageContent,
+            createdAt: openThread.createdAt,
+            messageType: "channel",
+          }}
+          currentUserId={currentUser.id}
+          onClose={() => setOpenThread(null)}
+          onMentionMessage={handleMentionMessage}
+          onMentionCall={handleMentionCall}
+          onReplyAdded={handleReplyAdded}
+        />
+      )}
     </div>
   )
 }

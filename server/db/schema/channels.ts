@@ -118,11 +118,6 @@ export const channelMessages = pgTable(
     pinnedByUserId: integer("pinned_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
-    // For threading support (optional for now)
-    parentMessageId: integer("parent_message_id").references(
-      (): any => channelMessages.id,
-      { onDelete: "cascade" },
-    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
@@ -138,9 +133,6 @@ export const channelMessages = pgTable(
     ),
     createdAtIdx: index("channel_messages_created_at_idx").on(table.createdAt),
     isPinnedIdx: index("channel_messages_is_pinned_idx").on(table.isPinned),
-    parentMessageIdIdx: index("channel_messages_parent_message_id_idx").on(
-      table.parentMessageId,
-    ),
   }),
 )
 
@@ -186,7 +178,6 @@ export type SelectChannelMember = z.infer<typeof selectChannelMemberSchema>
 // Zod schemas for channel messages
 export const insertChannelMessageSchema = createInsertSchema(channelMessages, {
   messageContent: lexicalEditorStateSchema,
-  parentMessageId: z.number().int().positive().optional(),
 }).omit({
   id: true,
   isEdited: true,
@@ -255,11 +246,6 @@ export const channelMessagesRelations = relations(
       fields: [channelMessages.pinnedByUserId],
       references: [users.id],
       relationName: "pinned_channel_messages",
-    }),
-    parentMessage: one(channelMessages, {
-      fields: [channelMessages.parentMessageId],
-      references: [channelMessages.id],
-      relationName: "message_thread",
     }),
   }),
 )

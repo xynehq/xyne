@@ -5,7 +5,8 @@ import { z } from "zod"
 import config from "@/config"
 import { directMessages } from "@/db/schema/directMessages"
 import { users } from "@/db/schema/users"
-import { eq, and, or, desc, sql, asc } from "drizzle-orm"
+import { threads, threadReplies } from "@/db/schema/threads"
+import { eq, and, or, desc, sql, asc, inArray } from "drizzle-orm"
 import { getUserByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -293,11 +294,22 @@ export const GetConversationApi = async (c: Context) => {
         senderEmail: sql<string>`sender.email`,
         senderPhotoLink: sql<string>`sender."photoLink"`,
         senderExternalId: sql<string>`sender.external_id`,
+        // Thread information
+        threadId: threads.id,
+        replyCount: threads.replyCount,
+        lastReplyAt: threads.lastReplyAt,
       })
       .from(directMessages)
       .innerJoin(
         sql`users AS sender`,
         sql`sender.id = ${directMessages.sentByUserId}`,
+      )
+      .leftJoin(
+        threads,
+        and(
+          eq(threads.parentMessageId, directMessages.id),
+          eq(threads.messageType, "direct"),
+        ),
       )
       .where(conversationCondition)
       .orderBy(desc(directMessages.id)) // Order by ID DESC to get newest first, then paginate to older
@@ -329,6 +341,59 @@ export const GetConversationApi = async (c: Context) => {
     // Reverse the messages to display oldest to newest (bottom to top in chat UI)
     const messagesInDisplayOrder = messagesToReturn.reverse()
 
+    // Fetch repliers for messages with threads (limit to 3 most recent unique repliers per thread)
+    const threadIds = messagesInDisplayOrder
+      .filter((msg) => msg.threadId)
+      .map((msg) => msg.threadId!)
+
+    let repliersMap = new Map<
+      number,
+      Array<{ name: string; photoLink: string | null }>
+    >()
+
+    if (threadIds.length > 0) {
+      // Get distinct repliers for each thread (limit 3 most recent unique repliers per thread)
+      // We need to get all replies, then group by thread and get unique senders
+      const allReplies = await db
+        .select({
+          threadId: threadReplies.threadId,
+          senderId: threadReplies.senderId,
+          senderName: users.name,
+          senderPhotoLink: users.photoLink,
+          createdAt: threadReplies.createdAt,
+        })
+        .from(threadReplies)
+        .innerJoin(users, eq(users.id, threadReplies.senderId))
+        .where(
+          and(
+            inArray(threadReplies.threadId, threadIds),
+            sql`${threadReplies.deletedAt} IS NULL`,
+          ),
+        )
+        .orderBy(desc(threadReplies.createdAt))
+
+      // Group by thread ID and get up to 3 unique senders per thread
+      for (const reply of allReplies) {
+        if (!repliersMap.has(reply.threadId)) {
+          repliersMap.set(reply.threadId, [])
+        }
+        const threadRepliers = repliersMap.get(reply.threadId)!
+
+        // Check if this sender is already in the list
+        const alreadyAdded = threadRepliers.some(
+          (r) => r.name === reply.senderName,
+        )
+
+        // Add if not already added and we haven't reached the limit of 3
+        if (!alreadyAdded && threadRepliers.length < 3) {
+          threadRepliers.push({
+            name: reply.senderName,
+            photoLink: reply.senderPhotoLink,
+          })
+        }
+      }
+    }
+
     return c.json({
       success: true,
       messages: messagesInDisplayOrder.map((msg) => ({
@@ -345,6 +410,11 @@ export const GetConversationApi = async (c: Context) => {
           email: msg.senderEmail,
           photoLink: msg.senderPhotoLink,
         },
+        // Thread information
+        threadId: msg.threadId,
+        replyCount: msg.replyCount || 0,
+        lastReplyAt: msg.lastReplyAt,
+        repliers: msg.threadId ? repliersMap.get(msg.threadId) || [] : [],
       })),
       targetUser: {
         id: targetUser.externalId,

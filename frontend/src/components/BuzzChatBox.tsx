@@ -22,6 +22,7 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary"
 import { ListPlugin } from "@lexical/react/LexicalListPlugin"
 import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin"
+import { AutoLinkPlugin } from "@lexical/react/LexicalAutoLinkPlugin"
 import { TabIndentationPlugin } from "@lexical/react/LexicalTabIndentationPlugin"
 import { HeadingNode, QuoteNode } from "@lexical/rich-text"
 import { ListItemNode, ListNode } from "@lexical/list"
@@ -48,6 +49,42 @@ import {
 } from "@lexical/list"
 import { MentionNode } from "./lexical/MentionNode"
 import { MentionPlugin } from "./lexical/MentionPlugin"
+
+// URL matchers for AutoLinkPlugin
+const URL_MATCHER =
+  /((https?:\/\/(www\.)?)|(www\.))[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*)/
+
+const EMAIL_MATCHER =
+  /(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))/
+
+const MATCHERS = [
+  (text: string) => {
+    const match = URL_MATCHER.exec(text)
+    if (match === null) {
+      return null
+    }
+    const fullMatch = match[0]
+    return {
+      index: match.index,
+      length: fullMatch.length,
+      text: fullMatch,
+      url: fullMatch.startsWith("http") ? fullMatch : `https://${fullMatch}`,
+    }
+  },
+  (text: string) => {
+    const match = EMAIL_MATCHER.exec(text)
+    if (match === null) {
+      return null
+    }
+    const fullMatch = match[0]
+    return {
+      index: match.index,
+      length: fullMatch.length,
+      text: fullMatch,
+      url: `mailto:${fullMatch}`,
+    }
+  },
+]
 
 // Plugin to set initial content
 function InitialContentPlugin({
@@ -574,6 +611,7 @@ export default function BuzzChatBox({
             <HistoryPlugin />
             <ListPlugin />
             <LinkPlugin />
+            <AutoLinkPlugin matchers={MATCHERS} />
             <TabIndentationPlugin />
             <EnterKeyPlugin onSend={handleSend} disabled={disabled} />
             <ClearEditorPlugin clearTrigger={clearTrigger} />

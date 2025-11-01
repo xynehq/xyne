@@ -147,4 +147,9 @@ export interface ChannelMessage {
     id: string
     name: string
   }
+  // Thread information
+  threadId?: number | null
+  replyCount?: number
+  lastReplyAt?: string | null
+  repliers?: Array<{ name: string; photoLink: string | null }>
 }
