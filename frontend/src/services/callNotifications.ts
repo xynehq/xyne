@@ -439,7 +439,6 @@ class CallNotificationClient {
       this.ws = new WebSocket(wsUrl)
 
       this.ws.onopen = () => {
-        console.log("Connected to call notifications")
         this.reconnectAttempts = 0
         this.connectionInitialized = false // Reset flag on successful connection
       }
@@ -513,7 +512,6 @@ class CallNotificationClient {
       }
 
       this.ws.onclose = () => {
-        console.log("Call notification connection closed")
         this.connectionInitialized = false // Reset flag on connection close
         // Only attempt reconnection from main window
         if (this.isMainWindow) {
@@ -535,9 +533,6 @@ class CallNotificationClient {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
       setTimeout(() => {
-        console.log(
-          `Reconnecting to call notifications... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`,
-        )
         this.connect()
       }, this.reconnectDelay * this.reconnectAttempts)
     }

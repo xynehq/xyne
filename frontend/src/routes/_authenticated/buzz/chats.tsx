@@ -109,13 +109,6 @@ function BuzzChats() {
     targetUserId: string,
     callType: CallType = CallType.Video,
   ) => {
-    console.log(
-      "Initiating call with targetUserId:",
-      targetUserId,
-      "callType:",
-      callType,
-    )
-
     if (!targetUserId) {
       toast({
         title: "Error",

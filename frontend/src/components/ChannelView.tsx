@@ -727,8 +727,6 @@ export default function ChannelView({
   // Handle typing indicator
   const handleTyping = (isTyping: boolean) => {
     // In a real implementation, you'd send this to the server
-    // For now, we'll just log it
-    console.log("User is typing:", isTyping)
   }
 
   // Load messages and set up real-time subscriptions

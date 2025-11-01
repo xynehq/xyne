@@ -66,7 +66,6 @@ class RealtimeMessagingService extends EventEmitter {
   // Register user's WebSocket connection
   registerUser(userId: string, ws: WSContext<ServerWebSocket>) {
     this.activeConnections.set(userId, ws)
-    console.log(`User ${userId} connected for real-time messaging`)
 
     // Note: Connection cleanup is handled by the WebSocket upgrade handler
   }
@@ -75,9 +74,6 @@ class RealtimeMessagingService extends EventEmitter {
   removeUser(userId: string) {
     const wasConnected = this.activeConnections.has(userId)
     this.activeConnections.delete(userId)
-    if (wasConnected) {
-      console.log(`User ${userId} disconnected from real-time messaging`)
-    }
   }
 
   // Check if user is online
@@ -99,9 +95,6 @@ class RealtimeMessagingService extends EventEmitter {
       return true
     }
 
-    console.log(
-      `Target user ${notification.target.id} is not connected for real-time notifications`,
-    )
     return false
   }
 
@@ -137,9 +130,6 @@ class RealtimeMessagingService extends EventEmitter {
       return true
     }
 
-    console.log(
-      `Target user ${targetUserId} is not connected for real-time messages`,
-    )
     return false
   }
 
@@ -213,9 +203,6 @@ class RealtimeMessagingService extends EventEmitter {
       }
     }
 
-    console.log(
-      `Channel message sent to ${sentCount}/${memberUserIds.length} online members`,
-    )
     return sentCount
   }
 

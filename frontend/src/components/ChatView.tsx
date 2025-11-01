@@ -372,11 +372,6 @@ export default function ChatView({
     setLoading(true)
     setIsInitialLoad(true)
     try {
-      console.log(
-        "[ChatView] Fetching initial conversation for user:",
-        targetUser.id,
-      )
-
       const response = await api.messages.conversation.$get({
         query: {
           targetUserId: targetUser.id,
@@ -386,13 +381,6 @@ export default function ChatView({
 
       if (response.ok) {
         const data = await response.json()
-        console.log("[ChatView] Initial load response:", {
-          messageCount: data.messages?.length || 0,
-          hasMore: data.responseMetadata?.hasMore,
-          nextCursor: data.responseMetadata?.nextCursor,
-          firstMessageId: data.messages?.[0]?.id,
-          lastMessageId: data.messages?.[data.messages?.length - 1]?.id,
-        })
 
         setMessages(data.messages || [])
         setNextCursor(data.responseMetadata?.nextCursor || "")
@@ -423,8 +411,6 @@ export default function ChatView({
   const loadMoreMessages = async () => {
     if (!hasMore || loadingMore || !nextCursor || loading) return
 
-    console.log("[ChatView] Loading more messages with cursor:", nextCursor)
-
     // Save current scroll position and first message to maintain smooth scroll
     const container = messageContainerRef.current
     if (!container) return
@@ -444,14 +430,6 @@ export default function ChatView({
 
       if (response.ok) {
         const data = await response.json()
-
-        console.log("[ChatView] Load more response:", {
-          messageCount: data.messages?.length || 0,
-          hasMore: data.responseMetadata?.hasMore,
-          nextCursor: data.responseMetadata?.nextCursor,
-          firstMessageId: data.messages?.[0]?.id,
-          lastMessageId: data.messages?.[data.messages?.length - 1]?.id,
-        })
 
         // Prepend older messages to the beginning of the list
         setMessages((prev) => [...(data.messages || []), ...prev])

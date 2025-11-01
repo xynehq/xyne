@@ -212,14 +212,6 @@ export const GetConversationApi = async (c: Context) => {
       cursor,
     })
 
-    // Log pagination parameters for debugging
-    console.log("[GetConversation] Pagination params:", {
-      targetUserId: validatedData.targetUserId,
-      limit: validatedData.limit,
-      cursor: validatedData.cursor,
-      cursorProvided: !!validatedData.cursor,
-    })
-
     // Get current user info
     const currentUsers = await getUserByEmail(db, userEmail)
     if (!currentUsers || currentUsers.length === 0) {
@@ -249,7 +241,6 @@ export const GetConversationApi = async (c: Context) => {
     let cursorId: number | null = null
     if (validatedData.cursor) {
       cursorId = decodeCursor(validatedData.cursor)
-      console.log("[GetConversation] Decoded cursor ID:", cursorId)
       if (cursorId === null) {
         throw new HTTPException(400, { message: "invalid_cursor" })
       }
@@ -257,11 +248,6 @@ export const GetConversationApi = async (c: Context) => {
 
     // Fetch limit + 1 to determine if there are more results
     const fetchLimit = validatedData.limit + 1
-    console.log(
-      "[GetConversation] Fetching messages with limit:",
-      fetchLimit,
-      "(limit + 1)",
-    )
 
     // Build the where clause
     const conversationCondition = and(
@@ -319,23 +305,11 @@ export const GetConversationApi = async (c: Context) => {
     const hasMore = messages.length > validatedData.limit
     const messagesToReturn = hasMore ? messages.slice(0, -1) : messages
 
-    console.log("[GetConversation] Query results:", {
-      fetchedCount: messages.length,
-      returningCount: messagesToReturn.length,
-      hasMore,
-      firstMessageId: messagesToReturn[0]?.id,
-      lastMessageId: messagesToReturn[messagesToReturn.length - 1]?.id,
-    })
-
     // Generate next cursor from the last (oldest) message's ID
     let nextCursor = ""
     if (hasMore && messagesToReturn.length > 0) {
       const oldestMessage = messagesToReturn[messagesToReturn.length - 1]
       nextCursor = encodeCursor(oldestMessage.id)
-      console.log("[GetConversation] Next cursor generated:", {
-        messageId: oldestMessage.id,
-        encodedCursor: nextCursor,
-      })
     }
 
     // Reverse the messages to display oldest to newest (bottom to top in chat UI)
