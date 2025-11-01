@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import BuzzChatBox from "./BuzzChatBox"
 import { ConfirmModal } from "./ui/confirmModal"
+import { MentionPill } from "@/components/MentionPill"
 import { CallType } from "@/types"
 import { cn } from "@/lib/utils"
 import type { Channel, ChannelMessage, LexicalEditorState } from "@/types"
@@ -46,6 +47,7 @@ interface ChannelViewProps {
   onInitiateCall: (channelId: number, callType: CallType) => void
   onOpenSettings: (channelId: number) => void
   onOpenMembers: (channelId: number) => void
+  onSwitchToUser?: (userId: string) => void
 }
 
 const MAX_MESSAGE_LENGTH = 10000
@@ -101,16 +103,16 @@ function RenderLexicalContent({
         )
       }
 
-      // Regular user mention
+      // Regular user mention - use MentionPill for hover functionality
       if (node.mentionUser) {
         return (
-          <span
+          <MentionPill
             key={index}
-            className="inline-flex items-center bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-medium cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800"
-            onClick={() => onMentionMessage?.(node.mentionUser.id)}
-          >
-            @{node.mentionUser.name}
-          </span>
+            user={node.mentionUser}
+            onMessage={onMentionMessage}
+            onCall={onMentionCall}
+            currentUserId={currentUserId}
+          />
         )
       }
     }
@@ -213,6 +215,7 @@ export default function ChannelView({
   onInitiateCall,
   onOpenSettings,
   onOpenMembers,
+  onSwitchToUser,
 }: ChannelViewProps) {
   const [messages, setMessages] = useState<ChannelMessage[]>([])
   const [loading, setLoading] = useState(true)
@@ -233,6 +236,9 @@ export default function ChannelView({
   })
   const [pinnedMessages, setPinnedMessages] = useState<ChannelMessage[]>([])
   const [showPinnedMessages, setShowPinnedMessages] = useState(false)
+  const [memberCount, setMemberCount] = useState<number>(
+    channel.memberCount || 0,
+  )
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageContainerRef = useRef<HTMLDivElement>(null)
@@ -272,6 +278,31 @@ export default function ChannelView({
       console.error("Error checking mentions:", error)
       return false
     }
+  }
+
+  // Handle mention message action
+  const handleMentionMessage = async (userId: string) => {
+    // Call the parent callback to switch to DM with user
+    if (onSwitchToUser) {
+      onSwitchToUser(userId)
+    } else {
+      // Fallback: show toast
+      toast({
+        title: "Info",
+        description: "Message feature requires navigation support",
+      })
+    }
+  }
+
+  // Handle mention call action
+  const handleMentionCall = (userId: string, callType: CallType) => {
+    // For channels, we can't directly call a user's ID
+    // We would need to initiate a direct call
+    toast({
+      title: "Info",
+      description:
+        "Call feature is not yet implemented for mentions in channels",
+    })
   }
 
   // Scroll to bottom
@@ -648,6 +679,22 @@ export default function ChannelView({
     setEditingContent(null)
   }
 
+  // Fetch member count
+  const fetchMemberCount = async () => {
+    try {
+      const response = await api.channels.members.$get({
+        query: { channelId: channel.id.toString() },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setMemberCount(data.members?.length || 0)
+      }
+    } catch (error) {
+      console.error("Failed to fetch member count:", error)
+    }
+  }
+
   // Handle typing indicator
   const handleTyping = (isTyping: boolean) => {
     // In a real implementation, you'd send this to the server
@@ -663,6 +710,7 @@ export default function ChannelView({
     setHasMore(true) // Reset pagination flag
     fetchMessages()
     fetchPinnedMessages()
+    fetchMemberCount()
 
     // Subscribe to channel messages
     const unsubscribeMessage = callNotificationClient.onChannelMessage(
@@ -815,7 +863,7 @@ export default function ChannelView({
             className="flex items-center gap-2"
           >
             <Users className="h-4 w-4" />
-            <span>Members</span>
+            <span>{memberCount}</span>
           </Button>
 
           {/* Call Button - Audio only for channels */}
@@ -860,7 +908,12 @@ export default function ChannelView({
                     className="text-sm text-gray-700 dark:text-gray-300"
                   >
                     <span className="font-medium">{msg.sender.name}: </span>
-                    <RenderLexicalContent content={msg.messageContent} />
+                    <RenderLexicalContent
+                      content={msg.messageContent}
+                      onMentionMessage={handleMentionMessage}
+                      onMentionCall={handleMentionCall}
+                      currentUserId={currentUser.id}
+                    />
                   </div>
                 ))}
               </div>
@@ -1006,6 +1059,8 @@ export default function ChannelView({
                         <div className="text-[15px] text-gray-800 dark:text-gray-200 break-words leading-[22px]">
                           <RenderLexicalContent
                             content={message.messageContent}
+                            onMentionMessage={handleMentionMessage}
+                            onMentionCall={handleMentionCall}
                             currentUserId={currentUser.id}
                           />
                         </div>

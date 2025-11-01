@@ -677,6 +677,12 @@ export default function ChatView({
     // Subscribe to real-time messages
     const unsubscribeMessage = callNotificationClient.onDirectMessage(
       (message) => {
+        // Skip WebSocket messages when chatting with yourself (already added optimistically)
+        const isSelfChat = currentUser.id === targetUser.id
+        if (isSelfChat) {
+          return
+        }
+
         // Only add message if it's from the target user we're chatting with
         if (message.sender.id === targetUser.id) {
           setMessages((prev) => [

@@ -102,7 +102,7 @@ function BuzzChannels() {
   // Handle channel updated (settings changed, archived, etc.)
   const handleChannelUpdated = () => {
     setRefreshKey((prev) => prev + 1)
-    
+
     // Refresh current channel data if one is selected
     if (selectedChannel) {
       fetchChannelData(selectedChannel.id)
@@ -137,14 +137,17 @@ function BuzzChannels() {
     }
   }
 
+  // Handle switching to user DM
+  const handleSwitchToUser = (userId: string) => {
+    // Navigate to the chats page with the selected user
+    window.location.href = `/buzz/chats?userId=${userId}`
+  }
+
   // Handle call initiation for channels
-  const initiateCall = async (
-    channelId: number,
-    callType: CallType,
-  ) => {
+  const initiateCall = async (channelId: number, callType: CallType) => {
     try {
       const response = await api.calls.initiate.$post({
-        json: { 
+        json: {
           callType,
           channelId,
         },
@@ -219,6 +222,7 @@ function BuzzChannels() {
             onInitiateCall={initiateCall}
             onOpenSettings={() => setShowSettingsModal(true)}
             onOpenMembers={() => setShowMembersModal(true)}
+            onSwitchToUser={handleSwitchToUser}
           />
         </div>
       ) : (
