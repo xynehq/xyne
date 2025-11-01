@@ -22,6 +22,12 @@ import { callNotificationClient } from "@/services/callNotifications"
 import { CallType, LexicalEditorState } from "@/types"
 import BuzzChatBox from "@/components/BuzzChatBox"
 import { MentionPill } from "@/components/MentionPill"
+import {
+  formatDateSeparator,
+  shouldShowDateSeparator,
+  shouldShowHeader,
+  isContentEqual,
+} from "@/utils/messageHelpers"
 
 interface User {
   id: string
@@ -246,48 +252,6 @@ export default function ChatView({
   // Handle mention call action
   const handleMentionCall = (userId: string, callType: CallType) => {
     onInitiateCall(userId, callType)
-  }
-
-  // Helper function to extract plain text from Lexical content for comparison
-  const extractTextContent = (content: LexicalEditorState): string => {
-    try {
-      const extractText = (node: any): string => {
-        if (!node) return ""
-        if (node.text) return node.text
-        if (node.type === "mention" && node.mentionUser) {
-          return `@${node.mentionUser.name || "unknown"}`
-        }
-        if (node.children && Array.isArray(node.children)) {
-          return node.children.map((child: any) => extractText(child)).join("")
-        }
-        return ""
-      }
-      return content.root.children.map(extractText).join("\n").trim()
-    } catch (error) {
-      console.error("Error extracting text content:", error)
-      return ""
-    }
-  }
-
-  // Helper function to compare Lexical editor states by text content
-  const isContentEqual = (
-    content1: LexicalEditorState,
-    content2: LexicalEditorState,
-  ): boolean => {
-    try {
-      // First try exact JSON comparison for perfect match
-      const str1 = JSON.stringify(content1)
-      const str2 = JSON.stringify(content2)
-      if (str1 === str2) return true
-
-      // If JSON doesn't match, compare by text content
-      const text1 = extractTextContent(content1)
-      const text2 = extractTextContent(content2)
-      return text1 === text2
-    } catch (error) {
-      console.error("Error comparing content:", error)
-      return false
-    }
   }
 
   // Scroll to bottom naturally by setting scrollTop to scrollHeight
@@ -705,6 +669,9 @@ export default function ChatView({
   // Load conversation on mount or when target user changes
   useEffect(() => {
     setIsInitialLoad(true) // Reset initial load flag when switching users
+    setMessages([]) // Clear messages when switching users
+    setNextCursor("") // Reset pagination cursor
+    setHasMore(true) // Reset pagination flag
     fetchConversation()
 
     // Subscribe to real-time messages
@@ -764,22 +731,13 @@ export default function ChatView({
   // Format timestamp
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp)
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  }
-
-  // Check if message should show header (avatar + username)
-  const shouldShowHeader = (
-    currentMsg: Message,
-    prevMsg: Message | null,
-  ): boolean => {
-    if (!prevMsg) return true
-    // Show header if different sender
-    if (prevMsg.sentByUserId !== currentMsg.sentByUserId) return true
-    // Show header if more than 5 minutes apart
-    const timeDiff =
-      new Date(currentMsg.createdAt).getTime() -
-      new Date(prevMsg.createdAt).getTime()
-    return timeDiff > 5 * 60 * 1000 // 5 minutes
+    return date
+      .toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+      .toUpperCase()
   }
 
   // Check if chatting with yourself
@@ -880,127 +838,149 @@ export default function ChatView({
             {messages.map((message, index) => {
               const prevMessage = index > 0 ? messages[index - 1] : null
               const showHeader = shouldShowHeader(message, prevMessage)
+              const showDateSeparator = shouldShowDateSeparator(
+                message,
+                prevMessage,
+              )
 
               return (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6 transition-colors duration-150",
-                    showHeader ? "py-0.5 mt-2" : "py-0",
-                    message.isMine &&
-                      "hover:bg-blue-50/30 dark:hover:bg-blue-900/10",
-                  )}
-                >
-                  <div className="flex gap-3 items-start">
-                    {/* Avatar - only show for first message in group */}
-                    {showHeader ? (
-                      <div className="flex-shrink-0 w-9 h-9">
-                        {message.sender.photoLink ? (
-                          <img
-                            src={`/api/v1/proxy/${encodeURIComponent(message.sender.photoLink)}`}
-                            alt={message.sender.name}
-                            className="w-9 h-9 rounded-md"
-                          />
-                        ) : (
-                          <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                              {message.sender.name.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                        )}
+                <div key={message.id}>
+                  {/* Date Separator */}
+                  {showDateSeparator && (
+                    <div className="relative flex items-center justify-center my-6">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
                       </div>
-                    ) : (
-                      <div className="flex-shrink-0 w-9 h-9 flex items-center justify-center">
-                        <span className="text-[10px] text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {formatTime(message.createdAt)}
+                      <div className="relative px-4 bg-white dark:bg-[#1E1E1E]">
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                          {formatDateSeparator(message.createdAt)}
                         </span>
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    <div className="flex-1 min-w-0">
-                      {/* Header - username and timestamp */}
-                      {showHeader && (
-                        <div className="flex items-center gap-2 mb-0.5 leading-none">
-                          <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 leading-none">
-                            {message.sender.name}
-                          </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400 leading-none">
+                  {/* Message */}
+                  <div
+                    className={cn(
+                      "group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6 transition-colors duration-150",
+                      showHeader ? "py-0.5 mt-2" : "py-0",
+                      message.isMine &&
+                        "hover:bg-blue-50/30 dark:hover:bg-blue-900/10",
+                    )}
+                  >
+                    <div className="flex gap-3 items-start">
+                      {/* Avatar - only show for first message in group */}
+                      {showHeader ? (
+                        <div className="flex-shrink-0 w-9 h-9">
+                          {message.sender.photoLink ? (
+                            <img
+                              src={`/api/v1/proxy/${encodeURIComponent(message.sender.photoLink)}`}
+                              alt={message.sender.name}
+                              className="w-9 h-9 rounded-md"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                              <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                                {message.sender.name.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex-shrink-0 w-9 h-9 flex items-center justify-center">
+                          <span className="text-[10px] text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                             {formatTime(message.createdAt)}
                           </span>
                         </div>
                       )}
 
-                      {/* Message content */}
-                      {editingMessageId === message.id ? (
-                        <div className="mt-1">
-                          <BuzzChatBox
-                            key={`edit-${message.id}`}
-                            onSend={(newContent) => {
-                              handleEditMessage(message.id, newContent)
-                            }}
-                            onTyping={() => {}}
-                            placeholder="Edit your message..."
-                            disabled={false}
-                            initialContent={editingContent || undefined}
-                          />
-                          <div className="flex gap-2 mt-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={cancelEditing}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-[15px] text-gray-900 dark:text-gray-100 break-words leading-relaxed">
-                          <RenderLexicalContent
-                            content={message.messageContent}
-                            onMentionMessage={handleMentionMessage}
-                            onMentionCall={handleMentionCall}
-                            currentUserId={currentUser.id}
-                          />
-                          {message.isEdited && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
-                              (edited)
+                      <div className="flex-1 min-w-0">
+                        {/* Header - username and timestamp */}
+                        {showHeader && (
+                          <div className="flex items-center gap-2 mb-0.5 leading-none">
+                            <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 leading-none">
+                              {message.sender.name}
                             </span>
-                          )}
+                            <span className="text-xs text-gray-500 dark:text-gray-400 leading-none whitespace-nowrap">
+                              {formatTime(message.createdAt)}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Message content */}
+                        {editingMessageId === message.id ? (
+                          <div className="mt-1">
+                            <BuzzChatBox
+                              key={`edit-${message.id}`}
+                              onSend={(newContent) => {
+                                handleEditMessage(message.id, newContent)
+                              }}
+                              onTyping={() => {}}
+                              placeholder="Edit your message..."
+                              disabled={false}
+                              initialContent={editingContent || undefined}
+                            />
+                            <div className="flex gap-2 mt-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={cancelEditing}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-[15px] text-gray-900 dark:text-gray-100 break-words leading-relaxed">
+                            <RenderLexicalContent
+                              content={message.messageContent}
+                              onMentionMessage={handleMentionMessage}
+                              onMentionCall={handleMentionCall}
+                              currentUserId={currentUser.id}
+                            />
+                            {message.isEdited && (
+                              <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                                (edited)
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Three-dot menu - only show for own messages */}
+                      {message.isMine && editingMessageId !== message.id && (
+                        <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-all duration-200 hover:shadow-sm border border-transparent hover:border-gray-300 dark:hover:border-gray-600"
+                              >
+                                <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => startEditingMessage(message)}
+                              >
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit message
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  showDeleteConfirmation(message.id)
+                                }
+                                className="text-red-600 focus:text-red-600"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete message
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       )}
                     </div>
-
-                    {/* Three-dot menu - only show for own messages */}
-                    {message.isMine && editingMessageId !== message.id && (
-                      <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 ease-in-out">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-all duration-200 hover:shadow-sm border border-transparent hover:border-gray-300 dark:hover:border-gray-600"
-                            >
-                              <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => startEditingMessage(message)}
-                            >
-                              <Pencil className="h-4 w-4 mr-2" />
-                              Edit message
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => showDeleteConfirmation(message.id)}
-                              className="text-red-600 focus:text-red-600"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete message
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    )}
                   </div>
                 </div>
               )

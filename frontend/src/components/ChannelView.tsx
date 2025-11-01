@@ -25,6 +25,13 @@ import { ConfirmModal } from "./ui/confirmModal"
 import { CallType } from "@/types"
 import { cn } from "@/lib/utils"
 import type { Channel, ChannelMessage, LexicalEditorState } from "@/types"
+import {
+  formatDateSeparator,
+  shouldShowDateSeparator,
+  extractTextContent,
+  shouldShowHeader,
+  isContentEqual,
+} from "@/utils/messageHelpers"
 
 interface User {
   id: string
@@ -263,45 +270,6 @@ export default function ChannelView({
       return content.root.children.some(checkNode)
     } catch (error) {
       console.error("Error checking mentions:", error)
-      return false
-    }
-  }
-
-  // Helper to compare Lexical content
-  const extractTextContent = (content: LexicalEditorState): string => {
-    try {
-      const extractText = (node: any): string => {
-        if (!node) return ""
-        if (node.text) return node.text
-        if (node.type === "mention" && node.mentionUser) {
-          return `@${node.mentionUser.name}`
-        }
-        if (node.children && Array.isArray(node.children)) {
-          return node.children.map(extractText).join("")
-        }
-        return ""
-      }
-      return content.root.children.map(extractText).join("\n").trim()
-    } catch (error) {
-      console.error("Error extracting text content:", error)
-      return ""
-    }
-  }
-
-  const isContentEqual = (
-    content1: LexicalEditorState,
-    content2: LexicalEditorState,
-  ): boolean => {
-    try {
-      const str1 = JSON.stringify(content1)
-      const str2 = JSON.stringify(content2)
-      if (str1 === str2) return true
-
-      const text1 = extractTextContent(content1)
-      const text2 = extractTextContent(content2)
-      return text1 === text2
-    } catch (error) {
-      console.error("Error comparing content:", error)
       return false
     }
   }
@@ -690,6 +658,9 @@ export default function ChannelView({
   // Load messages and set up real-time subscriptions
   useEffect(() => {
     setIsInitialLoad(true)
+    setMessages([]) // Clear messages when switching channels
+    setNextCursor("") // Reset pagination cursor
+    setHasMore(true) // Reset pagination flag
     fetchMessages()
     fetchPinnedMessages()
 
@@ -787,20 +758,13 @@ export default function ChannelView({
   // Format timestamp
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp)
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  }
-
-  // Check if message should show header
-  const shouldShowHeader = (
-    currentMsg: ChannelMessage,
-    prevMsg: ChannelMessage | null,
-  ): boolean => {
-    if (!prevMsg) return true
-    if (prevMsg.sender.id !== currentMsg.sender.id) return true
-    const timeDiff =
-      new Date(currentMsg.createdAt).getTime() -
-      new Date(prevMsg.createdAt).getTime()
-    return timeDiff > 5 * 60 * 1000 // 5 minutes
+    return date
+      .toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+      .toUpperCase()
   }
 
   // Check if user can manage messages (owner or admin)
@@ -946,111 +910,142 @@ export default function ChannelView({
             {messages.map((message, index) => {
               const prevMessage = index > 0 ? messages[index - 1] : null
               const showHeader = shouldShowHeader(message, prevMessage)
+              const showDateSeparator = shouldShowDateSeparator(
+                message,
+                prevMessage,
+              )
               const isMine = message.sender.id === currentUser.id
               const isEditing = editingMessageId === message.id
 
               return (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "group -mx-6 px-6 py-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 flex gap-3",
-                    showHeader ? "mt-4" : "mt-0.5",
+                <div key={message.id}>
+                  {/* Date Separator */}
+                  {showDateSeparator && (
+                    <div className="relative flex items-center justify-center my-6">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
+                      </div>
+                      <div className="relative px-4 bg-white dark:bg-[#232323]">
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                          {formatDateSeparator(message.createdAt)}
+                        </span>
+                      </div>
+                    </div>
                   )}
-                >
-                  {/* Avatar (only show if header is shown) */}
-                  <div className="flex-shrink-0">
-                    {showHeader ? (
-                      message.sender.photoLink ? (
-                        <img
-                          src={`/api/v1/proxy/${encodeURIComponent(message.sender.photoLink)}`}
-                          alt={message.sender.name}
-                          className="w-9 h-9 rounded-md"
-                        />
+
+                  {/* Message */}
+                  <div
+                    className={cn(
+                      "group -mx-6 px-6 py-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 flex gap-3 items-start",
+                      showHeader ? "mt-4" : "mt-0.5",
+                    )}
+                  >
+                    {/* Avatar (only show if header is shown) */}
+                    <div className="flex-shrink-0">
+                      {showHeader ? (
+                        message.sender.photoLink ? (
+                          <img
+                            src={`/api/v1/proxy/${encodeURIComponent(message.sender.photoLink)}`}
+                            alt={message.sender.name}
+                            className="w-9 h-9 rounded-md"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-700 flex items-center justify-center">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                              {message.sender.name.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                        )
                       ) : (
-                        <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-700 flex items-center justify-center">
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                            {message.sender.name.charAt(0).toUpperCase()}
+                        <div className="w-9 h-9 flex items-center justify-center">
+                          <span className="text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                            {formatTime(message.createdAt)}
                           </span>
                         </div>
-                      )
-                    ) : (
-                      <div className="w-9 h-9 flex items-center justify-center">
-                        <span className="text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {formatTime(message.createdAt)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
 
-                  {/* Message Content */}
-                  <div className="flex-1 min-w-0">
-                    {showHeader && (
-                      <div className="flex items-baseline gap-2 mb-0.5">
-                        <span className="font-semibold text-[15px] text-gray-900 dark:text-gray-100">
-                          {message.sender.name}
-                        </span>
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                          {formatTime(message.createdAt)}
-                        </span>
-                        {message.isEdited && (
-                          <span className="text-[11px] text-gray-400 dark:text-gray-500">
-                            (edited)
+                    {/* Message Content */}
+                    <div className="flex-1 min-w-0">
+                      {showHeader && (
+                        <div className="flex items-baseline gap-2 mb-0.5">
+                          <span className="font-semibold text-[15px] text-gray-900 dark:text-gray-100">
+                            {message.sender.name}
                           </span>
-                        )}
-                        {message.isPinned && (
-                          <Pin className="h-3 w-3 text-blue-600 dark:text-blue-400" />
-                        )}
-                      </div>
-                    )}
-
-                    {isEditing ? (
-                      <div className="mt-2">
-                        <BuzzChatBox
-                          initialContent={editingContent || undefined}
-                          onSend={(content) =>
-                            handleEditMessage(message.id, content)
-                          }
-                          placeholder="Edit message..."
-                          disabled={false}
-                        />
-                        <div className="flex gap-2 mt-2">
-                          <Button size="sm" onClick={cancelEditing}>
-                            Cancel
-                          </Button>
+                          <span className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                            {formatTime(message.createdAt)}
+                          </span>
+                          {message.isEdited && (
+                            <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                              (edited)
+                            </span>
+                          )}
+                          {message.isPinned && (
+                            <Pin className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                          )}
                         </div>
-                      </div>
-                    ) : (
-                      <div className="text-[15px] text-gray-800 dark:text-gray-200 break-words leading-[22px]">
-                        <RenderLexicalContent
-                          content={message.messageContent}
-                          currentUserId={currentUser.id}
-                        />
-                      </div>
-                    )}
-                  </div>
+                      )}
 
-                  {/* Message Actions Dropdown (show on hover) */}
-                  {!isEditing && (
-                    <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {isMine && (
-                            <>
-                              <DropdownMenuItem
-                                onClick={() => startEditingMessage(message)}
-                              >
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Edit message
-                              </DropdownMenuItem>
+                      {isEditing ? (
+                        <div className="mt-2">
+                          <BuzzChatBox
+                            initialContent={editingContent || undefined}
+                            onSend={(content) =>
+                              handleEditMessage(message.id, content)
+                            }
+                            placeholder="Edit message..."
+                            disabled={false}
+                          />
+                          <div className="flex gap-2 mt-2">
+                            <Button size="sm" onClick={cancelEditing}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[15px] text-gray-800 dark:text-gray-200 break-words leading-[22px]">
+                          <RenderLexicalContent
+                            content={message.messageContent}
+                            currentUserId={currentUser.id}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Message Actions Dropdown (show on hover) */}
+                    {!isEditing && (
+                      <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {isMine && (
+                              <>
+                                <DropdownMenuItem
+                                  onClick={() => startEditingMessage(message)}
+                                >
+                                  <Pencil className="h-4 w-4 mr-2" />
+                                  Edit message
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    showDeleteConfirmation(message.id)
+                                  }
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete message
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {canManageMessages && !isMine && (
                               <DropdownMenuItem
                                 onClick={() =>
                                   showDeleteConfirmation(message.id)
@@ -1060,30 +1055,23 @@ export default function ChannelView({
                                 <Trash2 className="h-4 w-4 mr-2" />
                                 Delete message
                               </DropdownMenuItem>
-                            </>
-                          )}
-                          {canManageMessages && !isMine && (
+                            )}
+                            {/* Pin option available to everyone */}
                             <DropdownMenuItem
-                              onClick={() => showDeleteConfirmation(message.id)}
-                              className="text-red-600"
+                              onClick={() =>
+                                handleTogglePin(message.id, message.isPinned)
+                              }
                             >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete message
+                              <Pin className="h-4 w-4 mr-2" />
+                              {message.isPinned
+                                ? "Unpin message"
+                                : "Pin message"}
                             </DropdownMenuItem>
-                          )}
-                          {/* Pin option available to everyone */}
-                          <DropdownMenuItem
-                            onClick={() =>
-                              handleTogglePin(message.id, message.isPinned)
-                            }
-                          >
-                            <Pin className="h-4 w-4 mr-2" />
-                            {message.isPinned ? "Unpin message" : "Pin message"}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )
             })}
