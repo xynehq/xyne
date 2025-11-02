@@ -334,6 +334,139 @@ class RealtimeMessagingService extends EventEmitter {
 
     return false
   }
+
+  // Send direct message edit notification
+  sendDirectMessageEdit(
+    targetUserId: string,
+    messageId: number,
+    messageContent: any,
+    updatedAt: Date,
+  ) {
+    const userWs = this.activeConnections.get(targetUserId)
+
+    if (userWs) {
+      try {
+        userWs.send(
+          JSON.stringify({
+            type: "direct_message_edit",
+            data: {
+              messageId,
+              messageContent,
+              isEdited: true,
+              updatedAt,
+            },
+          }),
+        )
+        return true
+      } catch (error) {
+        console.error(
+          `Failed to send message edit notification to user ${targetUserId}:`,
+          error,
+        )
+      }
+    }
+
+    return false
+  }
+
+  // Send direct message delete notification
+  sendDirectMessageDelete(targetUserId: string, messageId: number) {
+    const userWs = this.activeConnections.get(targetUserId)
+
+    if (userWs) {
+      try {
+        userWs.send(
+          JSON.stringify({
+            type: "direct_message_delete",
+            data: {
+              messageId,
+            },
+          }),
+        )
+        return true
+      } catch (error) {
+        console.error(
+          `Failed to send message delete notification to user ${targetUserId}:`,
+          error,
+        )
+      }
+    }
+
+    return false
+  }
+
+  // Send channel message edit notification to all members
+  sendChannelMessageEdit(
+    memberUserIds: string[],
+    channelId: number,
+    messageId: number,
+    messageContent: any,
+    updatedAt: Date,
+  ) {
+    let sentCount = 0
+
+    for (const userId of memberUserIds) {
+      const userWs = this.activeConnections.get(userId)
+      if (userWs) {
+        try {
+          userWs.send(
+            JSON.stringify({
+              type: "channel_message_edit",
+              data: {
+                channelId,
+                messageId,
+                messageContent,
+                isEdited: true,
+                updatedAt,
+              },
+            }),
+          )
+          sentCount++
+        } catch (error) {
+          console.error(
+            `Failed to send channel message edit to user ${userId}:`,
+            error,
+          )
+        }
+      }
+    }
+
+    return sentCount
+  }
+
+  // Send channel message delete notification to all members
+  sendChannelMessageDelete(
+    memberUserIds: string[],
+    channelId: number,
+    messageId: number,
+  ) {
+    let sentCount = 0
+
+    for (const userId of memberUserIds) {
+      const userWs = this.activeConnections.get(userId)
+      if (userWs) {
+        try {
+          userWs.send(
+            JSON.stringify({
+              type: "channel_message_delete",
+              data: {
+                channelId,
+                messageId,
+              },
+            }),
+          )
+          sentCount++
+        } catch (error) {
+          console.error(
+            `Failed to send channel message delete to user ${userId}:`,
+            error,
+          )
+        }
+      }
+    }
+
+    return sentCount
+  }
 }
 
 // Export both the new service and maintain backward compatibility

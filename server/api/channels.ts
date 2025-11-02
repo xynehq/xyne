@@ -880,6 +880,13 @@ export const JoinChannelApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Channel not found" })
     }
 
+    // SECURITY: Verify channel belongs to user's workspace
+    if (channel.workspaceId !== currentUser.workspaceId) {
+      throw new HTTPException(403, {
+        message: "You do not have access to this channel",
+      })
+    }
+
     if (channel.isArchived) {
       throw new HTTPException(400, { message: "Cannot join archived channel" })
     }
@@ -1597,7 +1604,7 @@ export const GetChannelMessagesApi = async (c: Context) => {
 
     let repliersMap = new Map<
       number,
-      Array<{ name: string; photoLink: string | null }>
+      Array<{ userId: number; name: string; photoLink: string | null }>
     >()
 
     if (threadIds.length > 0) {
@@ -1628,14 +1635,15 @@ export const GetChannelMessagesApi = async (c: Context) => {
         }
         const threadRepliers = repliersMap.get(reply.threadId)!
 
-        // Check if this sender is already in the list
+        // Check if this sender is already in the list (by userId, not name)
         const alreadyAdded = threadRepliers.some(
-          (r) => r.name === reply.senderName,
+          (r) => r.userId === reply.senderId,
         )
 
         // Add if not already added and we haven't reached the limit of 3
         if (!alreadyAdded && threadRepliers.length < 3) {
           threadRepliers.push({
+            userId: reply.senderId,
             name: reply.senderName,
             photoLink: reply.senderPhotoLink,
           })
@@ -1662,7 +1670,14 @@ export const GetChannelMessagesApi = async (c: Context) => {
         threadId: msg.threadId,
         replyCount: msg.replyCount || 0,
         lastReplyAt: msg.lastReplyAt,
-        repliers: msg.threadId ? repliersMap.get(msg.threadId) || [] : [],
+        repliers: msg.threadId
+          ? (repliersMap.get(msg.threadId) || []).map(
+              ({ name, photoLink }) => ({
+                name,
+                photoLink,
+              }),
+            )
+          : [],
       })),
       responseMetadata: {
         hasMore,
@@ -1736,6 +1751,31 @@ export const EditChannelMessageApi = async (c: Context) => {
       messageId: updatedMessage.id,
       userId: currentUser.externalId,
     })
+
+    // Get all channel members to send real-time notifications
+    const members = await db
+      .select({
+        userId: channelMembers.userId,
+        externalId: users.externalId,
+      })
+      .from(channelMembers)
+      .innerJoin(users, eq(channelMembers.userId, users.id))
+      .where(eq(channelMembers.channelId, message.channelId))
+
+    // Send real-time notification to all channel members except the sender
+    const memberExternalIds = members
+      .filter((m) => m.userId !== currentUser.id)
+      .map((m) => m.externalId)
+
+    if (memberExternalIds.length > 0) {
+      realtimeMessagingService.sendChannelMessageEdit(
+        memberExternalIds,
+        message.channelId,
+        updatedMessage.id,
+        updatedMessage.messageContent,
+        updatedMessage.updatedAt,
+      )
+    }
 
     return c.json({
       success: true,
@@ -1816,6 +1856,29 @@ export const DeleteChannelMessageApi = async (c: Context) => {
       messageId: validatedData.messageId,
       userId: currentUser.externalId,
     })
+
+    // Get all channel members to send real-time notifications
+    const members = await db
+      .select({
+        userId: channelMembers.userId,
+        externalId: users.externalId,
+      })
+      .from(channelMembers)
+      .innerJoin(users, eq(channelMembers.userId, users.id))
+      .where(eq(channelMembers.channelId, message.channelId))
+
+    // Send real-time notification to all channel members except the sender
+    const memberExternalIds = members
+      .filter((m) => m.userId !== currentUser.id)
+      .map((m) => m.externalId)
+
+    if (memberExternalIds.length > 0) {
+      realtimeMessagingService.sendChannelMessageDelete(
+        memberExternalIds,
+        message.channelId,
+        validatedData.messageId,
+      )
+    }
 
     return c.json({
       success: true,

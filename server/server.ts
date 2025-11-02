@@ -1221,11 +1221,6 @@ export const AppRoutes = app
   )
   // Channel routes
   .post("/channels", zValidator("json", createChannelSchema), CreateChannelApi)
-  .post(
-    "/channels/create",
-    zValidator("json", createChannelSchema),
-    CreateChannelApi,
-  )
   .put(
     "/channels/update",
     zValidator("json", updateChannelSchema),

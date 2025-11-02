@@ -22,8 +22,8 @@ import { cn } from "@/lib/utils"
 import { callNotificationClient } from "@/services/callNotifications"
 import { CallType, LexicalEditorState } from "@/types"
 import BuzzChatBox from "@/components/BuzzChatBox"
-import { MentionPill } from "@/components/MentionPill"
 import ThreadPanel from "@/components/ThreadPanel"
+import { RenderLexicalContent } from "@/components/RenderLexicalContent"
 import {
   formatDateSeparator,
   shouldShowDateSeparator,
@@ -47,6 +47,8 @@ interface Message {
   sentByUserId: string
   isMine: boolean
   sender: User
+  deletedAt?: string | null
+  updatedAt?: string
   // Thread information
   threadId?: number | null
   replyCount?: number
@@ -62,149 +64,6 @@ interface ChatViewProps {
 }
 
 const MAX_MESSAGE_LENGTH = 10000
-
-// Component to render Lexical JSON content
-function RenderLexicalContent({
-  content,
-  onMentionMessage,
-  onMentionCall,
-  currentUserId,
-}: {
-  content: LexicalEditorState
-  onMentionMessage?: (userId: string) => void
-  onMentionCall?: (userId: string, callType: CallType) => void
-  currentUserId?: string
-}) {
-  const renderNode = (node: any, index: number): React.ReactNode => {
-    // Text node
-    if (node.type === "text") {
-      let text = node.text || ""
-      let element: React.ReactNode = text
-
-      // Apply formatting
-      if (node.format) {
-        const format = typeof node.format === "number" ? node.format : 0
-        // Format bits: 1 = bold, 2 = italic, 4 = strikethrough, 8 = underline, 16 = code
-        if (format & 1) element = <strong key={index}>{element}</strong>
-        if (format & 2) element = <em key={index}>{element}</em>
-        if (format & 16)
-          element = (
-            <code
-              key={index}
-              className="text-orange-600 dark:text-orange-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono text-xs"
-            >
-              {element}
-            </code>
-          )
-      }
-
-      return element
-    }
-
-    // Mention node
-    if (node.type === "mention" && node.mentionUser) {
-      return (
-        <MentionPill
-          key={index}
-          user={node.mentionUser}
-          onMessage={onMentionMessage}
-          onCall={onMentionCall}
-          currentUserId={currentUserId}
-        />
-      )
-    }
-
-    // Link node (handles both "link" and "autolink" types)
-    if (node.type === "link" || node.type === "autolink") {
-      return (
-        <a
-          key={index}
-          href={node.url || "#"}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-600 dark:text-blue-400 underline hover:text-blue-700"
-        >
-          {node.children?.map(renderNode)}
-        </a>
-      )
-    }
-
-    // List node
-    if (node.type === "list") {
-      const ListTag = node.listType === "number" ? "ol" : "ul"
-      return (
-        <ListTag
-          key={index}
-          className={
-            node.listType === "number"
-              ? "list-decimal list-inside"
-              : "list-disc list-inside"
-          }
-        >
-          {node.children?.map(renderNode)}
-        </ListTag>
-      )
-    }
-
-    // List item node
-    if (node.type === "listitem") {
-      return <li key={index}>{node.children?.map(renderNode)}</li>
-    }
-
-    // Paragraph node
-    if (node.type === "paragraph") {
-      return (
-        <div key={index} className="paragraph">
-          {node.children?.map(renderNode)}
-        </div>
-      )
-    }
-
-    // Heading node
-    if (node.type === "heading") {
-      const tag = node.tag || "h1"
-      const HeadingTag = tag as keyof JSX.IntrinsicElements
-      const headingClasses: Record<string, string> = {
-        h1: "text-2xl font-bold",
-        h2: "text-xl font-bold",
-        h3: "text-lg font-bold",
-        h4: "text-base font-bold",
-        h5: "text-sm font-bold",
-        h6: "text-xs font-bold",
-      }
-      return (
-        <HeadingTag key={index} className={headingClasses[tag] || ""}>
-          {node.children?.map(renderNode)}
-        </HeadingTag>
-      )
-    }
-
-    // Quote node
-    if (node.type === "quote") {
-      return (
-        <blockquote
-          key={index}
-          className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-700 dark:text-gray-300"
-        >
-          {node.children?.map(renderNode)}
-        </blockquote>
-      )
-    }
-
-    // Default: render children if they exist
-    if (node.children && Array.isArray(node.children)) {
-      return <span key={index}>{node.children.map(renderNode)}</span>
-    }
-
-    return null
-  }
-
-  return (
-    <div className="space-y-1">
-      {content.root.children.map((node, i) => renderNode(node, i))}
-    </div>
-  )
-}
 
 export default function ChatView({
   targetUser,
@@ -770,11 +629,61 @@ export default function ChatView({
       },
     )
 
+    // Subscribe to message edits
+    const unsubscribeEdit = callNotificationClient.onDirectMessageEdit(
+      (edit) => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === edit.messageId
+              ? {
+                  ...msg,
+                  messageContent: edit.messageContent,
+                  isEdited: true,
+                  updatedAt: edit.updatedAt,
+                }
+              : msg,
+          ),
+        )
+
+        // Also update the open thread if it's the same message
+        setOpenThread((prev) =>
+          prev && prev.id === edit.messageId
+            ? {
+                ...prev,
+                messageContent: edit.messageContent,
+                isEdited: true,
+                updatedAt: edit.updatedAt,
+              }
+            : prev,
+        )
+      },
+    )
+
+    // Subscribe to message deletes
+    const unsubscribeDelete = callNotificationClient.onDirectMessageDelete(
+      (del) => {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === del.messageId
+              ? { ...msg, deletedAt: new Date().toISOString() }
+              : msg,
+          ),
+        )
+
+        // Close thread if the deleted message was open
+        setOpenThread((prev) =>
+          prev && prev.id === del.messageId ? null : prev,
+        )
+      },
+    )
+
     return () => {
       unsubscribeMessage()
       unsubscribeRead()
       unsubscribeTyping()
       unsubscribeThreadReply()
+      unsubscribeEdit()
+      unsubscribeDelete()
     }
   }, [targetUser.id])
 
@@ -885,223 +794,231 @@ export default function ChatView({
               </div>
             )}
 
-            {messages.map((message, index) => {
-              const prevMessage = index > 0 ? messages[index - 1] : null
-              const showHeader = shouldShowHeader(message, prevMessage)
-              const showDateSeparator = shouldShowDateSeparator(
-                message,
-                prevMessage,
-              )
+            {messages
+              .filter((msg) => !msg.deletedAt)
+              .map((message, index, filteredMessages) => {
+                const prevMessage =
+                  index > 0 ? filteredMessages[index - 1] : null
+                const showHeader = shouldShowHeader(message, prevMessage)
+                const showDateSeparator = shouldShowDateSeparator(
+                  message,
+                  prevMessage,
+                )
 
-              return (
-                <div key={message.id}>
-                  {/* Date Separator */}
-                  {showDateSeparator && (
-                    <div className="relative flex items-center justify-center my-6">
-                      <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
-                      </div>
-                      <div className="relative px-4 bg-white dark:bg-[#1E1E1E]">
-                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-                          {formatDateSeparator(message.createdAt)}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Message */}
-                  <div
-                    className={cn(
-                      "group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6 transition-colors duration-150",
-                      showHeader ? "py-0.5 mt-2" : "py-0",
-                      message.isMine &&
-                        "hover:bg-blue-50/30 dark:hover:bg-blue-900/10",
-                    )}
-                  >
-                    <div className="flex gap-3 items-start">
-                      {/* Avatar - only show for first message in group */}
-                      {showHeader ? (
-                        <div className="flex-shrink-0 w-9 h-9">
-                          {message.sender.photoLink ? (
-                            <img
-                              src={`/api/v1/proxy/${encodeURIComponent(message.sender.photoLink)}`}
-                              alt={message.sender.name}
-                              className="w-9 h-9 rounded-md"
-                            />
-                          ) : (
-                            <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-                              <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                                {message.sender.name.charAt(0).toUpperCase()}
-                              </span>
-                            </div>
-                          )}
+                return (
+                  <div key={message.id}>
+                    {/* Date Separator */}
+                    {showDateSeparator && (
+                      <div className="relative flex items-center justify-center my-6">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
                         </div>
-                      ) : (
-                        <div className="flex-shrink-0 w-9 h-9 flex items-center justify-center">
-                          <span className="text-[10px] text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                            {formatTime(message.createdAt)}
+                        <div className="relative px-4 bg-white dark:bg-[#1E1E1E]">
+                          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                            {formatDateSeparator(message.createdAt)}
                           </span>
                         </div>
-                      )}
+                      </div>
+                    )}
 
-                      <div className="flex-1 min-w-0">
-                        {/* Header - username and timestamp */}
-                        {showHeader && (
-                          <div className="flex items-center gap-2 mb-0.5 leading-none">
-                            <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 leading-none">
-                              {message.sender.name}
-                            </span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400 leading-none whitespace-nowrap">
+                    {/* Message */}
+                    <div
+                      className={cn(
+                        "group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6 transition-colors duration-150",
+                        showHeader ? "py-0.5 mt-2" : "py-0",
+                        message.isMine &&
+                          "hover:bg-blue-50/30 dark:hover:bg-blue-900/10",
+                      )}
+                    >
+                      <div className="flex gap-3 items-start">
+                        {/* Avatar - only show for first message in group */}
+                        {showHeader ? (
+                          <div className="flex-shrink-0 w-9 h-9">
+                            {message.sender.photoLink ? (
+                              <img
+                                src={`/api/v1/proxy/${encodeURIComponent(message.sender.photoLink)}`}
+                                alt={message.sender.name}
+                                className="w-9 h-9 rounded-md"
+                              />
+                            ) : (
+                              <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                                  {message.sender.name.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex-shrink-0 w-9 h-9 flex items-center justify-center">
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                               {formatTime(message.createdAt)}
                             </span>
                           </div>
                         )}
 
-                        {/* Message content */}
-                        {editingMessageId === message.id ? (
-                          <div className="mt-1">
-                            <BuzzChatBox
-                              key={`edit-${message.id}`}
-                              onSend={(newContent) => {
-                                handleEditMessage(message.id, newContent)
-                              }}
-                              onTyping={() => {}}
-                              placeholder="Edit your message..."
-                              disabled={false}
-                              initialContent={editingContent || undefined}
-                            />
-                            <div className="flex gap-2 mt-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={cancelEditing}
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-[15px] text-gray-900 dark:text-gray-100 break-words leading-relaxed">
-                            <RenderLexicalContent
-                              content={message.messageContent}
-                              onMentionMessage={handleMentionMessage}
-                              onMentionCall={handleMentionCall}
-                              currentUserId={currentUser.id}
-                            />
-                            {message.isEdited && (
-                              <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
-                                (edited)
+                        <div className="flex-1 min-w-0">
+                          {/* Header - username and timestamp */}
+                          {showHeader && (
+                            <div className="flex items-center gap-2 mb-0.5 leading-none">
+                              <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 leading-none">
+                                {message.sender.name}
                               </span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 leading-none whitespace-nowrap">
+                                {formatTime(message.createdAt)}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Message content */}
+                          {editingMessageId === message.id ? (
+                            <div className="mt-1">
+                              <BuzzChatBox
+                                key={`edit-${message.id}`}
+                                onSend={(newContent) => {
+                                  handleEditMessage(message.id, newContent)
+                                }}
+                                onTyping={() => {}}
+                                placeholder="Edit your message..."
+                                disabled={false}
+                                initialContent={editingContent || undefined}
+                              />
+                              <div className="flex gap-2 mt-2">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={cancelEditing}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[15px] text-gray-900 dark:text-gray-100 break-words leading-relaxed">
+                              <RenderLexicalContent
+                                content={message.messageContent}
+                                onMentionMessage={handleMentionMessage}
+                                onMentionCall={handleMentionCall}
+                                currentUserId={currentUser.id}
+                              />
+                              {message.isEdited && (
+                                <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                                  (edited)
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Message Actions (show on hover) */}
+                        {editingMessageId !== message.id && (
+                          <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0 flex items-center gap-1">
+                            {/* Reply in Thread Button */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => setOpenThread(message)}
+                              title="Reply in thread"
+                            >
+                              <MessageSquare className="h-4 w-4" />
+                            </Button>
+
+                            {/* Three-dot menu - only show for own messages */}
+                            {message.isMine && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-all duration-200 hover:shadow-sm border border-transparent hover:border-gray-300 dark:hover:border-gray-600"
+                                  >
+                                    <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() => startEditingMessage(message)}
+                                  >
+                                    <Pencil className="h-4 w-4 mr-2" />
+                                    Edit message
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      showDeleteConfirmation(message.id)
+                                    }
+                                    className="text-red-600 focus:text-red-600"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete message
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             )}
                           </div>
                         )}
                       </div>
 
-                      {/* Message Actions (show on hover) */}
-                      {editingMessageId !== message.id && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0 flex items-center gap-1">
-                          {/* Reply in Thread Button */}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
+                      {/* Reply Count - Show if message has replies */}
+                      {message.replyCount !== undefined &&
+                        message.replyCount > 0 && (
+                          <div
                             onClick={() => setOpenThread(message)}
-                            title="Reply in thread"
+                            className="ml-12 mt-1 flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 cursor-pointer hover:opacity-80 transition-opacity group/reply"
                           >
-                            <MessageSquare className="h-4 w-4" />
-                          </Button>
-
-                          {/* Three-dot menu - only show for own messages */}
-                          {message.isMine && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-all duration-200 hover:shadow-sm border border-transparent hover:border-gray-300 dark:hover:border-gray-600"
-                                >
-                                  <MoreVertical className="h-4 w-4 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() => startEditingMessage(message)}
-                                >
-                                  <Pencil className="h-4 w-4 mr-2" />
-                                  Edit message
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    showDeleteConfirmation(message.id)
-                                  }
-                                  className="text-red-600 focus:text-red-600"
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Delete message
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Reply Count - Show if message has replies */}
-                    {message.replyCount !== undefined &&
-                      message.replyCount > 0 && (
-                        <div
-                          onClick={() => setOpenThread(message)}
-                          className="ml-12 mt-1 flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 cursor-pointer hover:opacity-80 transition-opacity group/reply"
-                        >
-                          {/* Profile Icons of Repliers */}
-                          {message.repliers && message.repliers.length > 0 && (
-                            <div className="flex -space-x-2">
-                              {message.repliers
-                                .slice(0, 3)
-                                .map((replier, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="relative w-6 h-6 rounded border-2 border-white dark:border-gray-900"
-                                    title={replier.name}
-                                  >
-                                    {replier.photoLink ? (
-                                      <img
-                                        src={`/api/v1/proxy/${encodeURIComponent(replier.photoLink)}`}
-                                        alt={replier.name}
-                                        className="w-full h-full rounded object-cover"
-                                      />
-                                    ) : (
-                                      <div className="w-full h-full rounded bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-                                        <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300">
-                                          {replier.name.charAt(0).toUpperCase()}
-                                        </span>
+                            {/* Profile Icons of Repliers */}
+                            {message.repliers &&
+                              message.repliers.length > 0 && (
+                                <div className="flex -space-x-2">
+                                  {message.repliers
+                                    .slice(0, 3)
+                                    .map((replier, idx) => (
+                                      <div
+                                        key={idx}
+                                        className="relative w-6 h-6 rounded border-2 border-white dark:border-gray-900"
+                                        title={replier.name}
+                                      >
+                                        {replier.photoLink ? (
+                                          <img
+                                            src={`/api/v1/proxy/${encodeURIComponent(replier.photoLink)}`}
+                                            alt={replier.name}
+                                            className="w-full h-full rounded object-cover"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full rounded bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                                            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                                              {replier.name
+                                                .charAt(0)
+                                                .toUpperCase()}
+                                            </span>
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-
-                          <span className="font-medium">
-                            {message.replyCount}{" "}
-                            {message.replyCount === 1 ? "reply" : "replies"}
-                          </span>
-
-                          {message.lastReplyAt && (
-                            <span className="text-gray-500 dark:text-gray-400 font-normal">
-                              Last reply{" "}
-                              {new Date(message.lastReplyAt).toLocaleTimeString(
-                                [],
-                                { hour: "2-digit", minute: "2-digit" },
+                                    ))}
+                                </div>
                               )}
+
+                            <span className="font-medium">
+                              {message.replyCount}{" "}
+                              {message.replyCount === 1 ? "reply" : "replies"}
                             </span>
-                          )}
-                        </div>
-                      )}
+
+                            {message.lastReplyAt && (
+                              <span className="text-gray-500 dark:text-gray-400 font-normal">
+                                Last reply{" "}
+                                {new Date(
+                                  message.lastReplyAt,
+                                ).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })}
             {/* Typing Indicator */}
             {isOtherUserTyping && (
               <div className="group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6 py-0.5">

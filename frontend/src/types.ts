@@ -137,6 +137,8 @@ export interface ChannelMessage {
   isPinned: boolean
   pinnedAt?: string | null
   createdAt: string
+  deletedAt?: string | null
+  updatedAt?: string
   sender: {
     id: string
     name: string

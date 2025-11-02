@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
 import { callNotificationClient } from "@/services/callNotifications"
@@ -38,7 +38,7 @@ export default function ChannelList({
   )
 
   // Fetch user's channels
-  const fetchChannels = async () => {
+  const fetchChannels = useCallback(async () => {
     setLoading(true)
     try {
       const response = await api.channels.$get({
@@ -49,7 +49,22 @@ export default function ChannelList({
 
       if (response.ok) {
         const data = await response.json()
-        setChannels(data.channels || [])
+        const fetchedChannels = data.channels || []
+        setChannels(fetchedChannels)
+
+        // Seed unread counts from backend response
+        setUnreadCounts(() => {
+          const counts = new Map<number, number>()
+          fetchedChannels.forEach((channel: Channel) => {
+            if (
+              typeof channel.unreadCount === "number" &&
+              channel.unreadCount > 0
+            ) {
+              counts.set(channel.id, channel.unreadCount)
+            }
+          })
+          return counts
+        })
       } else {
         console.error("Failed to fetch channels")
         toast({
@@ -68,12 +83,12 @@ export default function ChannelList({
     } finally {
       setLoading(false)
     }
-  }
+  }, [showArchived])
 
-  // Load channels on mount
+  // Load channels on mount and when showArchived changes
   useEffect(() => {
     fetchChannels()
-  }, [showArchived])
+  }, [fetchChannels])
 
   // Subscribe to real-time channel updates
   useEffect(() => {
@@ -98,16 +113,54 @@ export default function ChannelList({
     // Subscribe to channel updates (name changes, archive, etc.)
     const unsubscribeUpdate = callNotificationClient.onChannelUpdate(
       (update) => {
-        // Refresh channel list when channels are updated
-        fetchChannels()
+        // Update channel in state directly if update data is available
+        if (update.updateData) {
+          setChannels((prevChannels) =>
+            prevChannels.map((channel) =>
+              channel.id === update.channelId
+                ? { ...channel, ...update.updateData }
+                : channel,
+            ),
+          )
+        } else {
+          // Fallback to refetch if no update data provided
+          fetchChannels()
+        }
       },
     )
 
     // Subscribe to membership updates
     const unsubscribeMembership =
       callNotificationClient.onChannelMembershipUpdate((update) => {
-        // Refresh channel list when user is added/removed from channels
-        fetchChannels()
+        // Handle membership updates based on type
+        if (update.updateType === "added" && update.channelData) {
+          // User was added to a new channel - add it to the list
+          setChannels((prevChannels) => {
+            // Check if channel already exists
+            const exists = prevChannels.some((ch) => ch.id === update.channelId)
+            if (!exists) {
+              return [...prevChannels, update.channelData]
+            }
+            return prevChannels
+          })
+        } else if (update.updateType === "removed") {
+          // User was removed from a channel - remove it from the list
+          setChannels((prevChannels) =>
+            prevChannels.filter((channel) => channel.id !== update.channelId),
+          )
+        } else if (update.updateType === "role_changed" && update.channelData) {
+          // Role changed - update the channel with new role info
+          setChannels((prevChannels) =>
+            prevChannels.map((channel) =>
+              channel.id === update.channelId
+                ? { ...channel, ...update.channelData }
+                : channel,
+            ),
+          )
+        } else {
+          // Fallback to refetch if update type is unhandled
+          fetchChannels()
+        }
       })
 
     return () => {
@@ -115,7 +168,7 @@ export default function ChannelList({
       unsubscribeUpdate()
       unsubscribeMembership()
     }
-  }, [currentUserId, selectedChannelId])
+  }, [currentUserId, selectedChannelId, fetchChannels])
 
   // Clear unread count when channel is selected
   useEffect(() => {
@@ -136,14 +189,25 @@ export default function ChannelList({
     return matchesSearch
   })
 
-  // Group channels by type
-  const publicChannels = filteredChannels.filter(
-    (ch) => ch.type === "public" && !ch.isArchived,
-  )
-  const privateChannels = filteredChannels.filter(
-    (ch) => ch.type === "private" && !ch.isArchived,
-  )
-  const archivedChannels = filteredChannels.filter((ch) => ch.isArchived)
+  // Group channels by type (single pass for better performance)
+  const { publicChannels, privateChannels, archivedChannels } =
+    filteredChannels.reduce(
+      (acc, channel) => {
+        if (channel.isArchived) {
+          acc.archivedChannels.push(channel)
+        } else if (channel.type === "public") {
+          acc.publicChannels.push(channel)
+        } else if (channel.type === "private") {
+          acc.privateChannels.push(channel)
+        }
+        return acc
+      },
+      {
+        publicChannels: [] as Channel[],
+        privateChannels: [] as Channel[],
+        archivedChannels: [] as Channel[],
+      },
+    )
 
   // Render channel item
   const renderChannel = (channel: Channel) => {

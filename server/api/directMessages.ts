@@ -322,7 +322,7 @@ export const GetConversationApi = async (c: Context) => {
 
     let repliersMap = new Map<
       number,
-      Array<{ name: string; photoLink: string | null }>
+      Array<{ userId: number; name: string; photoLink: string | null }>
     >()
 
     if (threadIds.length > 0) {
@@ -353,14 +353,15 @@ export const GetConversationApi = async (c: Context) => {
         }
         const threadRepliers = repliersMap.get(reply.threadId)!
 
-        // Check if this sender is already in the list
+        // Check if this sender is already in the list (by userId, not name)
         const alreadyAdded = threadRepliers.some(
-          (r) => r.name === reply.senderName,
+          (r) => r.userId === reply.senderId,
         )
 
         // Add if not already added and we haven't reached the limit of 3
         if (!alreadyAdded && threadRepliers.length < 3) {
           threadRepliers.push({
+            userId: reply.senderId,
             name: reply.senderName,
             photoLink: reply.senderPhotoLink,
           })
@@ -388,7 +389,14 @@ export const GetConversationApi = async (c: Context) => {
         threadId: msg.threadId,
         replyCount: msg.replyCount || 0,
         lastReplyAt: msg.lastReplyAt,
-        repliers: msg.threadId ? repliersMap.get(msg.threadId) || [] : [],
+        repliers: msg.threadId
+          ? (repliersMap.get(msg.threadId) || []).map(
+              ({ name, photoLink }) => ({
+                name,
+                photoLink,
+              }),
+            )
+          : [],
       })),
       targetUser: {
         id: targetUser.externalId,
@@ -683,10 +691,23 @@ export const EditMessageApi = async (c: Context) => {
 
     // Get recipient info for real-time notification
     const [recipient] = await db
-      .select()
+      .select({
+        id: users.id,
+        externalId: users.externalId,
+      })
       .from(users)
       .where(eq(users.id, message.sentToUserId))
       .limit(1)
+
+    // Send real-time notification to the recipient
+    if (recipient) {
+      realtimeMessagingService.sendDirectMessageEdit(
+        recipient.externalId,
+        updatedMessage.id,
+        updatedMessage.messageContent,
+        updatedMessage.updatedAt,
+      )
+    }
 
     return c.json({
       success: true,
@@ -765,10 +786,21 @@ export const DeleteMessageApi = async (c: Context) => {
 
     // Get recipient info for real-time notification
     const [recipient] = await db
-      .select()
+      .select({
+        id: users.id,
+        externalId: users.externalId,
+      })
       .from(users)
       .where(eq(users.id, message.sentToUserId))
       .limit(1)
+
+    // Send real-time notification to the recipient
+    if (recipient) {
+      realtimeMessagingService.sendDirectMessageDelete(
+        recipient.externalId,
+        validatedData.messageId,
+      )
+    }
 
     return c.json({
       success: true,

@@ -83,17 +83,13 @@ export default function MembersManagement({
         query: { channelId: channelId.toString() },
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        setMembers(data.members || [])
-      } else {
+      if (!response.ok) {
         console.error("Failed to fetch members")
-        toast({
-          title: "Error",
-          description: "Failed to load members",
-          variant: "destructive",
-        })
+        throw new Error("API request failed")
       }
+
+      const data = await response.json()
+      setMembers(data.members || [])
     } catch (error) {
       console.error("Failed to fetch members:", error)
       toast({

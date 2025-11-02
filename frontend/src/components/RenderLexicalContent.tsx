@@ -147,6 +147,11 @@ export function RenderLexicalContent({
       )
     }
 
+    // Line break node (Shift+Enter)
+    if (node.type === "linebreak") {
+      return <br key={index} />
+    }
+
     // Default: render children if they exist
     if (node.children && Array.isArray(node.children)) {
       return <span key={index}>{node.children.map(renderNode)}</span>

@@ -103,11 +103,12 @@ export default function BrowseChannels({
   }
 
   // Filter channels by search query
+  const lowercasedQuery = searchQuery.toLowerCase()
   const filteredChannels = channels.filter(
     (channel) =>
-      channel.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      channel.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      channel.purpose?.toLowerCase().includes(searchQuery.toLowerCase()),
+      channel.name.toLowerCase().includes(lowercasedQuery) ||
+      channel.description?.toLowerCase().includes(lowercasedQuery) ||
+      channel.purpose?.toLowerCase().includes(lowercasedQuery),
   )
 
   return (

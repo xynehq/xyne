@@ -86,6 +86,26 @@ export default function UserPillSelector({
     inputRef.current?.focus()
   }
 
+  // Keep suggestions aligned with excludeEmails and selectedUsers changes
+  useEffect(() => {
+    setSuggestions((prev) => {
+      const filtered = prev.filter(
+        (user) =>
+          !selectedUsers.some((u) => u.id === user.id) &&
+          !excludeEmails.includes(user.email),
+      )
+
+      if (filtered.length !== prev.length) {
+        setShowSuggestions(filtered.length > 0)
+        setHighlightedIndex((current) =>
+          filtered.length === 0 ? 0 : Math.min(current, filtered.length - 1),
+        )
+      }
+
+      return filtered
+    })
+  }, [excludeEmails, selectedUsers])
+
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showSuggestions) {

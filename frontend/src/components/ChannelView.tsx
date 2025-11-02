@@ -23,8 +23,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import BuzzChatBox from "./BuzzChatBox"
 import { ConfirmModal } from "./ui/confirmModal"
-import { MentionPill } from "@/components/MentionPill"
 import ThreadPanel from "./ThreadPanel"
+import { RenderLexicalContent } from "@/components/RenderLexicalContent"
 import { CallType } from "@/types"
 import { cn } from "@/lib/utils"
 import type { Channel, ChannelMessage, LexicalEditorState } from "@/types"
@@ -53,163 +53,6 @@ interface ChannelViewProps {
 }
 
 const MAX_MESSAGE_LENGTH = 10000
-
-// Component to render Lexical JSON content (same as ChatView)
-function RenderLexicalContent({
-  content,
-  onMentionMessage,
-  onMentionCall,
-  currentUserId,
-}: {
-  content: LexicalEditorState
-  onMentionMessage?: (userId: string) => void
-  onMentionCall?: (userId: string, callType: CallType) => void
-  currentUserId?: string
-}) {
-  const renderNode = (node: any, index: number): React.ReactNode => {
-    // Text node
-    if (node.type === "text") {
-      let text = node.text || ""
-      let element: React.ReactNode = text
-
-      // Apply formatting
-      if (node.format) {
-        const format = typeof node.format === "number" ? node.format : 0
-        if (format & 1) element = <strong key={index}>{element}</strong>
-        if (format & 2) element = <em key={index}>{element}</em>
-        if (format & 16)
-          element = (
-            <code
-              key={index}
-              className="text-orange-600 dark:text-orange-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono text-xs"
-            >
-              {element}
-            </code>
-          )
-      }
-
-      return element
-    }
-
-    // Mention node (can be used for @user, @channel, @here)
-    if (node.type === "mention") {
-      // For @channel or @here mentions
-      if (node.mentionType === "channel" || node.mentionType === "here") {
-        return (
-          <span
-            key={index}
-            className="inline-flex items-center bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-medium"
-          >
-            @{node.mentionType}
-          </span>
-        )
-      }
-
-      // Regular user mention - use MentionPill for hover functionality
-      if (node.mentionUser) {
-        return (
-          <MentionPill
-            key={index}
-            user={node.mentionUser}
-            onMessage={onMentionMessage}
-            onCall={onMentionCall}
-            currentUserId={currentUserId}
-          />
-        )
-      }
-    }
-
-    // Link node (handles both "link" and "autolink" types)
-    if (node.type === "link" || node.type === "autolink") {
-      return (
-        <a
-          key={index}
-          href={node.url || "#"}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-600 dark:text-blue-400 underline hover:text-blue-700"
-        >
-          {node.children?.map(renderNode)}
-        </a>
-      )
-    }
-
-    // List node
-    if (node.type === "list") {
-      const ListTag = node.listType === "number" ? "ol" : "ul"
-      return (
-        <ListTag
-          key={index}
-          className={
-            node.listType === "number"
-              ? "list-decimal list-inside"
-              : "list-disc list-inside"
-          }
-        >
-          {node.children?.map(renderNode)}
-        </ListTag>
-      )
-    }
-
-    // List item node
-    if (node.type === "listitem") {
-      return <li key={index}>{node.children?.map(renderNode)}</li>
-    }
-
-    // Paragraph node
-    if (node.type === "paragraph") {
-      return (
-        <div key={index} className="paragraph">
-          {node.children?.map(renderNode)}
-        </div>
-      )
-    }
-
-    // Heading node
-    if (node.type === "heading") {
-      const tag = node.tag || "h1"
-      const HeadingTag = tag as keyof JSX.IntrinsicElements
-      const headingClasses: Record<string, string> = {
-        h1: "text-2xl font-bold",
-        h2: "text-xl font-bold",
-        h3: "text-lg font-bold",
-        h4: "text-base font-bold",
-        h5: "text-sm font-bold",
-        h6: "text-xs font-bold",
-      }
-      return (
-        <HeadingTag key={index} className={headingClasses[tag] || ""}>
-          {node.children?.map(renderNode)}
-        </HeadingTag>
-      )
-    }
-
-    // Quote node
-    if (node.type === "quote") {
-      return (
-        <blockquote
-          key={index}
-          className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic text-gray-700 dark:text-gray-300"
-        >
-          {node.children?.map(renderNode)}
-        </blockquote>
-      )
-    }
-
-    // Default: render children if they exist
-    if (node.children && Array.isArray(node.children)) {
-      return <span key={index}>{node.children.map(renderNode)}</span>
-    }
-
-    return null
-  }
-
-  return (
-    <div className="space-y-1">
-      {content.root.children.map((node, i) => renderNode(node, i))}
-    </div>
-  )
-}
 
 export default function ChannelView({
   channel,
@@ -854,11 +697,67 @@ export default function ChannelView({
       },
     )
 
+    // Subscribe to channel message edits
+    const unsubscribeEdit = callNotificationClient.onChannelMessageEdit(
+      (edit) => {
+        // Only update if it's for this channel
+        if (edit.channelId === channel.id) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === edit.messageId
+                ? {
+                    ...msg,
+                    messageContent: edit.messageContent,
+                    isEdited: true,
+                    updatedAt: edit.updatedAt,
+                  }
+                : msg,
+            ),
+          )
+
+          // Also update the open thread if it's the same message
+          setOpenThread((prev) =>
+            prev && prev.id === edit.messageId
+              ? {
+                  ...prev,
+                  messageContent: edit.messageContent,
+                  isEdited: true,
+                  updatedAt: edit.updatedAt,
+                }
+              : prev,
+          )
+        }
+      },
+    )
+
+    // Subscribe to channel message deletes
+    const unsubscribeDelete = callNotificationClient.onChannelMessageDelete(
+      (del) => {
+        // Only update if it's for this channel
+        if (del.channelId === channel.id) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === del.messageId
+                ? { ...msg, deletedAt: new Date().toISOString() }
+                : msg,
+            ),
+          )
+
+          // Close thread if the deleted message was open
+          setOpenThread((prev) =>
+            prev && prev.id === del.messageId ? null : prev,
+          )
+        }
+      },
+    )
+
     return () => {
       unsubscribeMessage()
       unsubscribeTyping()
       unsubscribeUpdate()
       unsubscribeThreadReply()
+      unsubscribeEdit()
+      unsubscribeDelete()
     }
   }, [channel.id])
 
@@ -1019,147 +918,162 @@ export default function ChannelView({
             )}
 
             {/* Messages */}
-            {messages.map((message, index) => {
-              const prevMessage = index > 0 ? messages[index - 1] : null
-              const showHeader = shouldShowHeader(message, prevMessage)
-              const showDateSeparator = shouldShowDateSeparator(
-                message,
-                prevMessage,
-              )
-              const isMine = message.sender.id === currentUser.id
-              const isEditing = editingMessageId === message.id
+            {messages
+              .filter((msg) => !msg.deletedAt)
+              .map((message, index, filteredMessages) => {
+                const prevMessage =
+                  index > 0 ? filteredMessages[index - 1] : null
+                const showHeader = shouldShowHeader(message, prevMessage)
+                const showDateSeparator = shouldShowDateSeparator(
+                  message,
+                  prevMessage,
+                )
+                const isMine = message.sender.id === currentUser.id
+                const isEditing = editingMessageId === message.id
 
-              return (
-                <div key={message.id}>
-                  {/* Date Separator */}
-                  {showDateSeparator && (
-                    <div className="relative flex items-center justify-center my-6">
-                      <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
+                return (
+                  <div key={message.id}>
+                    {/* Date Separator */}
+                    {showDateSeparator && (
+                      <div className="relative flex items-center justify-center my-6">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
+                        </div>
+                        <div className="relative px-4 bg-white dark:bg-[#232323]">
+                          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                            {formatDateSeparator(message.createdAt)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="relative px-4 bg-white dark:bg-[#232323]">
-                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-                          {formatDateSeparator(message.createdAt)}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Message */}
-                  <div
-                    className={cn(
-                      "group -mx-6 px-6 py-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 flex gap-3 items-start",
-                      showHeader ? "mt-4" : "mt-0.5",
                     )}
-                  >
-                    {/* Avatar (only show if header is shown) */}
-                    <div className="flex-shrink-0">
-                      {showHeader ? (
-                        message.sender.photoLink ? (
-                          <img
-                            src={`/api/v1/proxy/${encodeURIComponent(message.sender.photoLink)}`}
-                            alt={message.sender.name}
-                            className="w-9 h-9 rounded-md"
-                          />
+
+                    {/* Message */}
+                    <div
+                      className={cn(
+                        "group -mx-6 px-6 py-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 flex gap-3 items-start",
+                        showHeader ? "mt-4" : "mt-0.5",
+                      )}
+                    >
+                      {/* Avatar (only show if header is shown) */}
+                      <div className="flex-shrink-0">
+                        {showHeader ? (
+                          message.sender.photoLink ? (
+                            <img
+                              src={`/api/v1/proxy/${encodeURIComponent(message.sender.photoLink)}`}
+                              alt={message.sender.name}
+                              className="w-9 h-9 rounded-md"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-700 flex items-center justify-center">
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                {message.sender.name.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                          )
                         ) : (
-                          <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-700 flex items-center justify-center">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                              {message.sender.name.charAt(0).toUpperCase()}
+                          <div className="w-9 h-9 flex items-center justify-center">
+                            <span className="text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                              {formatTime(message.createdAt)}
                             </span>
                           </div>
-                        )
-                      ) : (
-                        <div className="w-9 h-9 flex items-center justify-center">
-                          <span className="text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                            {formatTime(message.createdAt)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
 
-                    {/* Message Content */}
-                    <div className="flex-1 min-w-0">
-                      {showHeader && (
-                        <div className="flex items-baseline gap-2 mb-0.5">
-                          <span className="font-semibold text-[15px] text-gray-900 dark:text-gray-100">
-                            {message.sender.name}
-                          </span>
-                          <span className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                            {formatTime(message.createdAt)}
-                          </span>
-                          {message.isEdited && (
-                            <span className="text-[11px] text-gray-400 dark:text-gray-500">
-                              (edited)
+                      {/* Message Content */}
+                      <div className="flex-1 min-w-0">
+                        {showHeader && (
+                          <div className="flex items-baseline gap-2 mb-0.5">
+                            <span className="font-semibold text-[15px] text-gray-900 dark:text-gray-100">
+                              {message.sender.name}
                             </span>
-                          )}
-                          {message.isPinned && (
-                            <Pin className="h-3 w-3 text-blue-600 dark:text-blue-400" />
-                          )}
-                        </div>
-                      )}
-
-                      {isEditing ? (
-                        <div className="mt-2">
-                          <BuzzChatBox
-                            initialContent={editingContent || undefined}
-                            onSend={(content) =>
-                              handleEditMessage(message.id, content)
-                            }
-                            placeholder="Edit message..."
-                            disabled={false}
-                          />
-                          <div className="flex gap-2 mt-2">
-                            <Button size="sm" onClick={cancelEditing}>
-                              Cancel
-                            </Button>
+                            <span className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                              {formatTime(message.createdAt)}
+                            </span>
+                            {message.isEdited && (
+                              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                                (edited)
+                              </span>
+                            )}
+                            {message.isPinned && (
+                              <Pin className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                            )}
                           </div>
-                        </div>
-                      ) : (
-                        <div className="text-[15px] text-gray-800 dark:text-gray-200 break-words leading-[22px]">
-                          <RenderLexicalContent
-                            content={message.messageContent}
-                            onMentionMessage={handleMentionMessage}
-                            onMentionCall={handleMentionCall}
-                            currentUserId={currentUser.id}
-                          />
-                        </div>
-                      )}
-                    </div>
+                        )}
 
-                    {/* Message Actions (show on hover) */}
-                    {!isEditing && (
-                      <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0 flex items-center gap-1">
-                        {/* Reply in Thread Button */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          onClick={() => setOpenThread(message)}
-                          title="Reply in thread"
-                        >
-                          <MessageSquare className="h-4 w-4" />
-                        </Button>
+                        {isEditing ? (
+                          <div className="mt-2">
+                            <BuzzChatBox
+                              initialContent={editingContent || undefined}
+                              onSend={(content) =>
+                                handleEditMessage(message.id, content)
+                              }
+                              placeholder="Edit message..."
+                              disabled={false}
+                            />
+                            <div className="flex gap-2 mt-2">
+                              <Button size="sm" onClick={cancelEditing}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-[15px] text-gray-800 dark:text-gray-200 break-words leading-[22px]">
+                            <RenderLexicalContent
+                              content={message.messageContent}
+                              onMentionMessage={handleMentionMessage}
+                              onMentionCall={handleMentionCall}
+                              currentUserId={currentUser.id}
+                            />
+                          </div>
+                        )}
+                      </div>
 
-                        {/* More Options Dropdown */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0"
-                            >
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {isMine && (
-                              <>
-                                <DropdownMenuItem
-                                  onClick={() => startEditingMessage(message)}
-                                >
-                                  <Pencil className="h-4 w-4 mr-2" />
-                                  Edit message
-                                </DropdownMenuItem>
+                      {/* Message Actions (show on hover) */}
+                      {!isEditing && (
+                        <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0 flex items-center gap-1">
+                          {/* Reply in Thread Button */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => setOpenThread(message)}
+                            title="Reply in thread"
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </Button>
+
+                          {/* More Options Dropdown */}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {isMine && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() => startEditingMessage(message)}
+                                  >
+                                    <Pencil className="h-4 w-4 mr-2" />
+                                    Edit message
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      showDeleteConfirmation(message.id)
+                                    }
+                                    className="text-red-600"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete message
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {canManageMessages && !isMine && (
                                 <DropdownMenuItem
                                   onClick={() =>
                                     showDeleteConfirmation(message.id)
@@ -1169,91 +1083,79 @@ export default function ChannelView({
                                   <Trash2 className="h-4 w-4 mr-2" />
                                   Delete message
                                 </DropdownMenuItem>
-                              </>
-                            )}
-                            {canManageMessages && !isMine && (
+                              )}
+                              {/* Pin option available to everyone */}
                               <DropdownMenuItem
                                 onClick={() =>
-                                  showDeleteConfirmation(message.id)
+                                  handleTogglePin(message.id, message.isPinned)
                                 }
-                                className="text-red-600"
                               >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete message
+                                <Pin className="h-4 w-4 mr-2" />
+                                {message.isPinned
+                                  ? "Unpin message"
+                                  : "Pin message"}
                               </DropdownMenuItem>
-                            )}
-                            {/* Pin option available to everyone */}
-                            <DropdownMenuItem
-                              onClick={() =>
-                                handleTogglePin(message.id, message.isPinned)
-                              }
-                            >
-                              <Pin className="h-4 w-4 mr-2" />
-                              {message.isPinned
-                                ? "Unpin message"
-                                : "Pin message"}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    )}
-                  </div>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      )}
+                    </div>
 
-                  {/* Reply Count - Show if message has replies */}
-                  {message.replyCount !== undefined &&
-                    message.replyCount > 0 && (
-                      <div
-                        onClick={() => setOpenThread(message)}
-                        className="ml-12 mt-1 flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 cursor-pointer hover:opacity-80 transition-opacity group/reply"
-                      >
-                        {/* Profile Icons of Repliers */}
-                        {message.repliers && message.repliers.length > 0 && (
-                          <div className="flex -space-x-2">
-                            {message.repliers
-                              .slice(0, 3)
-                              .map((replier, idx) => (
-                                <div
-                                  key={idx}
-                                  className="relative w-6 h-6 rounded border-2 border-white dark:border-gray-900"
-                                  title={replier.name}
-                                >
-                                  {replier.photoLink ? (
-                                    <img
-                                      src={`/api/v1/proxy/${encodeURIComponent(replier.photoLink)}`}
-                                      alt={replier.name}
-                                      className="w-full h-full rounded object-cover"
-                                    />
-                                  ) : (
-                                    <div className="w-full h-full rounded bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-                                      <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300">
-                                        {replier.name.charAt(0).toUpperCase()}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                          </div>
-                        )}
+                    {/* Reply Count - Show if message has replies */}
+                    {message.replyCount !== undefined &&
+                      message.replyCount > 0 && (
+                        <div
+                          onClick={() => setOpenThread(message)}
+                          className="ml-12 mt-1 flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 cursor-pointer hover:opacity-80 transition-opacity group/reply"
+                        >
+                          {/* Profile Icons of Repliers */}
+                          {message.repliers && message.repliers.length > 0 && (
+                            <div className="flex -space-x-2">
+                              {message.repliers
+                                .slice(0, 3)
+                                .map((replier, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="relative w-6 h-6 rounded border-2 border-white dark:border-gray-900"
+                                    title={replier.name}
+                                  >
+                                    {replier.photoLink ? (
+                                      <img
+                                        src={`/api/v1/proxy/${encodeURIComponent(replier.photoLink)}`}
+                                        alt={replier.name}
+                                        className="w-full h-full rounded object-cover"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full rounded bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                                        <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                                          {replier.name.charAt(0).toUpperCase()}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                            </div>
+                          )}
 
-                        <span className="font-medium">
-                          {message.replyCount}{" "}
-                          {message.replyCount === 1 ? "reply" : "replies"}
-                        </span>
-
-                        {message.lastReplyAt && (
-                          <span className="text-gray-500 dark:text-gray-400 font-normal">
-                            Last reply{" "}
-                            {new Date(message.lastReplyAt).toLocaleTimeString(
-                              [],
-                              { hour: "2-digit", minute: "2-digit" },
-                            )}
+                          <span className="font-medium">
+                            {message.replyCount}{" "}
+                            {message.replyCount === 1 ? "reply" : "replies"}
                           </span>
-                        )}
-                      </div>
-                    )}
-                </div>
-              )
-            })}
+
+                          {message.lastReplyAt && (
+                            <span className="text-gray-500 dark:text-gray-400 font-normal">
+                              Last reply{" "}
+                              {new Date(message.lastReplyAt).toLocaleTimeString(
+                                [],
+                                { hour: "2-digit", minute: "2-digit" },
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                  </div>
+                )
+              })}
 
             {/* Typing Indicator */}
             {typingUsers.size > 0 && (

@@ -146,6 +146,9 @@ export function MentionPlugin({ onMentionSearch }: MentionPluginProps) {
       KEY_ARROW_DOWN_COMMAND,
       (event) => {
         event?.preventDefault()
+        if (users.length === 0) {
+          return true
+        }
         setSelectedIndex((prev) => (prev + 1) % users.length)
         return true
       },
@@ -156,6 +159,9 @@ export function MentionPlugin({ onMentionSearch }: MentionPluginProps) {
       KEY_ARROW_UP_COMMAND,
       (event) => {
         event?.preventDefault()
+        if (users.length === 0) {
+          return true
+        }
         setSelectedIndex((prev) => (prev - 1 + users.length) % users.length)
         return true
       },

@@ -122,6 +122,32 @@ export interface ThreadReply {
   }
 }
 
+export interface DirectMessageEdit {
+  type: "direct_message_edit"
+  messageId: number
+  messageContent: LexicalEditorState
+  updatedAt: string
+}
+
+export interface DirectMessageDelete {
+  type: "direct_message_delete"
+  messageId: number
+}
+
+export interface ChannelMessageEdit {
+  type: "channel_message_edit"
+  channelId: number
+  messageId: number
+  messageContent: LexicalEditorState
+  updatedAt: string
+}
+
+export interface ChannelMessageDelete {
+  type: "channel_message_delete"
+  channelId: number
+  messageId: number
+}
+
 type CallNotificationHandler = (notification: CallNotification) => void
 type CallStatusHandler = (status: CallStatusUpdate) => void
 type DirectMessageHandler = (message: DirectMessage) => void
@@ -132,6 +158,10 @@ type ChannelTypingIndicatorHandler = (indicator: ChannelTypingIndicator) => void
 type ChannelUpdateHandler = (update: ChannelUpdate) => void
 type ChannelMembershipUpdateHandler = (update: ChannelMembershipUpdate) => void
 type ThreadReplyHandler = (reply: ThreadReply) => void
+type DirectMessageEditHandler = (edit: DirectMessageEdit) => void
+type DirectMessageDeleteHandler = (del: DirectMessageDelete) => void
+type ChannelMessageEditHandler = (edit: ChannelMessageEdit) => void
+type ChannelMessageDeleteHandler = (del: ChannelMessageDelete) => void
 
 class CallNotificationClient {
   private ws: WebSocket | null = null
@@ -150,6 +180,10 @@ class CallNotificationClient {
   private onChannelMembershipUpdateCallbacks: ChannelMembershipUpdateHandler[] =
     []
   private onThreadReplyCallbacks: ThreadReplyHandler[] = []
+  private onDirectMessageEditCallbacks: DirectMessageEditHandler[] = []
+  private onDirectMessageDeleteCallbacks: DirectMessageDeleteHandler[] = []
+  private onChannelMessageEditCallbacks: ChannelMessageEditHandler[] = []
+  private onChannelMessageDeleteCallbacks: ChannelMessageDeleteHandler[] = []
   private soundInterval: ReturnType<typeof setInterval> | null = null
   private audioContextInitialized = false
   private connectionInitialized = false
@@ -505,6 +539,26 @@ class CallNotificationClient {
             this.onThreadReplyCallbacks.forEach((callback) => {
               callback(message.data)
             })
+          } else if (message.type === "direct_message_edit") {
+            // Handle direct message edit
+            this.onDirectMessageEditCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "direct_message_delete") {
+            // Handle direct message delete
+            this.onDirectMessageDeleteCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_message_edit") {
+            // Handle channel message edit
+            this.onChannelMessageEditCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_message_delete") {
+            // Handle channel message delete
+            this.onChannelMessageDeleteCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
           }
         } catch (error) {
           console.error("Error parsing notification message:", error)
@@ -648,6 +702,38 @@ class CallNotificationClient {
       this.onThreadReplyCallbacks = this.onThreadReplyCallbacks.filter(
         (cb) => cb !== callback,
       )
+    }
+  }
+
+  onDirectMessageEdit(callback: DirectMessageEditHandler) {
+    this.onDirectMessageEditCallbacks.push(callback)
+    return () => {
+      this.onDirectMessageEditCallbacks =
+        this.onDirectMessageEditCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
+  onDirectMessageDelete(callback: DirectMessageDeleteHandler) {
+    this.onDirectMessageDeleteCallbacks.push(callback)
+    return () => {
+      this.onDirectMessageDeleteCallbacks =
+        this.onDirectMessageDeleteCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
+  onChannelMessageEdit(callback: ChannelMessageEditHandler) {
+    this.onChannelMessageEditCallbacks.push(callback)
+    return () => {
+      this.onChannelMessageEditCallbacks =
+        this.onChannelMessageEditCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
+  onChannelMessageDelete(callback: ChannelMessageDeleteHandler) {
+    this.onChannelMessageDeleteCallbacks.push(callback)
+    return () => {
+      this.onChannelMessageDeleteCallbacks =
+        this.onChannelMessageDeleteCallbacks.filter((cb) => cb !== callback)
     }
   }
 
