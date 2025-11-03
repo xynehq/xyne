@@ -29,11 +29,7 @@ import {
   searchToCitation,
 } from "@/api/chat/utils"
 import type { Ctx, WithExcludedIds } from "../types"
-import {
-  baseToolParams,
-  createQuerySchema,
-  createTimeRangeSchema,
-} from "../schemas"
+import { baseToolParams, createQuerySchema } from "../schemas"
 import type { MinimalAgentFragment } from "../../types"
 import { answerContextMap } from "@/ai/context"
 import config from "@/config"
@@ -41,7 +37,6 @@ import config from "@/config"
 const searchGlobalToolSchema = z.object({
   query: createQuerySchema(),
   ...baseToolParams,
-  timeRange: createTimeRangeSchema(),
 })
 
 export type SearchGlobalToolParams = z.infer<typeof searchGlobalToolSchema>

@@ -8,11 +8,7 @@ import { searchGoogleApps } from "@/search/vespa"
 import config from "@/config"
 import { formatSearchToolResponse, parseAgentAppIntegrations } from "../utils"
 import type { Ctx, WithExcludedIds } from "../types"
-import {
-  baseToolParams,
-  createQuerySchema,
-  createTimeRangeSchema,
-} from "../schemas"
+import { baseToolParams, createQuerySchema } from "../schemas"
 
 export const participantsSchema = z
   .object({
@@ -32,9 +28,6 @@ const gmailSearchToolSchema = z.object({
       "Filter emails by Gmail labels. labels are 'IMPORTANT', 'STARRED', 'UNREAD', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS', 'DRAFT', 'SENT', 'INBOX', 'SPAM', 'TRASH'.",
     )
     .optional(),
-  timeRange: createTimeRangeSchema(
-    `Filter emails within a specific time range. Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
-  ),
   participants: participantsSchema
     .describe(
       `Advanced email communication filtering with intelligent resolution of names, organizations, and email addresses. Supports complex multi-participant email queries with automatic name-to-email mapping. - Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. - Each field accepts arrays containing email addresses, full names, first names, or organization names.`,

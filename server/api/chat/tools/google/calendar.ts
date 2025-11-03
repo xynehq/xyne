@@ -8,11 +8,7 @@ import config from "@/config"
 import { formatSearchToolResponse, parseAgentAppIntegrations } from "../utils"
 import type { Ctx, WithExcludedIds } from "../types"
 import type { EventStatusType } from "@xyne/vespa-ts"
-import {
-  baseToolParams,
-  createQuerySchema,
-  createTimeRangeSchema,
-} from "../schemas"
+import { baseToolParams, createQuerySchema } from "../schemas"
 
 const calendarSearchToolSchema = z.object({
   query: createQuerySchema(GoogleApps.Calendar, true),
@@ -27,7 +23,6 @@ const calendarSearchToolSchema = z.object({
     )
     .optional(),
   ...baseToolParams,
-  timeRange: createTimeRangeSchema(),
 })
 
 export type CalendarSearchToolParams = z.infer<typeof calendarSearchToolSchema>

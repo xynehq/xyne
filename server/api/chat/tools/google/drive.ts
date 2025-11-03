@@ -8,11 +8,7 @@ import { formatSearchToolResponse, parseAgentAppIntegrations } from "../utils"
 import { extractDriveIds } from "@/search/utils"
 import config from "@/config"
 import type { Ctx, WithExcludedIds } from "../types"
-import {
-  baseToolParams,
-  createQuerySchema,
-  createTimeRangeSchema,
-} from "../schemas"
+import { baseToolParams, createQuerySchema } from "../schemas"
 
 const driveSearchToolSchema = z.object({
   query: createQuerySchema(GoogleApps.Drive),
@@ -26,7 +22,6 @@ const driveSearchToolSchema = z.object({
         .join(", ")}.`,
     )
     .optional(),
-  timeRange: createTimeRangeSchema(),
 })
 
 export type DriveSearchToolParams = z.infer<typeof driveSearchToolSchema>

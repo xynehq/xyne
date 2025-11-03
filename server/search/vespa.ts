@@ -155,7 +155,7 @@ export const getItems = async (
 }
 
 export const getFolderItems = vespa.getFolderItems.bind(vespa)
-export const getThreadItems = vespa.getThreadItems.bind(vespa)
+export const searchSlackMessages = vespa.searchSlackMessages.bind(vespa)
 export const SearchVespaThreads = vespa.SearchVespaThreads.bind(vespa)
 
 // DataSource operations
@@ -168,9 +168,6 @@ export const fetchAllDataSourceFilesByName =
 export const getDataSourcesByCreator = vespa.getDataSourcesByCreator.bind(vespa)
 export const checkIfDataSourceFileExistsByNameAndId =
   vespa.checkIfDataSourceFileExistsByNameAndId.bind(vespa)
-
-// Slack operations
-export const getSlackUserDetails = vespa.getSlackUserDetails.bind(vespa)
 
 // Utility operations
 export const getTimestamp = vespa.getTimestamp.bind(vespa)

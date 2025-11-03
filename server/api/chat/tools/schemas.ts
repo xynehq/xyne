@@ -1,7 +1,7 @@
 import { z } from "zod"
 import config from "@/config"
 import { retrievalQueryDescription } from "@/api/chat/mapper"
-import type { GoogleApps } from "@xyne/vespa-ts"
+import type { Apps, GoogleApps } from "@xyne/vespa-ts"
 
 // Common pagination schemas
 export const limitSchema = z
@@ -34,20 +34,18 @@ export const timeRangeSchema = z
       .describe(`Start time in ${config.llmTimeFormat} format`),
     endTime: z.string().describe(`End time in ${config.llmTimeFormat} format`),
   })
-  .describe("Time range filter")
+  .describe(
+    `Filter within a specific time range. Example: { startTime: ${config.llmTimeFormat}, endTime: ${config.llmTimeFormat} }`,
+  )
 
-export const createQuerySchema = (app?: GoogleApps, required = false) => {
+export const createQuerySchema = (
+  app?: Apps | GoogleApps,
+  required = false,
+) => {
   const baseSchema = z.string().describe(retrievalQueryDescription(app))
   return required
     ? baseSchema.min(1, `Query is required for ${app} search`)
     : baseSchema.optional()
-}
-
-// Common base parameters
-export const baseToolParams = {
-  limit: limitSchema,
-  offset: offsetSchema,
-  sortBy: sortBySchema,
 }
 
 // Time range with description factory
@@ -58,3 +56,11 @@ export const createTimeRangeSchema = (description?: string) =>
         `Filter within a specific time range. Example: { startTime: ${config.llmTimeFormat}, endTime: ${config.llmTimeFormat} }`,
     )
     .optional()
+
+// Common base parameters
+export const baseToolParams = {
+  limit: limitSchema,
+  offset: offsetSchema,
+  sortBy: sortBySchema,
+  timeRange: timeRangeSchema,
+}
