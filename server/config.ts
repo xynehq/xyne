@@ -10,6 +10,7 @@ let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
+let appleBundleId = process.env.APPLE_BUNDLE_ID || ""
 
 // Vespa configuration constants
 export const NAMESPACE = "namespace"
@@ -181,6 +182,7 @@ export default {
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
+  appleBundleId,
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute
   defaultBestModel,
