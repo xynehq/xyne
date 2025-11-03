@@ -10,6 +10,9 @@ interface DateRangePickerProps {
   onSelect: (from: Date | undefined, to: Date | undefined) => void
   placeholder?: string
   className?: string
+
+  minYear?: number
+  maxYear?: number
 }
 
 export function DateRangePicker({
@@ -18,6 +21,8 @@ export function DateRangePicker({
   onSelect,
   placeholder = "Select date range",
   className,
+  minYear = new Date().getFullYear() - 100,
+  maxYear = new Date().getFullYear() + 10,
 }: DateRangePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [tempFrom, setTempFrom] = useState<Date | undefined>(from)
@@ -31,9 +36,11 @@ export function DateRangePicker({
       setTempFrom(from)
       setTempTo(to)
       setSelectingFrom(true)
-      // Set current month to the 'from' date if it exists, otherwise current month
+      // Set current month to the 'from' date if it exists, otherwise 'to' date, otherwise current month
       if (from) {
         setCurrentMonth(from)
+      } else if (to) {
+        setCurrentMonth(to)
       }
     }
     setIsOpen(open)
@@ -105,10 +112,13 @@ export function DateRangePicker({
     return (tempFrom && isSameDay(date, tempFrom)) || (tempTo && isSameDay(date, tempTo))
   }
 
-  const displayText = from && to
-    ? `${format(from, "dd/MM/yyyy")} - ${format(to, "dd/MM/yyyy")}`
-    : from
+  const displayText =
+    from && to
+      ? `${format(from, "dd/MM/yyyy")} - ${format(to, "dd/MM/yyyy")}`
+      : from
       ? `From: ${format(from, "dd/MM/yyyy")}`
+      : to
+      ? `To: ${format(to, "dd/MM/yyyy")}`
       : placeholder
 
   return (
@@ -193,8 +203,8 @@ export function DateRangePicker({
                     }}
                     className="appearance-none px-3 py-1.5 pr-8 text-sm font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-slate-400 dark:focus:border-slate-500 cursor-pointer transition-colors"
                   >
-                    {Array.from({ length: 21 }, (_, i) => {
-                      const year = new Date().getFullYear() - 10 + i
+                    {Array.from({ length: maxYear - minYear + 1 }, (_, i) => {
+                      const year = minYear + i
                       return (
                         <option key={year} value={year}>
                           {year}

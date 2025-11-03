@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
+import { format } from "date-fns"
 import {
   MessageSquare,
   Bot,
@@ -657,7 +658,7 @@ export const AdminChatsTable = ({
                   {userFilter !== "all" &&
                     ` • User: ${users.find((u) => u.id.toString() === userFilter)?.name || "Unknown"}`}
                   {sortBy !== "created" && ` • Sorted by ${sortBy}`}
-                  {(dateFrom || dateTo) && ` • Date: ${dateFrom ? new Date(dateFrom).toLocaleDateString() : 'Any'} - ${dateTo ? new Date(dateTo).toLocaleDateString() : 'Any'}`}
+                  {(dateFrom || dateTo) && ` • Date: ${dateFrom ? format(new Date(dateFrom), 'dd/MM/yyyy') : 'Any'} - ${dateTo ? format(new Date(dateTo), 'dd/MM/yyyy') : 'Any'}`}
                 </div>
               )}
             </div>
