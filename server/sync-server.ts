@@ -263,13 +263,7 @@ export const initSyncServer = async () => {
       Logger.error(error, "Failed to initialize queue system")
     })
 
-  // Connect to main server via WebSocket for progress updates
   // Note: Slack channel ingestion uses database polling, other integrations use WebSocket
-  try {
-    Logger.info("WebSocket connection to main server initiated")
-  } catch (error) {
-    Logger.error(error, "Failed to connect to main server via WebSocket")
-  }
 
   Logger.info("Sync Server initialization completed")
 }
