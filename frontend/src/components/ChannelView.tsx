@@ -93,6 +93,7 @@ export default function ChannelView({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageContainerRef = useRef<HTMLDivElement>(null)
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
+  const typingTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
 
   // Helper to check if user is mentioned in message
   const checkIfUserMentioned = (
@@ -648,6 +649,15 @@ export default function ChannelView({
     const unsubscribeTyping = callNotificationClient.onChannelTypingIndicator(
       (indicator) => {
         if (indicator.channelId === channel.id) {
+          // Clear any existing timeout for this user
+          const existingTimeout = typingTimeoutsRef.current.get(
+            indicator.userId,
+          )
+          if (existingTimeout) {
+            clearTimeout(existingTimeout)
+            typingTimeoutsRef.current.delete(indicator.userId)
+          }
+
           setTypingUsers((prev) => {
             const newSet = new Set(prev)
             if (indicator.isTyping) {
@@ -660,13 +670,15 @@ export default function ChannelView({
 
           // Auto-clear typing indicator after 5 seconds
           if (indicator.isTyping) {
-            setTimeout(() => {
+            const timeout = setTimeout(() => {
               setTypingUsers((prev) => {
                 const newSet = new Set(prev)
                 newSet.delete(indicator.userId)
                 return newSet
               })
+              typingTimeoutsRef.current.delete(indicator.userId)
             }, 5000)
+            typingTimeoutsRef.current.set(indicator.userId, timeout)
           }
         }
       },
@@ -784,6 +796,10 @@ export default function ChannelView({
       unsubscribeThreadReply()
       unsubscribeEdit()
       unsubscribeDelete()
+
+      // Clear all typing timeouts
+      typingTimeoutsRef.current.forEach((timeout) => clearTimeout(timeout))
+      typingTimeoutsRef.current.clear()
     }
   }, [channel.id])
 
@@ -1175,6 +1191,57 @@ export default function ChannelView({
             {typingUsers.size > 0 && (
               <div className="group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6 py-0.5">
                 <div className="flex gap-3">
+                  {/* Show profile picture for single user, or stacked avatars for multiple */}
+                  <div className="flex-shrink-0">
+                    {typingUsers.size === 1 ? (
+                      // Single user typing - show their avatar
+                      (() => {
+                        const userId = Array.from(typingUsers)[0]
+                        const member = channelMembers.get(userId)
+                        return member?.photoLink ? (
+                          <img
+                            src={`/api/v1/proxy/${encodeURIComponent(member.photoLink)}`}
+                            alt={member.name}
+                            className="w-9 h-9 rounded-md"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-md bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                              {member?.name?.charAt(0).toUpperCase() || "?"}
+                            </span>
+                          </div>
+                        )
+                      })()
+                    ) : (
+                      // Multiple users typing - show stacked avatars (up to 3)
+                      <div className="flex -space-x-2 w-9">
+                        {Array.from(typingUsers)
+                          .slice(0, 3)
+                          .map((userId) => {
+                            const member = channelMembers.get(userId)
+                            return member?.photoLink ? (
+                              <img
+                                key={userId}
+                                src={`/api/v1/proxy/${encodeURIComponent(member.photoLink)}`}
+                                alt={member.name}
+                                className="w-6 h-6 rounded border-2 border-white dark:border-gray-900"
+                                title={member.name}
+                              />
+                            ) : (
+                              <div
+                                key={userId}
+                                className="w-6 h-6 rounded bg-gray-300 dark:bg-gray-600 border-2 border-white dark:border-gray-900 flex items-center justify-center"
+                                title={member?.name || "Unknown"}
+                              >
+                                <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                                  {member?.name?.charAt(0).toUpperCase() || "?"}
+                                </span>
+                              </div>
+                            )
+                          })}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2 mb-1">
                       <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">

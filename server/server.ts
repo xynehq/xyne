@@ -355,6 +355,7 @@ import { updateMetricsFromThread } from "@/metrics/utils"
 import {
   agents,
   apiKeys,
+  channelMembers,
   users,
   type PublicUserWorkspace,
   updateWorkflowToolSchema,
@@ -584,7 +585,7 @@ export const CallNotificationWs = app.get(
           Logger.info(`User ${userId} connected for call notifications`)
         }
       },
-      onMessage(event, ws) {
+      async onMessage(event, ws) {
         try {
           const message = JSON.parse(event.data.toString())
           Logger.info(`Call notification message from user ${userId}:`, message)
@@ -616,16 +617,22 @@ export const CallNotificationWs = app.get(
               }
               break
             case "channel_typing_indicator":
-              // Handle channel typing indicator
+              // Handle channel typing indicator - derive recipients server-side
               if (
                 userId &&
                 message.channelId &&
-                message.memberUserIds &&
-                Array.isArray(message.memberUserIds) &&
                 typeof message.isTyping === "boolean"
               ) {
+                const members = await db
+                  .select({ externalId: users.externalId })
+                  .from(channelMembers)
+                  .innerJoin(users, eq(channelMembers.userId, users.id))
+                  .where(eq(channelMembers.channelId, message.channelId))
+                const targets = members
+                  .map((m) => m.externalId)
+                  .filter((externalId) => externalId !== userId)
                 callNotificationService.sendChannelTypingIndicator(
-                  message.memberUserIds,
+                  targets,
                   message.channelId,
                   userId,
                   message.isTyping,
