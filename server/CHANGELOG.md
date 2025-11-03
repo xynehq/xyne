@@ -1,3 +1,10 @@
+# [3.27.0](https://github.com/xynehq/xyne/compare/v3.26.2...v3.27.0) (2025-11-03)
+
+
+### Features
+
+* **langfuse:** Initial langfuse testing (UAT) ([#1182](https://github.com/xynehq/xyne/issues/1182)) ([5e6b8b3](https://github.com/xynehq/xyne/commit/5e6b8b34b85e1435c0f55dcaee6cbd177b60502e))
+
 ## [3.26.2](https://github.com/xynehq/xyne/compare/v3.26.1...v3.26.2) (2025-11-03)
 
 
