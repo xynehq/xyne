@@ -765,6 +765,23 @@ class CallNotificationClient {
       )
     }
   }
+
+  sendChannelTypingIndicator(
+    channelId: number,
+    memberUserIds: string[],
+    isTyping: boolean,
+  ) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: "channel_typing_indicator",
+          channelId,
+          memberUserIds,
+          isTyping,
+        }),
+      )
+    }
+  }
 }
 
 // Singleton instance

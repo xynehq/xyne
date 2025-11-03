@@ -28,6 +28,7 @@ import {
   formatDateSeparator,
   shouldShowDateSeparator,
   shouldShowHeader,
+  formatTime,
   isContentEqual,
 } from "@/utils/messageHelpers"
 
@@ -688,18 +689,6 @@ export default function ChatView({
       unsubscribeDelete()
     }
   }, [targetUser.id])
-
-  // Format timestamp
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp)
-    return date
-      .toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      })
-      .toUpperCase()
-  }
 
   // Check if chatting with yourself
   const isSelfChat = currentUser.id === targetUser.id

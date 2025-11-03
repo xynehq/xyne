@@ -134,6 +134,14 @@ export const getChannelMembersSchema = z.object({
   channelId: z.coerce.number().int().positive(),
 })
 
+export const getUserChannelsSchema = z.object({
+  includeArchived: z.coerce.boolean().optional().default(false),
+})
+
+export const channelIdParamSchema = z.object({
+  channelId: z.coerce.number().int().positive(),
+})
+
 // ==================== Helper Functions ====================
 
 // Get channel by external ID
@@ -285,7 +293,7 @@ export const CreateChannelApi = async (c: Context) => {
       .where(
         and(
           eq(channels.workspaceId, creator.workspaceId),
-          sql`LOWER(${channels.name}) = LOWER(${validatedData.name})`,
+          eq(channels.name, validatedData.name.toLowerCase()),
         ),
       )
       .limit(1)
@@ -331,9 +339,14 @@ export const CreateChannelApi = async (c: Context) => {
           ),
         )
 
-      if (membersToAdd.length > 0) {
+      // Filter out the creator to avoid duplicate key error
+      const uniqueMembers = membersToAdd.filter(
+        (user) => user.id !== creator.id,
+      )
+
+      if (uniqueMembers.length > 0) {
         await db.insert(channelMembers).values(
-          membersToAdd.map((user) => ({
+          uniqueMembers.map((user) => ({
             channelId: channel.id,
             userId: user.id,
             role: ChannelMemberRole.Member,
@@ -374,33 +387,22 @@ export const CreateChannelApi = async (c: Context) => {
 export const GetChannelDetailsApi = async (c: Context) => {
   try {
     const { workspaceId, sub: userEmail } = c.get(JwtPayloadKey)
-    const { channelId: channelIdParam } = c.req.param()
-
-    Logger.info({
-      msg: "GetChannelDetailsApi called",
-      channelIdParam,
-      allParams: c.req.param(),
-    })
 
     if (!workspaceId) {
       throw new HTTPException(400, { message: "Workspace ID is required" })
     }
 
-    if (!channelIdParam) {
-      throw new HTTPException(400, { message: "Channel ID is required" })
-    }
+    // Validate path parameters
+    const validatedParams = channelIdParamSchema.parse({
+      channelId: c.req.param("channelId"),
+    })
+    const channelId = validatedParams.channelId
 
-    // Parse and validate channelId
-    const channelId = parseInt(channelIdParam, 10)
-    if (!channelId || isNaN(channelId)) {
-      Logger.error({
-        msg: "Invalid channelId",
-        channelIdParam,
-        parsedChannelId: channelId,
-        isNaN: isNaN(channelId),
-      })
-      throw new HTTPException(400, { message: "Valid channel ID is required" })
-    }
+    Logger.info({
+      msg: "GetChannelDetailsApi called",
+      channelId,
+      allParams: c.req.param(),
+    })
 
     const currentUsers = await getUserByEmail(db, userEmail)
     if (!currentUsers || currentUsers.length === 0) {
@@ -413,7 +415,10 @@ export const GetChannelDetailsApi = async (c: Context) => {
       .select()
       .from(channels)
       .where(
-        and(eq(channels.id, channelId), eq(channels.workspaceId, workspaceId)),
+        and(
+          eq(channels.id, channelId),
+          eq(channels.workspaceId, currentUser.workspaceId),
+        ),
       )
       .limit(1)
 
@@ -498,7 +503,7 @@ export const UpdateChannelApi = async (c: Context) => {
     // Get channel and verify it belongs to workspace
     const channel = await assertChannelBelongsToWorkspace(
       channelId,
-      workspaceId,
+      currentUser.workspaceId,
     )
 
     if (channel.isArchived) {
@@ -523,7 +528,7 @@ export const UpdateChannelApi = async (c: Context) => {
         .where(
           and(
             eq(channels.workspaceId, channel.workspaceId),
-            sql`LOWER(${channels.name}) = LOWER(${validatedData.name})`,
+            eq(channels.name, validatedData.name.toLowerCase()),
             not(eq(channels.id, channel.id)),
           ),
         )
@@ -580,15 +585,16 @@ export const UpdateChannelApi = async (c: Context) => {
 export const DeleteChannelApi = async (c: Context) => {
   try {
     const { workspaceId, sub: userEmail } = c.get(JwtPayloadKey)
-    const { channelId } = c.req.param()
 
     if (!workspaceId) {
       throw new HTTPException(400, { message: "Workspace ID is required" })
     }
 
-    if (!channelId) {
-      throw new HTTPException(400, { message: "Channel ID is required" })
-    }
+    // Validate path parameters
+    const validatedParams = channelIdParamSchema.parse({
+      channelId: c.req.param("channelId"),
+    })
+    const channelId = validatedParams.channelId
 
     const currentUsers = await getUserByEmail(db, userEmail)
     if (!currentUsers || currentUsers.length === 0) {
@@ -602,8 +608,8 @@ export const DeleteChannelApi = async (c: Context) => {
       .from(channels)
       .where(
         and(
-          eq(channels.id, parseInt(channelId)),
-          eq(channels.workspaceId, workspaceId),
+          eq(channels.id, channelId),
+          eq(channels.workspaceId, currentUser.workspaceId),
         ),
       )
       .limit(1)
@@ -692,7 +698,7 @@ export const ArchiveChannelApi = async (c: Context) => {
     // Get channel and verify it belongs to workspace
     const channel = await assertChannelBelongsToWorkspace(
       channelId,
-      workspaceId,
+      currentUser.workspaceId,
     )
 
     // Check if user has admin privileges
@@ -755,7 +761,11 @@ export const GetUserChannelsApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    const includeArchived = c.req.query("includeArchived") === "true"
+    // Validate query parameters
+    const validatedQuery = getUserChannelsSchema.parse({
+      includeArchived: c.req.query("includeArchived"),
+    })
+    const includeArchived = validatedQuery.includeArchived
 
     // Get all channels the user is a member of
     const userChannels = await db
@@ -987,7 +997,7 @@ export const AddChannelMembersApi = async (c: Context) => {
     // Get channel and verify it belongs to workspace
     const channel = await assertChannelBelongsToWorkspace(
       channelId,
-      workspaceId,
+      currentUser.workspaceId,
     )
 
     if (channel.isArchived) {
@@ -1122,7 +1132,7 @@ export const RemoveChannelMemberApi = async (c: Context) => {
     // Get channel and verify it belongs to workspace
     const channel = await assertChannelBelongsToWorkspace(
       channelId,
-      workspaceId,
+      currentUser.workspaceId,
     )
 
     // Check if user has admin privileges
@@ -1212,7 +1222,7 @@ export const UpdateMemberRoleApi = async (c: Context) => {
     // Get channel and verify it belongs to workspace
     const channel = await assertChannelBelongsToWorkspace(
       channelId,
-      workspaceId,
+      currentUser.workspaceId,
     )
 
     // Only owner can change roles
@@ -1292,7 +1302,7 @@ export const LeaveChannelApi = async (c: Context) => {
     // Get channel and verify it belongs to workspace
     const channel = await assertChannelBelongsToWorkspace(
       channelId,
-      workspaceId,
+      currentUser.workspaceId,
     )
 
     // Ensure user is a member before leaving
@@ -1372,7 +1382,7 @@ export const GetChannelMembersApi = async (c: Context) => {
     const currentUser = currentUsers[0]
 
     // Verify channel belongs to workspace
-    await assertChannelBelongsToWorkspace(channelId, workspaceId)
+    await assertChannelBelongsToWorkspace(channelId, currentUser.workspaceId)
 
     // Check if user is a member of the channel
     const isMember = await isChannelMember(channelId, currentUser.id)
@@ -1433,15 +1443,15 @@ export const SendChannelMessageApi = async (c: Context) => {
     const validatedData = sendChannelMessageSchema.parse(requestBody)
     const channelId = validatedData.channelId
 
-    // Ensure the channel belongs to this workspace before proceeding
-    await assertChannelBelongsToWorkspace(channelId, workspaceId)
-
     // Get sender
     const senderUsers = await getUserByEmail(db, userEmail)
     if (!senderUsers || senderUsers.length === 0) {
       throw new HTTPException(404, { message: "User not found" })
     }
     const sender = senderUsers[0]
+
+    // Ensure the channel belongs to this workspace before proceeding
+    await assertChannelBelongsToWorkspace(channelId, sender.workspaceId)
 
     // Check if user is a member of the channel
     const isMember = await isChannelMember(channelId, sender.id)
@@ -1560,7 +1570,10 @@ export const GetChannelMessagesApi = async (c: Context) => {
     const currentUser = currentUsers[0]
 
     // Verify the channel belongs to this workspace before checking membership
-    await assertChannelBelongsToWorkspace(validatedData.channelId, workspaceId)
+    await assertChannelBelongsToWorkspace(
+      validatedData.channelId,
+      currentUser.workspaceId,
+    )
 
     // Check if user is a member of the channel
     const isMember = await isChannelMember(
@@ -1755,7 +1768,7 @@ export const EditChannelMessageApi = async (c: Context) => {
     // Get message and verify it belongs to workspace
     const message = await assertMessageBelongsToWorkspace(
       messageId,
-      workspaceId,
+      currentUser.workspaceId,
     )
 
     if (message.sentByUserId !== currentUser.id) {
@@ -1852,7 +1865,7 @@ export const DeleteChannelMessageApi = async (c: Context) => {
     // Get message and verify it belongs to workspace
     const message = await assertMessageBelongsToWorkspace(
       messageId,
-      workspaceId,
+      currentUser.workspaceId,
     )
 
     // Check if user is message sender or channel admin
@@ -1947,7 +1960,7 @@ export const PinMessageApi = async (c: Context) => {
     // Get message and verify it belongs to workspace
     const message = await assertMessageBelongsToWorkspace(
       messageId,
-      workspaceId,
+      currentUser.workspaceId,
     )
 
     if (message.deletedAt) {
@@ -2026,7 +2039,7 @@ export const UnpinMessageApi = async (c: Context) => {
     // Get message and verify it belongs to workspace
     const message = await assertMessageBelongsToWorkspace(
       messageId,
-      workspaceId,
+      currentUser.workspaceId,
     )
 
     // Check if user is channel admin
@@ -2099,7 +2112,7 @@ export const GetPinnedMessagesApi = async (c: Context) => {
     const currentUser = currentUsers[0]
 
     // Verify channel belongs to workspace
-    await assertChannelBelongsToWorkspace(channelId, workspaceId)
+    await assertChannelBelongsToWorkspace(channelId, currentUser.workspaceId)
 
     // Check if user is a member
     const isMember = await isChannelMember(channelId, currentUser.id)

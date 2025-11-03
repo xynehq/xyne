@@ -39,6 +39,10 @@ export const updateThreadReplySchema = z.object({
   messageContent: lexicalEditorStateSchema,
 })
 
+export const deleteThreadReplySchema = z.object({
+  replyId: z.coerce.number().int().positive(),
+})
+
 // ==================== Helper Functions ====================
 
 /**

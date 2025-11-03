@@ -50,6 +50,22 @@ export const formatDateSeparator = (date: string): string => {
 }
 
 /**
+ * Formats a timestamp to localized time string
+ * @param timestamp - ISO timestamp string
+ * @returns Formatted time string in 12-hour format (e.g., "02:30 PM")
+ */
+export const formatTime = (timestamp: string): string => {
+  const date = new Date(timestamp)
+  return date
+    .toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .toUpperCase()
+}
+
+/**
  * Determines if a date separator should be shown between two messages
  * Returns true if messages are on different days
  */

@@ -133,6 +133,7 @@ import {
   endCallSchema,
   leaveCallSchema,
   inviteToCallSchema,
+  getCallHistorySchema,
 } from "@/api/calls"
 import {
   SendMessageApi,
@@ -185,6 +186,8 @@ import {
   joinChannelSchema,
   getPinnedMessagesSchema,
   getChannelMembersSchema,
+  getUserChannelsSchema,
+  channelIdParamSchema,
 } from "@/api/channels"
 import {
   getThread,
@@ -194,6 +197,7 @@ import {
   getThreadSchema,
   sendThreadReplySchema,
   updateThreadReplySchema,
+  deleteThreadReplySchema,
 } from "@/api/threads"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
@@ -608,6 +612,23 @@ export const CallNotificationWs = app.get(
                   message.targetUserId,
                   message.isTyping,
                   userId,
+                )
+              }
+              break
+            case "channel_typing_indicator":
+              // Handle channel typing indicator
+              if (
+                userId &&
+                message.channelId &&
+                message.memberUserIds &&
+                Array.isArray(message.memberUserIds) &&
+                typeof message.isTyping === "boolean"
+              ) {
+                callNotificationService.sendChannelTypingIndicator(
+                  message.memberUserIds,
+                  message.channelId,
+                  userId,
+                  message.isTyping,
                 )
               }
               break
@@ -1198,7 +1219,11 @@ export const AppRoutes = app
   .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
   .post("/calls/leave", zValidator("json", leaveCallSchema), LeaveCallApi)
   .get("/calls/active", GetActiveCallsApi)
-  .get("/calls/history", GetCallHistoryApi)
+  .get(
+    "/calls/history",
+    zValidator("query", getCallHistorySchema),
+    GetCallHistoryApi,
+  )
   // Direct message routes
   .post("/messages/send", zValidator("json", sendMessageSchema), SendMessageApi)
   .get(
@@ -1231,7 +1256,11 @@ export const AppRoutes = app
     zValidator("json", archiveChannelSchema),
     ArchiveChannelApi,
   )
-  .get("/channels", GetUserChannelsApi)
+  .get(
+    "/channels",
+    zValidator("query", getUserChannelsSchema),
+    GetUserChannelsApi,
+  )
   .get("/channels/browse", BrowsePublicChannelsApi)
   .post("/channels/join", zValidator("json", joinChannelSchema), JoinChannelApi)
   .get(
@@ -1294,8 +1323,16 @@ export const AppRoutes = app
     zValidator("query", getPinnedMessagesSchema),
     GetPinnedMessagesApi,
   )
-  .delete("/channels/:channelId", DeleteChannelApi)
-  .get("/channels/:channelId", GetChannelDetailsApi)
+  .delete(
+    "/channels/:channelId",
+    zValidator("param", channelIdParamSchema),
+    DeleteChannelApi,
+  )
+  .get(
+    "/channels/:channelId",
+    zValidator("param", channelIdParamSchema),
+    GetChannelDetailsApi,
+  )
   // Thread routes
   .get("/threads/:messageId", zValidator("query", getThreadSchema), getThread)
   .post(
@@ -1308,7 +1345,11 @@ export const AppRoutes = app
     zValidator("json", updateThreadReplySchema),
     updateThreadReply,
   )
-  .delete("/threads/replies/:replyId", deleteThreadReply)
+  .delete(
+    "/threads/replies/:replyId",
+    zValidator("param", deleteThreadReplySchema),
+    deleteThreadReply,
+  )
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(

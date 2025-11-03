@@ -70,6 +70,12 @@ export const inviteToCallSchema = z.object({
   callType: z.nativeEnum(CallType).default(CallType.Audio),
 })
 
+export const getCallHistorySchema = z.object({
+  callType: z.enum(["video", "audio", "missed"]).optional(),
+  timeFilter: z.enum(["today", "week", "month"]).optional(),
+  search: z.string().optional(),
+})
+
 // Generate LiveKit access token
 // Note: LiveKit still uses the 'room' property, but we pass callId (externalId) as the room name
 const generateAccessToken = async (
@@ -816,10 +822,13 @@ export const GetCallHistoryApi = async (c: Context) => {
       throw new HTTPException(400, { message: "Workspace ID is required" })
     }
 
-    // Get query parameters for filtering
-    const callType = c.req.query("callType") // 'video', 'audio', 'missed', or undefined
-    const timeFilter = c.req.query("timeFilter") // 'today', 'week', 'month', or undefined
-    const searchQuery = c.req.query("search") // search string or undefined
+    // Validate and get query parameters
+    const validatedQuery = getCallHistorySchema.parse({
+      callType: c.req.query("callType"),
+      timeFilter: c.req.query("timeFilter"),
+      search: c.req.query("search"),
+    })
+    const { callType, timeFilter, search: searchQuery } = validatedQuery
 
     // Get user info
     const users = await getUserByEmail(db, userEmail)

@@ -6,6 +6,7 @@ import { callNotificationClient } from "@/services/callNotifications"
 import { RenderLexicalContent } from "./RenderLexicalContent"
 import { api } from "@/api"
 import type { LexicalEditorState, CallType } from "@/types"
+import { formatTime } from "@/utils/messageHelpers"
 
 interface ThreadMessage {
   id: number
@@ -48,18 +49,6 @@ export default function ThreadPanel({
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  // Format timestamp
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp)
-    return date
-      .toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      })
-      .toUpperCase()
-  }
 
   // Scroll to bottom
   const scrollToBottom = () => {

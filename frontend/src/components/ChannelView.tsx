@@ -34,6 +34,7 @@ import {
   extractTextContent,
   shouldShowHeader,
   isContentEqual,
+  formatTime,
 } from "@/utils/messageHelpers"
 
 interface User {
@@ -85,6 +86,9 @@ export default function ChannelView({
     channel.memberCount || 0,
   )
   const [openThread, setOpenThread] = useState<ChannelMessage | null>(null)
+  const [channelMembers, setChannelMembers] = useState<Map<string, User>>(
+    new Map(),
+  )
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageContainerRef = useRef<HTMLDivElement>(null)
@@ -552,7 +556,7 @@ export default function ChannelView({
     setEditingContent(null)
   }
 
-  // Fetch member count
+  // Fetch member count and member data
   const fetchMemberCount = async () => {
     try {
       const response = await api.channels.members.$get({
@@ -562,6 +566,18 @@ export default function ChannelView({
       if (response.ok) {
         const data = await response.json()
         setMemberCount(data.members?.length || 0)
+
+        // Store member data in a map for quick lookup
+        const membersMap = new Map<string, User>()
+        data.members?.forEach((member: any) => {
+          membersMap.set(member.id, {
+            id: member.id,
+            name: member.name,
+            email: member.email,
+            photoLink: member.photoLink,
+          })
+        })
+        setChannelMembers(membersMap)
       }
     } catch (error) {
       console.error("Failed to fetch member count:", error)
@@ -570,7 +586,15 @@ export default function ChannelView({
 
   // Handle typing indicator
   const handleTyping = (isTyping: boolean) => {
-    // In a real implementation, you'd send this to the server
+    // Get all member IDs from channelMembers map
+    const memberUserIds = Array.from(channelMembers.keys())
+    if (memberUserIds.length > 0) {
+      callNotificationClient.sendChannelTypingIndicator(
+        channel.id,
+        memberUserIds,
+        isTyping,
+      )
+    }
   }
 
   // Load messages and set up real-time subscriptions
@@ -762,18 +786,6 @@ export default function ChannelView({
       unsubscribeDelete()
     }
   }, [channel.id])
-
-  // Format timestamp
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp)
-    return date
-      .toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      })
-      .toUpperCase()
-  }
 
   // Check if user can manage messages (owner or admin)
   const canManageMessages =
@@ -1161,11 +1173,53 @@ export default function ChannelView({
 
             {/* Typing Indicator */}
             {typingUsers.size > 0 && (
-              <div className="flex gap-3 mt-4 px-3 py-1">
-                <div className="text-sm text-gray-500 italic">
-                  {Array.from(typingUsers).length === 1
-                    ? "Someone is typing..."
-                    : `${Array.from(typingUsers).length} people are typing...`}
+              <div className="group hover:bg-gray-50 dark:hover:bg-gray-800/50 -mx-6 px-6 py-0.5">
+                <div className="flex gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+                        {(() => {
+                          const typingNames = Array.from(typingUsers)
+                            .map((userId) => {
+                              const member = channelMembers.get(userId)
+                              return member?.name || "Someone"
+                            })
+                            .filter(
+                              (name, index, arr) => arr.indexOf(name) === index,
+                            ) // Remove duplicates
+
+                          if (typingNames.length === 1) {
+                            return typingNames[0]
+                          } else if (typingNames.length === 2) {
+                            return `${typingNames[0]} and ${typingNames[1]}`
+                          } else if (typingNames.length === 3) {
+                            return `${typingNames[0]}, ${typingNames[1]} and ${typingNames[2]}`
+                          } else {
+                            return `${typingNames.slice(0, 2).join(", ")} and ${typingNames.length - 2} other${typingNames.length - 2 > 1 ? "s" : ""}`
+                          }
+                        })()}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {typingUsers.size === 1
+                          ? "is typing..."
+                          : "are typing..."}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span
+                        className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
+                        style={{ animationDelay: "0ms" }}
+                      ></span>
+                      <span
+                        className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
+                        style={{ animationDelay: "150ms" }}
+                      ></span>
+                      <span
+                        className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"
+                        style={{ animationDelay: "300ms" }}
+                      ></span>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
