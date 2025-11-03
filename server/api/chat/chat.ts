@@ -497,6 +497,7 @@ const checkAndYieldCitations = async function* (
             // Skip datasource and attachment files from citations
             continue
           }
+          
           yield {
             citation: {
               index: citationIndex,
@@ -614,7 +615,57 @@ async function* processIterator(
   // tied to the json format and output expected, we expect the answer key to be present
   const ANSWER_TOKEN = '"answer":'
 
+  // Enhanced logging without citations
+  console.log("🚀 ProcessIterator started:", {
+    resultsCount: results.length,
+    previousResultsLength,
+    userRequestsReasoning,
+    email: email ? `${email.substring(0, 3)}***` : 'none',
+    reasoning,
+    answerToken: ANSWER_TOKEN
+  })
+
+  // Console the results array and individual items for debugging
+  console.log("📊 Search Results Array:", {
+    totalResults: results.length,
+    resultIds: results.map((r, index) => ({
+      index,
+      docId: (r.fields as any)?.docId,
+      app: (r.fields as any)?.app,
+      entity: (r.fields as any)?.entity,
+      title: (r.fields as any)?.title || (r.fields as any)?.subject || (r.fields as any)?.name
+    }))
+  })
+
+  // Log each individual result item
+  results.forEach((item, index) => {
+    console.log(`📋 Result Item [${index}]:`, JSON.stringify({
+      docId: (item.fields as any)?.docId,
+      app: (item.fields as any)?.app,
+      entity: (item.fields as any)?.entity,
+      sddocname: (item.fields as any)?.sddocname,
+      title: (item.fields as any)?.title || (item.fields as any)?.subject || (item.fields as any)?.name,
+      url: (item.fields as any)?.url,
+      relevance: item.relevance
+    }, null, 2))
+  })
+
+  let chunkCount = 0
   for await (const chunk of iterator) {
+    chunkCount++
+    
+    // Log chunk details without processing citations
+    console.log(`📦 Chunk ${chunkCount}:`, {
+      hasText: !!chunk.text,
+      textLength: chunk.text?.length || 0,
+      hasCost: !!chunk.cost,
+      hasMetadata: !!chunk.metadata,
+      reasoning: !!chunk.reasoning
+    })
+    
+    if (chunk.text) {
+      console.log(`💬 Chunk text preview: "${chunk.text.substring(0, 100)}${chunk.text.length > 100 ? '...' : ''}"`)
+    }
     if (chunk.text) {
       if (reasoning) {
         if (thinking && !chunk.text.includes(EndThinkingToken)) {
@@ -645,6 +696,8 @@ async function* processIterator(
             } else {
               thinking += token
             }
+            // Skip citations for debugging
+            console.log("Skipping citations for thinking:", thinking)
             yield* checkAndYieldCitations(
               thinking,
               yieldedCitations,
@@ -683,6 +736,8 @@ async function* processIterator(
               const newText = parsed.answer.slice(currentAnswer.length)
               yield { text: newText }
             }
+            // Skip citations for debugging  
+            console.log("Skipping citations for answer:", parsed.answer)
             yield* checkAndYieldCitations(
               parsed.answer,
               yieldedCitations,
@@ -1635,7 +1690,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         contextSpan?.end()
 
         const ragSpan = querySpan?.startSpan("baseline_rag")
-
+        console.log("printing the initialContext",JSON.stringify(initialContext))
         const iterator = baselineRAGJsonStream(
           query,
           userCtx,
@@ -1818,6 +1873,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       message,
       agentSpecificCollectionSelections.length > 0,
     )
+    console.log("printing the initialContext",JSON.stringify(initialContext))
 
     const { imageFileNames } = extractImageFileNames(
       initialContext,
@@ -2944,7 +3000,7 @@ async function* processResultsForMetadata(
     imageFileNames,
     agentPrompt: agentContext,
   }
-
+  console.log("printing the initialContext",JSON.stringify(context))
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app?.length == 1 && app[0] === Apps.Gmail) {
     loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)

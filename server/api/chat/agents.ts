@@ -3848,6 +3848,7 @@ export const AgentMessageApi = async (c: Context) => {
         "Existing conversation, fetched previous messages",
       )
       messages = allMessages.concat(insertedMsg) // Update messages array
+      console.log("i am printing message",JSON.stringify(allMessages))
       chat = existingChat
       chatCreationSpan.end()
     }
@@ -4187,7 +4188,7 @@ export const AgentMessageApi = async (c: Context) => {
               )
               // Limit messages to last 5 for the first LLM call if it's a new chat
               const limitedMessages = messagesWithNoErrResponse.slice(-8)
-
+              console.log("i am limited message ",JSON.stringify(limitedMessages))
               // Extract previous classification for pagination and follow-up queries
               let previousClassification: QueryRouterLLMResponse | null = null
               if (messages.length >= 2) {
