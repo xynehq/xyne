@@ -1435,6 +1435,9 @@ export const SendChannelMessageApi = async (c: Context) => {
     const validatedData = sendChannelMessageSchema.parse(requestBody)
     const channelId = validatedData.channelId
 
+    // Ensure the channel belongs to this workspace before proceeding
+    await assertChannelBelongsToWorkspace(channelId, workspaceId)
+
     // Get sender
     const senderUsers = await getUserByEmail(db, userEmail)
     if (!senderUsers || senderUsers.length === 0) {
@@ -1557,6 +1560,9 @@ export const GetChannelMessagesApi = async (c: Context) => {
       throw new HTTPException(404, { message: "User not found" })
     }
     const currentUser = currentUsers[0]
+
+    // Verify the channel belongs to this workspace before checking membership
+    await assertChannelBelongsToWorkspace(validatedData.channelId, workspaceId)
 
     // Check if user is a member of the channel
     const isMember = await isChannelMember(
