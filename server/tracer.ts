@@ -1,3 +1,5 @@
+import { getLangfuseInstance } from "./ai/langfuse"
+
 interface SpanAttributes {
   [key: string]: string | number | boolean | null
 }
@@ -93,6 +95,7 @@ export class CustomTracer implements Tracer {
   private spans: Span[] = []
   private traceId: string
   private langfuseTrace: any = null
+  private langfuseInstance: any = null
   private traceName: string
   private langfuseSpanMap: Map<string, any> = new Map() // Map spanId to LangFuse span object
 
@@ -102,10 +105,9 @@ export class CustomTracer implements Tracer {
 
     // Initialize LangFuse trace if available
     try {
-      const { getLangfuseInstance } = require("./ai/langfuse")
-      const langfuse = getLangfuseInstance()
-      if (langfuse) {
-        this.langfuseTrace = langfuse.trace({
+      this.langfuseInstance = getLangfuseInstance()
+      if (this.langfuseInstance) {
+        this.langfuseTrace = this.langfuseInstance.trace({
           name: name,
           id: this.traceId,
           metadata: {
@@ -200,14 +202,10 @@ export class CustomTracer implements Tracer {
         }
 
         // Auto-flush if this is the root span (no parent)
-        if (!span.parentSpanId) {
-          const { getLangfuseInstance } = require("./ai/langfuse")
-          const langfuse = getLangfuseInstance()
-          if (langfuse) {
-            langfuse.flushAsync().catch(() => {
-              // Ignore flush errors
-            })
-          }
+        if (!span.parentSpanId && this.langfuseInstance) {
+          this.langfuseInstance.flushAsync().catch(() => {
+            // Ignore flush errors
+          })
         }
       } catch (error) {
         // Ignore LangFuse errors to not break the application
