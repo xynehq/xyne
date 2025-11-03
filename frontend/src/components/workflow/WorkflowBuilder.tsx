@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect, useRef } from "react"
-import { Bot, Mail, FileText, Globe } from "lucide-react"
+import { Bot, Mail, Globe } from "lucide-react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -145,12 +145,15 @@ import {
   ManualTriggerIcon,
   AppEventIcon,
   ScheduleIcon,
+  FormSubmissionIcon,
   WorkflowExecutionIcon,
   ChatMessageIcon,
   WebhookIcon,
   HelpIcon,
   TemplatesIcon,
   AddIcon,
+  FormDocumentIcon,
+  JiraIcon,
 } from "./WorkflowIcons"
 import {
   workflowExecutionsAPI,
@@ -162,6 +165,7 @@ import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import HttpRequestConfigUI, { HttpRequestConfig } from "./HttpRequestConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
 import WebhookConfigurationUI, { WebhookConfig } from "./WebhookConfigurationUI"
+import { JiraConfigurationUI, JiraConfig } from "./JiraConfigurationUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
@@ -1214,7 +1218,7 @@ const StepNode: React.FC<NodeProps> = ({
                 borderRadius: "4.8px",
               }}
             >
-              <FileText size={16} />
+              <FormDocumentIcon width={16} height={16} />
             </div>
 
             <h3
@@ -2023,7 +2027,14 @@ const TriggersSidebar = ({
       name: "On Form Submission",
       description:
         "Generate webforms in Xyne and pass their responses to the workflow",
-      icon: <FileText size={20} />,
+      icon: <FormSubmissionIcon width={20} height={20} />,
+      enabled: true,
+    },
+    {
+      id: "jira",
+      name: "Jira",
+      description: "Trigger workflow when Jira events occur (issue created, updated, etc.)",
+      icon: <JiraIcon width={20} height={20} />,
       enabled: true,
     },
     {
@@ -2317,6 +2328,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [selectedWebhookNodeId, setSelectedWebhookNodeId] = useState<string | null>(
     null,
   )
+  const [showJiraConfigUI, setShowJiraConfigUI] = useState(false)
+  const [selectedJiraNodeId, setSelectedJiraNodeId] = useState<string | null>(
+    null,
+  )
+  const [jiraInitialConfig, setJiraInitialConfig] = useState<any>(undefined)
+  const [jiraToolId, setJiraToolId] = useState<string | undefined>(undefined)
   const [zoomLevel, setZoomLevel] = useState(100)
   const [showToolsSidebar, setShowToolsSidebar] = useState(false)
   const [selectedNodeTools] = useState<Tool[] | null>(
@@ -2666,6 +2683,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               type: step.type,
               contents: [],
               metadata: step.metadata,
+              config: step.metadata, // Use metadata as config for trigger nodes (jira, webhook, etc.)
               isExecution,
               toolExecutions: isExecution ? toolExecutions : undefined,
             },
@@ -2751,13 +2769,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       // Check if we have a valid trigger node (not just the trigger selector)
       const hasValidTrigger = nodes.some(node => {
         const nodeData = node.data as any
-        return nodeData?.step?.type && 
-               nodeData.step.type !== "trigger_selector" && 
-               (nodeData.step.type === "form_submission" || 
-                nodeData.step.type === "manual" || 
+        return nodeData?.step?.type &&
+               nodeData.step.type !== "trigger_selector" &&
+               (nodeData.step.type === "form_submission" ||
+                nodeData.step.type === "manual" ||
                 nodeData.step.type === "schedule" ||
                 nodeData.step.type === "app_event" ||
-                nodeData.step.type === "webhook")
+                nodeData.step.type === "webhook" ||
+                nodeData.step.type === "jira")
       })
 
       if (lastSavedHash === "" && hasValidTrigger) {
@@ -2835,8 +2854,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
-      setShowWebhookConfigUI(false)
+setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
+      setShowJiraConfigUI(false)
       setSelectedNodeForNext(null)
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
@@ -2845,6 +2865,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setSelectedExistingAgentNodeId(null)
       setSelectedHttpRequestNodeId(null)
       setSelectedWebhookNodeId(null)
+      setSelectedJiraNodeId(null)
 
       // Handle different tool types
       switch (toolType) {
@@ -2861,7 +2882,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setShowEmailConfigUI(true)
           break
 
-        case "http_request":
+case "http_request":
           // Open HTTP Request config sidebar
           setSelectedHttpRequestNodeId(node.id)
           setShowHttpRequestConfigUI(true)
@@ -2871,6 +2892,41 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // Open Webhook config sidebar
           setSelectedWebhookNodeId(node.id)
           setShowWebhookConfigUI(true)
+          break
+
+        case "jira":
+          // Open Jira config sidebar - fetch fresh data from backend
+          setSelectedJiraNodeId(node.id)
+          setShowJiraConfigUI(true)
+
+          // Fetch the latest tool data from backend
+          const jiraTools = node?.data?.tools as any[]
+          const jiraTool = jiraTools?.[0] as any
+          if (jiraTool?.id) {
+            // Store tool ID for fetching credentials later
+            setJiraToolId(jiraTool.id)
+
+            // Fetch from backend to ensure we have latest data
+            workflowToolsAPI.getTool(jiraTool.id)
+              .then((toolData) => {
+                setJiraInitialConfig({
+                  ...toolData.config,
+                  ...toolData.value,
+                })
+              })
+              .catch((error) => {
+                console.error("Failed to fetch Jira tool data:", error)
+                // Fallback to node data if fetch fails
+                setJiraInitialConfig({
+                  ...jiraTool?.config,
+                  ...jiraTool?.value,
+                })
+              })
+          } else {
+            // No tool ID yet (new node)
+            setJiraToolId(undefined)
+            setJiraInitialConfig(undefined)
+          }
           break
 
         case "ai_agent":
@@ -3092,6 +3148,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowExistingAgentConfigUI(false)
       setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
+      setShowJiraConfigUI(false)
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
       setShowWhatHappensNextUI(true)
@@ -3105,6 +3162,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowJiraConfigUI(false)
 
       setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
@@ -3358,11 +3416,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         setTimeout(() => {
           zoomTo(1)
         }, 50)
-      } else if (triggerId === "webhook") {
+} else if (triggerId === "webhook") {
         // Close TriggersSidebar with slide-out animation when WebhookConfigurationUI opens
         setShowTriggersSidebar(false)
         setSelectedWebhookNodeId("pending") // Temporary ID to indicate we're in creation mode
         setShowWebhookConfigUI(true)
+} else if (triggerId === "jira") {
+        // Close TriggersSidebar with slide-out animation when JiraConfigurationUI opens
+        setShowTriggersSidebar(false)
+        setSelectedJiraNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowJiraConfigUI(true)
         setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
         // Reset zoom to 100%
         setZoomLevel(100)
@@ -4061,7 +4124,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges],
   )
 
-  const handleWebhookConfigSave = useCallback(
+const handleWebhookConfigSave = useCallback(
     async (webhookConfig: WebhookConfig) => {
       try {
         let savedWebhookData: any
@@ -4127,11 +4190,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         } else if (selectedWebhookNodeId && selectedWebhookNodeId !== "pending") {
           // Update existing webhook - call API to update workflow_tool table
           const toolId = getToolIdFromStepId(selectedWebhookNodeId)
-          
+
           if (!toolId) {
             throw new Error("Tool ID not found for webhook node")
           }
-          
+
           savedWebhookData = await workflowToolsAPI.updateWebhookConfig(toolId, {
             webhookUrl: webhookConfig.webhookUrl,
             httpMethod: webhookConfig.httpMethod,
@@ -4190,6 +4253,182 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       }
     },
     [selectedWebhookNodeId, setNodes, setNodeCounter, setSelectedNodes, zoomTo, edges, getToolIdFromStepId],
+  )
+
+  const handleJiraConfigBack = useCallback(() => {
+    setShowJiraConfigUI(false)
+    setJiraInitialConfig(undefined)
+
+    // If we're in creation mode (pending), go back to triggers sidebar
+    if (selectedJiraNodeId === "pending") {
+      setShowTriggersSidebar(true)
+      setSelectedJiraNodeId(null)
+      // If we were in pending mode (creating new trigger), show empty canvas again
+      if (nodes.length === 0) {
+        setShowEmptyCanvas(true)
+      }
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedJiraNodeId(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) =>
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedJiraNodeId, nodes.length, setNodes])
+
+  const handleJiraConfigSave = useCallback(
+    async (jiraConfig: JiraConfig) => {
+      try {
+        let savedJiraData: any
+
+        // Helper to sanitize config by removing sensitive credentials
+        const sanitize = (cfg: JiraConfig) => {
+          const { apiToken, ...rest } = cfg
+          return rest
+        }
+
+        if (selectedJiraNodeId === "pending") {
+          // Create new Jira trigger - call API to save to workflow_tool table
+          savedJiraData = await workflowToolsAPI.saveJiraConfig({
+            domain: jiraConfig.domain,
+            email: jiraConfig.email,
+            apiToken: jiraConfig.apiToken,
+            events: jiraConfig.events,
+            webhookUrl: jiraConfig.webhookUrl,
+            testWebhookUrl: jiraConfig.testWebhookUrl,
+            productionWebhookUrl: jiraConfig.productionWebhookUrl,
+            webhookId: jiraConfig.webhookId,
+            title: jiraConfig.title,
+            description: jiraConfig.description,
+            jqlFilter: jiraConfig.jqlFilter,
+            simpleFilters: jiraConfig.simpleFilters,
+          })
+
+          // Avoid logging sensitive backend payloads
+
+          // Sanitize config before storing in client state
+          const sanitizedValue = savedJiraData?.value || {}
+          const sanitizedConfig = savedJiraData?.config
+            ? sanitize(savedJiraData.config as JiraConfig)
+            : {}
+
+          // Create new Jira trigger node
+          const newNodeId = "jira-trigger"
+
+          // Store sanitized data in client state (no apiToken)
+          const jiraTool = {
+            id: savedJiraData?.id || `tool-${newNodeId}`,
+            type: "jira",
+            val: sanitizedValue,
+            value: sanitizedValue,
+            config: sanitizedConfig,
+          }
+
+          // Create Jira trigger node
+          const jiraNode: Node = {
+            id: newNodeId,
+            type: "stepNode",
+            position: { x: 400, y: 100 },
+            data: {
+              step: {
+                id: newNodeId,
+                name: jiraConfig.title || "Jira Trigger",
+                status: "PENDING",
+                contents: [],
+                type: "jira",
+                config: sanitizedConfig,
+              },
+              tools: [jiraTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true,
+              anyNodeSelected: false,
+            },
+            draggable: true,
+            selectable: true,
+            selected: true, // Select the newly created node
+          }
+
+          setNodes([jiraNode])
+          setNodeCounter(2)
+          setSelectedNodes([jiraNode]) // Update selectedNodes for the anyNodeSelected flag
+
+        } else if (selectedJiraNodeId && selectedJiraNodeId !== "pending") {
+          // Update existing Jira trigger - call API to update workflow_tool table
+          const toolId = getToolIdFromStepId(selectedJiraNodeId)
+
+          if (!toolId) {
+            throw new Error("Tool ID not found for Jira node")
+          }
+
+          savedJiraData = await workflowToolsAPI.updateJiraConfig(toolId, {
+            domain: jiraConfig.domain,
+            email: jiraConfig.email,
+            apiToken: jiraConfig.apiToken,
+            events: jiraConfig.events,
+            webhookUrl: jiraConfig.webhookUrl,
+            testWebhookUrl: jiraConfig.testWebhookUrl,
+            productionWebhookUrl: jiraConfig.productionWebhookUrl,
+            webhookId: jiraConfig.webhookId,
+            title: jiraConfig.title,
+            description: jiraConfig.description,
+            jqlFilter: jiraConfig.jqlFilter,
+            simpleFilters: jiraConfig.simpleFilters,
+          })
+
+          // Avoid logging sensitive backend payloads
+
+          // Sanitize config before storing in client state
+          const sanitizedValue = savedJiraData?.value || {}
+          const sanitizedConfig = savedJiraData?.config
+            ? sanitize(savedJiraData.config as JiraConfig)
+            : {}
+
+          // Store sanitized data in client state (no apiToken)
+          const jiraTool = {
+            id: toolId,
+            type: "jira",
+            val: sanitizedValue,
+            value: sanitizedValue,
+            config: sanitizedConfig,
+          }
+
+          setNodes((nds) =>
+            nds.map((node) =>
+              node.id === selectedJiraNodeId
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      step: {
+                        ...(node.data.step || {}),
+                        name: jiraConfig.title || "Jira Trigger",
+                        config: sanitizedConfig,
+                      },
+                      tools: [jiraTool],
+                      hasNext: !edges.some(edge => edge.source === selectedJiraNodeId),
+                    },
+                  }
+                : node,
+            ),
+          )
+        }
+
+        setShowJiraConfigUI(false)
+        setSelectedJiraNodeId(null)
+        setZoomLevel(100)
+
+        setTimeout(() => {
+          smartFitWorkflow()
+        }, 50)
+      } catch (error) {
+        console.error("Failed to save Jira configuration:", error)
+        showSnackbarMessage("Failed to save Jira configuration. Please try again.", "error")
+      }
+    },
+    [selectedJiraNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges, getToolIdFromStepId, showSnackbarMessage],
   )
 
   const handleResultClick = useCallback((result: any) => {
@@ -4523,7 +4762,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           !showEmailConfigUI &&
           !showOnFormSubmissionUI &&
           !showWebhookConfigUI &&
-          !showHttpRequestConfigUI && (
+          !showHttpRequestConfigUI &&
+          !showJiraConfigUI && (
             <TriggersSidebar
               isVisible={showTriggersSidebar}
               onTriggerClick={handleTriggerClick}
@@ -4556,16 +4796,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           toolData={
             selectedNodeForNext
               ? (() => {
-                const node = nodes.find((n) => n.id === selectedNodeForNext)
-                const tools = node?.data?.tools as Tool[] | undefined
-                return tools && tools.length > 0 ? tools[0] : undefined
-              })()
+                  const node = nodes.find((n) => n.id === selectedNodeForNext)
+                  const tools = node?.data?.tools as Tool[] | undefined
+                  return tools && tools.length > 0 ? tools[0] : undefined
+                })()
               : undefined
           }
         />
 
         {/* AI Agent Config Sidebar */}
-        {!showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showHttpRequestConfigUI && (
+        {!showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showJiraConfigUI && (
           <AIAgentConfigUI
             isVisible={showAIAgentConfigUI}
             onBack={handleAIAgentConfigBack}
@@ -4648,7 +4888,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           )}
 
         {/* Email Config Sidebar */}
-        {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showHttpRequestConfigUI && (
+        {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showJiraConfigUI && (
           <EmailConfigUI
             isVisible={showEmailConfigUI}
             onBack={handleEmailConfigBack}
@@ -4769,7 +5009,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           onClose={() => {
             setShowWebhookConfigUI(false)
             setSelectedWebhookNodeId(null)
-            setNodes((prevNodes) => 
+            setNodes((prevNodes) =>
               prevNodes.map(node => ({ ...node, selected: false }))
             )
             setSelectedNodes([])
@@ -4799,6 +5039,29 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               : undefined
           }
           toolId={selectedWebhookNodeId ? getToolIdFromStepId(selectedWebhookNodeId) : undefined}
+        />
+
+        {/* Jira Configuration Sidebar */}
+        <JiraConfigurationUI
+          isVisible={showJiraConfigUI}
+          onBack={handleJiraConfigBack}
+          onClose={() => {
+            setShowJiraConfigUI(false)
+            setSelectedJiraNodeId(null)
+            setJiraInitialConfig(undefined)
+            setJiraToolId(undefined)
+            setNodes((prevNodes) =>
+              prevNodes.map(node => ({ ...node, selected: false }))
+            )
+            setSelectedNodes([])
+            // If we were in pending mode (creating new trigger), show empty canvas again
+            if (nodes.length === 0) {
+              setShowEmptyCanvas(true)
+            }
+          }}
+          onSave={handleJiraConfigSave}
+          initialConfig={jiraInitialConfig}
+          toolId={jiraToolId}
         />
       </div>
 

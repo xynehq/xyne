@@ -247,6 +247,12 @@ import {
   ServeWorkflowFileApi,
   GetGeminiModelEnumsApi,
   GetVertexAIModelEnumsApi,
+  TestJiraConnectionApi,
+  RegisterJiraWebhookApi,
+  GetJiraWebhooksApi,
+  DeleteJiraWebhookApi,
+  GetJiraMetadataApi,
+  ReceiveJiraWebhookApi,
   createWorkflowTemplateSchema,
   createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
@@ -1192,9 +1198,9 @@ app.get("/workflow/webhook-api/reload", async (c) => {
     const result = await webhookHandler.reloadWebhooks()
     return c.json(result)
   } catch (error) {
-    return c.json({ 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
     }, 500)
   }
 })
@@ -1205,12 +1211,16 @@ app.get("/workflow/webhook-api/list", async (c) => {
     const result = webhookHandler.listWebhooks()
     return c.json(result)
   } catch (error) {
-    return c.json({ 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
     }, 500)
   }
 })
+
+// Jira webhook endpoints (public - no auth required) - placed at top level outside AuthMiddleware
+app.post("/api/v1/webhook/jira/:webhookId", ReceiveJiraWebhookApi)
+app.post("/api/v1/webhook-test/jira/:webhookId", ReceiveJiraWebhookApi)
 
 export const AppRoutes = app
   .basePath("/api/v1")
@@ -1407,6 +1417,12 @@ export const AppRoutes = app
     UpdateWorkflowToolApi,
   )
   .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  .post("/workflow/tools/jira/test-connection", TestJiraConnectionApi)
+  .post("/workflow/tools/jira/register-webhook", RegisterJiraWebhookApi)
+  .post("/workflow/tools/jira/webhooks", GetJiraWebhooksApi)
+  .post("/workflow/tools/jira/delete-webhook", DeleteJiraWebhookApi)
+  .post("/workflow/tools/jira/metadata", GetJiraMetadataApi)
+  // Webhook routes moved to before AuthMiddleware (lines 892-893)
   .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
   .put(
     "/workflow/steps/:stepId",
