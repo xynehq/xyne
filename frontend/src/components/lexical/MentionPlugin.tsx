@@ -131,6 +131,7 @@ export function MentionPlugin({ onMentionSearch }: MentionPluginProps) {
       // Reset state
       setShowDropdown(false)
       setSearchTerm("")
+      setUsers([])
       setSelectedIndex(0)
       mentionStartOffset.current = null
       isInsertingMention.current = false
@@ -192,7 +193,11 @@ export function MentionPlugin({ onMentionSearch }: MentionPluginProps) {
     const removeKeyTabCommand = editor.registerCommand(
       KEY_TAB_COMMAND,
       (event) => {
-        if (users.length > 0) {
+        if (
+          showDropdown &&
+          users.length > 0 &&
+          mentionStartOffset.current !== null
+        ) {
           event?.preventDefault()
           insertMention(users[selectedIndex])
           return true
@@ -208,6 +213,7 @@ export function MentionPlugin({ onMentionSearch }: MentionPluginProps) {
         event?.preventDefault()
         setShowDropdown(false)
         setSearchTerm("")
+        setUsers([])
         setSelectedIndex(0)
         mentionStartOffset.current = null
         return true
@@ -387,6 +393,7 @@ export function MentionPlugin({ onMentionSearch }: MentionPluginProps) {
         if (showDropdown && !isInsertingMention.current) {
           setShowDropdown(false)
           setSearchTerm("")
+          setUsers([])
           setSelectedIndex(0)
           mentionStartOffset.current = null
         }
@@ -403,6 +410,7 @@ export function MentionPlugin({ onMentionSearch }: MentionPluginProps) {
       ) {
         setShowDropdown(false)
         setSearchTerm("")
+        setUsers([])
         setSelectedIndex(0)
       }
     }

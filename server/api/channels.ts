@@ -214,6 +214,45 @@ const extractPlainText = (lexicalJson: any): string => {
   return traverse(lexicalJson.root)
 }
 
+// Ensures the channel exists and belongs to the workspace
+const assertChannelBelongsToWorkspace = async (
+  channelId: number,
+  workspaceId: number,
+) => {
+  const [channel] = await db
+    .select()
+    .from(channels)
+    .where(
+      and(eq(channels.id, channelId), eq(channels.workspaceId, workspaceId)),
+    )
+    .limit(1)
+  if (!channel) throw new HTTPException(404, { message: "Channel not found" })
+  return channel
+}
+
+// Ensures the message exists and belongs to the workspace via its channel
+const assertMessageBelongsToWorkspace = async (
+  messageId: number,
+  workspaceId: number,
+) => {
+  const [row] = await db
+    .select({
+      message: channelMessages,
+      channelWorkspaceId: channels.workspaceId,
+    })
+    .from(channelMessages)
+    .innerJoin(channels, eq(channels.id, channelMessages.channelId))
+    .where(eq(channelMessages.id, messageId))
+    .limit(1)
+  if (!row) throw new HTTPException(404, { message: "Message not found" })
+  if (row.channelWorkspaceId !== workspaceId) {
+    throw new HTTPException(403, {
+      message: "You do not have access to this message",
+    })
+  }
+  return row.message
+}
+
 // ==================== Channel CRUD APIs ====================
 
 // Create a new channel
@@ -454,16 +493,11 @@ export const UpdateChannelApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    // Get channel and verify it exists
-    const [channel] = await db
-      .select()
-      .from(channels)
-      .where(eq(channels.id, channelId))
-      .limit(1)
-
-    if (!channel) {
-      throw new HTTPException(404, { message: "Channel not found" })
-    }
+    // Get channel and verify it belongs to workspace
+    const channel = await assertChannelBelongsToWorkspace(
+      channelId,
+      workspaceId,
+    )
 
     if (channel.isArchived) {
       throw new HTTPException(400, {
@@ -654,16 +688,11 @@ export const ArchiveChannelApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    // Get channel
-    const [channel] = await db
-      .select()
-      .from(channels)
-      .where(eq(channels.id, channelId))
-      .limit(1)
-
-    if (!channel) {
-      throw new HTTPException(404, { message: "Channel not found" })
-    }
+    // Get channel and verify it belongs to workspace
+    const channel = await assertChannelBelongsToWorkspace(
+      channelId,
+      workspaceId,
+    )
 
     // Check if user has admin privileges
     const userRole = await getUserChannelRole(channel.id, currentUser.id)
@@ -954,16 +983,11 @@ export const AddChannelMembersApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    // Get channel
-    const [channel] = await db
-      .select()
-      .from(channels)
-      .where(eq(channels.id, channelId))
-      .limit(1)
-
-    if (!channel) {
-      throw new HTTPException(404, { message: "Channel not found" })
-    }
+    // Get channel and verify it belongs to workspace
+    const channel = await assertChannelBelongsToWorkspace(
+      channelId,
+      workspaceId,
+    )
 
     if (channel.isArchived) {
       throw new HTTPException(400, {
@@ -1078,27 +1102,27 @@ export const RemoveChannelMemberApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    // Get user to remove
+    // Get user to remove (ensure they're in same workspace)
     const [userToRemove] = await db
       .select()
       .from(users)
-      .where(eq(users.externalId, validatedData.memberId))
+      .where(
+        and(
+          eq(users.externalId, validatedData.memberId),
+          eq(users.workspaceId, currentUser.workspaceId),
+        ),
+      )
       .limit(1)
 
     if (!userToRemove) {
       throw new HTTPException(404, { message: "User to remove not found" })
     }
 
-    // Get channel
-    const [channel] = await db
-      .select()
-      .from(channels)
-      .where(eq(channels.id, channelId))
-      .limit(1)
-
-    if (!channel) {
-      throw new HTTPException(404, { message: "Channel not found" })
-    }
+    // Get channel and verify it belongs to workspace
+    const channel = await assertChannelBelongsToWorkspace(
+      channelId,
+      workspaceId,
+    )
 
     // Check if user has admin privileges
     const currentUserRole = await getUserChannelRole(channel.id, currentUser.id)
@@ -1168,27 +1192,27 @@ export const UpdateMemberRoleApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    // Get user whose role is being updated
+    // Get user whose role is being updated (ensure they're in same workspace)
     const [targetUser] = await db
       .select()
       .from(users)
-      .where(eq(users.externalId, validatedData.memberId))
+      .where(
+        and(
+          eq(users.externalId, validatedData.memberId),
+          eq(users.workspaceId, currentUser.workspaceId),
+        ),
+      )
       .limit(1)
 
     if (!targetUser) {
       throw new HTTPException(404, { message: "Target user not found" })
     }
 
-    // Get channel
-    const [channel] = await db
-      .select()
-      .from(channels)
-      .where(eq(channels.id, channelId))
-      .limit(1)
-
-    if (!channel) {
-      throw new HTTPException(404, { message: "Channel not found" })
-    }
+    // Get channel and verify it belongs to workspace
+    const channel = await assertChannelBelongsToWorkspace(
+      channelId,
+      workspaceId,
+    )
 
     // Only owner can change roles
     const currentUserRole = await getUserChannelRole(channel.id, currentUser.id)
@@ -1264,15 +1288,18 @@ export const LeaveChannelApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    // Get channel
-    const [channel] = await db
-      .select()
-      .from(channels)
-      .where(eq(channels.id, channelId))
-      .limit(1)
+    // Get channel and verify it belongs to workspace
+    const channel = await assertChannelBelongsToWorkspace(
+      channelId,
+      workspaceId,
+    )
 
-    if (!channel) {
-      throw new HTTPException(404, { message: "Channel not found" })
+    // Ensure user is a member before leaving
+    const isMember = await isChannelMember(channel.id, currentUser.id)
+    if (!isMember) {
+      throw new HTTPException(400, {
+        message: "You are not a member of this channel",
+      })
     }
 
     // Check if user is the owner
@@ -1508,13 +1535,13 @@ export const GetChannelMessagesApi = async (c: Context) => {
 
     // Get query parameters
     const channelIdStr = c.req.query("channelId")
-    const limitStr = c.req.query("limit")
+    const limitStr = c.req.query("limit") ?? undefined
     const cursor = c.req.query("cursor")
 
     // Parse and validate
     const validatedData = getChannelMessagesSchema.parse({
       channelId: channelIdStr,
-      limit: limitStr,
+      limit: limitStr ?? undefined,
       cursor,
     })
 
@@ -1672,7 +1699,8 @@ export const GetChannelMessagesApi = async (c: Context) => {
         lastReplyAt: msg.lastReplyAt,
         repliers: msg.threadId
           ? (repliersMap.get(msg.threadId) || []).map(
-              ({ name, photoLink }) => ({
+              ({ userId, name, photoLink }) => ({
+                userId,
                 name,
                 photoLink,
               }),
@@ -1714,16 +1742,11 @@ export const EditChannelMessageApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    // Get message
-    const [message] = await db
-      .select()
-      .from(channelMessages)
-      .where(eq(channelMessages.id, messageId))
-      .limit(1)
-
-    if (!message) {
-      throw new HTTPException(404, { message: "Message not found" })
-    }
+    // Get message and verify it belongs to workspace
+    const message = await assertMessageBelongsToWorkspace(
+      messageId,
+      workspaceId,
+    )
 
     if (message.sentByUserId !== currentUser.id) {
       throw new HTTPException(403, {
@@ -1816,16 +1839,11 @@ export const DeleteChannelMessageApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    // Get message
-    const [message] = await db
-      .select()
-      .from(channelMessages)
-      .where(eq(channelMessages.id, messageId))
-      .limit(1)
-
-    if (!message) {
-      throw new HTTPException(404, { message: "Message not found" })
-    }
+    // Get message and verify it belongs to workspace
+    const message = await assertMessageBelongsToWorkspace(
+      messageId,
+      workspaceId,
+    )
 
     // Check if user is message sender or channel admin
     const isOwnMessage = message.sentByUserId === currentUser.id
@@ -1916,16 +1934,11 @@ export const PinMessageApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    // Get message
-    const [message] = await db
-      .select()
-      .from(channelMessages)
-      .where(eq(channelMessages.id, messageId))
-      .limit(1)
-
-    if (!message) {
-      throw new HTTPException(404, { message: "Message not found" })
-    }
+    // Get message and verify it belongs to workspace
+    const message = await assertMessageBelongsToWorkspace(
+      messageId,
+      workspaceId,
+    )
 
     if (message.deletedAt) {
       throw new HTTPException(400, { message: "Cannot pin deleted message" })
@@ -2000,16 +2013,11 @@ export const UnpinMessageApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
-    // Get message
-    const [message] = await db
-      .select()
-      .from(channelMessages)
-      .where(eq(channelMessages.id, messageId))
-      .limit(1)
-
-    if (!message) {
-      throw new HTTPException(404, { message: "Message not found" })
-    }
+    // Get message and verify it belongs to workspace
+    const message = await assertMessageBelongsToWorkspace(
+      messageId,
+      workspaceId,
+    )
 
     // Check if user is channel admin
     const userRole = await getUserChannelRole(message.channelId, currentUser.id)

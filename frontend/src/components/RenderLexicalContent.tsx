@@ -37,6 +37,28 @@ export function RenderLexicalContent({
               {element}
             </code>
           )
+        if (format & 4) {
+          element = <u key={`${index}-underline`}>{element}</u>
+        }
+        if (format & 8) {
+          element = <s key={`${index}-strikethrough`}>{element}</s>
+        }
+        if (format & 128) {
+          element = (
+            <mark
+              key={`${index}-highlight`}
+              className="bg-yellow-200 dark:bg-yellow-800 px-1 rounded-sm"
+            >
+              {element}
+            </mark>
+          )
+        }
+        if (format & 32) {
+          element = <sub key={`${index}-subscript`}>{element}</sub>
+        }
+        if (format & 64) {
+          element = <sup key={`${index}-superscript`}>{element}</sup>
+        }
       }
 
       return element

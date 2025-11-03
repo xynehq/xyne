@@ -391,7 +391,8 @@ export const GetConversationApi = async (c: Context) => {
         lastReplyAt: msg.lastReplyAt,
         repliers: msg.threadId
           ? (repliersMap.get(msg.threadId) || []).map(
-              ({ name, photoLink }) => ({
+              ({ userId, name, photoLink }) => ({
+                userId,
                 name,
                 photoLink,
               }),

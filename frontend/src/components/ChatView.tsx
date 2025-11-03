@@ -53,7 +53,7 @@ interface Message {
   threadId?: number | null
   replyCount?: number
   lastReplyAt?: string | null
-  repliers?: Array<{ name: string; photoLink: string | null }>
+  repliers?: Array<{ userId: string; name: string; photoLink: string | null }>
 }
 
 interface ChatViewProps {
@@ -133,9 +133,10 @@ export default function ChatView({
             // Add current user to repliers list (keep last 3 unique repliers)
             repliers: [
               ...(msg.repliers || []).filter(
-                (r) => r.name !== currentUser.name,
+                (r) => r.userId !== currentUser.id,
               ),
               {
+                userId: currentUser.id,
                 name: currentUser.name,
                 photoLink: currentUser.photoLink || null,
               },
@@ -613,9 +614,10 @@ export default function ChatView({
                   // Update repliers list (keep last 3 unique repliers)
                   repliers: [
                     ...(msg.repliers || []).filter(
-                      (r) => r.name !== data.reply.sender.name,
+                      (r) => r.userId !== data.reply.sender.externalId,
                     ),
                     {
+                      userId: data.reply.sender.externalId,
                       name: data.reply.sender.name,
                       photoLink: data.reply.sender.photoLink || null,
                     },

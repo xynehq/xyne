@@ -153,5 +153,5 @@ export interface ChannelMessage {
   threadId?: number | null
   replyCount?: number
   lastReplyAt?: string | null
-  repliers?: Array<{ name: string; photoLink: string | null }>
+  repliers?: Array<{ userId: string; name: string; photoLink: string | null }>
 }

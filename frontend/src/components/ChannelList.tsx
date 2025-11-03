@@ -37,6 +37,22 @@ export default function ChannelList({
     new Map(),
   )
 
+  // Helper to update unread counts for a specific channel
+  const updateUnreadCount = useCallback(
+    (channelId: number, unreadCount?: number) => {
+      setUnreadCounts((prev) => {
+        const next = new Map(prev)
+        if (typeof unreadCount === "number" && unreadCount > 0) {
+          next.set(channelId, unreadCount)
+        } else {
+          next.delete(channelId)
+        }
+        return next
+      })
+    },
+    [],
+  )
+
   // Fetch user's channels
   const fetchChannels = useCallback(async () => {
     setLoading(true)
@@ -122,6 +138,7 @@ export default function ChannelList({
                 : channel,
             ),
           )
+          updateUnreadCount(update.channelId, update.updateData.unreadCount)
         } else {
           // Fallback to refetch if no update data provided
           fetchChannels()
@@ -143,11 +160,13 @@ export default function ChannelList({
             }
             return prevChannels
           })
+          updateUnreadCount(update.channelId, update.channelData.unreadCount)
         } else if (update.updateType === "removed") {
           // User was removed from a channel - remove it from the list
           setChannels((prevChannels) =>
             prevChannels.filter((channel) => channel.id !== update.channelId),
           )
+          updateUnreadCount(update.channelId, 0)
         } else if (update.updateType === "role_changed" && update.channelData) {
           // Role changed - update the channel with new role info
           setChannels((prevChannels) =>
@@ -157,6 +176,7 @@ export default function ChannelList({
                 : channel,
             ),
           )
+          updateUnreadCount(update.channelId, update.channelData.unreadCount)
         } else {
           // Fallback to refetch if update type is unhandled
           fetchChannels()
@@ -168,7 +188,7 @@ export default function ChannelList({
       unsubscribeUpdate()
       unsubscribeMembership()
     }
-  }, [currentUserId, selectedChannelId, fetchChannels])
+  }, [currentUserId, selectedChannelId, fetchChannels, updateUnreadCount])
 
   // Clear unread count when channel is selected
   useEffect(() => {
