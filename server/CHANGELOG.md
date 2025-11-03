@@ -1,3 +1,10 @@
+## [3.26.2](https://github.com/xynehq/xyne/compare/v3.26.1...v3.26.2) (2025-11-03)
+
+
+### Bug Fixes
+
+* XYNE-284 removed caret from breaking dependencies and removed duplicate dependencies ([#1180](https://github.com/xynehq/xyne/issues/1180)) ([76f6095](https://github.com/xynehq/xyne/commit/76f6095c045fadaeffb5acd2ba51f40d1fd14277))
+
 ## [3.26.1](https://github.com/xynehq/xyne/compare/v3.26.0...v3.26.1) (2025-10-31)
 
 
