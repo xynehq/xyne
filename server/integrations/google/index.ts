@@ -2966,6 +2966,8 @@ export async function* listFiles(
           fields:
             "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
           pageToken: nextPageToken,
+          includeItemsFromAllDrives: true,
+          supportsAllDrives: true,
         }),
       `Fetching all files from Google Drive`,
       Apps.GoogleDrive,
