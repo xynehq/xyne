@@ -202,12 +202,15 @@ const hasAdminPrivileges = (role: ChannelMemberRole | null): boolean => {
 }
 
 // Extract plain text from Lexical JSON for notifications
-const extractPlainText = (lexicalJson: any): string => {
-  const traverse = (node: any): string => {
+const extractPlainText = (lexicalJson: any, maxDepth = 100): string => {
+  const traverse = (node: any, depth = 0): string => {
     if (!node) return ""
+    if (depth > maxDepth) return ""
     if (node.text) return node.text
     if (node.children && Array.isArray(node.children)) {
-      return node.children.map((child: any) => traverse(child)).join("")
+      return node.children
+        .map((child: any) => traverse(child, depth + 1))
+        .join("")
     }
     return ""
   }
@@ -1370,6 +1373,9 @@ export const GetChannelMembersApi = async (c: Context) => {
     }
     const currentUser = currentUsers[0]
 
+    // Verify channel belongs to workspace
+    await assertChannelBelongsToWorkspace(channelId, workspaceId)
+
     // Check if user is a member of the channel
     const isMember = await isChannelMember(channelId, currentUser.id)
     if (!isMember) {
@@ -2087,6 +2093,9 @@ export const GetPinnedMessagesApi = async (c: Context) => {
       throw new HTTPException(404, { message: "User not found" })
     }
     const currentUser = currentUsers[0]
+
+    // Verify channel belongs to workspace
+    await assertChannelBelongsToWorkspace(channelId, workspaceId)
 
     // Check if user is a member
     const isMember = await isChannelMember(channelId, currentUser.id)

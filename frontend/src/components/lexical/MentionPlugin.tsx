@@ -196,6 +196,8 @@ export function MentionPlugin({ onMentionSearch }: MentionPluginProps) {
         if (
           showDropdown &&
           users.length > 0 &&
+          selectedIndex >= 0 &&
+          selectedIndex < users.length &&
           mentionStartOffset.current !== null
         ) {
           event?.preventDefault()

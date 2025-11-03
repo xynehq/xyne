@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ChannelType } from "@/types"
+import UserPillSelector from "@/components/UserPillSelector"
 
 interface WorkspaceUser {
   id: string
@@ -39,11 +40,8 @@ export default function CreateChannelModal({
   const [channelType, setChannelType] = useState<ChannelType>(
     ChannelType.Public,
   )
-  const [selectedMembers, setSelectedMembers] = useState<string[]>([])
+  const [selectedMembers, setSelectedMembers] = useState<WorkspaceUser[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [memberSearchQuery, setMemberSearchQuery] = useState("")
-  const [searchedUsers, setSearchedUsers] = useState<WorkspaceUser[]>([])
-  const [isSearching, setIsSearching] = useState(false)
   const [errors, setErrors] = useState<{
     name?: string
     description?: string
@@ -57,40 +55,9 @@ export default function CreateChannelModal({
       setPurpose("")
       setChannelType(ChannelType.Public)
       setSelectedMembers([])
-      setMemberSearchQuery("")
-      setSearchedUsers([])
       setErrors({})
     }
   }, [isOpen])
-
-  // Search users with debouncing
-  useEffect(() => {
-    const searchUsers = async () => {
-      if (memberSearchQuery.trim().length < 2) {
-        setSearchedUsers([])
-        return
-      }
-
-      setIsSearching(true)
-      try {
-        const response = await api.workspace.users.search.$get({
-          query: { q: memberSearchQuery },
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          setSearchedUsers(data.users || [])
-        }
-      } catch (error) {
-        console.error("Failed to search users:", error)
-      } finally {
-        setIsSearching(false)
-      }
-    }
-
-    const debounceTimer = setTimeout(searchUsers, 300)
-    return () => clearTimeout(debounceTimer)
-  }, [memberSearchQuery])
 
   // Validate channel name
   const validateChannelName = (name: string): boolean => {
@@ -133,15 +100,6 @@ export default function CreateChannelModal({
     }
   }
 
-  // Toggle member selection
-  const toggleMember = (userId: string) => {
-    setSelectedMembers((prev) =>
-      prev.includes(userId)
-        ? prev.filter((id) => id !== userId)
-        : [...prev, userId],
-    )
-  }
-
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -160,7 +118,7 @@ export default function CreateChannelModal({
           description: description || undefined,
           purpose: purpose || undefined,
           type: channelType,
-          memberIds: selectedMembers.length > 0 ? selectedMembers : undefined,
+          memberIds: selectedMembers.length > 0 ? selectedMembers.map(u => u.id) : undefined,
         },
       })
 
@@ -312,57 +270,11 @@ export default function CreateChannelModal({
                 <span>Add members (optional)</span>
               </div>
             </Label>
-            <div className="space-y-2">
-              <Input
-                type="text"
-                placeholder="Search users by name or email..."
-                value={memberSearchQuery}
-                onChange={(e) => setMemberSearchQuery(e.target.value)}
-              />
-              {memberSearchQuery.trim().length > 0 && (
-                <div className="border rounded-lg max-h-48 overflow-y-auto">
-                  {isSearching ? (
-                    <div className="text-center py-4 text-sm text-gray-500">
-                      Searching...
-                    </div>
-                  ) : searchedUsers.length === 0 ? (
-                    <div className="text-center py-4 text-sm text-gray-500">
-                      {memberSearchQuery.trim().length < 2
-                        ? "Type at least 2 characters to search"
-                        : "No users found"}
-                    </div>
-                  ) : (
-                    searchedUsers.map((user) => (
-                      <label
-                        key={user.id}
-                        className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer border-b last:border-b-0"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedMembers.includes(user.id)}
-                          onChange={() => toggleMember(user.id)}
-                          className="rounded"
-                        />
-                        <div className="flex-1">
-                          <div className="font-medium text-sm">{user.name}</div>
-                          {user.email && (
-                            <div className="text-xs text-gray-500">
-                              {user.email}
-                            </div>
-                          )}
-                        </div>
-                      </label>
-                    ))
-                  )}
-                </div>
-              )}
-              {selectedMembers.length > 0 && (
-                <p className="text-sm text-gray-600">
-                  {selectedMembers.length} member
-                  {selectedMembers.length !== 1 ? "s" : ""} selected
-                </p>
-              )}
-            </div>
+            <UserPillSelector
+              selectedUsers={selectedMembers}
+              onUsersChange={setSelectedMembers}
+              placeholder="Type @ to mention and add members..."
+            />
           </div>
 
           {/* Actions */}
