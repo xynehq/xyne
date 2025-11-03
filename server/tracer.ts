@@ -89,12 +89,33 @@ class SpanImpl implements Span {
   }
 }
 
-class CustomTracer implements Tracer {
+export class CustomTracer implements Tracer {
   private spans: Span[] = []
   private traceId: string
+  private langfuseTrace: any = null
+  private traceName: string
 
   constructor(name: string) {
     this.traceId = `${name}-${Math.random().toString(16).substring(2, 18)}`
+    this.traceName = name
+
+    // Initialize LangFuse trace if available
+    try {
+      const { getLangfuseInstance } = require("./ai/langfuse")
+      const langfuse = getLangfuseInstance()
+      if (langfuse) {
+        this.langfuseTrace = langfuse.trace({
+          name: name,
+          id: this.traceId,
+          metadata: {
+            source: "custom-tracer",
+            timestamp: new Date().toISOString(),
+          },
+        })
+      }
+    } catch (error) {
+      // LangFuse not available, continue without it
+    }
   }
 
   startSpan(name: string, options: { parentSpan?: Span } = {}): Span {
@@ -129,6 +150,37 @@ class CustomTracer implements Tracer {
   endSpan(span: Span): void {
     span.endTime = Date.now()
     span.duration = span.endTime - (span.startTime || 0)
+
+    // Send to LangFuse if available
+    if (this.langfuseTrace) {
+      try {
+        this.langfuseTrace.span({
+          name: span.name,
+          id: span.spanId,
+          input: span.attributes,
+          output: span.attributes,
+          metadata: {
+            events: span.events,
+            duration: span.duration,
+          },
+          startTime: span.startTime ? new Date(span.startTime) : undefined,
+          endTime: span.endTime ? new Date(span.endTime) : undefined,
+        })
+
+        // Auto-flush if this is the root span (no parent)
+        if (!span.parentSpanId) {
+          const { getLangfuseInstance } = require("./ai/langfuse")
+          const langfuse = getLangfuseInstance()
+          if (langfuse) {
+            langfuse.flushAsync().catch(() => {
+              // Ignore flush errors
+            })
+          }
+        }
+      } catch (error) {
+        // Ignore LangFuse errors to not break the application
+      }
+    }
   }
 
   serializeToJson(): string {
