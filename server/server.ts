@@ -590,13 +590,13 @@ const handleAppValidation = async (c: Context) => {
 
     const accessToken = await generateTokens(
       user.email,
-      user.role,
-      user.workspaceExternalId,
+      existingUser.role,
+      existingUser.workspaceExternalId,
     )
     const refreshToken = await generateTokens(
       user.email,
-      user.role,
-      user.workspaceExternalId,
+      existingUser.role,
+      existingUser.workspaceExternalId,
       true,
     )
     // save refresh token generated in user schema
@@ -789,7 +789,11 @@ export const AppRoutes = app
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
-  .post("/chat/generateTitle", zValidator("json", chatTitleSchema), GenerateChatTitleApi)
+  .post(
+    "/chat/generateTitle",
+    zValidator("json", chatTitleSchema),
+    GenerateChatTitleApi,
+  )
   .post(
     "/chat/bookmark",
     zValidator("json", chatBookmarkSchema),
@@ -1537,7 +1541,10 @@ app.get(
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 
 // PDF.js worker files
-app.get("/pdfjs/pdf.worker.min.mjs", serveStatic({ path: "./dist/pdfjs/pdf.worker.min.mjs" }))
+app.get(
+  "/pdfjs/pdf.worker.min.mjs",
+  serveStatic({ path: "./dist/pdfjs/pdf.worker.min.mjs" }),
+)
 
 // PDF.js character maps
 app.get("/pdfjs/cmaps/*", serveStatic({ root: "./dist" }))
