@@ -286,7 +286,6 @@ export const CreateChannelApi = async (c: Context) => {
         and(
           eq(channels.workspaceId, creator.workspaceId),
           sql`LOWER(${channels.name}) = LOWER(${validatedData.name})`,
-          eq(channels.isArchived, false),
         ),
       )
       .limit(1)
@@ -526,7 +525,6 @@ export const UpdateChannelApi = async (c: Context) => {
             eq(channels.workspaceId, channel.workspaceId),
             sql`LOWER(${channels.name}) = LOWER(${validatedData.name})`,
             not(eq(channels.id, channel.id)),
-            eq(channels.isArchived, false),
           ),
         )
         .limit(1)
