@@ -424,3 +424,68 @@ export const BackArrowIcon: React.FC<IconProps> = ({
   </svg>
 )
 
+// Close/X Icon
+export const CloseIcon: React.FC<IconProps> = ({
+  className = "",
+  width = 24,
+  height = 24,
+}) => (
+  <svg
+    className={className}
+    xmlns="http://www.w3.org/2000/svg"
+    width={width}
+    height={height}
+    viewBox="0 0 24 24"
+    fill="none"
+  >
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M13.4142 12.0002L18.7072 6.70725C19.0982 6.31625 19.0982 5.68425 18.7072 5.29325C18.3162 4.90225 17.6842 4.90225 17.2932 5.29325L12.0002 10.5862L6.70725 5.29325C6.31625 4.90225 5.68425 4.90225 5.29325 5.29325C4.90225 5.68425 4.90225 6.31625 5.29325 6.70725L10.5862 12.0002L5.29325 17.2933C4.90225 17.6842 4.90225 18.3162 5.29325 18.7072C5.48825 18.9022 5.74425 19.0002 6.00025 19.0002C6.25625 19.0002 6.51225 18.9022 6.70725 18.7072L12.0002 13.4143L17.2932 18.7072C17.4882 18.9022 17.7442 19.0002 18.0002 19.0002C18.2562 19.0002 18.5122 18.9022 18.7072 18.7072C19.0982 18.3162 19.0982 17.6842 18.7072 17.2933L13.4142 12.0002Z"
+      fill="black"
+    />
+  </svg>
+)
+
+// Jira Icon
+export const JiraIcon: React.FC<IconProps> = ({
+  className = "",
+  width = 24,
+  height = 24,
+}) => {
+  const gradientId = React.useId()
+  return (
+    <svg
+      className={className}
+      width={width}
+      height={height}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="Jira"
+    >
+      <path
+        d="M11.5714 0L6.28571 5.28571L1.71429 9.85714L0 11.5714L11.5714 23.1429L13.2857 21.4286L7.71429 15.8571L13 10.5714L18.2857 5.28571L13 0H11.5714Z"
+        fill="#2684FF"
+      />
+      <path
+        d="M11.5714 11.5714L7 16.1429L11.5714 20.7143L16.1429 16.1429L11.5714 11.5714Z"
+        fill={`url(#${gradientId})`}
+      />
+      <defs>
+        <linearGradient
+          id={gradientId}
+          x1="7"
+          y1="16.1429"
+          x2="16.1429"
+          y2="16.1429"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#0052CC" />
+          <stop offset="1" stopColor="#2684FF" />
+        </linearGradient>
+      </defs>
+    </svg>
+  )
+}

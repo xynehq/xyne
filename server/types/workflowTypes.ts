@@ -22,6 +22,7 @@ export enum ToolType {
   AI_AGENT = "ai_agent",
   WEBHOOK = "webhook",
   HTTP_REQUEST = "http_request",
+  JIRA = "jira",
 }
 
 export enum ToolExecutionStatus {

@@ -392,6 +392,14 @@ export const workflowExecutionsAPI = {
 // Workflow Tools API for editing tools
 export const workflowToolsAPI = {
   /**
+   * Get a workflow tool by ID
+   */
+  async getTool(toolId: string): Promise<any> {
+    const response = await api.workflow.tools[toolId].$get()
+    return extractResponseData<any>(response)
+  },
+
+  /**
    * Update a workflow tool
    */
   async updateTool(
@@ -452,7 +460,7 @@ export const workflowToolsAPI = {
         // Fetch all credentials of the required type
         console.log("🔍 Fetching all credentials for auth type:", webhookConfig.authentication)
         const allCredentials = await credentialsAPI.fetchByType(webhookConfig.authentication as "basic" | "bearer" | "api_key")
-        
+
         if (allCredentials.length === 0) {
           console.log("ℹ️ No credentials found for this auth type")
           return []
@@ -463,12 +471,12 @@ export const workflowToolsAPI = {
         // Map all credentials with isSelected flag based on selectedCredential
         const credentialData = allCredentials.map(credential => {
           const isSelected = credential.id === webhookConfig.selectedCredential
-          
+
           // Create base64 encoding of user:password for basic auth
           const basicAuth = btoa(`${credential.user}:${credential.password}`)
-          
+
           console.log(`📋 Processing credential: ${credential.name}, isSelected: ${isSelected}`)
-          
+
           return {
             user: credential.user,
             password: credential.password, // Note: In production, this should be encrypted
@@ -526,12 +534,12 @@ export const workflowToolsAPI = {
       return response
     } catch (error) {
       console.error("❌ Backend API error:", error)
-      
+
       // Check if it's a validation error for unsupported tool type
       if (error instanceof Error && error.message.includes("webhook")) {
         console.log("⚠️ Backend doesn't support 'webhook' tool type yet")
         console.log("🔄 This is expected during development - webhook type needs to be added to backend validation")
-        
+
         // For now, return a mock response to unblock frontend development
         const mockResponse = {
           id: `mock-webhook-${Date.now()}`,
@@ -541,12 +549,67 @@ export const workflowToolsAPI = {
           createdAt: new Date().toISOString(),
           note: "Mock response - backend needs webhook tool type support"
         }
-        
+
         console.log("🔧 Returning mock response for development:", mockResponse)
         return mockResponse
       }
-      
+
       // Re-throw other errors
+      throw error
+    }
+  },
+
+  /**
+   * Test Jira connection
+   */
+  async testJiraConnection(credentials: {
+    domain: string
+    email: string
+    apiToken: string
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await api.workflow.tools.jira['test-connection'].$post({
+        json: credentials,
+      })
+
+      // Don't use extractResponseData here - we need to preserve the success flag
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error("❌ Jira connection test failed:", error)
+      throw error
+    }
+  },
+
+  /**
+   * Register Jira webhook
+   */
+  async registerJiraWebhook(config: {
+    domain: string
+    email: string
+    apiToken: string
+    webhookUrl: string
+    events: string[]
+    name?: string
+    filters?: { jqlFilter?: string }
+  }): Promise<{ success: boolean; webhookId: string; message: string }> {
+    try {
+      const response = await api.workflow.tools.jira['register-webhook'].$post({
+        json: config,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error("❌ Jira webhook registration failed:", error)
       throw error
     }
   },
@@ -555,7 +618,7 @@ export const workflowToolsAPI = {
    * Update existing webhook configuration
    */
   async updateWebhookConfig(
-    toolId: string, 
+    toolId: string,
     webhookConfig: {
       webhookUrl: string
       httpMethod: string
@@ -578,7 +641,7 @@ export const workflowToolsAPI = {
       try {
         // Fetch all credentials of the required type
         const allCredentials = await credentialsAPI.fetchByType(webhookConfig.authentication as "basic" | "bearer" | "api_key")
-        
+
         if (allCredentials.length === 0) {
           return []
         }
@@ -586,10 +649,10 @@ export const workflowToolsAPI = {
         // Map all credentials with isSelected flag based on selectedCredential
         const credentialData = allCredentials.map(credential => {
           const isSelected = credential.id === webhookConfig.selectedCredential
-          
+
           // Create base64 encoding of user:password for basic auth
           const basicAuth = btoa(`${credential.user}:${credential.password}`)
-          
+
           return {
             user: credential.user,
             password: credential.password, // Note: In production, this should be encrypted
@@ -691,12 +754,12 @@ export const workflowToolsAPI = {
       return response
     } catch (error) {
       console.error("❌ Backend API error:", error)
-      
+
       // Check if it's a validation error for unsupported tool type
       if (error instanceof Error && error.message.includes("http_request")) {
         console.log("⚠️ Backend doesn't support 'http_request' tool type yet")
         console.log("🔄 This is expected during development - http_request type needs to be added to backend validation")
-        
+
         // For now, return a mock response to unblock frontend development
         const mockResponse = {
           id: `mock-http-request-${Date.now()}`,
@@ -706,12 +769,158 @@ export const workflowToolsAPI = {
           createdAt: new Date().toISOString(),
           note: "Mock response - backend needs http_request tool type support"
         }
-        
+
         console.log("🔧 Returning mock response for development:", mockResponse)
         return mockResponse
       }
-      
+
       // Re-throw other errors
+      throw error
+    }
+  },
+
+  /**
+   * Get all Jira webhooks
+   */
+  async getJiraWebhooks(credentials: {
+    domain: string
+    email: string
+    apiToken: string
+  }): Promise<{ success: boolean; data: any[]; count: number }> {
+    try {
+      const response = await api.workflow.tools.jira.webhooks.$post({
+        json: credentials,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error("❌ Failed to get Jira webhooks:", error)
+      throw error
+    }
+  },
+
+  /**
+   * Delete Jira webhook
+   */
+  async deleteJiraWebhook(config: {
+    domain: string
+    email: string
+    apiToken: string
+    webhookId: string
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await api.workflow.tools.jira['delete-webhook'].$post({
+        json: config,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error("❌ Failed to delete Jira webhook:", error)
+      throw error
+    }
+  },
+
+  /**
+   * Fetch Jira metadata for dynamic dropdowns
+   */
+  async fetchJiraMetadata(config: {
+    domain: string
+    email: string
+    apiToken: string
+    projectKeys?: string[]
+  }): Promise<{
+    projects: Array<{ key: string; name: string; id: string }>
+    priorities: Array<{ id: string; name: string }>
+    statuses: Array<{ id: string; name: string }>
+    issueTypes: Array<{ id: string; name: string }>
+    epics: Array<{ key: string; summary: string; projectKey?: string }>
+    components: Array<{ id: string; name: string }>
+    issues: Array<{ key: string; summary: string; status?: string; issuetype?: string; priority?: string }>
+  }> {
+    try {
+      const response = await api.workflow.tools.jira.metadata.$post({
+        json: config,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      return result.data
+    } catch (error) {
+      console.error("❌ Failed to fetch Jira metadata:", error)
+      throw error
+    }
+  },
+
+  /**
+   * Save Jira configuration to workflow_tool table
+   */
+  async saveJiraConfig(jiraConfig: {
+    domain: string
+    email: string
+    apiToken: string
+    events: string[]
+    webhookUrl?: string
+    testWebhookUrl?: string
+    productionWebhookUrl?: string
+    webhookId?: string
+    title?: string
+    description?: string
+    jqlFilter?: string
+    simpleFilters?: {
+      projects?: string[]
+      issueTypes?: string[]
+      priorities?: string[]
+      statuses?: string[]
+      epics?: string[]
+      issues?: string[]
+    }
+  }): Promise<any> {
+    // Prepare data for workflow_tool table
+    const toolData = {
+      type: "jira",
+      value: {
+        // Store webhook URLs and metadata in value column
+        webhookUrl: jiraConfig.productionWebhookUrl || jiraConfig.webhookUrl,
+        testWebhookUrl: jiraConfig.testWebhookUrl,
+        productionWebhookUrl: jiraConfig.productionWebhookUrl,
+        webhookId: jiraConfig.webhookId,
+        title: jiraConfig.title || 'Jira Trigger',
+        description: jiraConfig.description || `Jira webhook for events: ${jiraConfig.events.join(', ')}`,
+        events: jiraConfig.events,
+        jqlFilter: jiraConfig.jqlFilter,
+        simpleFilters: jiraConfig.simpleFilters,
+      },
+      config: {
+        // Store Jira credentials and webhookId in config column for reliable matching
+        domain: jiraConfig.domain,
+        email: jiraConfig.email,
+        apiToken: jiraConfig.apiToken,
+        webhookId: jiraConfig.webhookId, // Store in both config and value for reliable matching
+        events: jiraConfig.events,
+        productionWebhookUrl: jiraConfig.productionWebhookUrl,
+        testWebhookUrl: jiraConfig.testWebhookUrl,
+      }
+    }
+
+    try {
+      const response = await this.createTool(toolData)
+      return response
+    } catch (error) {
+      console.error("Failed to create Jira tool:", error instanceof Error ? error.message : error)
       throw error
     }
   },
@@ -720,7 +929,7 @@ export const workflowToolsAPI = {
    * Update existing HTTP request configuration
    */
   async updateHttpRequestConfig(
-    toolId: string, 
+    toolId: string,
     httpConfig: {
       url: string
       method: string
@@ -767,7 +976,7 @@ export const workflowToolsAPI = {
       return response
     } catch (error) {
       console.error("❌ Failed to update HTTP request configuration:", error)
-      
+
       // For development, return a mock response if the backend doesn't support it yet
       if (error instanceof Error && error.message.includes("http_request")) {
         const mockResponse = {
@@ -778,11 +987,74 @@ export const workflowToolsAPI = {
           updatedAt: new Date().toISOString(),
           note: "Mock response - backend needs http_request tool type support"
         }
-        
+
         console.log("🔧 Returning mock response for development:", mockResponse)
         return mockResponse
       }
-      
+
+      throw error
+    }
+  },
+
+  /**
+   * Update existing Jira configuration
+   */
+  async updateJiraConfig(
+    toolId: string,
+    jiraConfig: {
+      domain: string
+      email: string
+      apiToken: string
+      events: string[]
+      webhookUrl?: string
+      testWebhookUrl?: string
+      productionWebhookUrl?: string
+      webhookId?: string
+      title?: string
+      description?: string
+      jqlFilter?: string
+      simpleFilters?: {
+        projects?: string[]
+        issueTypes?: string[]
+        priorities?: string[]
+        statuses?: string[]
+        epics?: string[]
+        issues?: string[]
+      }
+    }
+  ): Promise<any> {
+    // Prepare data for workflow_tool table
+    const toolData = {
+      type: "jira",
+      value: {
+        // Store webhook URLs and metadata in value column
+        webhookUrl: jiraConfig.productionWebhookUrl || jiraConfig.webhookUrl,
+        testWebhookUrl: jiraConfig.testWebhookUrl,
+        productionWebhookUrl: jiraConfig.productionWebhookUrl,
+        webhookId: jiraConfig.webhookId,
+        title: jiraConfig.title || 'Jira Trigger',
+        description: jiraConfig.description || `Jira webhook for events: ${jiraConfig.events.join(', ')}`,
+        events: jiraConfig.events,
+        jqlFilter: jiraConfig.jqlFilter,
+        simpleFilters: jiraConfig.simpleFilters,
+      },
+      config: {
+        // Store Jira credentials and webhookId in config column for reliable matching
+        domain: jiraConfig.domain,
+        email: jiraConfig.email,
+        apiToken: jiraConfig.apiToken,
+        webhookId: jiraConfig.webhookId, // Store in both config and value for reliable matching
+        events: jiraConfig.events,
+        productionWebhookUrl: jiraConfig.productionWebhookUrl,
+        testWebhookUrl: jiraConfig.testWebhookUrl,
+      }
+    }
+
+    try {
+      const response = await this.updateTool(toolId, toolData)
+      return response
+    } catch (error) {
+      console.error("Failed to update Jira tool:", error instanceof Error ? error.message : error)
       throw error
     }
   },

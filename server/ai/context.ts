@@ -153,7 +153,7 @@ const aggregateTableChunksForPdf = (
   // Find all chunks that have 'table' in their block_labels
   const tableChunkIndices = new Set<number>()
   chunks_map.forEach((metadata, index) => {
-    if (metadata.block_labels.includes('table')) {
+    if (metadata.block_labels?.includes('table')) {
       tableChunkIndices.add(index)
     }
   })
