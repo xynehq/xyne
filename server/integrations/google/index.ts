@@ -3358,6 +3358,8 @@ export async function countDriveFiles(
           pageSize: 1000,
           fields: "nextPageToken, files(id)",
           pageToken: nextPageToken,
+          includeItemsFromAllDrives: true,
+          supportsAllDrives: true,
         }),
       `Counting Drive files (pageToken: ${nextPageToken || "initial"})`,
       Apps.GoogleDrive,
