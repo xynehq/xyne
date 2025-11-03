@@ -1,3 +1,10 @@
+# [3.28.0](https://github.com/xynehq/xyne/compare/v3.27.0...v3.28.0) (2025-11-03)
+
+
+### Features
+
+* jira trigger node ([#1088](https://github.com/xynehq/xyne/issues/1088)) ([1c1cab5](https://github.com/xynehq/xyne/commit/1c1cab5c0c2bbbe1e585c158fa69f96fb0fb11f3))
+
 # [3.27.0](https://github.com/xynehq/xyne/compare/v3.26.2...v3.27.0) (2025-11-03)
 
 
