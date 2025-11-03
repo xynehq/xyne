@@ -99,6 +99,7 @@
     "image-type": "^6.0.0",
     "jose": "^6.1.0",
     "jszip": "^3.10.1",
+    "langfuse": "^3.38.6",
     "libreoffice": "^0.4.5",
     "livekit-server-sdk": "^2.13.3",
     "llama3-tokenizer-js": "^1.2.0",
