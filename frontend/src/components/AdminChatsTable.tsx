@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { formatCostInINR } from "@/lib/utils"
 import { api } from "@/api"
 
@@ -260,6 +261,10 @@ interface AdminChatsTableProps {
   onUserFilterChange: (filter: "all" | string) => void
   sortBy: "created" | "messages" | "cost" | "tokens"
   onSortByChange: (sortBy: "created" | "messages" | "cost" | "tokens") => void
+  // Date range filter props
+  dateFrom: Date | undefined
+  dateTo: Date | undefined
+  onDateChange: (from: Date | undefined, to: Date | undefined) => void
   // Props to control visibility of user dropdown
   showUserFilter?: boolean
 }
@@ -280,6 +285,9 @@ export const AdminChatsTable = ({
   onUserFilterChange,
   sortBy,
   onSortByChange,
+  dateFrom,
+  dateTo,
+  onDateChange,
   showUserFilter = true,
 }: AdminChatsTableProps) => {
   const [selectedChat, setSelectedChat] = useState<AdminChat | null>(null)
@@ -303,7 +311,9 @@ export const AdminChatsTable = ({
     searchQuery.trim() !== "" ||
     filterType !== "all" ||
     userFilter !== "all" ||
-    sortBy !== "created"
+    sortBy !== "created" ||
+    dateFrom !== undefined ||
+    dateTo !== undefined
 
   // Fetch users on component mount
   useEffect(() => {
@@ -367,9 +377,10 @@ export const AdminChatsTable = ({
           </div>
 
           {/* Search and Filter Controls */}
-          <div className="mt-4 flex flex-col sm:flex-row gap-4">
-            {/* Search */}
-            <div className="relative flex-1">
+          <div className="mt-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              {/* Search */}
+              <div className="relative flex-1">
               <input
                 type="text"
                 placeholder="Search by chat title, user name, email, or agent..."
@@ -457,6 +468,14 @@ export const AdminChatsTable = ({
               </div>
             )}
 
+            {/* Date Range Picker */}
+            <DateRangePicker
+              from={dateFrom}
+              to={dateTo}
+              onSelect={onDateChange}
+              placeholder="Select date range"
+            />
+
             {/* Sort Dropdown */}
             <div className="relative">
               <select
@@ -494,24 +513,25 @@ export const AdminChatsTable = ({
               </div>
             </div>
 
-            {/* Clear All Filters Button */}
-            <button
-              type="button"
-              onClick={onClearAllFilters}
-              disabled={!hasActiveFilters}
-              className={`px-3 py-2 text-sm border border-input rounded-md transition-colors flex items-center gap-2 ${
-                hasActiveFilters
-                  ? "bg-background hover:bg-muted text-foreground"
-                  : "bg-muted/50 text-muted-foreground cursor-not-allowed"
-              }`}
-              title={
-                hasActiveFilters
-                  ? "Clear all filters"
-                  : "No active filters to clear"
-              }
-            >
-              Clear
-            </button>
+              {/* Clear All Filters Button */}
+              <button
+                type="button"
+                onClick={onClearAllFilters}
+                disabled={!hasActiveFilters}
+                className={`px-3 py-2 text-sm border border-input rounded-md transition-colors flex items-center gap-2 ${
+                  hasActiveFilters
+                    ? "bg-background hover:bg-muted text-foreground"
+                    : "bg-muted/50 text-muted-foreground cursor-not-allowed"
+                }`}
+                title={
+                  hasActiveFilters
+                    ? "Clear all filters"
+                    : "No active filters to clear"
+                }
+              >
+                Clear
+              </button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -637,6 +657,7 @@ export const AdminChatsTable = ({
                   {userFilter !== "all" &&
                     ` • User: ${users.find((u) => u.id.toString() === userFilter)?.name || "Unknown"}`}
                   {sortBy !== "created" && ` • Sorted by ${sortBy}`}
+                  {(dateFrom || dateTo) && ` • Date: ${dateFrom ? new Date(dateFrom).toLocaleDateString() : 'Any'} - ${dateTo ? new Date(dateTo).toLocaleDateString() : 'Any'}`}
                 </div>
               )}
             </div>
