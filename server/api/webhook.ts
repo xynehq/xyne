@@ -17,6 +17,10 @@ import webhookExecutionService from "@/services/webhookExecutionService"
 import webhookAuthService from "@/services/webhookAuthService"
 import webhookIntegrationService from "@/services/webhookIntegrationService"
 import { webhookRegistry, type WebhookConfig } from "@/services/webhookRegistry"
+import { getWorkflowTemplateByExternalIdWithPermissionCheck } from "@/db/workflow"
+import { getUserFromJWT } from "@/db/user"
+import config from "@/config"
+const { JwtPayloadKey } = config
 
 const Logger = getLogger(Subsystem.WorkflowApi)
 
@@ -33,44 +37,6 @@ const webhookConfigSchema = z.object({
   queryParams: z.record(z.string(), z.string()).optional(),
   requestBody: z.string().optional(),
 })
-
-// Load webhooks from database function
-async function loadWebhooksFromDatabase(): Promise<void> {
-  try {
-    // Load all webhook tools from database
-    const webhookTools = await db
-      .select({
-        id: workflowTool.id,
-        config: workflowTool.config,
-        value: workflowTool.value
-      })
-      .from(workflowTool)
-      .where(eq(workflowTool.type, ToolType.WEBHOOK))
-
-    for (const tool of webhookTools) {
-      try {
-        const config = tool.config as WebhookConfig
-        const value = tool.value as { path?: string }
-        
-        if (config?.path || value?.path) {
-          const path = config.path || value.path
-          // For now, we'll use the tool ID as template ID
-          // In a real implementation, you'd need to query the step template
-          await webhookRegistry.registerWebhook(path!, tool.id, tool.id, config)
-        }
-      } catch (error) {
-        Logger.error(`Failed to load webhook tool ${tool.id}: ${error}`)
-      }
-    }
-
-    Logger.info(`Loaded ${webhookRegistry.getAllWebhooks().length} webhooks from database`)
-  } catch (error) {
-    Logger.error(`Failed to load webhooks from database: ${error}`)
-  }
-}
-
-// Load webhooks on startup
-loadWebhooksFromDatabase()
 
 // Webhook request handler
 export const handleWebhookRequest = async (c: Context, path: string): Promise<Response> => {
@@ -192,7 +158,7 @@ async function extractRequestData(c: Context, config: WebhookConfig) {
 
 // Execute workflow from webhook trigger
 async function executeWorkflowFromWebhook(
-  templateId: string,
+  templateId: number,
   requestData: any,
   config: WebhookConfig
 ): Promise<string> {
@@ -298,10 +264,23 @@ async function waitForExecution(executionId: string, timeoutMs: number) {
 export const webhookRouter = new Hono()
 
 // Register webhook (called when saving webhook tool)
-webhookRouter.post('/register', zValidator('json', webhookConfigSchema), async (c) => {
+webhookRouter.post('/register', zValidator('json', webhookConfigSchema), async (c: Context) => {
   try {
-    const config = c.req.valid('json') as WebhookConfig
-    const { workflowTemplateId, toolId } = c.req.query()
+    const config = await c.req.json<WebhookConfig>() 
+    const { workflowTemplateExternalId, toolId } = c.req.query()
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
+
+    const workflow = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+      db,
+      workflowTemplateExternalId,
+      user.workspaceId,
+      user.id
+    )
+    if (!workflow) {
+      throw new Error("workflow not found or user doesn't have access")
+    }
+
+    const workflowTemplateId = workflow.id
 
     if (!workflowTemplateId || !toolId) {
       throw new HTTPException(400, { message: "workflowTemplateId and toolId required" })

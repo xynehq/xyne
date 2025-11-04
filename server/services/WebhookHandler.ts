@@ -17,7 +17,7 @@ const Logger = getLogger(Subsystem.WorkflowApi)
 
 // Dynamic webhook registry - loads from database
 interface WebhookRegistryEntry {
-  workflowTemplateId: string
+  workflowTemplateId: number
   toolId: string
   config: Record<string, unknown>
   value: Record<string, unknown>
@@ -90,7 +90,7 @@ export class WebhookHandler {
 
   // Execute workflow from webhook trigger
   async executeWorkflowFromWebhook(
-    templateId: string,
+    templateId: number,
     webhookData: Record<string, unknown>,
     webhookConfig: Record<string, unknown>
   ): Promise<string> {
@@ -780,7 +780,7 @@ export class WebhookHandler {
   }
 
   // Helper method to get workflow tools
-  private async getWorkflowTools(templateId: string, userId: number, workspaceId: number) {
+  private async getWorkflowTools(templateId: number, userId: number, workspaceId: number) {
     try {
       Logger.info(`🔧 getWorkflowTools for template: ${templateId}`)
       

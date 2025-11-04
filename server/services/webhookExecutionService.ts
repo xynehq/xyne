@@ -15,7 +15,7 @@ import { WorkflowStatus, ToolExecutionStatus, StepType } from "@/types/workflowT
 const Logger = getLogger(Subsystem.WorkflowApi)
 
 export interface WebhookExecutionContext {
-  workflowTemplateId: string
+  workflowTemplateId: number
   webhookPath: string
   requestData: any
   executionId?: string
@@ -62,7 +62,7 @@ export class WebhookExecutionService {
     }
   }
 
-  private async getWorkflowTemplate(templateId: string) {
+  private async getWorkflowTemplate(templateId: number) {
     const [template] = await db
       .select()
       .from(workflowTemplate)
@@ -105,7 +105,7 @@ export class WebhookExecutionService {
     return execution
   }
 
-  private async getWorkflowSteps(templateId: string) {
+  private async getWorkflowSteps(templateId: number) {
     const stepsRaw = await db
       .select()
       .from(workflowStepTemplate)
@@ -450,7 +450,7 @@ Please analyze this webhook request and provide insights.`
     }
   }
 
-  private async getWorkflowTools(templateId: string) {
+  private async getWorkflowTools(templateId: number) {
     try {
       Logger.info(`🔧 getWorkflowTools for template: ${templateId}`)
       
