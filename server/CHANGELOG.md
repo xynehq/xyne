@@ -1,3 +1,10 @@
+## [3.29.2](https://github.com/xynehq/xyne/compare/v3.29.1...v3.29.2) (2025-11-04)
+
+
+### Bug Fixes
+
+* **dashboard:** XYNE-282 fix sort by cost filter and added date picker filter ([#1183](https://github.com/xynehq/xyne/issues/1183)) ([2270b67](https://github.com/xynehq/xyne/commit/2270b67163df31fdd725778d642bd1ee35ed45c1))
+
 ## [3.29.1](https://github.com/xynehq/xyne/compare/v3.29.0...v3.29.1) (2025-11-04)
 
 
