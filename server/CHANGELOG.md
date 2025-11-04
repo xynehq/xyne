@@ -1,3 +1,10 @@
+## [3.29.4](https://github.com/xynehq/xyne/compare/v3.29.3...v3.29.4) (2025-11-04)
+
+
+### Bug Fixes
+
+* **driveFileApi:** Add the option to list shared drive files ([#1186](https://github.com/xynehq/xyne/issues/1186)) ([8f7ab28](https://github.com/xynehq/xyne/commit/8f7ab28d719dbc0f89d8d8ef3660a0c9408a6c42))
+
 ## [3.29.3](https://github.com/xynehq/xyne/compare/v3.29.2...v3.29.3) (2025-11-04)
 
 
