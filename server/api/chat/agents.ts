@@ -161,6 +161,7 @@ import { applyFollowUpContext } from "@/utils/parseAttachment"
 import { expandSheetIds } from "@/search/utils"
 import { googleTools, searchGlobalTool } from "@/api/chat/tools/index"
 import { fallbackTool } from "./tools/global"
+import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -1728,7 +1729,11 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentPrompt: agentPromptForLLM,
           userMessage: message,
         }
-        const internalTools = [...googleTools, searchGlobalTool]
+        const internalTools = [
+          ...googleTools,
+          searchGlobalTool,
+          getSlackRelatedMessagesTool,
+        ]
         const mcpJAFTools = buildMCPJAFTools(finalToolsList)
         const allJAFTools = [...internalTools, ...mcpJAFTools]
         toolsCompositionSpan.setAttribute(

@@ -45,7 +45,12 @@ const getSlackRelatedMessagesSchema = z.object({
     .string()
     .optional()
     .describe("Name or Email of specific user whose messages to retrieve"),
-  mentions: z.array(z.string()).describe("").optional(),
+  mentions: z
+    .array(z.string())
+    .describe(
+      "Filter messages that mention specific users. Provide usernames or email (e.g., '@john.doe' or john.d@domain.in)",
+    )
+    .optional(),
   ...baseToolParams,
 })
 
@@ -123,10 +128,12 @@ export const getSlackRelatedMessagesTool: Tool<
         asc: searchOptions.sortBy === "asc",
         limit: searchOptions.limit,
         offset: searchOptions.offset,
-        timestampRange: {
-          from: params.timeRange.startTime,
-          to: params.timeRange.endTime,
-        },
+        timestampRange: params.timeRange
+          ? {
+              from: params.timeRange.startTime,
+              to: params.timeRange.endTime,
+            }
+          : undefined,
         agentChannelIds: channelIds.length > 0 ? channelIds : undefined,
         mentions:
           params.mentions && params.mentions.length > 0
