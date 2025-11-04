@@ -295,13 +295,17 @@ export const parseMail = async (
   }
 
   // Permissions include all unique email addresses involved
-  const permissions = Array.from(
-    new Set(
-      [from, ...to, ...cc, ...bcc]
-        .map((email) => email?.toLowerCase() ?? "")
-        .filter((v) => !!v),
-    ),
-  )
+  // mails come from calendar event invitations. Each attendee receives a unique email with their name in the subject line
+  // for those email we just add current user-email
+  const permissions = mailId?.startsWith("calendar-")
+    ? [userEmail]
+    : Array.from(
+        new Set(
+          [from, ...to, ...cc, ...bcc]
+            .map((email) => email?.toLowerCase() ?? "")
+            .filter((v) => !!v),
+        ),
+      )
 
   // Extract body and chunks
   const body = getBody(payload)

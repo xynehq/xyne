@@ -15,7 +15,18 @@ import {
   HandlePerUserSlackSync,
   HandlePerUserGoogleWorkSpaceSync,
   StartGoogleIngestionApi,
+  syncByMailSchema,
 } from "@/api/admin"
+import {
+  GetIngestionStatusApi,
+  CancelIngestionApi,
+  PauseIngestionApi,
+  ResumeIngestionApi,
+  getIngestionStatusSchema,
+  cancelIngestionSchema,
+  pauseIngestionSchema,
+  resumeIngestionSchema,
+} from "@/api/ingestion"
 import {
   ingestMoreChannelSchema,
   startSlackIngestionSchema,
@@ -25,9 +36,9 @@ import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
 import type { JwtVariables } from "hono/jwt"
 import type { Context, Next } from "hono"
-import WebSocket from "ws"
 import { Worker } from "worker_threads"
 import path from "path"
+import WebSocket from "ws"
 
 const Logger = getLogger(Subsystem.SyncServer)
 
@@ -36,6 +47,7 @@ const app = new Hono<{ Variables: JwtVariables }>()
 const honoMiddlewareLogger = LogMiddleware(Subsystem.SyncServer)
 
 // WebSocket connection to main server for forwarding stats
+// Note: Slack channel ingestion uses database polling, other integrations use WebSocket
 let mainServerWebSocket: WebSocket | null = null
 let reconnectAttempts = 0
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
@@ -146,6 +158,7 @@ const scheduleReconnect = () => {
 }
 
 // Function to send WebSocket message to main server
+// Note: Slack channel ingestion bypasses this and uses database polling instead
 export const sendWebsocketMessageToMainServer = (
   message: string,
   connectorId: string,
@@ -156,6 +169,7 @@ export const sendWebsocketMessageToMainServer = (
   ) {
     try {
       mainServerWebSocket.send(JSON.stringify({ message, connectorId }))
+      Logger.debug(`WebSocket message sent for connector ${connectorId}`)
     } catch (error) {
       Logger.error(
         error,
@@ -248,8 +262,41 @@ app.post(
   StartGoogleIngestionApi,
 )
 // Sync APIs
-app.post("/syncSlackByMail", HandlePerUserSlackSync)
-app.post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
+app.post(
+  "/syncSlackByMail",
+  zValidator("json", syncByMailSchema),
+  HandlePerUserSlackSync,
+)
+app.post(
+  "/syncGoogleWorkSpaceByMail",
+  zValidator("json", syncByMailSchema),
+  HandlePerUserGoogleWorkSpaceSync,
+)
+
+// Ingestion Management APIs
+app.get(
+  "/ingestion/status",
+  zValidator("query", getIngestionStatusSchema),
+  GetIngestionStatusApi,
+)
+
+app.post(
+  "/ingestion/cancel",
+  zValidator("json", cancelIngestionSchema),
+  CancelIngestionApi,
+)
+
+app.post(
+  "/ingestion/pause",
+  zValidator("json", pauseIngestionSchema),
+  PauseIngestionApi,
+)
+
+app.post(
+  "/ingestion/resume",
+  zValidator("json", resumeIngestionSchema),
+  ResumeIngestionApi,
+)
 
 const startAndMonitorWorkers = (
   workerScript: string,
@@ -362,8 +409,15 @@ export const initSyncServer = async () => {
       Logger.error(error, "Failed to initialize queue system")
     })
 
-  // Connect to main server WebSocket
-  connectToMainServer()
+  // Connect to main server via WebSocket for progress updates
+  // Note: Slack channel ingestion uses database polling, other integrations use WebSocket
+  try {
+    connectToMainServer()
+    Logger.info("WebSocket connection to main server initiated")
+  } catch (error) {
+    Logger.error(error, "Failed to connect to main server via WebSocket")
+  }
+
   Logger.info("Sync Server initialization completed")
 }
 

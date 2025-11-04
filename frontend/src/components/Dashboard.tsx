@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react"
+import { useNavigate } from "@tanstack/react-router"
+import { useAdminUserSelectionStore } from "@/store/useAdminUserSelectionStore"
 import {
   Users,
   Activity,
@@ -37,6 +39,7 @@ import {
   Area,
   AreaChart,
 } from "recharts"
+import type { AdminChat } from "@/components/AdminChatsTable"
 
 interface Chat {
   externalId: string
@@ -1507,10 +1510,14 @@ const AdminUsersLeaderboard = ({
   users,
   loading = false,
   onUserClick,
+  onAllChatsClick,
+  onUserChatsClick,
 }: {
   users: AdminUserUsage[]
   loading?: boolean
   onUserClick?: (user: AdminUserUsage) => void
+  onAllChatsClick?: () => void
+  onUserChatsClick?: (userId: number, userName: string) => void
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [feedbackModal, setFeedbackModal] = useState<{
@@ -1533,6 +1540,11 @@ const AdminUsersLeaderboard = ({
       userName: user.userName,
       userEmail: user.userEmail,
     })
+  }
+
+  const handleViewChatsClick = (e: React.MouseEvent, user: AdminUserUsage) => {
+    e.stopPropagation()
+    onUserChatsClick?.(user.userId, user.userName)
   }
 
   const closeFeedbackModal = () => {
@@ -1579,11 +1591,24 @@ const AdminUsersLeaderboard = ({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Users className="h-5 w-5" />
-          Users Leaderboard
-        </CardTitle>
-        <CardDescription>All active users by message count</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Users Leaderboard
+            </CardTitle>
+            <CardDescription>All active users by message count</CardDescription>
+          </div>
+          {onAllChatsClick && (
+            <button
+              onClick={onAllChatsClick}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <MessageSquare className="h-4 w-4" />
+              All Chats
+            </button>
+          )}
+        </div>
         <div className="mt-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
@@ -1687,15 +1712,26 @@ const AdminUsersLeaderboard = ({
                         <span>{user.dislikes}</span>
                       </div>
                     </div>
-                    {(user.likes > 0 || user.dislikes > 0) && (
-                      <button
-                        onClick={(e) => handleFeedbackClick(e, user)}
-                        className="ml-3 px-3 py-1.5 text-xs text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors font-medium flex items-center gap-1"
-                      >
-                        <MessageSquare className="h-3 w-3" />
-                        Feedbacks
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {onUserChatsClick && (
+                        <button
+                          onClick={(e) => handleViewChatsClick(e, user)}
+                          className="px-3 py-1.5 text-xs text-green-600 border border-green-200 rounded-lg hover:bg-green-50 hover:border-green-300 transition-colors font-medium flex items-center gap-1"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          View Chats
+                        </button>
+                      )}
+                      {(user.likes > 0 || user.dislikes > 0) && (
+                        <button
+                          onClick={(e) => handleFeedbackClick(e, user)}
+                          className="px-3 py-1.5 text-xs text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors font-medium flex items-center gap-1"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          Feedbacks
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -2155,10 +2191,18 @@ const UserDetailPage = ({
   user,
   onBack,
   timeRange,
+  navigate,
+  setSelectedUserInStore,
 }: {
   user: AdminUserUsage
   onBack: () => void
   timeRange: "today" | "1w" | "1m" | "3m" | "all"
+  navigate: ReturnType<typeof useNavigate>
+  setSelectedUserInStore: (user: {
+    userId: number
+    userName: string
+    userEmail: string
+  }) => void
 }) => {
   const [userChats, setUserChats] = useState<any[]>([])
   const [agentLeaderboard, setAgentLeaderboard] = useState<
@@ -2216,7 +2260,7 @@ const UserDetailPage = ({
         const leaderboardData = await leaderboardResponse.json()
 
         setUserChats(
-          chats.filter(
+          chats.data.filter(
             (chat: any) =>
               chat.userId === user.userId || chat.user?.id === user.userId,
           ),
@@ -2391,48 +2435,68 @@ const UserDetailPage = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-10">
-        <button
-          onClick={onBack}
-          className="flex items-center justify-center w-10 h-10 text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-all duration-200"
-          title="Back to Users"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-        </button>
-
+      <div className="flex items-center justify-between mb-10">
         <div className="flex items-center gap-4">
-          <div className="flex items-center justify-center w-12 h-12 text-xl font-bold text-white bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
-            {user.userName.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">{user.userName}</h1>
-            <p className="text-muted-foreground">{user.userEmail}</p>
-            <Badge
-              variant={
-                user.role === "SuperAdmin"
-                  ? "destructive"
-                  : user.role === "Admin"
-                    ? "default"
-                    : "secondary"
-              }
-              className="mt-1"
+          <button
+            onClick={onBack}
+            className="flex items-center justify-center w-10 h-10 text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-all duration-200"
+            title="Back to Users"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              {user.role}
-            </Badge>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center justify-center w-12 h-12 text-xl font-bold text-white bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
+              {user.userName.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">{user.userName}</h1>
+              <p className="text-muted-foreground">{user.userEmail}</p>
+              <Badge
+                variant={
+                  user.role === "SuperAdmin"
+                    ? "destructive"
+                    : user.role === "Admin"
+                      ? "default"
+                      : "secondary"
+                }
+                className="mt-1"
+              >
+                {user.role}
+              </Badge>
+            </div>
           </div>
         </div>
+
+        {/* View Chats Button */}
+        <button
+          onClick={() => {
+            setSelectedUserInStore({
+              userId: user.userId,
+              userName: user.userName,
+              userEmail: user.userEmail,
+            })
+            navigate({
+              to: "/admin/chat-overview" as const,
+            })
+          }}
+          className="px-4 py-2 text-sm font-medium text-green-600 border border-green-200 rounded-lg hover:bg-green-50 hover:border-green-300 transition-colors flex items-center gap-2"
+        >
+          <MessageSquare className="h-4 w-4" />
+          View Chats
+        </button>
       </div>
 
       {/* User Stats */}
@@ -2604,6 +2668,12 @@ export const Dashboard = ({
   role?: string
   isAgentMode?: boolean
 } = {}) => {
+  const navigate = useNavigate()
+  const {
+    setSelectedUser: setSelectedUserInStore,
+    setDashboardTab,
+    dashboardTab,
+  } = useAdminUserSelectionStore()
   const [stats, setStats] = useState<DashboardStats>({
     totalChats: 0,
     totalMessages: 0,
@@ -2643,7 +2713,7 @@ export const Dashboard = ({
   const [activeTab, setActiveTab] = useState<"normal" | "agent">("agent")
   const [mainTab, setMainTab] = useState<
     "my-activity" | "shared-agents" | "admin-overview"
-  >("my-activity")
+  >(dashboardTab || "my-activity")
   const [timeRange, setTimeRange] = useState<
     "today" | "1w" | "1m" | "3m" | "all"
   >("1m")
@@ -2667,6 +2737,7 @@ export const Dashboard = ({
       feedbackMessages: [],
     },
   })
+  const [_, setAdminChats] = useState<AdminChat[]>([])
   const [adminLoading, setAdminLoading] = useState(false)
   const [adminError, setAdminError] = useState<string | null>(null)
   const [selectedUser, setSelectedUser] = useState<AdminUserUsage | null>(null)
@@ -2853,15 +2924,58 @@ export const Dashboard = ({
           throw new Error("Failed to fetch admin data")
         }
 
-        const adminChats = await adminChatsResponse.json()
+        const adminChatsData = await adminChatsResponse.json()
         const adminAgents = await adminAgentsResponse.json()
+
+        // Handle both new pagination format and old format for backward compatibility
+        let chatsArray: any[]
+        if (
+          adminChatsData &&
+          typeof adminChatsData === "object" &&
+          "data" in adminChatsData &&
+          "pagination" in adminChatsData
+        ) {
+          // New format with pagination metadata
+          chatsArray = adminChatsData.data
+        } else if (Array.isArray(adminChatsData)) {
+          // Old format - direct array
+          chatsArray = adminChatsData
+        } else {
+          throw new Error("Invalid response format from admin chats API")
+        }
+
         // Process admin stats
         const processedAdminStats = processAdminChatsData(
-          adminChats,
+          chatsArray,
           adminAgents,
           timeRange,
         )
         setAdminStats(processedAdminStats)
+
+        // Set the raw admin chats data for the table
+        setAdminChats(
+          chatsArray.map((chat: any) => ({
+            externalId: chat.externalId,
+            title: chat.title || "Untitled Chat",
+            createdAt: chat.createdAt,
+            userId: chat.userId || chat.user?.id,
+            userName: chat.userName || chat.user?.name || "Unknown User",
+            userEmail: chat.userEmail || chat.user?.email || "",
+            agentId: chat.agentId,
+            agentName:
+              chat.agentName ||
+              (chat.agentId
+                ? adminAgents.find((a: any) => a.externalId === chat.agentId)
+                    ?.name
+                : null),
+            messageCount: chat.messageCount || chat.messages?.length || 0,
+            totalCost: chat.totalCost || 0,
+            totalTokens: chat.totalTokens || 0,
+            likes: chat.likes || 0,
+            dislikes: chat.dislikes || 0,
+            isBookmarked: chat.isBookmarked || false,
+          })),
+        )
 
         setAdminError(null)
       } catch (err) {
@@ -3616,7 +3730,10 @@ export const Dashboard = ({
               {/* Main Tabs - My Activity vs Shared Agent Usage vs Admin */}
               <div className="flex items-center gap-1 p-1 bg-muted rounded-lg">
                 <button
-                  onClick={() => setMainTab("my-activity")}
+                  onClick={() => {
+                    setMainTab("my-activity")
+                    setDashboardTab("my-activity")
+                  }}
                   className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                     mainTab === "my-activity"
                       ? "bg-white dark:bg-gray-800 shadow-sm"
@@ -3629,7 +3746,10 @@ export const Dashboard = ({
                   </div>
                 </button>
                 <button
-                  onClick={() => setMainTab("shared-agents")}
+                  onClick={() => {
+                    setMainTab("shared-agents")
+                    setDashboardTab("shared-agents")
+                  }}
                   className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                     mainTab === "shared-agents"
                       ? "bg-white dark:bg-gray-800 shadow-sm"
@@ -3644,7 +3764,10 @@ export const Dashboard = ({
                 {isAdmin && (
                   <>
                     <button
-                      onClick={() => setMainTab("admin-overview")}
+                      onClick={() => {
+                        setMainTab("admin-overview")
+                        setDashboardTab("admin-overview")
+                      }}
                       className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                         mainTab === "admin-overview"
                           ? "bg-white dark:bg-gray-800 shadow-sm"
@@ -3816,6 +3939,8 @@ export const Dashboard = ({
                     user={selectedUser}
                     onBack={() => handleAdminUserSelect(selectedUser)}
                     timeRange={timeRange}
+                    navigate={navigate}
+                    setSelectedUserInStore={setSelectedUserInStore}
                   />
                 </div>
               ) : selectedAgent ? (
@@ -3974,6 +4099,30 @@ export const Dashboard = ({
                     users={adminStats.topUsers}
                     loading={adminLoading}
                     onUserClick={handleAdminUserSelect}
+                    onAllChatsClick={() => {
+                      // Navigate to all chats view
+                      navigate({ to: "/admin/chat-overview" as const })
+                    }}
+                    onUserChatsClick={(userId: number, userName: string) => {
+                      // Find the user from the admin users list
+                      const selectedUser = adminStats.topUsers.find(
+                        (u) => u.userId === userId,
+                      )
+
+                      if (selectedUser) {
+                        // Set user in store
+                        setSelectedUserInStore({
+                          userId: selectedUser.userId,
+                          userName: selectedUser.userName,
+                          userEmail: selectedUser.userEmail,
+                        })
+                      }
+
+                      // Navigate to user-specific chats view (without URL params)
+                      navigate({
+                        to: "/admin/chat-overview" as const,
+                      })
+                    }}
                   />
 
                   {/* Top Agents System-wide */}

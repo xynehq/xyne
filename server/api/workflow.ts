@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
-import { publicWorkflowTemplateSchema, type SelectAgent, type UpdateWorkflowTemplateRequest, type UserMetadata } from "../db/schema"
+import { publicWorkflowTemplateSchema, workflowTemplate, type SelectAgent, type UpdateWorkflowTemplateRequest, type UserMetadata } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
 
 
@@ -24,9 +24,18 @@ import {
   workflowTool,
   toolExecution,
   userWorkflowPermissions,
-  users,
+  createWorkflowTemplateSchema,
+  createComplexWorkflowTemplateSchema,
+  createWorkflowToolSchema,
+  executeWorkflowSchema,
+  updateWorkflowTemplateSchema,
+  createWorkflowExecutionSchema,
+  updateWorkflowExecutionSchema,
+  updateWorkflowStepExecutionSchema,
+  formSubmissionSchema,
 } from "@/db/schema"
-import { getUserFromJWT, getUserMetaData } from "@/db/user"
+import { users } from "@/db/schema"
+import { getUserByEmail, getUserFromJWT, getUserMetaData } from "@/db/user"
 import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { type CreateAgentPayload } from "./agent"
 import {
@@ -43,7 +52,118 @@ import {
   ne,
 } from "drizzle-orm"
 
-import { UserWorkflowRole, type AttachmentMetadata } from "@/shared/types"
+import { UserWorkflowRole,type AttachmentMetadata } from "@/shared/types"
+import { webhookRegistry } from "@/services/webhookRegistry"
+import webhookIntegrationService from "@/services/webhookIntegrationService"
+import { hasWebhookTools, triggerWebhookReload } from "@/services/webhookReloadService"
+
+// Utility function to sort steps based on their dependencies (prevStepIds/nextStepIds)
+function topologicalSortSteps(steps: any[]): any[] {
+  // Create a map for quick lookup
+  const stepMap = new Map(steps.map(step => [step.id, step]))
+  const sorted: any[] = []
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  
+  function visit(stepId: string) {
+    if (visited.has(stepId)) return
+    if (visiting.has(stepId)) {
+      // Circular dependency detected, skip for now
+      return
+    }
+    
+    visiting.add(stepId)
+    const step = stepMap.get(stepId)
+    if (step) {
+      // Visit all prerequisites first (prevStepIds)
+      if (step.prevStepIds && Array.isArray(step.prevStepIds)) {
+        for (const prevId of step.prevStepIds) {
+          if (stepMap.has(prevId)) {
+            visit(prevId)
+          }
+        }
+      }
+      
+      visiting.delete(stepId)
+      visited.add(stepId)
+      sorted.push(step)
+    }
+  }
+  
+  // Find root steps (steps with no prevStepIds or empty prevStepIds)
+  const rootSteps = steps.filter(step => 
+    !step.prevStepIds || step.prevStepIds.length === 0
+  )
+  
+  // Start with root steps
+  for (const rootStep of rootSteps) {
+    visit(rootStep.id)
+  }
+  
+  // Visit any remaining unvisited steps (in case of isolated components)
+  for (const step of steps) {
+    if (!visited.has(step.id)) {
+      visit(step.id)
+    }
+  }
+  
+  return sorted
+}
+
+// Utility function to sort step executions based on their template dependencies
+function topologicalSortStepExecutions(stepExecutions: any[]): any[] {
+  // Create a map for quick lookup
+  const execMap = new Map(stepExecutions.map(exec => [exec.id, exec]))
+  const sorted: any[] = []
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  
+  function visit(execId: string) {
+    if (visited.has(execId)) return
+    if (visiting.has(execId)) {
+      // Circular dependency detected, skip for now
+      return
+    }
+    
+    visiting.add(execId)
+    const exec = execMap.get(execId)
+    if (exec) {
+      // Visit all prerequisites first (prevStepIds)
+      if (exec.prevStepIds && Array.isArray(exec.prevStepIds)) {
+        for (const prevTemplateId of exec.prevStepIds) {
+          // Find the execution that corresponds to this template ID
+          const prevExec = stepExecutions.find(e => e.workflowStepTemplateId === prevTemplateId)
+          if (prevExec && execMap.has(prevExec.id)) {
+            visit(prevExec.id)
+          }
+        }
+      }
+      
+      visiting.delete(execId)
+      visited.add(execId)
+      sorted.push(exec)
+    }
+  }
+  
+  // Find root executions (executions with no prevStepIds or empty prevStepIds)
+  const rootExecutions = stepExecutions.filter(exec => 
+    !exec.prevStepIds || exec.prevStepIds.length === 0
+  )
+  
+  // Start with root executions
+  for (const rootExec of rootExecutions) {
+    visit(rootExec.id)
+  }
+  
+  // Visit any remaining unvisited executions (in case of isolated components)
+  for (const exec of stepExecutions) {
+    if (!visited.has(exec.id)) {
+      visit(exec.id)
+    }
+  }
+  
+  return sorted
+}
 
 // Re-export schemas for server.ts
 export {
@@ -119,28 +239,59 @@ const extractAttachmentIds = (formData: Record<string, any>): {
   const documentIds: string[] = []
 
   Object.entries(formData).forEach(([key, file]) => {
-    // More defensive checking
-    if (file &&
-      typeof file === 'object' &&
-      file !== null &&
-      'attachmentId' in file &&
-      file.attachmentId) {
+    Logger.info(`🔍 Examining form field ${key}:`, {
+      type: typeof file,
+      isObject: typeof file === 'object' && file !== null,
+      keys: file && typeof file === 'object' ? Object.keys(file) : [],
+      value: JSON.stringify(file, null, 2)
+    })
 
-      Logger.info(`Processing field ${key} with attachment ID: ${file.attachmentId}`)
+    // Check for different possible attachment structures
+    let attachmentId = null
+    let isDocument = true
 
-
+    // Structure 1: Direct attachmentId property
+    if (file && typeof file === 'object' && file !== null && 'attachmentId' in file && file.attachmentId) {
+      attachmentId = file.attachmentId
+      Logger.info(`📎 Found attachmentId in direct property: ${attachmentId}`)
+      
       if ('attachmentMetadata' in file && file.attachmentMetadata) {
         const metadata = file.attachmentMetadata as AttachmentMetadata
-        if (metadata.isImage) {
-          imageIds.push(file.attachmentId)
-        } else {
-          documentIds.push(file.attachmentId)
-        }
-      } else {
-        // Fallback: assume non-image if no metadata
-        Logger.warn(`No attachmentMetadata found for ${key}, assuming document`)
-        documentIds.push(file.attachmentId)
+        isDocument = !metadata.isImage
+        Logger.info(`📋 Metadata found - isImage: ${metadata.isImage}, isDocument: ${isDocument}`)
       }
+    }
+    // Structure 2: Check if the file itself is an attachment ID string
+    else if (typeof file === 'string' && file.startsWith('att_')) {
+      attachmentId = file
+      Logger.info(`📎 Found attachment ID as string value: ${attachmentId}`)
+    }
+    // Structure 3: Check for nested structures
+    else if (file && typeof file === 'object' && file !== null) {
+      // Look for nested attachment properties
+      const nestedKeys = Object.keys(file)
+      for (const nestedKey of nestedKeys) {
+        if (nestedKey.includes('attachment') || nestedKey.includes('file')) {
+          const nestedValue = file[nestedKey]
+          if (typeof nestedValue === 'string' && nestedValue.startsWith('att_')) {
+            attachmentId = nestedValue
+            Logger.info(`📎 Found attachment ID in nested property ${nestedKey}: ${attachmentId}`)
+            break
+          }
+        }
+      }
+    }
+
+    if (attachmentId) {
+      if (isDocument) {
+        documentIds.push(attachmentId)
+        Logger.info(`✅ Added document attachment: ${attachmentId}`)
+      } else {
+        imageIds.push(attachmentId)
+        Logger.info(`✅ Added image attachment: ${attachmentId}`)
+      }
+    } else {
+      Logger.warn(`⚠️ Field ${key} does not contain a valid attachment ID`)
     }
   })
 
@@ -172,10 +323,11 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
             template.userId
           )
         }
-        const steps = await getWorkflowStepTemplatesByTemplateId(
+        const stepsRaw = await getWorkflowStepTemplatesByTemplateId(
           db,
           template.id
         )
+        const steps = topologicalSortSteps(stepsRaw)
 
         // Get root step details with single tool (not array)
         let rootStep = null
@@ -249,10 +401,11 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Workflow template not found" })
     }
 
-    const steps = await getWorkflowStepTemplatesByTemplateId(
+    const stepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
       template.id
     )
+    const steps = topologicalSortSteps(stepsRaw)
 
 
     const toolIds = steps.flatMap((s) => s.toolIds as string[] || [])
@@ -446,10 +599,11 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     )
 
     // Get all step templates
-    const steps = await getWorkflowStepTemplatesByTemplateId(
+    const stepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
       template.id
     )
+    const steps = topologicalSortSteps(stepsRaw)
 
     const stepExecutions = await createWorkflowStepExecutionsFromSteps(db, execution.id, steps)
 
@@ -692,10 +846,11 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     }
 
     // Get step templates
-    const steps = await getWorkflowStepTemplatesByTemplateId(
+    const stepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
       template.id
     )
+    const steps = topologicalSortSteps(stepsRaw)
 
     // Get all toolIds from step templates to fetch exactly the tools referenced by this workflow
     const allToolIds = steps.flatMap((step) => step.toolIds as string[] || [])
@@ -1004,13 +1159,20 @@ const executeAutomatedWorkflowSteps = async (
 }
 
 // Execute workflow chain - automatically execute steps in sequence
-const executeWorkflowChain = async (
+export const executeWorkflowChain = async (
   executionId: string,
   currentStepId: string,
   tools: any[],
   previousResults: any,
 ) => {
   try {
+    Logger.info(`🚀 executeWorkflowChain called:`, {
+      executionId,
+      currentStepId,
+      toolCount: tools.length,
+      previousResultsKeys: Object.keys(previousResults || {})
+    })
+
     // Get current step execution
     const stepExecution = await db
       .select()
@@ -1022,8 +1184,208 @@ const executeWorkflowChain = async (
 
     const step = stepExecution[0]
 
-    // If step is manual, wait for user input
-    if (step.type === StepType.MANUAL) {
+    // Check if this is a webhook-triggered execution (get this first)
+    const [execution] = await db
+      .select()
+      .from(workflowExecution)
+      .where(eq(workflowExecution.id, executionId))
+
+    // Check if step is already completed (e.g., webhook step completed at creation)
+    if (step.status === WorkflowStatus.COMPLETED) {
+      Logger.info(`⏭️ Step already completed, loading results: ${step.name} (${step.id})`)
+      
+      // Get completed tool execution results for this step execution
+      const toolExecutions = await db
+        .select()
+        .from(toolExecution)
+        .where(eq(toolExecution.workflowExecutionId, step.id))
+      
+      Logger.info(`🔍 Looking for tool executions for step ${step.id}, found: ${toolExecutions.length}`)
+      
+      if (toolExecutions.length > 0) {
+        const completedResult = toolExecutions[0].result
+        Logger.info(`📋 Completed result for ${step.name}:`, {
+          hasResult: !!completedResult,
+          resultKeys: Object.keys(completedResult || {}),
+          resultSample: completedResult ? JSON.stringify(completedResult).substring(0, 200) : 'null'
+        })
+        
+        const stepResults = {
+          stepId: step.id,
+          result: completedResult,
+          toolExecution: toolExecutions[0],
+          status: 'success',
+          toolType: 'webhook'
+        }
+        
+        const updatedResults = {
+          ...(previousResults || {}),
+          [step.name]: stepResults,
+        }
+        
+        Logger.info(`📊 Loaded completed step results for '${step.name}':`, {
+          stepType: 'webhook',
+          status: 'completed',
+          hasResult: !!completedResult,
+          resultKeys: Object.keys(completedResult || {}),
+          totalSteps: Object.keys(updatedResults).length
+        })
+        
+        // Continue to next steps since this one is done
+        if (step.nextStepIds && Array.isArray(step.nextStepIds)) {
+          Logger.info(`🔗 Found ${step.nextStepIds.length} next step(s) from completed step:`, step.nextStepIds)
+          
+          for (const nextStepId of step.nextStepIds) {
+            const nextSteps = await db
+              .select()
+              .from(workflowStepExecution)
+              .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+            const nextStep = nextSteps.find(
+              (s) => s.workflowStepTemplateId === nextStepId,
+            )
+
+            if (nextStep) {
+              const isWebhookTriggered = execution?.metadata && 
+                (execution.metadata as any).triggerType === 'webhook'
+              
+              const shouldExecute = nextStep.type === StepType.AUTOMATED || isWebhookTriggered
+              
+              if (shouldExecute) {
+                Logger.info(`⏭️ Executing next step from completed step: ${nextStep.name} (${nextStep.id})`)
+                await executeWorkflowChain(
+                  executionId,
+                  nextStep.id,
+                  tools,
+                  updatedResults,
+                )
+              } else {
+                Logger.info(`⏸️ Skipping manual step: ${nextStep.name} (${nextStep.type})`)
+              }
+            } else {
+              Logger.warn(`⚠️ Next step not found for template ID: ${nextStepId}`)
+            }
+          }
+        } else {
+          Logger.info(`🏁 No next steps found for completed step '${step.name}'`)
+        }
+        
+        return updatedResults
+      } else {
+        Logger.warn(`⚠️ No tool executions found for completed step ${step.name} (${step.id})`)
+        
+        // For webhook steps, provide dummy data to keep workflow running
+        if (step.name.toLowerCase().includes('webhook')) {
+          Logger.info(`🔄 Creating dummy webhook data for ${step.name} to continue workflow`)
+          
+          const dummyWebhookData = {
+            webhook: {
+              method: "POST",
+              url: "http://localhost:3000/workflow/webhook/test1",
+              path: "/test1",
+              headers: { "Content-Type": "application/json" },
+              query: {},
+              body: { message: "Test webhook trigger", timestamp: new Date().toISOString() },
+              timestamp: new Date().toISOString(),
+              curl: `curl -X POST -H "Content-Type: application/json" -d '{"message":"Test webhook trigger"}' "http://localhost:3000/workflow/webhook/test1"`
+            },
+            aiOutput: `Webhook Request Analysis:
+
+Method: POST
+URL: http://localhost:3000/workflow/webhook/test1
+Path: /test1
+Timestamp: ${new Date().toISOString()}
+
+Headers:
+{
+  "Content-Type": "application/json"
+}
+
+Query Parameters:
+{}
+
+Request Body:
+{
+  "message": "Test webhook trigger",
+  "timestamp": "${new Date().toISOString()}"
+}
+
+cURL Command:
+curl -X POST -H "Content-Type: application/json" -d '{"message":"Test webhook trigger"}' "http://localhost:3000/workflow/webhook/test1"
+
+Please analyze this webhook request and provide insights.`,
+            content: "Test webhook data for workflow execution",
+            output: "Test webhook output",
+            input: {
+              aiOutput: "Test webhook data for AI analysis",
+              content: "Test webhook content",
+              summary: "Webhook received: POST request to /test1",
+              data: { message: "Test webhook trigger" }
+            },
+            data: { message: "Test webhook trigger", timestamp: new Date().toISOString() },
+            status: 'success',
+            message: 'Test webhook triggered for workflow execution'
+          }
+          
+          const stepResults = {
+            stepId: step.id,
+            result: dummyWebhookData,
+            toolExecution: null,
+            status: 'success',
+            toolType: 'webhook'
+          }
+          
+          const updatedResults = {
+            ...(previousResults || {}),
+            [step.name]: stepResults,
+          }
+          
+          Logger.info(`📊 Created dummy webhook data for '${step.name}' to continue workflow`)
+          
+          // Continue to next steps with dummy data
+          if (step.nextStepIds && Array.isArray(step.nextStepIds)) {
+            for (const nextStepId of step.nextStepIds) {
+              const nextSteps = await db
+                .select()
+                .from(workflowStepExecution)
+                .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+              const nextStep = nextSteps.find(
+                (s) => s.workflowStepTemplateId === nextStepId,
+              )
+
+              if (nextStep) {
+                const isWebhookTriggered = execution?.metadata && 
+                  (execution.metadata as any).triggerType === 'webhook'
+                
+                const shouldExecute = nextStep.type === StepType.AUTOMATED || isWebhookTriggered
+                
+                if (shouldExecute) {
+                  Logger.info(`⏭️ Executing next step with dummy data: ${nextStep.name} (${nextStep.id})`)
+                  await executeWorkflowChain(
+                    executionId,
+                    nextStep.id,
+                    tools,
+                    updatedResults,
+                  )
+                }
+              }
+            }
+          }
+          
+          return updatedResults
+        }
+        
+        // If no tool executions found, let it continue to normal execution path
+      }
+    }
+    
+    const isWebhookTriggered = execution?.metadata && 
+      (execution.metadata as any).triggerType === 'webhook'
+
+    // If step is manual and not webhook-triggered, wait for user input
+    if (step.type === StepType.MANUAL && !isWebhookTriggered) {
+      Logger.info(`⏸️ Manual step encountered, waiting for user input: ${step.name}`)
       return previousResults
     }
 
@@ -1044,8 +1406,11 @@ const executeWorkflowChain = async (
 
     const tool = tools.find((t) => t.id === toolId)
     if (!tool) {
+      Logger.warn(`🔍 Tool not found for ID: ${toolId}. Available tools: ${tools.map(t => `${t.id}:${t.type}`).join(', ')}`)
       return previousResults
     }
+
+    Logger.info(`🔧 Executing tool: ${tool.type} (${tool.id}) for step: ${step.name}`)
 
     // Execute the tool
     const toolResult = await executeWorkflowTool(tool, previousResults, executionId)
@@ -1193,39 +1558,104 @@ const executeWorkflowChain = async (
       })
       .where(eq(workflowStepExecution.id, currentStepId))
 
+    Logger.info(`✅ Step marked as COMPLETED: ${step.name} (${step.id}) - Tool: ${tool.type}`)
+
     // Store results for next step
-    const updatedResults = {
-      ...(previousResults || {}),
-      [step.name]: {
-        stepId: step.id,
-        result: toolResult.result,
-        toolExecution: toolExecutionRecord,
-      },
+    const stepResults: any = {
+      stepId: step.id,
+      result: toolResult.result,
+      toolExecution: toolExecutionRecord,
+      status: toolResult.status,
+      toolType: tool.type,
     }
 
-    // Find and execute next steps using UUID arrays
-    if (step.nextStepIds && Array.isArray(step.nextStepIds)) {
-      for (const nextStepId of step.nextStepIds) {
-        const nextSteps = await db
-          .select()
-          .from(workflowStepExecution)
-          .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+    // Special handling for form steps: if this is a form step and the tool execution contains form data,
+    // make sure the form data (including file attachments) is easily accessible
+    if (tool.type === "form" && toolExecutionRecord && toolExecutionRecord.result) {
+      const executionResult = toolExecutionRecord.result as any
+      if (executionResult.formData) {
+        Logger.info(`📋 Form step detected - enhancing step results with form data for: ${step.name}`)
+        // Add form data directly to the step result for easier access by next steps
+        stepResults.formSubmission = {
+          formData: executionResult.formData,
+          submittedAt: executionResult.submittedAt,
+          submittedBy: executionResult.submittedBy
+        }
+        Logger.info(`📎 Form data keys available: ${Object.keys(executionResult.formData).join(', ')}`)
+      }
+    }
 
-        const nextStep = nextSteps.find(
+    const updatedResults = {
+      ...(previousResults || {}),
+      [step.name]: stepResults,
+    }
+
+    Logger.info(`📊 Step results accumulated for '${step.name}':`, {
+      stepType: tool.type,
+      status: toolResult.status,
+      hasResult: !!toolResult.result,
+      resultKeys: Object.keys(toolResult.result || {}),
+      totalSteps: Object.keys(updatedResults).length
+    })
+
+    // Find and execute next steps using UUID arrays - ensuring sequential execution
+    if (step.nextStepIds && Array.isArray(step.nextStepIds) && step.nextStepIds.length > 0) {
+      Logger.info(`🔗 Found ${step.nextStepIds.length} next step(s) to execute:`, step.nextStepIds)
+      
+      // Get execution metadata once for efficiency
+      const [execution] = await db
+        .select()
+        .from(workflowExecution)
+        .where(eq(workflowExecution.id, executionId))
+        .limit(1)
+      
+      const isWebhookTriggered = execution?.metadata && 
+        (execution.metadata as any).triggerType === 'webhook'
+
+      // Get all step executions once for efficiency
+      const allStepExecutions = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+      // Execute steps sequentially to maintain order
+      for (let i = 0; i < step.nextStepIds.length; i++) {
+        const nextStepId = step.nextStepIds[i]
+        
+        const nextStep = allStepExecutions.find(
           (s) => s.workflowStepTemplateId === nextStepId,
         )
 
-        if (nextStep && nextStep.type === StepType.AUTOMATED) {
-          // Recursively execute next automated step
-          // workflow-TODO: consider parallel execution , this is only for sequential steps
-          await executeWorkflowChain(
-            executionId,
-            nextStep.id,
-            tools,
-            updatedResults,
-          )
+        if (nextStep) {
+          // Execute all steps if webhook-triggered, or only automated steps otherwise
+          const shouldExecute = nextStep.type === StepType.AUTOMATED || isWebhookTriggered
+          
+          if (shouldExecute) {
+            Logger.info(`⏭️ Executing next step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.id}) - Type: ${nextStep.type}, Webhook: ${isWebhookTriggered}`)
+            
+            // Recursively execute next step and wait for completion
+            try {
+              await executeWorkflowChain(
+                executionId,
+                nextStep.id,
+                tools,
+                updatedResults,
+              )
+              
+              Logger.info(`✅ Completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
+            } catch (stepError) {
+              Logger.error(`❌ Failed to execute step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
+              // Continue with other steps even if one fails
+            }
+          } else {
+            Logger.info(`⏸️ Skipping manual step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.type})`)
+          }
+        } else {
+          Logger.warn(`⚠️ Next step ${i + 1}/${step.nextStepIds.length} not found for template ID: ${nextStepId}`)
         }
       }
+    } else {
+      Logger.info(`🏁 No more steps to execute after '${step.name}' (nextStepIds: ${step.nextStepIds})`)
     }
 
     // Check if this was the last step and mark workflow as completed if so
@@ -1234,9 +1664,15 @@ const executeWorkflowChain = async (
       .from(workflowStepExecution)
       .where(eq(workflowStepExecution.workflowExecutionId, executionId))
 
+    const completedSteps = allStepExecutions.filter(stepExec => stepExec.status === WorkflowStatus.COMPLETED)
     const allStepsCompleted = allStepExecutions.every(
       (stepExec) => stepExec.status === WorkflowStatus.COMPLETED,
     )
+
+    Logger.info(`📊 Workflow progress for ${executionId}: ${completedSteps.length}/${allStepExecutions.length} steps completed`, {
+      completed: completedSteps.map(s => s.name),
+      remaining: allStepExecutions.filter(s => s.status !== WorkflowStatus.COMPLETED).map(s => `${s.name}(${s.status})`)
+    })
 
     if (allStepsCompleted) {
       // Check if workflow execution is not already completed
@@ -1247,23 +1683,88 @@ const executeWorkflowChain = async (
 
       if (currentExecution && currentExecution.status !== WorkflowStatus.COMPLETED) {
         Logger.info(
-          `All steps completed for workflow execution ${executionId}, marking as completed`,
+          `🎉 All ${allStepExecutions.length} steps completed for workflow execution ${executionId}, marking workflow as COMPLETED`,
         )
         await db
           .update(workflowExecution)
           .set({
-            status: ToolExecutionStatus.COMPLETED,
+            status: WorkflowStatus.COMPLETED,
             completedAt: new Date(),
             completedBy: "system",
           })
           .where(eq(workflowExecution.id, executionId))
+        
+        Logger.info(`✅ Workflow ${executionId} marked as COMPLETED successfully`)
       }
     }
 
     return updatedResults
   } catch (error) {
     Logger.error(error, "Failed to execute workflow chain")
+    
+    // Even if there's an error, check if we should mark workflow as completed
+    try {
+      await checkAndCompleteWorkflow(executionId)
+    } catch (completionError) {
+      Logger.error(`Failed to check workflow completion: ${completionError}`)
+    }
+    
     return previousResults
+  }
+}
+
+// Helper function to check and complete workflow if all steps are done
+export const checkAndCompleteWorkflow = async (executionId: string) => {
+  try {
+    const allStepExecutions = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+    const completedSteps = allStepExecutions.filter(stepExec => stepExec.status === WorkflowStatus.COMPLETED)
+    const allStepsCompleted = allStepExecutions.every(
+      (stepExec) => stepExec.status === WorkflowStatus.COMPLETED,
+    )
+
+    Logger.info(`🔍 Checking workflow completion for ${executionId}: ${completedSteps.length}/${allStepExecutions.length} steps completed`, {
+      completed: completedSteps.map(s => `${s.name}(${s.status})`),
+      remaining: allStepExecutions.filter(s => s.status !== WorkflowStatus.COMPLETED).map(s => `${s.name}(${s.status})`)
+    })
+
+    if (allStepsCompleted && allStepExecutions.length > 0) {
+      // Check if workflow execution is not already completed
+      const [currentExecution] = await db
+        .select()
+        .from(workflowExecution)
+        .where(eq(workflowExecution.id, executionId))
+
+      if (currentExecution && currentExecution.status !== WorkflowStatus.COMPLETED) {
+        Logger.info(
+          `🎉 All ${allStepExecutions.length} steps completed for workflow execution ${executionId}, marking workflow as COMPLETED`,
+        )
+        await db
+          .update(workflowExecution)
+          .set({
+            status: WorkflowStatus.COMPLETED,
+            completedAt: new Date(),
+            completedBy: "system",
+          })
+          .where(eq(workflowExecution.id, executionId))
+        
+        Logger.info(`✅ Workflow ${executionId} marked as COMPLETED successfully`)
+        return true
+      } else if (currentExecution?.status === WorkflowStatus.COMPLETED) {
+        Logger.info(`✅ Workflow ${executionId} already marked as COMPLETED`)
+        return true
+      }
+    } else {
+      Logger.info(`⏳ Workflow ${executionId} still has pending steps`)
+    }
+    
+    return false
+  } catch (error) {
+    Logger.error(`Failed to check workflow completion for ${executionId}: ${error}`)
+    return false
   }
 }
 
@@ -1500,7 +2001,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       formData = jsonData.formData || {}
     }
 
-    console.log(`Form submission for stepId: ${stepId}`)
+    Logger.debug({ stepId }, 'Processing form submission')
 
     // Use the step execution and form tool we already fetched for multipart data
     let stepExecution =
@@ -1638,7 +2139,18 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         submittedBy: "demo",
       },
       toolExecution: toolExecutionRecord,
+      toolType: "form", // Add tool type for consistency
+      status: "success", // Add status for consistency
     }
+
+    Logger.info(`📋 FORM SUBMISSION: Prepared results for next step execution:`, {
+      stepName: stepName,
+      stepId: stepExecution.id,
+      formDataKeys: Object.keys(formData),
+      formDataValues: JSON.stringify(formData, null, 2),
+      resultStructure: JSON.stringify(currentResults, null, 2).substring(0, 500) + "...",
+      nextStepIds: stepExecution.nextStepIds
+    })
 
     // Execute next steps if they are automated using UUID arrays
     if (stepExecution.nextStepIds && Array.isArray(stepExecution.nextStepIds)) {
@@ -1658,12 +2170,29 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         )
 
         if (nextStep && nextStep.type === StepType.AUTOMATED) {
+          Logger.info(`🚀 FORM SUBMISSION: Executing next automated step:`, {
+            nextStepName: nextStep.name,
+            nextStepId: nextStep.id,
+            nextStepType: nextStep.type,
+            workflowExecutionId: stepExecution.workflowExecutionId,
+            currentResultsKeys: Object.keys(currentResults),
+            toolsCount: tools.length
+          })
+          
           await executeWorkflowChain(
             stepExecution.workflowExecutionId,
             nextStep.id,
             tools,
             currentResults,
           )
+          
+          Logger.info(`✅ FORM SUBMISSION: Completed execution of next step: ${nextStep.name}`)
+        } else {
+          Logger.info(`⏸️ FORM SUBMISSION: Skipping next step (not automated):`, {
+            nextStepFound: !!nextStep,
+            nextStepType: nextStep?.type,
+            nextStepName: nextStep?.name
+          })
         }
       }
     }
@@ -1691,6 +2220,40 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
   }
 }
 
+// Helper function to generate cURL command from webhook data
+const generateCurlCommand = (webhookData: {
+  method: string
+  url: string
+  headers: Record<string, any>
+  body: any
+}): string => {
+  try {
+    let curl = `curl -X ${webhookData.method.toUpperCase()}`
+    
+    // Add headers
+    Object.entries(webhookData.headers || {}).forEach(([key, value]) => {
+      if (value) {
+        curl += ` -H "${key}: ${value}"`
+      }
+    })
+    
+    // Add body for POST/PUT/PATCH requests
+    if (webhookData.body && ["POST", "PUT", "PATCH"].includes(webhookData.method.toUpperCase())) {
+      const bodyStr = typeof webhookData.body === 'string' 
+        ? webhookData.body 
+        : JSON.stringify(webhookData.body)
+      curl += ` -d '${bodyStr}'`
+    }
+    
+    // Add URL (should be last)
+    curl += ` "${webhookData.url}"`
+    
+    return curl
+  } catch (error) {
+    return `curl -X ${webhookData.method.toUpperCase()} "${webhookData.url}"`
+  }
+}
+
 // Helper function to extract content from previous step results using simplified input paths
 // Workflow-Todo: This function can be enhanced to support more complex path syntaxes if needed, currently this 
 const extractContentFromPath = (
@@ -1712,7 +2275,6 @@ const extractContentFromPath = (
     const propertyPath = contentPath.slice(6) // Remove "input."
     const pathParts = propertyPath.split(".")
 
-
     const latestStepKey = stepKeys[stepKeys.length - 1]
     const latestStepResult = previousStepResults[latestStepKey]
 
@@ -1725,7 +2287,8 @@ const extractContentFromPath = (
           target = target[part]
         } else {
           Logger.debug(`DEBUG - extractContentFromPath: Property '${part}' not found in latest step result`)
-          return `Property '${part}' not found in any step result. Available steps: ${stepKeys.join(", ")}`
+          // Property not found - fall back to sending all available data as JSON
+          return JSON.stringify(latestStepResult.result, null, 2)
         }
       }
 
@@ -1758,19 +2321,60 @@ const getExecutionContext = async (executionId: string): Promise<{
       executionId
     )
 
-    if (!execution || !execution.metadata) {
-      Logger.warn(`No execution context found for execution ${executionId}`)
+    if (!execution) {
+      Logger.warn(`No execution found for execution ${executionId}`)
       return null
     }
 
-    // Check if execution context was stored in metadata
-
+    // Check if execution context was stored in metadata (for manual executions)
     const context = execution.metadata as any
-    if (context.executionContext) {
+    if (context && context.executionContext) {
+      Logger.info(`✅ Found execution context in metadata for ${executionId}`)
       return context.executionContext
     }
 
-    Logger.warn(`No execution context in metadata for execution ${executionId}`)
+    // For webhook-triggered executions, get user info from execution record
+    if (execution.userId && execution.workspaceId) {
+      Logger.info(`🔄 Getting execution context from user/workspace IDs for webhook execution ${executionId}`)
+      
+      // Import user module to get user details
+      const { users, workspaces } = await import("@/db/schema")
+      
+      // Get user details
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, execution.userId))
+        .limit(1)
+      
+      // Get workspace details  
+      const [workspace] = await db
+        .select()
+        .from(workspaces)
+        .where(eq(workspaces.id, execution.workspaceId))
+        .limit(1)
+      
+      if (user && workspace) {
+        const executionContext = {
+          workspaceId: workspace.externalId || workspace.id.toString(),
+          userEmail: user.email,
+          workspaceInternalId: workspace.id.toString(),
+          userId: user.id.toString()
+        }
+        
+        Logger.info(`✅ Created execution context for webhook execution:`, {
+          userEmail: executionContext.userEmail,
+          workspaceId: executionContext.workspaceId,
+          userId: executionContext.userId
+        })
+        
+        return executionContext
+      } else {
+        Logger.warn(`❌ Could not find user (${execution.userId}) or workspace (${execution.workspaceId}) for execution ${executionId}`)
+      }
+    }
+
+    Logger.warn(`❌ No execution context available for execution ${executionId}`)
     return null
   } catch (error) {
     Logger.error(error, `Failed to get execution context for ${executionId}`)
@@ -1826,10 +2430,59 @@ const executeWorkflowTool = async (
               emailBody = `No content found at path: ${contentPath}`
             }
           } else {
-            // Fallback to extracting from response.aiOutput path
-            emailBody = extractContentFromPath(previousStepResults, "input.aiOutput")
-            if (!emailBody) {
-              emailBody = "No content available from previous step"
+            // Try multiple standard paths for email content
+            emailBody = extractContentFromPath(previousStepResults, "input.aiOutput") ||
+                       extractContentFromPath(previousStepResults, "input.content") ||
+                       extractContentFromPath(previousStepResults, "input.output")
+            
+            if (!emailBody || emailBody.includes("not found")) {
+              // Try direct path access for different types of previous step data
+              const stepKeys = Object.keys(previousStepResults)
+              if (stepKeys.length > 0) {
+                // Look for AI Agent output first (most recent step is usually what we want)
+                for (let i = stepKeys.length - 1; i >= 0; i--) {
+                  const stepKey = stepKeys[i]
+                  const stepData = previousStepResults[stepKey]
+                  
+                  // Try AI Agent output first
+                  if (stepData?.result?.aiOutput) {
+                    emailBody = stepData.result.aiOutput
+                    Logger.info(`📧 Email using AI Agent output from step: ${stepKey}`)
+                    break
+                  }
+                  
+                  // Try standard content fields
+                  if (stepData?.result?.content || stepData?.result?.output) {
+                    emailBody = stepData.result.content || stepData.result.output
+                    Logger.info(`📧 Email using content/output from step: ${stepKey}`)
+                    break
+                  }
+                  
+                  // Handle HTTP node output
+                  if (stepData?.toolType === 'http_request' && stepData?.result?.data) {
+                    const httpResult = stepData.result
+                    emailBody = `HTTP Request Summary:
+URL: ${httpResult.url}
+Method: ${httpResult.method}
+Status: ${httpResult.statusCode} ${httpResult.statusText}
+Success: ${httpResult.success}
+
+Response Data:
+${JSON.stringify(httpResult.data, null, 2)}`
+                    Logger.info(`📧 Email using HTTP node output from step: ${stepKey}`)
+                    break
+                  }
+                }
+                
+                // Fallback if no suitable content found
+                if (!emailBody) {
+                  emailBody = "No suitable content found from previous steps"
+                  Logger.warn(`📧 Email fallback: No content found in ${stepKeys.length} previous steps`)
+                }
+              } else {
+                emailBody = "No previous steps available"
+                Logger.warn(`📧 Email fallback: No previous step results available`)
+              }
             }
           }
 
@@ -1971,56 +2624,279 @@ const executeWorkflowTool = async (
           const workspaceId = executionContext.workspaceId
           const userEmail = executionContext.userEmail
 
-          // Process input content based on input type
+          // Generic AI Agent input processing - handles all input types
           let userQuery = ""
           let imageAttachmentIds: string[] = []
           let documentAttachmentIds: string[] = []
 
-          if (aiConfig.inputType === "form") {
-            // Extract form data from previous step - corrected data path
-            const stepKeys = Object.keys(previousStepResults)
+          Logger.info(`🔄 AI Agent processing input for execution ${executionId}:`, {
+            inputType: aiConfig.inputType,
+            prompt: prompt.substring(0, 100) + "...",
+            previousStepsCount: Object.keys(previousStepResults).length,
+            previousStepsKeys: Object.keys(previousStepResults),
+            fullPreviousStepResults: JSON.stringify(previousStepResults, null, 2)
+          })
 
-            if (stepKeys.length > 0) {
-              const latestStepKey = stepKeys[stepKeys.length - 1]
-              const prevStepData = previousStepResults[latestStepKey]
+          // Process all previous steps to extract content and attachments
+          const stepKeys = Object.keys(previousStepResults)
+          let content = ""
+          let hasProcessedContent = false
 
-              // Try multiple possible paths for form data
-              const formSubmission =
-                prevStepData?.formSubmission?.formData ||
-                prevStepData?.result?.formData ||
-                prevStepData?.toolExecution?.result?.formData ||
-                {}
+          if (stepKeys.length > 0) {
+            // Process each step to extract content and attachments
+            for (let i = stepKeys.length - 1; i >= 0; i--) {
+              const stepKey = stepKeys[i]
+              const stepData = previousStepResults[stepKey]
 
-              const extractedIds = extractAttachmentIds(formSubmission)
-              imageAttachmentIds = extractedIds.imageAttachmentIds
-              documentAttachmentIds = extractedIds.documentAttachmentIds
+              Logger.info(`📊 Processing step ${i + 1}/${stepKeys.length}: ${stepKey}`, {
+                toolType: stepData?.toolType,
+                hasResult: !!stepData?.result,
+                resultKeys: stepData?.result ? Object.keys(stepData.result) : []
+              })
 
-              // Process text fields
-              const textFields = Object.entries(formSubmission)
-                .filter(([key, value]) => typeof value === "string")
-                .map(([key, value]) => `${key}: ${value}`)
-                .join("\n")
+              // Extract attachments from any step (form, file uploads, direct attachments, etc.)
 
-              userQuery = `${prompt}\n\nForm Data:\n${textFields}`
-            } else {
-              Logger.warn("No previous step data found")
-              userQuery = prompt
+              // Method 1: Form data attachments
+              if (stepData?.result?.formData || stepData?.formSubmission?.formData || stepData?.toolExecution?.result?.formData) {
+                const formData = stepData.result?.formData ||
+                               stepData.formSubmission?.formData ||
+                               stepData.toolExecution?.result?.formData || {}
+
+                Logger.info(`📋 DETAILED Form data analysis for ${stepKey}:`, {
+                  stepName: stepKey,
+                  formDataKeys: Object.keys(formData),
+                  formDataValues: JSON.stringify(formData, null, 2),
+                  stepDataStructure: {
+                    hasResult: !!stepData?.result,
+                    hasFormSubmission: !!stepData?.formSubmission,
+                    hasToolExecution: !!stepData?.toolExecution,
+                    resultKeys: stepData?.result ? Object.keys(stepData.result) : [],
+                    formSubmissionKeys: stepData?.formSubmission ? Object.keys(stepData.formSubmission) : [],
+                    toolExecutionResultKeys: stepData?.toolExecution?.result ? Object.keys(stepData.toolExecution.result) : []
+                  },
+                  rawStepData: JSON.stringify(stepData, null, 2).substring(0, 1000) + "..."
+                })
+
+                // Try to extract attachment IDs with enhanced debugging
+                Logger.info(`🔍 Starting attachment extraction for ${stepKey}...`)
+                const extractedIds = extractAttachmentIds(formData)
+                imageAttachmentIds.push(...extractedIds.imageAttachmentIds)
+                documentAttachmentIds.push(...extractedIds.documentAttachmentIds)
+
+                Logger.info(`📎 FINAL Extracted form attachments from ${stepKey}:`, {
+                  images: extractedIds.imageAttachmentIds.length,
+                  documents: extractedIds.documentAttachmentIds.length,
+                  imageIds: extractedIds.imageAttachmentIds,
+                  documentIds: extractedIds.documentAttachmentIds,
+                  totalImagesSoFar: imageAttachmentIds.length,
+                  totalDocumentsSoFar: documentAttachmentIds.length
+                })
+              }
+
+              // Method 2: Direct attachment arrays
+              if (stepData?.result?.attachments) {
+                const attachments = Array.isArray(stepData.result.attachments)
+                  ? stepData.result.attachments
+                  : [stepData.result.attachments]
+
+                attachments.forEach((attachment: any) => {
+                  if (attachment?.attachmentId) {
+                    if (attachment.attachmentMetadata?.isImage) {
+                      imageAttachmentIds.push(attachment.attachmentId)
+                    } else {
+                      documentAttachmentIds.push(attachment.attachmentId)
+                    }
+                  }
+                })
+
+                Logger.info(`📎 Extracted direct attachments from ${stepKey}: ${attachments.length}`)
+              }
+
+              // Method 3: File IDs arrays (common format)
+              if (stepData?.result?.fileIds && Array.isArray(stepData.result.fileIds)) {
+                documentAttachmentIds.push(...stepData.result.fileIds)
+                Logger.info(`📎 Extracted file IDs from ${stepKey}: ${stepData.result.fileIds.length}`)
+              }
+
+              // Method 4: Image/document specific arrays
+              if (stepData?.result?.imageAttachmentIds && Array.isArray(stepData.result.imageAttachmentIds)) {
+                imageAttachmentIds.push(...stepData.result.imageAttachmentIds)
+              }
+              if (stepData?.result?.documentAttachmentIds && Array.isArray(stepData.result.documentAttachmentIds)) {
+                documentAttachmentIds.push(...stepData.result.documentAttachmentIds)
+              }
+
+              // Extract content only from the most recent relevant step
+              if (!hasProcessedContent) {
+                // Priority 1: Direct AI/content output
+                if (stepData?.result?.aiOutput) {
+                  content = stepData.result.aiOutput
+                  Logger.info(`🤖 Using AI output from step: ${stepKey}`)
+                  hasProcessedContent = true
+                } else if (stepData?.result?.content || stepData?.result?.output) {
+                  content = stepData.result.content || stepData.result.output
+                  Logger.info(`📄 Using content/output from step: ${stepKey}`)
+                  hasProcessedContent = true
+                }
+                // Priority 2: HTTP node data
+                else if (stepData?.toolType === 'http_request' && stepData?.result?.data) {
+                  const httpData = stepData.result
+                  content = `HTTP Request Results:
+- URL: ${httpData.url || 'N/A'}
+- Method: ${httpData.method || 'N/A'}
+- Status: ${httpData.statusCode} ${httpData.statusText || ''}
+- Success: ${httpData.success || false}
+- Duration: ${httpData.duration || 0}ms
+- Content Type: ${httpData.contentType || 'N/A'}
+
+Response Data:
+${JSON.stringify(httpData.data, null, 2)}
+
+Raw Response Preview:
+${(httpData.rawResponse || '').substring(0, 1000)}${httpData.rawResponse?.length > 1000 ? '...' : ''}
+
+Response Headers:
+${JSON.stringify(httpData.headers || {}, null, 2)}`
+
+                  Logger.info(`🌐 Using HTTP response from step: ${stepKey}`, {
+                    url: httpData.url,
+                    status: httpData.statusCode,
+                    dataType: typeof httpData.data,
+                    dataSize: JSON.stringify(httpData.data || {}).length
+                  })
+                  hasProcessedContent = true
+                }
+                // Priority 3: Webhook data (includes both webhook and Jira triggers)
+                else if (stepData?.toolType === 'webhook' || stepData?.toolType === 'jira' || stepData?.result?.webhook) {
+                  const webhookData = stepData.result?.webhook || stepData.result
+                  content = `Webhook Request Details:
+- Method: ${webhookData.method || 'N/A'}
+- URL: ${webhookData.url || 'N/A'}
+- Path: ${webhookData.path || 'N/A'}
+- Timestamp: ${webhookData.timestamp || 'N/A'}
+
+Headers:
+${JSON.stringify(webhookData.headers || {}, null, 2)}
+
+Query Parameters:
+${JSON.stringify(webhookData.query || {}, null, 2)}
+
+Request Body:
+${JSON.stringify(webhookData.body || {}, null, 2)}`
+
+                  Logger.info(`📡 Using webhook data from step: ${stepKey}`)
+                  hasProcessedContent = true
+                }
+                // Priority 4: Form data text fields
+                else if (stepData?.result?.formData || stepData?.formSubmission?.formData || stepData?.toolExecution?.result?.formData) {
+                  const formData = stepData.result?.formData ||
+                                 stepData.formSubmission?.formData ||
+                                 stepData.toolExecution?.result?.formData || {}
+                  const textFields = Object.entries(formData)
+                    .filter(([, value]) => typeof value === "string" && value.trim())
+                    .map(([key, value]) => `${key}: ${value}`)
+                    .join("\n")
+
+                  if (textFields) {
+                    content = `Form Data:\n${textFields}`
+                    Logger.info(`📝 Using form text data from step: ${stepKey}`)
+                    hasProcessedContent = true
+                  }
+                }
+                // Priority 5: Raw data fallback
+                else if (stepData?.result && Object.keys(stepData.result).length > 0) {
+                  content = `Data from ${stepKey} (${stepData.toolType || 'unknown'} tool):
+${JSON.stringify(stepData.result, null, 2)}`
+                  Logger.info(`🔍 Using raw data from step: ${stepKey}`)
+                  hasProcessedContent = true
+                }
+              }
             }
-          } else {
-            const stepKeys = Object.keys(previousStepResults)
-            if (stepKeys.length > 0) {
-              const latestStepKey = stepKeys[stepKeys.length - 1]
-              const prevStepData = previousStepResults[latestStepKey]
-              const content = prevStepData?.result?.output ||
-                prevStepData?.result?.content ||
-                JSON.stringify(prevStepData?.result || {})
-              userQuery = `${prompt}\n\nContent to analyze:\n${content}`
-            } else {
-              userQuery = prompt
-            }
+
+            // Remove duplicate attachment IDs
+            imageAttachmentIds = [...new Set(imageAttachmentIds)]
+            documentAttachmentIds = [...new Set(documentAttachmentIds)]
+
+            Logger.info(`📎 Total attachments collected:`, {
+              images: imageAttachmentIds.length,
+              documents: documentAttachmentIds.length,
+              imageIds: imageAttachmentIds,
+              documentIds: documentAttachmentIds
+            })
           }
+
+          // Build the final user query
+          if (content || imageAttachmentIds.length > 0 || documentAttachmentIds.length > 0) {
+            let queryParts = [prompt]
+            
+            if (content) {
+              queryParts.push(`\nContent to analyze:\n${content}`)
+            }
+            
+            if (imageAttachmentIds.length > 0) {
+              queryParts.push(`\nImage attachments: ${imageAttachmentIds.length} file(s)`)
+            }
+            
+            if (documentAttachmentIds.length > 0) {
+              queryParts.push(`\nDocument attachments: ${documentAttachmentIds.length} file(s)`)
+            }
+            
+            userQuery = queryParts.join("")
+            Logger.info(`✅ AI Agent query built with document content/attachments`)
+          } else {
+            // If we have previous steps but no content was extracted, this indicates a problem
+            if (stepKeys.length > 0) {
+              Logger.error(`❌ AI Agent ERROR: Previous steps exist but no content/attachments extracted!`, {
+                stepCount: stepKeys.length,
+                stepNames: stepKeys,
+                totalImagesSoFar: imageAttachmentIds.length,
+                totalDocumentsSoFar: documentAttachmentIds.length
+              })
+              
+              return {
+                status: "error",
+                result: {
+                  error: "No document content found from previous steps",
+                  details: `Expected document content from ${stepKeys.join(', ')} but none was extracted`,
+                  stepCount: stepKeys.length,
+                  stepNames: stepKeys
+                }
+              }
+            }
+            
+            userQuery = prompt
+            Logger.info(`📝 AI Agent using only prompt - no previous step data found`)
+          }
+
+          Logger.info(`🤖 AI Agent final query prepared:`, {
+            promptLength: prompt.length,
+            contentLength: content.length,
+            queryLength: userQuery.length,
+            hasImages: imageAttachmentIds.length > 0,
+            hasDocuments: documentAttachmentIds.length > 0,
+            imageAttachmentIds: imageAttachmentIds,
+            documentAttachmentIds: documentAttachmentIds,
+            contentPreview: content.substring(0, 200) + (content.length > 200 ? "..." : ""),
+            fullQuery: userQuery.substring(0, 500) + (userQuery.length > 500 ? "..." : ""),
+            promptPreview: prompt.substring(0, 200) + (prompt.length > 200 ? "..." : ""),
+            hasContent: content.length > 0,
+            isPromptOnlyQuery: userQuery === prompt,
+            contentSourceDetected: content.includes("Form Data:") || content.includes("Document") || content.includes("PDF") || content.includes("file")
+          })
           const isExistingAgent = aiConfig.isExistingAgent
           Logger.info(`Executing agent ${agentId} (existing: ${isExistingAgent}) for user ${userEmail} in workspace ${workspaceId}`)
+
+          Logger.info(`🤖 About to call executeAgentForWorkflowWithRag with:`, {
+            agentId,
+            userEmail,
+            workspaceId,
+            userQueryLength: userQuery.length,
+            userQueryPreview: userQuery.substring(0, 300) + (userQuery.length > 300 ? "..." : ""),
+            imageAttachmentIds: imageAttachmentIds,
+            nonImageAttachmentFileIds: documentAttachmentIds,
+            temperature,
+            isStreamable: false
+          })
 
           const fullResult = await executeAgentForWorkflowWithRag({
             agentId,
@@ -2033,7 +2909,23 @@ const executeWorkflowTool = async (
             nonImageAttachmentFileIds: documentAttachmentIds,
           })
 
+          Logger.info(`🔍 executeAgentForWorkflowWithRag response:`, {
+            success: fullResult.success,
+            hasResponse: !!fullResult.response,
+            responseLength: fullResult.response?.length || 0,
+            responsePreview: fullResult.response ? (fullResult.response.substring(0, 300) + (fullResult.response.length > 300 ? "..." : "")) : "No response",
+            error: fullResult.error,
+            fullResultKeys: Object.keys(fullResult),
+            agentId: agentId,
+            executionId: executionId
+          })
+
           if (!fullResult.success) {
+            Logger.error(`🚨 AI Agent execution failed:`, {
+              error: fullResult.error,
+              agentId: agentId,
+              executionId: executionId
+            })
             return {
               status: "error",
               result: {
@@ -2043,13 +2935,19 @@ const executeWorkflowTool = async (
             }
           }
 
+          Logger.info(`✅ AI Agent execution successful:`, {
+            responseLength: fullResult.response?.length || 0,
+            responsePreview: fullResult.response?.substring(0, 100) + "...",
+            agentId: agentId,
+            executionId: executionId
+          })
 
           return {
             status: "success",
             result: {
               aiOutput: fullResult.response,
               agentName: aiConfig.agentName || "Unknown Agent",
-              model: aiConfig.modelId || "gpt-4o",
+              model: aiConfig.model || aiConfig.modelId || "gpt-4o",
               inputType: aiConfig.inputType || "text",
               processedAt: new Date().toISOString(),
               chatId: null
@@ -2063,6 +2961,349 @@ const executeWorkflowTool = async (
               error: "Agent execution failed",
               message: error instanceof Error ? error.message : String(error),
               inputType: aiConfig.inputType,
+            }
+          }
+        }
+
+      case "http_request":
+        try {
+          const httpConfig = tool.config || {}
+          const httpValue = tool.value || {}
+          
+          // Extract configuration from both config and value objects
+          const url = httpValue.url || httpConfig.url
+          const method = (httpValue.method || httpConfig.method || "GET").toUpperCase()
+          const headers = { ...httpConfig.headers, ...httpValue.headers }
+          const queryParams = { ...httpConfig.queryParams, ...httpValue.queryParams }
+          const body = httpValue.body || httpConfig.body
+          const bodyType = httpValue.bodyType || httpConfig.bodyType || "json"
+          const authentication = httpConfig.authentication || httpValue.authentication || "none"
+          const authConfig = httpConfig.authConfig || httpValue.authConfig || {}
+          const timeout = httpConfig.timeout || httpValue.timeout || 30000
+
+          // Validate required fields
+          if (!url) {
+            return {
+              status: "error",
+              result: {
+                error: "URL is required for HTTP request",
+                config: { httpConfig, httpValue }
+              }
+            }
+          }
+
+          // Validate URL format
+          try {
+            new URL(url)
+          } catch (urlError) {
+            return {
+              status: "error",
+              result: {
+                error: "Invalid URL format",
+                url: url,
+                details: urlError instanceof Error ? urlError.message : String(urlError)
+              }
+            }
+          }
+
+          Logger.info(`🌐 Making HTTP ${method} request to: ${url}`)
+
+          // Build the final URL with query parameters
+          const finalUrl = new URL(url)
+          if (queryParams) {
+            Object.entries(queryParams).forEach(([key, value]) => {
+              if (value) {
+                finalUrl.searchParams.append(key, String(value))
+              }
+            })
+          }
+
+          // Build request headers
+          const requestHeaders: Record<string, string> = {
+            'User-Agent': 'Xyne-Workflow/1.0'
+          }
+
+          // Add custom headers
+          if (headers) {
+            Object.assign(requestHeaders, headers)
+          }
+
+          // Handle authentication
+          if (authentication === "basic" && authConfig?.username && authConfig?.password) {
+            const credentials = btoa(`${authConfig.username}:${authConfig.password}`)
+            requestHeaders['Authorization'] = `Basic ${credentials}`
+          } else if (authentication === "bearer" && authConfig?.token) {
+            requestHeaders['Authorization'] = `Bearer ${authConfig.token}`
+          } else if (authentication === "api_key" && authConfig?.apiKey && authConfig?.apiKeyHeader) {
+            requestHeaders[authConfig.apiKeyHeader] = authConfig.apiKey
+          }
+
+          // Prepare request body for POST/PUT/PATCH
+          let requestBody: string | undefined
+          if (body && ["POST", "PUT", "PATCH"].includes(method)) {
+            if (bodyType === "json") {
+              requestHeaders['Content-Type'] = 'application/json'
+              requestBody = typeof body === 'string' ? body : JSON.stringify(body)
+            } else if (bodyType === "form") {
+              requestHeaders['Content-Type'] = 'application/x-www-form-urlencoded'
+              requestBody = body
+            } else {
+              requestBody = body
+            }
+          }
+
+          Logger.info(`📤 Request details:`, {
+            finalUrl: finalUrl.toString(),
+            method,
+            hasBody: !!requestBody,
+            bodyLength: requestBody?.length || 0,
+            headerCount: Object.keys(requestHeaders).length
+          })
+
+          // Make the HTTP request
+          try {
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+            const startTime = Date.now()
+            
+            const response = await fetch(finalUrl.toString(), {
+              method,
+              headers: requestHeaders,
+              body: requestBody,
+              signal: controller.signal
+            })
+
+            clearTimeout(timeoutId)
+            const duration = Date.now() - startTime
+
+            Logger.info(`📥 Response received: ${response.status} ${response.statusText} (${duration}ms)`)
+
+            // Read response body
+            let responseText = ""
+            let responseData: any = null
+            
+            try {
+              responseText = await response.text()
+              const contentType = response.headers.get('content-type') || ''
+              
+              // Try to parse as JSON if appropriate
+              if (contentType.includes('application/json') && responseText) {
+                try {
+                  responseData = JSON.parse(responseText)
+                } catch {
+                  responseData = responseText
+                }
+              } else {
+                responseData = responseText
+              }
+            } catch (bodyError) {
+              Logger.warn(`Failed to read response body: ${bodyError}`)
+              responseData = "Failed to read response body"
+            }
+
+            // Collect response headers
+            const responseHeaders: Record<string, string> = {}
+            response.headers.forEach((value, key) => {
+              responseHeaders[key] = value
+            })
+
+            const isSuccess = response.status >= 200 && response.status < 300
+
+            Logger.info(`✅ Request completed successfully: ${response.status}`)
+
+            return {
+              status: isSuccess ? "success" : "partial_success", // Even error responses contain useful data
+              result: {
+                statusCode: response.status,
+                statusText: response.statusText,
+                headers: responseHeaders,
+                data: responseData,
+                rawResponse: responseText,
+                url: finalUrl.toString(),
+                method: method,
+                duration: duration,
+                success: isSuccess,
+                contentType: response.headers.get('content-type') || '',
+                timestamp: new Date().toISOString()
+              }
+            }
+
+          } catch (fetchError) {
+            Logger.error(`❌ HTTP request failed:`, fetchError)
+
+            let errorMessage = "Request failed"
+            let troubleshooting = "Check URL and network connectivity"
+
+            if (fetchError instanceof Error) {
+              if (fetchError.name === 'AbortError') {
+                errorMessage = `Request timed out after ${timeout}ms`
+                troubleshooting = "Increase timeout or check if service is responding"
+              } else {
+                errorMessage = fetchError.message
+                troubleshooting = "Verify URL is correct and accessible"
+              }
+            }
+
+            return {
+              status: "error",
+              result: {
+                error: "HTTP request failed",
+                message: errorMessage,
+                troubleshooting: troubleshooting,
+                url: finalUrl.toString(),
+                method: method,
+                timestamp: new Date().toISOString(),
+                debug: {
+                  timeout: timeout,
+                  originalError: fetchError instanceof Error ? fetchError.message : String(fetchError)
+                }
+              }
+            }
+          }
+
+        } catch (error) {
+          Logger.error(error, "HTTP request tool execution failed")
+          return {
+            status: "error",
+            result: {
+              error: "HTTP request tool execution failed",
+              message: error instanceof Error ? error.message : String(error),
+              config: tool.config,
+              value: tool.value
+            }
+          }
+        }
+
+      case "webhook":
+        try {
+          Logger.info(`🚀 Executing webhook tool for execution ${executionId}`)
+          
+          // Get webhook execution data from the execution metadata
+          const [execution] = await db
+            .select()
+            .from(workflowExecution)
+            .where(eq(workflowExecution.id, executionId))
+            .limit(1)
+
+          if (!execution || !execution.metadata) {
+            return {
+              status: "error",
+              result: {
+                error: "No webhook execution data found",
+                executionId: executionId
+              }
+            }
+          }
+
+          const webhookMetadata = execution.metadata as any
+          const webhookData = webhookMetadata.webhook || webhookMetadata
+          
+          Logger.info(`📡 Webhook metadata found:`, { 
+            hasMetadata: !!execution.metadata,
+            hasWebhookData: !!webhookData,
+            triggerType: webhookMetadata.triggerType,
+            method: webhookData.method,
+            path: webhookData.path 
+          })
+          
+          // Extract webhook request data for output
+          const webhookOutput = {
+            method: webhookData.method || "POST",
+            url: webhookData.url || `http://localhost:3000${webhookData.path || "/workflow/webhook"}`,
+            path: webhookData.path || "/workflow/webhook",
+            headers: webhookData.headers || {},
+            query: webhookData.query || {},
+            body: webhookData.body || webhookData.requestData || {},
+            timestamp: webhookData.timestamp || new Date().toISOString(),
+            // Add full request data for advanced use cases
+            requestData: webhookData.requestData || webhookData.body || {},
+            // Generate cURL command for easy sharing/debugging
+            curl: generateCurlCommand({
+              method: webhookData.method || "POST",
+              url: webhookData.url || `http://localhost:3000${webhookData.path || "/workflow/webhook"}`,
+              headers: webhookData.headers || {},
+              body: webhookData.body || webhookData.requestData || {}
+            }),
+            // Add formatted summary for AI analysis
+            summary: `Webhook received: ${webhookData.method || "POST"} request to ${webhookData.path || "/workflow/webhook"}`,
+            // Add formatted content for email
+            content: `Webhook Details:
+- Method: ${webhookData.method || "POST"}
+- Path: ${webhookData.path || "/workflow/webhook"}
+- Timestamp: ${webhookData.timestamp || new Date().toISOString()}
+- Headers: ${JSON.stringify(webhookData.headers || {}, null, 2)}
+- Query: ${JSON.stringify(webhookData.query || {}, null, 2)}
+- Body: ${JSON.stringify(webhookData.body || {}, null, 2)}`,
+            // Add specific fields that other tools might need
+            aiOutput: `Analyze this webhook request:\n${JSON.stringify(webhookData, null, 2)}`,
+            output: `Webhook ${webhookData.method || "POST"} ${webhookData.path || "/workflow/webhook"} - ${new Date().toISOString()}`
+          }
+
+          Logger.info(`✅ Webhook tool processed successfully - method: ${webhookOutput.method}, path: ${webhookOutput.path}`)
+          Logger.info(`📤 Webhook output data:`, { 
+            hasUrl: !!webhookOutput.url,
+            hasBody: !!webhookOutput.body,
+            hasHeaders: Object.keys(webhookOutput.headers).length > 0,
+            hasCurl: !!webhookOutput.curl
+          })
+
+          // Create formatted content for AI Agent analysis
+          const formattedContent = `Webhook Request Analysis:
+
+Method: ${webhookOutput.method}
+URL: ${webhookOutput.url}  
+Path: ${webhookOutput.path}
+Timestamp: ${webhookOutput.timestamp}
+
+Headers:
+${JSON.stringify(webhookOutput.headers, null, 2)}
+
+Query Parameters:
+${JSON.stringify(webhookOutput.query, null, 2)}
+
+Request Body:
+${JSON.stringify(webhookOutput.body, null, 2)}
+
+cURL Command:
+${webhookOutput.curl}
+
+Please analyze this webhook request and provide insights.`
+
+          return {
+            status: "success",
+            result: {
+              // Primary webhook data
+              webhook: webhookOutput,
+              // AI Agent expects content at these paths
+              aiOutput: formattedContent,
+              content: formattedContent,
+              output: formattedContent,
+              // Email tool expects content here
+              input: {
+                aiOutput: formattedContent,
+                content: formattedContent,
+                summary: `Webhook received: ${webhookOutput.method} request to ${webhookOutput.path}`,
+                data: webhookOutput
+              },
+              // Raw data for advanced usage
+              data: webhookOutput,
+              // Status info
+              success: true,
+              message: `Webhook triggered: ${webhookOutput.method} ${webhookOutput.path}`,
+              timestamp: webhookOutput.timestamp,
+              // Curl info for HTTP Request tool if needed
+              curlCommand: webhookOutput.curl
+            }
+          }
+
+        } catch (error) {
+          Logger.error(error, "Error processing webhook tool")
+          return {
+            status: "error",
+            result: {
+              error: "Failed to process webhook data",
+              details: error instanceof Error ? error.message : String(error)
             }
           }
         }
@@ -2213,6 +3454,36 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     }, [])
 
     for (const tool of uniqueTools) {
+      // Check if this tool already exists in the database
+      // Only query if the ID is a valid UUID (not temporary IDs like "tool-email-2")
+      let existingTool = null
+      const isValidUUID = tool.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tool.id)
+
+      if (isValidUUID) {
+        try {
+          const [foundTool] = await db
+            .select()
+            .from(workflowTool)
+            .where(and(
+              eq(workflowTool.id, tool.id),
+              eq(workflowTool.workspaceId, user.workspaceId),
+              eq(workflowTool.userId, user.id)
+            ))
+          existingTool = foundTool
+        } catch (error) {
+          Logger.error({ error, toolId: tool.id }, 'Failed to check for existing tool')
+          // Continue with creation if query fails
+        }
+      }
+
+      // If tool exists, reuse it and skip creation
+      if (existingTool) {
+        Logger.info({ toolId: tool.id, type: tool.type }, 'Reusing existing workflow tool')
+        createdTools.push(existingTool)
+        toolIdMap.set(tool.id, existingTool.id)
+        continue // Skip to next tool
+      }
+
       // Process form tools to ensure file fields use "document_file" as ID
       let processedValue = tool.value || {}
 
@@ -2249,6 +3520,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
               inputType: "form",
               agentId: tool.value.agentId,
               agentName: tool.value.name,
+              model: tool.value?.model,
               isExistingAgent: true,
               dynamicallyCreated: false
             }
@@ -2286,6 +3558,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
               agentId: newAgent.externalId,
               createdAgentId: newAgent.externalId,
               agentName: newAgent.name,
+              model: tool.value?.model,
               isExistingAgent: false,
               dynamicallyCreated: true
             }
@@ -2299,6 +3572,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           processedConfig = {
             ...processedConfig,
             inputType: "form",
+            model: tool.value?.model,
             agentCreationFailed: true,
             agentCreationError: agentCreationError instanceof Error ? agentCreationError.message :
               String(agentCreationError)
@@ -2447,6 +3721,17 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       workflow_tools: createdTools,
     }
 
+    // Check if workflow contains webhook tools and reload webhooks if needed
+    if (hasWebhookTools(createdTools)) {
+      Logger.info("🔄 Workflow contains webhook tools, triggering webhook reload...")
+      const reloadResult = await triggerWebhookReload()
+      if (reloadResult.success) {
+        Logger.info(`✅ Webhooks reloaded successfully: ${reloadResult.count} webhooks active`)
+      } else {
+        Logger.warn(`⚠️ Webhook reload failed: ${reloadResult.error}`)
+      }
+    }
+
     return c.json({
       success: true,
       data: completeTemplate,
@@ -2566,6 +3851,15 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
 
       return updatedTemplate
     })
+
+    // Trigger webhook reload after template update (config might contain workflow changes)
+    Logger.info("🔄 Template updated, triggering webhook reload to ensure webhooks are current...")
+    const reloadResult = await triggerWebhookReload()
+    if (reloadResult.success) {
+      Logger.info(`✅ Webhooks reloaded successfully: ${reloadResult.count} webhooks active`)
+    } else {
+      Logger.warn(`⚠️ Webhook reload failed: ${reloadResult.error}`)
+    }
 
     return c.json({
       success: true,
@@ -2736,6 +4030,72 @@ export const CreateWorkflowToolApi = async (c: Context) => {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const requestData = await c.req.json()
 
+    // For JIRA tools, check if a tool with the same webhook URL already exists
+    if (requestData.type === 'jira') {
+      const productionWebhookUrl = requestData.config?.productionWebhookUrl || requestData.value?.productionWebhookUrl || requestData.value?.webhookUrl
+      const webhookId = requestData.config?.webhookId || requestData.value?.webhookId
+
+      if (productionWebhookUrl || webhookId) {
+        // Get all JIRA tools for this workspace and user
+        const existingJiraTools = await db
+          .select()
+          .from(workflowTool)
+          .where(
+            and(
+              eq(workflowTool.type, 'jira'),
+              eq(workflowTool.workspaceId, user.workspaceId),
+              eq(workflowTool.userId, user.id)
+            )
+          )
+
+        // Check if any tool has the same webhook URL or ID
+        const duplicateTool = existingJiraTools.find((tool) => {
+          const config = tool.config as any
+          const value = tool.value as any
+
+          const existingProductionUrl = config?.productionWebhookUrl || value?.productionWebhookUrl || value?.webhookUrl
+          const existingWebhookId = config?.webhookId || value?.webhookId
+
+          // Check if webhook URL matches
+          if (productionWebhookUrl && existingProductionUrl === productionWebhookUrl) {
+            return true
+          }
+
+          // Check if webhook ID matches
+          if (webhookId && existingWebhookId === webhookId) {
+            return true
+          }
+
+          return false
+        })
+
+        if (duplicateTool) {
+          Logger.warn({
+            existingToolId: duplicateTool.id,
+            productionWebhookUrl,
+            webhookId,
+          }, "⚠️ JIRA tool with same webhook URL already exists, returning existing tool instead of creating duplicate")
+
+          // Sanitize config before returning
+          const sanitizedDuplicate = {
+            ...duplicateTool,
+            config: duplicateTool.config && typeof duplicateTool.config === 'object'
+              ? (() => {
+                  const { apiToken, ...rest } = duplicateTool.config as any
+                  return rest
+                })()
+              : duplicateTool.config
+          }
+
+          return c.json({
+            success: true,
+            data: sanitizedDuplicate,
+            message: "Tool with this webhook already exists",
+          })
+        }
+      }
+    }
+
     const tool = await createWorkflowTool(
       db,
       {
@@ -2746,6 +4106,43 @@ export const CreateWorkflowToolApi = async (c: Context) => {
         config: requestData.config || {},
       }
     )
+
+    // If this is a webhook tool, register the webhook
+    if (tool.type === ToolType.WEBHOOK && tool.config && tool.value) {
+      try {
+        const config = tool.config as any
+        const value = tool.value as any
+        
+        if (config.path || value.path) {
+          const webhookConfig = {
+            webhookUrl: value.webhookUrl || `http://localhost:3000/workflow/webhook${config.path || value.path}`,
+            httpMethod: config.httpMethod || 'POST',
+            path: config.path || value.path,
+            authentication: config.authentication || 'none',
+            selectedCredential: config.selectedCredential,
+            responseMode: config.responseMode || 'immediately',
+            options: config.options || {},
+            headers: config.headers || {},
+            queryParams: config.queryParams || {}
+          }
+          
+          // Get workflow template ID (simplified - in real implementation you'd get this from context)
+          const templateId = requestData.workflowTemplateId || 'default-template'
+          
+          await webhookRegistry.registerWebhook(
+            webhookConfig.path,
+            templateId,
+            tool.id,
+            webhookConfig
+          )
+          
+          Logger.info(`Registered webhook ${webhookConfig.path} for tool ${tool.id}`)
+        }
+      } catch (webhookError) {
+        Logger.error(webhookError, `Failed to register webhook for tool ${tool.id}`)
+        // Don't fail the tool creation if webhook registration fails
+      }
+    }
 
     return c.json({
       success: true,
@@ -2829,6 +4226,52 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
 
       return { tool: updatedTool, step: updatedStep }
     })
+
+    // If this is a webhook tool, update the webhook registration
+    if (result.tool.type === ToolType.WEBHOOK && result.tool.config && result.tool.value) {
+      try {
+        const config = result.tool.config as any
+        const value = result.tool.value as any
+        
+        if (config.path || value.path) {
+          const webhookConfig = {
+            webhookUrl: value.webhookUrl || `http://localhost:3000/workflow/webhook${config.path || value.path}`,
+            httpMethod: config.httpMethod || 'POST',
+            path: config.path || value.path,
+            authentication: config.authentication || 'none',
+            selectedCredential: config.selectedCredential,
+            responseMode: config.responseMode || 'immediately',
+            options: config.options || {},
+            headers: config.headers || {},
+            queryParams: config.queryParams || {}
+          }
+          
+          // Get workflow template ID (simplified - in real implementation you'd get this from context)
+          const templateId = requestData.workflowTemplateId || 'default-template'
+          
+          // Unregister old webhook first (if path changed)
+          if (existingTool && existingTool.value) {
+            const oldValue = existingTool.value as any
+            if (oldValue.path && oldValue.path !== webhookConfig.path) {
+              await webhookRegistry.unregisterWebhook(oldValue.path)
+            }
+          }
+          
+          // Register new/updated webhook
+          await webhookRegistry.registerWebhook(
+            webhookConfig.path,
+            templateId,
+            result.tool.id,
+            webhookConfig
+          )
+          
+          Logger.info(`Updated webhook registration ${webhookConfig.path} for tool ${result.tool.id}`)
+        }
+      } catch (webhookError) {
+        Logger.error(webhookError, `Failed to update webhook for tool ${result.tool.id}`)
+        // Don't fail the tool update if webhook registration fails
+      }
+    }
 
     return c.json({
       success: true,
@@ -2948,10 +4391,11 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     Logger.info(`Created new tool: ${newTool.id}`)
 
     // 2. Get all existing steps for this template
-    const existingSteps = await getWorkflowStepTemplatesByTemplateId(
+    const existingStepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
       template.id
     )
+    const existingSteps = topologicalSortSteps(existingStepsRaw)
     const isFirstStep =
       existingSteps.length === 0 || !template.rootWorkflowStepTemplateId
 
@@ -3028,10 +4472,11 @@ export const AddStepToWorkflowApi = async (c: Context) => {
       user.id
     )
 
-    const allSteps = await getWorkflowStepTemplatesByTemplateId(
+    const allStepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
       template.id
     )
+    const allSteps = topologicalSortSteps(allStepsRaw)
 
     return c.json({
       success: true,
@@ -3178,10 +4623,12 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       .where(eq(workflowStepTemplate.id, stepId))
 
     // 8. Update step orders for remaining steps
-    const remainingSteps = await getWorkflowStepTemplatesByTemplateId(
+    const remainingStepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
       templateId
     )
+
+    const remainingSteps = topologicalSortSteps(remainingStepsRaw)
 
     // Reorder remaining steps
     const sortedSteps = remainingSteps.sort((a, b) => {
@@ -3216,10 +4663,11 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       user.id
     )
 
-    const updatedSteps = await getWorkflowStepTemplatesByTemplateId(
+    const updatedStepsRaw = await getWorkflowStepTemplatesByTemplateId(
       db,
       templateId
     )
+    const updatedSteps = topologicalSortSteps(updatedStepsRaw)
 
     Logger.info(
       `Successfully deleted step ${stepId} and reconnected workflow chain`,
@@ -3457,6 +4905,955 @@ export const GetWorkflowUsersApi = async (c: Context) => {
     Logger.error(error, "Failed to get workflow users")
     throw new HTTPException(500, {
       message: getErrorMessage(error),
+    })
+  }
+}
+
+// Test Jira connection
+export const TestJiraConnectionApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken } = body
+
+    if (!domain || !email || !apiToken) {
+      throw new HTTPException(400, {
+        message: "domain, email, and apiToken are required",
+      })
+    }
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+
+    // Create client and test connection
+    const client = new JiraClient({ domain, email, apiToken })
+    await client.testConnection()
+
+    return c.json({
+      success: true,
+      message: "Connection tested successfully",
+    })
+  } catch (error: any) {
+    Logger.error(error, "Failed to test Jira connection")
+
+    // Return user-friendly error messages
+    if (error.response?.status === 401) {
+      throw new HTTPException(401, {
+        message: "Invalid credentials. Please check your email and API token.",
+      })
+    }
+
+    if (error.response?.status === 403) {
+      throw new HTTPException(403, {
+        message: "Access denied. Please check your permissions.",
+      })
+    }
+
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      throw new HTTPException(400, {
+        message: "Invalid Jira domain. Please check the domain name.",
+      })
+    }
+
+    if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
+      throw new HTTPException(408, {
+        message: "Connection timed out. Please check your network or try again.",
+      })
+    }
+
+    // Generic network/connection errors
+    if (error.code?.startsWith('E') || error.message?.toLowerCase().includes('network')) {
+      throw new HTTPException(500, {
+        message: "Unable to connect to Jira. Please verify the domain, email, and API token are correct.",
+      })
+    }
+
+    throw new HTTPException(500, {
+      message: error.message || "Unable to connect to Jira. Please verify the domain, email, and API token are correct.",
+    })
+  }
+}
+
+// Register Jira webhook
+export const RegisterJiraWebhookApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken, webhookUrl, events, name, filters } = body
+
+    Logger.info({
+      domain,
+      email: email?.substring(0, 10) + "...",
+      webhookUrl,
+      events,
+      name,
+      hasFilters: !!filters,
+    }, "🔗 Attempting to register Jira webhook")
+
+    if (!domain || !email || !apiToken || !webhookUrl || !events || events.length === 0) {
+      Logger.error({ domain, email, webhookUrl, eventsCount: events?.length }, "❌ Missing required fields for webhook registration")
+      throw new HTTPException(400, {
+        message: "domain, email, apiToken, webhookUrl, and events are required",
+      })
+    }
+
+    // Import Jira trigger
+    const { JiraTrigger } = await import("@/integrations/jira/trigger")
+
+    Logger.info("📦 JiraTrigger imported successfully")
+
+    // Create trigger and register webhook
+    const trigger = new JiraTrigger({
+      credentials: { domain, email, apiToken },
+      webhookUrl,
+      events,
+      filters,
+      name: name || `xyne-webhook-${Date.now()}`,
+    })
+
+    Logger.info("🎯 JiraTrigger instance created, calling register()...")
+
+    const result = await trigger.register()
+
+    Logger.info({ webhookId: result.webhookId }, "✅ Webhook registered successfully with Jira")
+
+    return c.json({
+      success: true,
+      webhookId: result.webhookId,
+      message: "Webhook registered successfully",
+    })
+  } catch (error: any) {
+    Logger.error({
+      error: error.message,
+      stack: error.stack,
+      response: error.response?.data,
+      status: error.response?.status,
+    }, "❌ Failed to register Jira webhook")
+
+    // Return user-friendly error messages
+    if (error.response?.status === 401) {
+      throw new HTTPException(401, {
+        message: "Invalid credentials. Please check your email and API token.",
+      })
+    }
+
+    if (error.response?.status === 403) {
+      throw new HTTPException(403, {
+        message: "Access denied. Please check your permissions.",
+      })
+    }
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to register webhook",
+    })
+  }
+}
+
+// Get all Jira webhooks
+export const GetJiraWebhooksApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken } = body
+
+    if (!domain || !email || !apiToken) {
+      throw new HTTPException(400, {
+        message: "domain, email, and apiToken are required",
+      })
+    }
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+
+    // Create client and get webhooks
+    const client = new JiraClient({ domain, email, apiToken })
+    const webhooks = await client.getWebhooks()
+
+    return c.json({
+      success: true,
+      data: webhooks,
+      count: webhooks.length,
+    })
+  } catch (error: any) {
+    Logger.error(error, "Failed to get Jira webhooks")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to get webhooks",
+    })
+  }
+}
+
+// Delete Jira webhook
+export const DeleteJiraWebhookApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken, webhookId } = body
+
+    if (!domain || !email || !apiToken || !webhookId) {
+      throw new HTTPException(400, {
+        message: "domain, email, apiToken, and webhookId are required",
+      })
+    }
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+
+    // Create client and delete webhook
+    const client = new JiraClient({ domain, email, apiToken })
+    await client.deleteWebhook(webhookId)
+
+    return c.json({
+      success: true,
+      message: "Webhook deleted successfully",
+    })
+  } catch (error: any) {
+    Logger.error(error, "Failed to delete Jira webhook")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to delete webhook",
+    })
+  }
+}
+
+// Get Jira metadata for dynamic dropdowns
+export const GetJiraMetadataApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken, projectKeys } = body
+
+    if (!domain || !email || !apiToken) {
+      throw new HTTPException(400, {
+        message: "domain, email, and apiToken are required",
+      })
+    }
+
+    Logger.info({ domain, hasProjectKeys: !!projectKeys }, "🔍 Fetching Jira metadata")
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+    const client = new JiraClient({ domain, email, apiToken })
+
+    // Fetch base metadata in parallel (always needed)
+    const [projects, priorities, statuses] = await Promise.all([
+      client.getProjects(),
+      client.getPriorities(),
+      client.getStatuses(),
+    ])
+
+    Logger.info({
+      projectsCount: projects.length,
+      prioritiesCount: priorities.length,
+      statusesCount: statuses.length,
+    }, "✅ Base metadata fetched")
+
+    // Prepare response
+    const metadata: any = {
+      projects: projects.map((p: any) => ({
+        key: p.key,
+        name: p.name,
+        id: p.id,
+      })),
+      priorities: priorities.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+      })),
+      statuses: statuses.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+      })),
+      issueTypes: [],
+      epics: [],
+      components: [],
+      issues: [],
+    }
+
+    // If specific projects are provided, fetch project-specific data
+    if (projectKeys && Array.isArray(projectKeys) && projectKeys.length > 0) {
+      Logger.info({ projectKeys }, "🔍 Fetching project-specific metadata")
+
+      // Fetch data for each project in parallel
+      const projectDataPromises = projectKeys.map(async (projectKey: string) => {
+        try {
+          const [issueTypes, epics, components] = await Promise.all([
+            client.getIssueTypes(projectKey),
+            client.getEpics(projectKey),
+            client.getComponents(projectKey),
+          ])
+
+          return {
+            projectKey,
+            issueTypes,
+            epics,
+            components,
+          }
+        } catch (error: any) {
+          Logger.error({ projectKey, error: error.message }, "Failed to fetch data for project")
+          return {
+            projectKey,
+            issueTypes: [],
+            epics: [],
+            components: [],
+          }
+        }
+      })
+
+      // Also fetch recent issues from selected projects (for dropdown)
+      let recentIssues: any[] = []
+      try {
+        recentIssues = await client.searchIssuesByProjects(projectKeys, undefined, 100)
+      } catch (error: any) {
+        Logger.error({ error: error.message }, "Failed to fetch recent issues")
+      }
+
+      const projectDataResults = await Promise.all(projectDataPromises)
+
+      // Merge all project-specific data
+      const allIssueTypes = new Map()
+      const allEpics: any[] = []
+      const allComponents = new Map()
+
+      projectDataResults.forEach((result) => {
+        // Collect unique issue types
+        result.issueTypes.forEach((it: any) => {
+          if (!allIssueTypes.has(it.id)) {
+            allIssueTypes.set(it.id, { id: it.id, name: it.name })
+          }
+        })
+
+        // Collect all epics
+        result.epics.forEach((epic: any) => {
+          allEpics.push({
+            key: epic.key,
+            summary: epic.fields?.summary || epic.key,
+            projectKey: result.projectKey,
+          })
+        })
+
+        // Collect unique components
+        result.components.forEach((c: any) => {
+          if (!allComponents.has(c.id)) {
+            allComponents.set(c.id, { id: c.id, name: c.name })
+          }
+        })
+      })
+
+      metadata.issueTypes = Array.from(allIssueTypes.values())
+      metadata.epics = allEpics
+      metadata.components = Array.from(allComponents.values())
+      metadata.issues = recentIssues.map((issue: any) => ({
+        key: issue.key,
+        summary: issue.fields?.summary || issue.key,
+        status: issue.fields?.status?.name,
+        issuetype: issue.fields?.issuetype?.name,
+        priority: issue.fields?.priority?.name,
+      }))
+
+      Logger.info({
+        issueTypesCount: metadata.issueTypes.length,
+        epicsCount: metadata.epics.length,
+        componentsCount: metadata.components.length,
+        issuesCount: metadata.issues.length,
+      }, "✅ Project-specific metadata fetched")
+    }
+
+    return c.json({
+      success: true,
+      data: metadata,
+    })
+  } catch (error: any) {
+    Logger.error({ error: error.message }, "❌ Failed to get Jira metadata")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to fetch Jira metadata",
+    })
+  }
+}
+
+/**
+ * Execute workflow from webhook trigger (following reference pattern)
+ */
+async function executeWorkflowFromWebhook(
+  templateId: number,
+  requestData: any,
+  config: { webhookId: string; createdBy: string; rawPayload?: any }
+): Promise<string> {
+  try {
+    const { executionId } = await triggerWorkflowFromWebhook(
+      config.webhookId,
+      requestData,
+      templateId,
+      config.createdBy,
+      config.rawPayload
+    )
+
+    Logger.info(`Created workflow execution ${executionId} from webhook ${config.webhookId}`)
+    return executionId
+
+  } catch (error) {
+    Logger.error(`Failed to execute workflow from webhook: ${error}`)
+    throw new Error("Failed to execute workflow")
+  }
+}
+
+/**
+ * Build webhook response
+ */
+function buildWebhookResponse(executionId: string, requestData: any) {
+  return {
+    success: true,
+    message: "Webhook event received and workflow triggered",
+    data: {
+      executionId,
+      event: requestData.event,
+      issueKey: requestData.issue?.key,
+      timestamp: new Date().toISOString(),
+    },
+  }
+}
+
+/**
+ * Helper function to redact PII from Jira webhook payloads
+ * Returns a minimal, safe subset of the webhook data
+ */
+function redactJiraWebhookData(eventData: any): Record<string, any> {
+  return {
+    webhookId: eventData.webhookId,
+    webhookEvent: eventData.event,
+    jiraIssue: eventData.issue ? {
+      key: eventData.issue?.key,
+      id: eventData.issue?.id,
+      summary: eventData.issue?.fields?.summary,
+      status: eventData.issue?.fields?.status?.name,
+      issueType: eventData.issue?.fields?.issuetype?.name,
+      priority: eventData.issue?.fields?.priority?.name,
+      // Exclude: description (may contain PII), comments, attachments
+    } : undefined,
+    jiraProject: eventData.project ? {
+      key: eventData.project?.key,
+      id: eventData.project?.id,
+      name: eventData.project?.name,
+      projectTypeKey: eventData.project?.projectTypeKey,
+      // Exclude: description (may contain PII)
+    } : undefined,
+    jiraUser: {
+      accountId: eventData.user?.accountId,
+      displayName: eventData.user?.displayName,
+      // Exclude: emailAddress, phone, personal details
+    },
+    changelog: eventData.changelog?.items?.map((item: any) => ({
+      field: item.field,
+      fieldtype: item.fieldtype,
+      from: item.from,
+      fromString: item.fromString,
+      to: item.to,
+      toString: item.toString,
+    })),
+    timestamp: eventData.timestamp,
+  }
+}
+
+/**
+ * Helper function to trigger workflow execution from webhook event
+ */
+async function triggerWorkflowFromWebhook(
+  webhookId: string,
+  eventData: any,
+  workflowTemplateId: number,
+  createdBy: string,
+  rawPayload?: any
+): Promise<{ executionId: string; rootStepId: string }> {
+  try {
+    Logger.info({
+      webhookId,
+      workflowTemplateId,
+      eventType: eventData.event,
+    }, "🚀 Triggering workflow from webhook event")
+
+    // Get template and validate
+    const template = await db
+      .select()
+      .from(workflowTemplate)
+      .where(eq(workflowTemplate.id, workflowTemplateId))
+
+    if (!template || template.length === 0) {
+      throw new Error("Workflow template not found")
+    }
+
+    if (!template[0].rootWorkflowStepTemplateId) {
+      throw new Error("Template has no root step configured")
+    }
+
+    // Get user info for execution context
+    const [templateOwner] = await db
+      .select({
+        email: users.email,
+        workspaceInternalId: users.workspaceId,
+        workspaceExternalId: users.workspaceExternalId, // External ID used for getUserAndWorkspaceByEmail
+      })
+      .from(users)
+      .where(eq(users.id, template[0].userId))
+
+    // Create workflow execution with webhook event data and execution context
+    const [execution] = await db
+      .insert(workflowExecution)
+      .values({
+        workflowTemplateId: template[0].id,
+        userId: template[0].userId, // Use the template's user ID
+        workspaceId: template[0].workspaceId, // Use the template's workspace ID
+        completedBy: createdBy || "webhook",
+        name: `${template[0].name} - ${eventData.issue?.key || eventData.project?.key || 'Webhook Event'}`,
+        description: `Triggered by ${eventData.event} on ${eventData.issue?.key || eventData.project?.name || 'unknown'}`,
+        metadata: {
+          ...redactJiraWebhookData(eventData),
+          // Add execution context for AI agent and other tools that need user info
+          executionContext: templateOwner ? {
+            workspaceId: templateOwner.workspaceExternalId, // External ID for getUserAndWorkspaceByEmail
+            userEmail: templateOwner.email,
+            workspaceInternalId: templateOwner.workspaceInternalId,
+            userId: template[0].userId,
+          } : undefined,
+        },
+        status: WorkflowStatus.ACTIVE,
+        rootWorkflowStepExeId: null,
+      })
+      .returning()
+
+    // Get all step templates
+    const steps = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, workflowTemplateId))
+
+    // Create step executions for all template steps
+    const stepExecutionsData = steps.map((step) => ({
+      workflowExecutionId: execution.id,
+      workflowStepTemplateId: step.id,
+      name: step.name,
+      type: step.type,
+      status: WorkflowStatus.DRAFT as const,
+      parentStepId: step.parentStepId,
+      prevStepIds: step.prevStepIds || [],
+      nextStepIds: step.nextStepIds || [],
+      toolExecIds: [],
+      timeEstimate: step.timeEstimate,
+      metadata: {
+        ...((step.metadata as Record<string, any>) || {}),
+        triggeredByWebhook: true,
+        webhookEventType: eventData.event,
+      },
+    }))
+
+    const stepExecutions = await db
+      .insert(workflowStepExecution)
+      .values(stepExecutionsData)
+      .returning()
+
+    // Find root step execution
+    const rootStepExecution = stepExecutions.find(
+      (se) =>
+        se.workflowStepTemplateId === template[0].rootWorkflowStepTemplateId,
+    )
+
+    if (!rootStepExecution) {
+      throw new Error("Failed to create root step execution")
+    }
+
+    // Update workflow with root step execution ID
+    await db
+      .update(workflowExecution)
+      .set({ rootWorkflowStepExeId: rootStepExecution.id })
+      .where(eq(workflowExecution.id, execution.id))
+
+    Logger.info({
+      executionId: execution.id,
+      rootStepId: rootStepExecution.id,
+      workflowName: template[0].name,
+    }, "✅ Workflow execution created from webhook")
+
+    // Get the root step template to find the Jira tool ID
+    const [rootStepTemplate] = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.id, template[0].rootWorkflowStepTemplateId!))
+
+    // Create a tool execution record for the webhook trigger so the frontend can display the data
+    const webhookData = redactJiraWebhookData(eventData)
+    const jiraToolId = rootStepTemplate?.toolIds?.[0] // Get the first tool ID (should be the Jira trigger)
+
+    if (jiraToolId) {
+      const [webhookToolExec] = await db
+        .insert(toolExecution)
+        .values({
+          workflowToolId: jiraToolId,
+          workflowExecutionId: execution.id,
+          status: "completed",
+          result: webhookData, // Store webhook data as tool result
+          startedAt: new Date(),
+          completedAt: new Date(),
+        })
+        .returning()
+
+      // Mark root step (JIRA trigger) as completed with tool execution linked
+      await db
+        .update(workflowStepExecution)
+        .set({
+          status: WorkflowStatus.COMPLETED,
+          toolExecIds: [webhookToolExec.id], // Link the tool execution so frontend can find it
+          metadata: {
+            ...((rootStepExecution.metadata as Record<string, any>) || {}),
+            webhookData: webhookData, // Store redacted subset to prevent PII retention
+            completedAt: new Date().toISOString(),
+            triggeredByWebhook: true,
+          },
+        })
+        .where(eq(workflowStepExecution.id, rootStepExecution.id))
+
+      Logger.info({
+        rootStepId: rootStepExecution.id,
+        webhookToolExecId: webhookToolExec.id,
+      }, "✅ Root step (JIRA trigger) marked as completed with tool execution")
+    } else {
+      // Fallback: Mark step as completed without tool execution (shouldn't happen)
+      await db
+        .update(workflowStepExecution)
+        .set({
+          status: WorkflowStatus.COMPLETED,
+          metadata: {
+            ...((rootStepExecution.metadata as Record<string, any>) || {}),
+            webhookData: webhookData,
+            completedAt: new Date().toISOString(),
+            triggeredByWebhook: true,
+          },
+        })
+        .where(eq(workflowStepExecution.id, rootStepExecution.id))
+
+      Logger.warn({
+        rootStepId: rootStepExecution.id,
+      }, "⚠️ Root step marked as completed but no Jira tool ID found")
+    }
+
+    // Execute automated workflow steps in background if root step has next steps
+    if (
+      rootStepExecution.nextStepIds &&
+      Array.isArray(rootStepExecution.nextStepIds) &&
+      rootStepExecution.nextStepIds.length > 0
+    ) {
+      Logger.info({
+        executionId: execution.id,
+        nextStepIds: rootStepExecution.nextStepIds,
+      }, "🚀 Starting automated workflow execution in background")
+
+      // Get all tools for step execution
+      const allTools = await db.select().from(workflowTool)
+
+      // Initialize results with webhook event data (redacted to prevent PII retention)
+      const rootStepName = rootStepExecution.name || "JIRA Trigger"
+      const currentResults: Record<string, any> = {}
+      currentResults[rootStepName] = {
+        stepId: rootStepExecution.id,
+        result: redactJiraWebhookData(eventData), // Store webhook data in 'result' field for next step consumption
+        completedAt: new Date().toISOString(),
+      }
+
+      // Execute automated steps in background (non-blocking)
+      executeAutomatedWorkflowSteps(
+        execution.id,
+        rootStepExecution.nextStepIds,
+        stepExecutions,
+        allTools,
+        currentResults,
+      ).catch((error) => {
+        Logger.error(
+          error,
+          `❌ Background workflow execution failed for ${execution.id}`,
+        )
+      })
+    } else {
+      // No next steps - check if all steps are completed and mark workflow as completed
+      Logger.info({
+        executionId: execution.id,
+      }, "ℹ️ No next steps to execute - checking workflow completion")
+
+      const allStepExecutions = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.workflowExecutionId, execution.id))
+
+      const allStepsCompleted = allStepExecutions.every(
+        (step) => step.status === WorkflowStatus.COMPLETED,
+      )
+
+      if (allStepsCompleted) {
+        Logger.info({
+          executionId: execution.id,
+        }, "✅ All steps completed - marking workflow as completed")
+
+        await db
+          .update(workflowExecution)
+          .set({
+            status: ToolExecutionStatus.COMPLETED,
+            completedAt: new Date(),
+            completedBy: "system",
+          })
+          .where(eq(workflowExecution.id, execution.id))
+      } else {
+        Logger.warn({
+          executionId: execution.id,
+          stepStatuses: allStepExecutions.map(s => ({ name: s.name, status: s.status })),
+        }, "⚠️ Workflow has no next steps but not all steps are completed")
+      }
+    }
+
+    return {
+      executionId: execution.id,
+      rootStepId: rootStepExecution.id,
+    }
+  } catch (error: any) {
+    Logger.error({
+      error: error.message,
+      webhookId,
+      workflowTemplateId,
+    }, "❌ Failed to trigger workflow from webhook")
+    throw error
+  }
+}
+
+// Receive Jira webhook event
+export const ReceiveJiraWebhookApi = async (c: Context) => {
+  try {
+    const webhookId = c.req.param('webhookId')
+    const body = await c.req.json()
+
+    Logger.info({
+      webhookId,
+      webhookEvent: body.webhookEvent,
+      hasIssue: !!body.issue,
+      hasProject: !!body.project,
+    }, '🔔 Jira webhook event received')
+
+    if (!webhookId) {
+      throw new HTTPException(400, {
+        message: "webhookId is required",
+      })
+    }
+
+    // Import Jira trigger
+    const { JiraTrigger } = await import("@/integrations/jira/trigger")
+
+    // Process webhook event
+    const processedEvent = JiraTrigger.processWebhookEvent(body)
+
+    Logger.debug({
+      event: processedEvent.event,
+      issueKey: processedEvent.issue?.key,
+      projectKey: processedEvent.project?.key,
+      projectName: processedEvent.project?.name,
+      user: processedEvent.user?.displayName,
+      timestamp: processedEvent.timestamp,
+      changesCount: processedEvent.changelog?.items?.length || 0
+    }, 'Processed Jira webhook event')
+
+    // Find workflow template associated with this webhook
+    // Look for a JIRA trigger tool with this webhookId in its config
+    const jiraTools = await db
+      .select({
+        toolId: workflowTool.id,
+        config: workflowTool.config,
+        value: workflowTool.value,
+      })
+      .from(workflowTool)
+      .where(eq(workflowTool.type, ToolType.JIRA))
+
+    Logger.info({
+      webhookId,
+      jiraToolsCount: jiraTools.length,
+    }, "🔍 Searching for workflow template with matching webhook ID")
+
+    // Find the tool that matches this webhookId
+    // Check both config.webhookId, value.webhookId, and webhook URLs
+    const matchingTool = jiraTools.find((tool) => {
+      const config = tool.config as any
+      const value = tool.value as any
+
+      // Check if webhookId is explicitly set in config or value
+      if (config?.webhookId === webhookId) {
+        Logger.info({ toolId: tool.toolId }, "✅ Matched via config.webhookId")
+        return true
+      }
+
+      if (value?.webhookId === webhookId) {
+        Logger.info({ toolId: tool.toolId }, "✅ Matched via value.webhookId")
+        return true
+      }
+
+      // Also check if the production or test webhook URL contains this webhookId
+      const productionUrl = config?.productionWebhookUrl || value?.productionWebhookUrl || value?.webhookUrl
+      const testUrl = config?.testWebhookUrl || value?.testWebhookUrl
+
+      if (productionUrl && productionUrl.includes(webhookId)) {
+        Logger.info({ toolId: tool.toolId, productionUrl }, "✅ Matched via production webhook URL")
+        return true
+      }
+
+      if (testUrl && testUrl.includes(webhookId)) {
+        Logger.info({ toolId: tool.toolId, testUrl }, "✅ Matched via test webhook URL")
+        return true
+      }
+
+      return false
+    })
+
+    if (!matchingTool) {
+      Logger.warn({
+        webhookId,
+        availableWebhookIds: jiraTools.map((t: any) => ({
+          configWebhookId: (t.config as any)?.webhookId,
+          valueWebhookId: (t.value as any)?.webhookId,
+        })),
+        availableWebhookUrls: jiraTools.map((t: any) => ({
+          configUrl: (t.config as any)?.productionWebhookUrl,
+          valueUrl: (t.value as any)?.webhookUrl || (t.value as any)?.productionWebhookUrl
+        })),
+      }, "⚠️  No workflow template found for this webhook ID")
+
+      return c.json({
+        success: true,
+        message: "Webhook event received but no workflow configured",
+      })
+    }
+
+    Logger.info({
+      webhookId,
+      toolId: matchingTool.toolId,
+    }, "✅ Found matching JIRA tool")
+
+    // Find the workflow step template that uses this tool
+    // Get all step templates and filter by toolIds in JavaScript
+    const allStepTemplates = await db
+      .select({
+        id: workflowStepTemplate.id,
+        workflowTemplateId: workflowStepTemplate.workflowTemplateId,
+        name: workflowStepTemplate.name,
+        toolIds: workflowStepTemplate.toolIds,
+      })
+      .from(workflowStepTemplate)
+
+    // Filter for steps that have this tool in their toolIds array
+    const stepTemplate = allStepTemplates.filter(st => {
+      const hasToolIds = st.toolIds && Array.isArray(st.toolIds)
+      const includesToolId = hasToolIds && (st.toolIds ?? []).includes(matchingTool.toolId)
+      return includesToolId
+    })
+
+    Logger.info({
+      webhookId,
+      toolId: matchingTool.toolId,
+      allStepTemplatesCount: allStepTemplates.length,
+      stepTemplateCount: stepTemplate.length,
+      stepTemplates: stepTemplate.map(s => ({ id: s.id, name: s.name, toolIds: s.toolIds })),
+    }, "🔍 Step template query result")
+
+    // AUTO-FIX duplicate tool issue
+    if (!stepTemplate || stepTemplate.length === 0) {
+      Logger.warn({
+        webhookId,
+        toolId: matchingTool.toolId,
+      }, "⚠️  No workflow step template uses this JIRA tool - attempting auto-fix")
+
+      // Check if there's a duplicate tool with same webhook URL
+      const duplicateTools = jiraTools.filter((tool) => {
+        const config = tool.config as any
+        const value = tool.value as any
+        const productionUrl = config?.productionWebhookUrl || value?.productionWebhookUrl || value?.webhookUrl
+
+        const matchedUrl = (matchingTool.config as any)?.productionWebhookUrl ||
+                           (matchingTool.value as any)?.productionWebhookUrl ||
+                           (matchingTool.value as any)?.webhookUrl
+
+        return productionUrl && matchedUrl && productionUrl === matchedUrl
+      })
+
+      if (duplicateTools.length > 1) {
+        Logger.info({
+          webhookId,
+          duplicateToolIds: duplicateTools.map(t => t.toolId),
+        }, "🔧 Found duplicate tools - searching for workflow using any of them")
+
+        // Try to find workflow using any of the duplicate tools
+        for (const dupTool of duplicateTools) {
+          const stepsWithDupTool = allStepTemplates.filter(st => {
+            return st.toolIds && Array.isArray(st.toolIds) && st.toolIds.includes(dupTool.toolId)
+          })
+
+          if (stepsWithDupTool.length > 0) {
+            Logger.info({
+              foundToolId: dupTool.toolId,
+              matchedToolId: matchingTool.toolId,
+              stepId: stepsWithDupTool[0].id,
+            }, "✅ Found workflow using duplicate tool - auto-fixing reference")
+
+            // Update the step to use the correct tool (the one webhook matched)
+            await db
+              .update(workflowStepTemplate)
+              .set({
+                toolIds: [matchingTool.toolId],
+                updatedAt: new Date(),
+              })
+              .where(eq(workflowStepTemplate.id, stepsWithDupTool[0].id))
+
+            // Delete the duplicate tool
+            await db
+              .delete(workflowTool)
+              .where(eq(workflowTool.id, dupTool.toolId))
+
+            Logger.info({
+              deletedToolId: dupTool.toolId,
+              keptToolId: matchingTool.toolId,
+            }, "🧹 Cleaned up duplicate tool")
+
+            // Use the found step
+            stepTemplate.push(stepsWithDupTool[0])
+            break
+          }
+        }
+      }
+
+      // If still no workflow found after auto-fix attempt
+      if (!stepTemplate || stepTemplate.length === 0) {
+        return c.json({
+          success: true,
+          message: "Webhook event received but tool not attached to workflow",
+        })
+      }
+
+      Logger.info("✅ Auto-fix successful - proceeding with workflow execution")
+    }
+
+    const workflowTemplateId = stepTemplate[0].workflowTemplateId
+
+    Logger.info({
+      webhookId,
+      workflowTemplateId,
+      stepName: stepTemplate[0].name,
+    }, "🎯 Found workflow template to trigger")
+
+    // Execute workflow from webhook (following reference pattern)
+    const executionId = await executeWorkflowFromWebhook(
+      workflowTemplateId,
+      processedEvent,
+      {
+        webhookId,
+        createdBy: processedEvent.user?.emailAddress || "webhook",
+        rawPayload: body, // Pass raw JIRA payload for full data storage
+      }
+    )
+
+    Logger.debug({ executionId }, 'Workflow execution created and started')
+
+    // Build webhook response
+    return c.json(buildWebhookResponse(executionId, processedEvent))
+  } catch (error: any) {
+    Logger.error(error, "Failed to process Jira webhook")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to process webhook",
     })
   }
 }

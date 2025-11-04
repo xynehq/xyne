@@ -1,13 +1,13 @@
 import { createFileRoute, useRouterState } from "@tanstack/react-router"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { useForm } from "@tanstack/react-form"
 import { toast, useToast } from "@/hooks/use-toast"
 import { useNavigate } from "@tanstack/react-router"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Pencil, ArrowLeft } from "lucide-react"
-import { api } from "@/api"
+import { Pencil, ArrowLeft, Square, RotateCcw, Pause, Play, RefreshCw } from "lucide-react"
+import { api, wsClient } from "@/api"
 import { getErrorMessage } from "@/lib/utils"
 import { Apps, AuthType, IngestionType, UserRole } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
@@ -40,7 +40,88 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { wsClient } from "@/api" // ensure wsClient is imported
+import { Progress } from "@/components/ui/progress"
+// Define ingestion status type locally to avoid importing from server schema
+type DbIngestionStatus = "started" | "in_progress" | "completed" | "failed" | "cancelled" | "paused"
+
+// Slack-specific metadata structure matching backend response
+interface SlackIngestionMetadata {
+  slack?: {
+    websocketData?: {
+      progress?: {
+        totalChannels: number;
+        processedChannels: number;
+        currentChannel: string;
+        totalMessages: number;
+        processedMessages: number;
+      };
+      connectorId?: string;
+    };
+    ingestionState?: {
+      endDate?: string;
+      startDate?: string;
+      lastUpdated: string;
+      channelsToIngest?: string[];
+      currentChannelId?: string;
+      includeBotMessage?: boolean;
+      currentChannelIndex?: number;
+      lastMessageTimestamp?: string;
+    };
+  };
+}
+
+// Complete ingestion object matching backend response
+interface IngestionData {
+  id: number;
+  userId: number;
+  connectorId: number;
+  workspaceId: number;
+  status: DbIngestionStatus;
+  metadata: SlackIngestionMetadata;
+  errorMessage?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Main response type matching backend API response
+interface IngestionStatusResponse {
+  success: boolean;
+  hasActiveIngestion: boolean;
+  ingestion?: IngestionData;
+}
+
+// Frontend-specific progress data structure for UI display
+interface ProgressData {
+  totalChannels?: number;
+  processedChannels?: number;
+  currentChannel?: string;
+  totalMessages?: number;
+  processedMessages?: number;
+}
+
+
+
+// Helper function to safely extract progress data from ingestion metadata
+const getProgressData = (ingestion: IngestionData): ProgressData => {
+  // Try to get progress from multiple sources
+  const progress = ingestion.metadata?.slack?.websocketData?.progress;
+  const state = ingestion.metadata?.slack?.ingestionState;
+  
+  return {
+    totalChannels: progress?.totalChannels,
+    processedChannels: progress?.processedChannels,
+    currentChannel: progress?.currentChannel,
+    totalMessages: progress?.totalMessages,
+    processedMessages: progress?.processedMessages,
+    // Fallback to state data if progress is not available
+    ...(!progress && state && {
+      totalChannels: state.channelsToIngest?.length,
+      processedChannels: state.currentChannelIndex,
+    })
+  };
+}
 
 export const updateConnectorStatus = async (
   connectorId: string,
@@ -766,6 +847,251 @@ export const Slack = ({
   const [isRegularIngestionActive, setIsRegularIngestionActive] =
     useState(false)
 
+  // Enhanced ingestion management state
+  const [ingestionStatus, setIngestionStatus] = useState<IngestionStatusResponse | null>(null)
+  const [ingestionLoading, setIngestionLoading] = useState(true)
+  const [ingestionError, setIngestionError] = useState<string | null>(null)
+  
+  // Refs for polling management
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const previousStatusRef = useRef<string | undefined>()
+  const isFetchingRef = useRef<boolean>(false)
+
+  // Simple polling functions for ingestion status
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
+  const fetchIngestionStatus = useCallback(async (connectorId: string) => {
+    // Prevent concurrent calls
+    if (isFetchingRef.current) {
+      return;
+    }
+    
+    isFetchingRef.current = true;
+    try {
+      setIngestionError(null);
+      
+      const response = await api.ingestion.status.$get({
+        query: { connectorId }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch ingestion status');
+      }
+
+      const data = await response.json();
+      const currentStatus = data.ingestion?.status;
+      
+      // Show notifications for status changes (but not on initial page load)
+      if (currentStatus !== previousStatusRef.current) {
+        const isInitialLoad = previousStatusRef.current === undefined;
+        previousStatusRef.current = currentStatus;
+        
+        // Only show completion toast for fresh completions, not on page refresh/load
+        if (currentStatus === 'completed' && !isInitialLoad) {
+          toast({
+            title: "Ingestion Completed",
+            description: "Slack channel ingestion has finished successfully!",
+            duration: 10000,
+          });
+          stopPolling();
+        } else if (currentStatus === 'failed') {
+          toast({
+            title: "Ingestion Failed", 
+            description: data.ingestion?.errorMessage || "Ingestion failed with an unknown error",
+            variant: "destructive",
+            duration: 10000,
+          });
+          stopPolling();
+        } else if (currentStatus === 'cancelled' && !isInitialLoad) {
+          toast({
+            title: "Ingestion Cancelled",
+            description: "Ingestion was cancelled by user",
+            duration: 10000,
+          });
+          stopPolling();
+        }
+      }
+
+      // Start/stop polling based on status - Fixed: More explicit status checking to avoid empty string issues
+      const shouldPoll = data.hasActiveIngestion && 
+                        data.ingestion?.status && 
+                        ['pending', 'in_progress'].includes(data.ingestion.status);
+      
+      
+      // Fixed: Use ref to check current polling state instead of potentially stale state
+      const isCurrentlyPolling = pollingIntervalRef.current !== null;
+      
+      if (shouldPoll && !isCurrentlyPolling) {
+        // Always clear any existing interval first to prevent duplicates
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+        }
+        // Fixed: Capture connectorId in closure to avoid stale values
+        const currentConnectorId = connectorId;
+        pollingIntervalRef.current = setInterval(() => {
+          fetchIngestionStatus(currentConnectorId);
+        }, 10000); // Poll every 10 seconds
+      } else if (!shouldPoll && isCurrentlyPolling) {
+        stopPolling();
+      } else if (!shouldPoll && pollingIntervalRef.current) {
+        // Force stop polling even if isPolling state is wrong
+        stopPolling();
+      }
+      
+      setIngestionStatus(data);
+      setIngestionLoading(false);
+      
+      return data;
+    } catch (err) {
+      setIngestionError(getErrorMessage(err));
+      setIngestionLoading(false);
+      stopPolling();
+      throw err;
+    } finally {
+      isFetchingRef.current = false;
+    }
+  }, [stopPolling]); // Fixed: Removed isPolling from dependencies to avoid stale closure issues
+
+  // Enhanced start ingestion function
+  const startChannelIngestion = useCallback(async (connectorId: string, channelsToIngest: string[], startDate: string, endDate: string, includeBotMessage: boolean) => {
+    try {
+      setIsManualIngestionActive(true);
+      
+      const isAdmin = user.role === UserRole.Admin || user.role === UserRole.SuperAdmin;
+      const response = isAdmin
+        ? await api.admin.slack.ingest_more_channel.$post({
+            json: { connectorId, channelsToIngest, startDate, endDate, includeBotMessage },
+          })
+        : await api.slack.ingest_more_channel.$post({
+            json: { connectorId, channelsToIngest, startDate, endDate, includeBotMessage },
+          });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText);
+      }
+
+      toast({
+        title: "Ingestion Started",
+        description: "Slack channel ingestion has been initiated successfully.",
+        duration: 20000,
+      });
+      
+      // Refresh status and start polling
+      await fetchIngestionStatus(connectorId);
+    } catch (err) {
+      toast({
+        title: "Failed to Start Ingestion",
+        description: getErrorMessage(err),
+        variant: "destructive",
+        duration: 20000,
+      });
+      throw err;
+    } finally {
+      setIsManualIngestionActive(false);
+    }
+  }, [user.role, fetchIngestionStatus]); // Fixed: Include fetchIngestionStatus in dependencies
+
+  // Resume ingestion function
+  const resumeIngestion = useCallback(async (ingestionId: number, connectorId: string) => {
+    try {
+      const response = await api.ingestion.resume.$post({
+        json: { ingestionId: ingestionId.toString() }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to resume ingestion');
+      }
+
+      toast({
+        title: "Ingestion Resumed",
+        description: "Ingestion has been resumed from where it left off.",
+        duration: 20000,
+      });
+      
+      await fetchIngestionStatus(connectorId);
+    } catch (err) {
+      toast({
+        title: "Failed to Resume Ingestion",
+        description: getErrorMessage(err),
+        variant: "destructive",
+        duration: 20000,
+      });
+      throw err;
+    }
+  }, [fetchIngestionStatus]); // Fixed: Include fetchIngestionStatus in dependencies
+
+  // Cancel ingestion function
+  const cancelIngestion = useCallback(async (ingestionId: number, connectorId: string) => {
+    try {
+      const response = await api.ingestion.cancel.$post({
+        json: { ingestionId: ingestionId.toString() }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to cancel ingestion');
+      }
+
+      toast({
+        title: "Ingestion Cancelled",
+        description: "Ingestion is being cancelled...",
+        duration: 20000,
+      });
+      
+      // Force stop polling before checking status
+      stopPolling();
+      await fetchIngestionStatus(connectorId);
+    } catch (err) {
+      toast({
+        title: "Failed to Cancel Ingestion",
+        description: getErrorMessage(err),
+        variant: "destructive",
+        duration: 20000,
+      });
+      throw err;
+    }
+  }, [stopPolling, fetchIngestionStatus]); // Fixed: Include dependencies
+
+  // Pause ingestion function
+  const pauseIngestion = useCallback(async (ingestionId: number, connectorId: string) => {
+    try {
+      const response = await api.ingestion.pause.$post({
+        json: { ingestionId: ingestionId.toString() }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to pause ingestion');
+      }
+
+      toast({
+        title: "Ingestion Paused",
+        description: "Ingestion has been paused and can be resumed later.",
+        duration: 20000,
+      });
+      
+      // Force stop polling before checking status
+      stopPolling();
+      await fetchIngestionStatus(connectorId);
+    } catch (err) {
+      toast({
+        title: "Failed to Pause Ingestion",
+        description: getErrorMessage(err),
+        variant: "destructive",
+        duration: 20000,
+      });
+      throw err;
+    }
+  }, [stopPolling, fetchIngestionStatus]); // Fixed: Include dependencies
+
+
   const { isPending, data, refetch } = useQuery<any[]>({
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
@@ -809,6 +1135,21 @@ export const Slack = ({
   const slackConnector = data?.find(
     (v) => v.app === Apps.Slack && v.authType === AuthType.OAuth,
   )
+
+  // Initialize ingestion status checking when connector is available
+  useEffect(() => {
+    if (slackConnector?.cId) {
+      fetchIngestionStatus(slackConnector.cId.toString());
+    }
+  }, [slackConnector?.cId, fetchIngestionStatus]); // Fixed: Include fetchIngestionStatus in dependencies
+
+  // Cleanup polling on component unmount
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, [stopPolling]);
+
   useEffect(() => {
     let socket: WebSocket | null = null
     if (!isPending && data && data.length > 0) {
@@ -1034,6 +1375,14 @@ export const Slack = ({
                     slackProgress={slackProgress}
                     slackUserStats={slackUserPartialIngestionStats}
                     userRole={user.role}
+                    ingestionStatus={ingestionStatus}
+                    ingestionLoading={ingestionLoading}
+                    ingestionError={ingestionError}
+                    startChannelIngestion={startChannelIngestion}
+                    resumeIngestion={resumeIngestion}
+                    pauseIngestion={pauseIngestion}
+                    cancelIngestion={cancelIngestion}
+                    fetchIngestionStatus={fetchIngestionStatus}
                   />
                 ) : (
                   <p>Please connect Slack OAuth to enable manual ingestion.</p>
@@ -1134,6 +1483,15 @@ interface ManualIngestionFormProps {
   slackProgress: number
   slackUserStats: { [email: string]: any }
   userRole: PublicUser["role"]
+  // Enhanced ingestion management props
+  ingestionStatus: IngestionStatusResponse | null
+  ingestionLoading: boolean
+  ingestionError: string | null
+  startChannelIngestion: (connectorId: string, channelsToIngest: string[], startDate: string, endDate: string, includeBotMessage: boolean) => Promise<void>
+  resumeIngestion: (ingestionId: number, connectorId: string) => Promise<void>
+  pauseIngestion: (ingestionId: number, connectorId: string) => Promise<void>
+  cancelIngestion: (ingestionId: number, connectorId: string) => Promise<void>
+  fetchIngestionStatus: (connectorId: string) => Promise<void>
 }
 
 const ManualIngestionForm = ({
@@ -1143,6 +1501,15 @@ const ManualIngestionForm = ({
   slackProgress,
   slackUserStats,
   userRole,
+  // Enhanced ingestion management props
+  ingestionStatus,
+  ingestionLoading,
+  ingestionError,
+  startChannelIngestion,
+  resumeIngestion,
+  pauseIngestion,
+  cancelIngestion,
+  fetchIngestionStatus,
 }: ManualIngestionFormProps) => {
   const { toast } = useToast()
   // const startTimeRef = useRef<number | null>(null)
@@ -1159,8 +1526,6 @@ const ManualIngestionForm = ({
         return
       }
 
-      setIsManualIngestionActive(true)
-
       try {
         const channelIdsList = value.channelIds
           .split(",")
@@ -1173,110 +1538,293 @@ const ManualIngestionForm = ({
             description: "Please provide at least one valid channel ID.",
             variant: "destructive",
           })
-          setIsManualIngestionActive(false)
           return
         }
 
-        // Role-based API routing
-        const isAdmin =
-          userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
-
-        const response = isAdmin
-          ? await api.admin.slack.ingest_more_channel.$post({
-              json: {
-                connectorId: connectorId,
-                channelsToIngest: channelIdsList,
-                startDate: value.startDate,
-                endDate: value.endDate,
-                includeBotMessage: value.includeBotMessage,
-              },
-            })
-          : await api.slack.ingest_more_channel.$post({
-              json: {
-                connectorId: connectorId,
-                channelsToIngest: channelIdsList,
-                startDate: value.startDate,
-                endDate: value.endDate,
-                includeBotMessage: value.includeBotMessage,
-              },
-            })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          toast({
-            title: "Ingestion Failed",
-            description: `Error: ${errorText}`,
-            variant: "destructive",
-          })
-          setIsManualIngestionActive(false)
-          return
-        }
-
-        toast({
-          title: "Manual Ingestion Started",
-          description: "Ingestion process initiated successfully.",
-        })
-
+        // Use the enhanced start ingestion function
+        await startChannelIngestion(connectorId, channelIdsList, value.startDate, value.endDate, value.includeBotMessage)
         form.reset()
-        setIsManualIngestionActive(false)
       } catch (error) {
-        toast({
-          title: "An error occurred",
-          description: `Error: ${getErrorMessage(error)}`,
-          variant: "destructive",
-        })
-        setIsManualIngestionActive(false)
+        // Error handling is done in the startChannelIngestion function
       }
     },
   })
 
+  // Render ingestion status if there's an active or previous ingestion
+  const renderIngestionStatus = () => {
+    if (ingestionLoading) {
+      return (
+        <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <div className="flex items-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 dark:border-blue-400"></div>
+            <span className="text-blue-900 dark:text-blue-100">Checking ingestion status...</span>
+          </div>
+        </div>
+      )
+    }
+
+    if (ingestionError) {
+      return (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="text-red-700">Error: {ingestionError}</div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => fetchIngestionStatus(connectorId!)}
+              disabled={ingestionLoading}
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Retry
+            </Button>
+          </div>
+        </div>
+      )
+    }
+
+    if (!ingestionStatus?.hasActiveIngestion) {
+      return null // No status to show
+    }
+
+    const ingestion = ingestionStatus.ingestion!
+    
+    if (ingestion.status === 'in_progress') {
+      return (
+        <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-blue-900 dark:text-blue-100">Ingestion In Progress</span>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => pauseIngestion(ingestion.id, connectorId!)}
+                  disabled={ingestionLoading}
+                >
+                  <Pause className="h-3 w-3 mr-1" />
+                  Pause
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => cancelIngestion(ingestion.id, connectorId!)}
+                  disabled={ingestionLoading}
+                >
+                  <Square className="h-3 w-3 mr-1" />
+                  Cancel
+                </Button>
+              </div>
+            </div>
+            
+            {(() => {
+              // Extract progress from metadata if available
+              const progressData = getProgressData(ingestion);
+              
+              if (progressData && (progressData.totalChannels || progressData.processedChannels)) {
+                return (
+                  <div className="space-y-2">
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-700 dark:text-gray-300">Channels</span>
+                        <span className="text-gray-900 dark:text-gray-100">{progressData.processedChannels || 0} / {progressData.totalChannels || 0}</span>
+                      </div>
+                      <Progress 
+                        value={(progressData.totalChannels ?? 0) > 0 ? ((progressData.processedChannels || 0) / (progressData.totalChannels ?? 0)) * 100 : 0} 
+                        className="h-2"
+                      />
+                    </div>
+                    
+                    <div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-700 dark:text-gray-300">Messages Processed</span>
+                        <span className="text-gray-900 dark:text-gray-100 font-medium">{progressData.processedMessages || 0}</span>
+                      </div>
+                    </div>
+                    
+                    {progressData.currentChannel && (
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Current: {progressData.currentChannel}
+                      </div>
+                    )}
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    Progress information not available yet...
+                  </div>
+                );
+              }
+            })()}
+          </div>
+        </div>
+      )
+    }
+
+    if (ingestion.status === 'paused') {
+      return (
+        <div className="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+          <div className="flex items-end justify-between">
+            <div className="flex-1">
+              <div className="font-medium text-yellow-900 dark:text-yellow-100">
+                Ingestion Paused
+              </div>
+              {(() => {
+                const progressData = getProgressData(ingestion);
+                if (progressData && (progressData.totalChannels || progressData.processedChannels || progressData.processedMessages)) {
+                  return (
+                    <div className="text-sm mt-1 text-yellow-700 dark:text-yellow-300">
+                      Progress: {progressData.processedChannels || 0} / {progressData.totalChannels || 0} channels, {progressData.processedMessages || 0} messages processed
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+            <div className="flex gap-2 ml-4">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => resumeIngestion(ingestion.id, connectorId!)}
+                disabled={ingestionLoading}
+              >
+                <Play className="h-3 w-3 mr-1" />
+                Resume
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => cancelIngestion(ingestion.id, connectorId!)}
+                disabled={ingestionLoading}
+              >
+                <Square className="h-3 w-3 mr-1" />
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (['failed', 'cancelled'].includes(ingestion.status)) {
+      return (
+        <div className="mb-4 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-medium text-orange-900 dark:text-orange-100">
+                Ingestion {ingestion.status === 'failed' ? 'Failed' : 'Cancelled'}
+              </div>
+              {(() => {
+                const progressData = getProgressData(ingestion);
+                return progressData && (progressData.totalChannels || progressData.processedChannels) && (
+                  <div className="text-sm mt-1 text-orange-700 dark:text-orange-300">
+                    Progress: {progressData.processedChannels || 0} / {progressData.totalChannels || 0} channels
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => resumeIngestion(ingestion.id, connectorId!)}
+                disabled={ingestionLoading}
+              >
+                <RotateCcw className="h-3 w-3 mr-1" />
+                Resume
+              </Button>
+              {ingestion.status === 'failed' && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => cancelIngestion(ingestion.id, connectorId!)}
+                  disabled={ingestionLoading}
+                >
+                  <Square className="h-3 w-3 mr-1" />
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (ingestion.status === 'completed') {
+      return (
+        <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-medium text-green-600 dark:text-green-400">Ingestion Completed</div>
+              {(() => {
+                const progressData = getProgressData(ingestion);
+                return progressData && (progressData.processedChannels || progressData.processedMessages) && (
+                  <div className="text-sm mt-1 text-green-700 dark:text-green-300">
+                    Processed {progressData.processedChannels || 0} channels with {progressData.processedMessages || 0} messages
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    return null
+  }
+
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault()
-        form.handleSubmit()
-      }}
-      className="grid w-full max-w-sm items-center gap-1.5"
-    >
-      <Label htmlFor="channelIds">Channel IDs (comma-separated)</Label>
-      <form.Field
-        name="channelIds"
-        children={(field) => (
-          <Input
-            id="channelIds"
-            type="text"
-            value={field.state.value}
-            onChange={(e) => field.handleChange(e.target.value)}
-            placeholder="e.g., C123,C456"
+    <div className="space-y-4">
+      {renderIngestionStatus()}
+      
+      {/* Only show form if no active ingestion */}
+      {!ingestionStatus?.hasActiveIngestion || !['in_progress', 'paused', 'failed'].includes(ingestionStatus?.ingestion?.status || '') ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            form.handleSubmit()
+          }}
+          className="grid w-full max-w-sm items-center gap-1.5"
+        >
+          <Label htmlFor="channelIds">Channel IDs (comma-separated)</Label>
+          <form.Field
+            name="channelIds"
+            children={(field) => (
+              <Input
+                id="channelIds"
+                type="text"
+                value={field.state.value}
+                onChange={(e) => field.handleChange(e.target.value)}
+                placeholder="e.g., C123,C456"
+              />
+            )}
           />
-        )}
-      />
 
-      <Label htmlFor="startDate">Start Date</Label>
-      <form.Field
-        name="startDate"
-        children={(field) => (
-          <Input
-            id="startDate"
-            type="date"
-            value={field.state.value}
-            onChange={(e) => field.handleChange(e.target.value)}
+          <Label htmlFor="startDate">Start Date</Label>
+          <form.Field
+            name="startDate"
+            children={(field) => (
+              <Input
+                id="startDate"
+                type="date"
+                value={field.state.value}
+                onChange={(e) => field.handleChange(e.target.value)}
+              />
+            )}
           />
-        )}
-      />
 
-      <Label htmlFor="endDate">End Date</Label>
-      <form.Field
-        name="endDate"
-        children={(field) => (
-          <Input
-            id="endDate"
-            type="date"
-            value={field.state.value}
-            onChange={(e) => field.handleChange(e.target.value)}
+          <Label htmlFor="endDate">End Date</Label>
+          <form.Field
+            name="endDate"
+            children={(field) => (
+              <Input
+                id="endDate"
+                type="date"
+                value={field.state.value}
+                onChange={(e) => field.handleChange(e.target.value)}
+              />
+            )}
           />
-        )}
-      />
 
       <div className="flex items-center space-x-2 mt-4">
         <form.Field
@@ -1299,9 +1847,28 @@ const ManualIngestionForm = ({
         </Label>
       </div>
 
-      <Button type="submit" disabled={isManualIngestionActive}>
-        {isManualIngestionActive ? "Ingesting..." : "Ingest Channels"}
-      </Button>
-    </form>
+          <Button 
+            type="submit" 
+            disabled={
+              isManualIngestionActive || 
+              ingestionLoading || 
+              ingestionError !== null ||
+              (ingestionStatus?.hasActiveIngestion && ['pending', 'in_progress', 'paused'].includes(ingestionStatus?.ingestion?.status || ''))
+            }
+          >
+            {isManualIngestionActive 
+              ? "Starting..." 
+              : ingestionLoading 
+                ? "Checking status..."
+                : ingestionError
+                  ? "Unable to check status"
+                  : (ingestionStatus?.hasActiveIngestion && ['pending', 'in_progress', 'paused'].includes(ingestionStatus?.ingestion?.status || ''))
+                    ? `Ingestion ${ingestionStatus.ingestion?.status || 'active'}`
+                    : "Start Channel Ingestion"
+            }
+          </Button>
+        </form>
+      ) : null}
+    </div>
   )
 }

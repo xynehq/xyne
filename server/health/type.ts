@@ -15,6 +15,7 @@ export interface HealthStatusResponse {
 export interface ServiceHealthCheck {
   postgres: HealthStatusResponse
   vespa: HealthStatusResponse
+  paddleOCR: HealthStatusResponse
 }
 
 export interface OverallSystemHealthResponse {
@@ -36,4 +37,5 @@ export enum ServiceName {
   vespa = "Vespa",
   loki = "Loki",
   prometheus = "Prometheus",
+  paddleOCR = "PaddleOCR",
 }

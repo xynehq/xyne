@@ -97,7 +97,7 @@ import { ShareModal } from "@/components/ShareModal"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { renderToStaticMarkup } from "react-dom/server"
-import { CitationPreview } from "@/components/CitationPreview"
+import CitationPreview from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
 import { createPortal } from "react-dom"
 import {
@@ -105,6 +105,10 @@ import {
   processMessage,
   createTableComponents,
 } from "@/utils/chatUtils.tsx"
+import {
+  useDocumentOperations,
+  DocumentOperationsProvider,
+} from "@/contexts/DocumentOperationsContext"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -225,6 +229,7 @@ export const ChatPage = ({
   const [sharedChatData, setSharedChatData] = useState<any>(null)
   const [sharedChatLoading, setSharedChatLoading] = useState(false)
   const [sharedChatError, setSharedChatError] = useState<string | null>(null)
+  const { documentOperationsRef } = useDocumentOperations()
 
   const data = useLoaderData({
     from: isWithChatId
@@ -408,7 +413,11 @@ export const ChatPage = ({
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(
     null,
   )
+  const [selectedChunkIndex, setSelectedChunkIndex] = useState<number | null>(
+    null,
+  )
   const [cameFromSources, setCameFromSources] = useState(false)
+  const [isDocumentLoaded, setIsDocumentLoaded] = useState(false)
 
   // Compute disableRetry flag for retry buttons
   const disableRetry = isStreaming || retryIsStreaming || isSharedChat
@@ -1177,9 +1186,104 @@ export const ChatPage = ({
     }
   }
 
+  // Handle chunk index changes from CitationPreview
+  const handleChunkIndexChange = useCallback(
+    async (newChunkIndex: number | null, documentId: string, docId: string) => {
+      if (!documentId) {
+        console.error("handleChunkIndexChange called without documentId")
+        return
+      }
+
+      if (selectedCitation?.itemId !== documentId) {
+        return
+      }
+
+      if (newChunkIndex === null) {
+        documentOperationsRef?.current?.clearHighlights?.()
+        return
+      }
+
+      if (newChunkIndex !== null) {
+        try {
+          const chunkContentResponse = await api.chunk[":cId"].files[
+            ":docId"
+          ].content.$get({
+            param: { cId: newChunkIndex.toString(), docId: docId },
+          })
+
+          if (!chunkContentResponse.ok) {
+            console.error(
+              "Failed to fetch chunk content:",
+              chunkContentResponse.status,
+            )
+            toast({
+              title: "Error",
+              description: "Failed to load chunk content",
+              variant: "destructive",
+            })
+            return
+          }
+
+          const chunkContent = await chunkContentResponse.json()
+
+          // Ensure we are still on the same document before mutating UI
+          if (selectedCitation?.itemId !== documentId) {
+            return
+          }
+
+          if (chunkContent && chunkContent.chunkContent) {
+            if (documentOperationsRef?.current?.clearHighlights) {
+              documentOperationsRef.current.clearHighlights()
+            }
+
+            if (documentOperationsRef?.current?.highlightText) {
+              try {
+                await documentOperationsRef.current.highlightText(
+                  chunkContent.chunkContent,
+                  newChunkIndex,
+                  chunkContent.pageIndex,
+                  true,
+                )
+              } catch (error) {
+                console.error(
+                  "Error highlighting chunk text:",
+                  chunkContent.chunkContent,
+                  error,
+                )
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error in handleChunkIndexChange:", error)
+          toast({
+            title: "Error",
+            description: "Failed to process chunk navigation",
+            variant: "destructive",
+          })
+        }
+      }
+    },
+    [selectedCitation, toast, documentOperationsRef],
+  )
+
+  useEffect(() => {
+    if (selectedCitation && isDocumentLoaded) {
+      handleChunkIndexChange(
+        selectedChunkIndex,
+        selectedCitation?.itemId ?? "",
+        selectedCitation?.docId ?? "",
+      )
+    }
+  }, [
+    selectedChunkIndex,
+    selectedCitation,
+    isDocumentLoaded,
+    handleChunkIndexChange,
+  ])
+
   // Handler for citation clicks - moved before conditional returns
   const handleCitationClick = useCallback(
-    (citation: Citation, fromSources: boolean = false) => {
+    (citation: Citation, chunkIndex?: number, fromSources: boolean = false) => {
       if (!citation || !citation.clId || !citation.itemId) {
         // For citations without clId or itemId, open as regular link
         if (citation.url) {
@@ -1197,6 +1301,11 @@ export const ChatPage = ({
         setCurrentCitations([])
         setCurrentMessageId(null)
       }
+      // Handle chunk index change if provided
+      setSelectedChunkIndex(null)
+      setTimeout(() => {
+        setSelectedChunkIndex(chunkIndex ?? null)
+      }, 0)
     },
     [],
   )
@@ -1206,7 +1315,26 @@ export const ChatPage = ({
     setIsCitationPreviewOpen(false)
     setSelectedCitation(null)
     setCameFromSources(false)
+    setSelectedChunkIndex(null)
+    setIsDocumentLoaded(false)
   }, [])
+
+  // Callback for when document is loaded in CitationPreview
+  const handleDocumentLoaded = useCallback(() => {
+    setIsDocumentLoaded(true)
+  }, [])
+
+  useEffect(() => {
+    setIsDocumentLoaded(false)
+  }, [selectedCitation])
+
+  useEffect(() => {
+    setIsCitationPreviewOpen(false)
+    setSelectedCitation(null)
+    setCameFromSources(false)
+    setSelectedChunkIndex(null)
+    setIsDocumentLoaded(false)
+  }, [chatId])
 
   // Handler for back to sources navigation
   const handleBackToSources = useCallback(() => {
@@ -1216,6 +1344,7 @@ export const ChatPage = ({
       setIsCitationPreviewOpen(false)
       setSelectedCitation(null)
       setCameFromSources(false)
+      setSelectedChunkIndex(null)
     }
   }, [currentCitations, currentMessageId])
 
@@ -1610,6 +1739,8 @@ export const ChatPage = ({
         onClose={handleCloseCitationPreview}
         showBackButton={cameFromSources}
         onBackToSources={handleBackToSources}
+        documentOperationsRef={documentOperationsRef}
+        onDocumentLoaded={handleDocumentLoaded}
       />
     </div>
   )
@@ -1683,7 +1814,11 @@ const CitationList = ({
   onCitationClick,
 }: {
   citations: Citation[]
-  onCitationClick?: (citation: Citation, fromSources?: boolean) => void
+  onCitationClick?: (
+    citation: Citation,
+    chunkIndex?: number,
+    fromSources?: boolean,
+  ) => void
 }) => {
   return (
     <ul className={`mt-2`}>
@@ -1693,7 +1828,7 @@ const CitationList = ({
           className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] mt-[12px] w-[85%] cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
           onClick={(e) => {
             e.preventDefault()
-            onCitationClick?.(citation, true)
+            onCitationClick?.(citation, undefined, true)
           }}
         >
           <div className="flex pl-[12px] pt-[12px]">
@@ -1729,7 +1864,11 @@ const Sources = ({
   showSources: boolean
   citations: Citation[]
   closeSources: () => void
-  onCitationClick?: (citation: Citation, fromSources?: boolean) => void
+  onCitationClick?: (
+    citation: Citation,
+    chunkIndex?: number,
+    fromSources?: boolean,
+  ) => void
 }) => {
   return showSources ? (
     <div
@@ -2723,11 +2862,13 @@ export const Route = createFileRoute("/_authenticated/chat")({
     const { user, workspace, agentWhiteList } =
       matches[matches.length - 1].context
     return (
-      <ChatPage
-        user={user}
-        workspace={workspace}
-        agentWhiteList={agentWhiteList}
-      />
+      <DocumentOperationsProvider>
+        <ChatPage
+          user={user}
+          workspace={workspace}
+          agentWhiteList={agentWhiteList}
+        />
+      </DocumentOperationsProvider>
     )
   },
   errorComponent: errorComponent,

@@ -51,10 +51,7 @@ const baseSearchSchema = z.object({
     .pipe(z.number())
     .optional(),
   app: z.nativeEnum(Apps).optional(),
-  entity: z.union([
-    z.string().min(1),          
-    z.array(z.string().min(1)),  
-  ]).optional(),
+  entity: z.union([z.string().min(1), z.array(z.string().min(1))]).optional(),
   lastUpdated: z.string().default("anytime"),
   isQueryTyped: z.preprocess((val) => val === "true", z.boolean()).optional(),
   debug: z
@@ -245,6 +242,10 @@ export const deleteConnectorSchema = z.object({
   connectorId: z.string(),
 })
 
+export const chatIdParamSchema = z.object({
+  chatId: z.string().min(1, "Chat ID must be a non-empty string"),
+})
+
 export const updateConnectorStatusSchema = z.object({
   connectorId: z.string(),
   status: z.nativeEnum(ConnectorStatus),
@@ -316,9 +317,7 @@ export type SaaSJob = {
 
 export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
-export type TxnOrClient =
-  | PgTransaction<any>
-  | PostgresJsDatabase<any>
+export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase<any>
 
 export type OAuthCredentials = {
   data: {
@@ -339,7 +338,6 @@ export enum SyncCron {
   // applying filters like modifiedAt/updatedAt internally.
   FullSync = "FullSync",
 }
-
 
 // history id was getting removed if we just use union
 // and do parse of selectSyncJobSchema
@@ -603,6 +601,22 @@ export const UserRoleChangeSchema = z.object({
 
 export type userRoleChange = z.infer<typeof UserRoleChangeSchema>
 
+// Admin pagination response schema
+export const AdminChatsPaginationResponseSchema = z.object({
+  data: z.array(z.any()), // Chat data array
+  pagination: z.object({
+    totalCount: z.number(),
+    currentPage: z.number(),
+    pageSize: z.number(),
+    hasNextPage: z.boolean(),
+    hasPreviousPage: z.boolean(),
+  }),
+})
+
+export type AdminChatsPaginationResponse = z.infer<
+  typeof AdminChatsPaginationResponseSchema
+>
+
 export const UserMetadata = z.object({
   userTimezone: z.string(),
   dateForAI: z.string(),
@@ -612,10 +626,10 @@ export type UserMetadataType = z.infer<typeof UserMetadata>
 
 // ChunkMetadata type for OCR and file processing
 export type ChunkMetadata = {
-  chunk_index: number;
-  page_numbers: number[];
-  block_labels: string[];
-};
+  chunk_index: number
+  page_numbers: number[]
+  block_labels: string[]
+}
 
 // DuckDB related types
 export interface DuckDBQuery {

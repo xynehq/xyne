@@ -8,13 +8,21 @@ let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
 let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
+let paddleStatusEndpoint =
+  process.env.STATUS_ENDPOINT || "http://localhost:8000/instance_status"
+let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
 // Centralized database URL construction
 function getDatabaseUrl(): string {
-    return process.env.DATABASE_URL || `postgres://xyne:xyne@${postgresBaseHost}:5432/xyne`
+  return (
+    process.env.DATABASE_URL ||
+    `postgres://xyne:xyne@${postgresBaseHost}:5432/xyne`
+  )
 }
+
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
+let appleBundleId = process.env.APPLE_BUNDLE_ID || ""
 
 // Vespa configuration constants
 export const NAMESPACE = "namespace"
@@ -51,19 +59,41 @@ let isReasoning = false
 let sqlInferenceModel = ""
 
 // File processing worker configuration
-let fileProcessingWorkerThreads = parseInt(process.env.FILE_PROCESSING_WORKER_THREADS || "4", 10)
-let fileProcessingTeamSize = parseInt(process.env.FILE_PROCESSING_TEAM_SIZE || "4", 10)
-let pdfFileProcessingWorkerThreads = parseInt(process.env.PDF_FILE_PROCESSING_WORKER_THREADS || "2", 10)
-let pdfFileProcessingTeamSize = parseInt(process.env.PDF_FILE_PROCESSING_TEAM_SIZE || "2", 10)
+let fileProcessingWorkerThreads = parseInt(
+  process.env.FILE_PROCESSING_WORKER_THREADS || "4",
+  10,
+)
+let fileProcessingTeamSize = parseInt(
+  process.env.FILE_PROCESSING_TEAM_SIZE || "4",
+  10,
+)
+let pdfFileProcessingWorkerThreads = parseInt(
+  process.env.PDF_FILE_PROCESSING_WORKER_THREADS || "2",
+  10,
+)
+let pdfFileProcessingTeamSize = parseInt(
+  process.env.PDF_FILE_PROCESSING_TEAM_SIZE || "2",
+  10,
+)
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
 let ragOffFeature = true
+let useLegacyServiceAccountSync =
+  process.env.USE_LEGACY_SERVICE_ACCOUNT_SYNC === "true"
+let useLegacySlackSync = process.env.USE_LEGACY_SLACK_SYNC === "true"
 let CurrentAuthType: AuthType =
   (process.env.AUTH_TYPE as AuthType) || AuthType.OAuth
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 const MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES = 3 * 1024 // 3KB - generous limit for service account JSON files
 const AccessTokenCookie = "access-token"
+
+// LangFuse configuration
+let langfusePublicKey = process.env["LANGFUSE_PUBLIC_KEY"]?.trim() || ""
+let langfuseSecretKey = process.env["LANGFUSE_SECRET_KEY"]?.trim() || ""
+let langfuseBaseUrl =
+  process.env["LANGFUSE_BASE_URL"]?.trim() || "http://localhost:3003"
+let langfuseEnabled = process.env["LANGFUSE_ENABLED"] === "true"
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
@@ -175,6 +205,7 @@ export default {
   port,
   metricsPort,
   syncServerPort,
+  syncServerHost,
   host,
   vespaPort,
   // slack oauth does not work on http
@@ -196,6 +227,8 @@ export default {
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
+  paddleStatusEndpoint,
+  appleBundleId,
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute
   defaultBestModel,
@@ -235,4 +268,11 @@ export default {
   fileProcessingTeamSize,
   pdfFileProcessingWorkerThreads,
   pdfFileProcessingTeamSize,
+  useLegacyServiceAccountSync,
+  useLegacySlackSync,
+  // LangFuse configuration
+  langfusePublicKey,
+  langfuseSecretKey,
+  langfuseBaseUrl,
+  langfuseEnabled,
 }

@@ -18,6 +18,8 @@ export * from "@/db/schema/apiKey"
 export * from "@/db/schema/workflows"
 export * from "@/db/schema/calls"
 export * from "@/db/schema/userWorkflowPermissions"
+export * from "@/db/schema/directMessages"
+export * from "@/db/schema/ingestions"
 
 // Export combined types
 import type { PublicUser, SelectUser } from "@/db/schema/users"

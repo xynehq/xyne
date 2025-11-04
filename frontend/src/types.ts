@@ -47,6 +47,11 @@ export type Filter = {
   lastUpdated?: LastUpdated
 }
 
+export enum CallType {
+  Video = "video",
+  Audio = "audio",
+}
+
 export enum OAuthIntegrationStatus {
   Provider = "Provider", // yet to create provider
   OAuth = "OAuth", // provider created but OAuth not yet connected
@@ -74,4 +79,15 @@ export interface Reference {
   userMap?: Record<string, string>
   wholeSheet?: boolean
   threadId?: string // Optional threadId for chat references
+}
+
+export interface LexicalEditorState {
+  root: {
+    children: any[]
+    direction?: string | null
+    format?: string | number
+    indent?: number
+    type?: string
+    version?: number
+  }
 }
