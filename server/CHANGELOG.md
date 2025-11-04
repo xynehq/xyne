@@ -1,3 +1,10 @@
+## [3.29.3](https://github.com/xynehq/xyne/compare/v3.29.2...v3.29.3) (2025-11-04)
+
+
+### Bug Fixes
+
+* **importDep:** moved the websocket connection code from sync-server file ([#1185](https://github.com/xynehq/xyne/issues/1185)) ([0112d93](https://github.com/xynehq/xyne/commit/0112d933d254e1913f1d052f0c11e94ca41ce7d7))
+
 ## [3.29.2](https://github.com/xynehq/xyne/compare/v3.29.1...v3.29.2) (2025-11-04)
 
 
