@@ -38,7 +38,7 @@ import { answerContextMap } from "@/ai/context"
 import config from "@/config"
 
 const searchGlobalToolSchema = z.object({
-  query: createQuerySchema(),
+  query: createQuerySchema(undefined, true),
   ...baseToolParams,
 })
 
