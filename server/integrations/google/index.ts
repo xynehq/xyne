@@ -2966,6 +2966,8 @@ export async function* listFiles(
           fields:
             "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
           pageToken: nextPageToken,
+          includeItemsFromAllDrives: true,
+          supportsAllDrives: true,
         }),
       `Fetching all files from Google Drive`,
       Apps.GoogleDrive,
@@ -3356,6 +3358,8 @@ export async function countDriveFiles(
           pageSize: 1000,
           fields: "nextPageToken, files(id)",
           pageToken: nextPageToken,
+          includeItemsFromAllDrives: true,
+          supportsAllDrives: true,
         }),
       `Counting Drive files (pageToken: ${nextPageToken || "initial"})`,
       Apps.GoogleDrive,
