@@ -104,10 +104,17 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
       const channelIds = agentPrompt
         ? await getChannelIdsFromAgentPrompt(agentPrompt)
         : []
+
+      const offset = params.offset || 0
+      const limit = params.limit
+        ? Math.min(params.limit, config.maxUserRequestCount) + (offset ?? 0)
+        : undefined
+
       const response = await executeVespaSearch({
         email,
         query: queryToUse,
-        limit: params.limit,
+        limit,
+        offset: params.offset || 0,
         excludedIds: params.excludedIds,
         agentAppEnums,
         channelIds,
@@ -363,8 +370,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
         content: await answerContextMap(
           r,
           userMetadata,
-          // Limit to 50 chunks for file documents to prevent exceeding context size with large files
-          r.fields.sddocname === fileSchema ? 50 : undefined,
+          config.maxDefaultSummary,
         ),
         source: citation,
         confidence: r.relevance || 0.7,

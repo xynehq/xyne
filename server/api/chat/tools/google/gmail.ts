@@ -95,11 +95,15 @@ export const searchGmailTool: Tool<GmailSearchToolParams, Ctx> = {
       }
 
       const offset = params.offset || 0
+      const limit = params.limit
+        ? Math.min(params.limit, config.maxUserRequestCount) + (offset ?? 0)
+        : undefined
+
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Gmail,
         email: email,
         query: params.query,
-        limit: (params.limit || config.VespaPageSize) + offset,
+        limit,
         offset,
         sortBy: params.sortBy || "desc",
         labels: params.labels,

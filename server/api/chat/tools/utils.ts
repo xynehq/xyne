@@ -19,6 +19,7 @@ import type { UserMetadataType } from "@/types"
 import { getDateForAI } from "@/utils/index"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getLogger, Subsystem } from "@/logger"
+import config from "@/config"
 const Logger = getLogger(Subsystem.Chat)
 
 export const userMetadata: UserMetadataType = {
@@ -63,8 +64,7 @@ export async function formatSearchToolResponse(
         content: await answerContextMap(
           r,
           userMetadata,
-          // Limit to 50 chunks for file documents to prevent exceeding context size with large files
-          r.fields.sddocname === fileSchema ? 50 : undefined,
+          config.maxDefaultSummary,
         ),
         source: citation,
         confidence: r.relevance || 0.7,
