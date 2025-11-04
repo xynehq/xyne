@@ -248,7 +248,7 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
 // Interface for email search result fields
 export interface EmailSearchResultFields {
   app: Apps
-  threadId?: string
+  parentThreadId?: string
   docId: string
   [key: string]: any // Allow other fields
 }
@@ -296,7 +296,8 @@ export function processThreadResults(
   for (const child of threadResults) {
     const emailChild = child as EmailSearchResult
     const docId = emailChild.fields.docId
-    const threadId = emailChild.fields.threadId
+    // const threadId = emailChild.fields.threadId
+    const parentThreadId = emailChild.fields.parentThreadId
 
     // Skip if already in results
     if (!existingDocIds.has(docId)) {
@@ -305,8 +306,8 @@ export function processThreadResults(
       addedCount++
 
       // Track count per thread for logging
-      if (threadId) {
-        threadInfo[threadId] = (threadInfo[threadId] || 0) + 1
+      if (parentThreadId) {
+        threadInfo[parentThreadId] = (threadInfo[parentThreadId] || 0) + 1
       }
     }
   }
@@ -323,10 +324,10 @@ export function extractThreadIdsFromResults(
   return results.reduce<string[]>((threadIds, result) => {
     const fields = result.fields as EmailSearchResultFields
     // Check if it's an email result
-    if (fields.app === Apps.Gmail && fields.threadId) {
-      if (!seenThreadIds.has(fields.threadId)) {
-        threadIds.push(fields.threadId)
-        seenThreadIds.add(fields.threadId)
+    if (fields.app === Apps.Gmail && fields.parentThreadId) {
+      if (!seenThreadIds.has(fields.parentThreadId)) {
+        threadIds.push(fields.parentThreadId)
+        seenThreadIds.add(fields.parentThreadId)
       }
     }
     return threadIds
@@ -476,6 +477,7 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       app: (fields as VespaMail).app,
       entity: (fields as VespaMail).entity,
       threadId: (fields as VespaMail).threadId,
+      parentThreadId: (fields as VespaMail).parentThreadId,
     }
   } else if (result.fields.sddocname === eventSchema) {
     return {
@@ -643,7 +645,7 @@ export const extractFileIdsFromMessage = async (
         }
         // Check if this pill has a threadId (for email threads)
         if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
-          threadIds.push(obj?.value?.threadId)
+          threadIds.push(obj?.value?.parentThreadId || obj?.value?.threadId)
         }
 
         const pillValue = obj.value
