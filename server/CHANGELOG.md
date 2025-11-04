@@ -1,3 +1,10 @@
+# [3.29.0](https://github.com/xynehq/xyne/compare/v3.28.0...v3.29.0) (2025-11-04)
+
+
+### Features
+
+* XYN-269 channels and treads in buzz ([#1179](https://github.com/xynehq/xyne/issues/1179)) ([71a45bd](https://github.com/xynehq/xyne/commit/71a45bdb616a427e56d654f4da89b3951ce9b457))
+
 # [3.28.0](https://github.com/xynehq/xyne/compare/v3.27.0...v3.28.0) (2025-11-03)
 
 
