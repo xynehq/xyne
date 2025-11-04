@@ -94,7 +94,7 @@ export const handleGmailIngestion = async (
           let msgResp
           try {
             let mailExists = false
-            if (message.id && !skipMailExistCheck)
+            if (message.id && skipMailExistCheck)
               mailExists = await IfMailDocExist(email, message.id)
             if (mailExists) {
               Logger.info(`skipping mail with mailid: ${message.id}`)
@@ -261,8 +261,23 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
+  const Reference = getHeader("References") || ""
+  const inReplyTo = getHeader("In-Reply-To") || ""
+  let firstReferenceId = ""
+  if (Reference) {
+    const match = Reference.match(/<([^>]+)>/)
+    if (match && match[1]) {
+      firstReferenceId = match[1]
+    }
+  }
   const mailId =
     getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
+  let parentThreadId = mailId
+  if (Reference && firstReferenceId) {
+    parentThreadId = firstReferenceId
+  } else if (inReplyTo) {
+    parentThreadId = inReplyTo.replace(/^<|>$/g, "")
+  }
   let docId = messageId
   let userMap: Record<string, string> = {}
   let mailExist = false
@@ -480,6 +495,7 @@ export const parseMail = async (
     app: Apps.Gmail,
     userMap: userMap,
     entity: MailEntity.Email,
+    parentThreadId: parentThreadId,
     permissions: permissions,
     from: from,
     to: to,
