@@ -1,3 +1,10 @@
+## [3.29.1](https://github.com/xynehq/xyne/compare/v3.29.0...v3.29.1) (2025-11-04)
+
+
+### Bug Fixes
+
+* **driveSync:** Add fix for newStartPageToken to avoid it getting invalid ([#1131](https://github.com/xynehq/xyne/issues/1131)) ([0bfa79b](https://github.com/xynehq/xyne/commit/0bfa79ba403771301cb911f7874679e902e8ed6e))
+
 # [3.29.0](https://github.com/xynehq/xyne/compare/v3.28.0...v3.29.0) (2025-11-04)
 
 
