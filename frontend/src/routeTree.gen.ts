@@ -34,6 +34,7 @@ import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authentic
 import { Route as AuthenticatedCallCallIdRouteImport } from './routes/_authenticated/call.$callId'
 import { Route as AuthenticatedBuzzHistoryRouteImport } from './routes/_authenticated/buzz/history'
 import { Route as AuthenticatedBuzzChatsRouteImport } from './routes/_authenticated/buzz/chats'
+import { Route as AuthenticatedBuzzChannelsRouteImport } from './routes/_authenticated/buzz/channels'
 import { Route as AuthenticatedAdminUserManagementRouteImport } from './routes/_authenticated/admin/userManagement'
 import { Route as AuthenticatedAdminChatOverviewRouteImport } from './routes/_authenticated/admin/chat-overview'
 import { Route as AuthenticatedAdminIntegrationsIndexRouteImport } from './routes/_authenticated/admin/integrations/index'
@@ -176,6 +177,12 @@ const AuthenticatedBuzzChatsRoute = AuthenticatedBuzzChatsRouteImport.update({
   path: '/chats',
   getParentRoute: () => AuthenticatedBuzzRoute,
 } as any)
+const AuthenticatedBuzzChannelsRoute =
+  AuthenticatedBuzzChannelsRouteImport.update({
+    id: '/channels',
+    path: '/channels',
+    getParentRoute: () => AuthenticatedBuzzRoute,
+  } as any)
 const AuthenticatedAdminUserManagementRoute =
   AuthenticatedAdminUserManagementRouteImport.update({
     id: '/admin/userManagement',
@@ -240,6 +247,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
+  '/buzz/channels': typeof AuthenticatedBuzzChannelsRoute
   '/buzz/chats': typeof AuthenticatedBuzzChatsRoute
   '/buzz/history': typeof AuthenticatedBuzzHistoryRoute
   '/call/$callId': typeof AuthenticatedCallCallIdRoute
@@ -273,6 +281,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
+  '/buzz/channels': typeof AuthenticatedBuzzChannelsRoute
   '/buzz/chats': typeof AuthenticatedBuzzChatsRoute
   '/buzz/history': typeof AuthenticatedBuzzHistoryRoute
   '/call/$callId': typeof AuthenticatedCallCallIdRoute
@@ -309,6 +318,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/chat-overview': typeof AuthenticatedAdminChatOverviewRoute
   '/_authenticated/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
+  '/_authenticated/buzz/channels': typeof AuthenticatedBuzzChannelsRoute
   '/_authenticated/buzz/chats': typeof AuthenticatedBuzzChatsRoute
   '/_authenticated/buzz/history': typeof AuthenticatedBuzzHistoryRoute
   '/_authenticated/call/$callId': typeof AuthenticatedCallCallIdRoute
@@ -345,6 +355,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin/chat-overview'
     | '/admin/userManagement'
+    | '/buzz/channels'
     | '/buzz/chats'
     | '/buzz/history'
     | '/call/$callId'
@@ -378,6 +389,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin/chat-overview'
     | '/admin/userManagement'
+    | '/buzz/channels'
     | '/buzz/chats'
     | '/buzz/history'
     | '/call/$callId'
@@ -413,6 +425,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/admin/chat-overview'
     | '/_authenticated/admin/userManagement'
+    | '/_authenticated/buzz/channels'
     | '/_authenticated/buzz/chats'
     | '/_authenticated/buzz/history'
     | '/_authenticated/call/$callId'
@@ -617,6 +630,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBuzzChatsRouteImport
       parentRoute: typeof AuthenticatedBuzzRoute
     }
+    '/_authenticated/buzz/channels': {
+      id: '/_authenticated/buzz/channels'
+      path: '/channels'
+      fullPath: '/buzz/channels'
+      preLoaderRoute: typeof AuthenticatedBuzzChannelsRouteImport
+      parentRoute: typeof AuthenticatedBuzzRoute
+    }
     '/_authenticated/admin/userManagement': {
       id: '/_authenticated/admin/userManagement'
       path: '/admin/userManagement'
@@ -677,12 +697,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedBuzzRouteChildren {
+  AuthenticatedBuzzChannelsRoute: typeof AuthenticatedBuzzChannelsRoute
   AuthenticatedBuzzChatsRoute: typeof AuthenticatedBuzzChatsRoute
   AuthenticatedBuzzHistoryRoute: typeof AuthenticatedBuzzHistoryRoute
   AuthenticatedBuzzIndexRoute: typeof AuthenticatedBuzzIndexRoute
 }
 
 const AuthenticatedBuzzRouteChildren: AuthenticatedBuzzRouteChildren = {
+  AuthenticatedBuzzChannelsRoute: AuthenticatedBuzzChannelsRoute,
   AuthenticatedBuzzChatsRoute: AuthenticatedBuzzChatsRoute,
   AuthenticatedBuzzHistoryRoute: AuthenticatedBuzzHistoryRoute,
   AuthenticatedBuzzIndexRoute: AuthenticatedBuzzIndexRoute,
