@@ -1265,7 +1265,6 @@ const getNewAccessRefreshToken = async (c: Context) => {
 const webhookHandler = WebhookHandler
 webhookHandler.initialize()
 
-
 // Dynamic webhook handler
 app.all("/workflow/webhook/*", async (c) => {
   return await webhookHandler.handleWebhookRequest(c)
@@ -2418,7 +2417,6 @@ const metricServer = Bun.serve({
 
 Logger.info(`listening on port: ${config.port}`)
 Logger.info(`metrics server started on port: ${config.metricsPort}`)
-
 
 const errorEvents: string[] = [
   `uncaughtException`,
