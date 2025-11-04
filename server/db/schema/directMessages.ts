@@ -40,6 +40,7 @@ export const directMessages = pgTable(
       .notNull()
       .$type<z.infer<typeof lexicalEditorStateSchema>>(),
     isRead: boolean("is_read").notNull().default(false),
+    isEdited: boolean("is_edited").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
