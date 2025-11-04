@@ -127,7 +127,6 @@ import {
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
-import { agentTools } from "./tools"
 // JAF integration imports
 import {
   runStream,
@@ -161,6 +160,7 @@ import { getAuth, safeGet } from "../agent"
 import { applyFollowUpContext } from "@/utils/parseAttachment"
 import { expandSheetIds } from "@/search/utils"
 import { googleTools, searchGlobalTool } from "@/api/chat/tools/index"
+import { fallbackTool } from "./tools/global"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -2419,13 +2419,14 @@ export const MessageWithToolsApi = async (c: Context) => {
                               `Tool Execution ${index + 1}: ${getTextContent(msg.content)}`,
                           )
                           .join("\n")
-                        console.log("Tool log:", toolLog)
                         // Prepare fallback tool parameters with context from runState.messages
                         const fallbackParams = {
                           originalQuery: message,
                           agentScratchpad: agentScratchpad,
                           toolLog: toolLog,
-                          gatheredFragments: gatheredFragments,
+                          gatheredFragments: gatheredFragments
+                            .map((v) => v.content)
+                            .join("\n"),
                         }
 
                         await stream.writeSSE({
@@ -2442,16 +2443,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                         })
 
                         // Execute fallback tool directly
-                        const fallbackResponse = await agentTools[
-                          "fall_back"
-                        ].execute(
+                        const fallbackResponse = (await fallbackTool.execute(
                           fallbackParams,
-                          streamSpan.startSpan("fallback_search_execution"),
-                          email,
-                          ctx,
-                          agentPromptForLLM,
-                          message,
-                        )
+                          baseCtx,
+                        )) as ToolResult<{ fallbackReasoning: string }>
 
                         await stream.writeSSE({
                           event: ChatSSEvents.Reasoning,
@@ -2462,24 +2457,21 @@ export const MessageWithToolsApi = async (c: Context) => {
                               toolName: "fall_back",
                               status: "completed",
                               resultSummary:
-                                fallbackResponse.result ||
+                                fallbackResponse.data ||
                                 "Fallback response generated",
-                              itemsFound:
-                                fallbackResponse.contexts?.length || 0,
+                              itemsFound: gatheredFragments.length || 0,
                               stepSummary: `Generated fallback response`,
                             },
                           }),
                         })
 
+                        const fallbackReasoning = fallbackResponse.metadata
+                          ? fallbackResponse.metadata["fallbackReasoning"]
+                          : ""
                         // Stream the fallback response if available
-                        if (
-                          fallbackResponse.fallbackReasoning ||
-                          fallbackResponse.result
-                        ) {
+                        if (fallbackReasoning || fallbackResponse.data) {
                           const fallbackAnswer =
-                            fallbackResponse.fallbackReasoning ||
-                            fallbackResponse.result ||
-                            ""
+                            fallbackReasoning || fallbackResponse.data || ""
 
                           await stream.writeSSE({
                             event: ChatSSEvents.ResponseUpdate,
@@ -2487,26 +2479,26 @@ export const MessageWithToolsApi = async (c: Context) => {
                           })
 
                           // Handle any contexts returned by fallback tool
-                          if (
-                            fallbackResponse.contexts &&
-                            Array.isArray(fallbackResponse.contexts)
-                          ) {
-                            fallbackResponse.contexts.forEach((context) => {
-                              citations.push(context.source)
-                              citationMap[citations.length] =
-                                citations.length - 1
-                            })
+                          // if (
+                          //   fallbackResponse.contexts &&
+                          //   Array.isArray(fallbackResponse.contexts)
+                          // ) {
+                          //   fallbackResponse.contexts.forEach((context) => {
+                          //     citations.push(context.source)
+                          //     citationMap[citations.length] =
+                          //       citations.length - 1
+                          //   })
 
-                            if (citations.length > 0) {
-                              await stream.writeSSE({
-                                event: ChatSSEvents.CitationsUpdate,
-                                data: JSON.stringify({
-                                  contextChunks: citations,
-                                  citationMap,
-                                }),
-                              })
-                            }
-                          }
+                          //   if (citations.length > 0) {
+                          //     await stream.writeSSE({
+                          //       event: ChatSSEvents.CitationsUpdate,
+                          //       data: JSON.stringify({
+                          //         contextChunks: citations,
+                          //         citationMap,
+                          //       }),
+                          //     })
+                          //   }
+                          // }
 
                           if (fallbackAnswer.trim()) {
                             // Insert successful fallback message
@@ -2570,9 +2562,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                         })
                         // Fall through to default error handling if fallback fails
                       }
-
-                      // Default error handling if fallback fails or produces no response
-                      errMsg = `Max turns exceeded: ${err.turns}`
                       break
                     default:
                       errMsg = errTag

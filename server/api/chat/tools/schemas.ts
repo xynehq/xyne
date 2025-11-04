@@ -1,7 +1,64 @@
 import { z } from "zod"
 import config from "@/config"
-import { retrievalQueryDescription } from "@/api/chat/mapper"
-import type { Apps, GoogleApps } from "@xyne/vespa-ts"
+import { Apps, GoogleApps } from "@xyne/vespa-ts"
+
+export const retrievalQueryDescription = (app?: GoogleApps | Apps) => `
+Create SHORT, targeted search terms optimized for retrieval systems. Focus on 1-3 key terms rather than long descriptive phrases.
+      
+      Step 1: Identify the MOST IMPORTANT specific keywords:
+      - Person names (e.g., "John", "Sarah")
+      - Business/project names (e.g., "uber", "zomato") 
+      - Core topics (e.g., "contract", "invoice", "proposal")
+      - Company names (e.g., "OpenAI", "Google")
+      - Product names or key identifiers
+      
+      Step 2: EXCLUDE these generic terms:
+      - Action words: "find", "show", "get", "search", "give", "recent", "latest"
+      - Pronouns: "my", "your", "their"
+      - Time references: "recent", "latest", "last week", "old", "new"
+      - Quantity words: "5", "10", "most", "all", "some"
+      - Generic types: "emails", "files", "documents", "meetings" (when used alone)
+      - Filler words: "summary", "details", "info", "information", "about", "regarding"
+      
+      Step 3: Create CONCISE query (1-3 key terms max):
+      ${
+        app === GoogleApps.Contacts || !app
+          ? "- Contact queries: Use person/company names, job titles (e.g., 'John Smith', 'OpenAI', 'CEO')"
+          : ""
+      }
+      
+      ${
+        app === GoogleApps.Drive || !app
+          ? "- File queries: Use topic + context (e.g., 'budget report', 'contract legal', 'project alpha')"
+          : ""
+      }
+      ${
+        app === GoogleApps.Calendar || !app
+          ? "- Meeting queries: Use meeting topic + type (e.g., 'standup engineering', 'client demo', 'budget review')"
+          : ""
+      }
+      ${
+        app === Apps.Slack || !app
+          ? "- Slack queries: Use discussion topic + context (e.g., 'deployment issue', 'feature review', 'team sync')"
+          : ""
+      }
+      
+      Examples:
+      - "reimbursement procedure application process policy guidelines" → "reimbursement policy"
+      - "meeting notes from last week about project updates" → "project updates"
+      - "emails from John about the marketing campaign" → "John marketing"
+      
+      Step 4: Apply the rule:
+      ${
+        !app
+          ? `- Global search: query is MANDATORY. Use 1-3 most important terms from available keywords to search across all apps (${Object.values(
+              GoogleApps,
+            )
+              .map((v) => v)
+              .join(",")} and ${Apps.Slack})`
+          : "- IF specific content keywords found → create SHORT semantic query (1-3 terms)\n      - IF no specific content keywords found → set query to null"
+      }
+`
 
 // Common pagination schemas
 export const limitSchema = z

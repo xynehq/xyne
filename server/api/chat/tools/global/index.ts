@@ -30,6 +30,9 @@ import {
 } from "@/api/chat/utils"
 import type { Ctx, WithExcludedIds } from "../types"
 import { baseToolParams, createQuerySchema } from "../schemas"
+import { generateFallback } from "@/ai/provider"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
 import type { MinimalAgentFragment } from "../../types"
 import { answerContextMap } from "@/ai/context"
 import config from "@/config"
@@ -39,14 +42,32 @@ const searchGlobalToolSchema = z.object({
   ...baseToolParams,
 })
 
-export type SearchGlobalToolParams = z.infer<typeof searchGlobalToolSchema>
+const fallbackToolSchema = z.object({
+  originalQuery: z
+    .string()
+    .describe("The original user query")
+    .min(1, "Original query is required"),
+  agentScratchpad: z
+    .string()
+    .describe("The agent reasoning history")
+    .min(1, "Agent scratchpad is required"),
+  toolLog: z
+    .string()
+    .describe("The tool execution log")
+    .min(1, "Tool log is required"),
+  gatheredFragments: z
+    .string()
+    .describe("The gathered context fragments")
+    .min(1, "Gathered fragments is required"),
+})
 
-type ToolSchemaParameters = Tool<
-  SearchGlobalToolParams,
-  Ctx
->["schema"]["parameters"]
-const toToolSchemaParameters = (schema: ZodType): ToolSchemaParameters =>
-  schema as unknown as ToolSchemaParameters
+export type SearchGlobalToolParams = z.infer<typeof searchGlobalToolSchema>
+export type FallbackToolParams = z.infer<typeof fallbackToolSchema>
+
+type ToolSchemaParameters<T> = Tool<T, Ctx>["schema"]["parameters"]
+const toToolSchemaParameters = <T>(
+  schema: ZodType<T>,
+): ToolSchemaParameters<T> => schema as unknown as ToolSchemaParameters<T>
 
 export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
   schema: {
@@ -106,6 +127,66 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         ToolErrorCodes.EXECUTION_FAILED,
         `Search error: ${errMsg}`,
         { toolName: "searchGlobal" },
+      )
+    }
+  },
+}
+
+export const fallbackTool: Tool<FallbackToolParams, Ctx> = {
+  schema: {
+    name: "fall_back",
+    description:
+      "Generate detailed reasoning about why the search failed when initial iterations are exhausted but synthesis is still not complete.",
+    parameters: toToolSchemaParameters(fallbackToolSchema),
+  },
+  async execute(params: FallbackToolParams, context: Ctx) {
+    const Logger = getLogger(Subsystem.Chat)
+    const { userCtx } = context
+    try {
+      // Generate detailed reasoning about why the search failed
+      const fallbackResponse = await generateFallback(
+        userCtx || "",
+        params.originalQuery,
+        params.agentScratchpad,
+        params.toolLog,
+        params.gatheredFragments,
+        {
+          modelId: config.defaultFastModel,
+          stream: false,
+          json: true,
+        },
+      )
+
+      if (
+        !fallbackResponse.reasoning ||
+        fallbackResponse.reasoning.trim() === ""
+      ) {
+        return ToolResponse.error(
+          ToolErrorCodes.EXECUTION_FAILED,
+          "No reasoning could be generated for the search failure.",
+          { toolName: "fall_back" },
+        )
+      }
+
+      // Return only the reasoning, not alternative queries
+      Logger.info(
+        `Fallback tool generated detailed reasoning about search failure`,
+      )
+
+      return ToolResponse.success(
+        `Fallback analysis completed. Generated detailed reasoning about why the search was unsuccessful.`,
+        {
+          toolName: "fall_back",
+          fallbackReasoning: fallbackResponse.reasoning, // Pass only the reasoning
+        },
+      )
+    } catch (error) {
+      const errMsg = getErrorMessage(error)
+      Logger.error(error, `Fallback tool error: ${errMsg}`)
+      return ToolResponse.error(
+        ToolErrorCodes.EXECUTION_FAILED,
+        `Fallback analysis failed: ${errMsg}`,
+        { toolName: "fall_back" },
       )
     }
   },
