@@ -509,6 +509,12 @@ export const getAllPublicAgents = async (
   const publicAgents = await trx
     .select()
     .from(agents)
-    .where(and(eq(agents.workspaceId, workspaceId), eq(agents.isPublic, true)))
+    .where(
+      and(
+        eq(agents.workspaceId, workspaceId),
+        eq(agents.isPublic, true),
+        isNull(agents.deletedAt),
+      ),
+    )
   return z.array(selectPublicAgentSchema).parse(publicAgents)
 }

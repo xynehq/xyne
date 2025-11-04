@@ -3921,25 +3921,22 @@ function processPublicAgentsCollectionSelections(
                 collectionFileIds.length > 0 ? collectionFileIds : undefined,
             })
           } else {
-            // Add to the first entry
+            // Add to the first entry with deduplication using Sets
             const firstEntry = agentSpecificCollectionSelections[0]
             if (collectionIds.length > 0) {
-              firstEntry.collectionIds = [
-                ...(firstEntry.collectionIds || []),
-                ...collectionIds,
-              ]
+              const existingIds = new Set(firstEntry.collectionIds || [])
+              collectionIds.forEach(id => existingIds.add(id))
+              firstEntry.collectionIds = Array.from(existingIds)
             }
             if (collectionFolderIds.length > 0) {
-              firstEntry.collectionFolderIds = [
-                ...(firstEntry.collectionFolderIds || []),
-                ...collectionFolderIds,
-              ]
+              const existingFolderIds = new Set(firstEntry.collectionFolderIds || [])
+              collectionFolderIds.forEach(id => existingFolderIds.add(id))
+              firstEntry.collectionFolderIds = Array.from(existingFolderIds)
             }
             if (collectionFileIds.length > 0) {
-              firstEntry.collectionFileIds = [
-                ...(firstEntry.collectionFileIds || []),
-                ...collectionFileIds,
-              ]
+              const existingFileIds = new Set(firstEntry.collectionFileIds || [])
+              collectionFileIds.forEach(id => existingFileIds.add(id))
+              firstEntry.collectionFileIds = Array.from(existingFileIds)
             }
           }
         }
