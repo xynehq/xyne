@@ -584,7 +584,7 @@ export const getThreadContext = async (
     ].filter((id) => id)
     if (threadIds.length > 0) {
       const threadSpan = span?.startSpan("fetch_slack_threads")
-      const threadMessages = await SearchVespaThreads(threadIds, threadSpan!)
+      const threadMessages = await SearchVespaThreads(threadIds)
       return threadMessages
     }
   }
@@ -4526,22 +4526,27 @@ export const MessageApi = async (c: Context) => {
             })
           }
           // Build conversation history (exclude current message)
-          const filteredMessages = messages.length > 1
-            ? messages
-                .slice(0, messages.length - 1)
-                .filter((msg) => !msg?.errorMessage)
-                .filter(
-                  (msg) =>
-                    !(msg.messageRole === MessageRole.Assistant && !msg.message),
-                )
-            : []
+          const filteredMessages =
+            messages.length > 1
+              ? messages
+                  .slice(0, messages.length - 1)
+                  .filter((msg) => !msg?.errorMessage)
+                  .filter(
+                    (msg) =>
+                      !(
+                        msg.messageRole === MessageRole.Assistant &&
+                        !msg.message
+                      ),
+                  )
+              : []
 
-          const topicConversationThread = filteredMessages.length > 0
-            ? buildTopicConversationThread(
-                filteredMessages,
-                filteredMessages.length - 1,
-              )
-            : []
+          const topicConversationThread =
+            filteredMessages.length > 0
+              ? buildTopicConversationThread(
+                  filteredMessages,
+                  filteredMessages.length - 1,
+                )
+              : []
 
           const llmFormattedMessages: Message[] = formatMessagesForLLM(
             topicConversationThread,
