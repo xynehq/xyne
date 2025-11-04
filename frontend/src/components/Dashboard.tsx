@@ -2673,6 +2673,8 @@ export const Dashboard = ({
     setSelectedUser: setSelectedUserInStore,
     setDashboardTab,
     dashboardTab,
+    activeTab,
+    setActiveTab,
   } = useAdminUserSelectionStore()
   const [stats, setStats] = useState<DashboardStats>({
     totalChats: 0,
@@ -2710,7 +2712,6 @@ export const Dashboard = ({
   const [sharedAgentLoading, setSharedAgentLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sharedAgentError, setSharedAgentError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<"normal" | "agent">("agent")
   const [mainTab, setMainTab] = useState<
     "my-activity" | "shared-agents" | "admin-overview"
   >(dashboardTab || "my-activity")
