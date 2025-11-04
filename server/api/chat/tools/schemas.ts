@@ -94,6 +94,7 @@ export const timeRangeSchema = z
   .describe(
     `Filter within a specific time range. Example: { startTime: ${config.llmTimeFormat}, endTime: ${config.llmTimeFormat} }`,
   )
+  .optional()
 
 export const createQuerySchema = (
   app?: Apps | GoogleApps,
