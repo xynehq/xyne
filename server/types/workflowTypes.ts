@@ -11,6 +11,12 @@ export enum StepType {
   AUTOMATED = "automated",
 }
 
+export enum ToolCategory {
+  TRIGGER = "trigger",
+  ACTION = "action",
+  SYSTEM = "system",
+}
+
 export enum ToolType {
   DELAY = "delay",
   SLACK = "slack",
@@ -23,6 +29,9 @@ export enum ToolType {
   WEBHOOK = "webhook",
   HTTP_REQUEST = "http_request",
   JIRA = "jira",
+  CONDITIONAL = "conditional",
+  MANUAL_TRIGGER = "manual_trigger",
+  SCHEDULER_TRIGGER = "scheduler_trigger",
 }
 
 export enum ToolExecutionStatus {

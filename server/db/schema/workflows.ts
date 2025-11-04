@@ -16,6 +16,7 @@ import {
   WorkflowStatus,
   StepType,
   ToolType,
+  ToolCategory,
   ToolExecutionStatus,
 } from "@/types/workflowTypes"
 import { workspaces } from "./workspaces"
@@ -54,6 +55,8 @@ export const uuidArray = customType<{
 export const workflowStatusEnum = pgEnum("workflow_status", Object.values(WorkflowStatus) as [string, ...string[]])
 
 export const stepTypeEnum = pgEnum("step_type", Object.values(StepType) as [string, ...string[]])
+
+export const toolCategoryEnum = pgEnum("tool_category", Object.values(ToolCategory) as [string, ...string[]])
 
 export const toolTypeEnum = pgEnum("tool_type", Object.values(ToolType) as [string, ...string[]])
 
@@ -120,9 +123,11 @@ export const workflowTool = pgTable("workflow_tool", {
   userId: integer("user_id")
     .notNull()
     .references(() => users.id),
+  category: toolCategoryEnum("category").notNull().default(ToolCategory.ACTION),
   type: toolTypeEnum("type").notNull(),
   value: jsonb("value"), // Can store string, number, or object based on tool type
   config: jsonb("config").default({}),
+  inputCount: integer("input_count").default(1), // Number of inputs required for this tool
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
@@ -197,6 +202,7 @@ export const toolExecution = pgTable("tool_execution", {
     .references(() => workflowTool.id),
   workflowExecutionId: uuid("workflow_execution_id").notNull(), // Renamed from stepId
   status: toolExecutionStatusEnum("status").notNull().default(ToolExecutionStatus.PENDING),
+  input: jsonb("input"), // Input data for tool execution
   result: jsonb("result"), // Execution result/output
   // Removed: errorMessage column
   startedAt: timestamp("started_at", { withTimezone: true }),
@@ -442,3 +448,12 @@ export type UpdateWorkflowStepExecutionRequest = z.infer<
 >
 export type FormSubmissionRequest = z.infer<typeof formSubmissionSchema>
 export type AddStepToWorkflowRequest = z.infer<typeof addStepToWorkflowSchema>
+
+// Re-export enums for convenience
+export {
+  WorkflowStatus,
+  StepType,
+  ToolType,
+  ToolCategory,
+  ToolExecutionStatus,
+} from "@/types/workflowTypes"

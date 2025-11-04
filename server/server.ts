@@ -327,6 +327,23 @@ import {
 } from "@/db/schema/workflows"
 import { ToolType, WorkflowStatus, ToolExecutionStatus } from "@/types/workflowTypes"
 import { sql, eq } from "drizzle-orm"
+import {
+  GetAvailableToolTypesApi,
+  GetToolTypeSchemaApi,
+  CreateTemplateApi,
+  UpdateTemplateApi,
+  DeleteTemplateApi,
+  GetTemplateApi,
+  ValidateTemplate,
+  createTemplateSchema,
+  validateTemplateSchema,
+} from "@/api/workflow-template"
+import { 
+  ExecuteTemplateHandler, 
+  GetExecutionStatusApi, 
+  StopExecutionApi, 
+  GetEngineHealthApi 
+} from "@/api/workflow-execution"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
   handleAttachmentUpload,
@@ -1501,6 +1518,20 @@ export const AppRoutes = app
   .post("/workflow/tools/jira/delete-webhook", DeleteJiraWebhookApi)
   .post("/workflow/tools/jira/metadata", GetJiraMetadataApi)
   // Webhook routes moved to before AuthMiddleware (lines 892-893)
+  .get("/workflow/tool-types", GetAvailableToolTypesApi)
+  .get("/workflow/tool-types/:toolType", GetToolTypeSchemaApi)
+  .post(
+    "/workflow/template/create",
+    zValidator("json", createTemplateSchema),
+    CreateTemplateApi
+  )
+  .get("/workflow/template/:templateId", GetTemplateApi)
+  .put("/workflow/template/:templateId", UpdateTemplateApi)
+  .delete("/workflow/template/:templateId", DeleteTemplateApi)
+  .post("/workflow/template/execute", ExecuteTemplateHandler)
+  .get("/workflow/execution/:executionId/status", GetExecutionStatusApi)
+  .post("/workflow/execution/:executionId/stop", StopExecutionApi)
+  .get("/workflow/engine/health", GetEngineHealthApi)
   .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
   .put(
     "/workflow/steps/:stepId",
@@ -2352,6 +2383,10 @@ app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
+  // Initialize message queue for inter-service communication with execution engine
+  const { messageQueue } = await import("@/execution-engine/message-queue")
+  await messageQueue.initialize()
+  
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
 

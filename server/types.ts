@@ -507,6 +507,7 @@ export enum Subsystem {
   Tuning = "Tuning",
   AgentApi = "AgentApi",
   WorkflowApi = "WorkflowApi",
+  ExecutionEngine = "ExecutionEngine",
   Metric = "Metric",
   Slack = "Slack",
 }
