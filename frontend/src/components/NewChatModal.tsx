@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react"
 import { Search, X } from "lucide-react"
-import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { api } from "@/api"
 import { toast } from "@/hooks/use-toast"
@@ -65,9 +64,7 @@ export default function NewChatModal({
   }, [searchQuery])
 
   const handleUserSelect = (user: User) => {
-    if (currentUserEmail && currentUserEmail === user.email) {
-      return
-    }
+    // Allow selecting yourself to create a DM with yourself
     onSelectUser(user)
     onClose()
   }
@@ -127,12 +124,7 @@ export default function NewChatModal({
                 <div
                   key={user.id}
                   onClick={() => handleUserSelect(user)}
-                  className={cn(
-                    "flex items-center p-3 rounded-lg transition-colors",
-                    currentUserEmail && currentUserEmail === user.email
-                      ? "opacity-50 cursor-not-allowed"
-                      : "hover:bg-[#D8DFE680] dark:hover:bg-gray-700 cursor-pointer",
-                  )}
+                  className="flex items-center p-3 rounded-lg transition-colors hover:bg-[#D8DFE680] dark:hover:bg-gray-700 cursor-pointer"
                 >
                   {/* User Avatar */}
                   <div className="flex-shrink-0 mr-3">

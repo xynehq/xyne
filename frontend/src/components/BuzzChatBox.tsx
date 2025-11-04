@@ -7,6 +7,7 @@ import {
   ListOrdered,
   ArrowUp,
   Smile,
+  AtSign,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import EmojiPicker, { Theme, EmojiClickData } from "emoji-picker-react"
@@ -21,6 +22,7 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary"
 import { ListPlugin } from "@lexical/react/LexicalListPlugin"
 import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin"
+import { AutoLinkPlugin } from "@lexical/react/LexicalAutoLinkPlugin"
 import { TabIndentationPlugin } from "@lexical/react/LexicalTabIndentationPlugin"
 import { HeadingNode, QuoteNode } from "@lexical/rich-text"
 import { ListItemNode, ListNode } from "@lexical/list"
@@ -45,12 +47,97 @@ import {
   $isListItemNode,
   $createListItemNode,
 } from "@lexical/list"
+import { MentionNode } from "./lexical/MentionNode"
+import { MentionPlugin } from "./lexical/MentionPlugin"
+
+// URL matchers for AutoLinkPlugin
+const URL_MATCHER =
+  /((https?:\/\/(www\.)?)|(www\.))[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*)/
+
+const EMAIL_MATCHER =
+  /(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))/
+
+const MATCHERS = [
+  (text: string) => {
+    const match = URL_MATCHER.exec(text)
+    if (match === null) {
+      return null
+    }
+    const fullMatch = match[0]
+    return {
+      index: match.index,
+      length: fullMatch.length,
+      text: fullMatch,
+      url: fullMatch.startsWith("http") ? fullMatch : `https://${fullMatch}`,
+    }
+  },
+  (text: string) => {
+    const match = EMAIL_MATCHER.exec(text)
+    if (match === null) {
+      return null
+    }
+    const fullMatch = match[0]
+    return {
+      index: match.index,
+      length: fullMatch.length,
+      text: fullMatch,
+      url: `mailto:${fullMatch}`,
+    }
+  },
+]
+
+// Plugin to set initial content
+function InitialContentPlugin({
+  initialContent,
+}: { initialContent?: LexicalEditorState }) {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => {
+    if (initialContent) {
+      editor.update(() => {
+        const editorState = editor.parseEditorState(
+          JSON.stringify(initialContent),
+        )
+        editor.setEditorState(editorState)
+      })
+    }
+  }, [editor, initialContent])
+
+  return null
+}
 
 interface BuzzChatBoxProps {
   onSend: (editorState: LexicalEditorState) => void
   onTyping?: (isTyping: boolean) => void
   placeholder?: string
   disabled?: boolean
+  initialContent?: LexicalEditorState
+}
+
+// Mention Button Component (for bottom toolbar)
+function MentionButton({ disabled }: { disabled: boolean }) {
+  const [editor] = useLexicalComposerContext()
+
+  const insertMention = () => {
+    editor.update(() => {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection)) {
+        selection.insertText("@")
+      }
+    })
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={insertMention}
+      className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-gray-500 dark:text-gray-400"
+      title="Mention user (@)"
+      disabled={disabled}
+    >
+      <AtSign size={16} />
+    </button>
+  )
 }
 
 // Inline Toolbar Component (inside the editor area)
@@ -328,6 +415,7 @@ export default function BuzzChatBox({
   onTyping,
   placeholder = "Message...",
   disabled = false,
+  initialContent,
 }: BuzzChatBoxProps) {
   const [clearTrigger, setClearTrigger] = useState(0)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
@@ -346,8 +434,9 @@ export default function BuzzChatBox({
     editorStateRef.current.read(() => {
       const root = $getRoot()
       const textContent = root.getTextContent().trim()
+      const hasContent = textContent.length > 0 || root.getChildrenSize() > 0
 
-      if (textContent) {
+      if (hasContent) {
         shouldSend = true
         jsonToSend = editorStateRef.current?.toJSON() as LexicalEditorState
       }
@@ -487,6 +576,7 @@ export default function BuzzChatBox({
       LinkNode,
       AutoLinkNode,
       CodeNode,
+      MentionNode,
     ],
   }
 
@@ -521,38 +611,46 @@ export default function BuzzChatBox({
             <HistoryPlugin />
             <ListPlugin />
             <LinkPlugin />
+            <AutoLinkPlugin matchers={MATCHERS} />
             <TabIndentationPlugin />
             <EnterKeyPlugin onSend={handleSend} disabled={disabled} />
             <ClearEditorPlugin clearTrigger={clearTrigger} />
             <CodeExitPlugin />
+            <MentionPlugin />
+            <InitialContentPlugin initialContent={initialContent} />
           </div>
 
           {/* Bottom Actions */}
           <div className="flex items-center justify-between px-3 py-1.5 relative">
-            {/* Left side - emoji only */}
-            <div className="relative">
-              <button
-                ref={emojiButtonRef}
-                type="button"
-                onClick={toggleEmojiPicker}
-                className={cn(
-                  "p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-gray-500 dark:text-gray-400",
-                  showEmojiPicker && "bg-gray-100 dark:bg-gray-700",
-                )}
-                title="Add emoji"
-                disabled={disabled}
-              >
-                <Smile size={18} />
-              </button>
-
-              {showEmojiPicker && (
-                <div
-                  ref={emojiPickerRef}
-                  className="absolute bottom-full left-0 mb-2 z-[100]"
+            {/* Left side - emoji and mention buttons */}
+            <div className="flex items-center gap-1">
+              <div className="relative">
+                <button
+                  ref={emojiButtonRef}
+                  type="button"
+                  onClick={toggleEmojiPicker}
+                  className={cn(
+                    "p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors text-gray-500 dark:text-gray-400",
+                    showEmojiPicker && "bg-gray-100 dark:bg-gray-700",
+                  )}
+                  title="Add emoji"
+                  disabled={disabled}
                 >
-                  <EmojiPickerPlugin onEmojiClick={handleEmojiClick} />
-                </div>
-              )}
+                  <Smile size={16} />
+                </button>
+
+                {showEmojiPicker && (
+                  <div
+                    ref={emojiPickerRef}
+                    className="absolute bottom-full left-0 mb-2 z-[100]"
+                  >
+                    <EmojiPickerPlugin onEmojiClick={handleEmojiClick} />
+                  </div>
+                )}
+              </div>
+
+              {/* Mention button */}
+              <MentionButton disabled={disabled} />
             </div>
 
             {/* Send button */}

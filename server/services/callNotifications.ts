@@ -19,7 +19,6 @@ interface CallNotification {
     photoLink?: string | null
   }
   callType: "video" | "audio"
-  targetToken: string
   timestamp: number
 }
 
@@ -38,13 +37,35 @@ interface DirectMessageNotification {
   timestamp: number
 }
 
+interface ChannelMessageNotification {
+  type: "channel_message"
+  messageId: number
+  channelId: number
+  channelName: string
+  messageContent: any // Lexical JSON structure
+  plainTextContent: string // Extracted plain text for previews
+  createdAt: Date
+  sender: {
+    id: string
+    name: string
+    email: string
+    photoLink?: string | null
+  }
+  timestamp: number
+}
+
+interface ChannelTypingIndicator {
+  channelId: number
+  userId: string
+  isTyping: boolean
+}
+
 class RealtimeMessagingService extends EventEmitter {
   private activeConnections = new Map<string, WSContext<ServerWebSocket>>()
 
   // Register user's WebSocket connection
   registerUser(userId: string, ws: WSContext<ServerWebSocket>) {
     this.activeConnections.set(userId, ws)
-    console.log(`User ${userId} connected for real-time messaging`)
 
     // Note: Connection cleanup is handled by the WebSocket upgrade handler
   }
@@ -53,9 +74,6 @@ class RealtimeMessagingService extends EventEmitter {
   removeUser(userId: string) {
     const wasConnected = this.activeConnections.has(userId)
     this.activeConnections.delete(userId)
-    if (wasConnected) {
-      console.log(`User ${userId} disconnected from real-time messaging`)
-    }
   }
 
   // Check if user is online
@@ -77,9 +95,6 @@ class RealtimeMessagingService extends EventEmitter {
       return true
     }
 
-    console.log(
-      `Target user ${notification.target.id} is not connected for real-time notifications`,
-    )
     return false
   }
 
@@ -115,9 +130,6 @@ class RealtimeMessagingService extends EventEmitter {
       return true
     }
 
-    console.log(
-      `Target user ${targetUserId} is not connected for real-time messages`,
-    )
     return false
   }
 
@@ -162,6 +174,298 @@ class RealtimeMessagingService extends EventEmitter {
     }
 
     return false
+  }
+
+  // Send channel message to all members
+  sendChannelMessage(
+    memberUserIds: string[],
+    notification: ChannelMessageNotification,
+  ) {
+    let sentCount = 0
+
+    for (const userId of memberUserIds) {
+      const userWs = this.activeConnections.get(userId)
+      if (userWs) {
+        try {
+          userWs.send(
+            JSON.stringify({
+              type: "channel_message",
+              data: notification,
+            }),
+          )
+          sentCount++
+        } catch (error) {
+          console.error(
+            `Failed to send channel message to user ${userId}:`,
+            error,
+          )
+        }
+      }
+    }
+
+    return sentCount
+  }
+
+  // Send channel typing indicator to all members
+  sendChannelTypingIndicator(
+    memberUserIds: string[],
+    channelId: number,
+    typingUserId: string,
+    isTyping: boolean,
+  ) {
+    let sentCount = 0
+
+    for (const userId of memberUserIds) {
+      // Don't send typing indicator back to the person typing
+      if (userId === typingUserId) continue
+
+      const userWs = this.activeConnections.get(userId)
+      if (userWs) {
+        try {
+          userWs.send(
+            JSON.stringify({
+              type: "channel_typing_indicator",
+              data: {
+                channelId,
+                userId: typingUserId,
+                isTyping,
+              },
+            }),
+          )
+          sentCount++
+        } catch (error) {
+          console.error(
+            `Failed to send channel typing indicator to user ${userId}:`,
+            error,
+          )
+        }
+      }
+    }
+
+    return sentCount
+  }
+
+  // Send channel update notification (e.g., channel renamed, archived)
+  sendChannelUpdate(
+    memberUserIds: string[],
+    channelId: number,
+    updateType: string,
+    updateData: any,
+  ) {
+    let sentCount = 0
+
+    for (const userId of memberUserIds) {
+      const userWs = this.activeConnections.get(userId)
+      if (userWs) {
+        try {
+          userWs.send(
+            JSON.stringify({
+              type: "channel_update",
+              data: {
+                channelId,
+                updateType,
+                updateData,
+              },
+            }),
+          )
+          sentCount++
+        } catch (error) {
+          console.error(
+            `Failed to send channel update to user ${userId}:`,
+            error,
+          )
+        }
+      }
+    }
+
+    return sentCount
+  }
+
+  // Notify specific user about channel membership change
+  sendChannelMembershipUpdate(
+    userId: string,
+    channelId: number,
+    updateType: "added" | "removed" | "role_changed",
+    channelData?: any,
+  ) {
+    const userWs = this.activeConnections.get(userId)
+
+    if (userWs) {
+      try {
+        userWs.send(
+          JSON.stringify({
+            type: "channel_membership_update",
+            data: {
+              channelId,
+              updateType,
+              channelData,
+            },
+          }),
+        )
+        return true
+      } catch (error) {
+        console.error(
+          `Failed to send channel membership update to user ${userId}:`,
+          error,
+        )
+      }
+    }
+
+    return false
+  }
+
+  // Send thread reply notification to a specific user
+  sendThreadReply(userId: string, notification: any) {
+    const userWs = this.activeConnections.get(userId)
+
+    if (userWs) {
+      try {
+        userWs.send(
+          JSON.stringify({
+            type: "thread_reply",
+            data: notification,
+          }),
+        )
+        return true
+      } catch (error) {
+        console.error(`Failed to send thread reply to user ${userId}:`, error)
+      }
+    }
+
+    return false
+  }
+
+  // Send direct message edit notification
+  sendDirectMessageEdit(
+    targetUserId: string,
+    messageId: number,
+    messageContent: any,
+    updatedAt: Date,
+  ) {
+    const userWs = this.activeConnections.get(targetUserId)
+
+    if (userWs) {
+      try {
+        userWs.send(
+          JSON.stringify({
+            type: "direct_message_edit",
+            data: {
+              messageId,
+              messageContent,
+              isEdited: true,
+              updatedAt,
+            },
+          }),
+        )
+        return true
+      } catch (error) {
+        console.error(
+          `Failed to send message edit notification to user ${targetUserId}:`,
+          error,
+        )
+      }
+    }
+
+    return false
+  }
+
+  // Send direct message delete notification
+  sendDirectMessageDelete(targetUserId: string, messageId: number) {
+    const userWs = this.activeConnections.get(targetUserId)
+
+    if (userWs) {
+      try {
+        userWs.send(
+          JSON.stringify({
+            type: "direct_message_delete",
+            data: {
+              messageId,
+            },
+          }),
+        )
+        return true
+      } catch (error) {
+        console.error(
+          `Failed to send message delete notification to user ${targetUserId}:`,
+          error,
+        )
+      }
+    }
+
+    return false
+  }
+
+  // Send channel message edit notification to all members
+  sendChannelMessageEdit(
+    memberUserIds: string[],
+    channelId: number,
+    messageId: number,
+    messageContent: any,
+    updatedAt: Date,
+  ) {
+    let sentCount = 0
+
+    for (const userId of memberUserIds) {
+      const userWs = this.activeConnections.get(userId)
+      if (userWs) {
+        try {
+          userWs.send(
+            JSON.stringify({
+              type: "channel_message_edit",
+              data: {
+                channelId,
+                messageId,
+                messageContent,
+                isEdited: true,
+                updatedAt,
+              },
+            }),
+          )
+          sentCount++
+        } catch (error) {
+          console.error(
+            `Failed to send channel message edit to user ${userId}:`,
+            error,
+          )
+        }
+      }
+    }
+
+    return sentCount
+  }
+
+  // Send channel message delete notification to all members
+  sendChannelMessageDelete(
+    memberUserIds: string[],
+    channelId: number,
+    messageId: number,
+  ) {
+    let sentCount = 0
+
+    for (const userId of memberUserIds) {
+      const userWs = this.activeConnections.get(userId)
+      if (userWs) {
+        try {
+          userWs.send(
+            JSON.stringify({
+              type: "channel_message_delete",
+              data: {
+                channelId,
+                messageId,
+              },
+            }),
+          )
+          sentCount++
+        } catch (error) {
+          console.error(
+            `Failed to send channel message delete to user ${userId}:`,
+            error,
+          )
+        }
+      }
+    }
+
+    return sentCount
   }
 }
 

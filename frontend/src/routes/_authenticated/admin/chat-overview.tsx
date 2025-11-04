@@ -64,7 +64,7 @@ function ChatOverviewPage({
 }: ChatOverviewPageProps) {
   const navigate = useNavigate()
   const search = Route.useSearch()
-  const { selectedUser, clearSelectedUser } = useAdminUserSelectionStore()
+  const { selectedUser, clearSelectedUser, dateRange, setDateRange } = useAdminUserSelectionStore()
   const [adminChats, setAdminChats] = useState<AdminChat[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -92,7 +92,7 @@ function ChatOverviewPage({
   // Reset to page 1 when filter changes
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, filterType, userFilter, sortBy])
+  }, [searchQuery, filterType, userFilter, sortBy, dateRange.from, dateRange.to])
 
   // Function to execute search
   const handleSearch = () => {
@@ -112,6 +112,7 @@ function ChatOverviewPage({
     setFilterType("all")
     setUserFilter("all")
     setSortBy("created")
+    setDateRange(undefined, undefined)
   }
 
   useEffect(() => {
@@ -145,6 +146,13 @@ function ChatOverviewPage({
         }
         if (sortBy !== "created") {
           query.sortBy = sortBy
+        }
+        // Add date range filters
+        if (dateRange.from) {
+          query.from = dateRange.from.toISOString()
+        }
+        if (dateRange.to) {
+          query.to = dateRange.to.toISOString()
         }
 
         const [adminChatsResponse, adminAgentsResponse] = await Promise.all([
@@ -241,6 +249,8 @@ function ChatOverviewPage({
     userFilter,
     sortBy,
     selectedUser?.userId,
+    dateRange.from,
+    dateRange.to,
   ])
 
   const handleBackToDashboard = () => {
@@ -322,6 +332,9 @@ function ChatOverviewPage({
             onUserFilterChange={setUserFilter}
             sortBy={sortBy}
             onSortByChange={setSortBy}
+            dateFrom={dateRange.from}
+            dateTo={dateRange.to}
+            onDateChange={(from, to) => setDateRange(from, to)}
             showUserFilter={!selectedUser?.userEmail}
             onChatView={(chat: AdminChat) => {
               console.log("Viewing chat:", chat.externalId)

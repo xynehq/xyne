@@ -19,6 +19,8 @@ export * from "@/db/schema/workflows"
 export * from "@/db/schema/calls"
 export * from "@/db/schema/userWorkflowPermissions"
 export * from "@/db/schema/directMessages"
+export * from "@/db/schema/channels"
+export * from "@/db/schema/threads"
 export * from "@/db/schema/ingestions"
 
 // Export combined types

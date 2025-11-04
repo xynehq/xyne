@@ -1835,9 +1835,7 @@ export const GetAdminChats = async (c: Context) => {
         break
       case "cost":
         orderByClause = desc(
-          sum(
-            sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END`,
-          ),
+          sql`COALESCE(SUM(CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.cost} ELSE 0 END), 0)`,
         )
         break
       case "tokens":
