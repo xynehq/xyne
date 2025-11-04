@@ -94,7 +94,7 @@ export const handleGmailIngestion = async (
           let msgResp
           try {
             let mailExists = false
-            if (message.id && skipMailExistCheck)
+            if (message.id && !skipMailExistCheck)
               mailExists = await IfMailDocExist(email, message.id)
             if (mailExists) {
               Logger.info(`skipping mail with mailid: ${message.id}`)
