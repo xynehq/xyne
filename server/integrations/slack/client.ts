@@ -74,10 +74,11 @@ const handleError = async (
     user?: string
     action?: string
     payload?: any
+    isDM?: boolean
   },
 ) => {
   const errorId = createId()
-  const { client, channel, user, threadTs, action, payload } = context
+  const { client, channel, user, threadTs, action, payload, isDM = false } = context
 
   Logger.error(
     {
@@ -95,17 +96,31 @@ const handleError = async (
 
   if (client && channel && user) {
     try {
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        thread_ts: threadTs,
-        text: "An unexpected error occurred.",
-        blocks: createErrorBlocks(
-          "An internal error occurred. Please try again later.",
-          errorId,
-          `Error during: ${action}`,
-        ),
-      })
+      if (isDM) {
+        // For DMs: use postMessage and don't thread
+        await client.chat.postMessage({
+          channel,
+          text: "An unexpected error occurred.",
+          blocks: createErrorBlocks(
+            "An internal error occurred. Please try again later.",
+            errorId,
+            `Error during: ${action}`,
+          ),
+        })
+      } else {
+        // For channels: use postEphemeral and thread as before
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          thread_ts: threadTs,
+          text: "An unexpected error occurred.",
+          blocks: createErrorBlocks(
+            "An internal error occurred. Please try again later.",
+            errorId,
+            `Error during: ${action}`,
+          ),
+        })
+      }
     } catch (postError: any) {
       Logger.error(
         {
@@ -408,6 +423,7 @@ const handleAgentsCommand = async (
   user: string,
   dbUser: DbUser,
   threadTs: string,
+  isDM: boolean = false,
 ) => {
   Logger.info(`Listing agents for user ${dbUser.email}`)
 
@@ -417,12 +433,20 @@ const handleAgentsCommand = async (
       Logger.error(
         `Invalid or missing workspaceId for user ${dbUser.email}: ${dbUser.workspaceId}`,
       )
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: "There's an issue with your workspace configuration. Please contact your administrator.",
-        thread_ts: threadTs
-      })
+      
+      if (isDM) {
+        await client.chat.postMessage({
+          channel,
+          text: "There's an issue with your workspace configuration. Please contact your administrator."
+        })
+      } else {
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: "There's an issue with your workspace configuration. Please contact your administrator.",
+          thread_ts: threadTs
+        })
+      }
       return
     }
 
@@ -435,12 +459,19 @@ const handleAgentsCommand = async (
     )
 
     if (agents.length === 0) {
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: "You don't have access to any agents yet. Please contact your administrator.",
-        thread_ts: threadTs
-      })
+      if (isDM) {
+        await client.chat.postMessage({
+          channel,
+          text: "You don't have access to any agents yet. Please contact your administrator."
+        })
+      } else {
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: "You don't have access to any agents yet. Please contact your administrator.",
+          thread_ts: threadTs
+        })
+      }
       return
     }
 
@@ -482,13 +513,22 @@ const handleAgentsCommand = async (
       },
     )
 
-    await client.chat.postEphemeral({
-      channel,
-      user,
-      text: `Available agents (${agents.length})`,
-      blocks: agentBlocks,
-      thread_ts: threadTs
-    })
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: `Available agents (${agents.length})`,
+        blocks: agentBlocks,
+      })
+    }
+    else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: `Available agents (${agents.length})`,
+        blocks: agentBlocks,
+        thread_ts: threadTs
+      })
+    }
   } catch (error: any) {
     await handleError(error, {
       client,
@@ -508,6 +548,7 @@ const handleAgentSearchCommand = async (
   agentCommand: string,
   dbUser: DbUser,
   threadTs: string,
+  isDM: boolean,
 ) => {
   // Add debug logging to see what we're processing
   Logger.info(
@@ -525,12 +566,20 @@ const handleAgentSearchCommand = async (
   )
 
   if (!match) {
-    await client.chat.postEphemeral({
-      channel,
-      user,
-      text: "Invalid format. Use: `/<agent_name> your query here`\nExample: `/public-test-agent how to reset password`",
-      thread_ts: threadTs,
-    })
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: "Invalid format. Use: `/<agent_name> your query here`\nExample: `/public-test-agent how to reset password`",
+      })
+    }
+    else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: "Invalid format. Use: `/<agent_name> your query here`\nExample: `/public-test-agent how to reset password`",
+        thread_ts: threadTs,
+      })
+    }
     return
   }
 
@@ -547,12 +596,20 @@ const handleAgentSearchCommand = async (
       Logger.error(
         `Invalid or missing workspaceId for user ${dbUser.email}: ${dbUser.workspaceId}`,
       )
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: "There's an issue with your workspace configuration. Please contact your administrator.",
-        thread_ts: threadTs
-      })
+      if (isDM) {
+        await client.chat.postMessage({
+          channel,
+          text: "There's an issue with your workspace configuration. Please contact your administrator.",
+        })
+      }
+      else {
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: "There's an issue with your workspace configuration. Please contact your administrator.",
+          thread_ts: threadTs
+        })
+      }
       return
     }
 
@@ -589,12 +646,20 @@ const handleAgentSearchCommand = async (
         const matchingAgentNames = partialMatches
           .map((a: any) => `/${a.name.replace(/\s+/g, "-")}`)
           .join("\n• ")
-        await client.chat.postEphemeral({
-          channel,
-          user,
-          text: `Multiple agents match "/${agentName}". Please be more specific. Did you mean one of these?\n\n• ${matchingAgentNames}`,
-          thread_ts: threadTs
-        })
+        if (isDM) {
+          await client.chat.postMessage({
+            channel,
+            text: `Multiple agents match "/${agentName}". Please be more specific. Did you mean one of these?\n\n• ${matchingAgentNames}`,
+          })
+        }
+        else {
+          await client.chat.postEphemeral({
+            channel,
+            user,
+            text: `Multiple agents match "/${agentName}". Please be more specific. Did you mean one of these?\n\n• ${matchingAgentNames}`,
+            thread_ts: threadTs
+          })
+        }
         return
       }
     }
@@ -603,24 +668,39 @@ const handleAgentSearchCommand = async (
       const availableAgents = agents
         .map((a: any) => `/${a.name.replace(/\s+/g, "-")}`)
         .join(", ")
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: `Agent "/${agentName}" not found or not accessible to you.\n\nAvailable agents: ${availableAgents}\n\nUse \`/agents\` to see the full list with descriptions.`,
-        thread_ts: threadTs
-      })
+      
+      if (isDM) {
+        await client.chat.postMessage({
+          channel,
+          text: `Agent "/${agentName}" not found or not accessible to you.\n\nAvailable agents: ${availableAgents}\n\nUse \`/agents\` to see the full list with descriptions.`
+        })
+      } else {
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: `Agent "/${agentName}" not found or not accessible to you.\n\nAvailable agents: ${availableAgents}\n\nUse \`/agents\` to see the full list with descriptions.`,
+          thread_ts: threadTs
+        })
+      }
       return
     }
 
     const agentDisplayName = selectedAgent.name.replace(/\s+/g, "-")
 
     if (!query || query.trim() === "") {
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: `Please provide a query for the agent "/${agentDisplayName}".\n\nExample: \`/${agentDisplayName} your query here\``,
-        thread_ts: threadTs
-      })
+      if (isDM) {
+        await client.chat.postMessage({
+          channel,
+          text: `Please provide a query for the agent "/${agentDisplayName}".\n\nExample: \`/${agentDisplayName} your query here\``
+        })
+      } else {
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: `Please provide a query for the agent "/${agentDisplayName}".\n\nExample: \`/${agentDisplayName} your query here\``,
+          thread_ts: threadTs
+        })
+      }
       return
     }
 
@@ -628,22 +708,37 @@ const handleAgentSearchCommand = async (
       `Starting agent chat with ${selectedAgent.name} for query: "${query}"`,
     )
 
-    await client.chat.postEphemeral({
-      channel,
-      user,
-      text: `Querying the agent "/${agentDisplayName}"...`,
-      thread_ts: threadTs
-    })
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: `Querying the agent "/${agentDisplayName}"...`
+      })
+    } else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: `Querying the agent "/${agentDisplayName}"...`,
+        thread_ts: threadTs
+      })
+    }
 
     try {
       if (!dbUser.workspaceExternalId) {
         Logger.error(`Missing workspaceExternalId for user ${dbUser.email}`)
-        await client.chat.postEphemeral({
-          channel,
-          user,
-          text: "Your workspace ID is not configured correctly. Please contact your administrator.",
-          thread_ts: threadTs
-        })
+        
+        if (isDM) {
+          await client.chat.postMessage({
+            channel,
+            text: "Your workspace ID is not configured correctly. Please contact your administrator."
+          })
+        } else {
+          await client.chat.postEphemeral({
+            channel,
+            user,
+            text: "Your workspace ID is not configured correctly. Please contact your administrator.",
+            thread_ts: threadTs
+          })
+        }
         return
       }
       const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -675,12 +770,20 @@ const handleAgentSearchCommand = async (
         errorMessage += `\n\n**What you can do:**\n• Use \`/agents\` to see all available agents\n• Contact your workspace administrator to request access\n• Try using a different agent from your available list`
         errorMessage += `\n\n**For administrators:** Check agent permissions in the workspace settings or verify the agent configuration.`
 
-        await client.chat.postEphemeral({
-          channel,
-          user,
-          text: errorMessage,
-          thread_ts: threadTs
-        })
+        if (isDM) {
+          await client.chat.postMessage({
+            channel,
+            text: errorMessage,
+          })
+        }
+        else {
+          await client.chat.postEphemeral({
+            channel,
+            user,
+            text: errorMessage,
+            thread_ts: threadTs
+          })
+        }
         return
       }
 
@@ -843,12 +946,20 @@ const handleAgentSearchCommand = async (
       }
 
       if (!finalResponse.trim()) {
-        await client.chat.postEphemeral({
-          channel,
-          user,
-          text: `Agent "/${agentDisplayName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
-          thread_ts: threadTs
-        })
+        if (isDM) {
+          await client.chat.postMessage({
+            channel,
+            text: `Agent "/${agentDisplayName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
+          })
+        }
+        else {
+          await client.chat.postEphemeral({
+            channel,
+            user,
+            text: `Agent "/${agentDisplayName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
+            thread_ts: threadTs
+          })
+        }
         return
       }
 
@@ -881,41 +992,52 @@ const handleAgentSearchCommand = async (
         chatId: chat.id,
       })
 
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: `Agent "/${agentDisplayName}" response is ready.`,
-        thread_ts: threadTs,
-        blocks: [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `Agent */${agentDisplayName}* has responded to your query: "_${query}_"\n${
-                citations.length > 0
-                  ? `Found ${citations.length} relevant sources`
-                  : "Direct response from agent"
-              }\nClick the button to view the full response.`,
-            },
+      const blocks = [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `Agent */${agentDisplayName}* has responded to your query: "_${query}_"\n${
+              citations.length > 0
+                ? `Found ${citations.length} relevant sources`
+                : "Direct response from agent"
+            }\nClick the button to view the full response.`,
           },
-          {
-            type: "actions",
-            elements: [
-              {
-                type: "button",
-                style: "primary",
-                text: {
-                  type: "plain_text",
-                  text: "View Agent Response",
-                  emoji: true,
-                },
-                action_id: ACTION_IDS.VIEW_AGENT_MODAL,
-                value: newMessage.externalId,
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              style: "primary",
+              text: {
+                type: "plain_text",
+                text: "View Agent Response",
+                emoji: true,
               },
-            ],
-          },
-        ],
-      })
+              action_id: ACTION_IDS.VIEW_AGENT_MODAL,
+              value: newMessage.externalId,
+            },
+          ],
+        },
+      ] 
+
+      if (isDM) {
+        await client.chat.postMessage({
+          channel,
+          text: `Agent "/${agentDisplayName}" response is ready.`,
+          blocks,
+        })
+      }
+      else {
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: `Agent "/${agentDisplayName}" response is ready.`,
+          thread_ts: threadTs,
+          blocks,
+        })
+      }
     } catch (agentError: any) {
       Logger.error(agentError, "Error in direct agent processing")
       if (client) {
@@ -1063,6 +1185,7 @@ const handleSearchQuery = async (
   query: string,
   dbUser: DbUser,
   threadTs: string,
+  isDM: boolean,
 ) => {
   Logger.info(`Executing search for query: "${query}" by user ${dbUser.email}`)
 
@@ -1071,12 +1194,20 @@ const handleSearchQuery = async (
     // Validate workspaceExternalId before using it
     if (!dbUser.workspaceExternalId) {
       Logger.error(`Missing workspaceExternalId for user ${dbUser.email}`)
-      await client.chat.postEphemeral({
-        channel,
-        user,
-        text: "Your workspace ID is not configured correctly. Please contact your administrator.",
-        thread_ts: threadTs,
-      })
+      if (isDM) {
+        await client.chat.postMessage({
+          channel,
+          text: "Your workspace ID is not configured correctly. Please contact your administrator.",
+        })
+      }
+      else {
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: "Your workspace ID is not configured correctly. Please contact your administrator.",
+          thread_ts: threadTs,
+        })
+      }
       return
     }
     // Use the new secure search function
@@ -1108,12 +1239,20 @@ const handleSearchQuery = async (
   }
 
   if (results.length === 0) {
-    await client.chat.postEphemeral({
-      channel,
-      user,
-      text: `I couldn't find any results for "${query}". Try different keywords.`,
-      thread_ts: threadTs
-    })
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: `I couldn't find any results for "${query}". Try different keywords.`,
+      })
+    }
+    else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: `I couldn't find any results for "${query}". Try different keywords.`,
+        thread_ts: threadTs
+      })
+    }
     return
   }
 
@@ -1144,33 +1283,43 @@ const handleSearchQuery = async (
     chatId: chat.id,
   })
 
-  await client.chat.postEphemeral({
-    channel,
-    user,
-    text: `Search results for "${query}" are ready.`,
-    thread_ts: threadTs,
-    blocks: [
+  const blocks = [
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `🔍 I found *${results.length} results* for your query: "_${query}_"\nClick the button to view them.`,
+    },
+  },
+  {
+    type: "actions",
+    elements: [
       {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `🔍 I found *${results.length} results* for your query: "_${query}_"\nClick the button to view them.`,
-        },
-      },
-      {
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            style: "primary",
-            text: { type: "plain_text", text: "View Results", emoji: true },
-            action_id: ACTION_IDS.VIEW_SEARCH_MODAL,
-            value: newMessage.externalId,
-          },
-        ],
+        type: "button",
+        style: "primary",
+        text: { type: "plain_text", text: "View Results", emoji: true },
+        action_id: ACTION_IDS.VIEW_SEARCH_MODAL,
+        value: newMessage.externalId,
       },
     ],
-  })
+  }]
+
+  if (isDM) {
+    await client.chat.postMessage({
+      channel,
+      text: `Search results for "${query}" are ready.`,
+      blocks,
+    })
+  }
+  else {
+    await client.chat.postEphemeral({
+      channel,
+      user,
+      text: `Search results for "${query}" are ready.`,
+      thread_ts: threadTs,
+      blocks,
+    })
+  }
 }
 
 const handleHelpCommand = async (
@@ -1178,23 +1327,13 @@ const handleHelpCommand = async (
   channel: string,
   user: string,
   threadTs: string,
+  isDM: boolean,
 ) => {
   const botUserId = (await client.auth.test()).user_id
-
-  // Check if this is a DM by trying to get channel info
-  let isDM = false
-  try {
-    const channelInfo = await client.conversations.info({ channel })
-    isDM = channelInfo.ok && !!channelInfo.channel?.is_im
-  } catch (error) {
-    // If we can't get channel info, assume it's not a DM
-    isDM = false
-  }
 
   const messageOptions: any = {
     channel,
     text: "Help - Available Commands",
-    thread_ts: threadTs,
     blocks: [
       {
         type: "section",
@@ -1246,6 +1385,7 @@ const handleHelpCommand = async (
   } else {
     // For channels, we need the user parameter
     messageOptions.user = user
+    messageOptions.thread_ts = threadTs
     await client.chat.postEphemeral(messageOptions)
   }
 }
@@ -1284,9 +1424,10 @@ const handleSlackCommand = async (
   processedText: string,
   dbUser: DbUser,
   thread_ts: string,
+  isDM: boolean, 
 ): Promise<void> => {
   if (processedText.toLowerCase().startsWith("/agents")) {
-    await handleAgentsCommand(client, channel, user, dbUser, thread_ts)
+    await handleAgentsCommand(client, channel, user, dbUser, thread_ts, isDM)
   } else if (processedText.toLowerCase().startsWith("/search ")) {
     const query = processedText.substring(8).trim()
     await handleSearchQuery(
@@ -1296,6 +1437,7 @@ const handleSlackCommand = async (
       query,
       dbUser,
       thread_ts,
+      isDM
     )
   } else if (processedText.startsWith("/")) {
     await handleAgentSearchCommand(
@@ -1305,6 +1447,7 @@ const handleSlackCommand = async (
       processedText,
       dbUser,
       thread_ts,
+      isDM
     )
   } else if (processedText.toLowerCase() === "help") {
     await handleHelpCommand(
@@ -1312,6 +1455,7 @@ const handleSlackCommand = async (
       channel,
       user,
       thread_ts,
+      isDM
     )
   } else {
     // Default behavior - show help
@@ -1320,6 +1464,7 @@ const handleSlackCommand = async (
       channel,
       user,
       thread_ts,
+      isDM
     )
   }
 }
@@ -1453,6 +1598,7 @@ export const processSlackEvent = async (event: any) => {
         processedText,
         dbUser[0],
         thread_ts ?? ts,
+        false
       )
     } catch (error: any) {
       Logger.error(error, "Error processing app_mention event")
@@ -1986,13 +2132,15 @@ const processSlackDM = async (event: any) => {
 
   const { user, text, channel, ts, thread_ts } = event
 
+  console.dir(event)
+
   try {
     // Validate the user and get their DB record (true flag indicates this is a DM)
     const validatedUser = await validateSlackUser(
       webClient,
       user,
       channel,
-      thread_ts ?? ts,
+      ts,
       true,
     )
     if (!validatedUser) {
@@ -2005,16 +2153,6 @@ const processSlackDM = async (event: any) => {
     // Process the text message to extract the actual command
     const processedText = processSlackText(text)
 
-    // Send thread starter message for new conversations
-    // Ensures every bot conversation has a clear visual thread header
-    if (!thread_ts || thread_ts === ts) { 
-      await webClient.chat.postMessage({
-        channel,
-        thread_ts: ts,
-        text: "🤖 Xyne Bot — Discussion Thread 🧵"
-      })
-    }
-
     // Handle the command with the shared command handler
     await handleSlackCommand(
       webClient,
@@ -2022,7 +2160,8 @@ const processSlackDM = async (event: any) => {
       user,
       processedText,
       dbUser[0],
-      thread_ts ?? ts,
+      ts,
+      true
     )
   } catch (error: any) {
     Logger.error(error, "Error processing DM event")
