@@ -78,6 +78,7 @@ export const searchVespa = async (
       "Error fetching Google sync jobs status",
     )
   }
+  const processedCollectionSelections = await extractCollectionVespaIds(options)
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
     recencyDecayRate:
@@ -86,6 +87,7 @@ export const searchVespa = async (
     isDriveConnected,
     isGmailConnected,
     isCalendarConnected,
+    processedCollectionSelections,
   })
 }
 

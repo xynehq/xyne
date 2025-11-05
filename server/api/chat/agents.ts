@@ -3968,7 +3968,7 @@ export const AgentMessageApi = async (c: Context) => {
                 [],
                 imageAttachmentFileIds,
                 agentPromptForLLM,
-                fileIds.length > 0,
+                false,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -4580,7 +4580,7 @@ export const AgentMessageApi = async (c: Context) => {
                       undefined,
                       imageAttachmentFileIds as string[],
                       agentPromptForLLM,
-                      undefined,
+                      fileIds.some((fileId) => fileId.startsWith("clf-")),
                       actualModelId || config.defaultBestModel,
                     )
                   } else {
