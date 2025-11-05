@@ -104,7 +104,7 @@ services:
         max-file: "6"
 
   loki:
-    image: grafana/loki:3.4.1
+    image: grafana/loki:3.5.8
     container_name: loki
     user: "10001:10001"
     ports:
