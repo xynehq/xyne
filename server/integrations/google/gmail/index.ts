@@ -261,11 +261,11 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
-  const Reference = getHeader("References") || ""
+  const reference = getHeader("References") || ""
   const inReplyTo = getHeader("In-Reply-To") || ""
   let firstReferenceId = ""
-  if (Reference) {
-    const match = Reference.match(/<([^>]+)>/)
+  if (reference) {
+    const match = reference.match(/<([^>]+)>/)
     if (match && match[1]) {
       firstReferenceId = match[1]
     }
@@ -273,7 +273,7 @@ export const parseMail = async (
   const mailId =
     getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
   let parentThreadId = mailId
-  if (Reference && firstReferenceId) {
+  if (reference && firstReferenceId) {
     parentThreadId = firstReferenceId
   } else if (inReplyTo) {
     parentThreadId = inReplyTo.replace(/^<|>$/g, "")

@@ -1731,8 +1731,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         entity: citation.entity,
         type: "citation",
         wholeSheet: wholeSheet,
-        threadId: (citation as any).threadId, // Add threadId if available
-        parentThreadId: (citation as any).parentThreadId,
+        threadId: (citation as Citation).threadId, // Add threadId if available
+        parentThreadId: (citation as Citation).parentThreadId,
       }
 
       const input = inputRef.current
