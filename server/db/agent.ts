@@ -500,3 +500,21 @@ export const cleanUpAgentDb = async (
     )
   }
 }
+
+
+export const getAllPublicAgents = async (
+  trx: TxnOrClient,
+  workspaceId: number,
+): Promise<SelectPublicAgent[]> => {
+  const publicAgents = await trx
+    .select()
+    .from(agents)
+    .where(
+      and(
+        eq(agents.workspaceId, workspaceId),
+        eq(agents.isPublic, true),
+        isNull(agents.deletedAt),
+      ),
+    )
+  return z.array(selectPublicAgentSchema).parse(publicAgents)
+}
