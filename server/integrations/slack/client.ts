@@ -34,7 +34,7 @@ import { UnderstandMessageAndAnswer } from "@/api/chat/chat"
 import { generateSearchQueryOrAnswerFromConversation } from "@/ai/provider"
 import { userContext } from "@/ai/context"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
-import { QueryType } from "@/ai/types"
+import { QueryType, type ConverseResponse } from "@/ai/types"
 import { Apps } from "@xyne/vespa-ts/types"
 import { getTracer } from "@/tracer"
 import { getDateForAI } from "@/utils/index"
@@ -785,7 +785,7 @@ const handleAgentSearchCommand = async (
 
         const tracer = getTracer("slack-agent")
         const span = tracer.startSpan("slack_agent_rag")
-        let iterator: AsyncIterableIterator<ConverseResponseWithCitations>;
+        let iterator: AsyncIterableIterator<ConverseResponseWithCitations | ConverseResponse>;
 
         if (checkAgentWithNoIntegrations(selectedAgent)) {
           iterator = agentWithNoIntegrationsQuestion(
@@ -828,7 +828,7 @@ const handleAgentSearchCommand = async (
           if (chunk.text && !chunk.reasoning) {
             response += chunk.text
           }
-          if (chunk.citation) {
+          if ("citation" in chunk && chunk.citation) {
             ragCitations.push(chunk.citation.item)
           }
         }
@@ -1419,7 +1419,12 @@ export const processSlackEvent = async (event: any) => {
       }
 
       // Validate the user and get their DB record
-      const validatedUser = await validateSlackUser(webClient, user, channel, thread_ts)
+      const validatedUser = await validateSlackUser(
+        webClient,
+        user,
+        channel,
+        thread_ts ?? ts
+      )
       if (!validatedUser) {
         Logger.warn(`User validation failed for user ${user}`)
         return
