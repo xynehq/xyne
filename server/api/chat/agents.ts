@@ -3730,7 +3730,7 @@ export const AgentMessageApi = async (c: Context) => {
     let ids
     let isValidPath: boolean = false
     if (path) {
-      ids = await getRecordBypath(path, db)
+      ids = await getRecordBypath(path, workspace.id, db)
       if (ids != null) {
         // Check if the vespaId exists in the agent's app integrations using our validation function
         if (!(await validateVespaIdInAgentIntegrations(agentForDb, ids))) {
@@ -5181,7 +5181,10 @@ export const AgentMessageApi = async (c: Context) => {
         await addErrMessageToMessage(lastMessage, errFromMap)
       }
     }
-    if (error instanceof APIError) {
+    if (error instanceof HTTPException) {
+      // Re-throw HTTPException to preserve the original status code (400, 403, etc.)
+      throw error
+    } else if (error instanceof APIError) {
       // quota error
       if (error.status === 429) {
         Logger.error(error, "You exceeded your current quota")

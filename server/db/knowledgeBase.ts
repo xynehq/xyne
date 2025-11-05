@@ -1012,7 +1012,7 @@ export const updateParentStatus = async (
   }
 }
 
-export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
+export const getRecordBypath = async (path: string, workspaceId: number, trx: TxnOrClient) => {
   let collectionName: string
   let directoryPath: string
   let currItem: string
@@ -1044,12 +1044,16 @@ export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
     currItem = segments[segments.length - 1]
   }
 
-  // First, get the collection by name to get its ID
+  // First, get the collection by name and workspace to get its ID
   const [collection] = await trx
     .select({ id: collections.id })
     .from(collections)
     .where(
-      and(eq(collections.name, collectionName), isNull(collections.deletedAt)),
+      and(
+        eq(collections.name, collectionName),
+        eq(collections.workspaceId, workspaceId),
+        isNull(collections.deletedAt)
+      ),
     )
 
   if (!collection) {
