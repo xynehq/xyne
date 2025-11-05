@@ -3905,14 +3905,14 @@ function processPublicAgentsCollectionSelections(
           }
         }
 
-        // Create or add to the first entry in the key-value pair object
+        // Create or add to the first agent specific collection selection in the key-value pair object
         if (
           collectionIds.length > 0 ||
           collectionFolderIds.length > 0 ||
           collectionFileIds.length > 0
         ) {
           if (agentSpecificCollectionSelections.length === 0) {
-            // Create the first entry if it doesn't exist
+            // Create the first agent specific collection selection if it doesn't exist
             agentSpecificCollectionSelections.push({
               collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
               collectionFolderIds:
@@ -3921,22 +3921,22 @@ function processPublicAgentsCollectionSelections(
                 collectionFileIds.length > 0 ? collectionFileIds : undefined,
             })
           } else {
-            // Add to the first entry with deduplication using Sets
-            const firstEntry = agentSpecificCollectionSelections[0]
+            // Add the other agent specific collection selections with deduplication using Sets
+            const collectionSelection = agentSpecificCollectionSelections[0]
             if (collectionIds.length > 0) {
-              const existingIds = new Set(firstEntry.collectionIds || [])
+              const existingIds = new Set(collectionSelection.collectionIds || [])
               collectionIds.forEach(id => existingIds.add(id))
-              firstEntry.collectionIds = Array.from(existingIds)
+              collectionSelection.collectionIds = Array.from(existingIds)
             }
             if (collectionFolderIds.length > 0) {
-              const existingFolderIds = new Set(firstEntry.collectionFolderIds || [])
+              const existingFolderIds = new Set(collectionSelection.collectionFolderIds || [])
               collectionFolderIds.forEach(id => existingFolderIds.add(id))
-              firstEntry.collectionFolderIds = Array.from(existingFolderIds)
+              collectionSelection.collectionFolderIds = Array.from(existingFolderIds)
             }
             if (collectionFileIds.length > 0) {
-              const existingFileIds = new Set(firstEntry.collectionFileIds || [])
+              const existingFileIds = new Set(collectionSelection.collectionFileIds || [])
               collectionFileIds.forEach(id => existingFileIds.add(id))
-              firstEntry.collectionFileIds = Array.from(existingFileIds)
+              collectionSelection.collectionFileIds = Array.from(existingFileIds)
             }
           }
         }
@@ -4429,6 +4429,7 @@ export const MessageApi = async (c: Context) => {
     }
 
     // get all the public agents for the workspace
+    // here we are using workspaceId instead of workspaceExternalId as agents table has workspaceId as foreign key
     const publicAgents: SelectPublicAgent[] = numericWorkspaceId
       ? await getAllPublicAgents(db, numericWorkspaceId)
       : []
