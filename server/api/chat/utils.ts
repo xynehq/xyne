@@ -1064,7 +1064,7 @@ export function extractNamesFromIntent(intent: any): MailParticipant {
 
   return result
 }
-
+// // this helper function checks if the given value conforms to the AppSelectionMap structure, that is, an object, is it is an array of AppSelection objects it will return false
 export function isAppSelectionMap(value: any): value is AppSelectionMap {
   if (!value || typeof value !== "object") {
     return false

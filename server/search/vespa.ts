@@ -97,8 +97,12 @@ export const searchVespaAgent = async (
   AgentApps: Apps[] | null,
   options: Partial<VespaQueryConfig> = {},
 ) => {
+
+  Logger.info(`[searchVespaAgent] options.collectionSelections: ${JSON.stringify(options.collectionSelections)}`)
+  Logger.info(`[searchVespaAgent] options.selectedItem: ${JSON.stringify(options.selectedItem)}`)
   const driveIds = await extractDriveIds(options, email)
   const processedCollectionSelections = await extractCollectionVespaIds(options)
+  Logger.info(`[searchVespaAgent] processedCollectionSelections: ${JSON.stringify(processedCollectionSelections)}`)
   return await vespa.searchVespaAgent.bind(vespa)(
     query,
     email,

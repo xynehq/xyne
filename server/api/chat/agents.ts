@@ -114,6 +114,8 @@ import {
   mimeTypeMap,
   processMessage,
   searchToCitation,
+  parseAppSelections,
+  isAppSelectionMap,
 } from "./utils"
 import { textToCitationIndex, textToImageCitationIndex } from "./utils"
 import config from "@/config"
@@ -3839,9 +3841,15 @@ export const AgentMessageApi = async (c: Context) => {
                 }
               } else if (typeof agentForDb.appIntegrations === "object") {
                 // New format: Record<string, {itemIds, selectedAll}>
-                agentAppEnums = Object.keys(agentForDb.appIntegrations) as Apps[]
+                // Parse using parseAppSelections to convert keys to proper Apps enum values
+                if (isAppSelectionMap(agentForDb.appIntegrations)) {
+                  const { selectedApps } = parseAppSelections(agentForDb.appIntegrations)
+                  agentAppEnums = [...new Set(selectedApps)]
+                } else {
+                  // Fallback for unexpected format
+                  agentAppEnums = Object.keys(agentForDb.appIntegrations) as Apps[]
+                }
               }
-
               // Only proceed if we have valid app integrations
               if (agentAppEnums.length > 0) {
                 // PATH 3: DUAL RAG (NEW!)
