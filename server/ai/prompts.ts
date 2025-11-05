@@ -13,12 +13,7 @@ import {
   SlackEntity,
 } from "@xyne/vespa-ts/types"
 import { ContextSysthesisState, XyneTools } from "@/shared/types"
-import {
-  internalTools,
-  slackTools,
-  formatToolsSection,
-  type ToolDefinition,
-} from "@/api/chat/mapper"
+import { formatToolsSection, type ToolDefinition } from "@/api/chat/mapper"
 import type { AgentPromptData } from "./provider"
 import config from "@/config"
 export const askQuestionSelfCleanupPrompt = (
@@ -53,7 +48,6 @@ Each chunk's metadata includes details such as:
 - **Entity**: Type or category of the document (e.g., File, User, Email).
 - **Title, Subject, To, From, Owner**: Key fields summarizing the content or origin of the chunk.
 - **Permissions**: Visibility or sharing settings.
-- **Relevance score**: Initial relevance rating provided by the system.
 
 Note: If the entity is **Mail**, the metadata will also include **Labels**. Use this field to help determine the relevance of the email.
 
@@ -79,7 +73,6 @@ Metadata includes details like:
 - **Entity**: Type of document (e.g., File, User, Email).
 - **Title, Subject, To, From, Owner**: Key fields describing the chunk.
 - **Permissions**: Sharing settings.
-- **Relevance score**: An initial relevance rating.
 - **Timestamp**: Indicates when the chunk was created or last updated.
 
 When reviewing, use these guidelines:
@@ -349,7 +342,6 @@ The context provided will be formatted with specific fields for each type:
 - Mime type
 - Permissions
 - Content chunks
-- Relevance score
 
 ## User Context Format
 - App and Entity type
@@ -359,7 +351,6 @@ The context provided will be formatted with specific fields for each type:
 - Job title
 - Department
 - Location
-- Relevance score
 
 ## Email Context Format
 - App and Entity type
@@ -368,7 +359,6 @@ The context provided will be formatted with specific fields for each type:
 - From/To/Cc/Bcc
 - Labels
 - Content chunks
-- Relevance score
 
 ## Event Context Format
 - App and Entity type
@@ -378,7 +368,6 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-- Relevance score
 
 # User Context
 ${userContext}
@@ -393,7 +382,6 @@ ${retrievedContext}
 
 # Guidelines for Response
 1. Data Interpretation:
-   - Consider the relevance scores when weighing information
    - Pay attention to timestamps for temporal context only if the query explicitly requests it
    - Respect permission levels indicated in file contexts
    - Note relationships between different content types
@@ -425,13 +413,12 @@ ${retrievedContext}
 4. Quality Assurance:
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
-   - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information, without referencing meetings or events unless explicitly requested
 
 # Response Format
 Analyze: [For RetrieveMetadata email queries, this section MUST be empty. For other queries, provide a brief analysis of the available context, excluding any meeting or event-related information unless explicitly requested. If the query lacks context (e.g., data for another employee like Vipul is not available), this section should note the lack of data and set the answer to null.]
 Answer: [For RetrieveMetadata email queries, list emails in the specified format only, with no additional text. For other queries, provide a direct response following the guidelines above, excluding meeting-related content unless requested. If the query lacks context, set to null.]
-Sources: [List relevant sources with relevance scores, or empty if no data is available]
+Sources: [List relevant sources, or empty if no data is available]
 Confidence: [High/Medium/Low based on context quality, or Low if no data is available]
 Suggestions: [Related queries or clarifications if needed, avoiding any meeting or event-related suggestions unless requested]
 
@@ -534,7 +521,6 @@ The context provided will be formatted with specific fields for each type:
 - Mime type
 - Permissions (this field just shows who has access to what, nothing more)
 - Content chunks
-- Relevance score
 ## User Context Format
 - App and Entity type
 - Addition date
@@ -543,7 +529,6 @@ The context provided will be formatted with specific fields for each type:
 - Job title
 - Department
 - Location
-- Relevance score
 ## Email Context Format
 - App and Entity type
 - Timestamp
@@ -551,7 +536,6 @@ The context provided will be formatted with specific fields for each type:
 - From/To/Cc/Bcc
 - Labels
 - Content chunks
-- Relevance score
 ## Event Context Format
 - App and Entity type
 - Event name and description
@@ -560,13 +544,11 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-- Relevance score
 ## Slack Message Context Format
 - App and Entity type
 - Username
 - Message
 - teamName (User is part of Workspace)
-- Relevance score
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -578,7 +560,6 @@ This includes:
 ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
-   - Consider the relevance scores when weighing information
    - Pay attention to timestamps for temporal context
    - Note relationships between different content types
 2. Response Structure:
@@ -609,7 +590,6 @@ ${retrievedContext}
 4. Quality Assurance:
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
-   - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information.
 # Response Format
 You must respond in valid JSON format with the following structure:
@@ -648,7 +628,7 @@ You have access to the following types of data:
 4. Calendar events
 5. Slack/Chat Messages
 The context provided will be formatted with specific fields for each type:
-- App and Entity type and the relevance score
+- App and Entity type
 ## File Context Format
 - Title
 - Creation and update timestamps
@@ -700,7 +680,6 @@ This includes:
 ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
-   - Consider the relevance scores when weighing information
    - Pay attention to timestamps for temporal context
    - Note relationships between different content types
 2. Response Structure:
@@ -722,7 +701,6 @@ ${retrievedContext}
 4. Quality Assurance:
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
-   - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information
 
 # Response Format
@@ -765,7 +743,6 @@ The context provided will be formatted with specific fields for each type:
 - Mime type
 - Permissions, this field just shows who has access to what, nothing more
 - Content chunks
-- Relevance score
 ## User Context Format
 - App and Entity type
 - Addition date
@@ -774,7 +751,6 @@ The context provided will be formatted with specific fields for each type:
 - Job title
 - Department
 - Location
-- Relevance score
 ## Email Context Format
 - App and Entity type
 - Timestamp
@@ -782,7 +758,6 @@ The context provided will be formatted with specific fields for each type:
 - From/To/Cc/Bcc
 - Labels
 - Content chunks
-- Relevance score
 ## Event Context Format
 - App and Entity type
 - Event name and description
@@ -791,7 +766,6 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
-- Relevance score
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -803,7 +777,6 @@ This includes:
 ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
-   - Consider the relevance scores when weighing information
    - Pay attention to timestamps for temporal context
    - Note relationships between different content types
 2. Response Structure:
@@ -825,7 +798,6 @@ ${retrievedContext}
 4. Quality Assurance:
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
-   - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information
 # Response Format
 You must respond in valid JSON format with the following structure:
@@ -910,8 +882,8 @@ export const SearchQueryToolContextPrompt = (
     : `${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar}`
 
   const toolsToUse = {
-    internal: customTools?.internal || internalTools,
-    slack: customTools?.slack || slackTools,
+    internal: customTools?.internal,
+    slack: customTools?.slack,
   }
 
   const updatedInternalTools = { ...toolsToUse.internal }
@@ -993,7 +965,6 @@ export const SearchQueryToolContextPrompt = (
     
     ${formatToolsSection(updatedInternalTools, "Internal Tool Context")}
     
-    ${formatToolsSection(toolsToUse.slack, "Slack Tool Context")}
     ---
     
     Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
@@ -2305,7 +2276,6 @@ The context provided will be formatted with specific fields for each type:
 - Mime type
 - Permissions, this field just shows who has access to what, nothing more
 - Content chunks
-- Relevance score
 
 
 # Context of the user talking to you
@@ -2325,7 +2295,6 @@ ${retrievedContext}
 
 # Guidelines for Response
 1. Data Interpretation:
-   - Consider the relevance scores when weighing information
    - Pay attention to timestamps for temporal context
    - Note relationships between different content types
 2. Response Structure:
@@ -2346,7 +2315,6 @@ ${retrievedContext}
 6. Quality Assurance:
    - Verify information across multiple sources when available
    - Note any inconsistencies in the data
-   - Indicate confidence levels based on relevance scores
    - Acknowledge any gaps in the available information
 7. Technical Response Guidelines:
    - When responding to queries involving API details or payload structures, always enclose the content within properly formatted code blocks for clarity and accuracy.
@@ -2434,3 +2402,51 @@ Without these connections, I can only provide general assistance and cannot acce
 
 Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 I'm still here to help with general questions, explanations, and tasks that don't require access to your personal workspace data. How can I assist you today?`
+
+export const extractBestDocumentsPrompt = (
+  query: string,
+  context: string[],
+) => {
+  return `
+You are an expert retrieval assistant designed to identify and select the most relevant and useful documents from a retrieved set of contexts.
+
+### Objective
+Given a **user query** and a list of **retrieved document contexts**, analyze each context carefully and choose the ones that best answer, support, or are meaningfully related to the query.  
+Your goal is to capture not only directly matching documents but also those that provide **contextually relevant**, **semantically aligned**, or **complementary** information that could help a human understand or answer the query more effectively.
+
+### Instructions
+1. **Understand intent beyond words** — infer what the user might *really* want, even if their phrasing is incomplete, indirect, or ambiguous.
+2. **Evaluate each context** — assess how strongly it relates to the *core meaning* of the query, not just exact keyword overlap.
+3. **Include relevant or supporting contexts** — select documents that:
+   - Directly answer the question, **or**
+   - Offer **related background**, **context**, **examples**, or **clarifying information**.
+4. **Prioritize quality** — prefer documents that are specific, factual, and contribute distinct value.
+5. **Output** — Return only the indexes of the most relevant and complementary contexts.
+
+### Input
+- Query: "${query}"
+- Retrieved Contexts:
+${context
+  .map(
+    (c, i) => ` 
+  ${"#".repeat(20)}\n
+   [${i + 1}] ${c}
+  ${"#".repeat(20)}\n
+   `,
+  )
+  .join("\n")}
+
+
+### Output Format
+
+Return **only** a JSON array of the most relevant and complementary document indexes, ordered by their importance to the query.
+
+Wrap the output in <indexes> tags as shown below:
+
+<indexes>
+[2, 5, 7]
+</indexes>
+
+Now, return the array of indexes for the best matching and semantically related documents.
+  `
+}

@@ -15,6 +15,7 @@ import {
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
   agentWithNoIntegrationsQuestion,
+  extractBestDocumentIndexes,
 } from "@/ai/provider"
 import { getConnectorById } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -129,7 +130,6 @@ import {
   generateAnswerFromDualRag,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
-import { agentTools } from "./tools"
 // JAF integration imports
 import {
   runStream,
@@ -142,11 +142,14 @@ import {
   type RunState as JAFRunState,
   type RunResult as JAFRunResult,
   type TraceEvent as JAFTraceEvent,
+  type TraceEvent,
+  ToolResponse,
+  type ToolResult,
+  type ToolCall,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
 import {
-  buildInternalJAFTools,
   buildMCPJAFTools,
   type FinalToolsList as JAFinalToolsList,
   type JAFAdapterCtx,
@@ -159,6 +162,9 @@ import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
 import { applyFollowUpContext } from "@/utils/parseAttachment"
 import { expandSheetIds } from "@/search/utils"
+import { googleTools, searchGlobalTool } from "@/api/chat/tools/index"
+import { fallbackTool } from "./tools/global"
+import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -975,6 +981,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
+    let thinking = ""
     if (!chatId) {
       const dbTransactionSpan = chatCreationSpan.startSpan(
         "db_transaction_new_chat",
@@ -1185,16 +1192,17 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         const humanReadableLog = convertReasoningStepToText(enhancedStep)
         structuredReasoningSteps.push(enhancedStep)
-
-        // Stream both summaries
-        await stream.writeSSE({
-          event: ChatSSEvents.Reasoning,
-          data: JSON.stringify({
+        const data = JSON.stringify({
             text: humanReadableLog,
             step: enhancedStep,
             quickSummary: enhancedStep.stepSummary,
             aiSummary: enhancedStep.aiGeneratedSummary,
-          }),
+          })
+        thinking += `${data}\n`
+        // Stream both summaries
+        await stream.writeSSE({
+          event: ChatSSEvents.Reasoning,
+          data: data,
         })
       }
 
@@ -1260,16 +1268,19 @@ export const MessageWithToolsApi = async (c: Context) => {
           // Add to structured reasoning steps so it gets saved to DB
           structuredReasoningSteps.push(iterationSummaryStep)
 
+          const data = JSON.stringify({
+            text: summary,
+            step: iterationSummaryStep,
+            quickSummary: summary,
+            aiSummary: summary,
+            isIterationSummary: true,
+          })
+          thinking += `${data}\n`
+
           // Stream the iteration summary
           await stream.writeSSE({
             event: ChatSSEvents.Reasoning,
-            data: JSON.stringify({
-              text: summary,
-              step: iterationSummaryStep,
-              quickSummary: summary,
-              aiSummary: summary,
-              isIterationSummary: true,
-            }),
+            data: data,
           })
         } catch (error) {
           Logger.error(`Error generating iteration summary: ${error}`)
@@ -1285,15 +1296,19 @@ export const MessageWithToolsApi = async (c: Context) => {
           // Add to structured reasoning steps so it gets saved to DB
           structuredReasoningSteps.push(fallbackSummaryStep)
 
-          await stream.writeSSE({
-            event: ChatSSEvents.Reasoning,
-            data: JSON.stringify({
+          const data = JSON.stringify({
               text: fallbackSummary,
               step: fallbackSummaryStep,
               quickSummary: fallbackSummary,
               aiSummary: fallbackSummary,
               isIterationSummary: true,
-            }),
+            })
+
+          thinking += `${data}\n`
+
+          await stream.writeSSE({
+            event: ChatSSEvents.Reasoning,
+            data: data,
           })
         }
       }
@@ -1533,6 +1548,8 @@ export const MessageWithToolsApi = async (c: Context) => {
         const citationMap: Record<number, number> = {}
         const citationValues: Record<number, Citation> = {}
         let gatheredFragments: MinimalAgentFragment[] = []
+        const gatheredFragmentskeys = new Set<string>() // to track uniqueness
+        const seenDocuments = new Set<string>()
         let planningContext = ""
         let parseSynthesisResult = null
 
@@ -1723,12 +1740,16 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentPrompt: agentPromptForLLM,
           userMessage: message,
         }
-        const internalJAFTools = buildInternalJAFTools()
+        const internalTools = [
+          ...googleTools,
+          searchGlobalTool,
+          getSlackRelatedMessagesTool,
+        ]
         const mcpJAFTools = buildMCPJAFTools(finalToolsList)
-        const allJAFTools = [...internalJAFTools, ...mcpJAFTools]
+        const allJAFTools = [...internalTools, ...mcpJAFTools]
         toolsCompositionSpan.setAttribute(
           "internal_tools_count",
-          internalJAFTools.length,
+          internalTools.length,
         )
         toolsCompositionSpan.setAttribute("mcp_tools_count", mcpJAFTools.length)
         toolsCompositionSpan.setAttribute(
@@ -1739,24 +1760,37 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         // Build dynamic instructions that include tools + current context fragments
         const agentInstructions = () => {
-          const toolOverview = buildToolsOverview(allJAFTools)
+          const toolOverview = buildToolsOverview(internalTools)
           const contextSection = buildContextSection(gatheredFragments)
           const agentSection = agentPromptForLLM
             ? `\n\nAgent Constraints:\n${agentPromptForLLM}`
             : ""
           const synthesisSection = parseSynthesisResult
+          const dateForAI = getDateForAI({ userTimeZone: userTimezone })
           return (
-            `You are Xyne, an enterprise search assistant.\n` +
+            `
+            The current date is: ${dateForAI} \n\n
+
+            You are Xyne, an enterprise search assistant.\n` +
             `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
             `- Do NOT answer from general knowledge. Always retrieve context via tools first.\n` +
             `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
-            `- If context is missing or insufficient, use search/metadata tools to fetch more, or ask a brief clarifying question, then search.\n` +
+            `- If context is missing or insufficient, use respective tools to fetch more, or ask a brief clarifying question, then search.\n` +
             `- Be concise, accurate, and avoid hallucinations.\n` +
             `- If there is a parseSynthesisOutput, use it to respond to the user without doing any further tool calls. Add missing citations and return the answer.\n` +
             `\nAvailable Tools:\n${toolOverview}` +
             contextSection +
             agentSection +
-            `\n<parseSynthesisOutput>${synthesisSection}</parseSynthesisOutput>`
+            `
+            #IMPORTANT Citation Format:
+            - Use square brackets with the context index number: [1], [2], etc.
+            - Place citations right after the relevant statement
+            - NEVER group multiple indices in one bracket like [1, 2] or [1, 2, 3] - this is an error
+            - Example: "The project deadline was moved to March [3] and the team agreed to the new timeline [5]"
+            - Only cite information that directly appears in the context
+            - WRONG: "The project deadline was changed and the team agreed to it [0, 2, 4]"
+            - RIGHT: "The project deadline was changed [1] and the team agreed to it [2]"
+            `
           )
         }
 
@@ -1766,10 +1800,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         const initialMessages: JAFMessage[] = messages
           .filter((m) => !m?.errorMessage)
           .map((m) => ({
-            role:
-              m.messageRole === MessageRole.User
-                ? ("user" as const)
-                : ("assistant" as const),
+            role: m.messageRole === MessageRole.User ? "user" : "assistant",
             content: m.message,
           }))
 
@@ -1777,7 +1808,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           name: "xyne-agent",
           instructions: () => agentInstructions(),
           tools: allJAFTools,
-          modelConfig: { name: defaultBestModel as unknown as string },
+          modelConfig: { name: defaultBestModel },
         }
 
         const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
@@ -1799,7 +1830,90 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentRegistry,
           modelProvider,
           maxTurns: 10,
-          modelOverride: defaultBestModel as unknown as string,
+          modelOverride: defaultBestModel,
+          onAfterToolExecution: async (
+            toolName: string,
+            result: any,
+            context: {
+              toolCall: ToolCall
+              args: any
+              state: JAFRunState<JAFAdapterCtx>
+              agentName: string
+              executionTime: number
+              status: string | ToolResult
+            },
+          ) => {
+            // Return only the best document indexes content as string
+            const contexts = result?.metadata?.contexts
+
+            if (Array.isArray(contexts) && contexts.length) {
+              const filteredContexts = contexts.filter(
+                (v) => !gatheredFragmentskeys.has(v.id),
+              )
+
+              const contextStrings = filteredContexts.map(
+                (v: MinimalAgentFragment) => {
+                  seenDocuments.add(v.id)
+                  return `
+                    title: ${v.source.title}\n
+                    content: ${v.content}\n
+                    `
+                },
+              )
+
+              try {
+                const bestDocIndexes = await extractBestDocumentIndexes(
+                  message,
+                  contextStrings,
+                  {
+                    modelId: config.defaultBestModel,
+                    json: false,
+                    stream: false,
+                  },
+                  messagesWithNoErrResponse,
+                )
+
+                if (bestDocIndexes.length) {
+                  const selectedDocs: MinimalAgentFragment[] = []
+
+                  bestDocIndexes.forEach((idx) => {
+                    if (idx >= 1 && idx <= filteredContexts.length) {
+                      const doc: MinimalAgentFragment =
+                        filteredContexts[idx - 1]
+                      const key = doc.id
+                      if (!gatheredFragmentskeys.has(key)) {
+                        gatheredFragments.push(doc)
+                        gatheredFragmentskeys.add(key)
+                      }
+                      selectedDocs.push(doc)
+                    }
+                  })
+
+                  return selectedDocs
+                    .map((doc: MinimalAgentFragment) => doc.content)
+                    .join("\n")
+                } else {
+                  Logger.info(
+                    "Couldn't retrieve good documents for user's query",
+                  )
+                  // If no best documents found, return empty string
+                  return null
+                }
+              } catch (error) {
+                // adding all context if extracting best document fails
+                filteredContexts.forEach((doc: MinimalAgentFragment) => {
+                  const key = doc.id
+                  if (!gatheredFragmentskeys.has(key)) {
+                    gatheredFragments.push(doc)
+                    gatheredFragmentskeys.add(key)
+                  }
+                })
+
+                return null
+              }
+            }
+            return null
+          },
         }
         jafSetupSpan.setAttribute("run_id", runId)
         jafSetupSpan.setAttribute("trace_id", traceId)
@@ -1822,6 +1936,20 @@ export const MessageWithToolsApi = async (c: Context) => {
         for await (const evt of runStream<JAFAdapterCtx, string>(
           runState,
           runCfg,
+          async (event: TraceEvent) => {
+            if (event.type !== "before_tool_execution") return
+
+            const { args = {} } = event.data ?? {}
+            const docIds =
+              gatheredFragments?.map((v) => v.id).filter(Boolean) ?? []
+            const seenDocIds = Array.from(seenDocuments)
+            // to exclude docs which already retrieved in prev iteration
+            const modifiedArgs = docIds.length
+              ? { ...args, excludedIds: [...docIds, ...seenDocIds] }
+              : args
+
+            return modifiedArgs
+          },
         )) {
           if (stream.closed) {
             wasStreamClosedPrematurely = true
@@ -1833,9 +1961,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               const turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
               turnSpan.setAttribute("turn_number", currentTurn)
               turnSpan.setAttribute("agent_name", evt.data.agentName)
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
+              const data = JSON.stringify({
                   text: `Iteration ${evt.data.turn} started (agent: ${evt.data.agentName})`,
                   step: {
                     type: AgentReasoningStepType.Iteration,
@@ -1843,7 +1969,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     status: "in_progress",
                     stepSummary: `Planning search iteration ${evt.data.turn}`,
                   },
-                }),
+                })
+              thinking += `${data}\n`
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: data, 
               })
               turnSpan.end()
               break
@@ -1867,9 +1997,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   Object.keys(r.args || {}).length,
                 )
 
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
+                let data = JSON.stringify({
                     text: `Tool selected: ${r.name}`,
                     step: {
                       type: AgentReasoningStepType.ToolSelected,
@@ -1877,11 +2005,13 @@ export const MessageWithToolsApi = async (c: Context) => {
                       status: "in_progress",
                       stepSummary: `Executing ${r.name} tool`,
                     },
-                  }),
-                })
+                  })
+                thinking += `${data}\n`
                 await stream.writeSSE({
                   event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
+                  data: data, 
+                })
+                data = JSON.stringify({
                     text: `Parameters: ${JSON.stringify(r.args)}`,
                     step: {
                       type: AgentReasoningStepType.ToolParameters,
@@ -1889,7 +2019,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                       status: "in_progress",
                       stepSummary: "Reviewing tool parameters",
                     },
-                  }),
+                  })
+                  thinking += `${data}\n` 
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: data,
                 })
                 toolSelectionSpan.end()
               }
@@ -1900,9 +2034,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               const toolStartSpan =
                 jafStreamingSpan.startSpan("tool_call_start")
               toolStartSpan.setAttribute("tool_name", evt.data.toolName)
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
+              const data = JSON.stringify({
                   text: `Executing ${evt.data.toolName}...`,
                   step: {
                     type: AgentReasoningStepType.ToolExecuting,
@@ -1910,7 +2042,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     status: "in_progress",
                     stepSummary: `Executing ${evt.data.toolName} tool`,
                   },
-                }),
+                })
+              thinking += `${data}\n`
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: data,
               })
               toolStartSpan.end()
               break
@@ -1927,10 +2063,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                 ? contexts.length
                 : 0
 
-              if (Array.isArray(contexts) && contexts.length) {
-                gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
-              }
-
               toolEndSpan.setAttribute("tool_name", evt.data.toolName)
               toolEndSpan.setAttribute("status", evt.data.status || "completed")
               toolEndSpan.setAttribute("contexts_found", contextsCount)
@@ -1939,9 +2071,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 gatheredFragments.length,
               )
 
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
+              const data = JSON.stringify({
                   text: `Tool result: ${evt.data.toolName}`,
                   step: {
                     type: AgentReasoningStepType.ToolResult,
@@ -1951,7 +2081,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     itemsFound: contextsCount,
                     stepSummary: `Found ${contextsCount} results`,
                   },
-                }),
+                })
+              thinking += `${data}\n`
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: data,
               })
               toolEndSpan.end()
               break
@@ -1971,16 +2105,18 @@ export const MessageWithToolsApi = async (c: Context) => {
               if (hasToolCalls) {
                 // Treat assistant content that accompanies tool calls as planning/reasoning,
                 // not as final answer text. Emit as a reasoning step and do not send 'u' updates.
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
+                const data = JSON.stringify({
                     text: content,
                     step: {
                       type: AgentReasoningStepType.LogMessage,
                       status: "in_progress",
                       stepSummary: "Model planned tool usage",
                     },
-                  }),
+                  })
+                thinking += `${data}\n`
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: data,
                 })
                 break
               }
@@ -2095,9 +2231,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               const turnEndSpan = jafStreamingSpan.startSpan("turn_end")
               turnEndSpan.setAttribute("turn_number", evt.data.turn)
               // Emit an iteration summary (fallback version)
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
+              const data = JSON.stringify({
                   text: `Completed iteration ${evt.data.turn}.`,
                   step: {
                     type: AgentReasoningStepType.LogMessage,
@@ -2107,7 +2241,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                     stepSummary: `Completed iteration ${evt.data.turn}.`,
                     isIterationSummary: true,
                   },
-                }),
+                })
+              thinking += `${data}\n`
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: data,
               })
               turnEndSpan.end()
               break
@@ -2197,7 +2335,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   sources: citations,
                   imageCitations: imageCitations,
                   message: processMessage(answer, citationMap),
-                  thinking: "",
+                  thinking: thinking,
                   modelId: defaultBestModel,
                   cost: totalCost.toString(),
                   tokensUsed: totalTokens,
@@ -2273,9 +2411,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     case "MaxTurnsExceeded":
                       // Execute fallback tool directly using messages from runState
                       try {
-                        await stream.writeSSE({
-                          event: ChatSSEvents.Reasoning,
-                          data: JSON.stringify({
+                        let data = JSON.stringify({
                             text: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
                             step: {
                               type: AgentReasoningStepType.LogMessage,
@@ -2284,7 +2420,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                               status: "in_progress",
                               stepSummary: "Activating fallback search",
                             },
-                          }),
+                          })
+                        thinking += `${data}\n`
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: data,
                         })
 
                         // Extract all context from runState.messages array
@@ -2311,18 +2451,17 @@ export const MessageWithToolsApi = async (c: Context) => {
                               `Tool Execution ${index + 1}: ${getTextContent(msg.content)}`,
                           )
                           .join("\n")
-                        console.log("Tool log:", toolLog)
                         // Prepare fallback tool parameters with context from runState.messages
                         const fallbackParams = {
                           originalQuery: message,
                           agentScratchpad: agentScratchpad,
                           toolLog: toolLog,
-                          gatheredFragments: gatheredFragments,
+                          gatheredFragments: gatheredFragments
+                            .map((v) => v.content)
+                            .join("\n"),
                         }
 
-                        await stream.writeSSE({
-                          event: ChatSSEvents.Reasoning,
-                          data: JSON.stringify({
+                         data = JSON.stringify({
                             text: `Executing fallback tool with context from ${allMessages.length} messages...`,
                             step: {
                               type: AgentReasoningStepType.ToolExecuting,
@@ -2330,48 +2469,45 @@ export const MessageWithToolsApi = async (c: Context) => {
                               status: "in_progress",
                               stepSummary: "Executing fallback tool",
                             },
-                          }),
+                          })
+                         thinking += `${data}\n`
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: data,
                         })
 
                         // Execute fallback tool directly
-                        const fallbackResponse = await agentTools[
-                          "fall_back"
-                        ].execute(
+                        const fallbackResponse = (await fallbackTool.execute(
                           fallbackParams,
-                          streamSpan.startSpan("fallback_search_execution"),
-                          email,
-                          ctx,
-                          agentPromptForLLM,
-                          message,
-                        )
+                          baseCtx,
+                        )) as ToolResult<{ fallbackReasoning: string }>
 
-                        await stream.writeSSE({
-                          event: ChatSSEvents.Reasoning,
-                          data: JSON.stringify({
+                        data = JSON.stringify({
                             text: `Fallback tool execution completed`,
                             step: {
                               type: AgentReasoningStepType.ToolResult,
                               toolName: "fall_back",
                               status: "completed",
                               resultSummary:
-                                fallbackResponse.result ||
+                                fallbackResponse.data ||
                                 "Fallback response generated",
-                              itemsFound:
-                                fallbackResponse.contexts?.length || 0,
+                              itemsFound: gatheredFragments.length || 0,
                               stepSummary: `Generated fallback response`,
                             },
-                          }),
+                          })
+                        thinking += `${data}\n`
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: data,
                         })
 
+                        const fallbackReasoning = fallbackResponse.metadata
+                          ? fallbackResponse.metadata["fallbackReasoning"]
+                          : ""
                         // Stream the fallback response if available
-                        if (
-                          fallbackResponse.fallbackReasoning ||
-                          fallbackResponse.result
-                        ) {
+                        if (fallbackReasoning || fallbackResponse.data) {
                           const fallbackAnswer =
-                            fallbackResponse.fallbackReasoning ||
-                            fallbackResponse.result ||
-                            ""
+                            fallbackReasoning || fallbackResponse.data || ""
 
                           await stream.writeSSE({
                             event: ChatSSEvents.ResponseUpdate,
@@ -2379,26 +2515,26 @@ export const MessageWithToolsApi = async (c: Context) => {
                           })
 
                           // Handle any contexts returned by fallback tool
-                          if (
-                            fallbackResponse.contexts &&
-                            Array.isArray(fallbackResponse.contexts)
-                          ) {
-                            fallbackResponse.contexts.forEach((context) => {
-                              citations.push(context.source)
-                              citationMap[citations.length] =
-                                citations.length - 1
-                            })
+                          // if (
+                          //   fallbackResponse.contexts &&
+                          //   Array.isArray(fallbackResponse.contexts)
+                          // ) {
+                          //   fallbackResponse.contexts.forEach((context) => {
+                          //     citations.push(context.source)
+                          //     citationMap[citations.length] =
+                          //       citations.length - 1
+                          //   })
 
-                            if (citations.length > 0) {
-                              await stream.writeSSE({
-                                event: ChatSSEvents.CitationsUpdate,
-                                data: JSON.stringify({
-                                  contextChunks: citations,
-                                  citationMap,
-                                }),
-                              })
-                            }
-                          }
+                          //   if (citations.length > 0) {
+                          //     await stream.writeSSE({
+                          //       event: ChatSSEvents.CitationsUpdate,
+                          //       data: JSON.stringify({
+                          //         contextChunks: citations,
+                          //         citationMap,
+                          //       }),
+                          //     })
+                          //   }
+                          // }
 
                           if (fallbackAnswer.trim()) {
                             // Insert successful fallback message
@@ -2423,7 +2559,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                                 fallbackAnswer,
                                 citationMap,
                               ),
-                              thinking: "",
+                              thinking: thinking,
                               modelId: modelId || defaultBestModel,
                               cost: totalCost.toString(),
                               tokensUsed: totalTokens,
@@ -2448,9 +2584,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                           fallbackError,
                           "Error during MaxTurnsExceeded fallback tool execution",
                         )
-                        await stream.writeSSE({
-                          event: ChatSSEvents.Reasoning,
-                          data: JSON.stringify({
+
+                        const data = JSON.stringify({
                             text: `Fallback search failed: ${getErrorMessage(fallbackError)}. Will generate best-effort answer.`,
                             step: {
                               type: AgentReasoningStepType.LogMessage,
@@ -2458,13 +2593,14 @@ export const MessageWithToolsApi = async (c: Context) => {
                               status: "error",
                               stepSummary: "Fallback search failed",
                             },
-                          }),
+                          })
+                        thinking += `${data}\n`
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: data,
                         })
                         // Fall through to default error handling if fallback fails
                       }
-
-                      // Default error handling if fallback fails or produces no response
-                      errMsg = `Max turns exceeded: ${err.turns}`
                       break
                     default:
                       errMsg = errTag
@@ -4127,7 +4263,7 @@ export const AgentMessageApi = async (c: Context) => {
                 [],
                 imageAttachmentFileIds,
                 agentPromptForLLM,
-                fileIds.length > 0,
+                false,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -4738,7 +4874,7 @@ export const AgentMessageApi = async (c: Context) => {
                       undefined,
                       imageAttachmentFileIds as string[],
                       agentPromptForLLM,
-                      undefined,
+                      fileIds.some((fileId) => fileId.startsWith("clf-")),
                       actualModelId || config.defaultBestModel,
                     )
                   } else {

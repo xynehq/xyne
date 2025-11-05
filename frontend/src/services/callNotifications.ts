@@ -1,10 +1,9 @@
-// WebSocket client for call notifications
+// WebSocket client for call notifications and direct messages
 import { useEffect, useRef, useState } from "react"
 
 export interface CallNotification {
   type: "incoming_call" | "call_accepted" | "call_rejected" | "call_ended"
   callId: string
-  roomName: string
   caller: {
     id: string
     name: string
@@ -18,9 +17,45 @@ export interface CallNotification {
     photoLink?: string | null
   }
   callType: "video" | "audio"
-  targetToken: string
-  livekitUrl: string
+  targetToken?: string // Optional - token generated on join
+  livekitUrl?: string // Optional
   timestamp: number
+}
+
+export interface LexicalEditorState {
+  root: {
+    children: any[]
+    direction?: string | null
+    format?: string | number
+    indent?: number
+    type?: string
+    version?: number
+  }
+}
+
+export interface DirectMessage {
+  type: "direct_message"
+  messageId: number
+  messageContent: LexicalEditorState
+  createdAt: string
+  sender: {
+    id: string
+    name: string
+    email: string
+    photoLink?: string | null
+  }
+  timestamp: number
+}
+
+export interface TypingIndicator {
+  type: "typing_indicator"
+  userId: string
+  isTyping: boolean
+}
+
+export interface MessageRead {
+  type: "message_read"
+  readByUserId: string
 }
 
 export interface CallStatusUpdate {
@@ -29,8 +64,104 @@ export interface CallStatusUpdate {
   data?: any
 }
 
+// Channel notification interfaces
+export interface ChannelMessage {
+  type: "channel_message"
+  messageId: number
+  channelId: number
+  channelName: string
+  messageContent: LexicalEditorState
+  plainTextContent: string
+  createdAt: string
+  sender: {
+    id: string
+    name: string
+    email: string
+    photoLink?: string | null
+  }
+  timestamp: number
+}
+
+export interface ChannelTypingIndicator {
+  type: "channel_typing_indicator"
+  channelId: number
+  userId: string
+  isTyping: boolean
+}
+
+export interface ChannelUpdate {
+  type: "channel_update"
+  channelId: number
+  updateType: string
+  updateData: any
+}
+
+export interface ChannelMembershipUpdate {
+  type: "channel_membership_update"
+  channelId: number
+  updateType: "added" | "removed" | "role_changed"
+  channelData?: any
+}
+
+export interface ThreadReply {
+  type: "thread_reply"
+  threadId: number
+  parentMessageId: number
+  messageType: "channel" | "direct"
+  reply: {
+    id: number
+    messageContent: LexicalEditorState
+    createdAt: string
+    isEdited: boolean
+    sender: {
+      externalId: string
+      name: string
+      email: string
+      photoLink?: string | null
+    }
+  }
+}
+
+export interface DirectMessageEdit {
+  type: "direct_message_edit"
+  messageId: number
+  messageContent: LexicalEditorState
+  updatedAt: string
+}
+
+export interface DirectMessageDelete {
+  type: "direct_message_delete"
+  messageId: number
+}
+
+export interface ChannelMessageEdit {
+  type: "channel_message_edit"
+  channelId: number
+  messageId: number
+  messageContent: LexicalEditorState
+  updatedAt: string
+}
+
+export interface ChannelMessageDelete {
+  type: "channel_message_delete"
+  channelId: number
+  messageId: number
+}
+
 type CallNotificationHandler = (notification: CallNotification) => void
 type CallStatusHandler = (status: CallStatusUpdate) => void
+type DirectMessageHandler = (message: DirectMessage) => void
+type TypingIndicatorHandler = (indicator: TypingIndicator) => void
+type MessageReadHandler = (readStatus: MessageRead) => void
+type ChannelMessageHandler = (message: ChannelMessage) => void
+type ChannelTypingIndicatorHandler = (indicator: ChannelTypingIndicator) => void
+type ChannelUpdateHandler = (update: ChannelUpdate) => void
+type ChannelMembershipUpdateHandler = (update: ChannelMembershipUpdate) => void
+type ThreadReplyHandler = (reply: ThreadReply) => void
+type DirectMessageEditHandler = (edit: DirectMessageEdit) => void
+type DirectMessageDeleteHandler = (del: DirectMessageDelete) => void
+type ChannelMessageEditHandler = (edit: ChannelMessageEdit) => void
+type ChannelMessageDeleteHandler = (del: ChannelMessageDelete) => void
 
 class CallNotificationClient {
   private ws: WebSocket | null = null
@@ -39,6 +170,20 @@ class CallNotificationClient {
   private reconnectDelay = 1000
   private onNotificationCallbacks: CallNotificationHandler[] = []
   private onStatusCallbacks: CallStatusHandler[] = []
+  private onDirectMessageCallbacks: DirectMessageHandler[] = []
+  private onTypingIndicatorCallbacks: TypingIndicatorHandler[] = []
+  private onMessageReadCallbacks: MessageReadHandler[] = []
+  private onChannelMessageCallbacks: ChannelMessageHandler[] = []
+  private onChannelTypingIndicatorCallbacks: ChannelTypingIndicatorHandler[] =
+    []
+  private onChannelUpdateCallbacks: ChannelUpdateHandler[] = []
+  private onChannelMembershipUpdateCallbacks: ChannelMembershipUpdateHandler[] =
+    []
+  private onThreadReplyCallbacks: ThreadReplyHandler[] = []
+  private onDirectMessageEditCallbacks: DirectMessageEditHandler[] = []
+  private onDirectMessageDeleteCallbacks: DirectMessageDeleteHandler[] = []
+  private onChannelMessageEditCallbacks: ChannelMessageEditHandler[] = []
+  private onChannelMessageDeleteCallbacks: ChannelMessageDeleteHandler[] = []
   private soundInterval: ReturnType<typeof setInterval> | null = null
   private audioContextInitialized = false
   private connectionInitialized = false
@@ -328,7 +473,6 @@ class CallNotificationClient {
       this.ws = new WebSocket(wsUrl)
 
       this.ws.onopen = () => {
-        console.log("Connected to call notifications")
         this.reconnectAttempts = 0
         this.connectionInitialized = false // Reset flag on successful connection
       }
@@ -355,6 +499,66 @@ class CallNotificationClient {
             this.onStatusCallbacks.forEach((callback) => {
               callback(message)
             })
+          } else if (message.type === "direct_message") {
+            // Handle incoming direct message
+            this.onDirectMessageCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "typing_indicator") {
+            // Handle typing indicator
+            this.onTypingIndicatorCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "message_read") {
+            // Handle message read receipt
+            this.onMessageReadCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_message") {
+            // Handle incoming channel message
+            this.onChannelMessageCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_typing_indicator") {
+            // Handle channel typing indicator
+            this.onChannelTypingIndicatorCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_update") {
+            // Handle channel update
+            this.onChannelUpdateCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_membership_update") {
+            // Handle channel membership update
+            this.onChannelMembershipUpdateCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "thread_reply") {
+            // Handle thread reply
+            this.onThreadReplyCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "direct_message_edit") {
+            // Handle direct message edit
+            this.onDirectMessageEditCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "direct_message_delete") {
+            // Handle direct message delete
+            this.onDirectMessageDeleteCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_message_edit") {
+            // Handle channel message edit
+            this.onChannelMessageEditCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
+          } else if (message.type === "channel_message_delete") {
+            // Handle channel message delete
+            this.onChannelMessageDeleteCallbacks.forEach((callback) => {
+              callback(message.data)
+            })
           }
         } catch (error) {
           console.error("Error parsing notification message:", error)
@@ -362,7 +566,6 @@ class CallNotificationClient {
       }
 
       this.ws.onclose = () => {
-        console.log("Call notification connection closed")
         this.connectionInitialized = false // Reset flag on connection close
         // Only attempt reconnection from main window
         if (this.isMainWindow) {
@@ -384,9 +587,6 @@ class CallNotificationClient {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
       setTimeout(() => {
-        console.log(
-          `Reconnecting to call notifications... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`,
-        )
         this.connect()
       }, this.reconnectDelay * this.reconnectAttempts)
     }
@@ -435,6 +635,108 @@ class CallNotificationClient {
     }
   }
 
+  onDirectMessage(callback: DirectMessageHandler) {
+    this.onDirectMessageCallbacks.push(callback)
+    return () => {
+      this.onDirectMessageCallbacks = this.onDirectMessageCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
+  onTypingIndicator(callback: TypingIndicatorHandler) {
+    this.onTypingIndicatorCallbacks.push(callback)
+    return () => {
+      this.onTypingIndicatorCallbacks = this.onTypingIndicatorCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
+  onMessageRead(callback: MessageReadHandler) {
+    this.onMessageReadCallbacks.push(callback)
+    return () => {
+      this.onMessageReadCallbacks = this.onMessageReadCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
+  onChannelMessage(callback: ChannelMessageHandler) {
+    this.onChannelMessageCallbacks.push(callback)
+    return () => {
+      this.onChannelMessageCallbacks = this.onChannelMessageCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
+  onChannelTypingIndicator(callback: ChannelTypingIndicatorHandler) {
+    this.onChannelTypingIndicatorCallbacks.push(callback)
+    return () => {
+      this.onChannelTypingIndicatorCallbacks =
+        this.onChannelTypingIndicatorCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
+  onChannelUpdate(callback: ChannelUpdateHandler) {
+    this.onChannelUpdateCallbacks.push(callback)
+    return () => {
+      this.onChannelUpdateCallbacks = this.onChannelUpdateCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
+  onChannelMembershipUpdate(callback: ChannelMembershipUpdateHandler) {
+    this.onChannelMembershipUpdateCallbacks.push(callback)
+    return () => {
+      this.onChannelMembershipUpdateCallbacks =
+        this.onChannelMembershipUpdateCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
+  onThreadReply(callback: ThreadReplyHandler) {
+    this.onThreadReplyCallbacks.push(callback)
+    return () => {
+      this.onThreadReplyCallbacks = this.onThreadReplyCallbacks.filter(
+        (cb) => cb !== callback,
+      )
+    }
+  }
+
+  onDirectMessageEdit(callback: DirectMessageEditHandler) {
+    this.onDirectMessageEditCallbacks.push(callback)
+    return () => {
+      this.onDirectMessageEditCallbacks =
+        this.onDirectMessageEditCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
+  onDirectMessageDelete(callback: DirectMessageDeleteHandler) {
+    this.onDirectMessageDeleteCallbacks.push(callback)
+    return () => {
+      this.onDirectMessageDeleteCallbacks =
+        this.onDirectMessageDeleteCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
+  onChannelMessageEdit(callback: ChannelMessageEditHandler) {
+    this.onChannelMessageEditCallbacks.push(callback)
+    return () => {
+      this.onChannelMessageEditCallbacks =
+        this.onChannelMessageEditCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
+  onChannelMessageDelete(callback: ChannelMessageDeleteHandler) {
+    this.onChannelMessageDeleteCallbacks.push(callback)
+    return () => {
+      this.onChannelMessageDeleteCallbacks =
+        this.onChannelMessageDeleteCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
   sendCallResponse(
     callId: string,
     callerId: string,
@@ -447,6 +749,35 @@ class CallNotificationClient {
           callId,
           callerId,
           response,
+        }),
+      )
+    }
+  }
+
+  sendTypingIndicator(targetUserId: string, isTyping: boolean) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: "typing_indicator",
+          targetUserId,
+          isTyping,
+        }),
+      )
+    }
+  }
+
+  sendChannelTypingIndicator(
+    channelId: number,
+    memberUserIds: string[],
+    isTyping: boolean,
+  ) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: "channel_typing_indicator",
+          channelId,
+          memberUserIds,
+          isTyping,
         }),
       )
     }
@@ -515,8 +846,9 @@ export function useCallNotifications() {
     clientRef.current.stopCallNotificationSound()
     setIncomingCall(null)
 
-    // Open call in a new window with the LiveKit server URL
-    const callUrl = `/call?token=${notification.targetToken}&room=${notification.roomName}&type=${notification.callType}&serverUrl=${encodeURIComponent(notification.livekitUrl)}`
+    // Open call using the new cleaner route format
+    // Route will automatically authenticate and fetch token via join API
+    const callUrl = `/call/${notification.callId}?type=${notification.callType}`
     const callWindow = window.open(
       callUrl,
       "call-window-receiver",

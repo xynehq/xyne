@@ -1,3 +1,5 @@
+import { getLangfuseInstance } from "./ai/langfuse"
+
 interface SpanAttributes {
   [key: string]: string | number | boolean | null
 }
@@ -89,12 +91,34 @@ class SpanImpl implements Span {
   }
 }
 
-class CustomTracer implements Tracer {
+export class CustomTracer implements Tracer {
   private spans: Span[] = []
   private traceId: string
+  private langfuseTrace: any = null
+  private langfuseInstance: any = null
+  private traceName: string
+  private langfuseSpanMap: Map<string, any> = new Map() // Map spanId to LangFuse span object
 
   constructor(name: string) {
     this.traceId = `${name}-${Math.random().toString(16).substring(2, 18)}`
+    this.traceName = name
+
+    // Initialize LangFuse trace if available
+    try {
+      this.langfuseInstance = getLangfuseInstance()
+      if (this.langfuseInstance) {
+        this.langfuseTrace = this.langfuseInstance.trace({
+          name: name,
+          id: this.traceId,
+          metadata: {
+            source: "custom-tracer",
+            timestamp: new Date().toISOString(),
+          },
+        })
+      }
+    } catch (error) {
+      // LangFuse not available, continue without it
+    }
   }
 
   startSpan(name: string, options: { parentSpan?: Span } = {}): Span {
@@ -107,6 +131,37 @@ class CustomTracer implements Tracer {
       options.parentSpan?.spanId,
     )
     this.spans.push(span)
+
+    // Create LangFuse span when it starts
+    if (this.langfuseTrace) {
+      try {
+        // Find parent LangFuse span if exists
+        const parentLangfuseSpan = options.parentSpan?.spanId
+          ? this.langfuseSpanMap.get(options.parentSpan.spanId)
+          : null
+
+        // Create span nested under parent, or under trace if root
+        const langfuseSpan = parentLangfuseSpan
+          ? parentLangfuseSpan.span({
+              name: name,
+              id: spanId,
+              startTime: new Date(span.startTime!),
+              input: span.attributes,
+            })
+          : this.langfuseTrace.span({
+              name: name,
+              id: spanId,
+              startTime: new Date(span.startTime!),
+              input: span.attributes,
+            })
+
+        // Store the LangFuse span reference
+        this.langfuseSpanMap.set(spanId, langfuseSpan)
+      } catch (error) {
+        // Ignore LangFuse errors
+      }
+    }
+
     return span
   }
 
@@ -129,6 +184,33 @@ class CustomTracer implements Tracer {
   endSpan(span: Span): void {
     span.endTime = Date.now()
     span.duration = span.endTime - (span.startTime || 0)
+
+    // End the LangFuse span with proper timing
+    if (this.langfuseTrace) {
+      try {
+        const langfuseSpan = this.langfuseSpanMap.get(span.spanId)
+        if (langfuseSpan) {
+          // End the span with output and metadata
+          langfuseSpan.end({
+            endTime: new Date(span.endTime),
+            output: span.attributes,
+            metadata: {
+              events: span.events,
+              duration: span.duration,
+            },
+          })
+        }
+
+        // Auto-flush if this is the root span (no parent)
+        if (!span.parentSpanId && this.langfuseInstance) {
+          this.langfuseInstance.flushAsync().catch(() => {
+            // Ignore flush errors
+          })
+        }
+      } catch (error) {
+        // Ignore LangFuse errors to not break the application
+      }
+    }
   }
 
   serializeToJson(): string {

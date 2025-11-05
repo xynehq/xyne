@@ -4,7 +4,8 @@ import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 export const generateUUID = () => crypto.randomUUID()
 
 export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
+export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
+export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
 
 // Function to clean citation numbers from response text
 export const cleanCitationsFromResponse = (text: string): string => {
@@ -12,6 +13,7 @@ export const cleanCitationsFromResponse = (text: string): string => {
   return text
     .replace(textToCitationIndex, "")
     .replace(textToImageCitationIndex, "")
+    .replace(textToKbItemCitationIndex, "")
     .replace(/[ \t]+/g, " ")
     .trim()
 }
@@ -22,18 +24,6 @@ export const processMessage = (
   citationUrls: string[],
 ) => {
   text = splitGroupedCitationsWithSpaces(text)
-  text = text.replace(
-    /(\[\d+_\d+\])/g,
-    (fullMatch, capturedCitation, offset, string) => {
-      // Check if this image citation appears earlier in the string
-      const firstIndex = string.indexOf(fullMatch)
-      if (firstIndex < offset) {
-        // remove duplicate image citations
-        return ""
-      }
-      return capturedCitation
-    },
-  )
   text = text.replace(
     textToImageCitationIndex,
     (match, citationKey, offset, string) => {
@@ -48,15 +38,50 @@ export const processMessage = (
   )
 
   if (citationMap) {
+    text = text.replace(textToKbItemCitationIndex, (_, citationKey) => {
+      const index = citationMap[parseInt(citationKey.split("_")[0], 10)]
+      const chunkIndex = parseInt(citationKey.split("_")[1], 10)
+      const url = citationUrls[index]
+      return typeof index === "number" && typeof chunkIndex === "number" && url
+      ? `[${index + 1}_${chunkIndex}](${url})`
+      : ""
+    })
+  } else {
+    let localCitationMap: Record<number, number> = {}
+    let localIndex = 0
+    text = text.replace(textToKbItemCitationIndex, (_, citationKey) => {
+      const citationindex = parseInt(citationKey.split("_")[0], 10)
+      if (localCitationMap[citationindex] === undefined) {
+        localCitationMap[citationindex] = localIndex
+        localIndex++
+      }
+      const chunkIndex = parseInt(citationKey.split("_")[1], 10)
+      const url = citationUrls[localCitationMap[citationindex]]
+      return typeof localCitationMap[citationindex] === "number" && typeof chunkIndex === "number" && url
+      ? `[${localCitationMap[citationindex] + 1}_${chunkIndex}](${url})`
+      : ""
+    })
+  }
+
+  if (citationMap) {
     return text.replace(textToCitationIndex, (match, num) => {
       const index = citationMap[num]
       const url = citationUrls[index]
       return typeof index === "number" && url ? `[${index + 1}](${url})` : ""
     })
   } else {
+    let localCitationMap: Record<number, number> = {}
+    let localIndex = 0
     return text.replace(textToCitationIndex, (match, num) => {
-      const url = citationUrls[num - 1]
-      return url ? `[${num}](${url})` : ""
+      const citationindex = parseInt(num, 10)
+      if (localCitationMap[citationindex] === undefined) {
+        localCitationMap[citationindex] = localIndex
+        localIndex++
+      }
+      const url = citationUrls[localCitationMap[citationindex]]
+      return typeof localCitationMap[citationindex] === "number" && url
+      ? `[${localCitationMap[citationindex] + 1}](${url})`
+      : ""
     })
   }
 }

@@ -150,6 +150,7 @@ import {
   getAllAgents,
   getAgentsAccessibleToUser,
   type SelectAgent,
+  getAllPublicAgents,
 } from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import {
@@ -181,6 +182,7 @@ import {
   isValidApp,
   isValidEntity,
   collectFollowupContext,
+  textToKbItemCitationIndex,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -191,11 +193,8 @@ import {
   getAttachmentsByMessageId,
   storeAttachmentMetadata,
 } from "@/db/attachment"
-import type { AttachmentMetadata } from "@/shared/types"
+import type { AttachmentMetadata, SelectPublicAgent } from "@/shared/types"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
-import { isImageFile } from "shared/fileUtils"
-import { promises as fs } from "node:fs"
-import path from "node:path"
 import {
   getAgentUsageByUsers,
   getChatCountsByAgents,
@@ -468,21 +467,27 @@ const checkAndYieldCitations = async function* (
   baseIndex: number = 0,
   email: string,
   yieldedImageCitations: Set<number>,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
   let imgMatch
+  let kbMatch = null
   while (
     (match = textToCitationIndex.exec(text)) !== null ||
-    (imgMatch = textToImageCitationIndex.exec(text)) !== null
+    (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
+    (isMsgWithKbItems &&
+      (kbMatch = textToKbItemCitationIndex.exec(text)) !== null)
   ) {
-    if (match) {
-      const citationIndex = parseInt(match[1], 10)
+    if (match || kbMatch) {
+      let citationIndex = 0
+      if (match) {
+        citationIndex = parseInt(match[1], 10)
+      } else if (kbMatch) {
+        citationIndex = parseInt(kbMatch[1].split("_")[0], 10)
+      }
       if (!yieldedCitations.has(citationIndex)) {
-        const item = isMsgWithSources
-          ? results[baseIndex]
-          : results[citationIndex - baseIndex]
+        const item = results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
           const f = (item as any)?.fields
@@ -496,9 +501,7 @@ const checkAndYieldCitations = async function* (
           yield {
             citation: {
               index: citationIndex,
-              item: isMsgWithSources
-                ? searchToCitation(item as VespaSearchResults, citationIndex)
-                : searchToCitation(item as VespaSearchResults),
+              item: searchToCitation(item as VespaSearchResults),
             },
           }
           yieldedCitations.add(citationIndex)
@@ -582,7 +585,7 @@ export const getThreadContext = async (
     ].filter((id) => id)
     if (threadIds.length > 0) {
       const threadSpan = span?.startSpan("fetch_slack_threads")
-      const threadMessages = await SearchVespaThreads(threadIds, threadSpan!)
+      const threadMessages = await SearchVespaThreads(threadIds)
       return threadMessages
     }
   }
@@ -595,7 +598,7 @@ async function* processIterator(
   previousResultsLength: number = 0,
   userRequestsReasoning?: boolean,
   email?: string,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -624,7 +627,7 @@ async function* processIterator(
             previousResultsLength,
             email!,
             yieldedImageCitations,
-            isMsgWithSources,
+            isMsgWithKbItems,
           )
           yield { text: chunk.text, reasoning }
         } else {
@@ -650,7 +653,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
-              isMsgWithSources,
+              isMsgWithKbItems,
             )
             yield { text: token, reasoning }
           }
@@ -688,7 +691,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
-              isMsgWithSources,
+              isMsgWithKbItems,
             )
             currentAnswer = parsed.answer
           }
@@ -1105,6 +1108,7 @@ export async function buildContext(
   userMetadata: UserMetadataType,
   startIndex: number = 0,
   builtUserQuery?: string,
+  isMsgWithKbItems?: boolean,
 ): Promise<string> {
   const contextPromises = results?.map(
     async (v, i) =>
@@ -1113,7 +1117,7 @@ export async function buildContext(
         userMetadata,
         maxSummaryCount,
         undefined,
-        undefined,
+        isMsgWithKbItems,
         builtUserQuery,
       )}`,
   )
@@ -1136,6 +1140,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   queryRagSpan?: Span,
   agentPrompt?: string,
   pathExtractedInfo?: PathExtractedInfo,
+  publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -1268,9 +1273,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(
-              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
-            )
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
 
@@ -1292,6 +1295,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         console.log("No KnowledgeBase items found in selectedItems")
       }
     }
+  } else if (publicAgents && publicAgents.length > 0) {
+    processPublicAgentsCollectionSelections(
+      publicAgents,
+      pathExtractedInfo,
+      agentSpecificCollectionSelections,
+    )
   }
 
   let message = input
@@ -1368,6 +1377,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       alpha: userAlpha,
       timestampRange,
       span: initialSearchSpan,
+      collectionSelections: agentSpecificCollectionSelections,
     })
   } else {
     Logger.info(
@@ -1440,6 +1450,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           limit: pageSize,
           alpha: userAlpha,
           span: vespaSearchSpan,
+          collectionSelections: agentSpecificCollectionSelections,
         })
       } else {
         results = await searchVespaAgent(
@@ -1489,6 +1500,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         userMetadata,
         0,
         message,
+        agentSpecificCollectionSelections.length > 0,
       )
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
@@ -1515,6 +1527,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               alpha: userAlpha,
               timestampRange,
               span: latestSearchSpan,
+              collectionSelections: agentSpecificCollectionSelections,
             })
           : searchVespaAgent(query, email, null, null, agentAppEnums, {
               limit: pageSize,
@@ -1569,6 +1582,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             excludedIds: latestResults
               ?.map((v: VespaSearchResult) => (v.fields as any).docId)
               ?.filter((v) => !!v),
+            collectionSelections: agentSpecificCollectionSelections,
           })
         } else {
           results = await searchVespaAgent(
@@ -1623,6 +1637,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           userMetadata,
           0,
           message,
+          agentSpecificCollectionSelections.length > 0,
         )
 
         const { imageFileNames } = extractImageFileNames(
@@ -1655,6 +1670,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             agentPrompt,
             imageFileNames,
           },
+          agentSpecificCollectionSelections.length > 0,
+          agentSpecificCollectionSelections.length > 0,
         )
 
         const answer = yield* processIterator(
@@ -1663,6 +1680,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           previousResultsLength,
           config.isReasoning && userRequestsReasoning,
           email,
+          agentSpecificCollectionSelections.length > 0,
         )
         if (answer) {
           ragSpan?.setAttribute("answer_found", true)
@@ -1693,6 +1711,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           alpha: userAlpha,
           excludedIds: latestIds,
           span: searchSpan,
+          collectionSelections: agentSpecificCollectionSelections,
         })
       } else {
         results = await searchVespaAgent(
@@ -1751,6 +1770,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           offset: pageNumber * pageSize,
           alpha: userAlpha,
           span: searchSpan,
+          collectionSelections: agentSpecificCollectionSelections,
         })
       } else {
         results = await searchVespaAgent(
@@ -1817,6 +1837,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       userMetadata,
       startIndex,
       message,
+      agentSpecificCollectionSelections.length > 0,
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -1852,6 +1873,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         messages,
         imageFileNames,
       },
+      agentSpecificCollectionSelections.length > 0,
+      agentSpecificCollectionSelections.length > 0,
     )
 
     const answer = yield* processIterator(
@@ -1860,6 +1883,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       previousResultsLength,
       config.isReasoning && userRequestsReasoning,
       email,
+      agentSpecificCollectionSelections.length > 0,
     )
 
     if (answer) {
@@ -1898,10 +1922,11 @@ async function* generateAnswerFromGivenContext(
   passedSpan?: Span,
   threadIds?: string[],
   attachmentFileIds?: string[],
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
+  messages: Message[] = [],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2145,7 +2170,7 @@ async function* generateAnswerFromGivenContext(
       userMetadata,
       i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
-      isMsgWithSources,
+      isMsgWithKbItems,
       message,
     )
     if (
@@ -2169,7 +2194,7 @@ async function* generateAnswerFromGivenContext(
         )
       }
     }
-    return isMsgWithSources ? content : `Index ${i + startIndex} \n ${content}`
+    return `Index ${i + startIndex} \n ${content}`
   })
 
   const resolvedContexts = contextPromises
@@ -2218,9 +2243,10 @@ async function* generateAnswerFromGivenContext(
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
       imageFileNames: finalImageFileNames,
+      messages: messages,
     },
     true,
-    isMsgWithSources,
+    isMsgWithKbItems,
   )
 
   const answer = yield* processIterator(
@@ -2229,7 +2255,7 @@ async function* generateAnswerFromGivenContext(
     previousResultsLength,
     userRequestsReasoning,
     email,
-    isMsgWithSources,
+    isMsgWithKbItems,
   )
   if (answer) {
     generateAnswerSpan?.setAttribute("answer_found", true)
@@ -2976,6 +3002,7 @@ async function* generatePointQueryTimeExpansion(
   eventRagSpan?: Span,
   agentPrompt?: string,
   pathExtractedInfo?: PathExtractedInfo,
+  publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3102,9 +3129,7 @@ async function* generatePointQueryTimeExpansion(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(
-              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
-            )
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
 
@@ -3124,6 +3149,12 @@ async function* generatePointQueryTimeExpansion(
         }
       }
     }
+  } else if (publicAgents && publicAgents.length > 0) {
+    processPublicAgentsCollectionSelections(
+      publicAgents,
+      pathExtractedInfo,
+      agentSpecificCollectionSelections,
+    )
   }
 
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
@@ -3253,6 +3284,7 @@ async function* generatePointQueryTimeExpansion(
           timestampRange: { to, from },
           notInMailLabels: ["CATEGORY_PROMOTIONS"],
           span: emailSearchSpan,
+          collectionSelections: agentSpecificCollectionSelections,
         }),
       ])
     }
@@ -3286,6 +3318,7 @@ async function* generatePointQueryTimeExpansion(
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
             selectedItem: selectedItem,
+            collectionSelections: agentSpecificCollectionSelections,
           }),
         ])
         results.root.children = [
@@ -3501,6 +3534,7 @@ async function* processResultsForMetadata(
   email?: string,
   agentContext?: string,
   modelId?: string,
+  isMsgWithKbItems?: boolean,
 ) {
   if (app?.length == 1 && app[0] === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -3516,7 +3550,14 @@ async function* processResultsForMetadata(
     "Document chunk size",
     `full_context maxed to ${chunksCount}`,
   )
-  const context = await buildContext(items, chunksCount, userMetadata, 0, input)
+  const context = await buildContext(
+    items,
+    chunksCount,
+    userMetadata,
+    0,
+    input,
+    isMsgWithKbItems,
+  )
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
@@ -3544,6 +3585,8 @@ async function* processResultsForMetadata(
       userMetadata,
       context,
       streamOptions,
+      isMsgWithKbItems,
+      isMsgWithKbItems,
     )
   }
 
@@ -3552,6 +3595,8 @@ async function* processResultsForMetadata(
     items,
     0,
     config.isReasoning && userRequestsReasoning,
+    email,
+    isMsgWithKbItems,
   )
 }
 
@@ -3571,6 +3616,7 @@ async function* generateMetadataQueryAnswer(
   maxIterations = 5,
   modelId?: string,
   pathExtractedInfo?: PathExtractedInfo,
+  publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3705,9 +3751,7 @@ async function* generateMetadataQueryAnswer(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(
-              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
-            )
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
           }
         }
 
@@ -3727,6 +3771,12 @@ async function* generateMetadataQueryAnswer(
         }
       }
     }
+  } else if (publicAgents && publicAgents.length > 0) {
+    processPublicAgentsCollectionSelections(
+      publicAgents,
+      pathExtractedInfo,
+      agentSpecificCollectionSelections,
+    )
   }
 
   // Process timestamp
@@ -3839,6 +3889,7 @@ async function* generateMetadataQueryAnswer(
             limit: pageSize + pageSize * iteration,
             offset: pageSize * iteration,
             span: pageSpan,
+            collectionSelections: agentSpecificCollectionSelections,
           },
         )
       } else {
@@ -3888,7 +3939,14 @@ async function* generateMetadataQueryAnswer(
 
       pageSpan?.setAttribute(
         "context",
-        await buildContext(items, 20, userMetadata, 0, input),
+        await buildContext(
+          items,
+          20,
+          userMetadata,
+          0,
+          input,
+          agentSpecificCollectionSelections.length > 0,
+        ),
       )
       if (!items.length) {
         loggerWithChild({ email: email }).info(
@@ -3916,6 +3974,7 @@ async function* generateMetadataQueryAnswer(
         email,
         agentPrompt,
         modelId,
+        agentSpecificCollectionSelections.length > 0,
       )
 
       if (answer == null) {
@@ -4076,7 +4135,14 @@ async function* generateMetadataQueryAnswer(
 
     span?.setAttribute(
       "context",
-      await buildContext(items, 20, userMetadata, 0, input),
+      await buildContext(
+        items,
+        20,
+        userMetadata,
+        0,
+        input,
+        agentSpecificCollectionSelections.length > 0,
+      ),
     )
     span?.end()
     loggerWithChild({ email: email }).info(
@@ -4106,6 +4172,7 @@ async function* generateMetadataQueryAnswer(
       email,
       agentPrompt,
       modelId,
+      agentSpecificCollectionSelections.length > 0,
     )
     return
   } else if (
@@ -4178,6 +4245,7 @@ async function* generateMetadataQueryAnswer(
             ...searchOptions,
             limit: pageSize + pageSize * iteration,
             offset: pageSize * iteration,
+            collectionSelections: agentSpecificCollectionSelections,
           },
         )
       } else {
@@ -4195,6 +4263,7 @@ async function* generateMetadataQueryAnswer(
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
             selectedItem: selectedItem,
+            collectionSelections: agentSpecificCollectionSelections,
           },
         )
       }
@@ -4225,7 +4294,14 @@ async function* generateMetadataQueryAnswer(
       )
       iterationSpan?.setAttribute(
         `context`,
-        await buildContext(items, 20, userMetadata, 0, input),
+        await buildContext(
+          items,
+          20,
+          userMetadata,
+          0,
+          input,
+          agentSpecificCollectionSelections.length > 0,
+        ),
       )
       iterationSpan?.end()
 
@@ -4258,6 +4334,7 @@ async function* generateMetadataQueryAnswer(
         email,
         agentPrompt,
         modelId,
+        agentSpecificCollectionSelections.length > 0,
       )
 
       if (answer == null) {
@@ -4387,6 +4464,84 @@ export function getCollectionSource(
   }
 }
 
+function processPublicAgentsCollectionSelections(
+  publicAgents: SelectPublicAgent[],
+  pathExtractedInfo: PathExtractedInfo | undefined,
+  agentSpecificCollectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }>,
+): void {
+  // Iterate through all public agent prompts and gather app integrations
+  for (const publicAgent of publicAgents) {
+    if (!publicAgent) continue
+
+    // parsing for the new type of integration which we are going to save
+    if (isAppSelectionMap(publicAgent.appIntegrations)) {
+      const { selectedItems } = parseAppSelections(
+        publicAgent.appIntegrations,
+      )
+
+      // Extract collection selections from knowledge_base selections
+      if (selectedItems[Apps.KnowledgeBase]) {
+        const collectionIds: string[] = []
+        const collectionFolderIds: string[] = []
+        const collectionFileIds: string[] = []
+        const source = getCollectionSource(pathExtractedInfo, selectedItems)
+        for (const itemId of source) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            collectionIds.push(itemId.replace(/^cl[-_]/, ""))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+          }
+        }
+
+        // Create or add to the first agent specific collection selection in the key-value pair object
+        if (
+          collectionIds.length > 0 ||
+          collectionFolderIds.length > 0 ||
+          collectionFileIds.length > 0
+        ) {
+          if (agentSpecificCollectionSelections.length === 0) {
+            // Create the first agent specific collection selection if it doesn't exist
+            agentSpecificCollectionSelections.push({
+              collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+              collectionFolderIds:
+                collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+              collectionFileIds:
+                collectionFileIds.length > 0 ? collectionFileIds : undefined,
+            })
+          } else {
+            // Add the other agent specific collection selections with deduplication using Sets
+            const collectionSelection = agentSpecificCollectionSelections[0]
+            if (collectionIds.length > 0) {
+              const existingIds = new Set(collectionSelection.collectionIds || [])
+              collectionIds.forEach(id => existingIds.add(id))
+              collectionSelection.collectionIds = Array.from(existingIds)
+            }
+            if (collectionFolderIds.length > 0) {
+              const existingFolderIds = new Set(collectionSelection.collectionFolderIds || [])
+              collectionFolderIds.forEach(id => existingFolderIds.add(id))
+              collectionSelection.collectionFolderIds = Array.from(existingFolderIds)
+            }
+            if (collectionFileIds.length > 0) {
+              const existingFileIds = new Set(collectionSelection.collectionFileIds || [])
+              collectionFileIds.forEach(id => existingFileIds.add(id))
+              collectionSelection.collectionFileIds = Array.from(existingFileIds)
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
@@ -4400,6 +4555,7 @@ export async function* UnderstandMessageAndAnswer(
   agentPrompt?: string,
   modelId?: string,
   pathExtractedInfo?: PathExtractedInfo,
+  publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -4452,6 +4608,7 @@ export async function* UnderstandMessageAndAnswer(
       5,
       modelId,
       pathExtractedInfo,
+      publicAgents,
     )
 
     let hasYieldedAnswer = false
@@ -4501,6 +4658,7 @@ export async function* UnderstandMessageAndAnswer(
       eventRagSpan,
       agentPrompt,
       pathExtractedInfo,
+      publicAgents,
     )
   } else {
     loggerWithChild({ email: email }).info(
@@ -4524,6 +4682,7 @@ export async function* UnderstandMessageAndAnswer(
       ragSpan,
       agentPrompt, // Pass agentPrompt to generateIterativeTimeFilterAndQueryRewrite
       pathExtractedInfo,
+      publicAgents,
     )
   }
 }
@@ -4540,10 +4699,11 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   threadIds?: string[],
   attachmentFileIds?: string[],
   agentPrompt?: string,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
+  messages: Message[] = [],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -4574,10 +4734,11 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     passedSpan,
     threadIds,
     attachmentFileIds,
-    isMsgWithSources,
+    isMsgWithKbItems,
     modelId,
     isValidPath,
     folderIds,
+    messages,
   )
 }
 
@@ -4845,18 +5006,35 @@ export const MessageApi = async (c: Context) => {
     }
 
     let agentDetails: SelectAgent | null = null
+    let numericWorkspaceId: number | undefined
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
         db,
         workspaceId,
         email,
       )
+      numericWorkspaceId = userAndWorkspaceCheck.workspace.id
       agentDetails = await getAgentByExternalId(
         db,
         agentPromptValue,
-        userAndWorkspaceCheck.workspace.id,
+        numericWorkspaceId,
       )
+    } else {
+      // Get workspace ID even if we don't have an agent prompt value
+      const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
+        db,
+        workspaceId,
+        email,
+      )
+      numericWorkspaceId = userAndWorkspaceCheck.workspace.id
     }
+
+    // get all the public agents for the workspace
+    // here we are using workspaceId instead of workspaceExternalId as agents table has workspaceId as foreign key
+    const publicAgents: SelectPublicAgent[] = numericWorkspaceId
+      ? await getAllPublicAgents(db, numericWorkspaceId)
+      : []
+
     // If none of the above, proceed with default RAG flow
     const userRequestsReasoning = isReasoningEnabled
     if (!message) {
@@ -5080,6 +5258,32 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
+          // Build conversation history (exclude current message)
+          const filteredMessages =
+            messages.length > 1
+              ? messages
+                  .slice(0, messages.length - 1)
+                  .filter((msg) => !msg?.errorMessage)
+                  .filter(
+                    (msg) =>
+                      !(
+                        msg.messageRole === MessageRole.Assistant &&
+                        !msg.message
+                      ),
+                  )
+              : []
+
+          const topicConversationThread =
+            filteredMessages.length > 0
+              ? buildTopicConversationThread(
+                  filteredMessages,
+                  filteredMessages.length - 1,
+                )
+              : []
+
+          const llmFormattedMessages: Message[] = formatMessagesForLLM(
+            topicConversationThread,
+          )
 
           if (
             (fileIds && fileIds?.length > 0) ||
@@ -5115,6 +5319,9 @@ export const MessageApi = async (c: Context) => {
               agentPromptValue,
               isMsgWithKbItems,
               actualModelId || config.defaultBestModel,
+              false,
+              [],
+              llmFormattedMessages,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -5342,25 +5549,10 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-            const filteredMessages = messages
-              .slice(0, messages.length - 1)
-              .filter((msg) => !msg?.errorMessage)
-              .filter(
-                (msg) =>
-                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
-              )
-
             loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
 
-            const topicConversationThread = buildTopicConversationThread(
-              filteredMessages,
-              filteredMessages.length - 1,
-            )
-            const llmFormattedMessages: Message[] = formatMessagesForLLM(
-              topicConversationThread,
-            )
             // Extract previous classification for pagination and follow-up queries
             let previousClassification: QueryRouterLLMResponse | null = null
             if (filteredMessages.length >= 1) {
@@ -5824,16 +6016,6 @@ export const MessageApi = async (c: Context) => {
                 // - Updated count/pagination info
                 // - All the smart follow-up logic from the LLM
 
-                const filteredMessages = messages
-                  .filter((msg) => !msg?.errorMessage)
-                  .filter(
-                    (msg) =>
-                      !(
-                        msg.messageRole === MessageRole.Assistant &&
-                        !msg.message
-                      ),
-                  )
-
                 // Check for follow-up context carry-forward
                 const workingSet = collectFollowupContext(filteredMessages)
 
@@ -5867,7 +6049,7 @@ export const MessageApi = async (c: Context) => {
                     undefined,
                     imageAttachmentFileIds as string[],
                     agentPromptValue,
-                    undefined,
+                    fileIds.some((fileId) => fileId.startsWith("clf-")),
                     actualModelId || config.defaultBestModel,
                   )
                 } else {
@@ -5893,6 +6075,8 @@ export const MessageApi = async (c: Context) => {
                   understandSpan,
                   agentPromptValue,
                   actualModelId || config.defaultBestModel,
+                  undefined,
+                  publicAgents,
                 )
               }
 

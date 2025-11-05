@@ -14,6 +14,7 @@ import config from "@/config"
 import { getErrorMessage } from "@/utils"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
+import JSZip from "jszip"
 import {
   // New primary function names
   createCollection,
@@ -105,7 +106,7 @@ const { JwtPayloadKey } = config
 // Storage configuration for Knowledge Base feature files
 const KB_STORAGE_ROOT = join(process.cwd(), "storage", "kb_files")
 const MAX_FILE_SIZE = 100 // 100MB max file size
-const MAX_FILES_PER_REQUEST = 100 // Maximum files per upload request
+const MAX_ZIP_FILE_SIZE = 35 // 35MB max zip file size
 
 // Initialize storage directory for Knowledge Base files
 ;(async () => {
@@ -167,6 +168,37 @@ function getStoragePath(
     month,
     `${storageKey}_${fileName}`,
   )
+}
+
+/**
+ * Checks if a file path or filename is a system file that should be skipped
+ * @param pathOrName - Full path or just filename to check
+ * @returns true if the file is a system file and should be skipped
+ */
+function isSystemFile(pathOrName: string): boolean {
+  // Check for macOS system directories and files
+  if (
+    pathOrName.includes("__MACOSX/") ||
+    pathOrName.includes("/._") ||
+    pathOrName.endsWith(".DS_Store")
+  ) {
+    return true
+  }
+
+  // Extract filename from path
+  const fileName = pathOrName.split("/").pop() || ""
+
+  // Check for common system files
+  if (
+    fileName === ".DS_Store" ||
+    fileName.startsWith("._") ||
+    fileName === "Thumbs.db" ||
+    fileName === "desktop.ini"
+  ) {
+    return true
+  }
+
+  return false
 }
 
 // Enhanced MIME type detection with extension normalization and magic byte analysis
@@ -420,7 +452,19 @@ export const ListCollectionsApi = async (c: Context) => {
 
 // Get a specific Collection
 export const GetCollectionApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.LIST_COLLECTIONS)) {
+      return c.json(
+        { message: "API key does not have scope to get collection details" },
+        403,
+      )
+    }
+  }
+
   const collectionId = c.req.param("clId")
 
   // Get user from database
@@ -480,7 +524,6 @@ export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
     agentExternalId,
     user.workspaceId,
   )
-  
 
   if (!agent) {
     throw new HTTPException(404, { message: "Agent not found" })
@@ -526,7 +569,19 @@ export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
 
 // Update a Collection
 export const UpdateCollectionApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.UPDATE_COLLECTION)) {
+      return c.json(
+        { message: "API key does not have scope to update collections" },
+        403,
+      )
+    }
+  }
+
   const collectionId = c.req.param("clId")
 
   // Get user from database
@@ -1121,8 +1176,8 @@ export const UploadFilesApi = async (c: Context) => {
 
     const formData = await c.req.formData()
     const parentId = formData.get("parentId") as string | null
-    const files = formData.getAll("files") as File[]
-    const paths = formData.getAll("paths") as string[] // Get file paths for folder structure
+    let files = formData.getAll("files") as File[]
+    let paths = formData.getAll("paths") as string[] // Get file paths for folder structure
     const duplicateStrategy =
       (formData.get("duplicateStrategy") as DuplicateStrategy) ||
       DuplicateStrategy.RENAME
@@ -1148,10 +1203,94 @@ export const UploadFilesApi = async (c: Context) => {
       throw new HTTPException(400, { message: "No files provided" })
     }
 
-    // Validate file count
-    if (files.length > MAX_FILES_PER_REQUEST) {
+    // Check if any files are zip files and extract them
+    const extractedFiles: File[] = []
+    const extractedPaths: string[] = []
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const ext = extname(file.name).toLowerCase()
+
+      if (ext === ".zip") {
+        // Check zip file size before extraction
+        const zipSizeMB = Math.round(file.size / 1024 / 1024)
+        if (file.size > MAX_ZIP_FILE_SIZE * 1024 * 1024) {
+          loggerWithChild({ email: userEmail }).warn(
+            `Zip file too large: ${file.name} (${zipSizeMB}MB). Maximum is ${MAX_ZIP_FILE_SIZE}MB`,
+          )
+          throw new HTTPException(400, {
+            message: `Zip file too large (${zipSizeMB}MB). Maximum size is ${MAX_ZIP_FILE_SIZE}MB`,
+          })
+        }
+
+        loggerWithChild({ email: userEmail }).info(
+          `Extracting zip file: ${file.name} (${zipSizeMB}MB)`,
+        )
+
+        try {
+          // Extract zip file
+          const zipBuffer = await file.arrayBuffer()
+          const zip = await JSZip.loadAsync(zipBuffer)
+
+          let extractedCount = 0
+          for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+            // Skip directories
+            if (zipEntry.dir) continue
+
+            // Skip system files using helper function
+            if (isSystemFile(relativePath)) {
+              continue
+            }
+
+            // Get the file name from the path
+            const pathParts = relativePath.split("/")
+            const entryFileName = pathParts[pathParts.length - 1]
+
+            // Extract the file content
+            const content = await zipEntry.async("blob")
+
+            // Detect proper MIME type for the extracted file
+            const arrayBuffer = await content.arrayBuffer()
+            const mimeType = await detectMimeType(entryFileName, arrayBuffer)
+
+            const extractedFile = new File([content], entryFileName, {
+              type: mimeType,
+            })
+
+            extractedFiles.push(extractedFile)
+            extractedPaths.push(relativePath)
+            extractedCount++
+          }
+
+          loggerWithChild({ email: userEmail }).info(
+            `Extracted ${extractedCount} files from ${file.name}`,
+          )
+        } catch (error) {
+          loggerWithChild({ email: userEmail }).error(
+            error,
+            `Failed to extract zip file: ${file.name}`,
+          )
+          // If extraction fails, treat it as a regular file
+          extractedFiles.push(file)
+          extractedPaths.push(paths[i] || file.name)
+        }
+      } else {
+        // Not a zip file, add as-is
+        extractedFiles.push(file)
+        extractedPaths.push(paths[i] || file.name)
+      }
+    }
+
+    // Replace files and paths with extracted versions
+    files = extractedFiles
+    paths = extractedPaths
+
+    // Validate file count - allow up to 3000 files for zip extractions
+    const maxFilesLimit = 10000
+
+    if (files.length > maxFilesLimit) {
       throw new HTTPException(400, {
-        message: `Too many files. Maximum ${MAX_FILES_PER_REQUEST} files allowed per request`,
+        message: `Too many files. Maximum ${maxFilesLimit} files allowed per request`,
       })
     }
 
@@ -1177,12 +1316,7 @@ export const UploadFilesApi = async (c: Context) => {
       let targetParentId = parentId // Declare here so it's accessible in catch block
 
       // Skip system files
-      if (
-        file.name === ".DS_Store" ||
-        file.name.startsWith("._") ||
-        file.name === "Thumbs.db" ||
-        file.name === "desktop.ini"
-      ) {
+      if (isSystemFile(file.name)) {
         uploadResults.push({
           success: false,
           fileName: file.name,
@@ -1197,7 +1331,7 @@ export const UploadFilesApi = async (c: Context) => {
       let storagePath = ""
       try {
         // Validate file size
-        try{
+        try {
           checkFileSize(file.size, MAX_FILE_SIZE)
         } catch (error) {
           uploadResults.push({
@@ -1217,12 +1351,7 @@ export const UploadFilesApi = async (c: Context) => {
         const originalFileName = pathParts.pop() || file.name // Get the actual filename
 
         // Skip if the filename is a system file (in case it comes from path)
-        if (
-          originalFileName === ".DS_Store" ||
-          originalFileName.startsWith("._") ||
-          originalFileName === "Thumbs.db" ||
-          originalFileName === "desktop.ini"
-        ) {
+        if (isSystemFile(originalFileName)) {
           uploadResults.push({
             success: false,
             fileName: originalFileName,
@@ -1612,7 +1741,7 @@ export const DeleteItemApi = async (c: Context) => {
               } catch (error) {
                 loggerWithChild({ email: userEmail }).error(
                   `Failed to delete file from Vespa: ${id}`,
-                  { error: getErrorMessage(error) }
+                  { error: getErrorMessage(error) },
                 )
               }
             }
@@ -1804,10 +1933,14 @@ export const GetChunkContentApi = async (c: Context) => {
     }
 
     // Get the chunk content from Vespa response
-    const chunkContent = resp.fields.chunks[index]
+    let chunkContent = resp.fields.chunks[index]
     let pageIndex: number | undefined
 
-    const isSheetFile = getFileType({ type: resp.fields.mimeType || "", name: resp.fields.fileName || "" }) === FileType.SPREADSHEET
+    const isSheetFile =
+      getFileType({
+        type: resp.fields.mimeType || "",
+        name: resp.fields.fileName || "",
+      }) === FileType.SPREADSHEET
     if (isSheetFile) {
       const sheetIndexMatch = docId.match(/_sheet_(\d+)$/)
       if (sheetIndexMatch) {
@@ -1815,6 +1948,10 @@ export const GetChunkContentApi = async (c: Context) => {
       } else {
         pageIndex = 0
       }
+      // Remove header row (first line) and column header (first tab-delimited value) from each remaining line
+      chunkContent = chunkContent.split("\n").slice(1).map((line) => {
+        return line.split("\t").slice(1).join("\t")
+      }).join("\n")
     } else {
       const pageNums = resp.fields.chunks_map?.[index]?.page_numbers
       pageIndex =
@@ -1822,7 +1959,7 @@ export const GetChunkContentApi = async (c: Context) => {
           ? pageNums[0]
           : 0
     }
-    
+
     if (!chunkContent) {
       throw new HTTPException(404, { message: "Chunk content not found" })
     }
@@ -1887,7 +2024,18 @@ export const GetFileContentApi = async (c: Context) => {
 
 // Poll collection items status for multiple collections
 export const PollCollectionsStatusApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.LIST_COLLECTIONS)) {
+      return c.json(
+        { message: "API key does not have scope to poll collection status" },
+        403,
+      )
+    }
+  }
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)

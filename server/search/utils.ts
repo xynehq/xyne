@@ -15,8 +15,10 @@ import {
   getAllCollectionAndFolderItems,
   getCollectionFoldersItemIds,
 } from "@/db/knowledgeBase"
+import { collections } from "@/db/schema"
 import type { SelectAgent } from "@/db/agent"
 import { sharedVespaService } from "./vespaService"
+import { and, inArray, isNull } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "search-utils" })
 
@@ -41,15 +43,18 @@ export function expandSheetIds(fileId: string): string[] {
   return expandedIds
 }
 
-export function replaceSheetIndex(vespaDocId: string, newSheetIndex: number): string {
+export function replaceSheetIndex(
+  vespaDocId: string,
+  newSheetIndex: number,
+): string {
   // Check if the vespaDocId matches the pattern docId_sheet_number
   const sheetMatch = vespaDocId.match(/^(.+)_sheet_(\d+)$/)
-  
+
   if (!sheetMatch) {
     // Not a sheet ID, return as is
     return vespaDocId
   }
-  
+
   const [, docId] = sheetMatch
   return `${docId}_sheet_${newSheetIndex}`
 }
@@ -68,27 +73,82 @@ export function removePrefixesFromItemIds(itemIds: string[]): string[] {
   })
 }
 
+export async function getCollectionVespaIds(
+  collectionDbIds: string[],
+): Promise<string[]> {
+  try {
+    if (collectionDbIds.length === 0) return []
+
+    const result = await db
+      .select({ vespaDocId: collections.vespaDocId })
+      .from(collections)
+      .where(
+        and(
+          inArray(collections.id, collectionDbIds),
+          isNull(collections.deletedAt),
+        ),
+      )
+
+    return result.map((item) => item.vespaDocId).filter(Boolean)
+  } catch (error) {
+    Logger.error("Error getting collection vespaIds:", error)
+    return []
+  }
+}
+
 export async function getVespaIdsFromPrefixedItemIds(
   prefixedItemIds: string[],
 ): Promise<string[]> {
   try {
-    // Remove prefixes from itemIds
-    const cleanedItemIds = removePrefixesFromItemIds(prefixedItemIds)
-    // Get their corresponding vespaIds
-    const ids = await getCollectionFoldersItemIds(cleanedItemIds, db)
-    // get all their children db Ids
-    const { fileIds, folderIds } = await getAllCollectionAndFolderItems(
-      ids
+    // Separate itemIds by type based on their prefixes
+    const collectionIds: string[] = []
+    const folderFileIds: string[] = []
+
+    for (const itemId of prefixedItemIds) {
+      if (itemId.startsWith("cl-")) {
+        // Collection ID - remove 'cl-' prefix
+        collectionIds.push(itemId.substring(3))
+      } else if (itemId.startsWith("clfd-") || itemId.startsWith("clf-")) {
+        // Folder or file ID - will be cleaned by removePrefixesFromItemIds
+        folderFileIds.push(itemId)
+      } else {
+        Logger.error("Invalid collection item")
+      }
+    }
+
+    const allVespaDocIds: string[] = []
+
+    // Handle collection IDs
+    if (collectionIds.length > 0) {
+      const collectionVespaIds = await getCollectionVespaIds(collectionIds)
+      allVespaDocIds.push(...collectionVespaIds)
+    }
+
+    // Handle folder/file IDs
+    if (folderFileIds.length > 0) {
+      const cleanedFolderFileIds = removePrefixesFromItemIds(folderFileIds)
+      const ids = await getCollectionFoldersItemIds(cleanedFolderFileIds, db)
+      const folderFileVespaIds = ids
         .map((doc) => doc.vespaDocId)
-        .filter((id): id is string => id !== null),
+        .filter((id): id is string => id !== null)
+      allVespaDocIds.push(...folderFileVespaIds)
+    }
+
+    // Get all their children db Ids using the combined vespa doc IDs
+    const { fileIds, folderIds } = await getAllCollectionAndFolderItems(
+      allVespaDocIds,
       db,
     )
 
+    // Start with the original collection vespa doc IDs
+    const finalVespaIds = [...allVespaDocIds]
+
     // Get vespaIds for all file items
     const fileVespaIds = await getCollectionFilesVespaIds(fileIds, db)
-    const allVespaIds = fileVespaIds
+    const fileVespaDocIds = fileVespaIds
       .map((item: any) => item.vespaDocId)
       .filter(Boolean)
+    finalVespaIds.push(...fileVespaDocIds)
 
     // Also get vespaIds for folder items
     if (folderIds.length > 0) {
@@ -96,9 +156,9 @@ export async function getVespaIdsFromPrefixedItemIds(
       const folderVespaDocIds = folderVespaIds
         .map((item: any) => item.vespaDocId)
         .filter(Boolean)
-      allVespaIds.push(...folderVespaDocIds)
+      finalVespaIds.push(...folderVespaDocIds)
     }
-    return allVespaIds
+    return finalVespaIds
   } catch (error) {
     Logger.error("Error getting vespaIds from prefixed itemIds:", error)
     return []
@@ -196,6 +256,7 @@ export async function extractCollectionVespaIds(
       const vespaDocIds = ids
         .filter((item: any) => item.vespaDocId !== null)
         .map((item: any) => item.vespaDocId!)
+        .flatMap((i) => expandSheetIds(i))
 
       if (!result.collectionFileIds) result.collectionFileIds = []
       result.collectionFileIds.push(...vespaDocIds)
