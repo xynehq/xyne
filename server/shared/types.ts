@@ -59,7 +59,6 @@ export type {
   VespaChatContainerSearch,
   VespaChatUserSearch,
   VespaSearchResults
-  
 } from "@xyne/vespa-ts/types"
 
 export type VespaFile = z.infer<typeof VespaFileSchema>

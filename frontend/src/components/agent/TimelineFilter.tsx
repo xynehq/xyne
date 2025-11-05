@@ -153,7 +153,7 @@ export const TimelineFilter: React.FC<TimelineFilterProps> = ({
   selectedPeople = new Set(),
   selectedChannels = new Set(),
 }) => {
-  const [selectedTimelines, setSelectedTimelines] = useState<Set<string>>(new Set())
+  const [selectedTimeline, setSelectedTimeline] = useState<string | null>(null)
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({
     start: null,
@@ -161,13 +161,17 @@ export const TimelineFilter: React.FC<TimelineFilterProps> = ({
   })
   const [currentMonth, setCurrentMonth] = useState(new Date())
 
-  // Parse existing timeline filters
+  // Parse existing timeline filter (only one allowed)
   useEffect(() => {
-    if (!filterValue) return
+    if (!filterValue) {
+      setSelectedTimeline(null)
+      return
+    }
 
     const filters = filterValue.split(', ').filter(f => f.trim())
     const timelineFilters = filters.filter(f => f.startsWith('~')).map(f => f.substring(1))
-    setSelectedTimelines(new Set(timelineFilters))
+    // Only take the first timeline filter if multiple exist
+    setSelectedTimeline(timelineFilters.length > 0 ? timelineFilters[0] : null)
   }, [filterValue])
 
   const handleTimelineSelect = (timelineOption: { label: string; value: string }) => {
@@ -176,16 +180,15 @@ export const TimelineFilter: React.FC<TimelineFilterProps> = ({
       return
     }
 
-    const updatedTimelines = new Set(selectedTimelines)
-    if (updatedTimelines.has(timelineOption.label)) {
-      updatedTimelines.delete(timelineOption.label)
-    } else {
-      updatedTimelines.add(timelineOption.label)
-    }
-    setSelectedTimelines(updatedTimelines)
+    // If clicking the already selected timeline, deselect it
+    const newSelection = selectedTimeline === timelineOption.label 
+      ? null 
+      : timelineOption.label
 
-    // Build filter string
-    const selectedTimelineNames = Array.from(updatedTimelines).map(t => `~${t}`)
+    setSelectedTimeline(newSelection)
+
+    // Build filter string with single timeline
+    const selectedTimelineNames = newSelection ? [`~${newSelection}`] : []
     
     // Preserve existing non-timeline filters
     const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
@@ -206,24 +209,18 @@ export const TimelineFilter: React.FC<TimelineFilterProps> = ({
       
       const dateRangeString = `${formatDate(dateRange.start)} → ${formatDate(dateRange.end)}`
       
-      const updatedTimelines = new Set(selectedTimelines)
-      updatedTimelines.add(dateRangeString)
-      setSelectedTimelines(updatedTimelines)
+      // Replace any existing timeline selection
+      setSelectedTimeline(dateRangeString)
       
-      // Build filter string
-      const selectedPeopleIds = Array.from(selectedPeople ?? new Set<string>()).map(id => `@${id}`)
+      // Build filter string with single timeline
+      const selectedTimelineNames = [`~${dateRangeString}`]
       
-      const selectedChannelIds = Array.from(selectedChannels).map(id => `#${id}`)
-      const selectedTimelineNames = Array.from(updatedTimelines).map(t => `~${t}`)
-      
-      // Preserve existing Gmail people filters
+      // Preserve existing non-timeline filters
       const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
-      const existingGmailFilters = currentFilters.filter(f => 
-        f.startsWith('from:') || f.startsWith('to:') || f.startsWith('cc:') || f.startsWith('bcc:')
-      )
+      const existingNonTimelineFilters = currentFilters.filter(f => !f.startsWith('~'))
       
-      const combinedNames = [...existingGmailFilters, ...selectedPeopleIds, ...selectedChannelIds, ...selectedTimelineNames].join(', ')
-      onFilterChange(combinedNames)
+      const combinedFilters = [...selectedTimelineNames, ...existingNonTimelineFilters]
+      onFilterChange(combinedFilters.join(', '))
       
       setShowDatePicker(false)
       setDateRange({ start: null, end: null })
@@ -252,7 +249,10 @@ export const TimelineFilter: React.FC<TimelineFilterProps> = ({
               <input 
                 type="checkbox" 
                 className="mr-3" 
-                checked={selectedTimelines.has(timelineOption.label)}
+                checked={
+                  selectedTimeline === timelineOption.label || 
+                  (timelineOption.label === 'Custom date' && selectedTimeline?.includes('→'))
+                }
                 onChange={() => {}}
               />
               <span className="text-gray-700 dark:text-gray-200">{timelineOption.label}</span>
