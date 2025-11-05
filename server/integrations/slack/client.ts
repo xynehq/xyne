@@ -2132,8 +2132,6 @@ const processSlackDM = async (event: any) => {
 
   const { user, text, channel, ts, thread_ts } = event
 
-  console.dir(event)
-
   try {
     // Validate the user and get their DB record (true flag indicates this is a DM)
     const validatedUser = await validateSlackUser(
