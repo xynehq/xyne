@@ -1,9 +1,13 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router"
 import { useCallNotifications } from "@/services/callNotifications"
 import { IncomingCallModal } from "@/components/IncomingCallModal"
+import { UnreadCountProvider } from "@/contexts/UnreadCountContext"
+import { useGlobalUnreadTracker } from "@/hooks/useGlobalUnreadTracker"
 
-function RootComponent() {
-  const { incomingCall, acceptCall, rejectCall, dismissCall } = useCallNotifications()
+function RootContent() {
+  const { incomingCall, acceptCall, rejectCall, dismissCall } =
+    useCallNotifications()
+  useGlobalUnreadTracker() // Track unread messages globally
 
   return (
     <>
@@ -15,6 +19,14 @@ function RootComponent() {
         onDismiss={dismissCall}
       />
     </>
+  )
+}
+
+function RootComponent() {
+  return (
+    <UnreadCountProvider>
+      <RootContent />
+    </UnreadCountProvider>
   )
 }
 

@@ -238,20 +238,70 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
   }
 }
 
+export async function checkPaddleOCRHealth(): Promise<HealthStatusResponse> {
+  const start = Date.now()
+
+  const baseURL = config.paddleStatusEndpoint!
+  try {
+    const response = await fetch(`${baseURL}`, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000), // 5 second timeout
+    })
+
+    const responseTime = Date.now() - start
+
+    if (!response.ok) {
+      return {
+        status: HealthStatusType.Unhealthy,
+        serviceName: ServiceName.paddleOCR,
+        responseTime,
+        details: {
+          message: `PaddleOCR service Unhealthy ${response.status}`,
+          responseTimeThreshold: "5000ms",
+        },
+      }
+    }
+    return {
+      status: HealthStatusType.Healthy,
+      serviceName: ServiceName.paddleOCR,
+      responseTime,
+      details: {
+        message: "PaddleOCR service is healthy",
+      },
+    }
+  } catch (error) {
+    Logger.error(error, "PaddleOCR health check failed")
+    return {
+      status: HealthStatusType.Unhealthy,
+      serviceName: ServiceName.paddleOCR,
+      responseTime: Date.now() - start,
+      details: {
+        message: "Failed to connect to PaddleOCR service",
+        error:
+          error instanceof Error
+            ? (error as Error).message
+            : "Unknown PaddleOCR Service Error",
+      },
+    }
+  }
+}
+
 // Check Overall System Health
 export const checkOverallSystemHealth =
   async (): Promise<OverallSystemHealthResponse> => {
     Logger.info("Starting overall system health check...")
     const startTime = Date.now()
 
-    const [postgresHealth, vespaHealth] = await Promise.all([
+    const [postgresHealth, vespaHealth, paddleOCRHealth] = await Promise.all([
       checkPostgresHealth(),
       checkVespaHealth(),
+      checkPaddleOCRHealth(),
     ])
 
     const services: ServiceHealthCheck = {
       postgres: postgresHealth,
       vespa: vespaHealth,
+      paddleOCR: paddleOCRHealth,
     }
 
     const serviceStatuses = Object.values(services).filter(Boolean)

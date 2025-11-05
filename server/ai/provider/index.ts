@@ -1334,7 +1334,6 @@ export const baselineRAGJsonStream = (
     ],
   }
 
-  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
@@ -1372,7 +1371,7 @@ export const baselineRAGOffJsonStream = (
     ],
   }
 
-  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
+
   const updatedMessages: Message[] = messages
     ? [...messages, baseMessage]
     : [baseMessage]
@@ -2147,6 +2146,7 @@ export const extractBestDocumentIndexes = async (
   query: string,
   retrievedContext: string[],
   params: ModelParams,
+  messages: Message[],
 ): Promise<number[]> => {
   try {
     if (!params.modelId) {
@@ -2155,17 +2155,23 @@ export const extractBestDocumentIndexes = async (
 
     params.systemPrompt = extractBestDocumentsPrompt(query, retrievedContext)
 
-    const { text, cost } = await getProviderByModel(params.modelId).converse(
-      [
+    const baseMessage: Message = {
+      role: "user",
+      content: [
         {
-          role: "user",
-          content: [
-            {
-              text: query,
-            },
-          ],
+          text: query,
         },
       ],
+    }
+
+    // Combine history messages with the current query
+    const allMessages: Message[] =
+      messages && messages.length > 0
+        ? [...messages, baseMessage]
+        : [baseMessage]
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      allMessages,
       params,
     )
 

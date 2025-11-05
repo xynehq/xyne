@@ -572,8 +572,9 @@ export const getAttendeesOfEvent = (
   const attendeesNames: string[] = []
   const attendeesEmails: string[] = []
   for (const attendee of allAttendes) {
-    if (attendee.displayName) {
-      attendeesNames.push(attendee.displayName ?? "")
+    const nameToAdd = attendee.displayName || attendee.email
+    if (nameToAdd) {
+      attendeesNames.push(nameToAdd)
     }
 
     if (attendee.email) {
@@ -2258,9 +2259,9 @@ export const getSheetsListFromOneSpreadsheet = async (
 
         const sheetDataToBeIngested = {
           title: `${spreadsheet.name} / ${sheet?.sheetTitle}`,
-          url: sheet?.sheetId 
+          url: sheet?.sheetId
             ? `https://docs.google.com/spreadsheets/d/${spreadsheet.id}/edit#gid=${sheet.sheetId}`
-            : spreadsheet.webViewLink ?? "",
+            : (spreadsheet.webViewLink ?? ""),
           app: Apps.GoogleDrive,
           // TODO Document it eveyrwhere
           // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
@@ -2965,6 +2966,8 @@ export async function* listFiles(
           fields:
             "nextPageToken, files(id, webViewLink, size, parents, createdTime, modifiedTime, name, owners, fileExtension, mimeType, permissions(id, type, emailAddress))",
           pageToken: nextPageToken,
+          includeItemsFromAllDrives: true,
+          supportsAllDrives: true,
         }),
       `Fetching all files from Google Drive`,
       Apps.GoogleDrive,
@@ -3355,6 +3358,8 @@ export async function countDriveFiles(
           pageSize: 1000,
           fields: "nextPageToken, files(id)",
           pageToken: nextPageToken,
+          includeItemsFromAllDrives: true,
+          supportsAllDrives: true,
         }),
       `Counting Drive files (pageToken: ${nextPageToken || "initial"})`,
       Apps.GoogleDrive,

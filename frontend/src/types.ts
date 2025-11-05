@@ -47,6 +47,11 @@ export type Filter = {
   lastUpdated?: LastUpdated
 }
 
+export enum CallType {
+  Video = "video",
+  Audio = "audio",
+}
+
 export enum OAuthIntegrationStatus {
   Provider = "Provider", // yet to create provider
   OAuth = "OAuth", // provider created but OAuth not yet connected
@@ -74,4 +79,79 @@ export interface Reference {
   userMap?: Record<string, string>
   wholeSheet?: boolean
   threadId?: string // Optional threadId for chat references
+}
+
+export interface LexicalEditorState {
+  root: {
+    children: any[]
+    direction?: string | null
+    format?: string | number
+    indent?: number
+    type?: string
+    version?: number
+  }
+}
+
+// Channel types
+export enum ChannelType {
+  Public = "public",
+  Private = "private",
+}
+
+export enum ChannelMemberRole {
+  Owner = "owner",
+  Admin = "admin",
+  Member = "member",
+}
+
+export interface Channel {
+  id: number
+  name: string
+  description?: string
+  purpose?: string
+  type: ChannelType
+  isArchived: boolean
+  createdAt: string
+  archivedAt?: string | null
+  memberRole?: ChannelMemberRole
+  joinedAt?: string
+  lastReadAt?: string | null
+  memberCount?: number
+  unreadCount?: number
+}
+
+export interface ChannelMember {
+  id: string
+  name: string
+  email: string
+  photoLink?: string | null
+  role: ChannelMemberRole
+  joinedAt: string
+}
+
+export interface ChannelMessage {
+  id: number
+  channelId: number
+  messageContent: LexicalEditorState
+  isEdited: boolean
+  isPinned: boolean
+  pinnedAt?: string | null
+  createdAt: string
+  deletedAt?: string | null
+  updatedAt?: string
+  sender: {
+    id: string
+    name: string
+    email: string
+    photoLink?: string | null
+  }
+  pinnedBy?: {
+    id: string
+    name: string
+  }
+  // Thread information
+  threadId?: number | null
+  replyCount?: number
+  lastReplyAt?: string | null
+  repliers?: Array<{ userId: string; name: string; photoLink: string | null }>
 }

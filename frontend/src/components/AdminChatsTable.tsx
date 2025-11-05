@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
+import { format } from "date-fns"
 import {
   MessageSquare,
   Bot,
@@ -27,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { formatCostInINR } from "@/lib/utils"
 import { api } from "@/api"
 
@@ -34,7 +36,6 @@ export interface AdminChat {
   externalId: string
   title: string
   createdAt: string
-  userId: number
   userName: string
   userEmail: string
   agentId?: string | null
@@ -177,12 +178,6 @@ const ChatViewDialog = ({ isOpen, onClose, chat }: ChatViewDialogProps) => {
                     {chat.agentName || "Unknown Agent"}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-sm font-medium">Agent ID:</span>
-                  <span className="text-sm font-mono text-xs">
-                    {chat.agentId}
-                  </span>
-                </div>
               </CardContent>
             </Card>
           )}
@@ -260,12 +255,17 @@ interface AdminChatsTableProps {
   onSearchInputChange: (input: string) => void
   onSearch: () => void
   onClearSearch: () => void
+  onClearAllFilters: () => void
   filterType: "all" | "agent" | "normal"
   onFilterTypeChange: (type: "all" | "agent" | "normal") => void
-  userFilter: "all" | number
-  onUserFilterChange: (filter: "all" | number) => void
+  userFilter: "all" | string
+  onUserFilterChange: (filter: "all" | string) => void
   sortBy: "created" | "messages" | "cost" | "tokens"
   onSortByChange: (sortBy: "created" | "messages" | "cost" | "tokens") => void
+  // Date range filter props
+  dateFrom: Date | undefined
+  dateTo: Date | undefined
+  onDateChange: (from: Date | undefined, to: Date | undefined) => void
   // Props to control visibility of user dropdown
   showUserFilter?: boolean
 }
@@ -279,12 +279,16 @@ export const AdminChatsTable = ({
   onSearchInputChange,
   onSearch,
   onClearSearch,
+  onClearAllFilters,
   filterType,
   onFilterTypeChange,
   userFilter,
   onUserFilterChange,
   sortBy,
   onSortByChange,
+  dateFrom,
+  dateTo,
+  onDateChange,
   showUserFilter = true,
 }: AdminChatsTableProps) => {
   const [selectedChat, setSelectedChat] = useState<AdminChat | null>(null)
@@ -302,6 +306,15 @@ export const AdminChatsTable = ({
     setIsDialogOpen(false)
     setSelectedChat(null)
   }
+
+  // Check if any filters are active
+  const hasActiveFilters =
+    searchQuery.trim() !== "" ||
+    filterType !== "all" ||
+    userFilter !== "all" ||
+    sortBy !== "created" ||
+    dateFrom !== undefined ||
+    dateTo !== undefined
 
   // Fetch users on component mount
   useEffect(() => {
@@ -365,14 +378,18 @@ export const AdminChatsTable = ({
           </div>
 
           {/* Search and Filter Controls */}
-          <div className="mt-4 flex flex-col sm:flex-row gap-4">
-            {/* Search */}
-            <div className="relative flex-1">
+          <div className="mt-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              {/* Search */}
+              <div className="relative flex-1">
               <input
                 type="text"
                 placeholder="Search by chat title, user name, email, or agent..."
                 value={searchInput}
-                onChange={(e) => onSearchInputChange(e.target.value)}
+                onChange={(e) => {
+                  const newValue = e.target.value
+                  onSearchInputChange(newValue)
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     onSearch()
@@ -429,7 +446,7 @@ export const AdminChatsTable = ({
                   value={userFilter}
                   onChange={(e) =>
                     onUserFilterChange(
-                      e.target.value === "all" ? "all" : Number(e.target.value),
+                      e.target.value === "all" ? "all" : e.target.value,
                     )
                   }
                   className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent min-w-[150px]"
@@ -437,7 +454,7 @@ export const AdminChatsTable = ({
                 >
                   <option value="all">All Users</option>
                   {users.map((user) => (
-                    <option key={user.id} value={user.id}>
+                    <option key={user.id} value={user.id.toString()}>
                       {user.name} ({user.email})
                     </option>
                   ))}
@@ -451,6 +468,14 @@ export const AdminChatsTable = ({
                 </div>
               </div>
             )}
+
+            {/* Date Range Picker */}
+            <DateRangePicker
+              from={dateFrom}
+              to={dateTo}
+              onSelect={onDateChange}
+              placeholder="Select date range"
+            />
 
             {/* Sort Dropdown */}
             <div className="relative">
@@ -488,6 +513,26 @@ export const AdminChatsTable = ({
                 </svg>
               </div>
             </div>
+
+              {/* Clear All Filters Button */}
+              <button
+                type="button"
+                onClick={onClearAllFilters}
+                disabled={!hasActiveFilters}
+                className={`px-3 py-2 text-sm border border-input rounded-md transition-colors flex items-center gap-2 ${
+                  hasActiveFilters
+                    ? "bg-background hover:bg-muted text-foreground"
+                    : "bg-muted/50 text-muted-foreground cursor-not-allowed"
+                }`}
+                title={
+                  hasActiveFilters
+                    ? "Clear all filters"
+                    : "No active filters to clear"
+                }
+              >
+                Clear
+              </button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -499,7 +544,7 @@ export const AdminChatsTable = ({
           ) : (
             <div className="space-y-4">
               {/* Chats List */}
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <div className="space-y-2 max-h-[55vh] overflow-y-auto">
                 {chats.length > 0 ? (
                   chats.map((chat, index) => (
                     <div
@@ -611,8 +656,9 @@ export const AdminChatsTable = ({
                   {searchQuery && ` • Search: "${searchQuery}"`}
                   {filterType !== "all" && ` • ${filterType} chats only`}
                   {userFilter !== "all" &&
-                    ` • User: ${users.find((u) => u.id === userFilter)?.name || "Unknown"}`}
+                    ` • User: ${users.find((u) => u.id.toString() === userFilter)?.name || "Unknown"}`}
                   {sortBy !== "created" && ` • Sorted by ${sortBy}`}
+                  {(dateFrom || dateTo) && ` • Date: ${dateFrom ? format(new Date(dateFrom), 'dd/MM/yyyy') : 'Any'} - ${dateTo ? format(new Date(dateTo), 'dd/MM/yyyy') : 'Any'}`}
                 </div>
               )}
             </div>

@@ -111,6 +111,10 @@ import { serveStatic } from "hono/bun"
 import config from "@/config"
 import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
+import {
+  validateAppleToken,
+  extractUserInfoFromToken,
+} from "@/utils/apple-auth"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import {
@@ -139,7 +143,72 @@ import {
   endCallSchema,
   leaveCallSchema,
   inviteToCallSchema,
+  getCallHistorySchema,
 } from "@/api/calls"
+import {
+  SendMessageApi,
+  GetConversationApi,
+  MarkMessagesAsReadApi,
+  GetUnreadCountsApi,
+  GetConversationParticipantsApi,
+  EditMessageApi,
+  DeleteMessageApi,
+  sendMessageSchema,
+  getConversationSchema,
+  markAsReadSchema,
+  editMessageSchema,
+  deleteMessageSchema,
+} from "@/api/directMessages"
+import {
+  CreateChannelApi,
+  GetChannelDetailsApi,
+  UpdateChannelApi,
+  ArchiveChannelApi,
+  GetUserChannelsApi,
+  BrowsePublicChannelsApi,
+  JoinChannelApi,
+  AddChannelMembersApi,
+  RemoveChannelMemberApi,
+  UpdateMemberRoleApi,
+  LeaveChannelApi,
+  GetChannelMembersApi,
+  DeleteChannelApi,
+  SendChannelMessageApi,
+  GetChannelMessagesApi,
+  EditChannelMessageApi,
+  DeleteChannelMessageApi,
+  PinMessageApi,
+  UnpinMessageApi,
+  GetPinnedMessagesApi,
+  createChannelSchema,
+  updateChannelSchema,
+  archiveChannelSchema,
+  addMembersSchema,
+  removeMemberSchema,
+  updateMemberRoleSchema,
+  leaveChannelSchema,
+  sendChannelMessageSchema,
+  getChannelMessagesSchema,
+  editChannelMessageSchema,
+  deleteChannelMessageSchema,
+  pinMessageSchema,
+  unpinMessageSchema,
+  joinChannelSchema,
+  getPinnedMessagesSchema,
+  getChannelMembersSchema,
+  getUserChannelsSchema,
+  channelIdParamSchema,
+} from "@/api/channels"
+import {
+  getThread,
+  sendThreadReply,
+  updateThreadReply,
+  deleteThreadReply,
+  getThreadSchema,
+  sendThreadReplySchema,
+  updateThreadReplySchema,
+  deleteThreadReplySchema,
+} from "@/api/threads"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -239,6 +308,12 @@ import {
   ServeWorkflowFileApi,
   GetGeminiModelEnumsApi,
   GetVertexAIModelEnumsApi,
+  TestJiraConnectionApi,
+  RegisterJiraWebhookApi,
+  GetJiraWebhooksApi,
+  DeleteJiraWebhookApi,
+  GetJiraMetadataApi,
+  ReceiveJiraWebhookApi,
   createWorkflowTemplateSchema,
   createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
@@ -249,6 +324,15 @@ import {
   formSubmissionSchema,
   listWorkflowExecutionsQuerySchema,
 } from "@/api/workflow"
+import { 
+  workflowTool, 
+  workflowStepTemplate, 
+  workflowTemplate, 
+  workflowExecution, 
+  workflowStepExecution 
+} from "@/db/schema/workflows"
+import { ToolType, WorkflowStatus, ToolExecutionStatus } from "@/types/workflowTypes"
+import { sql, eq } from "drizzle-orm"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
   handleAttachmentUpload,
@@ -296,6 +380,7 @@ import { updateMetricsFromThread } from "@/metrics/utils"
 import {
   agents,
   apiKeys,
+  channelMembers,
   users,
   type PublicUserWorkspace,
   updateWorkflowToolSchema,
@@ -304,9 +389,9 @@ import {
 import { sendMailHelper } from "@/api/testEmail"
 import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
-import { eq } from "drizzle-orm"
 import {
   checkOverallSystemHealth,
+  checkPaddleOCRHealth,
   checkPostgresHealth,
   checkVespaHealth,
 } from "./health"
@@ -315,6 +400,7 @@ import {
   ServiceName,
   type HealthStatusResponse,
 } from "@/health/type"
+import WebhookHandler from "@/services/WebhookHandler"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -525,12 +611,12 @@ export const CallNotificationWs = app.get(
           Logger.info(`User ${userId} connected for call notifications`)
         }
       },
-      onMessage(event, ws) {
+      async onMessage(event, ws) {
         try {
           const message = JSON.parse(event.data.toString())
           Logger.info(`Call notification message from user ${userId}:`, message)
 
-          // Handle different message types (accept call, reject call, etc.)
+          // Handle different message types (accept call, reject call, typing indicator, etc.)
           switch (message.type) {
             case "call_response":
               // Handle call acceptance/rejection
@@ -539,6 +625,43 @@ export const CallNotificationWs = app.get(
                   message.callerId,
                   message.response,
                   { callId: message.callId, targetUserId: userId },
+                )
+              }
+              break
+            case "typing_indicator":
+              // Handle typing indicator
+              if (
+                userId &&
+                message.targetUserId &&
+                typeof message.isTyping === "boolean"
+              ) {
+                callNotificationService.sendTypingIndicator(
+                  message.targetUserId,
+                  message.isTyping,
+                  userId,
+                )
+              }
+              break
+            case "channel_typing_indicator":
+              // Handle channel typing indicator - derive recipients server-side
+              if (
+                userId &&
+                message.channelId &&
+                typeof message.isTyping === "boolean"
+              ) {
+                const members = await db
+                  .select({ externalId: users.externalId })
+                  .from(channelMembers)
+                  .innerJoin(users, eq(channelMembers.userId, users.id))
+                  .where(eq(channelMembers.channelId, message.channelId))
+                const targets = members
+                  .map((m) => m.externalId)
+                  .filter((externalId) => externalId !== userId)
+                callNotificationService.sendChannelTypingIndicator(
+                  targets,
+                  message.channelId,
+                  userId,
+                  message.isTyping,
                 )
               }
               break
@@ -754,6 +877,254 @@ const handleAppValidation = async (c: Context) => {
   )
 }
 
+// Apple Sign-In validation endpoint
+const handleAppleAppValidation = async (c: Context) => {
+  const authHeader = c.req.header("Authorization")
+  const body = await c.req.json()
+
+  if (!authHeader) {
+    throw new HTTPException(401, {
+      message: "Missing Authorization header",
+    })
+  }
+
+  if (!authHeader.startsWith("Bearer ")) {
+    throw new HTTPException(400, { message: "Malformed Authorization header" })
+  }
+
+  const identityToken = authHeader.slice("Bearer ".length).trim()
+
+  try {
+    const expectedAudience = config.appleBundleId
+
+    if (!expectedAudience) {
+      throw new HTTPException(500, {
+        message: "Apple Bundle ID is not configured",
+      })
+    }
+
+    // Validate the Apple identity token
+    const tokenClaims = await validateAppleToken(
+      identityToken,
+      expectedAudience,
+    )
+
+    // Extract user information from token and request body
+    const userInfo = extractUserInfoFromToken(tokenClaims, {
+      name: body.fullName
+        ? {
+            firstName: body.fullName.givenName,
+            lastName: body.fullName.familyName,
+          }
+        : body.user?.name,
+    })
+
+    const email = tokenClaims?.email
+
+    if (!email) {
+      throw new HTTPException(400, {
+        message: "Could not extract email from Apple token or request body",
+      })
+    }
+
+    // Check if email is verified (Apple tokens should always have verified emails)
+    if (!userInfo.emailVerified) {
+      throw new HTTPException(403, {
+        message: "Apple ID email is not verified",
+      })
+    }
+
+    // Extract domain from email
+    const emailParts = email.split("@")
+    if (emailParts.length !== 2) {
+      throw new HTTPException(400, { message: "Invalid email format" })
+    }
+    let domain = emailParts[1]
+
+    const name =
+      userInfo.name || userInfo.givenName || userInfo.familyName || ""
+
+    Logger.info(
+      {
+        requestId: c.var.requestId,
+        user: {
+          id: userInfo.id,
+          email: email,
+          email_verified: userInfo.emailVerified,
+          name: name,
+        },
+      },
+      "Apple Sign-In token validated successfully",
+    )
+
+    // Check if user already exists
+    const existingUserRes = await getUserByEmail(db, email)
+
+    // if user exists then workspace exists too
+    if (existingUserRes && existingUserRes.length) {
+      Logger.info(
+        {
+          requestId: c.var.requestId,
+          user: {
+            email: email,
+            name: name,
+            verified_email: userInfo.emailVerified,
+          },
+        },
+        "Existing user found and authenticated with Apple Sign-In",
+      )
+
+      const existingUser = existingUserRes[0]
+      const workspaceId = existingUser.workspaceExternalId
+
+      const accessToken = await generateTokens(
+        email,
+        existingUser.role,
+        existingUser.workspaceExternalId,
+      )
+      const refreshToken = await generateTokens(
+        email,
+        existingUser.role,
+        existingUser.workspaceExternalId,
+        true,
+      )
+
+      // Save refresh token to database
+      await saveRefreshTokenToDB(db, email, refreshToken)
+
+      return c.json({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        workspace_id: workspaceId,
+        user: {
+          id: userInfo.id,
+          email: email,
+          name: name,
+          apple_user_id: userInfo.id,
+        },
+      })
+    }
+
+    // check if workspace exists
+    // just create the user
+    const existingWorkspaceRes = await getWorkspaceByDomain(domain)
+    if (existingWorkspaceRes && existingWorkspaceRes.length) {
+      Logger.info("Workspace found, creating user for Apple Sign-In")
+      const existingWorkspace = existingWorkspaceRes[0]
+      const [user] = await createUser(
+        db,
+        existingWorkspace.id,
+        email,
+        name,
+        "",
+        UserRole.User,
+        existingWorkspace.externalId,
+      )
+
+      const accessToken = await generateTokens(
+        user.email,
+        user.role,
+        user.workspaceExternalId,
+      )
+      const refreshToken = await generateTokens(
+        user.email,
+        user.role,
+        user.workspaceExternalId,
+        true,
+      )
+      // save refresh token generated in user schema
+      await saveRefreshTokenToDB(db, email, refreshToken)
+      const emailSent = await emailService.sendWelcomeEmail(
+        user.email,
+        user.name,
+      )
+      if (emailSent) {
+        Logger.info(`Welcome email sent to ${user.email} and ${user.name}`)
+      }
+
+      return c.json({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        workspace_id: user.workspaceExternalId,
+        user: {
+          id: userInfo.id,
+          email: user.email,
+          name: user.name,
+          apple_user_id: userInfo.id,
+        },
+      })
+    }
+
+    // we could not find the user and the workspace
+    // creating both
+    Logger.info("Creating workspace and user for Apple Sign-In")
+    const userAcc = await db.transaction(async (trx) => {
+      const [workspace] = await createWorkspace(trx, email, domain)
+      const [user] = await createUser(
+        trx,
+        workspace.id,
+        email,
+        name,
+        "",
+        UserRole.SuperAdmin,
+        workspace.externalId,
+      )
+      return user
+    })
+
+    const accessToken = await generateTokens(
+      userAcc.email,
+      userAcc.role,
+      userAcc.workspaceExternalId,
+    )
+    const refreshToken = await generateTokens(
+      userAcc.email,
+      userAcc.role,
+      userAcc.workspaceExternalId,
+      true,
+    )
+    // save refresh token generated in user schema
+    await saveRefreshTokenToDB(db, email, refreshToken)
+    const emailSent = await emailService.sendWelcomeEmail(
+      userAcc.email,
+      userAcc.name,
+    )
+    if (emailSent) {
+      Logger.info(
+        `Welcome email sent to new workspace creator ${userAcc.email}`,
+      )
+    }
+
+    return c.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      workspace_id: userAcc.workspaceExternalId,
+      user: {
+        id: userInfo.id,
+        email: userAcc.email,
+        name: userAcc.name,
+        apple_user_id: userInfo.id,
+      },
+    })
+  } catch (error) {
+    Logger.error(
+      {
+        requestId: c.var.requestId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Apple Sign-In validation failed",
+    )
+
+    if (error instanceof HTTPException) {
+      throw error
+    }
+
+    throw new HTTPException(401, {
+      message: "Apple Sign-In validation failed",
+    })
+  }
+}
+
 const handleAppRefreshToken = async (c: Context) => {
   let body
   try {
@@ -896,9 +1267,49 @@ const getNewAccessRefreshToken = async (c: Context) => {
   }
 }
 
+// Initialize webhook handler on startup
+const webhookHandler = WebhookHandler
+webhookHandler.initialize()
+
+// Dynamic webhook handler
+app.all("/workflow/webhook/*", async (c) => {
+  return await webhookHandler.handleWebhookRequest(c)
+})
+
+// API endpoint to reload webhooks
+app.get("/workflow/webhook-api/reload", async (c) => {
+  try {
+    const result = await webhookHandler.reloadWebhooks()
+    return c.json(result)
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    }, 500)
+  }
+})
+
+// API endpoint to list registered webhooks
+app.get("/workflow/webhook-api/list", async (c) => {
+  try {
+    const result = webhookHandler.listWebhooks()
+    return c.json(result)
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    }, 500)
+  }
+})
+
+// Jira webhook endpoints (public - no auth required) - placed at top level outside AuthMiddleware
+app.post("/api/v1/webhook/jira/:webhookId", ReceiveJiraWebhookApi)
+app.post("/api/v1/webhook-test/jira/:webhookId", ReceiveJiraWebhookApi)
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)
+  .post("/validate-apple-token", handleAppleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
   .use("*", AuthMiddleware)
@@ -1093,6 +1504,12 @@ export const AppRoutes = app
     UpdateWorkflowToolApi,
   )
   .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  .post("/workflow/tools/jira/test-connection", TestJiraConnectionApi)
+  .post("/workflow/tools/jira/register-webhook", RegisterJiraWebhookApi)
+  .post("/workflow/tools/jira/webhooks", GetJiraWebhooksApi)
+  .post("/workflow/tools/jira/delete-webhook", DeleteJiraWebhookApi)
+  .post("/workflow/tools/jira/metadata", GetJiraMetadataApi)
+  // Webhook routes moved to before AuthMiddleware (lines 892-893)
   .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
   .put(
     "/workflow/steps/:stepId",
@@ -1132,7 +1549,137 @@ export const AppRoutes = app
   .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
   .post("/calls/leave", zValidator("json", leaveCallSchema), LeaveCallApi)
   .get("/calls/active", GetActiveCallsApi)
-  .get("/calls/history", GetCallHistoryApi)
+  .get(
+    "/calls/history",
+    zValidator("query", getCallHistorySchema),
+    GetCallHistoryApi,
+  )
+  // Direct message routes
+  .post("/messages/send", zValidator("json", sendMessageSchema), SendMessageApi)
+  .get(
+    "/messages/conversation",
+    zValidator("query", getConversationSchema),
+    GetConversationApi,
+  )
+  .post(
+    "/messages/mark-read",
+    zValidator("json", markAsReadSchema),
+    MarkMessagesAsReadApi,
+  )
+  .get("/messages/unread-counts", GetUnreadCountsApi)
+  .get("/messages/participants", GetConversationParticipantsApi)
+  .put("/messages/edit", zValidator("json", editMessageSchema), EditMessageApi)
+  .delete(
+    "/messages/delete",
+    zValidator("json", deleteMessageSchema),
+    DeleteMessageApi,
+  )
+  // Channel routes
+  .post("/channels", zValidator("json", createChannelSchema), CreateChannelApi)
+  .put(
+    "/channels/update",
+    zValidator("json", updateChannelSchema),
+    UpdateChannelApi,
+  )
+  .post(
+    "/channels/archive",
+    zValidator("json", archiveChannelSchema),
+    ArchiveChannelApi,
+  )
+  .get(
+    "/channels",
+    zValidator("query", getUserChannelsSchema),
+    GetUserChannelsApi,
+  )
+  .get("/channels/browse", BrowsePublicChannelsApi)
+  .post("/channels/join", zValidator("json", joinChannelSchema), JoinChannelApi)
+  .get(
+    "/channels/members",
+    zValidator("query", getChannelMembersSchema),
+    GetChannelMembersApi,
+  )
+  .post(
+    "/channels/members/add",
+    zValidator("json", addMembersSchema),
+    AddChannelMembersApi,
+  )
+  .post(
+    "/channels/members/remove",
+    zValidator("json", removeMemberSchema),
+    RemoveChannelMemberApi,
+  )
+  .put(
+    "/channels/members/role",
+    zValidator("json", updateMemberRoleSchema),
+    UpdateMemberRoleApi,
+  )
+  .post(
+    "/channels/leave",
+    zValidator("json", leaveChannelSchema),
+    LeaveChannelApi,
+  )
+  .get(
+    "/channels/messages",
+    zValidator("query", getChannelMessagesSchema),
+    GetChannelMessagesApi,
+  )
+  .post(
+    "/channels/messages/send",
+    zValidator("json", sendChannelMessageSchema),
+    SendChannelMessageApi,
+  )
+  .put(
+    "/channels/messages/edit",
+    zValidator("json", editChannelMessageSchema),
+    EditChannelMessageApi,
+  )
+  .delete(
+    "/channels/messages/delete",
+    zValidator("json", deleteChannelMessageSchema),
+    DeleteChannelMessageApi,
+  )
+  .post(
+    "/channels/messages/pin",
+    zValidator("json", pinMessageSchema),
+    PinMessageApi,
+  )
+  .post(
+    "/channels/messages/unpin",
+    zValidator("json", unpinMessageSchema),
+    UnpinMessageApi,
+  )
+  .get(
+    "/channels/messages/pinned",
+    zValidator("query", getPinnedMessagesSchema),
+    GetPinnedMessagesApi,
+  )
+  .delete(
+    "/channels/:channelId",
+    zValidator("param", channelIdParamSchema),
+    DeleteChannelApi,
+  )
+  .get(
+    "/channels/:channelId",
+    zValidator("param", channelIdParamSchema),
+    GetChannelDetailsApi,
+  )
+  // Thread routes
+  .get("/threads/:messageId", zValidator("query", getThreadSchema), getThread)
+  .post(
+    "/threads/:messageId/reply",
+    zValidator("json", sendThreadReplySchema),
+    sendThreadReply,
+  )
+  .patch(
+    "/threads/replies/:replyId",
+    zValidator("json", updateThreadReplySchema),
+    updateThreadReply,
+  )
+  .delete(
+    "/threads/replies/:replyId",
+    zValidator("param", deleteThreadReplySchema),
+    deleteThreadReply,
+  )
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
@@ -1557,8 +2104,6 @@ app.get(
     redirect_uri: redirectURI,
   }),
   async (c: Context) => {
-    const token = c.get("token")
-    const grantedScopes = c.get("granted-scopes")
     const user = c.get("user-google")
 
     const email = user?.email
@@ -1782,6 +2327,12 @@ app.get(
   createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
 )
 
+// PaddleOCR health check endpoint
+app.get(
+  "/health/paddle",
+  createHealthCheckHandler(checkPaddleOCRHealth, ServiceName.paddleOCR),
+)
+
 // Serving exact frontend routes and adding AuthRedirect wherever needed
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 
@@ -1874,6 +2425,7 @@ const metricServer = Bun.serve({
 })
 
 Logger.info(`listening on port: ${config.port}`)
+Logger.info(`metrics server started on port: ${config.metricsPort}`)
 
 const errorEvents: string[] = [
   `uncaughtException`,

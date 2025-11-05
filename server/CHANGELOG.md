@@ -1,3 +1,206 @@
+## [3.29.4](https://github.com/xynehq/xyne/compare/v3.29.3...v3.29.4) (2025-11-04)
+
+
+### Bug Fixes
+
+* **driveFileApi:** Add the option to list shared drive files ([#1186](https://github.com/xynehq/xyne/issues/1186)) ([8f7ab28](https://github.com/xynehq/xyne/commit/8f7ab28d719dbc0f89d8d8ef3660a0c9408a6c42))
+
+## [3.29.3](https://github.com/xynehq/xyne/compare/v3.29.2...v3.29.3) (2025-11-04)
+
+
+### Bug Fixes
+
+* **importDep:** moved the websocket connection code from sync-server file ([#1185](https://github.com/xynehq/xyne/issues/1185)) ([0112d93](https://github.com/xynehq/xyne/commit/0112d933d254e1913f1d052f0c11e94ca41ce7d7))
+
+## [3.29.2](https://github.com/xynehq/xyne/compare/v3.29.1...v3.29.2) (2025-11-04)
+
+
+### Bug Fixes
+
+* **dashboard:** XYNE-282 fix sort by cost filter and added date picker filter ([#1183](https://github.com/xynehq/xyne/issues/1183)) ([2270b67](https://github.com/xynehq/xyne/commit/2270b67163df31fdd725778d642bd1ee35ed45c1))
+
+## [3.29.1](https://github.com/xynehq/xyne/compare/v3.29.0...v3.29.1) (2025-11-04)
+
+
+### Bug Fixes
+
+* **driveSync:** Add fix for newStartPageToken to avoid it getting invalid ([#1131](https://github.com/xynehq/xyne/issues/1131)) ([0bfa79b](https://github.com/xynehq/xyne/commit/0bfa79ba403771301cb911f7874679e902e8ed6e))
+
+# [3.29.0](https://github.com/xynehq/xyne/compare/v3.28.0...v3.29.0) (2025-11-04)
+
+
+### Features
+
+* XYN-269 channels and treads in buzz ([#1179](https://github.com/xynehq/xyne/issues/1179)) ([71a45bd](https://github.com/xynehq/xyne/commit/71a45bdb616a427e56d654f4da89b3951ce9b457))
+
+# [3.28.0](https://github.com/xynehq/xyne/compare/v3.27.0...v3.28.0) (2025-11-03)
+
+
+### Features
+
+* jira trigger node ([#1088](https://github.com/xynehq/xyne/issues/1088)) ([1c1cab5](https://github.com/xynehq/xyne/commit/1c1cab5c0c2bbbe1e585c158fa69f96fb0fb11f3))
+
+# [3.27.0](https://github.com/xynehq/xyne/compare/v3.26.2...v3.27.0) (2025-11-03)
+
+
+### Features
+
+* **langfuse:** Initial langfuse testing (UAT) ([#1182](https://github.com/xynehq/xyne/issues/1182)) ([5e6b8b3](https://github.com/xynehq/xyne/commit/5e6b8b34b85e1435c0f55dcaee6cbd177b60502e))
+
+## [3.26.2](https://github.com/xynehq/xyne/compare/v3.26.1...v3.26.2) (2025-11-03)
+
+
+### Bug Fixes
+
+* XYNE-284 removed caret from breaking dependencies and removed duplicate dependencies ([#1180](https://github.com/xynehq/xyne/issues/1180)) ([76f6095](https://github.com/xynehq/xyne/commit/76f6095c045fadaeffb5acd2ba51f40d1fd14277))
+
+## [3.26.1](https://github.com/xynehq/xyne/compare/v3.26.0...v3.26.1) (2025-10-31)
+
+
+### Bug Fixes
+
+* **fix/Sync-1:** inserting single user job in queue ([#1175](https://github.com/xynehq/xyne/issues/1175)) ([8c8008d](https://github.com/xynehq/xyne/commit/8c8008d2a1ab2eb4e2af9181e42655482da68ead))
+
+# [3.26.0](https://github.com/xynehq/xyne/compare/v3.25.4...v3.26.0) (2025-10-31)
+
+
+### Features
+
+* Webhook Registration and execution service with dynamic webhook… ([#1071](https://github.com/xynehq/xyne/issues/1071)) ([5478db1](https://github.com/xynehq/xyne/commit/5478db11d67e9d39c38277c160bcad0777805955))
+
+## [3.25.4](https://github.com/xynehq/xyne/compare/v3.25.3...v3.25.4) (2025-10-31)
+
+
+### Bug Fixes
+
+* **search:** Add attendees email if display name is empty ([#1167](https://github.com/xynehq/xyne/issues/1167)) ([c861801](https://github.com/xynehq/xyne/commit/c86180131bcaaf2e4b690602008cda9f58ae5ce9))
+
+## [3.25.3](https://github.com/xynehq/xyne/compare/v3.25.2...v3.25.3) (2025-10-31)
+
+
+### Bug Fixes
+
+* XYNE-259 fixed chunk index load error ([#1178](https://github.com/xynehq/xyne/issues/1178)) ([6e79a73](https://github.com/xynehq/xyne/commit/6e79a7361cdcfc316ed07ba94ed8321fe428f90c))
+
+## [3.25.2](https://github.com/xynehq/xyne/compare/v3.25.1...v3.25.2) (2025-10-31)
+
+
+### Bug Fixes
+
+* **kb:** XYNE-270 fixed chat button state in basis of poll status ([#1177](https://github.com/xynehq/xyne/issues/1177)) ([43d516f](https://github.com/xynehq/xyne/commit/43d516f5433e162f4725936fb96135d5ff7f4825))
+
+## [3.25.1](https://github.com/xynehq/xyne/compare/v3.25.0...v3.25.1) (2025-10-31)
+
+
+### Bug Fixes
+
+* XYNE-156 tool box disappear fix ([#1157](https://github.com/xynehq/xyne/issues/1157)) ([ae16427](https://github.com/xynehq/xyne/commit/ae164273af57408dbdda9b82a5c068c411992833))
+
+# [3.25.0](https://github.com/xynehq/xyne/compare/v3.24.1...v3.25.0) (2025-10-31)
+
+
+### Features
+
+* **apple-signin:** Add Apple Sign-in validation endpoint for mobile app ([#1168](https://github.com/xynehq/xyne/issues/1168)) ([40810a8](https://github.com/xynehq/xyne/commit/40810a8054c7ca2be577bfd3b963859fdc1d9362))
+
+## [3.24.1](https://github.com/xynehq/xyne/compare/v3.24.0...v3.24.1) (2025-10-31)
+
+
+### Bug Fixes
+
+* XYNE-260 fixed the UI to show correct button during google ingestion post oauth ([#1171](https://github.com/xynehq/xyne/issues/1171)) ([8a641a3](https://github.com/xynehq/xyne/commit/8a641a36f59c0841b77e38a45df872c61b749134)), closes [Chinmay-Sin#FQX1](https://github.com/Chinmay-Sin/issues/FQX1)
+
+# [3.24.0](https://github.com/xynehq/xyne/compare/v3.23.9...v3.24.0) (2025-10-30)
+
+
+### Features
+
+* XYN-263 implented enhanced chatting and notification mechanism ([#1172](https://github.com/xynehq/xyne/issues/1172)) ([6beb54f](https://github.com/xynehq/xyne/commit/6beb54f79698ee8aec1b371739ebbffc2a8a77e4))
+
+## [3.23.9](https://github.com/xynehq/xyne/compare/v3.23.8...v3.23.9) (2025-10-30)
+
+
+### Bug Fixes
+
+* XYNE-254 fixed followup in kb chat ([#1170](https://github.com/xynehq/xyne/issues/1170)) ([a1ba643](https://github.com/xynehq/xyne/commit/a1ba6433a43355c87e13cd525fd408b78aeb30f3))
+
+## [3.23.8](https://github.com/xynehq/xyne/compare/v3.23.7...v3.23.8) (2025-10-30)
+
+
+### Bug Fixes
+
+* **nginx:** increase upload limit, update CSP, switch backend port, adjust proxy settings ([#1146](https://github.com/xynehq/xyne/issues/1146)) ([a8181a0](https://github.com/xynehq/xyne/commit/a8181a0cb80cc2d5e4d395a820e16f70d5ddc01a))
+
+## [3.23.7](https://github.com/xynehq/xyne/compare/v3.23.6...v3.23.7) (2025-10-29)
+
+
+### Bug Fixes
+
+* **migrate-datasource:** Migrate datasource to knowledgeBase ([#1136](https://github.com/xynehq/xyne/issues/1136)) ([3fa075b](https://github.com/xynehq/xyne/commit/3fa075ba3d26c614f48f058908231aa644bed9d0))
+
+## [3.23.6](https://github.com/xynehq/xyne/compare/v3.23.5...v3.23.6) (2025-10-29)
+
+
+### Bug Fixes
+
+* **agentic:** Fix best document selection ([#1160](https://github.com/xynehq/xyne/issues/1160)) ([9fb9076](https://github.com/xynehq/xyne/commit/9fb90769fbb8cccdae61b23c34601370d5b00ae6))
+
+## [3.23.5](https://github.com/xynehq/xyne/compare/v3.23.4...v3.23.5) (2025-10-29)
+
+
+### Bug Fixes
+
+* XYNE-183 fixed sheetIds of collection files in agent ([#1162](https://github.com/xynehq/xyne/issues/1162)) ([d5b12d6](https://github.com/xynehq/xyne/commit/d5b12d678d47e11354e033a2b02715036c42b979))
+
+## [3.23.4](https://github.com/xynehq/xyne/compare/v3.23.3...v3.23.4) (2025-10-29)
+
+
+### Bug Fixes
+
+* XYNE-252 fixed citation index in document chat ([#1158](https://github.com/xynehq/xyne/issues/1158)) ([76d4089](https://github.com/xynehq/xyne/commit/76d4089a6d60ee0248a347b1ee7fb51c11baa80f))
+
+## [3.23.3](https://github.com/xynehq/xyne/compare/v3.23.2...v3.23.3) (2025-10-29)
+
+
+### Bug Fixes
+
+* XYN-255 fixed the shareable call link with routes ([#1164](https://github.com/xynehq/xyne/issues/1164)) ([148a7cc](https://github.com/xynehq/xyne/commit/148a7cc04c83a0f095694f526e8ef1785637a433))
+
+## [3.23.2](https://github.com/xynehq/xyne/compare/v3.23.1...v3.23.2) (2025-10-29)
+
+
+### Bug Fixes
+
+* **knowledgemanagment:**  added collections loading state ([#1155](https://github.com/xynehq/xyne/issues/1155)) ([4582abe](https://github.com/xynehq/xyne/commit/4582abedb78defdf3c4fb89f175db0bbcb23b91b))
+
+## [3.23.1](https://github.com/xynehq/xyne/compare/v3.23.0...v3.23.1) (2025-10-29)
+
+
+### Bug Fixes
+
+* XYNE-251 moved zustand dependency from root to frontend ([#1161](https://github.com/xynehq/xyne/issues/1161)) ([f97d0fa](https://github.com/xynehq/xyne/commit/f97d0fa930b8b383d9fa6f6eafc98709435152db))
+
+# [3.23.0](https://github.com/xynehq/xyne/compare/v3.22.5...v3.23.0) (2025-10-28)
+
+
+### Features
+
+* XYN-211 chats with worspace users ([#1130](https://github.com/xynehq/xyne/issues/1130)) ([3dbd558](https://github.com/xynehq/xyne/commit/3dbd5580bd6483b038b103eb9dda3b064c91e9ab))
+
+## [3.22.5](https://github.com/xynehq/xyne/compare/v3.22.4...v3.22.5) (2025-10-28)
+
+
+### Bug Fixes
+
+* **syncTrigger:** fix individual sync trigger for oauth based syncJob ([#1154](https://github.com/xynehq/xyne/issues/1154)) ([b826dda](https://github.com/xynehq/xyne/commit/b826dda7f6e736962420d343deccc50733c2d5a1))
+
+## [3.22.4](https://github.com/xynehq/xyne/compare/v3.22.3...v3.22.4) (2025-10-28)
+
+
+### Bug Fixes
+
+* XYNE-253 fixed auto scroll in document preview ([#1153](https://github.com/xynehq/xyne/issues/1153)) ([cbb9b74](https://github.com/xynehq/xyne/commit/cbb9b749c75919c0f22a4b6d5201010a8a7f2dec))
+
 ## [3.22.3](https://github.com/xynehq/xyne/compare/v3.22.2...v3.22.3) (2025-10-27)
 
 
