@@ -2,6 +2,7 @@ import { ToolType, ToolCategory } from "@/types/workflowTypes"
 import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
 import { z } from "zod"
 import { messageQueue, type ExecutionRequest } from "@/execution-engine/message-queue"  
+import type { SelectWorkflowTemplate } from "@/db/schema/workflows"
 export class SchedulerTriggerTool implements WorkflowTool {
   type = ToolType.SCHEDULER_TRIGGER
   category = ToolCategory.TRIGGER
@@ -92,96 +93,45 @@ export class SchedulerTriggerTool implements WorkflowTool {
     }
   }
 
-  // Parse cron expression and calculate next execution time
-  private getNextCronExecution(cronExpression: string, currentTime: Date): Date | null {
-    try {
-      // Basic cron format validation (5 or 6 fields)
-      const cronParts = cronExpression.trim().split(/\s+/)
-      if (cronParts.length !== 5 && cronParts.length !== 6) {
-        return null
-      }
-
-      // For 5-field cron: minute hour day month dayOfWeek
-      // For 6-field cron: second minute hour day month dayOfWeek
-      const isSecondsField = cronParts.length === 6
-      const [seconds, minute, hour, day, month, dayOfWeek] = isSecondsField 
-        ? cronParts 
-        : ['0', ...cronParts]
-
-      const nextExecution = new Date(currentTime)
-      nextExecution.setSeconds(parseInt(seconds === '*' ? '0' : seconds), 0)
-
-      // Handle minute field
-      if (minute !== '*') {
-        const targetMinute = parseInt(minute)
-        if (targetMinute >= 0 && targetMinute <= 59) {
-          nextExecution.setMinutes(targetMinute)
-        }
-      }
-
-      // Handle hour field  
-      if (hour !== '*') {
-        const targetHour = parseInt(hour)
-        if (targetHour >= 0 && targetHour <= 23) {
-          nextExecution.setHours(targetHour)
-        }
-      }
-
-      // Simple logic: if calculated time is in the past, add 1 day
-      if (nextExecution <= currentTime) {
-        nextExecution.setDate(nextExecution.getDate() + 1)
-      }
-
-      // TODO: Implement full cron parsing for day, month, dayOfWeek fields
-      // This is a simplified implementation focusing on time-based scheduling
-      
-      return nextExecution
-    } catch (error) {
-      return null
-    }
-  }
-
   // Handler for active trigger - called when template is activated
-  async handleActiveTrigger(config: Record<string, any>, templateId:string): Promise<Record<string, string>> {
-    
-    
+  async handleActiveTrigger(config: Record<string, any>, template:SelectWorkflowTemplate): Promise<Record<string, string>> {
     try {
       // Create execution packet for starting workflow
       const executionPacket:ExecutionRequest = {
-          templateId: templateId,
-          userId: 1, // TODO: Get from context
-          workspaceId: 1 // TODO: Get from context
+          templateId: template.id,
+          userId: template.userId, // TODO: Get from context
+          workspaceId: template.workspaceId // TODO: Get from context
       }
-
-      // const messageBoss = messageQueue.getBoss()
-      // const queueName = 'incoming-queue'
 
       // // Check if cron expression exists
       if (config.cron_expression && typeof config.cron_expression === 'string') {
-      //   // Schedule recurring execution with PgBoss
-      //   // const scheduleKey = `workflow-${templateId}-cron`
-      //   await messageBoss.schedule(
-      //     queueName,
-      //     config.cron_expression,
-      //     executionPacket,
-      //     {
-      //       tz: config.timezone || 'UTC'
-      //     }
-      //   )
         await messageQueue.publishExecution(executionPacket, undefined, config.cron_expression)
-        console.log(`✅ Scheduled workflow ${templateId} with cron: ${config.cron_expression}`)
+        console.log(`✅ Scheduled workflow ${template.id} with cron: ${config.cron_expression}`)
         return {"status":"success","message": `scheduled with cron ${config.cron_expression}`}
       }
       else {
         // No scheduling config found, send immediately
         await messageQueue.publishExecution(executionPacket)
-        console.log(`✅ Started immediate execution for workflow ${templateId} (no cron config)`)
-        return {"status":"success","message": `Started immediate execution for workflow ${templateId} (no cron config)`}
+        console.log(`✅ Started immediate execution for workflow ${template.id} (no cron config)`)
+        return {"status":"success","message": `Started immediate execution for workflow ${template.id} (no cron config)`}
       }
 
     } catch (error) {
-      console.error(`❌ Failed to handle active trigger for workflow ${templateId}:`, error)
+      console.error(`❌ Failed to handle active trigger for workflow ${template.id}:`, error)
       throw error
     }
   }
+
+    async handleInactiveTrigger(_config: Record<string, any>, template:SelectWorkflowTemplate): Promise<Record<string, string>> {
+      try {
+        const boss = messageQueue.getBoss()
+        const queues = messageQueue.getQueueNames()
+        await boss.unschedule(queues.incoming,template.id)
+        return {"status":"success","message": `Unschedule workflow ${template.id} from ${queues.incoming}` }
+      } catch (error) {
+        console.error(`❌ Failed to handle inactive trigger for workflow ${template.id}:`, error)
+        throw error
+      }
+  }
+
 }

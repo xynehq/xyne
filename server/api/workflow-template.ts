@@ -15,7 +15,7 @@ import {
   type SelectWorkflowTemplate,
 } from "@/db/schema/workflows"
 import { eq, inArray, sql, and, or } from "drizzle-orm"
-import { handleActivateTemplate } from "@/execution-engine/triggers"
+import { handleTemplateStateChange } from "@/execution-engine/triggers"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -25,7 +25,7 @@ const Logger = getLogger(Subsystem.WorkflowApi)
 export const workflowTemplateRouter = new Hono()
 
 import { getSupportedToolTypes, getTool, getToolCategory } from "@/workflow-tools/registry"
-import { ToolType } from "@/types/workflowTypes"
+import { TemplateState, ToolType } from "@/types/workflowTypes"
 
 // Helper function to get category from tool type - now uses the category from the tool files themselves
 const getCategoryFromType = (toolType: string): string => {
@@ -649,8 +649,7 @@ export const ValidateTemplate = async (c: Context) => {
   }
 }
 
-// Activate workflow template - set state to active and schedule triggers
-export const ActivateWorkflowTemplateApi = async (c: Context) => {
+export const HandleStateChangeTemplateApi = async (c: Context, state: TemplateState) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const requestData = await c.req.json()
@@ -679,33 +678,36 @@ export const ActivateWorkflowTemplateApi = async (c: Context) => {
       })
     }
 
-    // Update template state to active
-    
-    // Activate template triggers using execution engine
-    const activateResult = await handleActivateTemplate(template as SelectWorkflowTemplate)
+    if (template.state === state) {
+      throw new HTTPException(400, {
+        message: `Workflow template is already ${state}`,
+      })
+    }
 
-    
-    await db
+    const stateChangeResult = await handleTemplateStateChange(template as SelectWorkflowTemplate,state)
+
+    // Update template state to inactive
+    const [updatedTemplate] = await db
       .update(workflowTemplate)
       .set({
-        state: "active",
+        state: state,
         updatedAt: new Date(),
       })
       .where(eq(workflowTemplate.id, templateId))
       .returning()
 
-    Logger.info(`✅ Activated workflow template ${templateId}`)
+    Logger.info(`✅ Deactivated workflow template ${templateId}`)
 
     return c.json({
       success: true,
       data: {
-        template: template,
-        activateResult,
+        template: updatedTemplate,
+        stateChangeResult
       },
-      message: "Workflow template activated successfully",
+      message: "Workflow template deactivated successfully",
     })
   } catch (error) {
-    Logger.error(error, "Failed to activate workflow template")
+    Logger.error(error, `Failed to change state to ${state} for wfId: ${c.req.param("templateId")}`)
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })

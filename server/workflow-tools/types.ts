@@ -1,3 +1,4 @@
+import type { SelectWorkflowTemplate } from "@/db/schema/workflows"
 import { ToolType, ToolCategory } from "@/types/workflowTypes"
 import { z } from "zod"
 
@@ -25,7 +26,8 @@ export interface WorkflowTool {
   configSchema: z.ZodSchema<any>
   triggerIfActive: boolean
   execute(input: Record<string, any>, config: Record<string, any>, workflowContext: WorkflowContext): Promise<ToolExecutionResult>
-  handleActiveTrigger?(config: Record<string, any>, templateId:string): Promise<Record<string, string>>
+  handleActiveTrigger?(config: Record<string, any>, template:SelectWorkflowTemplate): Promise<Record<string, string>>
+  handleInactiveTrigger?(config: Record<string, any>, template:SelectWorkflowTemplate): Promise<Record<string, string>>
 }
 
 // Tool registry type for the execution engine

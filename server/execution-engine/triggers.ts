@@ -6,8 +6,8 @@ import { workflowStepExecution, toolExecution, WorkflowStatus, ToolExecutionStat
 import { eq, and, or, sql } from "drizzle-orm"
 import { queueNextSteps, executionBoss } from "./execution-engine-queue"
 import type { ExecutionPacket } from "./types"
-import { getTool } from "@/workflow-tools/registry"
-import { ToolType } from "@/types/workflowTypes"
+import { getTool, type WorkflowTool } from "@/workflow-tools/registry"
+import { TemplateState, ToolType } from "@/types/workflowTypes"
 
 const Logger = getLogger(Subsystem.ExecutionEngine)
 
@@ -127,39 +127,13 @@ export const handleManualTrigger = async (c: Context) => {
   }
 }
 
-/**
- * Activate workflow template - check root nodes for triggers and schedule them
- */
-export const handleActivateTemplate = async (template: SelectWorkflowTemplate) => {
+
+export const handleTemplateStateChange = async (template: SelectWorkflowTemplate, state: TemplateState) => {
   try {
-    Logger.info(`🎯 Activating workflow template ${template.id}`)
-
-    // if (!template.rootWorkflowStepTemplateId) {
-    //   Logger.warn(`No root step found for template ${template.id}`)
-    //   return {
-    //     success: false,
-    //     message: "No root step found in template"
-    //   }
-    // }
-
-    // Check if template has a root step
-
-    // Get the root step template
-    // const [rootStep] = await db
-    //   .select()
-    //   .from(workflowStepTemplate)
-    //   .where(eq(workflowStepTemplate.id, template.rootWorkflowStepTemplateId))
-    //   .limit(1)
-
-    // if (!rootStep) {
-    //   Logger.warn(`Root step ${template.rootWorkflowStepTemplateId} not found`)
-    //   return {
-    //     success: false,
-    //     message: "Root step not found"
-    //   }
-    // }
+    Logger.info(`🎯 handling state change in workflow template ${template.id}`)
 
     // Find root nodes (steps with no previous IDs or empty previous IDs array)
+    // this will be changed to get the trigger nodes only
     const rootSteps = await db
       .select()
       .from(workflowStepTemplate)
@@ -183,7 +157,7 @@ export const handleActivateTemplate = async (template: SelectWorkflowTemplate) =
 
     Logger.info(`Found ${rootSteps.length} root step(s) for template ${template.id}`)
 
-    const schedulingResults = []
+    const stateChangeTriggerResults = []
 
     // Process each root step to check for trigger tools
     for (const rootStep of rootSteps) {
@@ -192,7 +166,7 @@ export const handleActivateTemplate = async (template: SelectWorkflowTemplate) =
         Logger.warn(`No tools found in root step ${rootStep.id}`)
         continue
       }
-        // Check each tool in this root step
+        // Check each tool in this root step 
         for (const toolId of rootToolIds) {
           const [toolConfig] = await db
             .select()
@@ -207,41 +181,21 @@ export const handleActivateTemplate = async (template: SelectWorkflowTemplate) =
 
           // Get tool implementation to check triggerIfActive
           const toolImplementation = getTool(toolConfig.type as any)
-          
-          if (!toolImplementation.triggerIfActive) {
-            Logger.info(`Tool ${toolConfig.type} does not trigger when active, skipping`)
-            continue
-          }
-
-          // Switch case for tool types
           switch (toolConfig.type) {
             case ToolType.SCHEDULER_TRIGGER:
               Logger.info(`📅 Processing scheduler trigger for tool ${toolId}`)
-              
-              // Check if the tool has handleActiveTrigger method
-              if (toolImplementation.handleActiveTrigger) {
-                const result = await toolImplementation.handleActiveTrigger(toolConfig.config || {}, template.id)
-                
-                schedulingResults.push({
-                  toolId,
-                  toolType: ToolType.SCHEDULER_TRIGGER,
-                  scheduled: true,
-                  message: result.message
-                })
-              } else {
-                Logger.warn(`Scheduler trigger tool ${toolId} does not support activation`)
-                schedulingResults.push({
-                  toolId,
-                  toolType: ToolType.SCHEDULER_TRIGGER,
-                  scheduled: false,
-                  error: 'Tool does not support handleActiveTrigger method'
-                })
-              }
+              const result = await callStateImplementation(state, toolImplementation, toolConfig.config || {}, template)
+              stateChangeTriggerResults.push({
+                toolId,
+                toolType: ToolType.SCHEDULER_TRIGGER,
+                scheduled: true,
+                message: result.message
+              })
               break
 
             default:
               Logger.info(`Tool type ${toolConfig.type} activation not implemented yet`)
-              schedulingResults.push({
+              stateChangeTriggerResults.push({
                 toolId,
                 toolType: toolConfig.type,
                 scheduled: false,
@@ -258,15 +212,32 @@ export const handleActivateTemplate = async (template: SelectWorkflowTemplate) =
       success: true,
       templateId: template.id,
       rootStepIds: rootSteps.map(step => step.id),
-      schedulingResults,
-      message: `Processed ${schedulingResults.length} trigger tool(s) across ${rootSteps.length} root step(s)`
+      stateChangeTriggerResults,
+      message: `Processed ${stateChangeTriggerResults.length} trigger tool(s) across ${rootSteps.length} root step(s)`
     }
 
   } catch (error) {
-    Logger.error(error, `Failed to activate template ${template.id}`)
+    Logger.error(error, `Failed to ${state} template ${template.id}`)
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     }
+  }
+}
+
+const callStateImplementation = (state: TemplateState, toolImplementation: WorkflowTool, config: Record<string, any>, template:SelectWorkflowTemplate) => {
+  switch (state) {
+    case TemplateState.ACTIVE:
+      if (toolImplementation.handleActiveTrigger) {
+        return toolImplementation.handleActiveTrigger(config, template)
+      } else {
+        return {"message":'Tool does not support handleActiveTrigger method'}
+      }
+    case TemplateState.INACTIVE:
+      if (toolImplementation.handleInactiveTrigger) {
+        return toolImplementation.handleInactiveTrigger(config, template)
+      } else {
+        return {"message":'Tool does not support handleInactiveTrigger method'}
+      }
   }
 }

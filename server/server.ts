@@ -335,10 +335,11 @@ import {
   DeleteTemplateApi,
   GetTemplateApi,
   ValidateTemplate,
-  ActivateWorkflowTemplateApi,
+  HandleStateChangeTemplateApi,
   createTemplateSchema,
   validateTemplateSchema,
 } from "@/api/workflow-template"
+import { TemplateState } from "@/types/workflowTypes"
 import { 
   ExecuteTemplateHandler, 
   GetExecutionStatusApi, 
@@ -1531,7 +1532,8 @@ export const AppRoutes = app
   .put("/workflow/template/:templateId", UpdateTemplateApi)
   .delete("/workflow/template/:templateId", DeleteTemplateApi)
   .post("/workflow/template/execute", ExecuteTemplateHandler)
-  .post("/workflow/template/activate", ActivateWorkflowTemplateApi)
+  .post("/workflow/template/activate", (c: Context) => HandleStateChangeTemplateApi(c, TemplateState.ACTIVE))
+  .post("/workflow/template/deactivate", (c: Context) => HandleStateChangeTemplateApi(c, TemplateState.INACTIVE))
   .get("/workflow/execution/:executionId/status", GetExecutionStatusApi)
   .post("/workflow/execution/:executionId/stop", StopExecutionApi)
   .get("/workflow/engine/health", GetEngineHealthApi)
