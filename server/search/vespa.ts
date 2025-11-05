@@ -174,7 +174,6 @@ export const checkIfDataSourceFileExistsByNameAndId =
   vespa.checkIfDataSourceFileExistsByNameAndId.bind(vespa)
 
 // Slack operations
-export const getSlackUserDetails = vespa.getSlackUserDetails.bind(vespa)
 export const fetchSlackEntity = vespa.fetchSlackEntity.bind(vespa)
 
 // Utility operations
