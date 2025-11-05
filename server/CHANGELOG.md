@@ -1,3 +1,10 @@
+## [3.30.1](https://github.com/xynehq/xyne/compare/v3.30.0...v3.30.1) (2025-11-05)
+
+
+### Bug Fixes
+
+* **agents:** revamp app integration and add filters ([#1126](https://github.com/xynehq/xyne/issues/1126)) ([d35b2cb](https://github.com/xynehq/xyne/commit/d35b2cbc6fb797126fa977006b8e75917c278736))
+
 # [3.30.0](https://github.com/xynehq/xyne/compare/v3.29.4...v3.30.0) (2025-11-05)
 
 
