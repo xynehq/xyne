@@ -97,11 +97,11 @@ services:
     command: >
       postgres
       -c log_statement=mod
-      -c log_min_duration_statement=0
+      -c log_min_duration_statement=1000ms
       -c logging_collector=on
       -c log_destination=stderr
       -c log_directory=log
-      -c log_filename=postgresql-%Y-%m-%d_%H%M%S.log
+      -c log_filename=postgresql-%Y-%m-%d.log
       -c log_file_mode=0640
       -c log_rotation_age=3d
       -c log_rotation_size=100MB
