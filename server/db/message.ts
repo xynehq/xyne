@@ -285,3 +285,85 @@ export async function getMessageFeedbackStats({
     feedbackMessages: processedFeedbackMessages,
   }
 }
+
+export const getMessagesWithAttachmentsByChatId = async (
+  trx: TxnOrClient,
+  chatExternalId: string,
+  limit: number,
+  offset: number,
+): Promise<
+  Array<{
+    id: number
+    externalId: string
+    attachments: unknown
+    sources: unknown
+    email: string
+  }>
+> => {
+  const chatMessages = await trx
+    .select({
+      id: messages.id,
+      externalId: messages.externalId,
+      attachments: messages.attachments,
+      sources: messages.sources,
+      email: messages.email,
+    })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.chatExternalId, chatExternalId),
+        isNull(messages.deletedAt),
+      ),
+    )
+    .orderBy(asc(messages.createdAt), asc(messages.id))
+    .limit(limit)
+    .offset(offset)
+  return chatMessages
+}
+
+export const updateMessageAttachmentsAndSources = async (
+  trx: TxnOrClient,
+  messageExternalId: string,
+  email: string,
+  updatedSources: unknown[],
+): Promise<void> => {
+  await trx
+    .update(messages)
+    .set({
+      attachments: [],
+      sources: updatedSources,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(messages.externalId, messageExternalId),
+        eq(messages.email, email),
+      ),
+    )
+}
+
+export const fetchUserQueriesForChat = async (
+  trx: TxnOrClient,
+  chatExternalId: string,
+  workspaceExternalId?: string,
+): Promise<string[]> => {
+  const conditions = [
+    eq(messages.chatExternalId, chatExternalId),
+    eq(messages.messageRole, MessageRole.User),
+    isNull(messages.deletedAt),
+  ]
+
+  // Add workspace validation if workspaceExternalId is provided
+  if (workspaceExternalId) {
+    conditions.push(eq(messages.workspaceExternalId, workspaceExternalId))
+  }
+
+  const queries = await trx
+    .select({
+      content: messages.message,
+    })
+    .from(messages)
+    .where(and(...conditions))
+    .orderBy(asc(messages.createdAt))
+  return queries.map((q) => q.content)
+}

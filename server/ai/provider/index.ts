@@ -39,7 +39,7 @@ import type {
   ChainBreakClassifications,
   ConverseResponse,
   Cost,
-  Intent,
+  MailParticipant,
   LLMProvider,
   ModelParams,
   QueryRouterLLMResponse,
@@ -86,6 +86,7 @@ import {
   deepResearchPrompt,
   webSearchSystemPrompt,
   agentWithNoIntegrationsSystemPrompt,
+  extractBestDocumentsPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -107,8 +108,8 @@ import type { ProviderV2 } from "@ai-sdk/provider"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
-  agentBaselineFileContextPromptJson,
   agentBaselineFilesContextPromptJson,
+  agentBaselineKbContextPromptJson,
   agentBaselinePrompt,
   agentBaselinePromptJson,
   agentBaselineReasoningPromptJson,
@@ -431,7 +432,6 @@ export const getAISDKProviderByModel = (modelId: Models): ProviderV2 => {
             : VertexProjectId && VertexRegion
               ? AIProviders.VertexAI
               : null
-
   switch (providerType) {
     case AIProviders.VertexAI: {
       if (!VertexProjectId || !VertexRegion) {
@@ -855,7 +855,7 @@ export const generateTitleUsingQuery = async (
 
     params.json = true
     Logger.info("inside generateTitleUsingQuery")
-    if(assistantResponse === undefined){
+    if (assistantResponse === undefined) {
       assistantResponse = ""
     }
 
@@ -1204,7 +1204,7 @@ export const baselineRAGJson = async (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
-      dateForAI
+      dateForAI,
     )
   } else {
     params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx, dateForAI)
@@ -1248,7 +1248,7 @@ export const baselineRAGJsonStream = (
   retrievedCtx: string,
   params: ModelParams,
   specificFiles?: boolean,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
@@ -1262,23 +1262,34 @@ export const baselineRAGJsonStream = (
 
   if (specificFiles) {
     Logger.info("Using baselineFilesContextPromptJson")
-    if (isMsgWithSources) {
-      params.systemPrompt = agentBaselineFileContextPromptJson(
-        userCtx,
-        userMetadata.dateForAI,
-        retrievedCtx,
-      )
-    } else if (!isAgentPromptEmpty(params.agentPrompt)) {
-      params.systemPrompt = agentBaselineFilesContextPromptJson(
-        userCtx,
-        indexToCitation(retrievedCtx),
-        parseAgentPrompt(params.agentPrompt),
-      )
+    if (!isAgentPromptEmpty(params.agentPrompt)) {
+      if (isMsgWithKbItems) {
+        params.systemPrompt = agentBaselineKbContextPromptJson(
+          userCtx,
+          userMetadata.dateForAI,
+          retrievedCtx,
+          parseAgentPrompt(params.agentPrompt),
+        )
+      } else {
+        params.systemPrompt = agentBaselineFilesContextPromptJson(
+          userCtx,
+          indexToCitation(retrievedCtx),
+          parseAgentPrompt(params.agentPrompt),
+        )
+      }
     } else {
-      params.systemPrompt = baselineFilesContextPromptJson(
-        userCtx,
-        indexToCitation(retrievedCtx),
-      )
+      if (isMsgWithKbItems) {
+        params.systemPrompt = agentBaselineKbContextPromptJson(
+          userCtx,
+          userMetadata.dateForAI,
+          retrievedCtx,
+        )
+      } else {
+        params.systemPrompt = baselineFilesContextPromptJson(
+          userCtx,
+          indexToCitation(retrievedCtx),
+        )
+      }
     }
   } else if (defaultReasoning) {
     Logger.info("Using baselineReasoningPromptJson")
@@ -1323,7 +1334,6 @@ export const baselineRAGJsonStream = (
     ],
   }
 
-  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
   const messages: Message[] = params.messages
     ? [...params.messages, baseMessage]
     : [baseMessage]
@@ -1361,7 +1371,7 @@ export const baselineRAGOffJsonStream = (
     ],
   }
 
-  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
+
   const updatedMessages: Message[] = messages
     ? [...messages, baseMessage]
     : [baseMessage]
@@ -1386,10 +1396,14 @@ export const temporalPromptJsonStream = (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
-      dateForAI
+      dateForAI,
     )
   } else {
-    params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx, dateForAI)
+    params.systemPrompt = temporalDirectionJsonPrompt(
+      userCtx,
+      retrievedCtx,
+      dateForAI,
+    )
   }
   params.json = true
   const baseMessage = {
@@ -1597,7 +1611,7 @@ export async function generateToolSelectionOutput(
   reasoning?: string | null
 } | null> {
   params.json = true
-  const dateForAI = getDateForAI({userTimeZone: "Asia/Kolkata"})
+  const dateForAI = getDateForAI({ userTimeZone: "Asia/Kolkata" })
 
   let defaultReasoning = isReasoning
   params.systemPrompt = SearchQueryToolContextPrompt(
@@ -1753,7 +1767,7 @@ export function generateSynthesisBasedOnToolOutput(
     userCtx,
     currentMessage,
     gatheredFragments,
-    dateForAI
+    dateForAI,
   )
 
   const baseMessage = {
@@ -1873,16 +1887,16 @@ export const generateFallback = async (
 }
 
 export const extractEmailsFromContext = async (
-  names: Intent,
+  names: MailParticipant,
   userCtx: string,
   retrievedCtx: string,
   params: ModelParams,
-): Promise<{ emails: Intent }> => {
+): Promise<{ emails: MailParticipant }> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
 
-  const intentNames =
+  const participants =
     [
       ...(names.from?.length ? [`From: ${names.from.join(", ")}`] : []),
       ...(names.to?.length ? [`To: ${names.to.join(", ")}`] : []),
@@ -1893,7 +1907,7 @@ export const extractEmailsFromContext = async (
   params.systemPrompt = nameToEmailResolutionPrompt(
     userCtx,
     retrievedCtx,
-    intentNames,
+    participants,
     names,
   )
   params.json = false
@@ -1902,7 +1916,7 @@ export const extractEmailsFromContext = async (
     role: ConversationRole.USER,
     content: [
       {
-        text: `Help me find emails for these names: ${intentNames}`,
+        text: `Help me find emails for these names: ${participants}`,
       },
     ],
   }
@@ -2124,6 +2138,68 @@ export const agentWithNoIntegrationsQuestion = (
     return getProviderByModel(params.modelId).converseStream(messages, params)
   } catch (error) {
     Logger.error(error, "Error in agentWithNoIntegrationsQuestion")
+    throw error
+  }
+}
+
+export const extractBestDocumentIndexes = async (
+  query: string,
+  retrievedContext: string[],
+  params: ModelParams,
+  messages: Message[],
+): Promise<number[]> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultBestModel
+    }
+
+    params.systemPrompt = extractBestDocumentsPrompt(query, retrievedContext)
+
+    const baseMessage: Message = {
+      role: "user",
+      content: [
+        {
+          text: query,
+        },
+      ],
+    }
+
+    // Combine history messages with the current query
+    const allMessages: Message[] =
+      messages && messages.length > 0
+        ? [...messages, baseMessage]
+        : [baseMessage]
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      allMessages,
+      params,
+    )
+
+    if (!text) {
+      Logger.warn("No text returned from model")
+      return []
+    }
+
+    // Extract indexes block between <indexes> ... </indexes>
+    const match = text.match(/<indexes>([\s\S]*?)<\/indexes>/i)
+    const extracted = match ? match[1].trim() : text.trim()
+
+    let indexes: number[] = []
+    try {
+      const parsed = JSON.parse(extracted)
+      if (Array.isArray(parsed)) {
+        indexes = parsed.filter((n) => typeof n === "number")
+      }
+    } catch {
+      Logger.info("Failed to extract document indexes")
+    }
+
+    Logger.info(
+      `"Extracted best document indexes" : indexes: ${indexes}, cost: ${cost}`,
+    )
+    return indexes
+  } catch (error) {
+    Logger.error(error, "Error in extractBestDocumentIndexes")
     throw error
   }
 }

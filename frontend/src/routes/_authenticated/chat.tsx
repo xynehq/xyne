@@ -97,7 +97,7 @@ import { ShareModal } from "@/components/ShareModal"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { renderToStaticMarkup } from "react-dom/server"
-import { CitationPreview } from "@/components/CitationPreview"
+import CitationPreview from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
 import { createPortal } from "react-dom"
 import {
@@ -105,6 +105,10 @@ import {
   processMessage,
   createTableComponents,
 } from "@/utils/chatUtils.tsx"
+import {
+  useDocumentOperations,
+  DocumentOperationsProvider,
+} from "@/contexts/DocumentOperationsContext"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -225,6 +229,7 @@ export const ChatPage = ({
   const [sharedChatData, setSharedChatData] = useState<any>(null)
   const [sharedChatLoading, setSharedChatLoading] = useState(false)
   const [sharedChatError, setSharedChatError] = useState<string | null>(null)
+  const { documentOperationsRef } = useDocumentOperations()
 
   const data = useLoaderData({
     from: isWithChatId
@@ -408,7 +413,11 @@ export const ChatPage = ({
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(
     null,
   )
+  const [selectedChunkIndex, setSelectedChunkIndex] = useState<number | null>(
+    null,
+  )
   const [cameFromSources, setCameFromSources] = useState(false)
+  const [isDocumentLoaded, setIsDocumentLoaded] = useState(false)
 
   // Compute disableRetry flag for retry buttons
   const disableRetry = isStreaming || retryIsStreaming || isSharedChat
@@ -753,6 +762,7 @@ export const ChatPage = ({
 
   const [streamingStarted, setStreamingStarted] = useState(false)
   const [lastUserMessageCount, setLastUserMessageCount] = useState(0)
+  const [initialBottomSpace, setInitialBottomSpace] = useState(0)
 
   // Detect when streaming starts for a new query and calculate exact space needed
   useEffect(() => {
@@ -784,13 +794,14 @@ export const ChatPage = ({
           spaceNeeded = Math.max(300, containerHeight * 0.65)
         } else if (containerHeight <= 900) {
           // Medium screens: good separation without excess
-          spaceNeeded = Math.max(400, containerHeight * 0.72)
+          spaceNeeded = Math.max(400, containerHeight * 0.78)
         } else {
           // Large screens: sufficient space but not excessive
           spaceNeeded = Math.max(800, Math.min(containerHeight * 1, 980))
         }
 
         setBottomSpace(spaceNeeded)
+        setInitialBottomSpace(spaceNeeded)
 
         // Position the latest user message at the top with precise scroll positioning
         setTimeout(() => {
@@ -828,6 +839,98 @@ export const ChatPage = ({
     messages,
     lastUserMessageCount,
   ])
+
+  // Shared function to adjust bottom space based on content height
+  // Calculates total height of last assistant message (including action buttons, sources, follow-ups)
+  // and adjusts the spacer to prevent unnecessary extra space
+  const adjustBottomSpaceForContent = useCallback(
+    (forceUpdate = false) => {
+      if (initialBottomSpace === 0) return
+
+      const container = messagesContainerRef.current
+      if (!container) return
+
+      const assistantMessageWrappers = container.querySelectorAll(
+        '[data-message-role="assistant"]',
+      )
+      if (assistantMessageWrappers.length === 0) return
+
+      const lastMessageWrapper = assistantMessageWrappers[
+        assistantMessageWrappers.length - 1
+      ] as HTMLElement
+      if (!lastMessageWrapper) return
+
+      const totalHeight = lastMessageWrapper.offsetHeight
+      const newBottomSpace = Math.max(50, initialBottomSpace - totalHeight)
+
+      // During streaming, only update if there's a significant change (>10px) to avoid jitter
+      // After streaming, always update to ensure accurate spacing
+      setBottomSpace((prevBottomSpace) => {
+        if (forceUpdate || Math.abs(prevBottomSpace - newBottomSpace) > 10) {
+          return newBottomSpace
+        }
+        return prevBottomSpace
+      })
+    },
+    [initialBottomSpace],
+  )
+
+  // Adjust bottom space during streaming as content grows
+  useEffect(() => {
+    if (!streamingStarted || (!isStreaming && !retryIsStreaming)) return
+    if (initialBottomSpace === 0) return
+
+    const observer = new ResizeObserver(() => adjustBottomSpaceForContent())
+    const interval = setInterval(() => adjustBottomSpaceForContent(), 100)
+
+    const container = messagesContainerRef.current
+    if (container) observer.observe(container)
+
+    return () => {
+      observer.disconnect()
+      clearInterval(interval)
+    }
+  }, [
+    streamingStarted,
+    isStreaming,
+    retryIsStreaming,
+    initialBottomSpace,
+    adjustBottomSpaceForContent,
+    partial,
+    currentResp,
+  ])
+
+  // Adjust bottom space after streaming ends for action buttons, sources, and follow-ups
+  useEffect(() => {
+    if (isStreaming || retryIsStreaming || initialBottomSpace === 0) return
+
+    const observer = new ResizeObserver(() => adjustBottomSpaceForContent(true))
+
+    const container = messagesContainerRef.current
+    if (container) observer.observe(container)
+
+    // Timed adjustments to catch elements as they appear:
+    // 50ms: action buttons, 200ms: sources, 400ms: follow-up loading, 600ms: safety check
+    const timeouts = [50, 200, 400, 600].map((delay) =>
+      setTimeout(() => adjustBottomSpaceForContent(true), delay),
+    )
+
+    return () => {
+      observer.disconnect()
+      timeouts.forEach(clearTimeout)
+    }
+  }, [
+    isStreaming,
+    retryIsStreaming,
+    initialBottomSpace,
+    messages,
+    adjustBottomSpaceForContent,
+  ])
+
+  // Callback for when follow-up questions finish generating
+  const handleFollowUpQuestionsLoaded = useCallback(() => {
+    setTimeout(() => adjustBottomSpaceForContent(true), 150)
+  }, [adjustBottomSpaceForContent])
 
   const handleSend = async (
     messageToSend: string,
@@ -1083,9 +1186,104 @@ export const ChatPage = ({
     }
   }
 
+  // Handle chunk index changes from CitationPreview
+  const handleChunkIndexChange = useCallback(
+    async (newChunkIndex: number | null, documentId: string, docId: string) => {
+      if (!documentId) {
+        console.error("handleChunkIndexChange called without documentId")
+        return
+      }
+
+      if (selectedCitation?.itemId !== documentId) {
+        return
+      }
+
+      if (newChunkIndex === null) {
+        documentOperationsRef?.current?.clearHighlights?.()
+        return
+      }
+
+      if (newChunkIndex !== null) {
+        try {
+          const chunkContentResponse = await api.chunk[":cId"].files[
+            ":docId"
+          ].content.$get({
+            param: { cId: newChunkIndex.toString(), docId: docId },
+          })
+
+          if (!chunkContentResponse.ok) {
+            console.error(
+              "Failed to fetch chunk content:",
+              chunkContentResponse.status,
+            )
+            toast({
+              title: "Error",
+              description: "Failed to load chunk content",
+              variant: "destructive",
+            })
+            return
+          }
+
+          const chunkContent = await chunkContentResponse.json()
+
+          // Ensure we are still on the same document before mutating UI
+          if (selectedCitation?.itemId !== documentId) {
+            return
+          }
+
+          if (chunkContent && chunkContent.chunkContent) {
+            if (documentOperationsRef?.current?.clearHighlights) {
+              documentOperationsRef.current.clearHighlights()
+            }
+
+            if (documentOperationsRef?.current?.highlightText) {
+              try {
+                await documentOperationsRef.current.highlightText(
+                  chunkContent.chunkContent,
+                  newChunkIndex,
+                  chunkContent.pageIndex,
+                  true,
+                )
+              } catch (error) {
+                console.error(
+                  "Error highlighting chunk text:",
+                  chunkContent.chunkContent,
+                  error,
+                )
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error in handleChunkIndexChange:", error)
+          toast({
+            title: "Error",
+            description: "Failed to process chunk navigation",
+            variant: "destructive",
+          })
+        }
+      }
+    },
+    [selectedCitation, toast, documentOperationsRef],
+  )
+
+  useEffect(() => {
+    if (selectedCitation && isDocumentLoaded) {
+      handleChunkIndexChange(
+        selectedChunkIndex,
+        selectedCitation?.itemId ?? "",
+        selectedCitation?.docId ?? "",
+      )
+    }
+  }, [
+    selectedChunkIndex,
+    selectedCitation,
+    isDocumentLoaded,
+    handleChunkIndexChange,
+  ])
+
   // Handler for citation clicks - moved before conditional returns
   const handleCitationClick = useCallback(
-    (citation: Citation, fromSources: boolean = false) => {
+    (citation: Citation, chunkIndex?: number, fromSources: boolean = false) => {
       if (!citation || !citation.clId || !citation.itemId) {
         // For citations without clId or itemId, open as regular link
         if (citation.url) {
@@ -1103,6 +1301,11 @@ export const ChatPage = ({
         setCurrentCitations([])
         setCurrentMessageId(null)
       }
+      // Handle chunk index change if provided
+      setSelectedChunkIndex(null)
+      setTimeout(() => {
+        setSelectedChunkIndex(chunkIndex ?? null)
+      }, 0)
     },
     [],
   )
@@ -1112,7 +1315,26 @@ export const ChatPage = ({
     setIsCitationPreviewOpen(false)
     setSelectedCitation(null)
     setCameFromSources(false)
+    setSelectedChunkIndex(null)
+    setIsDocumentLoaded(false)
   }, [])
+
+  // Callback for when document is loaded in CitationPreview
+  const handleDocumentLoaded = useCallback(() => {
+    setIsDocumentLoaded(true)
+  }, [])
+
+  useEffect(() => {
+    setIsDocumentLoaded(false)
+  }, [selectedCitation])
+
+  useEffect(() => {
+    setIsCitationPreviewOpen(false)
+    setSelectedCitation(null)
+    setCameFromSources(false)
+    setSelectedChunkIndex(null)
+    setIsDocumentLoaded(false)
+  }, [chatId])
 
   // Handler for back to sources navigation
   const handleBackToSources = useCallback(() => {
@@ -1122,6 +1344,7 @@ export const ChatPage = ({
       setIsCitationPreviewOpen(false)
       setSelectedCitation(null)
       setCameFromSources(false)
+      setSelectedChunkIndex(null)
     }
   }, [currentCitations, currentMessageId])
 
@@ -1416,6 +1639,7 @@ export const ChatPage = ({
                 isAutoScrollingRef={isAutoScrollingRef}
                 partial={partial}
                 bottomSpace={bottomSpace}
+                onFollowUpQuestionsLoaded={handleFollowUpQuestionsLoaded}
               />
               {showRagTrace && chatId && selectedMessageId && (
                 <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
@@ -1515,6 +1739,8 @@ export const ChatPage = ({
         onClose={handleCloseCitationPreview}
         showBackButton={cameFromSources}
         onBackToSources={handleBackToSources}
+        documentOperationsRef={documentOperationsRef}
+        onDocumentLoaded={handleDocumentLoaded}
       />
     </div>
   )
@@ -1588,7 +1814,11 @@ const CitationList = ({
   onCitationClick,
 }: {
   citations: Citation[]
-  onCitationClick?: (citation: Citation, fromSources?: boolean) => void
+  onCitationClick?: (
+    citation: Citation,
+    chunkIndex?: number,
+    fromSources?: boolean,
+  ) => void
 }) => {
   return (
     <ul className={`mt-2`}>
@@ -1598,7 +1828,7 @@ const CitationList = ({
           className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] mt-[12px] w-[85%] cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
           onClick={(e) => {
             e.preventDefault()
-            onCitationClick?.(citation, true)
+            onCitationClick?.(citation, undefined, true)
           }}
         >
           <div className="flex pl-[12px] pt-[12px]">
@@ -1634,7 +1864,11 @@ const Sources = ({
   showSources: boolean
   citations: Citation[]
   closeSources: () => void
-  onCitationClick?: (citation: Citation, fromSources?: boolean) => void
+  onCitationClick?: (
+    citation: Citation,
+    chunkIndex?: number,
+    fromSources?: boolean,
+  ) => void
 }) => {
   return showSources ? (
     <div
@@ -1893,6 +2127,7 @@ interface VirtualizedMessagesProps {
   isAutoScrollingRef: React.MutableRefObject<boolean>
   partial: string
   bottomSpace: number
+  onFollowUpQuestionsLoaded: () => void
 }
 
 const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
@@ -1935,6 +2170,7 @@ const VirtualizedMessages = React.forwardRef<
       isAutoScrollingRef,
       partial,
       bottomSpace,
+      onFollowUpQuestionsLoaded,
     },
     ref,
   ) => {
@@ -2224,6 +2460,7 @@ const VirtualizedMessages = React.forwardRef<
                           chatBoxRef.current?.sendMessage(question)
                         }}
                         isStreaming={isStreaming || retryIsStreaming}
+                        onQuestionsLoaded={onFollowUpQuestionsLoaded}
                       />
                     )}
                   </Fragment>
@@ -2625,11 +2862,13 @@ export const Route = createFileRoute("/_authenticated/chat")({
     const { user, workspace, agentWhiteList } =
       matches[matches.length - 1].context
     return (
-      <ChatPage
-        user={user}
-        workspace={workspace}
-        agentWhiteList={agentWhiteList}
-      />
+      <DocumentOperationsProvider>
+        <ChatPage
+          user={user}
+          workspace={workspace}
+          agentWhiteList={agentWhiteList}
+        />
+      </DocumentOperationsProvider>
     )
   },
   errorComponent: errorComponent,

@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import {
   LiveKitRoom,
   VideoConference,
   formatChatMessageLinks,
+  setLogLevel,
 } from "@livekit/components-react"
 import "@livekit/components-styles/index.css"
 import { InviteUsersModal } from "./InviteUsersModal"
@@ -18,63 +19,93 @@ import { Input } from "@/components/ui/input"
 import { UserPlus, Share2, Copy } from "lucide-react"
 import { api } from "@/api"
 import { useToast } from "@/hooks/use-toast"
+import { useParams, useSearch } from "@tanstack/react-router"
+import { CallType } from "@/types"
+
+// Set LiveKit log level to warning or error only (suppresses debug logs)
+setLogLevel("warn")
 
 export default function CallPage() {
-  // Get parameters from URL
-  const urlParams = new URLSearchParams(window.location.search)
-  const room = urlParams.get("room") || ""
-  const token = urlParams.get("token") || ""
-  const callType = urlParams.get("type") || "video"
-  const LiveKitServerUrl = urlParams.get("serverUrl")
+  // Get callId from route params: /call/:callId
+  const params = useParams({ strict: false }) as { callId?: string }
+  const search = useSearch({ strict: false }) as { type: CallType }
+
+  const callId = params.callId || ""
+  const callType = search.type
 
   const [isCallEnded, setIsCallEnded] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
   const [joinError, setJoinError] = useState<string | null>(null)
-  const [actualToken, setActualToken] = useState(token)
+  const [token, setToken] = useState<string | null>(null)
+  const [serverUrl, setServerUrl] = useState<string | null>(null)
   const [isCopying, setIsCopying] = useState(false)
-  const [serverUrl, setServerUrl] = useState(LiveKitServerUrl)
   const { toast } = useToast()
 
   // Generate the shareable call link (without token for security)
-  const shareableCallLink = `${window.location.origin}/call?room=${room}&type=${callType}`
+  // Only generate if callId is valid
+  const shareableCallLink = callId
+    ? `${window.location.origin}/call/${callId}?type=${callType}`
+    : ""
 
-  // If no token provided, try to join the call
-  useEffect(() => {
-    if (room && !token && !isJoining && !joinError) {
-      joinCall()
-    }
-  }, [room, token, isJoining, joinError])
-
-  const joinCall = async () => {
-    if (!room) return
+  const joinCall = useCallback(async () => {
+    if (!callId) return
 
     setIsJoining(true)
     setJoinError(null)
 
     try {
       const response = await api.calls.join.$post({
-        json: { roomName: room },
+        json: { callId },
       })
 
       if (response.ok) {
         const data = await response.json()
-        setActualToken(data.token)
-        if (data.livekitUrl) setServerUrl(data.livekitUrl)
+        setToken(data.token)
+        if (data.livekitUrl) {
+          setServerUrl(data.livekitUrl)
+        }
       } else {
-        const errorData = await response.json()
-        setJoinError(errorData.message || "Failed to join call")
+        // Handle error response - check if there's JSON content
+        let errorMessage = "Failed to join call"
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.message || errorMessage
+        } catch {
+          // If response is not JSON, use status text
+          errorMessage = `Server error: ${response.statusText || response.status}`
+        }
+        setJoinError(errorMessage)
       }
     } catch (error) {
-      console.error("Error joining call:", error)
       setJoinError("Failed to join call. Please try again.")
     } finally {
       setIsJoining(false)
     }
-  }
+  }, [callId])
+
+  // Automatically join the call on mount
+  // Use useRef to track if we've already attempted to join
+  const joinAttempted = useRef(false)
+
+  useEffect(() => {
+    if (callId && !token && !joinAttempted.current) {
+      joinAttempted.current = true
+      joinCall()
+    }
+  }, [callId, token, joinCall])
 
   const handleCopyLink = async () => {
+    if (!shareableCallLink) {
+      toast({
+        title: "Error",
+        description: "No valid call link available.",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setIsCopying(true)
       await navigator.clipboard.writeText(shareableCallLink)
@@ -83,7 +114,6 @@ export default function CallPage() {
         description: "Call link copied to clipboard.",
       })
     } catch (error) {
-      console.error("Failed to copy link:", error)
       toast({
         title: "Error",
         description: "Failed to copy link. Please try again.",
@@ -95,15 +125,23 @@ export default function CallPage() {
   }
 
   const handleShareNative = async () => {
+    if (!shareableCallLink) {
+      toast({
+        title: "Error",
+        description: "No valid call link available.",
+        variant: "destructive",
+      })
+      return
+    }
+
     if (navigator.share) {
       try {
         await navigator.share({
           title: `Join ${callType} call`,
-          text: `Join our ${callType} call: ${room}`,
+          text: `Join our ${callType} call`,
           url: shareableCallLink,
         })
       } catch (error) {
-        console.error("Error sharing:", error)
         // Fallback to copy
         handleCopyLink()
       }
@@ -113,11 +151,72 @@ export default function CallPage() {
     }
   }
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
+    // Mark as ended first to prevent duplicate calls
     setIsCallEnded(true)
-    // Close the call window
-    window.close()
+
+    // Notify backend that user is leaving the call
+    if (callId) {
+      try {
+        await api.calls.leave.$post({
+          json: { callId },
+        })
+      } catch (error: unknown) {
+        // Continue with disconnect even if API call fails
+      }
+    }
+
+    // Close the call window after a short delay to ensure API call completes
+    setTimeout(() => {
+      window.close()
+    }, 100)
   }
+
+  // Track when user actually connects to the room (for participants tracking)
+  const handleConnected = async () => {
+    if (!callId) return
+
+    try {
+      // If user had a token (caller), we need to register them as a participant
+      if (token && !isJoining) {
+        await api.calls.join.$post({
+          json: { callId },
+        })
+      }
+    } catch (error) {
+      // Don't show error to user - this is background tracking
+    }
+  }
+
+  // Ensure leave API is called when user closes window/tab or navigates away
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (callId && !isCallEnded) {
+        // Use synchronous fetch with keepalive for reliable delivery during page unload
+        // keepalive ensures the request completes even after the page unloads
+        fetch("/api/v1/calls/leave", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({ callId }),
+          keepalive: true, // Critical: keeps request alive after page unload
+        }).catch(() => {
+          // Silently fail - page is unloading anyway
+        })
+      }
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    // Also listen to pagehide for better mobile support
+    window.addEventListener("pagehide", handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+      window.removeEventListener("pagehide", handleBeforeUnload)
+    }
+  }, [callId, isCallEnded])
 
   // Show loading state while joining
   if (isJoining) {
@@ -137,7 +236,7 @@ export default function CallPage() {
   }
 
   // Show error if join failed or missing required params
-  if (!room || (!actualToken && joinError)) {
+  if (!callId || (!token && joinError)) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900">
         <div className="text-center">
@@ -145,7 +244,7 @@ export default function CallPage() {
             {joinError ? "Failed to Join Call" : "Invalid Call"}
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            {joinError || "Missing room or token information"}
+            {joinError || "Missing call ID"}
           </p>
           <button
             onClick={() => window.close()}
@@ -183,15 +282,16 @@ export default function CallPage() {
     <div className="h-screen bg-gray-900 relative overflow-hidden">
       {/* Call Interface */}
       <div className="h-full relative overflow-hidden">
-        {actualToken && serverUrl ? (
+        {token && serverUrl ? (
           <LiveKitRoom
             video={callType === "video"}
             audio={true}
-            token={actualToken}
+            token={token}
             serverUrl={serverUrl}
             // Use the default LiveKit styles
             data-lk-theme="default"
             style={{ height: "100%", overflow: "hidden" }}
+            onConnected={handleConnected}
             onDisconnected={handleDisconnect}
           >
             {/* LiveKit provides a complete VideoConference component */}
@@ -239,8 +339,8 @@ export default function CallPage() {
       <InviteUsersModal
         isOpen={showInviteModal}
         onClose={() => setShowInviteModal(false)}
-        roomName={room}
-        callType={callType as "video" | "audio"}
+        callId={callId}
+        callType={callType}
       />
 
       {/* Share Call Link Modal */}
@@ -255,34 +355,51 @@ export default function CallPage() {
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Link Section */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Call Link</label>
-              <div className="flex items-center space-x-2">
-                <Input
-                  readOnly
-                  value={shareableCallLink}
-                  className="flex-1 font-mono text-sm min-w-0"
-                />
-                <Button
-                  onClick={handleCopyLink}
-                  disabled={isCopying}
-                  variant="outline"
-                  size="sm"
-                  className="px-3 flex-shrink-0"
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+            {shareableCallLink ? (
+              <>
+                {/* Link Section */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Call Link</label>
+                  <div className="flex items-center space-x-2">
+                    <Input
+                      readOnly
+                      value={shareableCallLink}
+                      className="flex-1 font-mono text-sm min-w-0"
+                    />
+                    <Button
+                      onClick={handleCopyLink}
+                      disabled={isCopying}
+                      variant="outline"
+                      size="sm"
+                      className="px-3 flex-shrink-0"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-col gap-2 pt-2">
-              <Button onClick={handleShareNative} className="w-full" size="sm">
-                <Share2 className="h-4 w-4 mr-2" />
-                Share Link
-              </Button>
-            </div>
+                {/* Action Buttons */}
+                <div className="flex flex-col gap-2 pt-2">
+                  <Button
+                    onClick={handleShareNative}
+                    className="w-full"
+                    size="sm"
+                  >
+                    <Share2 className="h-4 w-4 mr-2" />
+                    Share Link
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-4">
+                <p className="text-sm text-muted-foreground">
+                  Unable to generate shareable link.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Please ensure you're in an active call.
+                </p>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

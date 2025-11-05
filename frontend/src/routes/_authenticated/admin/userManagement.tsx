@@ -129,7 +129,6 @@ const Skeleton = ({ className = "" }: { className?: string }) => (
   />
 )
 
-
 export const Route = createFileRoute("/_authenticated/admin/userManagement")({
   beforeLoad: ({ context }) => {
     if (
@@ -452,6 +451,7 @@ function UsersListPage({
         setIngestedUsers(
           ingestedData.data.map((user: any) => ({
             ...user,
+            email: user.email || "", // Ensure email is empty string if null/undefined
             syncJobs: Object.fromEntries(
               Object.entries(user.syncJobs || {}).map(([app, value]) => [
                 app,
@@ -546,10 +546,11 @@ function UsersListPage({
   ): T[] => {
     // Filter users based on search term
     let filtered = userArray.filter((user) => {
+      if (!searchTerm) return true // If no search term, include all users
       const searchLower = searchTerm.toLowerCase()
       return (
         user.name?.toLowerCase().includes(searchLower) ||
-        user.email.toLowerCase().includes(searchLower)
+        user.email?.toLowerCase().includes(searchLower)
       )
     })
 
@@ -609,12 +610,11 @@ function UsersListPage({
       if (!res.ok) {
         throw new Error("Failed to update role")
       }
-       if (activeTab === "loggedIn") {
+      if (activeTab === "loggedIn") {
         await fetchLoggedInUsers()
       } else if (activeTab === "ingested") {
         await fetchIngestedUsers()
       }
-      
 
       toast.success({
         title: "Success",
@@ -659,7 +659,7 @@ function UsersListPage({
     try {
       setSyncingUser(user.email)
       const res = await api.admin.syncGoogleWorkSpaceByMail.$post({
-        form: { email: user.email },
+        json: { email: user.email },
       })
 
       if (!res.ok) {
@@ -700,13 +700,13 @@ function UsersListPage({
     try {
       setSyncingSlackUser(user.email)
       const res = await api.admin.syncSlackByMail.$post({
-        form: { email: user.email },
+        json: { email: user.email },
       })
 
       if (!res.ok) {
         throw new Error("Failed to trigger Slack sync")
       }
- 
+
       toast.success({
         title: "Success",
         description: "Slack sync has been successfully triggered.",
@@ -1397,7 +1397,7 @@ function UsersListPage({
                                 <div className="flex items-center space-x-3">
                                   <Avatar className="h-10 w-10">
                                     <AvatarFallback className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium">
-                                      {user.email[0].toUpperCase()}
+                                      {user?.email?.[0]?.toUpperCase() || "?"}
                                     </AvatarFallback>
                                   </Avatar>
                                   <div className="min-w-0 flex-1">
@@ -1550,11 +1550,11 @@ function UsersListPage({
                     </Avatar>
                     <div>
                       <div className="font-medium text-gray-900 dark:text-gray-100">
-                        {userToConfirmRoleChange.user.name ||
-                          userToConfirmRoleChange.user.email}
+                        {userToConfirmRoleChange?.user?.name ||
+                          userToConfirmRoleChange?.user.email}
                       </div>
                       <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {userToConfirmRoleChange.user.email}
+                        {userToConfirmRoleChange?.user.email}
                       </div>
                     </div>
                   </div>
@@ -1645,7 +1645,7 @@ function UsersListPage({
                     </Avatar>
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                        {selectedUser.name || selectedUser.email}
+                        {selectedUser?.name || selectedUser.email}
                       </h3>
                       <p className="text-gray-500 dark:text-gray-400">
                         {selectedUser.email}

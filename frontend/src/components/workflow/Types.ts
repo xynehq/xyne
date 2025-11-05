@@ -301,6 +301,19 @@ export interface WorkflowExecutionModalProps {
   onViewExecution?: (executionId: string) => void
 }
 
+export interface WebhookConfig {
+  webhookUrl: string
+  httpMethod: "GET" | "POST" | "PUT" | "DELETE" | "PATCH"
+  path: string
+  authentication: "none" | "basic" | "bearer" | "api_key"
+  selectedCredential?: string
+  responseMode: "immediately" | "wait_for_completion" | "custom"
+  options?: Record<string, any>
+  headers?: Record<string, string>
+  queryParams?: Record<string, string>
+  requestBody?: string
+}
+
 export interface LegacyWorkflowTemplate {
   id: string
   name: string
@@ -321,4 +334,25 @@ export interface LegacyWorkflowTemplate {
   category?: string
   created_at?: string
   updated_at?: string
+}
+
+
+export interface AgentToolData {
+  agentId: string
+  name: string
+  description?: string
+  model?: string
+  isExistingAgent?: boolean
+  prompt?: string
+  isRagOn?: boolean
+  appIntegrations?: any
+}
+
+// ✅ Type for the tool object passed as prop
+export interface AgentTool {
+  id: string
+  type: string
+  val?: AgentToolData
+  value?: AgentToolData
+  config?: AgentToolData
 }

@@ -1,3 +1,7 @@
+// Resumable Slack channel ingestion implementation
+// Provides full resumability with progress tracking and WebSocket communication
+// Supports stopping and starting from the exact point where ingestion was interrupted
+
 import { getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   connectors,
@@ -49,7 +53,7 @@ import type { Team } from "@slack/web-api/dist/types/response/TeamInfoResponse"
 import type { User } from "@slack/web-api/dist/types/response/UsersInfoResponse"
 import { count, eq } from "drizzle-orm"
 import { StatType, Tracker } from "@/integrations/tracker"
-import { sendWebsocketMessage } from "../metricStream"
+// Removed WebSocket import - now using database-only approach for progress updates
 import {
   AuthType,
   ConnectorStatus,
@@ -342,6 +346,100 @@ export function formatSlackSpecialMentions(
 
   return formattedText
 }
+
+/**
+ * Processes user mentions in bot messages, replacing <@userId> with appropriate names
+ * Similar to formatSlackSpecialMentions but handles user mentions specifically
+ */
+export async function processBotMessageMentions(
+  text: string | undefined,
+  client: WebClient,
+  memberMap: Map<string, User>,
+): Promise<string> {
+  if (!text) return ""
+
+  let processedText = text
+  const mentionRegex = /<@([A-Z0-9]+)>/g
+
+  // Find all user mentions
+  const mentions = text.match(mentionRegex)
+  if (!mentions) return processedText
+
+  for (const mention of mentions) {
+    const userId = mention.slice(2, -1) // Remove <@ and >
+
+    // Check if user is already in memberMap
+    let user = memberMap.get(userId)
+
+    // If not in map, fetch user info
+    if (!user) {
+      try {
+        const userResponse = await client.users.info({ user: userId })
+        if (userResponse.ok && userResponse.user) {
+          user = userResponse.user as User
+          memberMap.set(userId, user)
+        }
+      } catch (error) {
+        // If fetching fails, continue with original mention
+        continue
+      }
+    }
+
+    if (user) {
+      let replacementName: string
+
+      // Check if this is a bot user
+      if (user.is_bot) {
+        // For bots, use the bot's name or real_name
+        replacementName =
+          user.profile?.real_name ||
+          user.real_name ||
+          user.name ||
+          "Unknown Bot"
+      } else {
+        // For regular users, use display_name or name
+        replacementName =
+          user.profile?.display_name || user.name || "Unknown User"
+      }
+
+      // Replace the mention with @username format
+      processedText = processedText.replace(mention, `@${replacementName}`)
+    }
+  }
+
+  return processedText
+}
+
+/**
+ * Extracts and combines all text content from bot message blocks
+ */
+export function extractBotMessageText(message: SlackMessage): string {
+  let combinedText = ""
+
+  // Add the main text field if it exists
+  if (message.text) {
+    combinedText += message.text + "\n"
+  }
+
+  // Extract text from blocks
+  if (message.blocks) {
+    for (const block of message.blocks) {
+      if (block.type === "section" && block.text?.text) {
+        combinedText += block.text.text + "\n"
+      }
+
+      if (block.type === "section" && block.fields) {
+        for (const field of block.fields) {
+          if (field.text) {
+            combinedText += field.text + "\n"
+          }
+        }
+      }
+    }
+  }
+
+  return combinedText.trim()
+}
 /**
  * Fetches all messages from a channel.
  * For each message that is a thread parent, it also fetches the thread replies.
@@ -357,8 +455,19 @@ export async function insertChannelMessages(
   channelMap: Map<string, string>,
   startDate: string,
   endDate: string,
+  includeBotMessages: boolean = false,
+  messageCounters?: {
+    totalMessages: { value: number }
+    processedMessages: { value: number }
+  },
+  checkCancellationOrPause?: () => Promise<{
+    shouldStop: boolean
+    isPaused: boolean
+  }>,
+  onLastTimestampUpdate?: (timestamp: string) => void,
 ): Promise<void> {
   let cursor: string | undefined = undefined
+  let lastProcessedTimestamp: string = timestamp
 
   let replyCount = 0
 
@@ -386,16 +495,53 @@ export async function insertChannelMessages(
         { conversation_id: channelId ?? "", email: email },
         response.messages?.length,
       )
+
+      // Update total message count
+      if (messageCounters) {
+        const previousTotal = messageCounters.totalMessages.value
+        messageCounters.totalMessages.value += response.messages.length
+        loggerWithChild({ email }).info(
+          `Message counter update: added ${response.messages.length} messages, total now ${messageCounters.totalMessages.value} (was ${previousTotal})`,
+        )
+      }
+
+      let messageIndex = 0
       for (const message of response.messages as (SlackMessage & {
         mentions: string[]
       })[]) {
+        messageIndex++
+        // Processing message ${messageIndex}/${response.messages.length}
+        // Check for pause/cancellation/deletion before processing each message
+        // Check for pause/cancellation/deletion before processing each message
+        if (checkCancellationOrPause) {
+          try {
+            // Check cancellation status
+            const { shouldStop } = await checkCancellationOrPause()
+            // Cancellation check complete
+            if (shouldStop) {
+              loggerWithChild({ email }).info(
+                `Message processing stopped due to pause/cancellation/deletion in channel ${channelId}`,
+              )
+              return
+            }
+          } catch (error) {
+            loggerWithChild({ email }).error(
+              `❌ Error in checkCancellationOrPause for message ${messageIndex}: ${error}`,
+            )
+            throw error
+          }
+        }
+
         // replace user id with username
 
+        // Extract mentions
         const mentions = extractUserIdsFromBlocks(message)
+        // Found ${mentions.length} mentions
         let text = message.text
         if (mentions.length) {
           for (const m of mentions) {
             if (!memberMap.get(m)) {
+              // Fetching user info for mention
               memberMap.set(
                 m,
                 (
@@ -404,6 +550,7 @@ export async function insertChannelMessages(
                   })
                 ).user!,
               )
+              // Successfully fetched user info
             }
             text = text?.replace(
               `<@${m}>`,
@@ -411,40 +558,103 @@ export async function insertChannelMessages(
             )
           }
         }
+        loggerWithChild({ email }).info(
+          `🔄 Formatting special mentions for message ${messageIndex}`,
+        )
         text = formatSlackSpecialMentions(text, channelMap, channelId)
         message.text = text
+        // Completed text processing
         // Add the top-level message
-        if (
+        // Check if message should be processed based on includeBotMessages flag
+        const isRegularMessage =
           message.type === "message" &&
           !message.subtype &&
           message.user &&
           message.client_msg_id &&
           message.text != ""
-          // memberMap[message.user]
-        ) {
-          // a deleted user's message could be there
-          if (!memberMap.get(message.user)) {
-            memberMap.set(
-              message.user,
-              (
-                await client.users.info({
-                  user: message.user,
-                })
-              ).user!,
-            )
-          }
+
+        const hasTextOrBlocks =
+          (message.text && message.text.trim().length > 0) ||
+          (Array.isArray(message.blocks) && message.blocks.length > 0)
+        const isBotMessage =
+          includeBotMessages &&
+          message.type === "message" &&
+          message.bot_id &&
+          hasTextOrBlocks
+
+        if (isRegularMessage || isBotMessage) {
+          // Insert message ${messageIndex}
           message.mentions = mentions
           message.team = await getTeam(client, message)
 
-          // case to avoid bot messages
-          await insertChatMessage(
-            client,
-            message,
-            channelId,
-            memberMap.get(message.user!)?.profile?.display_name!,
-            memberMap.get(message.user!)?.name!,
-            memberMap.get(message.user!)?.profile?.image_192!,
-          )
+          // Handle both regular user messages and bot messages
+          if (isBotMessage) {
+            // For bot messages, generate custom ID: channelId_ts_botid
+            const customBotId = `${channelId}_${message.ts}_${message.bot_id}`
+            // Temporarily set identifiers for bot messages
+            message.client_msg_id = message.client_msg_id || customBotId
+            // Ensure a userId-like value exists for downstream writes/attachments
+            message.user =
+              message.user || (message.bot_profile?.id as any) || message.bot_id
+
+            // For bot messages, extract and combine all text from blocks
+            const combinedBotText = extractBotMessageText(message)
+
+            // Process user mentions in the combined bot text
+            const processedBotText = await processBotMessageMentions(
+              combinedBotText,
+              client,
+              memberMap,
+            )
+
+            // Apply special mentions formatting
+            const finalBotText = formatSlackSpecialMentions(
+              processedBotText,
+              channelMap,
+              channelId,
+            )
+
+            message.text = finalBotText
+            // For bot messages, use bot profile information
+            const botName = message.bot_profile?.name || "Unknown Bot"
+            const botUsername =
+              message.bot_profile?.name || message.bot_id || "bot"
+            const botImage =
+              message.bot_profile?.icons?.image_72 ||
+              message.bot_profile?.icons?.image_48 ||
+              message.bot_profile?.icons?.image_36 ||
+              ""
+
+            await insertChatMessage(
+              client,
+              message,
+              channelId,
+              botName,
+              botUsername,
+              botImage,
+            )
+          } else {
+            // For regular user messages, handle user info
+            if (message.user && !memberMap.get(message.user)) {
+              memberMap.set(
+                message.user,
+                (
+                  await client.users.info({
+                    user: message.user,
+                  })
+                ).user!,
+              )
+            }
+
+            await insertChatMessage(
+              client,
+              message,
+              channelId,
+              memberMap.get(message.user!)?.profile?.display_name!,
+              memberMap.get(message.user!)?.name!,
+              memberMap.get(message.user!)?.profile?.image_192!,
+            )
+          }
           try {
             insertChatMessagesCount.inc({
               conversation_id: channelId,
@@ -458,10 +668,26 @@ export async function insertChannelMessages(
               `Error inserting chat message`,
             )
           }
+
+          // Update processed message count
+          if (messageCounters) {
+            messageCounters.processedMessages.value += 1
+            // Successfully processed message
+          }
+
           tracker.updateUserStats(email, StatType.Slack_Message, 1)
         } else {
+          // Skipping message (subtype: ${message.subtype})
           subtypes.add(message.subtype)
         }
+
+        // Update last processed timestamp for resumption
+        lastProcessedTimestamp = message.ts!
+        if (onLastTimestampUpdate) {
+          onLastTimestampUpdate(lastProcessedTimestamp)
+        }
+
+        // Completed processing message ${messageIndex}
 
         // If the message is a thread parent (its thread_ts equals its ts) and it has replies, fetch them.
         if (
@@ -485,15 +711,34 @@ export async function insertChannelMessages(
           // Exclude the parent message (already added)
           const replies: (SlackMessage & { mentions?: string[] })[] =
             threadMessages.filter((msg) => msg.ts !== message.ts)
+
+          // Add thread replies to total message count
+          if (messageCounters && replies.length > 0) {
+            const previousTotal = messageCounters.totalMessages.value
+            messageCounters.totalMessages.value += replies.length
+            loggerWithChild({ email }).info(
+              `Thread replies counter update: added ${replies.length} replies, total now ${messageCounters.totalMessages.value} (was ${previousTotal})`,
+            )
+          }
           for (const reply of replies) {
-            if (
+            // Check if reply should be processed based on includeBotMessages flag
+            const isRegularReply =
               reply.type === "message" &&
               !reply.subtype &&
               reply.user &&
               reply.client_msg_id &&
               reply.text != ""
-              // memberMap[reply.user]
-            ) {
+
+            const hasTextOrBlocks =
+              (reply.text && reply.text.trim().length > 0) ||
+              (Array.isArray(reply.blocks) && reply.blocks.length > 0)
+            const isBotReply =
+              includeBotMessages &&
+              reply.type === "message" &&
+              reply.bot_id &&
+              hasTextOrBlocks
+
+            if (isRegularReply || isBotReply) {
               const mentions = extractUserIdsFromBlocks(reply)
               let text = reply.text
               if (mentions.length) {
@@ -515,29 +760,78 @@ export async function insertChannelMessages(
                 }
               }
               text = formatSlackSpecialMentions(text, channelMap, channelId)
-              if (!memberMap.get(reply.user)) {
-                memberMap.set(
-                  reply.user,
-                  (
-                    await client.users.info({
-                      user: reply.user,
-                    })
-                  ).user!,
-                )
-              }
+
               reply.mentions = mentions
               reply.text = text
-
               reply.team = await getTeam(client, reply)
 
-              await insertChatMessage(
-                client,
-                reply,
-                channelId,
-                memberMap.get(reply.user!)?.profile?.display_name!,
-                memberMap.get(reply.user!)?.name!,
-                memberMap.get(reply.user!)?.profile?.image_192!,
-              )
+              // Handle both regular user replies and bot replies
+              if (isBotReply) {
+                // For bot replies, generate custom ID: channelId_ts_botid
+                const customBotId = `${channelId}_${reply.ts}_${reply.bot_id}`
+                reply.client_msg_id = reply.client_msg_id || customBotId
+                // Ensure a userId-like value exists for downstream writes/attachments
+                reply.user =
+                  reply.user || (reply.bot_profile?.id as any) || reply.bot_id
+
+                // For bot replies, extract and combine all text from blocks
+                const combinedBotText = extractBotMessageText(reply)
+
+                // Process user mentions in the combined bot text
+                const processedBotText = await processBotMessageMentions(
+                  combinedBotText,
+                  client,
+                  memberMap,
+                )
+
+                // Apply special mentions formatting
+                const finalBotText = formatSlackSpecialMentions(
+                  processedBotText,
+                  channelMap,
+                  channelId,
+                )
+
+                reply.text = finalBotText
+                // For bot replies, use bot profile information
+                const botName = reply.bot_profile?.name || "Unknown Bot"
+                const botUsername =
+                  reply.bot_profile?.name || reply.bot_id || "bot"
+                const botImage =
+                  reply.bot_profile?.icons?.image_72 ||
+                  reply.bot_profile?.icons?.image_48 ||
+                  reply.bot_profile?.icons?.image_36 ||
+                  ""
+
+                await insertChatMessage(
+                  client,
+                  reply,
+                  channelId,
+                  botName,
+                  botUsername,
+                  botImage,
+                )
+              } else {
+                // For regular user replies, handle user info
+                if (reply.user && !memberMap.get(reply.user)) {
+                  memberMap.set(
+                    reply.user,
+                    (
+                      await client.users.info({
+                        user: reply.user,
+                      })
+                    ).user!,
+                  )
+                }
+
+                await insertChatMessage(
+                  client,
+                  reply,
+                  channelId,
+                  memberMap.get(reply.user!)?.profile?.display_name!,
+                  memberMap.get(reply.user!)?.name!,
+                  memberMap.get(reply.user!)?.profile?.image_192!,
+                )
+              }
               try {
                 insertChatMessagesCount.inc({
                   conversation_id: channelId,
@@ -551,6 +845,15 @@ export async function insertChannelMessages(
                   `Error inserting chat message`,
                 )
               }
+
+              // Update processed message count for replies
+              if (messageCounters) {
+                messageCounters.processedMessages.value += 1
+                loggerWithChild({ email }).info(
+                  `Processed reply counter: ${messageCounters.processedMessages.value}`,
+                )
+              }
+
               tracker.updateUserStats(email, StatType.Slack_Message_Reply, 1)
             } else {
               subtypes.add(reply.subtype)
@@ -827,9 +1130,7 @@ export const insertChatMessage = async (
           channelId,
         )
         attachmentIds.push(file.id!)
-        Logger.info(
-          `Inserted attachment ${file.id} for message ${message.client_msg_id}`,
-        )
+        // Successfully inserted attachment
       } catch (error) {
         Logger.error(`Error inserting attachment ${file.id}: ${error}`)
       }
@@ -907,19 +1208,101 @@ export const insertMember = async (member: Member) => {
   )
 }
 
+// Main function for resumable Slack channel ingestion
+// Processes specified channels with full resumability support
+// Tracks progress and communicates via WebSocket for real-time updates
 export const handleSlackChannelIngestion = async (
   connectorId: number,
   channelsToIngest: string[],
   startDate: string,
   endDate: string,
   email: string,
+  includeBotMessages: boolean = false,
+  ingestionId?: number, // Optional for resumability tracking
 ) => {
+  let ingestionRecord: any = null
+  let interval: ReturnType<typeof setInterval> | undefined
   try {
     const abortController = new AbortController()
+
+    // Function to check if ingestion has been cancelled, paused, or deleted
+    const checkCancellationOrPause = async (): Promise<{
+      shouldStop: boolean
+      isPaused: boolean
+    }> => {
+      if (!ingestionId) return { shouldStop: false, isPaused: false }
+      try {
+        const { getIngestionById } = await import("@/db/ingestion")
+        const currentIngestion = await getIngestionById(db, ingestionId)
+        if (!currentIngestion) {
+          // Ingestion was deleted
+          return { shouldStop: true, isPaused: false }
+        }
+        const isCancelled = currentIngestion?.status === "cancelled"
+        const isPaused = currentIngestion?.status === "paused"
+        const isFailed = currentIngestion?.status === "failed"
+        const isCompleted = currentIngestion?.status === "completed"
+        const shouldStop = isCancelled || isPaused || isFailed || isCompleted
+        loggerWithChild({ email }).info(
+          `Status check: ingestionId=${ingestionId}, status=${currentIngestion?.status}, isCancelled=${isCancelled}, isPaused=${isPaused}`,
+        )
+        return { shouldStop, isPaused }
+      } catch (error) {
+        loggerWithChild({ email }).warn(
+          "Failed to check ingestion status:",
+          error,
+        )
+        return { shouldStop: false, isPaused: false }
+      }
+    }
     const connector: SelectConnector = await getOAuthConnectorWithCredentials(
       db,
       connectorId,
     )
+
+    // Import ingestion database functions for progress tracking
+    const { updateIngestionStatus, updateIngestionMetadata, getIngestionById } =
+      await import("@/db/ingestion")
+
+    // Initialize resumability variables with defaults
+    let resumeFromChannelIndex = 0
+    let existingChannelsToIngest = channelsToIngest
+    let existingStartDate = startDate
+    let existingEndDate = endDate
+    let existingIncludeBotMessages = includeBotMessages
+
+    if (ingestionId) {
+      // Check if this is a resume operation by examining existing state
+      const existingIngestion = await getIngestionById(db, ingestionId)
+      if (existingIngestion && existingIngestion.status === "pending") {
+        // Extract resumability state from stored metadata
+        // This is the key to resuming from exactly where we left off
+        const metadata = existingIngestion.metadata as any
+        if (metadata?.slack?.ingestionState) {
+          const state = metadata.slack.ingestionState
+          resumeFromChannelIndex = state.currentChannelIndex || 0 // Resume from this channel
+          existingChannelsToIngest = state.channelsToIngest || channelsToIngest
+          existingStartDate = state.startDate || startDate
+          existingEndDate = state.endDate || endDate
+          existingIncludeBotMessages =
+            state.includeBotMessage ?? includeBotMessages
+
+          loggerWithChild({ email }).info(
+            `Resuming Slack channel ingestion from channel index ${resumeFromChannelIndex} of ${existingChannelsToIngest.length}`,
+          )
+        }
+      }
+
+      // Update database status to indicate active processing
+      ingestionRecord = await updateIngestionStatus(
+        db,
+        ingestionId,
+        "in_progress",
+      )
+      loggerWithChild({ email }).info(
+        `Started Slack channel ingestion with ID: ${ingestionId}`,
+      )
+    }
 
     const { accessToken } = connector.oauthCredentials as {
       accessToken: string
@@ -930,24 +1313,140 @@ export const handleSlackChannelIngestion = async (
     const tracker = new Tracker(Apps.Slack, AuthType.OAuth)
     const team = await safeGetTeamInfo(client)
     const channelMap = new Map<string, string>()
-    const interval = setInterval(() => {
-      sendWebsocketMessage(
-        JSON.stringify({
-          IngestionType: IngestionType.partialIngestion,
-          progress: tracker.getProgress(),
-          userStats: tracker.getOAuthProgress().userStats,
-          startTime: tracker.getStartTime(),
-        }),
-        connector?.externalId,
+
+    let processedChannels = resumeFromChannelIndex
+    let globalLastMessageTimestamp = "0" // Track last processed message timestamp globally
+
+    // Restore last message timestamp if resuming
+    if (
+      ingestionRecord?.metadata?.slack?.ingestionState?.lastMessageTimestamp
+    ) {
+      globalLastMessageTimestamp =
+        ingestionRecord.metadata.slack.ingestionState.lastMessageTimestamp
+      loggerWithChild({ email }).info(
+        `📍 Restored global last message timestamp: ${globalLastMessageTimestamp}`,
       )
-    }, 4000)
+    }
+
+    // Initialize message counters - restore from saved metadata if resuming
+    let savedMessageCounters = { totalMessages: 0, processedMessages: 0 }
+    if (ingestionRecord?.metadata?.slack?.websocketData?.progress) {
+      savedMessageCounters = {
+        totalMessages:
+          ingestionRecord.metadata.slack.websocketData.progress.totalMessages ||
+          0,
+        processedMessages:
+          ingestionRecord.metadata.slack.websocketData.progress
+            .processedMessages || 0,
+      }
+      loggerWithChild({ email }).info(
+        `📊 Resuming with saved counters: total=${savedMessageCounters.totalMessages}, processed=${savedMessageCounters.processedMessages}`,
+      )
+    } else {
+      loggerWithChild({ email }).info(
+        `📊 Starting fresh counters: total=0, processed=0`,
+      )
+    }
+
+    const messageCounters = {
+      totalMessages: { value: savedMessageCounters.totalMessages },
+      processedMessages: { value: savedMessageCounters.processedMessages },
+    }
+
+    // Set up periodic progress updates every 4 seconds
+    // This ensures real-time frontend updates and persistent resumability state
+    interval = setInterval(async () => {
+      loggerWithChild({ email }).info(
+        `Periodic check running for ingestion ${ingestionId}`,
+      )
+      loggerWithChild({ email }).info(
+        `Message counters: total=${messageCounters.totalMessages.value}, processed=${messageCounters.processedMessages.value}`,
+      )
+      // Check for cancellation/pause and abort if requested
+      const { shouldStop, isPaused } = await checkCancellationOrPause()
+      if (shouldStop) {
+        if (isPaused) {
+          loggerWithChild({ email }).info(
+            `Ingestion ${ingestionId} was paused, stopping process`,
+          )
+        } else {
+          // Get the actual status to log the correct message
+          if (ingestionId !== undefined) {
+            const { getIngestionById } = await import("@/db/ingestion")
+            const currentIngestion = await getIngestionById(db, ingestionId)
+            const status = currentIngestion?.status || "unknown"
+            loggerWithChild({ email }).info(
+              `Ingestion ${ingestionId} was ${status}, stopping process`,
+            )
+          } else {
+            loggerWithChild({ email }).info(
+              `Ingestion was cancelled/stopped, stopping process`,
+            )
+          }
+        }
+        abortController.abort()
+        clearInterval(interval)
+        return
+      }
+      const progressData = {
+        IngestionType: IngestionType.partialIngestion,
+        progress: tracker.getProgress(),
+        userStats: tracker.getOAuthProgress().userStats,
+        startTime: tracker.getStartTime(),
+        // Enhanced progress information for resumable ingestion UI
+        channelProgress: {
+          totalChannels: existingChannelsToIngest.length,
+          processedChannels,
+          currentChannel:
+            channelMap.get(existingChannelsToIngest[processedChannels]) || "",
+          totalMessages: messageCounters.totalMessages.value,
+          processedMessages: messageCounters.processedMessages.value,
+        },
+        ingestionId,
+      }
+
+      // Progress updates now handled via database polling - no WebSocket needed
+      // Frontend will get this data when it polls /api/ingestion/status
+      // sendWebsocketMessage call removed - using database-only approach
+
+      // Persist current state to database for resumability
+      // Critical: this allows resuming from exact same point if interrupted
+      if (ingestionId && ingestionRecord) {
+        try {
+          await updateIngestionMetadata(db, ingestionId, {
+            slack: {
+              // Data sent to frontend for progress display
+              websocketData: {
+                connectorId: connector.externalId,
+                progress: progressData.channelProgress,
+              },
+              // Internal state data for resuming interrupted ingestions
+              ingestionState: {
+                currentChannelId: existingChannelsToIngest[processedChannels],
+                channelsToIngest: existingChannelsToIngest,
+                startDate: existingStartDate,
+                endDate: existingEndDate,
+                includeBotMessage: existingIncludeBotMessages,
+                currentChannelIndex: processedChannels, // Key for resumability
+                lastMessageTimestamp: globalLastMessageTimestamp, // Key for message-level resumability
+                lastUpdated: new Date().toISOString(),
+              },
+            },
+          })
+        } catch (metadataError) {
+          loggerWithChild({ email }).warn(
+            "Failed to update ingestion metadata:",
+            metadataError,
+          )
+        }
+      }
+    }, 4000) // Update every 4 seconds for good UX without overwhelming the system
 
     const conversations: Channel[] = []
-    for (const channel in channelsToIngest) {
-      const channelId = channelsToIngest[channel] // Get the channel ID string using the index from the for...in loop
+    for (const channel in existingChannelsToIngest) {
+      const channelId = existingChannelsToIngest[channel] // Get the channel ID string using the index from the for...in loop
       try {
         const response = await client.conversations.info({ channel: channelId })
-        console.log(response.channel)
         if (response.ok && response.channel) {
           conversations.push(response.channel as Channel)
         } else {
@@ -978,54 +1477,163 @@ export const handleSlackChannelIngestion = async (
       chatContainerSchema,
       conversations.map((c) => c.id!),
     )
-    const conversationsToInsert = conversations
-    // .filter(
-    //   (conversation) =>
-    //     (existenceMap[conversation.id!] &&
-    //       !existenceMap[conversation.id!].exists) ||
-    //     !existenceMap[conversation.id!],
-    // )
-    loggerWithChild({ email: email }).info(
-      `conversations to insert ${conversationsToInsert.length} and skipping ${conversations.length - conversationsToInsert.length}`,
+    const conversationsToInsert = conversations.filter(
+      (conversation) =>
+        (existenceMap[conversation.id!] &&
+          !existenceMap[conversation.id!].exists) ||
+        !existenceMap[conversation.id!],
     )
+
+    // Fix: Build conversationsToProcess from original ordering to prevent skipping channels
+    // resumeFromChannelIndex refers to position in existingChannelsToIngest, not conversationsToInsert
+    const channelsToResume = existingChannelsToIngest.slice(
+      resumeFromChannelIndex,
+    )
+    const conversationsToProcess = channelsToResume
+      .map((channelId) =>
+        conversationsToInsert.find((conv) => conv.id === channelId),
+      )
+      .filter(Boolean) as typeof conversationsToInsert
+
+    loggerWithChild({ email }).info(
+      `Processing ${conversationsToProcess.length} channels (skipping ${resumeFromChannelIndex} already processed)`,
+    )
+
+    loggerWithChild({ email: email }).info(
+      `conversations to insert ${conversationsToProcess.length} (skipping ${resumeFromChannelIndex} already processed) and skipping ${conversations.length - conversationsToInsert.length} existing`,
+    )
+    // Fix: Correct skip count calculation - don't double-count resume offset
+    // conversations.length - conversationsToInsert.length = already ingested
+    // resumeFromChannelIndex = channels processed in previous runs
     totalConversationsSkipped.inc(
       { team_id: team.id ?? team.name ?? "", email: email },
-      conversations.length - conversationsToInsert.length,
+      conversations.length -
+        conversationsToInsert.length +
+        resumeFromChannelIndex,
     )
     const user = await getAuthenticatedUserId(client)
     const teamMap = new Map<string, Team>()
     teamMap.set(team.id!, team)
     const memberMap = new Map<string, User>()
-    tracker.setCurrent(0)
+    tracker.setCurrent(resumeFromChannelIndex)
     tracker.setTotal(conversationsToInsert.length)
-    let conversationIndex = 0
+    let conversationIndex = resumeFromChannelIndex
     totalConversationsToBeInserted.inc(
       { team_id: team.id ?? team.name ?? "", email: email },
       conversationsToInsert.length,
     )
     // can be done concurrently, but can cause issues with ratelimits
-    for (const conversation of conversationsToInsert) {
+    for (const conversation of conversationsToProcess) {
+      // Update conversationIndex to match position in existingChannelsToIngest
+      conversationIndex = existingChannelsToIngest.indexOf(conversation.id!)
+      loggerWithChild({ email }).info(
+        `Processing channel ${conversationIndex + 1}/${existingChannelsToIngest.length}: ${conversation.name}`,
+      )
+
+      // Check for cancellation/pause before processing each conversation
+      if (abortController.signal.aborted) {
+        loggerWithChild({ email }).info(
+          `Conversation processing aborted for ingestion ${ingestionId}`,
+        )
+        return
+      }
+
+      // Update processedChannels for progress tracking
+      processedChannels = conversationIndex
+      loggerWithChild({ email }).info(
+        `Updated processedChannels to ${processedChannels} for conversation ${conversation.name}`,
+      )
+
+      loggerWithChild({ email }).info(
+        `Starting member fetching for conversation ${conversation.name}`,
+      )
       const memberIds = await getConversationUsers(
         user,
         client,
         conversation,
         email,
       )
+      loggerWithChild({ email }).info(
+        `Found ${memberIds.length} member IDs for conversation ${conversation.name}`,
+      )
+
       const membersToFetch = memberIds.filter((m: string) => !memberMap.get(m))
+      loggerWithChild({ email }).info(
+        `Need to fetch ${membersToFetch.length} new members for ${conversation.name}`,
+      )
+
       const concurrencyLimit = pLimit(5)
       const memberPromises = membersToFetch.map((memberId: string) =>
-        concurrencyLimit(() => client.users.info({ user: memberId })),
-      )
-      const members: User[] = (await Promise.all(memberPromises))
-        .map((userResp) => {
-          if (userResp.user) {
-            memberMap.set(userResp.user.id!, userResp.user)
-            return userResp.user as User
+        concurrencyLimit(async () => {
+          // Check abort signal before each individual API call
+          if (abortController.signal.aborted) {
+            loggerWithChild({ email }).info(
+              `Aborting member fetch due to cancellation`,
+            )
+            return null // Return null to signal abort without error
           }
+          return client.users.info({ user: memberId })
+        }),
+      )
+
+      loggerWithChild({ email }).info(
+        `Starting member fetch for ${memberPromises.length} members`,
+      )
+
+      // Check for abort before starting member fetching
+      if (abortController.signal.aborted) {
+        loggerWithChild({ email }).info(
+          `Member fetching aborted for ingestion ${ingestionId}`,
+        )
+        return
+      }
+
+      // Use Promise.allSettled to handle individual promise failures due to abort
+      const memberResults = await Promise.allSettled(memberPromises)
+      const members: User[] = memberResults
+        .filter(
+          (result): result is PromiseFulfilledResult<any> =>
+            result.status === "fulfilled",
+        )
+        .map((result) => {
+          // Handle null values from aborted calls
+          if (result.value?.user && result.value) {
+            memberMap.set(result.value.user.id!, result.value.user)
+            return result.value.user as User
+          }
+          return undefined
         })
         .filter((user) => !!user)
-      // check if already exists
+
+      // Check if we were aborted during member fetching
+      if (abortController.signal.aborted) {
+        loggerWithChild({ email }).info(
+          `Member fetching aborted during processing for ingestion ${ingestionId}`,
+        )
+        return
+      }
+      loggerWithChild({ email }).info(
+        `👥 [CHANNEL ${conversationIndex + 1}] Completed member fetching, got ${members.length} valid members for ${conversation.name} (ID: ${conversation.id})`,
+      )
+
+      // Check for abort after member fetching completes
+      if (abortController.signal.aborted) {
+        loggerWithChild({ email }).info(
+          `Aborting after member fetching completed for ingestion ${ingestionId}`,
+        )
+        return
+      }
+      let memberIndex = 0
       for (const member of members) {
+        memberIndex++
+        // Check for abort during member processing
+        if (abortController.signal.aborted) {
+          loggerWithChild({ email }).info(
+            `Member processing aborted for ingestion ${ingestionId}`,
+          )
+          return
+        }
+
         // team first time encountering
         if (!teamMap.get(member.team_id!)) {
           const teamResp: TeamInfoResponse = await client.team.info({
@@ -1043,7 +1651,7 @@ export const handleSlackChannelIngestion = async (
           } catch (error) {
             loggerWithChild({ email: email ?? "" }).error(
               error,
-              `Error inserting member`,
+              `Error inserting team`,
             )
             ingestedTeamErrorTotalCount.inc({
               email_domain: teamResp.team!.email_domain,
@@ -1093,6 +1701,33 @@ export const handleSlackChannelIngestion = async (
           status: OperationStatus.Success,
         })
       try {
+        // Get last processed message timestamp for resumption
+        let resumeTimestamp = "0" // Default to start from beginning
+        if (
+          ingestionRecord?.metadata?.slack?.ingestionState
+            ?.lastMessageTimestamp &&
+          conversationIndex === resumeFromChannelIndex
+        ) {
+          resumeTimestamp =
+            ingestionRecord.metadata.slack.ingestionState.lastMessageTimestamp
+          loggerWithChild({ email }).info(
+            `📍 Resuming channel ${conversation.name} from timestamp: ${resumeTimestamp}`,
+          )
+        } else {
+          loggerWithChild({ email }).info(
+            `📍 Starting channel ${conversation.name} from beginning (timestamp: 0)`,
+          )
+        }
+
+        // Track the last processed message timestamp for resumption
+        let currentLastTimestamp = resumeTimestamp
+
+        loggerWithChild({ email }).info(
+          `📨 [CHANNEL ${conversationIndex + 1}] About to call insertChannelMessages for conversation ${conversation.name} (ID: ${conversation.id})`,
+        )
+        loggerWithChild({ email }).info(
+          `📊 [CHANNEL ${conversationIndex + 1}] Current message counters before processing: total=${messageCounters.totalMessages.value}, processed=${messageCounters.processedMessages.value}`,
+        )
         await insertChannelMessages(
           email,
           client,
@@ -1100,10 +1735,27 @@ export const handleSlackChannelIngestion = async (
           abortController,
           memberMap,
           tracker,
-          "0",
+          resumeTimestamp,
           channelMap,
-          startDate,
-          endDate,
+          existingStartDate,
+          existingEndDate,
+          existingIncludeBotMessages,
+          messageCounters,
+          checkCancellationOrPause,
+          (timestamp: string) => {
+            // Update the last processed timestamp for this channel
+            currentLastTimestamp = timestamp
+            globalLastMessageTimestamp = timestamp // Update global variable for metadata storage
+            loggerWithChild({ email }).info(
+              `📍 [CHANNEL ${conversationIndex + 1}] Updated last processed timestamp: ${timestamp} for ${conversation.name}`,
+            )
+          },
+        )
+        loggerWithChild({ email }).info(
+          `✅ [CHANNEL ${conversationIndex + 1}] Completed insertChannelMessages for conversation ${conversation.name} (ID: ${conversation.id})`,
+        )
+        loggerWithChild({ email }).info(
+          `📊 [CHANNEL ${conversationIndex + 1}] Message counters after processing ${conversation.name}: total=${messageCounters.totalMessages.value}, processed=${messageCounters.processedMessages.value}`,
         )
         channelMessageInsertionDuration()
         insertChannelMessagesCount.inc({
@@ -1115,7 +1767,7 @@ export const handleSlackChannelIngestion = async (
         tracker.updateUserStats(email, StatType.Slack_Conversation, 1)
       } catch (error) {
         loggerWithChild({ email: email }).error(
-          "Error inserting Channel Messages",
+          `Error inserting Channel Messages for ${conversation.name}: ${error}`,
         )
         insertChannelMessagesErrorCount.inc({
           conversation_id: conversation.id ?? "",
@@ -1139,8 +1791,10 @@ export const handleSlackChannelIngestion = async (
           status: OperationStatus.Success,
           email: email,
         })
-        conversationIndex++
         tracker.setCurrent(conversationIndex)
+        loggerWithChild({ email }).info(
+          `Completed processing conversation ${conversation.name} (${conversationIndex + 1}/${existingChannelsToIngest.length})`,
+        )
       } catch (error) {
         loggerWithChild({ email: email }).error(`Error inserting Conversation`)
         insertConversationErrorCount.inc({
@@ -1151,10 +1805,32 @@ export const handleSlackChannelIngestion = async (
         })
       }
     }
-    setTimeout(() => {
-      clearInterval(interval)
-    }, 8000)
 
+    loggerWithChild({ email }).info(
+      `Successfully processed all ${conversationsToInsert.length} channels. Total messages: ${messageCounters.totalMessages.value}, Processed: ${messageCounters.processedMessages.value}`,
+    )
+
+    // Check if ingestion was actually completed or just paused/cancelled
+    const finalStatus = await checkCancellationOrPause()
+    loggerWithChild({ email }).info(
+      `🔍 Final status check: shouldStop=${finalStatus.shouldStop}, isPaused=${finalStatus.isPaused}`,
+    )
+
+    if (finalStatus.shouldStop && finalStatus.isPaused) {
+      loggerWithChild({ email }).info(
+        `⏸️ Ingestion was paused - keeping status as 'paused', not completing`,
+      )
+      return // Exit without marking as completed
+    }
+
+    if (finalStatus.shouldStop && !finalStatus.isPaused) {
+      loggerWithChild({ email }).info(
+        `❌ Ingestion was cancelled - keeping status as 'cancelled', not completing`,
+      )
+      return // Exit without marking as completed
+    }
+
+    // Update connector status only for actual completion
     db.transaction(async (trx) => {
       await trx
         .update(connectors)
@@ -1164,8 +1840,119 @@ export const handleSlackChannelIngestion = async (
         })
         .where(eq(connectors.id, connector.id))
     })
+
+    // Mark ingestion as successfully completed (only if not paused/cancelled)
+    loggerWithChild({ email }).info(
+      `🎯 Reached completion section! About to mark ingestion ${ingestionId} as completed`,
+    )
+    if (ingestionId) {
+      try {
+        // Update database status to completed
+        loggerWithChild({ email }).info(
+          `🔄 Calling updateIngestionStatus with ingestionId=${ingestionId}, status=completed`,
+        )
+        await updateIngestionStatus(db, ingestionId, "completed")
+
+        // Update metadata with final message counters for frontend display
+        const finalProgressData = {
+          totalChannels: channelsToIngest.length,
+          processedChannels: channelsToIngest.length, // All channels completed
+          currentChannel: "", // Completed
+          totalMessages: messageCounters.totalMessages.value,
+          processedMessages: messageCounters.processedMessages.value,
+        }
+
+        loggerWithChild({ email }).info(
+          `📊 Updating final metadata: total=${finalProgressData.totalMessages}, processed=${finalProgressData.processedMessages}`,
+        )
+        await updateIngestionMetadata(db, ingestionId, {
+          slack: {
+            websocketData: {
+              connectorId: connector.externalId,
+              progress: finalProgressData,
+            },
+            ingestionState: {
+              channelsToIngest: existingChannelsToIngest,
+              currentChannelIndex: existingChannelsToIngest.length, // Completed all
+              currentChannelId: null, // No current channel
+              startDate: existingStartDate,
+              endDate: existingEndDate,
+              includeBotMessage: existingIncludeBotMessages,
+              lastUpdated: new Date().toISOString(),
+            },
+          },
+        })
+
+        loggerWithChild({ email }).info(
+          `✅ SUCCESS: Completed Slack channel ingestion with ID: ${ingestionId}`,
+        )
+
+        // Completion notification now handled via database status
+        // Frontend will detect completion via polling /api/ingestion/status
+        loggerWithChild({ email }).info(
+          `🚀 Slack channel ingestion completed - status updated in database for polling detection`,
+        )
+      } catch (completionError) {
+        loggerWithChild({ email }).error(
+          "Failed to mark ingestion as completed:",
+          completionError,
+        )
+      }
+    }
   } catch (error) {
     loggerWithChild({ email: email }).error(error)
+
+    // Handle ingestion failure by updating database and notifying frontend
+    if (ingestionId) {
+      try {
+        const { updateIngestionStatus, getIngestionById } = await import(
+          "@/db/ingestion"
+        )
+
+        // Check current status before overwriting - preserve cancellation/pause states
+        const currentIngestion = await getIngestionById(db, ingestionId)
+        const currentStatus = currentIngestion?.status
+
+        // Only mark as failed if not already cancelled, paused, or completed
+        if (
+          currentStatus &&
+          !["cancelled", "paused", "completed"].includes(currentStatus)
+        ) {
+          await updateIngestionStatus(
+            db,
+            ingestionId,
+            "failed",
+            (error as Error).message,
+          )
+          loggerWithChild({ email }).error(
+            `Failed Slack channel ingestion with ID: ${ingestionId}`,
+          )
+
+          // Failure notification now handled via database status
+          // Frontend will detect failure via polling /api/ingestion/status
+          loggerWithChild({ email }).error(
+            `Slack channel ingestion failed - status updated in database for polling detection`,
+          )
+        } else {
+          loggerWithChild({ email }).info(
+            `Ingestion ${ingestionId} error occurred but preserving existing status: ${currentStatus}`,
+          )
+        }
+      } catch (failureError) {
+        loggerWithChild({ email }).error(
+          "Failed to mark ingestion as failed:",
+          failureError,
+        )
+      }
+    }
+  } finally {
+    // Always clear the interval regardless of how the function exits
+    if (interval) {
+      clearInterval(interval)
+      loggerWithChild({ email }).info(
+        `Cleared periodic progress interval for ingestion ${ingestionId}`,
+      )
+    }
   }
 }
 

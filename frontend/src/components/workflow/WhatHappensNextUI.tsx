@@ -7,6 +7,7 @@ import {
   Users,
   ChevronRight,
   X,
+  BoomBox,
 } from "lucide-react"
 
 interface WhatHappensNextUIProps {
@@ -45,17 +46,22 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       description: "Send emails to added mails",
       icon: <Mail className="w-5 h-5" />,
     },
+    {
+      id: "select_agents",
+      name: "Select Agents",
+      description: "Choose from your existing direct agents",
+      icon: <BoomBox className="w-5 h-5" />,
+    },
+    {
+      id: "http_request",
+      name: "HTTP Requests",
+      description: "HTTP requests, set webhooks",
+      icon: <Globe className="w-5 h-5" />,
+    },
   ]
 
   // Coming soon actions (upcoming features)
   const comingSoonActions: NextAction[] = [
-    {
-      id: "http_requests",
-      name: "HTTP Requests",
-      description: "HTTP requests, set webhooks",
-      icon: <Globe className="w-5 h-5" />,
-      isComingSoon: true,
-    },
     {
       id: "conditionals",
       name: "Conditionals",
@@ -107,8 +113,8 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
           <div
             key={action.id}
             onClick={() => {
-              if (action.id === "ai_agent" || action.id === "email") {
-                // For AI Agent and Email, trigger custom event to open respective ConfigUI
+              if (action.id === "ai_agent" || action.id === "email" || action.id === "http_request" || action.id === "select_agents") {
+                // For AI Agent, Email, HTTP Request, and Select Agents, trigger custom event to open respective ConfigUI
                 onSelectAction(action.id)
                 onClose() // Close WhatHappensNextUI
               }

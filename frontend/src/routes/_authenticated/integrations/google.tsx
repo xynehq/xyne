@@ -68,6 +68,8 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+      } else if (connector?.status === ConnectorStatus.Authenticated) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthReadyForIngestion)
       } else if (connector?.status === ConnectorStatus.NotConnected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
       } else {
@@ -81,7 +83,9 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
   useEffect(() => {
     let socket: WebSocket | null = null
     if (!isPending && data && data.length > 0) {
-      const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
+      const oauthConnector = data.find(
+        (c) => c.app === Apps.GoogleDrive && c.authType === AuthType.OAuth,
+      )
       if (oauthConnector) {
         socket = wsClient.ws.$ws({
           query: { id: oauthConnector.id },

@@ -184,6 +184,26 @@ export const WebhookIcon: React.FC<IconProps> = ({
   </svg>
 )
 
+export const HttpRequestIcon: React.FC<IconProps> = ({
+  className = "",
+  width = 20,
+  height = 20,
+}) => (
+  <svg
+    className={className}
+    width={width}
+    height={height}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+  >
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="2" y1="12" x2="22" y2="12"></line>
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+  </svg>
+)
+
 export const FormSubmissionIcon: React.FC<IconProps> = ({
   className = "",
   width = 20,
@@ -426,3 +446,46 @@ export const CloseIcon: React.FC<IconProps> = ({
     />
   </svg>
 )
+
+// Jira Icon
+export const JiraIcon: React.FC<IconProps> = ({
+  className = "",
+  width = 24,
+  height = 24,
+}) => {
+  const gradientId = React.useId()
+  return (
+    <svg
+      className={className}
+      width={width}
+      height={height}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="Jira"
+    >
+      <path
+        d="M11.5714 0L6.28571 5.28571L1.71429 9.85714L0 11.5714L11.5714 23.1429L13.2857 21.4286L7.71429 15.8571L13 10.5714L18.2857 5.28571L13 0H11.5714Z"
+        fill="#2684FF"
+      />
+      <path
+        d="M11.5714 11.5714L7 16.1429L11.5714 20.7143L16.1429 16.1429L11.5714 11.5714Z"
+        fill={`url(#${gradientId})`}
+      />
+      <defs>
+        <linearGradient
+          id={gradientId}
+          x1="7"
+          y1="16.1429"
+          x2="16.1429"
+          y2="16.1429"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#0052CC" />
+          <stop offset="1" stopColor="#2684FF" />
+        </linearGradient>
+      </defs>
+    </svg>
+  )
+}

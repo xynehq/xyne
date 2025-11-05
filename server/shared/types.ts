@@ -54,7 +54,6 @@ export type {
   SearchResultsSchema,
   SearchResponse,
   SearchResultDiscriminatedUnion,
-  
 } from "@xyne/vespa-ts/types"
 
 export type VespaFile = z.infer<typeof VespaFileSchema>
@@ -138,10 +137,12 @@ export enum ConnectorStatus {
   Connected = "connected",
   // Pending = 'pending',
   Connecting = "connecting",
+
   Paused = "paused",
   Failed = "failed",
   // for oauth we will default to this
   NotConnected = "not-connected",
+  Authenticated = "authenticated",
 }
 
 export enum SyncJobStatus {
@@ -219,12 +220,14 @@ export const attachmentFileTypeMap: Record<string, AttachmentEntity> = {
 
 export enum ApiKeyScopes {
   CREATE_AGENT = "CREATE_AGENT",
+  READ_AGENT = "READ_AGENT",
   AGENT_CHAT = "AGENT_CHAT",
   AGENT_CHAT_STOP = "AGENT_CHAT_STOP",
   UPDATE_AGENT = "UPDATE_AGENT",
   DELETE_AGENT = "DELETE_AGENT",
   CHAT_HISTORY = "CHAT_HISTORY",
   CREATE_COLLECTION = "CREATE_COLLECTION",
+  UPDATE_COLLECTION = "UPDATE_COLLECTION",
   LIST_COLLECTIONS = "LIST_COLLECTIONS",
   UPLOAD_FILES = "UPLOAD_FILES",
   SEARCH_COLLECTION = "SEARCH_COLLECTION",
@@ -544,6 +547,22 @@ export enum MessageFeedback {
   Dislike = "dislike",
 }
 
+export enum ChannelType {
+  Public = "public",
+  Private = "private",
+}
+
+export enum ChannelMemberRole {
+  Owner = "owner",
+  Admin = "admin",
+  Member = "member",
+}
+
+export enum MessageType {
+  Channel = "channel",
+  Direct = "direct",
+}
+
 export enum MessageMode {
   Ask = "ask",
   Agentic = "agentic",
@@ -778,12 +797,13 @@ export interface ModelConfiguration {
 }
 export const getDocumentSchema = z.object({
   docId: z.string().min(1),
+  sheetIndex: z.number().min(0).optional(),
   schema: z.string().min(1),
 })
 
 export enum UploadStatus {
   PENDING = "pending",
   PROCESSING = "processing",
-  COMPLETED = "completed", 
+  COMPLETED = "completed",
   FAILED = "failed",
 }
