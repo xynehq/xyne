@@ -4820,9 +4820,18 @@ const AgentChatMessage = ({
           : ""
       })
     } else {
-      return text.replace(textToCitationIndexPattern, (match, num) => {
-        const url = citationUrls[num - 1]
-        return url ? `[[${num}]](${url})` : ""
+      let localCitationMap: Record<number, number> = {}
+      let localIndex = 0
+      return text.replace(textToCitationIndex, (match, num) => {
+        const citationindex = parseInt(num, 10)
+        if (localCitationMap[citationindex] === undefined) {
+          localCitationMap[citationindex] = localIndex
+          localIndex++
+        }
+        const url = citationUrls[localCitationMap[citationindex]]
+        return typeof localCitationMap[citationindex] === "number" && url
+        ? `[${localCitationMap[citationindex] + 1}](${url})`
+        : ""
       })
     }
   }

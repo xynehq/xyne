@@ -1,3 +1,10 @@
+# [3.30.0](https://github.com/xynehq/xyne/compare/v3.29.4...v3.30.0) (2025-11-05)
+
+
+### Features
+
+* **agentic:** Added jaf native tool ([#1176](https://github.com/xynehq/xyne/issues/1176)) ([af9014f](https://github.com/xynehq/xyne/commit/af9014f406ba1d92f60cc8e07de04bdba2f3c537))
+
 ## [3.29.4](https://github.com/xynehq/xyne/compare/v3.29.3...v3.29.4) (2025-11-04)
 
 

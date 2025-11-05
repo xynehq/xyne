@@ -78,6 +78,7 @@ export const searchVespa = async (
       "Error fetching Google sync jobs status",
     )
   }
+  const processedCollectionSelections = await extractCollectionVespaIds(options)
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
     recencyDecayRate:
@@ -86,6 +87,7 @@ export const searchVespa = async (
     isDriveConnected,
     isGmailConnected,
     isCalendarConnected,
+    processedCollectionSelections,
   })
 }
 
@@ -155,7 +157,7 @@ export const getItems = async (
 }
 
 export const getFolderItems = vespa.getFolderItems.bind(vespa)
-export const getThreadItems = vespa.getThreadItems.bind(vespa)
+export const searchSlackMessages = vespa.searchSlackMessages.bind(vespa)
 export const SearchVespaThreads = vespa.SearchVespaThreads.bind(vespa)
 
 // DataSource operations
@@ -168,9 +170,6 @@ export const fetchAllDataSourceFilesByName =
 export const getDataSourcesByCreator = vespa.getDataSourcesByCreator.bind(vespa)
 export const checkIfDataSourceFileExistsByNameAndId =
   vespa.checkIfDataSourceFileExistsByNameAndId.bind(vespa)
-
-// Slack operations
-export const getSlackUserDetails = vespa.getSlackUserDetails.bind(vespa)
 
 // Utility operations
 export const getTimestamp = vespa.getTimestamp.bind(vespa)

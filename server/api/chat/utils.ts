@@ -543,7 +543,9 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       entity: SlackEntity.Channel,
     }
   } else {
-    throw new Error("Invalid search result type for citation")
+    throw new Error(
+      `Invalid search result type for citation: ${result.fields.sddocname}`,
+    )
   }
 }
 
