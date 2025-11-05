@@ -5,8 +5,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { FileType } from "shared/types"
 import { getFileType } from "shared/fileUtils"
+import { FileType } from "shared/types"
 
 export interface Citation {
   url: string
@@ -21,6 +21,8 @@ export const createCitationLink =
     citations: Citation[] = [],
     onCitationClick?: (citation: Citation, chunkIndex?: number) => void,
     showTooltip: boolean = true,
+    globalChunkIndexMap: Map<string, number> = new Map(),
+    globalCount: number = 0,
   ) =>
   ({
     href,
@@ -47,12 +49,21 @@ export const createCitationLink =
           : undefined
 
     if (chunkIndex !== undefined && citation) {
-      children = (citationIndex + 1).toString()
       if (
         getFileType({ type: "", name: citation?.title ?? "" }) ===
         FileType.SPREADSHEET
-      )
+      ) {
         chunkIndex = Math.max(chunkIndex - 1, 0)
+      }
+      if(showTooltip) {
+        children = (citationIndex + 1).toString()
+      } else {
+        if (!globalChunkIndexMap.has(`${citationIndex}_${chunkIndex}`)) {
+          globalCount = globalCount + 1
+          globalChunkIndexMap.set(`${citationIndex}_${chunkIndex}`, globalCount)
+        }
+        children = globalChunkIndexMap.get(`${citationIndex}_${chunkIndex}`)!.toString()
+      }
     }
 
     if (citation && citation.clId && citation.itemId) {

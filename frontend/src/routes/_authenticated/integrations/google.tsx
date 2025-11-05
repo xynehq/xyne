@@ -68,6 +68,8 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+      } else if (connector?.status === ConnectorStatus.Authenticated) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthReadyForIngestion)
       } else if (connector?.status === ConnectorStatus.NotConnected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
       } else {

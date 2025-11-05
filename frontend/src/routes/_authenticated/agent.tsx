@@ -1115,7 +1115,6 @@ function AgentComponent() {
   type AgentFilter = "all" | "madeByMe" | "sharedToMe"
 
   const fetchAgents = async (filter: AgentFilter = "all") => {
-    setIsLoadingAgents(true)
     try {
       const response = await api.agents.$get({ query: { filter } })
       if (response.ok) {
@@ -1139,26 +1138,33 @@ function AgentComponent() {
         description: `An error occurred while fetching agents (${filter}).`,
       })
       console.error(`Fetch agents error (${filter}):`, error)
-    } finally {
-      setIsLoadingAgents(false)
-    }
+    } 
   }
 
   const fetchAllAgentData = async () => {
+      setIsLoadingAgents(true)
     await Promise.all([
       fetchAgents("all"),
       fetchAgents("madeByMe"),
       fetchAgents("sharedToMe"),
     ])
+     setIsLoadingAgents(false)
   }
 
   useEffect(() => {
-    if (viewMode === "list") {
-      fetchAllAgentData()
-    } else {
-      // When switching to create/edit view, also fetch all agents for the dropdown
-      fetchAgents("all")
+    const run = async () => {
+      if (viewMode === "list") {
+        await fetchAllAgentData()
+      } else {
+        setIsLoadingAgents(true)
+        try {
+          await fetchAgents("all")
+        } finally {
+          setIsLoadingAgents(false)
+        }
+      }
     }
+    run()
   }, [viewMode])
 
   useEffect(() => {
@@ -5299,9 +5305,18 @@ const AgentChatMessage = ({
           : ""
       })
     } else {
-      return text.replace(textToCitationIndexPattern, (match, num) => {
-        const url = citationUrls[num - 1]
-        return url ? `[[${num}]](${url})` : ""
+      let localCitationMap: Record<number, number> = {}
+      let localIndex = 0
+      return text.replace(textToCitationIndex, (match, num) => {
+        const citationindex = parseInt(num, 10)
+        if (localCitationMap[citationindex] === undefined) {
+          localCitationMap[citationindex] = localIndex
+          localIndex++
+        }
+        const url = citationUrls[localCitationMap[citationindex]]
+        return typeof localCitationMap[citationindex] === "number" && url
+        ? `[${localCitationMap[citationindex] + 1}](${url})`
+        : ""
       })
     }
   }

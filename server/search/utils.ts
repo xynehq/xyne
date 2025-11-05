@@ -256,6 +256,7 @@ export async function extractCollectionVespaIds(
       const vespaDocIds = ids
         .filter((item: any) => item.vespaDocId !== null)
         .map((item: any) => item.vespaDocId!)
+        .flatMap((i) => expandSheetIds(i))
 
       if (!result.collectionFileIds) result.collectionFileIds = []
       result.collectionFileIds.push(...vespaDocIds)

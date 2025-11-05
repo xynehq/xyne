@@ -13,12 +13,7 @@ import {
   SlackEntity,
 } from "@xyne/vespa-ts/types"
 import { ContextSysthesisState, XyneTools } from "@/shared/types"
-import {
-  internalTools,
-  slackTools,
-  formatToolsSection,
-  type ToolDefinition,
-} from "@/api/chat/mapper"
+import { formatToolsSection, type ToolDefinition } from "@/api/chat/mapper"
 import type { AgentPromptData } from "./provider"
 import config from "@/config"
 export const askQuestionSelfCleanupPrompt = (
@@ -887,8 +882,8 @@ export const SearchQueryToolContextPrompt = (
     : `${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar}`
 
   const toolsToUse = {
-    internal: customTools?.internal || internalTools,
-    slack: customTools?.slack || slackTools,
+    internal: customTools?.internal,
+    slack: customTools?.slack,
   }
 
   const updatedInternalTools = { ...toolsToUse.internal }
@@ -970,7 +965,6 @@ export const SearchQueryToolContextPrompt = (
     
     ${formatToolsSection(updatedInternalTools, "Internal Tool Context")}
     
-    ${formatToolsSection(toolsToUse.slack, "Slack Tool Context")}
     ---
     
     Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.
@@ -2414,43 +2408,45 @@ export const extractBestDocumentsPrompt = (
   context: string[],
 ) => {
   return `
-You are an expert retrieval assistant designed to identify and select relevant documents from a retrieved set of document contexts.
-
-### Important Context Limitations
-- You are working with **document previews** (first few hundred characters only)
-- These previews may not contain the full relevant information
-- **Be more inclusive** rather than overly strict in your selection
-- When in doubt about relevance, **include the document** rather than exclude it
+You are an expert retrieval assistant designed to identify and select the most relevant and useful documents from a retrieved set of contexts.
 
 ### Objective
-Given a **user query** and **document contexts**, select documents that are likely to contain relevant information. Since you only see previews, err on the side of inclusion to avoid missing potentially valuable content.
+Given a **user query** and a list of **retrieved document contexts**, analyze each context carefully and choose the ones that best answer, support, or are meaningfully related to the query.  
+Your goal is to capture not only directly matching documents but also those that provide **contextually relevant**, **semantically aligned**, or **complementary** information that could help a human understand or answer the query more effectively.
 
 ### Instructions
-1. **Comprehend the query** — understand its intent, entities, and desired information type.
-2. **Evaluate each context preview** — look for ANY indicators of relevance:
-   - Related topics or concepts
-   - Similar domains or subject areas
-   - Entity names, dates, or other identifiers mentioned in the query
-3. **Remove only obvious non-matches** — exclude only when the preview clearly indicates no relevance
-4. **Prioritize recall over precision** — better to include a potentially relevant document than miss important information
-
+1. **Understand intent beyond words** — infer what the user might *really* want, even if their phrasing is incomplete, indirect, or ambiguous.
+2. **Evaluate each context** — assess how strongly it relates to the *core meaning* of the query, not just exact keyword overlap.
+3. **Include relevant or supporting contexts** — select documents that:
+   - Directly answer the question, **or**
+   - Offer **related background**, **context**, **examples**, or **clarifying information**.
+4. **Prioritize quality** — prefer documents that are specific, factual, and contribute distinct value.
+5. **Output** — Return only the indexes of the most relevant and complementary contexts.
 
 ### Input
 - Query: "${query}"
 - Retrieved Contexts:
-${context.map((c, i) => `  [${i + 1}] ${c}`).join("\n")}
+${context
+  .map(
+    (c, i) => ` 
+  ${"#".repeat(20)}\n
+   [${i + 1}] ${c}
+  ${"#".repeat(20)}\n
+   `,
+  )
+  .join("\n")}
+
 
 ### Output Format
 
-Return **only** a JSON array of the most relevant document indexes, ordered by relevance.
+Return **only** a JSON array of the most relevant and complementary document indexes, ordered by their importance to the query.
 
 Wrap the output in <indexes> tags as shown below:
 
 <indexes>
-[2, 5, 7, 1, 9]
+[2, 5, 7]
 </indexes>
 
-**Remember**: With limited context, favor inclusion over exclusion. It's better to return more potentially relevant documents than to miss important information.
-
+Now, return the array of indexes for the best matching and semantically related documents.
   `
 }

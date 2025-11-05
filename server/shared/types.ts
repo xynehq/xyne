@@ -553,6 +553,22 @@ export enum MessageFeedback {
   Dislike = "dislike",
 }
 
+export enum ChannelType {
+  Public = "public",
+  Private = "private",
+}
+
+export enum ChannelMemberRole {
+  Owner = "owner",
+  Admin = "admin",
+  Member = "member",
+}
+
+export enum MessageType {
+  Channel = "channel",
+  Direct = "direct",
+}
+
 export enum MessageMode {
   Ask = "ask",
   Agentic = "agentic",
@@ -794,6 +810,6 @@ export const getDocumentSchema = z.object({
 export enum UploadStatus {
   PENDING = "pending",
   PROCESSING = "processing",
-  COMPLETED = "completed", 
+  COMPLETED = "completed",
   FAILED = "failed",
 }
