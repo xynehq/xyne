@@ -1,54 +1,34 @@
-import { ToolType, ToolExecutionStatus, ToolCategory } from "@/types/workflowTypes"
+import { ToolType, ToolCategory } from "@/types/workflowTypes"
+import { z } from "zod"
 
-// Base interfaces for all workflow tools
-export interface ToolExecutionContext {
-  executionId: string
-  stepId: string
-  userId: string
-  workspaceId: string
-  userEmail: string
-  previousStepResults?: Record<string, any>
+// Workflow context object passed to tools
+export interface WorkflowContext {
+  templateId: string
+  workflowId: string
+  currentStepId: string
+  currentToolId: string
 }
 
-export interface ToolExecutionResult<T = any> {
+// Tool execution result
+export interface ToolExecutionResult {
   status: "success" | "error" | "awaiting_user_input" | "partial_success"
-  result: T
+  result: Record<string, any>
   metadata?: Record<string, any>
 }
 
-export interface BaseToolConfig {
-  [key: string]: any
-}
-
-export interface BaseToolInput {
-  [key: string]: any
-}
-
-export interface BaseToolOutput {
-  [key: string]: any
-}
-
-// Generic tool interface that all tools must implement
-export interface WorkflowTool<
-  TConfig extends BaseToolConfig = BaseToolConfig,
-  TInput extends BaseToolInput = BaseToolInput,
-  TOutput extends BaseToolOutput = BaseToolOutput
-> {
+// Workflow tool interface with schemas
+export interface WorkflowTool {
   type: ToolType
   category: ToolCategory
-  execute(
-    input: TInput,
-    config: TConfig,
-    context: ToolExecutionContext
-  ): Promise<ToolExecutionResult<TOutput>>
-  validateInput(input: unknown): input is TInput
-  validateConfig(config: unknown): config is TConfig
-  getInputSchema(): any
-  getConfigSchema(): any
-  getDefaultConfig(): TConfig
+  inputSchema: z.ZodSchema<any>
+  outputSchema: z.ZodSchema<any>
+  configSchema: z.ZodSchema<any>
+  triggerIfActive: boolean
+  execute(input: Record<string, any>, config: Record<string, any>, workflowContext: WorkflowContext): Promise<ToolExecutionResult>
+  handleActiveTrigger?(config: Record<string, any>, templateId:string): Promise<Record<string, string>>
 }
 
 // Tool registry type for the execution engine
 export type ToolRegistry = {
-  [K in ToolType]: WorkflowTool<any, any, any>
+  [K in ToolType]: WorkflowTool
 }

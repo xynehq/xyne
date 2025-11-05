@@ -12,8 +12,10 @@ import {
   workflowTemplate,
   workflowStepTemplate,
   workflowTool,
+  type SelectWorkflowTemplate,
 } from "@/db/schema/workflows"
-import { eq, inArray, sql } from "drizzle-orm"
+import { eq, inArray, sql, and, or } from "drizzle-orm"
+import { handleActivateTemplate } from "@/execution-engine/triggers"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -22,7 +24,7 @@ const Logger = getLogger(Subsystem.WorkflowApi)
 // New Workflow Template API Routes
 export const workflowTemplateRouter = new Hono()
 
-import { getSupportedToolTypes, getToolSchemas, getToolCategory } from "@/workflow-tools/registry"
+import { getSupportedToolTypes, getTool, getToolCategory } from "@/workflow-tools/registry"
 import { ToolType } from "@/types/workflowTypes"
 
 // Helper function to get category from tool type - now uses the category from the tool files themselves
@@ -125,14 +127,13 @@ export const GetAvailableToolTypesApi = async (c: Context) => {
     const supportedToolTypes = getSupportedToolTypes()
     
     const toolsData = supportedToolTypes.map(toolType => {
-      const schemas = getToolSchemas(toolType)
+      const schemas = getTool(toolType)
       
       return {
         type: toolType,
         category: getCategoryFromType(toolType),
         inputSchema: parseZodSchema(schemas.inputSchema),
         configSchema: parseZodSchema(schemas.configSchema),
-        defaultConfig: schemas.defaultConfig,
       }
     })
 
@@ -163,7 +164,7 @@ export const GetToolTypeSchemaApi = async (c: Context) => {
       })
     }
 
-    const schemas = getToolSchemas(toolType as any)
+    const schemas = getTool(toolType as any)
     
     return c.json({
       success: true,
@@ -172,7 +173,6 @@ export const GetToolTypeSchemaApi = async (c: Context) => {
         category: getCategoryFromType(toolType),
         inputSchema: parseZodSchema(schemas.inputSchema),
         configSchema: parseZodSchema(schemas.configSchema),
-        defaultConfig: schemas.defaultConfig,
       },
     })
   } catch (error) {
@@ -643,6 +643,69 @@ export const ValidateTemplate = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Failed to validate workflow template")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+// Activate workflow template - set state to active and schedule triggers
+export const ActivateWorkflowTemplateApi = async (c: Context) => {
+  try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
+    const requestData = await c.req.json()
+    const { templateId } = requestData
+
+    if (!templateId) {
+      throw new HTTPException(400, { message: "templateId is required" })
+    }
+
+    // Validate template exists and user has access
+    const [template] = await db
+      .select()
+      .from(workflowTemplate)
+      .where(and(
+        eq(workflowTemplate.id, templateId),
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(workflowTemplate.userId, user.id),
+        )
+      ))
+
+    if (!template) {
+      throw new HTTPException(404, {
+        message: "Workflow template not found",
+      })
+    }
+
+    // Update template state to active
+    
+    // Activate template triggers using execution engine
+    const activateResult = await handleActivateTemplate(template as SelectWorkflowTemplate)
+
+    
+    await db
+      .update(workflowTemplate)
+      .set({
+        state: "active",
+        updatedAt: new Date(),
+      })
+      .where(eq(workflowTemplate.id, templateId))
+      .returning()
+
+    Logger.info(`✅ Activated workflow template ${templateId}`)
+
+    return c.json({
+      success: true,
+      data: {
+        template: template,
+        activateResult,
+      },
+      message: "Workflow template activated successfully",
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to activate workflow template")
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })

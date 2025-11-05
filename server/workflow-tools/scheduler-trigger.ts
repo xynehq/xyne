@@ -1,150 +1,187 @@
-import { z } from "zod"
 import { ToolType, ToolCategory } from "@/types/workflowTypes"
-import type { WorkflowTool, ToolExecutionContext, ToolExecutionResult } from "./types"
-
-// Scheduler trigger configuration schema
-export const schedulerTriggerConfigSchema = z.object({
-  scheduleType: z.enum(["cron", "interval", "once"]).default("once"),
-  cronExpression: z.string().optional(), // For cron-based scheduling
-  intervalMinutes: z.number().min(1).optional(), // For interval-based scheduling
-  scheduledAt: z.string().optional(), // ISO datetime for one-time scheduling
-  timezone: z.string().default("UTC"),
-  enabled: z.boolean().default(true),
-  maxExecutions: z.number().optional(), // Max number of executions (for interval/cron)
-  description: z.string().optional(),
-})
-
-// Scheduler trigger input schema
-export const schedulerTriggerInputSchema = z.object({
-  triggeredAt: z.string().optional(), // ISO datetime when trigger was activated
-  executionCount: z.number().default(0),
-  lastExecutionAt: z.string().optional(),
-  metadata: z.record(z.string(), z.any()).optional(),
-})
-
-// Scheduler trigger output schema
-export const schedulerTriggerOutputSchema = z.object({
-  triggeredAt: z.string(),
-  scheduleType: z.string(),
-  nextExecutionAt: z.string().optional(),
-  executionCount: z.number(),
-  maxExecutions: z.number().optional(),
-  isLastExecution: z.boolean(),
-  timezone: z.string(),
-  metadata: z.record(z.string(), z.any()),
-})
-
-export type SchedulerTriggerConfig = z.infer<typeof schedulerTriggerConfigSchema>
-export type SchedulerTriggerInput = z.infer<typeof schedulerTriggerInputSchema>
-export type SchedulerTriggerOutput = z.infer<typeof schedulerTriggerOutputSchema>
-
-export class SchedulerTriggerTool implements WorkflowTool<SchedulerTriggerConfig, SchedulerTriggerInput, SchedulerTriggerOutput> {
+import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
+import { z } from "zod"
+import { messageQueue, type ExecutionRequest } from "@/execution-engine/message-queue"  
+export class SchedulerTriggerTool implements WorkflowTool {
   type = ToolType.SCHEDULER_TRIGGER
   category = ToolCategory.TRIGGER
+  triggerIfActive = true
+
+  inputSchema = z.object({})
+  
+  outputSchema = z.object({
+    triggeredAt: z.string(),
+    scheduleType: z.string().optional(),
+    nextExecutionAt: z.string().optional(),
+    cronExpression: z.string().optional()
+  })
+  
+  configSchema = z.object({
+    trigger_after_seconds: z.number().positive().optional(),
+    trigger_at: z.string().optional(),
+    cron_expression: z.string().optional(),
+    timezone: z.string().default("UTC"),
+    maxExecutions: z.number().positive().optional()
+  })
 
   async execute(
-    input: SchedulerTriggerInput,
-    config: SchedulerTriggerConfig,
-    context: ToolExecutionContext
-  ): Promise<ToolExecutionResult<SchedulerTriggerOutput>> {
+    input: Record<string, any>,
+    config: Record<string, any>,
+    workflowContext: WorkflowContext
+  ): Promise<ToolExecutionResult> {
     try {
-      if (!config.enabled) {
-        return {
-          status: "error",
-          result: {
-            triggeredAt: new Date().toISOString(),
-            scheduleType: config.scheduleType,
-            executionCount: input.executionCount,
-            isLastExecution: true,
-            timezone: config.timezone,
-            metadata: input.metadata || {},
-          } as SchedulerTriggerOutput,
+      const currentTime = new Date()
+      
+      // Process scheduling configuration keys (if-else chain, first match wins)
+      const scheduleMetadata: Record<string, any> = {}
+      
+      // Handle trigger_after_seconds - convert to timestamp
+      if (config.trigger_after_seconds && typeof config.trigger_after_seconds === 'number') {
+        const triggerTime = new Date(currentTime.getTime() + config.trigger_after_seconds * 1000)
+        scheduleMetadata.trigger_after = triggerTime.toISOString()
+      } 
+      // Handle trigger_at - parse as timestamp  
+      else if (config.trigger_at) {
+        try {
+          const triggerAtDate = new Date(config.trigger_at)
+          if (!isNaN(triggerAtDate.getTime())) {
+            scheduleMetadata.trigger_after = triggerAtDate.toISOString()
+          }
+        } catch (error) {
+          // Invalid trigger_at, continue to next option
         }
       }
-
-      const currentTime = new Date()
-      const executionCount = input.executionCount + 1
+      // Handle cron_expression - parse standard cron format
+      else if (config.cron_expression && typeof config.cron_expression === 'string') {
+        // For cron expressions, we don't need to calculate next execution time here
+        // The scheduling is handled by PgBoss when the template is activated
+        scheduleMetadata.cron_expression = config.cron_expression
+        scheduleMetadata.timezone = config.timezone || 'UTC'
+        scheduleMetadata.recurring = true
+      }
       
       // Check if max executions reached
-      const isLastExecution = config.maxExecutions 
-        ? executionCount >= config.maxExecutions 
-        : config.scheduleType === "once"
+      // const isLastExecution = config.maxExecutions 
+      //   ? executionCount >= config.maxExecutions 
+      //   : (config.scheduleType || "once") === "once"
 
-      // Calculate next execution time (behavior to be implemented later)
-      const nextExecutionAt = isLastExecution 
-        ? undefined 
-        : this.calculateNextExecution(config, currentTime)
-
-      const output: SchedulerTriggerOutput = {
-        triggeredAt: currentTime.toISOString(),
-        scheduleType: config.scheduleType,
-        nextExecutionAt,
-        executionCount,
-        maxExecutions: config.maxExecutions,
-        isLastExecution,
-        timezone: config.timezone,
-        metadata: input.metadata || {},
-      }
+      // // Calculate next execution time (behavior to be implemented later)
+      // const nextExecutionAt = isLastExecution 
+      //   ? undefined 
+      //   : this.calculateNextExecution(config, currentTime)
 
       return {
         status: "success",
-        result: output,
+        result: {
+          triggeredAt: currentTime.toISOString()
+        },
+        metadata: scheduleMetadata
       }
     } catch (error) {
       return {
         status: "error",
         result: {
           triggeredAt: new Date().toISOString(),
-          scheduleType: config.scheduleType,
-          executionCount: input.executionCount,
+          scheduleType: config.scheduleType || "once",
+          executionCount: input.executionCount || 0,
           isLastExecution: true,
-          timezone: config.timezone,
+          timezone: config.timezone || "UTC",
           metadata: { error: error instanceof Error ? error.message : String(error) },
-        } as SchedulerTriggerOutput,
+        },
       }
     }
   }
 
-  private calculateNextExecution(config: SchedulerTriggerConfig, currentTime: Date): string | undefined {
-    // Basic implementation - behavior to be enhanced later
-    switch (config.scheduleType) {
-      case "interval":
-        if (config.intervalMinutes) {
-          const nextTime = new Date(currentTime.getTime() + config.intervalMinutes * 60 * 1000)
-          return nextTime.toISOString()
+  // Parse cron expression and calculate next execution time
+  private getNextCronExecution(cronExpression: string, currentTime: Date): Date | null {
+    try {
+      // Basic cron format validation (5 or 6 fields)
+      const cronParts = cronExpression.trim().split(/\s+/)
+      if (cronParts.length !== 5 && cronParts.length !== 6) {
+        return null
+      }
+
+      // For 5-field cron: minute hour day month dayOfWeek
+      // For 6-field cron: second minute hour day month dayOfWeek
+      const isSecondsField = cronParts.length === 6
+      const [seconds, minute, hour, day, month, dayOfWeek] = isSecondsField 
+        ? cronParts 
+        : ['0', ...cronParts]
+
+      const nextExecution = new Date(currentTime)
+      nextExecution.setSeconds(parseInt(seconds === '*' ? '0' : seconds), 0)
+
+      // Handle minute field
+      if (minute !== '*') {
+        const targetMinute = parseInt(minute)
+        if (targetMinute >= 0 && targetMinute <= 59) {
+          nextExecution.setMinutes(targetMinute)
         }
-        break
-      case "cron":
-        // Cron parsing to be implemented later
-        return new Date(currentTime.getTime() + 24 * 60 * 60 * 1000).toISOString() // Default to 24 hours
-      case "once":
-        return undefined
+      }
+
+      // Handle hour field  
+      if (hour !== '*') {
+        const targetHour = parseInt(hour)
+        if (targetHour >= 0 && targetHour <= 23) {
+          nextExecution.setHours(targetHour)
+        }
+      }
+
+      // Simple logic: if calculated time is in the past, add 1 day
+      if (nextExecution <= currentTime) {
+        nextExecution.setDate(nextExecution.getDate() + 1)
+      }
+
+      // TODO: Implement full cron parsing for day, month, dayOfWeek fields
+      // This is a simplified implementation focusing on time-based scheduling
+      
+      return nextExecution
+    } catch (error) {
+      return null
     }
-    return undefined
   }
 
-  validateInput(input: unknown): input is SchedulerTriggerInput {
-    return schedulerTriggerInputSchema.safeParse(input).success
-  }
+  // Handler for active trigger - called when template is activated
+  async handleActiveTrigger(config: Record<string, any>, templateId:string): Promise<Record<string, string>> {
+    
+    
+    try {
+      // Create execution packet for starting workflow
+      const executionPacket:ExecutionRequest = {
+          templateId: templateId,
+          userId: 1, // TODO: Get from context
+          workspaceId: 1 // TODO: Get from context
+      }
 
-  validateConfig(config: unknown): config is SchedulerTriggerConfig {
-    return schedulerTriggerConfigSchema.safeParse(config).success
-  }
+      // const messageBoss = messageQueue.getBoss()
+      // const queueName = 'incoming-queue'
 
-  getInputSchema() {
-    return schedulerTriggerInputSchema
-  }
+      // // Check if cron expression exists
+      if (config.cron_expression && typeof config.cron_expression === 'string') {
+      //   // Schedule recurring execution with PgBoss
+      //   // const scheduleKey = `workflow-${templateId}-cron`
+      //   await messageBoss.schedule(
+      //     queueName,
+      //     config.cron_expression,
+      //     executionPacket,
+      //     {
+      //       tz: config.timezone || 'UTC'
+      //     }
+      //   )
+        await messageQueue.publishExecution(executionPacket, undefined, config.cron_expression)
+        console.log(`✅ Scheduled workflow ${templateId} with cron: ${config.cron_expression}`)
+        return {"status":"success","message": `scheduled with cron ${config.cron_expression}`}
+      }
+      else {
+        // No scheduling config found, send immediately
+        await messageQueue.publishExecution(executionPacket)
+        console.log(`✅ Started immediate execution for workflow ${templateId} (no cron config)`)
+        return {"status":"success","message": `Started immediate execution for workflow ${templateId} (no cron config)`}
+      }
 
-  getConfigSchema() {
-    return schedulerTriggerConfigSchema
-  }
-
-  getDefaultConfig(): SchedulerTriggerConfig {
-    return {
-      scheduleType: "once",
-      timezone: "UTC",
-      enabled: true,
-      description: "Schedule workflow execution",
+    } catch (error) {
+      console.error(`❌ Failed to handle active trigger for workflow ${templateId}:`, error)
+      throw error
     }
   }
 }

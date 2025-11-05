@@ -10,7 +10,7 @@ import {
 } from "@/db/schema/workflows"
 import { eq, and, sql } from "drizzle-orm"
 import { sendExecutionPacket } from "./execution-engine-queue"
-import type { ExecutionPacket } from "./execution-engine-queue"
+import type { ExecutionPacket } from "./types"
 import { workflowTool, ToolCategory } from "@/db/schema/workflows"
 
 const Logger = getLogger(Subsystem.WorkflowApi)
@@ -38,7 +38,7 @@ export class WorkflowExecutor {
 
       // 3. Create step executions for all template steps
       const stepExecutions = await this.createStepExecutions(templateId, executionId)
-
+      
       // 4. Push root nodes to queue
       await this.pushRootNodesToQueue(rootNodes, stepExecutions, executionId)
 

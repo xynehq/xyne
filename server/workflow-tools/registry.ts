@@ -48,35 +48,6 @@ export function getSupportedToolTypes(): ToolType[] {
   return Object.values(ToolType)
 }
 
-// Helper function to validate tool configuration
-export async function validateToolConfig(toolType: ToolType, config: unknown): Promise<boolean> {
-  try {
-    const tool = getTool(toolType)
-    return tool.validateConfig(config)
-  } catch {
-    return false
-  }
-}
-
-// Helper function to validate tool input
-export async function validateToolInput(toolType: ToolType, input: unknown): Promise<boolean> {
-  try {
-    const tool = getTool(toolType)
-    return tool.validateInput(input)
-  } catch {
-    return false
-  }
-}
-
-// Helper function to get tool schemas for documentation/validation
-export function getToolSchemas(toolType: ToolType) {
-  const tool = getTool(toolType)
-  return {
-    inputSchema: tool.getInputSchema(),
-    configSchema: tool.getConfigSchema(),
-    defaultConfig: tool.getDefaultConfig(),
-  }
-}
 
 // Helper function to get tool category from the file itself
 export function getToolCategory(toolType: ToolType): ToolCategory {

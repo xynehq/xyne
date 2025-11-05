@@ -1,31 +1,6 @@
-import { z } from "zod"
 import { ToolType, ToolCategory } from "@/types/workflowTypes"
-import type { WorkflowTool, ToolExecutionContext, ToolExecutionResult } from "./types"
-
-// Delay tool configuration schema
-export const delayConfigSchema = z.object({
-  duration: z.number().min(1), // Duration in seconds
-  unit: z.enum(["seconds", "minutes", "hours", "days"]).default("seconds"),
-  message: z.string().optional(),
-})
-
-// Delay tool input schema
-export const delayInputSchema = z.object({
-  durationOverride: z.number().optional(), // Override config duration
-  unitOverride: z.enum(["seconds", "minutes", "hours", "days"]).optional(),
-})
-
-// Delay tool output schema
-export const delayOutputSchema = z.object({
-  delayedFor: z.number(),
-  unit: z.string(),
-  delayedUntil: z.string(),
-  message: z.string(),
-})
-
-export type DelayConfig = z.infer<typeof delayConfigSchema>
-export type DelayInput = z.infer<typeof delayInputSchema>
-export type DelayOutput = z.infer<typeof delayOutputSchema>
+import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
+import { z } from "zod"
 
 // Helper function to convert duration to milliseconds
 const convertToMilliseconds = (duration: number, unit: string): number => {
@@ -43,18 +18,37 @@ const convertToMilliseconds = (duration: number, unit: string): number => {
   }
 }
 
-export class DelayTool implements WorkflowTool<DelayConfig, DelayInput, DelayOutput> {
+export class DelayTool implements WorkflowTool {
   type = ToolType.DELAY
   category = ToolCategory.SYSTEM
+  triggerIfActive = false
+
+  inputSchema = z.object({
+    durationOverride: z.number().positive().optional(),
+    unitOverride: z.enum(["seconds", "minutes", "hours", "days"]).optional()
+  })
+
+  outputSchema = z.object({
+    delayedFor: z.number(),
+    unit: z.string(),
+    delayedUntil: z.string(),
+    message: z.string()
+  })
+
+  configSchema = z.object({
+    duration: z.number().positive().default(5),
+    unit: z.enum(["seconds", "minutes", "hours", "days"]).default("seconds"),
+    message: z.string().optional()
+  })
 
   async execute(
-    input: DelayInput,
-    config: DelayConfig,
-    context: ToolExecutionContext
-  ): Promise<ToolExecutionResult<DelayOutput>> {
+    input: Record<string, any>,
+    config: Record<string, any>,
+    workflowContext: WorkflowContext
+  ): Promise<ToolExecutionResult> {
     try {
-      const duration = input.durationOverride ?? config.duration
-      const unit = input.unitOverride ?? config.unit
+      const duration = input.durationOverride ?? config.duration ?? 5
+      const unit = input.unitOverride ?? config.unit ?? "seconds"
       const milliseconds = convertToMilliseconds(duration, unit)
 
       // Simulate delay
@@ -62,51 +56,25 @@ export class DelayTool implements WorkflowTool<DelayConfig, DelayInput, DelayOut
 
       const delayedUntil = new Date(Date.now() + milliseconds).toISOString()
 
-      const output: DelayOutput = {
-        delayedFor: duration,
-        unit,
-        delayedUntil,
-        message: config.message || `Delayed for ${duration} ${unit}`,
-      }
-
       return {
         status: "success",
-        result: output,
+        result: {
+          delayedFor: duration,
+          unit,
+          delayedUntil,
+          message: config.message || `Delayed for ${duration} ${unit}`,
+        },
       }
     } catch (error) {
       return {
         status: "error",
         result: {
           delayedFor: 0,
-          unit: config.unit,
+          unit: config.unit || "seconds",
           delayedUntil: new Date().toISOString(),
           message: `Delay failed: ${error instanceof Error ? error.message : String(error)}`,
-        } as DelayOutput,
+        },
       }
-    }
-  }
-
-  validateInput(input: unknown): input is DelayInput {
-    return delayInputSchema.safeParse(input).success
-  }
-
-  validateConfig(config: unknown): config is DelayConfig {
-    return delayConfigSchema.safeParse(config).success
-  }
-
-  getInputSchema() {
-    return delayInputSchema
-  }
-
-  getConfigSchema() {
-    return delayConfigSchema
-  }
-
-  getDefaultConfig(): DelayConfig {
-    return {
-      duration: 5,
-      unit: "seconds",
-      message: "Workflow paused",
     }
   }
 }

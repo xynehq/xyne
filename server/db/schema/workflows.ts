@@ -18,6 +18,7 @@ import {
   ToolType,
   ToolCategory,
   ToolExecutionStatus,
+  TemplateState,
 } from "@/types/workflowTypes"
 import { workspaces } from "./workspaces"
 import { users } from "./users"
@@ -62,6 +63,8 @@ export const toolTypeEnum = pgEnum("tool_type", Object.values(ToolType) as [stri
 
 export const toolExecutionStatusEnum = pgEnum("tool_execution_status", Object.values(ToolExecutionStatus) as [string, ...string[]])
 
+export const templateStateEnum = pgEnum("template_state", Object.values(TemplateState) as [string, ...string[]])
+
 // 1. Workflow Templates Table (renamed from workflow_templates)
 export const workflowTemplate = pgTable("workflow_template", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
@@ -78,6 +81,7 @@ export const workflowTemplate = pgTable("workflow_template", {
   description: text("description"),
   version: text("version").notNull().default("1.0.0"),
   status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
+  state: templateStateEnum("state").notNull().default("inactive"),
   config: jsonb("config").default({}),
   rootWorkflowStepTemplateId: uuid("root_workflow_step_template_id"), // UUID reference
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -87,6 +91,7 @@ export const workflowTemplate = pgTable("workflow_template", {
     .notNull()
     .default(sql`NOW()`),
   // Removed: workspaceId, deletedAt
+  
 })
 
 // 2. Workflow Step Templates Table (renamed from workflow_step_templates)

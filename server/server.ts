@@ -335,6 +335,7 @@ import {
   DeleteTemplateApi,
   GetTemplateApi,
   ValidateTemplate,
+  ActivateWorkflowTemplateApi,
   createTemplateSchema,
   validateTemplateSchema,
 } from "@/api/workflow-template"
@@ -342,7 +343,8 @@ import {
   ExecuteTemplateHandler, 
   GetExecutionStatusApi, 
   StopExecutionApi, 
-  GetEngineHealthApi 
+  GetEngineHealthApi,
+  HandleManualTrigger
 } from "@/api/workflow-execution"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
@@ -1529,6 +1531,7 @@ export const AppRoutes = app
   .put("/workflow/template/:templateId", UpdateTemplateApi)
   .delete("/workflow/template/:templateId", DeleteTemplateApi)
   .post("/workflow/template/execute", ExecuteTemplateHandler)
+  .post("/workflow/template/activate", ActivateWorkflowTemplateApi)
   .get("/workflow/execution/:executionId/status", GetExecutionStatusApi)
   .post("/workflow/execution/:executionId/stop", StopExecutionApi)
   .get("/workflow/engine/health", GetEngineHealthApi)
@@ -1541,6 +1544,7 @@ export const AppRoutes = app
   .post("/workflow/steps/:stepId/complete", CompleteWorkflowStepExecutionApi)
   .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
+  .post("/workflow/:workflowId/manual-trigger/:stepId", HandleManualTrigger)
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
   .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)

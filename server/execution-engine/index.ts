@@ -1,8 +1,6 @@
 // Main execution engine exports
 export { workflowExecutor } from "./workflow-executor"
 export { stepExecutor } from "./step-executor"
-export { toolExecutor } from "./tool-executor"
-export { queueManager } from "./queue-manager"
 export { executionClient } from "./execution-client"
 export { communicationService } from "./communication-service"
 export { messageQueue } from "./message-queue"
@@ -53,11 +51,9 @@ export class ExecutionEngine {
   // Get overall status
   static async getEngineStatus() {
     const { communicationService } = await import("./communication-service")
-    const { queueManager } = await import("./queue-manager")
-    
+
     return {
       service: communicationService.getServiceStatus(),
-      queue: queueManager.getQueueStatus(),
     }
   }
 

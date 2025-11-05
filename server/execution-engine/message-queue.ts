@@ -8,7 +8,7 @@ const Logger = getLogger(Subsystem.WorkflowApi)
 
 // Message types for communication
 export interface ExecutionMessage {
-  type: 'START_EXECUTION' | 'STOP_EXECUTION' | 'GET_STATUS'
+  type: 'START_EXECUTION' | 'STOP_EXECUTION' | 'GET_STATUS' | 'MANUAL_TRIGGER'
   payload: any
   correlationId: string
   timestamp: Date
@@ -40,7 +40,8 @@ class MessageQueue {
   constructor() {
     this.boss = new PgBoss({
       connectionString: config.getDatabaseUrl(),
-      monitorStateIntervalMinutes: 10,
+      schema: 'pgboss', // Explicitly set schema name
+      migrate: true, // Enable automatic migrations
     })
   }
 
@@ -48,20 +49,18 @@ class MessageQueue {
   async initialize(): Promise<void> {
     if (this.isInitialized) return
 
+    // Run migrations for PgBoss 11.x compatibility
     await this.boss.start()
+    
+    // Create queues after successful start
     await this.boss.createQueue(this.INCOMING_QUEUE)
     await this.boss.createQueue(this.OUTGOING_QUEUE)
 
     this.isInitialized = true
-    Logger.info("PgBoss message queue initialized")
+    Logger.info("PgBoss message queue initialized with v11 schema")
   }
 
   // Poll for response by correlation ID using direct SQL queries
-  // Benefits of this approach:
-  // - No job bouncing between states (fetch/fail cycle eliminated)
-  // - More efficient with single SQL query vs PgBoss method overhead  
-  // - Atomic operations directly on pgboss.job table
-  // - Scalable with potential for correlation ID indexing
   async pollForResponse(correlationId: string, timeoutMs: number = 30000): Promise<ExecutionResponse> {
     if (!this.checkInitialized()) {
       throw new Error("Message queue not initialized")
@@ -141,8 +140,8 @@ class MessageQueue {
     return this.pollForResponse(correlationId, timeoutMs)
   }
 
-  // Publish message to execution queue
-  async publishExecution(request: ExecutionRequest): Promise<string> {
+  // Publish message to execution queue with optional scheduling
+  async publishExecution(request: ExecutionRequest, start_at?: string, cron?: string): Promise<string> {
     if (!this.checkInitialized()) {
       throw new Error("Message queue not initialized")
     }
@@ -156,8 +155,23 @@ class MessageQueue {
       timestamp: new Date(),
     }
 
-    await this.boss.send(this.INCOMING_QUEUE, message)
-    Logger.info(`Published execution message with correlation ID: ${correlationId}`)
+    // Handle different scheduling options
+    if (cron) {
+      // Use boss.schedule for cron expressions
+      await this.boss.schedule(this.INCOMING_QUEUE, cron, message, {
+        tz: 'UTC',
+        key :  request.templateId
+      })
+      Logger.info(`Scheduled execution with cron '${cron}' and correlation ID: ${correlationId}`)
+    } else if (start_at) {
+      // Use boss.sendAfter for specific start time
+      await this.boss.sendAfter(this.INCOMING_QUEUE, message, {}, start_at)
+      Logger.info(`Scheduled execution for ${start_at} with correlation ID: ${correlationId}`)
+    } else {
+      // Use boss.send for immediate execution
+      await this.boss.send(this.INCOMING_QUEUE, message)
+      Logger.info(`Published immediate execution message with correlation ID: ${correlationId}`)
+    }
     
     return correlationId
   }
@@ -226,6 +240,27 @@ class MessageQueue {
   getQueueStatus() {
     return {
       isInitialized: this.isInitialized,
+    }
+  }
+
+  // Get detailed queue statistics (PgBoss 11.x method)
+  async getQueueStats() {
+    if (!this.checkInitialized()) {
+      throw new Error("Message queue not initialized")
+    }
+    
+    try {
+      const queues = await this.boss.getQueues()
+      return queues.map(queue => ({
+        name: queue.name,
+        deferredCount: queue.deferredCount || 0,
+        queuedCount: queue.queuedCount || 0,
+        activeCount: queue.activeCount || 0,
+        totalCount: queue.totalCount || 0,
+      }))
+    } catch (error) {
+      Logger.error(error, "Failed to get queue statistics")
+      return []
     }
   }
 

@@ -1,7 +1,8 @@
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { messageQueue, ExecutionRequest, ExecutionResponse, ExecutionMessage } from "./message-queue"
+import { messageQueue, type ExecutionRequest,type ExecutionResponse,type ExecutionMessage } from "./message-queue"
 import { workflowExecutor } from "./workflow-executor"
+import { handleManualTrigger } from "./triggers"
 
 const Logger = getLogger(Subsystem.WorkflowApi)
 
@@ -46,6 +47,10 @@ export class CommunicationService {
         
         case 'GET_STATUS':
           response = await this.handleGetStatus(message.payload)
+          break
+        
+        case 'MANUAL_TRIGGER':
+          response = await this.handleManualTrigger(message.payload)
           break
         
         default:
@@ -143,6 +148,31 @@ export class CommunicationService {
       return {
         success: false,
         error: error instanceof Error ? error.message : "Failed to get execution status"
+      }
+    }
+  }
+
+  // Handle manual trigger request
+  private async handleManualTrigger(request: { workflowId: string, stepId: string, triggeredBy: string }): Promise<ExecutionResponse> {
+    try {
+      // Create a mock context object with the required parameters
+      const mockContext = {
+        req: {
+          param: () => ({ workflowId: request.workflowId, stepId: request.stepId })
+        },
+        json: (data: any) => data
+      } as any
+
+      const result = await handleManualTrigger(mockContext)
+      
+      return {
+        success: true,
+        data: result
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to trigger manual step"
       }
     }
   }

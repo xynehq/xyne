@@ -1,4 +1,5 @@
 import { ToolType, WorkflowStatus, StepType, ToolExecutionStatus } from "@/types/workflowTypes"
+import type { ToolExecutionResult } from "@/workflow-tools/types"
 
 // Execution context for workflow execution
 export interface ExecutionContext {
@@ -63,4 +64,24 @@ export interface WorkflowExecutionState {
   failedSteps: Set<string>
   activeSteps: Set<string>
   pendingSteps: Set<string>
+}
+
+// Execution packet interface for queue communication
+export interface ExecutionPacket {
+  template_id: string
+  workflow_id: string
+  step_id: string
+  tool_id: string
+  input: Record<string, any> // JSON input data for tool execution
+}
+
+// Step execution result interface
+export interface StepExecutionResult {
+  success: boolean
+  stepId: string
+  toolId: string
+  toolResult: ToolExecutionResult
+  nextAction: 'continue' | 'halt' | 'wait_for_input'
+  next_execute_at?: string // ISO timestamp for scheduled execution
+  error?: string
 }

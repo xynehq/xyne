@@ -105,23 +105,46 @@ export const GetEngineHealthApi = async (c: Context) => {
 
     // Check health via HTTP call to execution engine service
     const isHealthy = await executionClient.healthCheck()
-    
-    // Get basic queue status from execution client
-    const engineStatus = {
-      service: "running",
-      queue: executionClient.getQueueStatus ? executionClient.getQueueStatus() : "unavailable"
-    }
+
 
     return c.json({
       success: true,
       data: {
         healthy: isHealthy,
-        status: engineStatus,
       },
       message: "Engine health status retrieved",
     })
   } catch (error) {
     Logger.error(error, "Failed to get engine health")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+// Manual trigger handler that communicates with execution engine via execution client
+export const HandleManualTrigger = async (c: Context) => {
+  const { workflowId, stepId } = c.req.param()
+  
+  try {
+    Logger.info(`🔴 Manual trigger requested for workflow ${workflowId}, step ${stepId}`)
+
+    // Use execution client to trigger the step (same pattern as ExecuteTemplateHandler)
+    const result = await executionClient.triggerManualStep(workflowId, stepId, "manual")
+
+    Logger.info(`✅ Manual trigger processed for step ${stepId}`)
+
+    return c.json({
+      success: true,
+      message: "Manual trigger completed successfully",
+      stepId: stepId,
+      workflowId: workflowId,
+      result: result
+    })
+
+  } catch (error) {
+    Logger.error(error, `❌ Manual trigger failed for workflow ${workflowId}, step ${stepId}`)
+    
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })

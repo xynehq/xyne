@@ -2,6 +2,7 @@ export enum WorkflowStatus {
   DRAFT = "draft",
   ACTIVE = "active",
   PAUSED = "paused",
+  WAITING = "waiting",
   COMPLETED = "completed",
   FAILED = "failed",
 }
@@ -39,4 +40,9 @@ export enum ToolExecutionStatus {
   RUNNING = "running",
   COMPLETED = "completed",
   FAILED = "failed",
+}
+
+export enum TemplateState {
+  ACTIVE = "active",
+  INACTIVE = "inactive",
 }

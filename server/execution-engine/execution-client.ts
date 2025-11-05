@@ -1,6 +1,6 @@
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { messageQueue, ExecutionRequest, ExecutionResponse } from "./message-queue"
+import { messageQueue,type ExecutionRequest } from "./message-queue"
 import { randomUUID } from "crypto"
 
 const Logger = getLogger(Subsystem.WorkflowApi)
@@ -39,6 +39,30 @@ export class ExecutionClient {
     }
   }
 
+
+  // Trigger manual step
+  async triggerManualStep(workflowId: string, stepId: string, triggeredBy: string): Promise<any> {
+    try {
+      const correlationId = await this.publishMessage('MANUAL_TRIGGER', {
+        workflowId,
+        stepId,
+        triggeredBy,
+        triggeredAt: new Date().toISOString()
+      })
+      
+      const response = await messageQueue.waitForSpecificResponse(correlationId)
+      
+      if (!response.success) {
+        throw new Error(response.error || "Failed to trigger manual step")
+      }
+
+      return response.data
+
+    } catch (error) {
+      Logger.error(error, `Failed to trigger manual step ${stepId} for workflow ${workflowId}`)
+      throw error
+    }
+  }
 
   // Get execution status
   async getExecutionStatus(executionId: string): Promise<any> {

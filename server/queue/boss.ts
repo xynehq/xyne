@@ -3,5 +3,5 @@ import config from "@/config"
 
 export const boss = new PgBoss({
   connectionString: config.getDatabaseUrl(),
-  monitorStateIntervalMinutes: 10, // Monitor state every 10 minutes
+  monitorIntervalSeconds: 600, // Monitor state every 10 minutes
 })
