@@ -1,3 +1,10 @@
+## [3.30.2](https://github.com/xynehq/xyne/compare/v3.30.1...v3.30.2) (2025-11-06)
+
+
+### Bug Fixes
+
+* **mailThreadId:** Add the parent mail message-Id as parentThreadId ([#1188](https://github.com/xynehq/xyne/issues/1188)) ([6c17a6a](https://github.com/xynehq/xyne/commit/6c17a6a28341831aeaf50c957fbf985efdfa1d45))
+
 ## [3.30.1](https://github.com/xynehq/xyne/compare/v3.30.0...v3.30.1) (2025-11-05)
 
 
