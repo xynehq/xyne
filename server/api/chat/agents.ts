@@ -3932,16 +3932,15 @@ export const AgentMessageApi = async (c: Context) => {
                 }),
               })
             }
-            //Dual RAG PATH (RAG from both Attachments and app integrations)
-            if (
-              (fileIds && fileIds?.length > 0 || imageAttachmentFileIds &&
-                imageAttachmentFileIds?.length > 0) &&
-              (agentForDb?.appIntegrations && agentForDb?.appIntegrations)
-            ) {
               // Extract app names from appIntegrations (handles both legacy and new format)
               let agentAppEnums: Apps[] = []
+              Logger.info(
+                `[Path3] Agent appIntegrations: ${JSON.stringify(
+                  agentForDb?.appIntegrations,
+                )}`,
+              )
 
-              if (Array.isArray(agentForDb.appIntegrations)) {
+              if (Array.isArray(agentForDb?.appIntegrations)) {
                 // Legacy format: string[] - convert each string to Apps enum
                 for (const integration of agentForDb.appIntegrations) {
                   if (typeof integration === "string") {
@@ -3976,10 +3975,10 @@ export const AgentMessageApi = async (c: Context) => {
                     }
                   }
                 }
-              } else if (typeof agentForDb.appIntegrations === "object") {
+              } else if (typeof agentForDb?.appIntegrations === "object") {
                 // New format: Record<string, {itemIds, selectedAll}>
                 // Parse using parseAppSelections to convert keys to proper Apps enum values
-                if (isAppSelectionMap(agentForDb.appIntegrations)) {
+                if (isAppSelectionMap(agentForDb?.appIntegrations)) {
                   const { selectedApps } = parseAppSelections(agentForDb.appIntegrations)
                   agentAppEnums = [...new Set(selectedApps)]
                 } else {
@@ -3987,10 +3986,15 @@ export const AgentMessageApi = async (c: Context) => {
                   agentAppEnums = Object.keys(agentForDb.appIntegrations) as Apps[]
                 }
               }
-              // Only proceed if we have valid app integrations
-              if (agentAppEnums.length > 0) {
+            //Dual RAG PATH (RAG from both Attachments and app integrations)
+            if (
+              (fileIds && fileIds?.length > 0 || imageAttachmentFileIds &&
+                imageAttachmentFileIds?.length > 0) &&
+              (agentForDb?.appIntegrations && agentForDb?.appIntegrations) && (agentAppEnums.length > 0)
+            ) {
+              
                 // PATH 3: DUAL RAG (NEW!)
-                // TODO: there is some repeated code between path 2 and path 3, we can create a helper function for the common parts
+                // TODO: there is some repeated code between path 2 and path 3, we can create a helper function for the common parts like File search logic  Context building LLM streaming and iterator processing
                 Logger.info(
                   `[Path3] User has selected context AND agent has ${agentAppEnums.length} KB integrations, using Dual RAG`
                 )
@@ -4226,7 +4230,7 @@ export const AgentMessageApi = async (c: Context) => {
                 endSpan.end()
                 streamSpan.end()
                 rootSpan.end()
-              }
+              
             }
             // RAG FROM USER SELECTED CONTEXT ONLY
             else if (
