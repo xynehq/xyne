@@ -1,3 +1,10 @@
+## [3.30.7](https://github.com/xynehq/xyne/compare/v3.30.6...v3.30.7) (2025-11-06)
+
+
+### Bug Fixes
+
+* XYNE-288 added frontend version in UI ([#1195](https://github.com/xynehq/xyne/issues/1195)) ([486f810](https://github.com/xynehq/xyne/commit/486f8109e646a5e85097f527b85073372212f973)), closes [Chinmay-Sin#FQX1](https://github.com/Chinmay-Sin/issues/FQX1)
+
 ## [3.30.6](https://github.com/xynehq/xyne/compare/v3.30.5...v3.30.6) (2025-11-06)
 
 
