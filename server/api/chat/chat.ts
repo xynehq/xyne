@@ -2303,13 +2303,13 @@ export async function* generateAnswerFromDualRag(
   userCtx: string,
   userMetadata: UserMetadataType,
   alpha: number = 0.5,
-  fileIds: string[],
+  fileIds: string[],// contains all attachement fileids
   agentAppEnums: Apps[],
   userRequestsReasoning: boolean,
   agentPrompt?: string,
   passedSpan?: Span,
   threadIds?: string[],
-  attachmentFileIds?: string[],
+  attachmentFileIds?: string[],// contains image attachments 
   isMsgWithSources?: boolean,
   modelId?: string,
   isValidPath?: boolean,
@@ -2427,12 +2427,12 @@ export async function* generateAnswerFromDualRag(
         )}`,
       )
 
-      const attachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
+      const allAttachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
 
   
       loggerWithChild({ email }).info(
         `[Dual RAG ] Attachment file IDs identified: ${JSON.stringify(
-          attachmentFileIds,
+          allAttachmentFileIds,
         )}`,
       )
 
@@ -2465,16 +2465,16 @@ export async function* generateAnswerFromDualRag(
           combinedSearchResponse.push(...results.root.children)
         }
       }
-      if (attachmentFileIds && attachmentFileIds.length > 0) {
+      if (allAttachmentFileIds && allAttachmentFileIds.length > 0) {
         loggerWithChild({ email }).info(
           `[Dual RAG ] Searching attachment file IDs: ${JSON.stringify(
-            attachmentFileIds,
+            allAttachmentFileIds,
           )} and calling searchVespaInFiles`,
         )
         results = await searchVespaInFiles(
           builtUserQuery,
           email,
-          attachmentFileIds,
+          allAttachmentFileIds,
           {
             limit: fileIds?.length,
             alpha: userAlpha,
