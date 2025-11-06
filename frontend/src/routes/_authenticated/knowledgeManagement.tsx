@@ -1306,7 +1306,16 @@ function KnowledgeManagementContent() {
       return
     }
 
+    // Prevent rapid double-clicks by checking if already loading
+    if (loadingDocument) {
+      return
+    }
+
     setLoadingDocument(true)
+
+    // Clear current document first to prevent issues with previous content
+    setSelectedDocument(null)
+
     try {
       // First check if the file supports preview
       const previewResponse = await authFetch(
@@ -1338,7 +1347,6 @@ function KnowledgeManagementContent() {
       }
 
       // If preview is supported, fetch the file content with cache-busting
-      const fileName = file.name.toLowerCase()
       const contentResponse = await authFetch(
         `/api/v1/cl/${collection.id}/files/${file.id}/content`,
         {
@@ -1374,6 +1382,7 @@ function KnowledgeManagementContent() {
 
       const blob = await contentResponse.blob()
 
+      // Set the document after successful loading
       setSelectedDocument({
         file,
         collection,
@@ -1381,10 +1390,13 @@ function KnowledgeManagementContent() {
       })
     } catch (error) {
       console.error("Error loading document:", error)
-      toast.error({
-        title: "Error",
-        description: "Failed to load document",
-      })
+      // Only show error if this request is still active
+      if (loadingDocument) {
+        toast.error({
+          title: "Error",
+          description: "Failed to load document",
+        })
+      }
     } finally {
       setLoadingDocument(false)
     }
@@ -1548,32 +1560,31 @@ function KnowledgeManagementContent() {
 
   // Derive the current upload status from collections state
   const currentUploadStatus = useMemo(() => {
-    if (!selectedDocument) return undefined;
+    if (!selectedDocument) return undefined
 
     const currentCollection = collections.find(
-      (c) => c.id === selectedDocument.collection.id
-    );
+      (c) => c.id === selectedDocument.collection.id,
+    )
 
-    if (!currentCollection) return undefined;
+    if (!currentCollection) return undefined
 
-    // Iteratively find the file's current status 
-    const stack: FileNode[] = [...currentCollection.items];
+    // Iteratively find the file's current status
+    const stack: FileNode[] = [...currentCollection.items]
     while (stack.length > 0) {
-      const item = stack.pop();
-      if (!item) continue;
+      const item = stack.pop()
+      if (!item) continue
 
       if (item.id === selectedDocument.file.id) {
-        return item.uploadStatus;
+        return item.uploadStatus
       }
 
       if (item.children) {
-        stack.push(...item.children);
+        stack.push(...item.children)
       }
     }
 
-    return undefined;
-  }, [selectedDocument, collections]);
-
+    return undefined
+  }, [selectedDocument, collections])
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-white dark:bg-[#1E1E1E]">
