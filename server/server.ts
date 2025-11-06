@@ -137,6 +137,7 @@ import {
   endCallSchema,
   leaveCallSchema,
   inviteToCallSchema,
+  getCallHistorySchema,
 } from "@/api/calls"
 import {
   SendMessageApi,
@@ -144,10 +145,64 @@ import {
   MarkMessagesAsReadApi,
   GetUnreadCountsApi,
   GetConversationParticipantsApi,
+  EditMessageApi,
+  DeleteMessageApi,
   sendMessageSchema,
   getConversationSchema,
   markAsReadSchema,
+  editMessageSchema,
+  deleteMessageSchema,
 } from "@/api/directMessages"
+import {
+  CreateChannelApi,
+  GetChannelDetailsApi,
+  UpdateChannelApi,
+  ArchiveChannelApi,
+  GetUserChannelsApi,
+  BrowsePublicChannelsApi,
+  JoinChannelApi,
+  AddChannelMembersApi,
+  RemoveChannelMemberApi,
+  UpdateMemberRoleApi,
+  LeaveChannelApi,
+  GetChannelMembersApi,
+  DeleteChannelApi,
+  SendChannelMessageApi,
+  GetChannelMessagesApi,
+  EditChannelMessageApi,
+  DeleteChannelMessageApi,
+  PinMessageApi,
+  UnpinMessageApi,
+  GetPinnedMessagesApi,
+  createChannelSchema,
+  updateChannelSchema,
+  archiveChannelSchema,
+  addMembersSchema,
+  removeMemberSchema,
+  updateMemberRoleSchema,
+  leaveChannelSchema,
+  sendChannelMessageSchema,
+  getChannelMessagesSchema,
+  editChannelMessageSchema,
+  deleteChannelMessageSchema,
+  pinMessageSchema,
+  unpinMessageSchema,
+  joinChannelSchema,
+  getPinnedMessagesSchema,
+  getChannelMembersSchema,
+  getUserChannelsSchema,
+  channelIdParamSchema,
+} from "@/api/channels"
+import {
+  getThread,
+  sendThreadReply,
+  updateThreadReply,
+  deleteThreadReply,
+  getThreadSchema,
+  sendThreadReplySchema,
+  updateThreadReplySchema,
+  deleteThreadReplySchema,
+} from "@/api/threads"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -319,6 +374,7 @@ import { updateMetricsFromThread } from "@/metrics/utils"
 import {
   agents,
   apiKeys,
+  channelMembers,
   users,
   type PublicUserWorkspace,
   updateWorkflowToolSchema,
@@ -549,7 +605,7 @@ export const CallNotificationWs = app.get(
           Logger.info(`User ${userId} connected for call notifications`)
         }
       },
-      onMessage(event, ws) {
+      async onMessage(event, ws) {
         try {
           const message = JSON.parse(event.data.toString())
           Logger.info(`Call notification message from user ${userId}:`, message)
@@ -577,6 +633,29 @@ export const CallNotificationWs = app.get(
                   message.targetUserId,
                   message.isTyping,
                   userId,
+                )
+              }
+              break
+            case "channel_typing_indicator":
+              // Handle channel typing indicator - derive recipients server-side
+              if (
+                userId &&
+                message.channelId &&
+                typeof message.isTyping === "boolean"
+              ) {
+                const members = await db
+                  .select({ externalId: users.externalId })
+                  .from(channelMembers)
+                  .innerJoin(users, eq(channelMembers.userId, users.id))
+                  .where(eq(channelMembers.channelId, message.channelId))
+                const targets = members
+                  .map((m) => m.externalId)
+                  .filter((externalId) => externalId !== userId)
+                callNotificationService.sendChannelTypingIndicator(
+                  targets,
+                  message.channelId,
+                  userId,
+                  message.isTyping,
                 )
               }
               break
@@ -1186,7 +1265,6 @@ const getNewAccessRefreshToken = async (c: Context) => {
 const webhookHandler = WebhookHandler
 webhookHandler.initialize()
 
-
 // Dynamic webhook handler
 app.all("/workflow/webhook/*", async (c) => {
   return await webhookHandler.handleWebhookRequest(c)
@@ -1462,7 +1540,11 @@ export const AppRoutes = app
   .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
   .post("/calls/leave", zValidator("json", leaveCallSchema), LeaveCallApi)
   .get("/calls/active", GetActiveCallsApi)
-  .get("/calls/history", GetCallHistoryApi)
+  .get(
+    "/calls/history",
+    zValidator("query", getCallHistorySchema),
+    GetCallHistoryApi,
+  )
   // Direct message routes
   .post("/messages/send", zValidator("json", sendMessageSchema), SendMessageApi)
   .get(
@@ -1477,6 +1559,118 @@ export const AppRoutes = app
   )
   .get("/messages/unread-counts", GetUnreadCountsApi)
   .get("/messages/participants", GetConversationParticipantsApi)
+  .put("/messages/edit", zValidator("json", editMessageSchema), EditMessageApi)
+  .delete(
+    "/messages/delete",
+    zValidator("json", deleteMessageSchema),
+    DeleteMessageApi,
+  )
+  // Channel routes
+  .post("/channels", zValidator("json", createChannelSchema), CreateChannelApi)
+  .put(
+    "/channels/update",
+    zValidator("json", updateChannelSchema),
+    UpdateChannelApi,
+  )
+  .post(
+    "/channels/archive",
+    zValidator("json", archiveChannelSchema),
+    ArchiveChannelApi,
+  )
+  .get(
+    "/channels",
+    zValidator("query", getUserChannelsSchema),
+    GetUserChannelsApi,
+  )
+  .get("/channels/browse", BrowsePublicChannelsApi)
+  .post("/channels/join", zValidator("json", joinChannelSchema), JoinChannelApi)
+  .get(
+    "/channels/members",
+    zValidator("query", getChannelMembersSchema),
+    GetChannelMembersApi,
+  )
+  .post(
+    "/channels/members/add",
+    zValidator("json", addMembersSchema),
+    AddChannelMembersApi,
+  )
+  .post(
+    "/channels/members/remove",
+    zValidator("json", removeMemberSchema),
+    RemoveChannelMemberApi,
+  )
+  .put(
+    "/channels/members/role",
+    zValidator("json", updateMemberRoleSchema),
+    UpdateMemberRoleApi,
+  )
+  .post(
+    "/channels/leave",
+    zValidator("json", leaveChannelSchema),
+    LeaveChannelApi,
+  )
+  .get(
+    "/channels/messages",
+    zValidator("query", getChannelMessagesSchema),
+    GetChannelMessagesApi,
+  )
+  .post(
+    "/channels/messages/send",
+    zValidator("json", sendChannelMessageSchema),
+    SendChannelMessageApi,
+  )
+  .put(
+    "/channels/messages/edit",
+    zValidator("json", editChannelMessageSchema),
+    EditChannelMessageApi,
+  )
+  .delete(
+    "/channels/messages/delete",
+    zValidator("json", deleteChannelMessageSchema),
+    DeleteChannelMessageApi,
+  )
+  .post(
+    "/channels/messages/pin",
+    zValidator("json", pinMessageSchema),
+    PinMessageApi,
+  )
+  .post(
+    "/channels/messages/unpin",
+    zValidator("json", unpinMessageSchema),
+    UnpinMessageApi,
+  )
+  .get(
+    "/channels/messages/pinned",
+    zValidator("query", getPinnedMessagesSchema),
+    GetPinnedMessagesApi,
+  )
+  .delete(
+    "/channels/:channelId",
+    zValidator("param", channelIdParamSchema),
+    DeleteChannelApi,
+  )
+  .get(
+    "/channels/:channelId",
+    zValidator("param", channelIdParamSchema),
+    GetChannelDetailsApi,
+  )
+  // Thread routes
+  .get("/threads/:messageId", zValidator("query", getThreadSchema), getThread)
+  .post(
+    "/threads/:messageId/reply",
+    zValidator("json", sendThreadReplySchema),
+    sendThreadReply,
+  )
+  .patch(
+    "/threads/replies/:replyId",
+    zValidator("json", updateThreadReplySchema),
+    updateThreadReply,
+  )
+  .delete(
+    "/threads/replies/:replyId",
+    zValidator("param", deleteThreadReplySchema),
+    deleteThreadReply,
+  )
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
@@ -2223,7 +2417,6 @@ const metricServer = Bun.serve({
 
 Logger.info(`listening on port: ${config.port}`)
 Logger.info(`metrics server started on port: ${config.metricsPort}`)
-
 
 const errorEvents: string[] = [
   `uncaughtException`,

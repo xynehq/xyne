@@ -43,7 +43,7 @@ function BuzzChats() {
       if (response.ok) {
         const data = await response.json()
         setCurrentUser({
-          id: data.user.id,
+          id: data.user.id || data.user.externalId,
           name: data.user.name,
           email: data.user.email,
           photoLink: data.user.photoLink,
@@ -109,13 +109,6 @@ function BuzzChats() {
     targetUserId: string,
     callType: CallType = CallType.Video,
   ) => {
-    console.log(
-      "Initiating call with targetUserId:",
-      targetUserId,
-      "callType:",
-      callType,
-    )
-
     if (!targetUserId) {
       toast({
         title: "Error",
@@ -201,10 +194,7 @@ function BuzzChats() {
 
   // Handle user click to open chat
   const handleUserClick = async (user: User) => {
-    if (currentUser && currentUser.email === user.email) {
-      // Don't open chat for self
-      return
-    }
+    // Allow opening chat with yourself
     setSelectedChatUser(user)
 
     // Mark messages as read if there are unread messages from this user
@@ -219,6 +209,52 @@ function BuzzChats() {
       } catch (error) {
         console.error("Failed to mark messages as read:", error)
       }
+    }
+  }
+
+  // Handle switching to a user from mention
+  const handleSwitchToUser = async (userId: string) => {
+    try {
+      // First, check if user is already in conversation list
+      const existingUser = conversationParticipants.find((u) => u.id === userId)
+
+      if (existingUser) {
+        // User exists, just switch to them
+        handleUserClick(existingUser)
+      } else {
+        // Need to fetch user info
+        const response = await api.workspace.users.$get()
+        if (response.ok) {
+          const data = await response.json()
+          const targetUser = data.find((u: User) => u.id === userId)
+
+          if (targetUser) {
+            // Add to conversation participants if not there
+            setConversationParticipants((prev) => {
+              if (!prev.find((p) => p.id === userId)) {
+                return [targetUser, ...prev]
+              }
+              return prev
+            })
+
+            // Switch to this user
+            setSelectedChatUser(targetUser)
+          } else {
+            toast({
+              title: "Error",
+              description: "User not found",
+              variant: "destructive",
+            })
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to switch to user:", error)
+      toast({
+        title: "Error",
+        description: "Failed to open chat with user",
+        variant: "destructive",
+      })
     }
   }
 
@@ -302,30 +338,26 @@ function BuzzChats() {
       {/* Direct Messages Sidebar */}
       <div
         className={cn(
-          "fixed left-[112px] top-0 bottom-0 w-80 bg-white dark:bg-[#1E1E1E] border-r border-[#D7E0E9] dark:border-gray-700 z-10 flex flex-col",
+          "fixed left-[112px] top-0 bottom-0 w-80 bg-white dark:bg-[#1a1a1a] border-r border-[#D7E0E9] dark:border-gray-700 z-10 flex flex-col",
           CLASS_NAMES.HISTORY_MODAL_CONTAINER,
         )}
       >
         {/* Header with Direct Messages title */}
-        <div className="flex items-center justify-between p-4 border-b border-[#D7E0E9] dark:border-gray-700">
-          <h2 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-            Direct Messages
-          </h2>
-          <button
-            onClick={() => setShowNewChatModal(true)}
-            className="p-1.5 hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded"
-            title="New message"
-          >
-            <Plus
-              size={18}
-              stroke="#384049"
-              className="dark:stroke-[#F1F3F4]"
-            />
-          </button>
-        </div>
+        <div className="px-4 pt-5 pb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+              Direct messages
+            </h2>
+            <button
+              onClick={() => setShowNewChatModal(true)}
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+              title="New message"
+            >
+              <Plus size={16} className="text-gray-600 dark:text-gray-400" />
+            </button>
+          </div>
 
-        {/* Search through existing conversations */}
-        <div className="p-3 border-b border-[#D7E0E9] dark:border-gray-700">
+          {/* Search through existing conversations */}
           <div className="relative">
             <Search
               size={14}
@@ -335,7 +367,7 @@ function BuzzChats() {
               placeholder="Search conversations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-8 text-sm"
+              className="pl-9 h-8 text-sm bg-gray-50 dark:bg-[#2A2A2A] border-gray-200 dark:border-gray-700"
             />
           </div>
         </div>
@@ -344,47 +376,49 @@ function BuzzChats() {
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center h-20">
-              <div className="text-sm text-gray-500">Loading...</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                Loading...
+              </div>
             </div>
           ) : filteredParticipants.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 px-4 text-center">
-              <UsersIcon className="h-12 w-12 mb-3 opacity-20 text-gray-400" />
-              <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+              <UsersIcon className="h-12 w-12 mb-3 opacity-30 text-gray-400 dark:text-gray-600" />
+              <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
                 {searchQuery ? "No users found" : "No conversations yet"}
               </div>
               {!searchQuery && (
                 <button
                   onClick={() => setShowNewChatModal(true)}
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
                 >
                   Start a conversation
                 </button>
               )}
             </div>
           ) : (
-            <div className="space-y-0">
+            <div>
               {filteredParticipants.map((user) => (
                 <div
                   key={user.id}
                   onClick={() => handleUserClick(user)}
                   className={cn(
-                    "flex items-center px-4 py-3 transition-colors border-b border-gray-100 dark:border-gray-800",
+                    "flex items-center px-3 py-2 transition-colors cursor-pointer",
                     selectedChatUser?.id === user.id
-                      ? "bg-[#D8DFE680] dark:bg-gray-700"
-                      : "hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer",
+                      ? "bg-blue-50 dark:bg-gray-800"
+                      : "hover:bg-gray-50 dark:hover:bg-gray-800/50",
                   )}
                 >
                   {/* User Avatar with initials */}
-                  <div className="flex-shrink-0 mr-3">
+                  <div className="flex-shrink-0 mr-2.5">
                     {user.photoLink ? (
                       <img
                         src={`/api/v1/proxy/${encodeURIComponent(user.photoLink)}`}
                         alt={user.name}
-                        className="w-10 h-10 rounded-full"
+                        className="w-8 h-8 rounded-full"
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                      <div className="w-8 h-8 rounded-full bg-blue-600 dark:bg-blue-700 flex items-center justify-center">
+                        <span className="text-[11px] font-semibold text-white">
                           {user.name
                             .split(" ")
                             .map((n: string) => n[0])
@@ -400,15 +434,15 @@ function BuzzChats() {
                   <div className="flex-1 min-w-0">
                     <div
                       className={cn(
-                        "text-sm truncate",
+                        "text-[13px] truncate leading-tight",
                         unreadCounts[user.id]
-                          ? "font-bold text-[#384049] dark:text-[#F1F3F4]"
-                          : "font-semibold text-[#384049] dark:text-[#F1F3F4]",
+                          ? "font-semibold text-gray-900 dark:text-white"
+                          : "font-medium text-gray-900 dark:text-gray-100",
                       )}
                     >
                       {user.name}
                     </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                    <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
                       {user.email}
                     </div>
                   </div>
@@ -416,8 +450,8 @@ function BuzzChats() {
                   {/* Unread Badge */}
                   {unreadCounts[user.id] && unreadCounts[user.id] > 0 && (
                     <div className="flex-shrink-0 ml-2">
-                      <div className="min-w-[20px] h-5 px-1.5 flex items-center justify-center bg-blue-600 dark:bg-blue-500 rounded-full">
-                        <span className="text-xs font-semibold text-white">
+                      <div className="min-w-[16px] h-[16px] px-1 flex items-center justify-center bg-blue-600 dark:bg-blue-500 rounded-full">
+                        <span className="text-[9px] font-semibold text-white">
                           {unreadCounts[user.id] > 99
                             ? "99+"
                             : unreadCounts[user.id]}
@@ -439,16 +473,16 @@ function BuzzChats() {
             targetUser={selectedChatUser}
             currentUser={currentUser}
             onInitiateCall={initiateCall}
+            onSwitchToUser={handleSwitchToUser}
           />
         </div>
       ) : (
-        <div className="fixed left-[432px] top-0 right-0 bottom-0 z-10 flex items-center justify-center bg-white dark:bg-[#1E1E1E]">
-          <div className="text-center text-gray-500 dark:text-gray-400">
-            <UsersIcon className="h-16 w-16 mx-auto mb-4 opacity-20" />
-            <h3 className="text-lg font-medium mb-2">
+        <div className="fixed left-[432px] top-0 right-0 bottom-0 z-10 flex flex-col items-center justify-center bg-white dark:bg-[#232323]">
+          <div className="text-center space-y-2">
+            <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-300">
               No conversation selected
             </h3>
-            <p className="text-sm">
+            <p className="text-sm text-gray-500">
               Select a user from the list to start a conversation
             </p>
           </div>

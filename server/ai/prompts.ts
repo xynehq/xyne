@@ -13,12 +13,7 @@ import {
   SlackEntity,
 } from "@xyne/vespa-ts/types"
 import { ContextSysthesisState, XyneTools } from "@/shared/types"
-import {
-  internalTools,
-  slackTools,
-  formatToolsSection,
-  type ToolDefinition,
-} from "@/api/chat/mapper"
+import { formatToolsSection, type ToolDefinition } from "@/api/chat/mapper"
 import type { AgentPromptData } from "./provider"
 import config from "@/config"
 export const askQuestionSelfCleanupPrompt = (
@@ -887,8 +882,8 @@ export const SearchQueryToolContextPrompt = (
     : `${Apps.Gmail}, ${Apps.GoogleDrive}, ${Apps.GoogleCalendar}`
 
   const toolsToUse = {
-    internal: customTools?.internal || internalTools,
-    slack: customTools?.slack || slackTools,
+    internal: customTools?.internal,
+    slack: customTools?.slack,
   }
 
   const updatedInternalTools = { ...toolsToUse.internal }
@@ -970,7 +965,6 @@ export const SearchQueryToolContextPrompt = (
     
     ${formatToolsSection(updatedInternalTools, "Internal Tool Context")}
     
-    ${formatToolsSection(toolsToUse.slack, "Slack Tool Context")}
     ---
     
     Carefully evaluate whether any tool from the tool context should be invoked for the given user query, potentially considering previous conversation history.

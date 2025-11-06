@@ -36,7 +36,7 @@ const AllSources = [
   mailSchema,
   eventSchema,
   mailAttachmentSchema,
-  chatUserSchema,
+  // chatUserSchema, // we mostly should not be searching for chat users
   chatMessageSchema,
   chatContainerSchema,
 ] as VespaSchema[]

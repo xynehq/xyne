@@ -5,7 +5,8 @@ import { z } from "zod"
 import config from "@/config"
 import { directMessages } from "@/db/schema/directMessages"
 import { users } from "@/db/schema/users"
-import { eq, and, or, desc, sql, asc } from "drizzle-orm"
+import { threads, threadReplies } from "@/db/schema/threads"
+import { eq, and, or, desc, sql, asc, inArray } from "drizzle-orm"
 import { getUserByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -17,20 +18,53 @@ const Logger = getLogger(Subsystem.Api).child({ module: "directMessages" })
 // Import Lexical schema
 import { lexicalEditorStateSchema } from "@/db/schema/directMessages"
 
+// Helper functions for cursor-based pagination
+const encodeCursor = (id: number): string => {
+  return Buffer.from(id.toString()).toString("base64")
+}
+
+const decodeCursor = (cursor: string): number | null => {
+  try {
+    const decoded = Buffer.from(cursor, "base64").toString("utf-8")
+    const id = parseInt(decoded, 10)
+    return isNaN(id) ? null : id
+  } catch {
+    return null
+  }
+}
+
 // Schemas
 export const sendMessageSchema = z.object({
   targetUserId: z.string().min(1, "Target user ID is required"),
   messageContent: lexicalEditorStateSchema,
 })
 
+/**
+ * Cursor-based pagination schema for conversations
+ * Following Slack's approach:
+ * - Uses cursor instead of offset for efficient pagination
+ * - Default limit of 100, max 200 (as recommended by Slack)
+ * - Cursor is base64-encoded message ID
+ * - Empty cursor means start from beginning
+ * - Empty nextCursor in response means no more results
+ */
 export const getConversationSchema = z.object({
   targetUserId: z.string().min(1, "Target user ID is required"),
-  limit: z.number().optional().default(50),
-  offset: z.number().optional().default(0),
+  limit: z.coerce.number().min(1).max(200).optional().default(50),
+  cursor: z.string().optional(),
 })
 
 export const markAsReadSchema = z.object({
   targetUserId: z.string().min(1, "Target user ID is required"),
+})
+
+export const editMessageSchema = z.object({
+  messageId: z.number().int().positive("Message ID is required"),
+  messageContent: lexicalEditorStateSchema,
+})
+
+export const deleteMessageSchema = z.object({
+  messageId: z.number().int().positive("Message ID is required"),
 })
 
 // Send a direct message
@@ -68,14 +102,10 @@ export const SendMessageApi = async (c: Context) => {
     }
     const targetUser = targetUsers[0]
 
-    // Check if sender is trying to message themselves
-    if (sender.id === targetUser.id) {
-      throw new HTTPException(400, {
-        message: "Cannot send message to yourself",
-      })
-    }
+    // Allow self-messaging (useful for notes/reminders)
+    // No restriction on messaging yourself
 
-    // Check if both users are in the same workspace
+    // Check if both users are in the same workspace (skip for self-messages)
     if (sender.workspaceId !== targetUser.workspaceId) {
       throw new HTTPException(403, {
         message: "Users must be in the same workspace",
@@ -165,23 +195,21 @@ export const SendMessageApi = async (c: Context) => {
 export const GetConversationApi = async (c: Context) => {
   try {
     const { workspaceId, sub: userEmail } = c.get(JwtPayloadKey)
-    const targetUserId = c.req.query("targetUserId")
-    const limit = parseInt(c.req.query("limit") || "50")
-    const offset = parseInt(c.req.query("offset") || "0")
 
     if (!workspaceId) {
       throw new HTTPException(400, { message: "Workspace ID is required" })
     }
 
-    if (!targetUserId) {
-      throw new HTTPException(400, { message: "Target user ID is required" })
-    }
+    // Get query parameters - already validated by zValidator middleware
+    const targetUserId = c.req.query("targetUserId")!
+    const limitStr = c.req.query("limit")
+    const cursor = c.req.query("cursor")
 
-    // Validate input
+    // Parse and validate with schema (applies defaults)
     const validatedData = getConversationSchema.parse({
       targetUserId,
-      limit,
-      offset,
+      limit: limitStr, // z.coerce.number() will convert this
+      cursor,
     })
 
     // Get current user info
@@ -209,12 +237,42 @@ export const GetConversationApi = async (c: Context) => {
       })
     }
 
+    // Decode cursor to get the message ID to start from
+    let cursorId: number | null = null
+    if (validatedData.cursor) {
+      cursorId = decodeCursor(validatedData.cursor)
+      if (cursorId === null) {
+        throw new HTTPException(400, { message: "invalid_cursor" })
+      }
+    }
+
+    // Fetch limit + 1 to determine if there are more results
+    const fetchLimit = validatedData.limit + 1
+
+    // Build the where clause
+    const conversationCondition = and(
+      or(
+        and(
+          eq(directMessages.sentByUserId, currentUser.id),
+          eq(directMessages.sentToUserId, targetUser.id),
+        ),
+        and(
+          eq(directMessages.sentByUserId, targetUser.id),
+          eq(directMessages.sentToUserId, currentUser.id),
+        ),
+      ),
+      sql`${directMessages.deletedAt} IS NULL`,
+      // Add cursor condition: fetch messages with ID less than cursor (for descending order - older messages)
+      cursorId ? sql`${directMessages.id} < ${cursorId}` : sql`1=1`,
+    )
+
     // Get messages between the two users
     const messages = await db
       .select({
         id: directMessages.id,
         messageContent: directMessages.messageContent,
         isRead: directMessages.isRead,
+        isEdited: directMessages.isEdited,
         createdAt: directMessages.createdAt,
         sentByUserId: directMessages.sentByUserId,
         sentToUserId: directMessages.sentToUserId,
@@ -222,37 +280,102 @@ export const GetConversationApi = async (c: Context) => {
         senderEmail: sql<string>`sender.email`,
         senderPhotoLink: sql<string>`sender."photoLink"`,
         senderExternalId: sql<string>`sender.external_id`,
+        // Thread information
+        threadId: threads.id,
+        replyCount: threads.replyCount,
+        lastReplyAt: threads.lastReplyAt,
       })
       .from(directMessages)
       .innerJoin(
         sql`users AS sender`,
         sql`sender.id = ${directMessages.sentByUserId}`,
       )
-      .where(
+      .leftJoin(
+        threads,
         and(
-          or(
-            and(
-              eq(directMessages.sentByUserId, currentUser.id),
-              eq(directMessages.sentToUserId, targetUser.id),
-            ),
-            and(
-              eq(directMessages.sentByUserId, targetUser.id),
-              eq(directMessages.sentToUserId, currentUser.id),
-            ),
-          ),
-          sql`${directMessages.deletedAt} IS NULL`,
+          eq(threads.parentMessageId, directMessages.id),
+          eq(threads.messageType, "direct"),
         ),
       )
-      .orderBy(asc(directMessages.createdAt))
-      .limit(validatedData.limit)
-      .offset(validatedData.offset)
+      .where(conversationCondition)
+      .orderBy(desc(directMessages.id)) // Order by ID DESC to get newest first, then paginate to older
+      .limit(fetchLimit)
+
+    // Determine if there are more results
+    const hasMore = messages.length > validatedData.limit
+    const messagesToReturn = hasMore ? messages.slice(0, -1) : messages
+
+    // Generate next cursor from the last (oldest) message's ID
+    let nextCursor = ""
+    if (hasMore && messagesToReturn.length > 0) {
+      const oldestMessage = messagesToReturn[messagesToReturn.length - 1]
+      nextCursor = encodeCursor(oldestMessage.id)
+    }
+
+    // Reverse the messages to display oldest to newest (bottom to top in chat UI)
+    const messagesInDisplayOrder = messagesToReturn.reverse()
+
+    // Fetch repliers for messages with threads (limit to 3 most recent unique repliers per thread)
+    const threadIds = messagesInDisplayOrder
+      .filter((msg) => msg.threadId)
+      .map((msg) => msg.threadId!)
+
+    let repliersMap = new Map<
+      number,
+      Array<{ userId: number; name: string; photoLink: string | null }>
+    >()
+
+    if (threadIds.length > 0) {
+      // Get distinct repliers for each thread (limit 3 most recent unique repliers per thread)
+      // We need to get all replies, then group by thread and get unique senders
+      const allReplies = await db
+        .select({
+          threadId: threadReplies.threadId,
+          senderId: threadReplies.senderId,
+          senderName: users.name,
+          senderPhotoLink: users.photoLink,
+          createdAt: threadReplies.createdAt,
+        })
+        .from(threadReplies)
+        .innerJoin(users, eq(users.id, threadReplies.senderId))
+        .where(
+          and(
+            inArray(threadReplies.threadId, threadIds),
+            sql`${threadReplies.deletedAt} IS NULL`,
+          ),
+        )
+        .orderBy(desc(threadReplies.createdAt))
+
+      // Group by thread ID and get up to 3 unique senders per thread
+      for (const reply of allReplies) {
+        if (!repliersMap.has(reply.threadId)) {
+          repliersMap.set(reply.threadId, [])
+        }
+        const threadRepliers = repliersMap.get(reply.threadId)!
+
+        // Check if this sender is already in the list (by userId, not name)
+        const alreadyAdded = threadRepliers.some(
+          (r) => r.userId === reply.senderId,
+        )
+
+        // Add if not already added and we haven't reached the limit of 3
+        if (!alreadyAdded && threadRepliers.length < 3) {
+          threadRepliers.push({
+            userId: reply.senderId,
+            name: reply.senderName,
+            photoLink: reply.senderPhotoLink,
+          })
+        }
+      }
+    }
 
     return c.json({
       success: true,
-      messages: messages.map((msg) => ({
+      messages: messagesInDisplayOrder.map((msg) => ({
         id: msg.id,
         messageContent: msg.messageContent,
         isRead: msg.isRead,
+        isEdited: msg.isEdited,
         createdAt: msg.createdAt,
         sentByUserId: msg.senderExternalId,
         isMine: msg.sentByUserId === currentUser.id,
@@ -262,12 +385,29 @@ export const GetConversationApi = async (c: Context) => {
           email: msg.senderEmail,
           photoLink: msg.senderPhotoLink,
         },
+        // Thread information
+        threadId: msg.threadId,
+        replyCount: msg.replyCount || 0,
+        lastReplyAt: msg.lastReplyAt,
+        repliers: msg.threadId
+          ? (repliersMap.get(msg.threadId) || []).map(
+              ({ userId, name, photoLink }) => ({
+                userId,
+                name,
+                photoLink,
+              }),
+            )
+          : [],
       })),
       targetUser: {
         id: targetUser.externalId,
         name: targetUser.name,
         email: targetUser.email,
         photoLink: targetUser.photoLink,
+      },
+      responseMetadata: {
+        nextCursor, // Empty string when no more results
+        hasMore,
       },
     })
   } catch (error) {
@@ -485,5 +625,193 @@ export const GetConversationParticipantsApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: "Failed to get conversation participants",
     })
+  }
+}
+
+// Edit a direct message
+export const EditMessageApi = async (c: Context) => {
+  try {
+    const { workspaceId, sub: userEmail } = c.get(JwtPayloadKey)
+    const requestBody = await c.req.json()
+    const { messageId, messageContent } = requestBody
+
+    if (!workspaceId) {
+      throw new HTTPException(400, { message: "Workspace ID is required" })
+    }
+
+    // Validate input
+    const validatedData = editMessageSchema.parse({
+      messageId,
+      messageContent,
+    })
+
+    // Get current user info
+    const currentUsers = await getUserByEmail(db, userEmail)
+    if (!currentUsers || currentUsers.length === 0) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
+    const currentUser = currentUsers[0]
+
+    // Get the message and verify ownership
+    const [message] = await db
+      .select()
+      .from(directMessages)
+      .where(eq(directMessages.id, validatedData.messageId))
+      .limit(1)
+
+    if (!message) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+
+    if (message.sentByUserId !== currentUser.id) {
+      throw new HTTPException(403, {
+        message: "You can only edit your own messages",
+      })
+    }
+
+    if (message.deletedAt) {
+      throw new HTTPException(400, { message: "Cannot edit deleted message" })
+    }
+
+    // Update the message
+    const [updatedMessage] = await db
+      .update(directMessages)
+      .set({
+        messageContent: validatedData.messageContent,
+        isEdited: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(directMessages.id, validatedData.messageId))
+      .returning()
+
+    Logger.info({
+      msg: "DM edited",
+      messageId: updatedMessage.id,
+      userId: currentUser.externalId,
+    })
+
+    // Get recipient info for real-time notification
+    const [recipient] = await db
+      .select({
+        id: users.id,
+        externalId: users.externalId,
+      })
+      .from(users)
+      .where(eq(users.id, message.sentToUserId))
+      .limit(1)
+
+    // Send real-time notification to the recipient
+    if (recipient) {
+      realtimeMessagingService.sendDirectMessageEdit(
+        recipient.externalId,
+        updatedMessage.id,
+        updatedMessage.messageContent,
+        updatedMessage.updatedAt,
+      )
+    }
+
+    return c.json({
+      success: true,
+      message: {
+        id: updatedMessage.id,
+        messageContent: updatedMessage.messageContent,
+        isEdited: updatedMessage.isEdited,
+        updatedAt: updatedMessage.updatedAt,
+      },
+    })
+  } catch (error) {
+    Logger.error(error, "Error editing message")
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    throw new HTTPException(500, { message: "Failed to edit message" })
+  }
+}
+
+// Delete a direct message (soft delete)
+export const DeleteMessageApi = async (c: Context) => {
+  try {
+    const { workspaceId, sub: userEmail } = c.get(JwtPayloadKey)
+    const requestBody = await c.req.json()
+    const { messageId } = requestBody
+
+    if (!workspaceId) {
+      throw new HTTPException(400, { message: "Workspace ID is required" })
+    }
+
+    // Validate input
+    const validatedData = deleteMessageSchema.parse({ messageId })
+
+    // Get current user info
+    const currentUsers = await getUserByEmail(db, userEmail)
+    if (!currentUsers || currentUsers.length === 0) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
+    const currentUser = currentUsers[0]
+
+    // Get the message and verify ownership
+    const [message] = await db
+      .select()
+      .from(directMessages)
+      .where(eq(directMessages.id, validatedData.messageId))
+      .limit(1)
+
+    if (!message) {
+      throw new HTTPException(404, { message: "Message not found" })
+    }
+
+    if (message.sentByUserId !== currentUser.id) {
+      throw new HTTPException(403, {
+        message: "You can only delete your own messages",
+      })
+    }
+
+    if (message.deletedAt) {
+      throw new HTTPException(400, { message: "Message already deleted" })
+    }
+
+    // Soft delete the message
+    await db
+      .update(directMessages)
+      .set({
+        deletedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(directMessages.id, validatedData.messageId))
+
+    Logger.info({
+      msg: "DM deleted",
+      messageId: validatedData.messageId,
+      userId: currentUser.externalId,
+    })
+
+    // Get recipient info for real-time notification
+    const [recipient] = await db
+      .select({
+        id: users.id,
+        externalId: users.externalId,
+      })
+      .from(users)
+      .where(eq(users.id, message.sentToUserId))
+      .limit(1)
+
+    // Send real-time notification to the recipient
+    if (recipient) {
+      realtimeMessagingService.sendDirectMessageDelete(
+        recipient.externalId,
+        validatedData.messageId,
+      )
+    }
+
+    return c.json({
+      success: true,
+      message: "Message deleted successfully",
+    })
+  } catch (error) {
+    Logger.error(error, "Error deleting message")
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    throw new HTTPException(500, { message: "Failed to delete message" })
   }
 }

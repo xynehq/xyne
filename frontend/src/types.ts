@@ -92,3 +92,67 @@ export interface LexicalEditorState {
     version?: number
   }
 }
+
+// Channel types
+export enum ChannelType {
+  Public = "public",
+  Private = "private",
+}
+
+export enum ChannelMemberRole {
+  Owner = "owner",
+  Admin = "admin",
+  Member = "member",
+}
+
+export interface Channel {
+  id: number
+  name: string
+  description?: string
+  purpose?: string
+  type: ChannelType
+  isArchived: boolean
+  createdAt: string
+  archivedAt?: string | null
+  memberRole?: ChannelMemberRole
+  joinedAt?: string
+  lastReadAt?: string | null
+  memberCount?: number
+  unreadCount?: number
+}
+
+export interface ChannelMember {
+  id: string
+  name: string
+  email: string
+  photoLink?: string | null
+  role: ChannelMemberRole
+  joinedAt: string
+}
+
+export interface ChannelMessage {
+  id: number
+  channelId: number
+  messageContent: LexicalEditorState
+  isEdited: boolean
+  isPinned: boolean
+  pinnedAt?: string | null
+  createdAt: string
+  deletedAt?: string | null
+  updatedAt?: string
+  sender: {
+    id: string
+    name: string
+    email: string
+    photoLink?: string | null
+  }
+  pinnedBy?: {
+    id: string
+    name: string
+  }
+  // Thread information
+  threadId?: number | null
+  replyCount?: number
+  lastReplyAt?: string | null
+  repliers?: Array<{ userId: string; name: string; photoLink: string | null }>
+}
