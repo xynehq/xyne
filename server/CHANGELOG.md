@@ -1,3 +1,10 @@
+## [3.30.6](https://github.com/xynehq/xyne/compare/v3.30.5...v3.30.6) (2025-11-06)
+
+
+### Bug Fixes
+
+* **healthcheck:** add http:// scheme to Vespa URL in production ([#1199](https://github.com/xynehq/xyne/issues/1199)) ([dcd504a](https://github.com/xynehq/xyne/commit/dcd504a5a7762ac75051484c056b29e83c61ea71))
+
 ## [3.30.5](https://github.com/xynehq/xyne/compare/v3.30.4...v3.30.5) (2025-11-06)
 
 
