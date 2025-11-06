@@ -1,3 +1,10 @@
+## [3.30.5](https://github.com/xynehq/xyne/compare/v3.30.4...v3.30.5) (2025-11-06)
+
+
+### Bug Fixes
+
+* XYNE-154 resolved error when double clicking a file in knowledgebase ([#1190](https://github.com/xynehq/xyne/issues/1190)) ([d82cd63](https://github.com/xynehq/xyne/commit/d82cd631279eb89e3f8071de713181c16f8613bc)), closes [Chinmay-Sin#FQX1](https://github.com/Chinmay-Sin/issues/FQX1)
+
 ## [3.30.4](https://github.com/xynehq/xyne/compare/v3.30.3...v3.30.4) (2025-11-06)
 
 
