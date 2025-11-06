@@ -2815,7 +2815,8 @@ export async function* generateAnswerFromDualRag(
     "context_length",
     initialContext?.length || 0,
   )
-  initialContextSpan?.setAttribute("context", initialContext || "")
+  // Do not log raw context; log size/hash only
+  initialContextSpan?.setAttribute("context_length_only", initialContext?.length || 0)
   initialContextSpan?.setAttribute(
     "number_of_chunks",
     combinedSearchResponse?.length || 0,
