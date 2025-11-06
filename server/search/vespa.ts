@@ -104,7 +104,11 @@ export const searchVespaAgent = async (
   Logger.info(`[searchVespaAgent] options.selectedItem: ${JSON.stringify(options.selectedItem)}`)
   const driveIds = await extractDriveIds(options, email)
   const processedCollectionSelections = await extractCollectionVespaIds(options)
-  Logger.info(`[searchVespaAgent] processedCollectionSelections: ${JSON.stringify(processedCollectionSelections)}`)
+  Logger.debug({ 
+    hasCollectionIds: Boolean(processedCollectionSelections.collectionIds?.length),
+    hasFolderIds: Boolean(processedCollectionSelections.collectionFolderIds?.length),
+    hasFileIds: Boolean(processedCollectionSelections.collectionFileIds?.length)
+  }, '[searchVespaAgent] Processed selections summary')
   return await vespa.searchVespaAgent.bind(vespa)(
     query,
     email,
