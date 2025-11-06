@@ -115,6 +115,7 @@ export const searchVespaAgent = async (
       ...options,
       driveIds,
       processedCollectionSelections,
+      appFilters: options.appFilters, // Explicitly pass appFilters
       recencyDecayRate:
         options.recencyDecayRate || config.defaultRecencyDecayRate,
     },
@@ -144,6 +145,7 @@ export const getItems = async (
       collectionFolderIds?: string[]
       collectionFileIds?: string[]
     }>
+    appFilters?: any
   },
 ) => {
   const driveIds = await extractDriveIds(
@@ -174,6 +176,9 @@ export const fetchAllDataSourceFilesByName =
 export const getDataSourcesByCreator = vespa.getDataSourcesByCreator.bind(vespa)
 export const checkIfDataSourceFileExistsByNameAndId =
   vespa.checkIfDataSourceFileExistsByNameAndId.bind(vespa)
+
+// Slack operations
+export const fetchSlackEntity = vespa.fetchSlackEntity.bind(vespa)
 
 // Utility operations
 export const getTimestamp = vespa.getTimestamp.bind(vespa)

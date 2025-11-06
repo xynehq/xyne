@@ -73,6 +73,7 @@ export const MinimalCitationSchema = z.object({
   page_title: z.string().optional(),
   itemId: z.string().optional(),
   clId: z.string().optional(),
+  parentThreadId: z.string().optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>

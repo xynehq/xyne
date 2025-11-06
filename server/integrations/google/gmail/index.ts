@@ -261,8 +261,23 @@ export const parseMail = async (
   const cc = extractEmailAddresses(getHeader("Cc") ?? "")
   const bcc = extractEmailAddresses(getHeader("Bcc") ?? "")
   const subject = getHeader("Subject") || ""
+  const reference = getHeader("References") || ""
+  const inReplyTo = getHeader("In-Reply-To") || ""
+  let firstReferenceId = ""
+  if (reference) {
+    const match = reference.match(/<([^>]+)>/)
+    if (match && match[1]) {
+      firstReferenceId = match[1]
+    }
+  }
   const mailId =
     getHeader("Message-Id")?.replace(/^<|>$/g, "") || messageId || undefined
+  let parentThreadId = mailId
+  if (reference && firstReferenceId) {
+    parentThreadId = firstReferenceId
+  } else if (inReplyTo) {
+    parentThreadId = inReplyTo.replace(/^<|>$/g, "")
+  }
   let docId = messageId
   let userMap: Record<string, string> = {}
   let mailExist = false
@@ -480,6 +495,7 @@ export const parseMail = async (
     app: Apps.Gmail,
     userMap: userMap,
     entity: MailEntity.Email,
+    parentThreadId: parentThreadId,
     permissions: permissions,
     from: from,
     to: to,
