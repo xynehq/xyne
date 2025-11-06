@@ -177,6 +177,7 @@ interface SearchResult {
   domain?: string
   createdAt?: string
   channelId?: string
+  parentThreadId?: string
 }
 
 function slackTs(ts: any) {
@@ -1730,7 +1731,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         entity: citation.entity,
         type: "citation",
         wholeSheet: wholeSheet,
-        threadId: (citation as any).threadId, // Add threadId if available
+        threadId: (citation as Citation).threadId, // Add threadId if available
+        parentThreadId: (citation as Citation).parentThreadId,
       }
 
       const input = inputRef.current
@@ -1888,6 +1890,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           docId: result.docId,
           mailId: result.mailId,
           threadId: result.threadId, // Add threadId from result
+          parentThreadId: result.parentThreadId,
           app: result.app,
           entity: result.entity,
           type: "global",

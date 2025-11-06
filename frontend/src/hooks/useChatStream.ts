@@ -150,6 +150,7 @@ const parseMessageInput = (htmlString: string) => {
                   ? false
                   : undefined,
             threadId: el.dataset.threadId,
+            parentThreadId: el.dataset.parentThreadId,
           },
         })
       } else if (tagName === "a" && el.getAttribute("href")) {
