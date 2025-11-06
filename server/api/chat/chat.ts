@@ -183,6 +183,7 @@ import {
   isValidEntity,
   collectFollowupContext,
   textToKbItemCitationIndex,
+  type AppFilter,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -1169,6 +1170,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   }> = []
   let channelIds: string[] = []
   let selectedItem: Partial<Record<Apps, string[]>> = {}
+  let agentAppFilters: Partial<Record<Apps, AppFilter[]>> = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1250,11 +1252,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     // parsing for the new type of integration which we are going to save
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
-      const { selectedApps, selectedItems } = parseAppSelections(
+      const { selectedApps, selectedItems, appFilters } = parseAppSelections(
         agentPromptData.appIntegrations,
       )
       // Use selectedApps and selectedItems
       selectedItem = selectedItems
+      agentAppFilters = appFilters || {}
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
 
@@ -1395,7 +1398,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds: channelIds,
         collectionSelections: agentSpecificCollectionSelections,
-        selectedItem: selectedItem, //agentIntegration format (app_integrations format)
+        selectedItem: selectedItem,
+        appFilters: agentAppFilters,
       },
     )
   }
@@ -1460,6 +1464,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             channelIds: channelIds,
             collectionSelections: agentSpecificCollectionSelections,
             selectedItem: selectedItem,
+            appFilters: agentAppFilters,
           },
         )
       }
@@ -1531,6 +1536,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               channelIds: channelIds,
               collectionSelections: agentSpecificCollectionSelections,
               selectedItem: selectedItem,
+              appFilters: agentAppFilters,
             }))
 
         // Expand email threads in the results
@@ -1594,6 +1600,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               channelIds,
               collectionSelections: agentSpecificCollectionSelections,
               selectedItem: selectedItem,
+              appFilters: agentAppFilters,
             },
           )
         }
@@ -1723,6 +1730,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             collectionSelections: agentSpecificCollectionSelections,
             channelIds: channelIds,
             selectedItem: selectedItem,
+            appFilters: agentAppFilters,
           },
         )
       }
@@ -1781,6 +1789,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             collectionSelections: agentSpecificCollectionSelections,
             channelIds: channelIds,
             selectedItem: selectedItem,
+            appFilters: agentAppFilters,
           },
         )
       }
@@ -2431,6 +2440,7 @@ async function* generatePointQueryTimeExpansion(
     collectionFileIds?: string[]
   }> = []
   let selectedItem: Partial<Record<Apps, string[]>> = {}
+  let agentAppFilters: any = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2509,11 +2519,12 @@ async function* generatePointQueryTimeExpansion(
 
     // parsing for the new type of integration which we are going to save
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
-      const { selectedApps, selectedItems } = parseAppSelections(
+      const { selectedApps, selectedItems, appFilters } = parseAppSelections(
         agentPromptData.appIntegrations,
       )
       // Use selectedApps and selectedItems
       selectedItem = selectedItems
+      agentAppFilters = appFilters || {}
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
 
@@ -2710,6 +2721,7 @@ async function* generatePointQueryTimeExpansion(
               dataSourceIds: agentSpecificDataSourceIds,
               channelIds: channelIds,
               selectedItem: selectedItem,
+              appFilters: agentAppFilters,
             },
           ),
           searchVespaAgent(message, email, null, null, agentAppEnums, {
@@ -2722,6 +2734,7 @@ async function* generatePointQueryTimeExpansion(
             channelIds: channelIds,
             selectedItem: selectedItem,
             collectionSelections: agentSpecificCollectionSelections,
+            appFilters: agentAppFilters,
           }),
         ])
         results.root.children = [
@@ -3051,6 +3064,7 @@ async function* generateMetadataQueryAnswer(
     collectionFileIds?: string[]
   }> = []
   let selectedItem = {}
+  let agentAppFilters: any = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -3130,10 +3144,12 @@ async function* generateMetadataQueryAnswer(
       )
     }
     // parsing for the new type of integration which we are going to save
+
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
-      const { selectedApps, selectedItems } = parseAppSelections(
+      const { selectedApps, selectedItems, appFilters } = parseAppSelections(
         agentPromptData.appIntegrations,
       )
+      agentAppFilters = appFilters
       // Use selectedApps and selectedItems
       selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
@@ -3312,6 +3328,7 @@ async function* generateMetadataQueryAnswer(
             channelIds: channelIds,
             selectedItem: selectedItem,
             collectionSelections: agentSpecificCollectionSelections,
+            appFilters: agentAppFilters,
           },
         )
       }
@@ -3481,6 +3498,7 @@ async function* generateMetadataQueryAnswer(
           channelIds,
           selectedItem: selectedItem,
           collectionSelections: agentSpecificCollectionSelections,
+          appFilters: agentAppFilters,
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -3667,6 +3685,7 @@ async function* generateMetadataQueryAnswer(
             channelIds: channelIds,
             selectedItem: selectedItem,
             collectionSelections: agentSpecificCollectionSelections,
+            appFilters: agentAppFilters,
           },
         )
       }
