@@ -123,10 +123,39 @@ export const slackIngestionMetadataSchema = z.object({
   }).optional(),
 })
 
+// Zod schema for Zoho Desk-specific metadata
+export const zohoDeskIngestionMetadataSchema = z.object({
+  // Data sent over WebSocket to frontend for real-time progress updates
+  websocketData: z.object({
+    connectorId: z.string(),
+    progress: z.object({
+      totalTickets: z.number().optional(),          // Total tickets to process
+      processedTickets: z.number().optional(),      // Tickets completed so far
+      ticketsWithAttachments: z.number().optional(), // Tickets with attachments
+      totalAttachments: z.number().optional(),      // Total attachments to process
+      processedAttachments: z.number().optional(),  // Attachments processed so far
+      errors: z.number().optional(),                 // Number of errors encountered
+    }).optional(),
+  }),
+
+  // Internal state data for resuming interrupted ingestions
+  ingestionState: z.object({
+    // Last ticket pagination cursor (for resumability)
+    lastTicketIndex: z.number().optional(),        // Last 'from' parameter value
+    lastModifiedTime: z.string().optional(),       // For incremental sync
+    lastUpdated: z.string(),
+
+    // Original ingestion parameters
+    isInitialSync: z.boolean().optional(),         // True if first-time sync
+    startDate: z.string().optional(),              // Date range start (for initial sync)
+  }).optional(),
+})
+
 // Generic metadata schema that can support different integration types
-// Currently only supports Slack, but extensible for future integrations
+// Supports Slack and Zoho Desk, extensible for future integrations
 export const ingestionMetadataSchema = z.object({
   slack: slackIngestionMetadataSchema.optional(),
+  zohoDesk: zohoDeskIngestionMetadataSchema.optional(),
 })
 
 // Zod schemas for type-safe database operations
@@ -153,3 +182,4 @@ export type IngestionStatus =
   | "failed"
   | "cancelled"
 export type SlackIngestionMetadata = z.infer<typeof slackIngestionMetadataSchema>
+export type ZohoDeskIngestionMetadata = z.infer<typeof zohoDeskIngestionMetadataSchema>

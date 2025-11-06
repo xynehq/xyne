@@ -54,7 +54,7 @@ import {
   type userRoleChange,
 } from "@/types"
 import { z } from "zod"
-import { boss, SaaSQueue } from "@/queue"
+import { boss, SaaSQueue, SyncZohoDeskQueue } from "@/queue"
 import config from "@/config"
 import {
   Apps,
@@ -329,6 +329,16 @@ const getAuthorizationUrl = async (
     }
 
     url = microsoft.createAuthorizationURL(newState, codeVerifier, scopesToUse)
+  } else if (app === Apps.ZohoDesk) {
+    // Zoho Desk OAuth
+    const newState = JSON.stringify({ app, random: state })
+    url = new URL("https://accounts.zoho.com/oauth/v2/auth")
+    url.searchParams.set("scope", "Desk.tickets.ALL,Desk.settings.READ,Desk.basic.READ")
+    url.searchParams.set("client_id", clientId!)
+    url.searchParams.set("response_type", "code")
+    url.searchParams.set("redirect_uri", `${config.host}/callback`)
+    url.searchParams.set("access_type", "offline")
+    url.searchParams.set("state", newState)
   } else {
     throw new Error(`Unsupported app: ${app}`)
   }
@@ -374,8 +384,41 @@ export const StartOAuth = async (c: Context) => {
     )
     throw new NoUserFound({})
   }
-  const provider = await getOAuthProvider(db, userRes[0].id, app)
+
+  // For Zoho Desk, use global config instead of database provider
+  let provider: SelectOAuthProvider
+  if (app === Apps.ZohoDesk) {
+    loggerWithChild({ email: sub }).info("✅ Using global Zoho config for OAuth start")
+    // Use environment config for Zoho Desk OAuth
+    provider = {
+      id: 0, // Dummy value, not used
+      externalId: 'zoho-desk-global',
+      clientId: config.ZohoClientId,
+      clientSecret: config.ZohoClientSecret,
+      oauthScopes: ['Desk.tickets.READ', 'Desk.basic.READ'],
+      workspaceId: userRes[0].workspaceId,
+      workspaceExternalId: userRes[0].workspaceExternalId,
+      userId: userRes[0].id,
+      isGlobal: true,
+      connectorId: 0, // Dummy value, indicates no existing connector
+      app: Apps.ZohoDesk,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+    loggerWithChild({ email: sub }).info("✅ Zoho provider created", {
+      clientId: provider.clientId,
+      scopes: provider.oauthScopes,
+    })
+  } else {
+    // For other apps, get provider from database
+    provider = await getOAuthProvider(db, userRes[0].id, app)
+  }
+
   const url = await getAuthorizationUrl(c, app, provider)
+  loggerWithChild({ email: sub }).info("✅ OAuth URL generated", {
+    app,
+    redirectUri: url.searchParams.get('redirect_uri'),
+  })
   return c.redirect(url.toString())
 }
 
@@ -463,6 +506,109 @@ export const CreateOAuthProvider = async (c: Context) => {
       message: "Connection and Provider created",
     })
   })
+}
+
+/**
+ * Create Zoho Desk connector for admin
+ * Admin provides refresh token, system verifies it and stores credentials
+ */
+export const CreateZohoDeskConnector = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+
+  // @ts-ignore
+  const form = c.req.valid("json")
+  const { refreshToken } = form
+
+  loggerWithChild({ email: sub }).info("Creating Zoho Desk connector")
+
+  try {
+    // Verify refresh token by trying to get access token
+    const { ZohoDeskClient } = await import("@/integrations/zoho/client")
+    const testClient = new ZohoDeskClient({
+      orgId: config.ZohoOrgId,
+      clientId: config.ZohoClientId,
+      clientSecret: config.ZohoClientSecret,
+      refreshToken,
+    })
+
+    // Try to refresh access token to verify credentials
+    try {
+      await testClient.refreshAccessToken()
+      loggerWithChild({ email: sub }).info(
+        "Zoho Desk refresh token verified successfully",
+      )
+    } catch (error) {
+      loggerWithChild({ email: sub }).error(
+        `Invalid Zoho Desk refresh token: ${getErrorMessage(error)}`,
+      )
+      return c.json(
+        {
+          success: false,
+          message: "Invalid refresh token. Please check your credentials.",
+        },
+        400,
+      )
+    }
+
+    return await db.transaction(async (trx) => {
+      // Create connector with verified credentials
+      const credentials = JSON.stringify({
+        orgId: config.ZohoOrgId,
+        clientId: config.ZohoClientId,
+        clientSecret: config.ZohoClientSecret,
+        refreshToken,
+      })
+
+      const connector = await insertConnector(
+        trx,
+        user.workspaceId,
+        user.id,
+        user.workspaceExternalId,
+        `${Apps.ZohoDesk}-${ConnectorType.SaaS}-${AuthType.OAuth}`,
+        ConnectorType.SaaS,
+        AuthType.OAuth,
+        Apps.ZohoDesk,
+        {}, // initial state
+        credentials, // credentials as JSON string
+        null, // metadata
+        null, // oauth credentials
+        null, // department ID (not needed for admin)
+        ConnectorStatus.Connected, // Set as connected since we verified the token
+      )
+
+      if (!connector) {
+        throw new ConnectorNotCreated({})
+      }
+
+      loggerWithChild({ email: sub }).info(
+        `Zoho Desk connector created and verified: ${connector.id}`,
+      )
+
+      return c.json({
+        success: true,
+        message: "Zoho Desk connector created successfully. Refresh token verified.",
+        connectorId: connector.id,
+      })
+    })
+  } catch (error) {
+    loggerWithChild({ email: sub }).error(
+      `Error creating Zoho Desk connector: ${getErrorMessage(error)}`,
+    )
+    return c.json(
+      {
+        success: false,
+        message: `Failed to create Zoho Desk connector: ${getErrorMessage(error)}`,
+      },
+      500,
+    )
+  }
 }
 
 export const AddServiceConnectionMicrosoft = async (c: Context) => {
@@ -2315,6 +2461,54 @@ export const GetKbVespaContent = async (c: Context) => {
     throw new HTTPException(500, {
       message:
         "Unable to fetch document data at this time. Please try again later.",
+    })
+  }
+}
+
+/**
+ * Start Zoho Desk sync manually for admin
+ * Admin-only endpoint to trigger the same sync that runs at 2 AM cron
+ * Syncs ALL Zoho Desk connectors
+ */
+export const StartZohoDeskSyncApi = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+
+  try {
+    loggerWithChild({ email: sub }).info("🚀 ZOHO SYNC: Admin triggered manual sync")
+
+    const userRes = await getUserByEmail(db, sub)
+    if (!userRes || !userRes.length) {
+      loggerWithChild({ email: sub }).error(
+        { sub },
+        "❌ ZOHO SYNC: No user found",
+      )
+      throw new NoUserFound({})
+    }
+
+    loggerWithChild({ email: sub }).info(
+      "✅ ZOHO SYNC: Admin verified, queueing sync job",
+    )
+
+    // Queue the same job that runs at 2 AM - syncs ALL Zoho Desk connectors
+    await boss.send(SyncZohoDeskQueue, {})
+
+    loggerWithChild({ email: sub }).info(
+      "✅ ZOHO SYNC: Job queued successfully",
+      { queue: SyncZohoDeskQueue }
+    )
+
+    return c.json({
+      success: true,
+      message: "Zoho Desk sync started successfully for all connectors.",
+    })
+  } catch (error: any) {
+    loggerWithChild({ email: sub }).error(
+      error,
+      `Error starting Zoho Desk sync: ${getErrorMessage(error)}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: `Failed to start Zoho Desk sync: ${getErrorMessage(error)}`,
     })
   }
 }

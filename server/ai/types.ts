@@ -392,6 +392,19 @@ export const MailParticipantSchema = z.object({
 
 export type MailParticipant = z.infer<typeof MailParticipantSchema>
 
+// Ticket Participant Schema for Zoho Desk filtering
+export const TicketParticipantSchema = z.object({
+  assignee: z.array(z.string()).optional(),
+  contact: z.array(z.string()).optional(),
+  department: z.array(z.string()).optional(),
+  status: z.array(z.string()).optional(),
+  priority: z.array(z.string()).optional(),
+  category: z.array(z.string()).optional(),
+  subject: z.array(z.string()).optional(),
+})
+
+export type TicketParticipant = z.infer<typeof TicketParticipantSchema>
+
 // Zod schemas for filters
 export const FiltersSchema = z.object({
   apps: z.array(z.nativeEnum(Apps)).nullable(),
@@ -402,6 +415,7 @@ export const FiltersSchema = z.object({
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
   offset: z.preprocess((val) => (val == null ? 0 : val), z.number()),
   mailParticipants: MailParticipantSchema.optional(),
+  ticketParticipants: TicketParticipantSchema.optional(),
 })
 
 const TemporalClassifierSchema = z.object({

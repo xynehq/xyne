@@ -1,12 +1,12 @@
 import config from "@/config"
 import { db } from "@/db/client"
-import { getConnector, updateConnector } from "@/db/connector"
+import { getConnector, updateConnector, insertConnector } from "@/db/connector"
 import { getOAuthProvider } from "@/db/oauthProvider"
 import type { SelectConnector } from "@/db/schema"
 import { NoUserFound, OAuthCallbackError } from "@/errors"
 import { boss, SaaSQueue } from "@/queue"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { Apps, ConnectorStatus, type AuthType } from "@/shared/types"
+import { Apps, ConnectorStatus, ConnectorType, AuthType } from "@/shared/types"
 import { type OAuthCredentials, type SaaSOAuthJob, Subsystem } from "@/types"
 import { Google, MicrosoftEntraId } from "arctic"
 import type { Context } from "hono"
@@ -14,8 +14,10 @@ import { getCookie } from "hono/cookie"
 import { HTTPException } from "hono/http-exception"
 import { handleGoogleOAuthIngestion } from "@/integrations/google"
 import { handleMicrosoftOAuthIngestion } from "@/integrations/microsoft"
+import { ZohoDeskClient } from "@/integrations/zoho/client"
+import querystring from "querystring"
 
-const { JwtPayloadKey, JobExpiryHours, slackHost } = config
+const { JwtPayloadKey, JobExpiryHours, slackHost, ZohoClientId, ZohoClientSecret, ZohoOrgId } = config
 import { IsGoogleApp, IsMicrosoftApp } from "@/utils"
 import { getUserByEmail } from "@/db/user"
 import { globalAbortControllers } from "@/integrations/abortManager"
@@ -71,8 +73,27 @@ export const OAuthCallback = async (c: Context) => {
       )
       throw new NoUserFound({})
     }
-    const provider = await getOAuthProvider(db, userRes[0].id, app)
-    const { clientId, clientSecret } = provider
+
+    // For Zoho Desk, use global config; for others, get provider from database
+    let provider: any
+    let clientId: string
+    let clientSecret: string
+
+    if (app === Apps.ZohoDesk) {
+      Logger.info("✅ ZOHO CALLBACK: Using global config for token exchange", { email })
+      clientId = ZohoClientId
+      clientSecret = ZohoClientSecret
+      provider = { connectorId: 0 } // Will create new connector for user (0 = no existing connector)
+      Logger.info("✅ ZOHO CALLBACK: Config loaded", {
+        email,
+        hasClientId: !!clientId,
+        hasClientSecret: !!clientSecret,
+      })
+    } else {
+      provider = await getOAuthProvider(db, userRes[0].id, app)
+      clientId = provider.clientId!
+      clientSecret = provider.clientSecret as string
+    }
     if (app === Apps.Slack) {
       const response = await fetch("https://slack.com/api/oauth.v2.access", {
         method: "POST",
@@ -128,15 +149,139 @@ export const OAuthCallback = async (c: Context) => {
       )
       tokens = oauthTokens as OAuthCredentials
       tokens.data.accessTokenExpiresAt = oauthTokens.accessTokenExpiresAt()
+    } else if (app === Apps.ZohoDesk) {
+      // Zoho OAuth flow
+      Logger.info("✅ ZOHO CALLBACK: Exchanging authorization code for tokens", { email })
+
+      const response = await fetch("https://accounts.zoho.com/oauth/v2/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: clientId!,
+          client_secret: clientSecret as string,
+          code,
+          redirect_uri: `${config.host}/callback`,
+        }).toString(),
+      })
+
+      const tokenData = (await response.json()) as any
+
+      if (!response.ok || tokenData.error) {
+        Logger.error("❌ ZOHO CALLBACK: Token exchange failed", {
+          email,
+          error: tokenData.error,
+          status: response.status,
+        })
+        throw new HTTPException(400, {
+          message: `Could not get Zoho token: ${tokenData.error || "Unknown error"}`,
+        })
+      }
+
+      Logger.info("✅ ZOHO CALLBACK: Tokens received successfully", {
+        email,
+        hasAccessToken: !!tokenData.access_token,
+        hasRefreshToken: !!tokenData.refresh_token,
+        expiresIn: tokenData.expires_in,
+      })
+
+      // Fetch user information including department
+      Logger.info("✅ ZOHO CALLBACK: Fetching user department info", { email })
+      const client = ZohoDeskClient.fromAccessToken(tokenData.access_token, ZohoOrgId)
+      const userInfo = await client.fetchUserInfo()
+
+      Logger.info("✅ ZOHO CALLBACK: User info fetched", {
+        email: userInfo.email,
+        departmentCount: userInfo.associatedDepartmentIds.length,
+        departments: userInfo.associatedDepartmentIds,
+      })
+
+      // Store tokens with user department info
+      tokens = {
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        tokenType: "Bearer",
+        expiresIn: tokenData.expires_in,
+        scope: tokenData.scope || "",
+        // Store department IDs for permissions
+        departmentIds: userInfo.associatedDepartmentIds,
+        departments: userInfo.associatedDepartments,
+      } as any
+
+      Logger.info("✅ ZOHO CALLBACK: Tokens prepared for storage", { email })
     } else {
       throw new HTTPException(400, { message: "Unsupported OAuth app" })
     }
-    const connectorId = provider.connectorId
-    const connector: SelectConnector = await updateConnector(db, connectorId, {
-      subject: email,
-      oauthCredentials: JSON.stringify(tokens),
-      status: ConnectorStatus.Authenticated,
-    })
+
+    let connector: SelectConnector
+
+    // For Zoho Desk user OAuth, create a new connector; for others, update existing
+    if (app === Apps.ZohoDesk && provider.connectorId === 0) {
+      // Create new connector for Zoho Desk user
+      Logger.info("✅ ZOHO CALLBACK: Creating new connector for user", { email })
+
+      const departmentIds = (tokens as any).departmentIds as string[] || []
+      const departmentId = departmentIds.length > 0 ? departmentIds[0] : null
+
+      Logger.info("✅ ZOHO CALLBACK: Department assignment", {
+        email,
+        departmentId,
+        totalDepartments: departmentIds.length,
+      })
+
+      const newConnector = await insertConnector(
+        db,
+        userRes[0].workspaceId,
+        userRes[0].id,
+        userRes[0].workspaceExternalId,
+        `${Apps.ZohoDesk}-${ConnectorType.SaaS}-${AuthType.OAuth}`,
+        ConnectorType.SaaS,
+        AuthType.OAuth,
+        Apps.ZohoDesk,
+        {}, // initial state
+        null, // no credentials needed for OAuth
+        email, // subject
+        JSON.stringify(tokens), // OAuth credentials
+        departmentId, // department ID for permissions
+        ConnectorStatus.Connected,
+      )
+
+      // Cast to SelectConnector with correct app type
+      connector = { ...newConnector, app: Apps.ZohoDesk } as SelectConnector
+
+      Logger.info("✅ ZOHO CALLBACK: Connector created successfully", {
+        connectorId: connector.id,
+        connectorExternalId: connector.externalId,
+        email,
+        departmentId,
+        status: connector.status,
+      })
+    } else {
+      // Update existing connector for other apps
+      const connectorId = provider.connectorId
+
+      const updateData: any = {
+        subject: email,
+        oauthCredentials: JSON.stringify(tokens),
+        status: ConnectorStatus.Authenticated,
+      }
+
+      if (app === Apps.ZohoDesk && (tokens as any).departmentIds) {
+        // Store first department ID (users typically have one department)
+        const departmentIds = (tokens as any).departmentIds as string[]
+        if (departmentIds.length > 0) {
+          updateData.departmentId = departmentIds[0]
+          Logger.info("Stored Zoho department ID in connector", {
+            connectorId,
+            departmentId: departmentIds[0],
+          })
+        }
+      }
+
+      connector = await updateConnector(db, connectorId, updateData)
+    }
     const SaasJobPayload: SaaSOAuthJob = {
       connectorId: connector.id,
       app,

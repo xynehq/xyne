@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { init as initQueue } from "@/queue"
 import config from "@/config"
 import { getLogger, LogMiddleware } from "@/logger"
-import { startGoogleIngestionSchema, Subsystem } from "@/types"
+import { startGoogleIngestionSchema, startZohoDeskSyncSchema, Subsystem } from "@/types"
 import { InitialisationError } from "@/errors"
 import metricRegister from "@/metrics/sharedRegistry"
 import { isSlackEnabled, startSocketMode } from "@/integrations/slack/client"
@@ -15,6 +15,7 @@ import {
   HandlePerUserSlackSync,
   HandlePerUserGoogleWorkSpaceSync,
   StartGoogleIngestionApi,
+  StartZohoDeskSyncApi,
 } from "@/api/admin"
 import {
   GetIngestionStatusApi,
@@ -262,6 +263,14 @@ app.post(
   zValidator("json", startGoogleIngestionSchema),
   StartGoogleIngestionApi,
 )
+
+// Zoho Desk APIs
+app.post(
+  "/zoho-desk/start_sync",
+  zValidator("json", startZohoDeskSyncSchema),
+  StartZohoDeskSyncApi,
+)
+
 // Sync APIs
 app.post("/syncSlackByMail", HandlePerUserSlackSync)
 app.post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
@@ -395,14 +404,15 @@ export const initSyncServer = async () => {
     fileWorkerCount,
   )
 
-  // Initialize the queue system in background - don't await (excluding file processing)
-  initQueue()
-    .then(() => {
-      Logger.info("Queue system initialized successfully")
-    })
-    .catch((error) => {
-      Logger.error(error, "Failed to initialize queue system")
-    })
+  // Initialize the queue system - MUST await to ensure boss.start() completes before accepting requests
+  Logger.info("🔄 Initializing queue system...")
+  try {
+    await initQueue()
+    Logger.info("✅ Queue system initialized successfully")
+  } catch (error) {
+    Logger.error(error, "❌ Failed to initialize queue system")
+    throw error // Fatal error - can't proceed without queue system
+  }
 
   // Connect to main server via WebSocket for progress updates
   // Note: Slack channel ingestion uses database polling, other integrations use WebSocket
@@ -413,7 +423,7 @@ export const initSyncServer = async () => {
     Logger.error(error, "Failed to connect to main server via WebSocket")
   }
 
-  Logger.info("Sync Server initialization completed")
+  Logger.info("✅ Sync Server initialization completed")
 }
 
 // Initialize the sync server
