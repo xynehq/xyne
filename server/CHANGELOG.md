@@ -1,3 +1,10 @@
+## [3.30.3](https://github.com/xynehq/xyne/compare/v3.30.2...v3.30.3) (2025-11-06)
+
+
+### Bug Fixes
+
+* XYNE-223 disabled highlight for pdfs not ingested by ocr ([#1197](https://github.com/xynehq/xyne/issues/1197)) ([2c91e32](https://github.com/xynehq/xyne/commit/2c91e32f9f4f197ab07d9be4b7673ceccf34a7c3))
+
 ## [3.30.2](https://github.com/xynehq/xyne/compare/v3.30.1...v3.30.2) (2025-11-06)
 
 
