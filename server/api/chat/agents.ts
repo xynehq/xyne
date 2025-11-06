@@ -3932,6 +3932,7 @@ export const AgentMessageApi = async (c: Context) => {
                 }),
               })
             }
+            //Dual RAG PATH (RAG from both Attachments and app integrations)
             if (
               (fileIds && fileIds?.length > 0 || imageAttachmentFileIds &&
                 imageAttachmentFileIds?.length > 0) &&
@@ -3989,6 +3990,7 @@ export const AgentMessageApi = async (c: Context) => {
               // Only proceed if we have valid app integrations
               if (agentAppEnums.length > 0) {
                 // PATH 3: DUAL RAG (NEW!)
+                // TODO: there is some repeated code between path 2 and path 3, we can create a helper function for the common parts
                 Logger.info(
                   `[Path3] User has selected context AND agent has ${agentAppEnums.length} KB integrations, using Dual RAG`
                 )
@@ -4127,7 +4129,7 @@ export const AgentMessageApi = async (c: Context) => {
                   "final_answer",
                   processMessage(answer, citationMap),
                 )
-                answerSpan.setAttribute("actual_answer", answer)
+                answerSpan.setAttribute("answer_preview", answer.substring(0, 100)) // First 100 chars only
                 answerSpan.setAttribute("final_answer_length", answer.length)
                 answerSpan.end()
                 ragSpan.end()
@@ -4226,6 +4228,7 @@ export const AgentMessageApi = async (c: Context) => {
                 rootSpan.end()
               }
             }
+            // RAG FROM USER SELECTED CONTEXT ONLY
             else if (
               (fileIds && fileIds?.length > 0) ||
               (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
