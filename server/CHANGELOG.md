@@ -1,3 +1,10 @@
+## [3.30.4](https://github.com/xynehq/xyne/compare/v3.30.3...v3.30.4) (2025-11-06)
+
+
+### Bug Fixes
+
+* update the vespa version ([#1200](https://github.com/xynehq/xyne/issues/1200)) ([2a3f970](https://github.com/xynehq/xyne/commit/2a3f9702fd44efaaaa00f5f463cd725b785a3181))
+
 ## [3.30.3](https://github.com/xynehq/xyne/compare/v3.30.2...v3.30.3) (2025-11-06)
 
 
