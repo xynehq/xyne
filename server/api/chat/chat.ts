@@ -2733,7 +2733,7 @@ export async function* generateAnswerFromDualRag(
       v.fields.sddocname === chatContainerSchema
     ) {
       const channelId = (v.fields as any).docId
-      console.log(`Processing chat container with docId: ${channelId}`)
+      loggerWithChild({ email: email }).info(`Processing chat container with docId: ${channelId}`)
 
       if (channelId) {
         const searchResults = await searchSlackInVespa(messageText, email, {
