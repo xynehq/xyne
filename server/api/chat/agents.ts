@@ -88,6 +88,7 @@ import {
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import { insertChatTrace } from "@/db/chatTrace"
+import type { AttachmentMetadata, SelectPublicAgent } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
@@ -335,7 +336,7 @@ const createMockAgentFromFormData = (
 
 // Check if agent has no app integrations and should use the no-integrations flow
 export const checkAgentWithNoIntegrations = (
-  agentForDb: SelectAgent | null,
+  agentForDb: SelectAgent | SelectPublicAgent | null,
 ): boolean => {
   if (!agentForDb?.appIntegrations) return true
 
