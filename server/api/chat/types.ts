@@ -4,6 +4,7 @@ import { Apps, type Entity } from "@xyne/vespa-ts/types"
 import type { Span } from "@/tracer"
 import { z } from "zod"
 import { entitySchema } from "@/shared/types"
+import type { ConverseResponse } from "@/ai/types"
 
 const {
   JwtPayloadKey,
@@ -73,6 +74,7 @@ export const MinimalCitationSchema = z.object({
   page_title: z.string().optional(),
   itemId: z.string().optional(),
   clId: z.string().optional(),
+  parentThreadId: z.string().optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>
@@ -83,6 +85,11 @@ export interface ImageCitation {
   imageData: string
   item: Citation
   mimeType?: string
+}
+
+export type ConverseResponseWithCitations = ConverseResponse & {
+  citation?: { index: number; item: any }
+  imageCitation?: ImageCitation
 }
 
 export interface MinimalAgentFragment {

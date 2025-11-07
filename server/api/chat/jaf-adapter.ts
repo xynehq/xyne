@@ -1,9 +1,7 @@
 import { z, type ZodRawShape, type ZodType } from "zod"
-import type { JSONSchema7 } from "json-schema"
 import type { Tool } from "@xynehq/jaf"
 import { ToolResponse } from "@xynehq/jaf"
 import type { MinimalAgentFragment } from "./types"
-import { agentTools } from "./tools"
 import { answerContextMapFromFragments } from "@/ai/context"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -17,96 +15,10 @@ export type JAFAdapterCtx = {
   userMessage: string
 }
 
-type AgentToolParameter = {
-  type: string
-  description: string
-  required: boolean
-}
-
 type ToolSchemaParameters = Tool<unknown, JAFAdapterCtx>["schema"]["parameters"]
 
 const toToolSchemaParameters = (schema: ZodType): ToolSchemaParameters =>
   schema as unknown as ToolSchemaParameters
-
-function paramsToZod(
-  parameters: Record<string, AgentToolParameter>,
-): ToolSchemaParameters {
-  if (!parameters || Object.keys(parameters).length === 0) {
-    return toToolSchemaParameters(z.looseObject({}))
-  }
-
-  const shape: Record<string, ZodType> = {}
-  const jsonProperties: NonNullable<JSONSchema7["properties"]> = {}
-  const requiredKeys: string[] = []
-
-  for (const [key, spec] of Object.entries(parameters)) {
-    const normalizedType = (spec.type || "string").toLowerCase()
-
-    let schema: ZodType
-    let jsonSchema: JSONSchema7
-
-    switch (normalizedType) {
-      case "string": {
-        schema = z.string()
-        jsonSchema = { type: "string" }
-        break
-      }
-      case "number": {
-        schema = z.number()
-        jsonSchema = { type: "number" }
-        break
-      }
-      case "boolean": {
-        schema = z.boolean()
-        jsonSchema = { type: "boolean" }
-        break
-      }
-      case "array": {
-        schema = z.array(z.unknown())
-        jsonSchema = { type: "array", items: {} }
-        break
-      }
-      case "object": {
-        schema = z.looseObject({})
-        jsonSchema = { type: "object" }
-        break
-      }
-      default: {
-        schema = z.unknown()
-        jsonSchema = {}
-        break
-      }
-    }
-
-    const described = schema.describe(spec.description || "")
-    shape[key] = spec.required ? described : described.optional()
-
-    if (spec.description) {
-      jsonSchema.description = spec.description
-    }
-    jsonProperties[key] = jsonSchema
-    if (spec.required) {
-      requiredKeys.push(key)
-    }
-  }
-
-  const looseObject = z.looseObject(
-    shape as unknown as ZodRawShape,
-  ) as unknown as ZodObjectWithRawSchema
-
-  const jsonSchema: JSONSchema7 = {
-    type: "object",
-    properties: jsonProperties,
-    additionalProperties: false,
-  }
-  if (requiredKeys.length > 0) {
-    jsonSchema.required = requiredKeys
-  }
-
-  looseObject.__xyne_raw_json_schema = jsonSchema
-
-  return toToolSchemaParameters(looseObject)
-}
 
 type ZodObjectWithRawSchema = ZodType & {
   __xyne_raw_json_schema?: unknown
@@ -131,54 +43,6 @@ function mcpToolSchemaStringToZodObject(
     )
     return toToolSchemaParameters(z.looseObject({}))
   }
-}
-
-export function buildInternalJAFTools(): Tool<unknown, JAFAdapterCtx>[] {
-  const tools: Tool<unknown, JAFAdapterCtx>[] = []
-  for (const [name, at] of Object.entries(agentTools)) {
-    // Skip the fallbackTool as it's no longer needed
-    if (name === "fall_back" || name === "get_user_info") {
-      continue
-    }
-
-    tools.push({
-      schema: {
-        name,
-        description: at.description,
-        parameters: paramsToZod(at.parameters || {}),
-      },
-      async execute(args, context) {
-        try {
-          // Delegate to existing agent tool implementation
-          const res = await at.execute(
-            args,
-            undefined,
-            context.email,
-            context.userCtx,
-            context.agentPrompt,
-            context.userMessage,
-          )
-          // Normalize to JAF ToolResult while keeping summary string as data
-          let summary = res?.result ?? ""
-          const contexts = res?.contexts ?? []
-          if (contexts.length) {
-            summary += "\n" + contexts.map((v) => v.content).join("\n")
-          }
-          const fullContext = contexts.map((v) => v.content).join("\n")
-          return ToolResponse.success(fullContext, {
-            toolName: name,
-            contexts,
-          })
-        } catch (err) {
-          return ToolResponse.error(
-            "EXECUTION_FAILED",
-            `Internal tool ${name} failed: ${err instanceof Error ? err.message : String(err)}`,
-          )
-        }
-      },
-    })
-  }
-  return tools
 }
 
 export type MCPToolClient = {

@@ -1,3 +1,80 @@
+## [3.30.9](https://github.com/xynehq/xyne/compare/v3.30.8...v3.30.9) (2025-11-07)
+
+
+### Bug Fixes
+
+* errors in slack bot ([#1083](https://github.com/xynehq/xyne/issues/1083)) ([323df91](https://github.com/xynehq/xyne/commit/323df917da1ee10e193e755448340bafc1f4c018))
+
+## [3.30.8](https://github.com/xynehq/xyne/compare/v3.30.7...v3.30.8) (2025-11-07)
+
+
+### Bug Fixes
+
+* personal one drive file permission sync ([#1184](https://github.com/xynehq/xyne/issues/1184)) ([1ad33fe](https://github.com/xynehq/xyne/commit/1ad33fec2ab95301a3c89546303b477d3e8c5432))
+
+## [3.30.7](https://github.com/xynehq/xyne/compare/v3.30.6...v3.30.7) (2025-11-06)
+
+
+### Bug Fixes
+
+* XYNE-288 added frontend version in UI ([#1195](https://github.com/xynehq/xyne/issues/1195)) ([486f810](https://github.com/xynehq/xyne/commit/486f8109e646a5e85097f527b85073372212f973)), closes [Chinmay-Sin#FQX1](https://github.com/Chinmay-Sin/issues/FQX1)
+
+## [3.30.6](https://github.com/xynehq/xyne/compare/v3.30.5...v3.30.6) (2025-11-06)
+
+
+### Bug Fixes
+
+* **healthcheck:** add http:// scheme to Vespa URL in production ([#1199](https://github.com/xynehq/xyne/issues/1199)) ([dcd504a](https://github.com/xynehq/xyne/commit/dcd504a5a7762ac75051484c056b29e83c61ea71))
+
+## [3.30.5](https://github.com/xynehq/xyne/compare/v3.30.4...v3.30.5) (2025-11-06)
+
+
+### Bug Fixes
+
+* XYNE-154 resolved error when double clicking a file in knowledgebase ([#1190](https://github.com/xynehq/xyne/issues/1190)) ([d82cd63](https://github.com/xynehq/xyne/commit/d82cd631279eb89e3f8071de713181c16f8613bc)), closes [Chinmay-Sin#FQX1](https://github.com/Chinmay-Sin/issues/FQX1)
+
+## [3.30.4](https://github.com/xynehq/xyne/compare/v3.30.3...v3.30.4) (2025-11-06)
+
+
+### Bug Fixes
+
+* update the vespa version ([#1200](https://github.com/xynehq/xyne/issues/1200)) ([2a3f970](https://github.com/xynehq/xyne/commit/2a3f9702fd44efaaaa00f5f463cd725b785a3181))
+
+## [3.30.3](https://github.com/xynehq/xyne/compare/v3.30.2...v3.30.3) (2025-11-06)
+
+
+### Bug Fixes
+
+* XYNE-223 disabled highlight for pdfs not ingested by ocr ([#1197](https://github.com/xynehq/xyne/issues/1197)) ([2c91e32](https://github.com/xynehq/xyne/commit/2c91e32f9f4f197ab07d9be4b7673ceccf34a7c3))
+
+## [3.30.2](https://github.com/xynehq/xyne/compare/v3.30.1...v3.30.2) (2025-11-06)
+
+
+### Bug Fixes
+
+* **mailThreadId:** Add the parent mail message-Id as parentThreadId ([#1188](https://github.com/xynehq/xyne/issues/1188)) ([6c17a6a](https://github.com/xynehq/xyne/commit/6c17a6a28341831aeaf50c957fbf985efdfa1d45))
+
+## [3.30.1](https://github.com/xynehq/xyne/compare/v3.30.0...v3.30.1) (2025-11-05)
+
+
+### Bug Fixes
+
+* **agents:** revamp app integration and add filters ([#1126](https://github.com/xynehq/xyne/issues/1126)) ([d35b2cb](https://github.com/xynehq/xyne/commit/d35b2cbc6fb797126fa977006b8e75917c278736))
+
+# [3.30.0](https://github.com/xynehq/xyne/compare/v3.29.4...v3.30.0) (2025-11-05)
+
+
+### Features
+
+* **agentic:** Added jaf native tool ([#1176](https://github.com/xynehq/xyne/issues/1176)) ([af9014f](https://github.com/xynehq/xyne/commit/af9014f406ba1d92f60cc8e07de04bdba2f3c537))
+
+## [3.29.4](https://github.com/xynehq/xyne/compare/v3.29.3...v3.29.4) (2025-11-04)
+
+
+### Bug Fixes
+
+* **driveFileApi:** Add the option to list shared drive files ([#1186](https://github.com/xynehq/xyne/issues/1186)) ([8f7ab28](https://github.com/xynehq/xyne/commit/8f7ab28d719dbc0f89d8d8ef3660a0c9408a6c42))
+
 ## [3.29.3](https://github.com/xynehq/xyne/compare/v3.29.2...v3.29.3) (2025-11-04)
 
 

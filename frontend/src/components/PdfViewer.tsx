@@ -26,7 +26,7 @@ const PageWrapper = memo(
     error,
     onRenderSuccess,
     onRenderTextLayerSuccess,
-    onRenderAnnotationLayerSuccess
+    onRenderAnnotationLayerSuccess,
   }: {
     pageNumber: number
     scale: number
@@ -54,7 +54,6 @@ const PageWrapper = memo(
   (prev, next) =>
     prev.pageNumber === next.pageNumber && prev.scale === next.scale,
 )
-
 
 interface PdfViewerProps {
   /** Either a URL or File object */
@@ -109,14 +108,22 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   // Height map: precomputed heights for all pages at current scale
   const [heightMap, setHeightMap] = useState<number[]>([])
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
-  
+
   // Page readiness tracking for all layers using ref for real-time access
-  const pageReadyRef = useRef<Record<number, {canvas?: boolean; text?: boolean; anno?: boolean}>>({})
-  
+  const pageReadyRef = useRef<
+    Record<number, { canvas?: boolean; text?: boolean; anno?: boolean }>
+  >({})
+
+  // Track component mount status to prevent operations on unmounted components
+  const isMountedRef = useRef<boolean>(true)
+
+  // Track active async operations to cancel them on unmount
+  const activeOperationsRef = useRef<Set<() => void>>(new Set())
+
   // Helper functions for page readiness tracking
   const mark = (page: number, key: "canvas" | "text" | "anno") => {
     const current = pageReadyRef.current[page] ?? {}
-    pageReadyRef.current[page] = {...current, [key]: true}
+    pageReadyRef.current[page] = { ...current, [key]: true }
   }
 
   const isFullyReady = (page: number) => {
@@ -124,7 +131,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     const ready = !!state?.canvas && !!state?.text && !!state?.anno
     return ready
   }
-  
+
   // Create a simple, readable key for the Document component
   const documentKey = useMemo(() => {
     let baseKey = ""
@@ -157,20 +164,35 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   // Precompute height map from PDF metadata (two-pass layout)
   const computeHeightMap = useCallback(
     async (doc: PDFDocumentProxy, currentScale: number) => {
-      if (!doc) return []
+      if (!doc || !isMountedRef.current) return []
+
       const pages: number = doc.numPages ?? 0
-      const heights: number[] = await Promise.all(
-        Array.from({ length: pages }, async (_, idx) => {
-          try {
-            const page = await doc.getPage(idx + 1)
-            const vp = page.getViewport({ scale: currentScale })
-            return vp.height
-          } catch (error) {
-            console.warn(`Failed to get page ${idx + 1} dimensions:`, error)
-            return Math.round(792 * currentScale)
+      const heights: number[] = []
+
+      // Process pages sequentially to avoid overwhelming the worker
+      for (let idx = 0; idx < pages; idx++) {
+        if (!isMountedRef.current) break
+
+        try {
+          const page = await doc.getPage(idx + 1)
+          if (!isMountedRef.current) {
+            // Clean up the page if component unmounted
+            page.cleanup?.()
+            break
           }
-        }),
-      )
+          const vp = page.getViewport({ scale: currentScale })
+          heights[idx] = vp.height
+          // Clean up the page after getting dimensions
+          page.cleanup?.()
+        } catch (error) {
+          console.warn(`Failed to get page ${idx + 1} dimensions:`, error)
+          // Only set fallback height if still mounted
+          if (isMountedRef.current) {
+            heights[idx] = Math.round(792 * currentScale)
+          }
+        }
+      }
+
       return heights
     },
     [],
@@ -250,6 +272,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   const onDocumentLoadSuccess = useCallback(
     async (pdfDoc: PDFDocumentProxy) => {
+      if (!isMountedRef.current) return
+
       const { numPages } = pdfDoc
       setNumPages(numPages)
       setPdfDocument(pdfDoc)
@@ -258,10 +282,22 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       // Get first page to calculate optimal scale BEFORE computing height map
       let finalScale = scale
       try {
+        if (!isMountedRef.current) return
+
         const firstPage = await pdfDoc.getPage(1)
+        if (!isMountedRef.current) {
+          firstPage.cleanup?.()
+          return
+        }
+
         const vp = firstPage.getViewport({ scale: 1 })
         const width = vp.width
         const height = vp.height
+
+        // Clean up the page after getting dimensions
+        firstPage.cleanup?.()
+
+        if (!isMountedRef.current) return
 
         // Set page dimensions for window resize calculations
         setPageDimensions({ width, height })
@@ -271,11 +307,22 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         finalScale = optimalScale
       } catch (error) {
         console.warn("Failed to get first page for scale calculation:", error)
+        // Don't return early on error - continue with default scale
       }
 
+      if (!isMountedRef.current) return
+
       // Compute height map with the final scale
-      const heights = await computeHeightMap(pdfDoc, finalScale)
-      setHeightMap(heights)
+      try {
+        const heights = await computeHeightMap(pdfDoc, finalScale)
+        if (!isMountedRef.current) return
+        setHeightMap(heights)
+      } catch (error) {
+        console.warn("Failed to compute height map:", error)
+        // Continue with empty height map
+      }
+
+      if (!isMountedRef.current) return
 
       // Only set loading to false after height map is computed
       setLoading(false)
@@ -286,7 +333,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       if (displayMode === "continuous" && validInitialPage > 1) {
         // Wait for height map to be set before scrolling
         setTimeout(() => {
-          rowVirtualizer.scrollToIndex(validInitialPage - 1, { align: "start" })
+          if (isMountedRef.current) {
+            rowVirtualizer.scrollToIndex(validInitialPage - 1, {
+              align: "start",
+            })
+          }
         }, 0)
       }
     },
@@ -301,6 +352,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   )
 
   function onDocumentLoadError(error: Error) {
+    if (!isMountedRef.current) return
+
     console.error("PDF load error:", error)
     const srcMeta =
       typeof source === "string"
@@ -323,13 +376,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       source: srcMeta,
     })
 
-    // Handle specific ArrayBuffer errors
+    // Handle specific errors
     if (
       error.message.includes("ArrayBuffer") ||
       error.message.includes("detached")
     ) {
       setError(
         "PDF data error: The document may be corrupted or in use by another process. Please try refreshing the page.",
+      )
+    } else if (
+      error.message.includes("sendWithPromise") ||
+      error.message.includes("Worker") ||
+      error.message.includes("terminated")
+    ) {
+      setError(
+        "PDF worker error: The PDF viewer encountered an internal error. Please try again.",
       )
     } else {
       setError(error.message)
@@ -359,7 +420,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   // Recompute height map when scale changes (synchronous)
   useEffect(() => {
-    if (displayMode === "continuous" && pdfDocument && numPages) {
+    if (
+      displayMode === "continuous" &&
+      pdfDocument &&
+      numPages &&
+      isMountedRef.current
+    ) {
       // Skip recomputation during initial load - it's already computed in onDocumentLoadSuccess
       if (isInitialLoadRef.current) {
         isInitialLoadRef.current = false
@@ -367,8 +433,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       }
 
       const recomputeHeights = async () => {
-        const newHeights = await computeHeightMap(pdfDocument, scale)
-        setHeightMap(newHeights)
+        try {
+          const newHeights = await computeHeightMap(pdfDocument, scale)
+          if (isMountedRef.current) {
+            setHeightMap(newHeights)
+          }
+        } catch (error) {
+          console.warn("Failed to recompute height map:", error)
+        }
       }
       recomputeHeights()
     }
@@ -417,20 +489,24 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   useEffect(() => {
     if (documentOperationsRef?.current) {
       documentOperationsRef.current.goToPage = async (pageIndex?: number) => {
-        if (pageIndex === undefined || pageIndex < 0) {
+        if (!isMountedRef.current || pageIndex === undefined || pageIndex < 0) {
           return
         }
         // Convert 0-based index to 1-based page number
         const pageNumber = pageIndex + 1
-        if(currentVisiblePage !== pageNumber) {
+        if (currentVisiblePage !== pageNumber) {
           goToPage(pageNumber)
         }
-        
+
         // Wait for the specific page to be ready
         let attempts = 0
         const maxAttempts = 100 // 5 seconds max wait
-        while (!isFullyReady(pageNumber) && attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 50))
+        while (
+          isMountedRef.current &&
+          !isFullyReady(pageNumber) &&
+          attempts < maxAttempts
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
           attempts++
         }
       }
@@ -512,7 +588,36 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     setHeightMap([])
     setPdfDocument(null)
     pageReadyRef.current = {} // Reset page readiness tracking
+    isInitialLoadRef.current = true // Reset initial load flag
   }, [documentKey, initialPage])
+
+  // Component lifecycle management
+  useEffect(() => {
+    isMountedRef.current = true
+
+    return () => {
+      isMountedRef.current = false
+
+      // Cancel any active operations
+      activeOperationsRef.current.forEach((cancel) => {
+        try {
+          cancel()
+        } catch (error) {
+          console.warn("Error canceling operation:", error)
+        }
+      })
+      activeOperationsRef.current.clear()
+
+      // Clean up PDF document if it exists
+      if (pdfDocument) {
+        try {
+          pdfDocument.destroy?.()
+        } catch (error) {
+          console.warn("Error destroying PDF document:", error)
+        }
+      }
+    }
+  }, [pdfDocument])
 
   return (
     <div

@@ -88,6 +88,7 @@ import {
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import { insertChatTrace } from "@/db/chatTrace"
+import type { AttachmentMetadata, SelectPublicAgent } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
@@ -127,7 +128,6 @@ import {
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
-import { agentTools } from "./tools"
 // JAF integration imports
 import {
   runStream,
@@ -148,7 +148,6 @@ import {
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
 import {
-  buildInternalJAFTools,
   buildMCPJAFTools,
   type FinalToolsList as JAFinalToolsList,
   type JAFAdapterCtx,
@@ -161,6 +160,9 @@ import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
 import { applyFollowUpContext } from "@/utils/parseAttachment"
 import { expandSheetIds } from "@/search/utils"
+import { googleTools, searchGlobalTool } from "@/api/chat/tools/index"
+import { fallbackTool } from "./tools/global"
+import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -331,7 +333,7 @@ const createMockAgentFromFormData = (
 
 // Check if agent has no app integrations and should use the no-integrations flow
 export const checkAgentWithNoIntegrations = (
-  agentForDb: SelectAgent | null,
+  agentForDb: SelectAgent | SelectPublicAgent | null,
 ): boolean => {
   if (!agentForDb?.appIntegrations) return true
 
@@ -1737,12 +1739,16 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentPrompt: agentPromptForLLM,
           userMessage: message,
         }
-        const internalJAFTools = buildInternalJAFTools()
+        const internalTools = [
+          ...googleTools,
+          searchGlobalTool,
+          getSlackRelatedMessagesTool,
+        ]
         const mcpJAFTools = buildMCPJAFTools(finalToolsList)
-        const allJAFTools = [...internalJAFTools, ...mcpJAFTools]
+        const allJAFTools = [...internalTools, ...mcpJAFTools]
         toolsCompositionSpan.setAttribute(
           "internal_tools_count",
-          internalJAFTools.length,
+          internalTools.length,
         )
         toolsCompositionSpan.setAttribute("mcp_tools_count", mcpJAFTools.length)
         toolsCompositionSpan.setAttribute(
@@ -1753,7 +1759,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         // Build dynamic instructions that include tools + current context fragments
         const agentInstructions = () => {
-          const toolOverview = buildToolsOverview(allJAFTools)
+          const toolOverview = buildToolsOverview(internalTools)
           const contextSection = buildContextSection(gatheredFragments)
           const agentSection = agentPromptForLLM
             ? `\n\nAgent Constraints:\n${agentPromptForLLM}`
@@ -2444,13 +2450,14 @@ export const MessageWithToolsApi = async (c: Context) => {
                               `Tool Execution ${index + 1}: ${getTextContent(msg.content)}`,
                           )
                           .join("\n")
-                        console.log("Tool log:", toolLog)
                         // Prepare fallback tool parameters with context from runState.messages
                         const fallbackParams = {
                           originalQuery: message,
                           agentScratchpad: agentScratchpad,
                           toolLog: toolLog,
-                          gatheredFragments: gatheredFragments,
+                          gatheredFragments: gatheredFragments
+                            .map((v) => v.content)
+                            .join("\n"),
                         }
 
                          data = JSON.stringify({
@@ -2469,16 +2476,10 @@ export const MessageWithToolsApi = async (c: Context) => {
                         })
 
                         // Execute fallback tool directly
-                        const fallbackResponse = await agentTools[
-                          "fall_back"
-                        ].execute(
+                        const fallbackResponse = (await fallbackTool.execute(
                           fallbackParams,
-                          streamSpan.startSpan("fallback_search_execution"),
-                          email,
-                          ctx,
-                          agentPromptForLLM,
-                          message,
-                        )
+                          baseCtx,
+                        )) as ToolResult<{ fallbackReasoning: string }>
 
                         data = JSON.stringify({
                             text: `Fallback tool execution completed`,
@@ -2487,10 +2488,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                               toolName: "fall_back",
                               status: "completed",
                               resultSummary:
-                                fallbackResponse.result ||
+                                fallbackResponse.data ||
                                 "Fallback response generated",
-                              itemsFound:
-                                fallbackResponse.contexts?.length || 0,
+                              itemsFound: gatheredFragments.length || 0,
                               stepSummary: `Generated fallback response`,
                             },
                           })
@@ -2500,15 +2500,13 @@ export const MessageWithToolsApi = async (c: Context) => {
                           data: data,
                         })
 
+                        const fallbackReasoning = fallbackResponse.metadata
+                          ? fallbackResponse.metadata["fallbackReasoning"]
+                          : ""
                         // Stream the fallback response if available
-                        if (
-                          fallbackResponse.fallbackReasoning ||
-                          fallbackResponse.result
-                        ) {
+                        if (fallbackReasoning || fallbackResponse.data) {
                           const fallbackAnswer =
-                            fallbackResponse.fallbackReasoning ||
-                            fallbackResponse.result ||
-                            ""
+                            fallbackReasoning || fallbackResponse.data || ""
 
                           await stream.writeSSE({
                             event: ChatSSEvents.ResponseUpdate,
@@ -2516,26 +2514,26 @@ export const MessageWithToolsApi = async (c: Context) => {
                           })
 
                           // Handle any contexts returned by fallback tool
-                          if (
-                            fallbackResponse.contexts &&
-                            Array.isArray(fallbackResponse.contexts)
-                          ) {
-                            fallbackResponse.contexts.forEach((context) => {
-                              citations.push(context.source)
-                              citationMap[citations.length] =
-                                citations.length - 1
-                            })
+                          // if (
+                          //   fallbackResponse.contexts &&
+                          //   Array.isArray(fallbackResponse.contexts)
+                          // ) {
+                          //   fallbackResponse.contexts.forEach((context) => {
+                          //     citations.push(context.source)
+                          //     citationMap[citations.length] =
+                          //       citations.length - 1
+                          //   })
 
-                            if (citations.length > 0) {
-                              await stream.writeSSE({
-                                event: ChatSSEvents.CitationsUpdate,
-                                data: JSON.stringify({
-                                  contextChunks: citations,
-                                  citationMap,
-                                }),
-                              })
-                            }
-                          }
+                          //   if (citations.length > 0) {
+                          //     await stream.writeSSE({
+                          //       event: ChatSSEvents.CitationsUpdate,
+                          //       data: JSON.stringify({
+                          //         contextChunks: citations,
+                          //         citationMap,
+                          //       }),
+                          //     })
+                          //   }
+                          // }
 
                           if (fallbackAnswer.trim()) {
                             // Insert successful fallback message
@@ -2602,9 +2600,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                         })
                         // Fall through to default error handling if fallback fails
                       }
-
-                      // Default error handling if fallback fails or produces no response
-                      errMsg = `Max turns exceeded: ${err.turns}`
                       break
                     default:
                       errMsg = errTag
@@ -3974,7 +3969,7 @@ export const AgentMessageApi = async (c: Context) => {
                 [],
                 imageAttachmentFileIds,
                 agentPromptForLLM,
-                fileIds.length > 0,
+                false,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -4586,7 +4581,7 @@ export const AgentMessageApi = async (c: Context) => {
                       undefined,
                       imageAttachmentFileIds as string[],
                       agentPromptForLLM,
-                      undefined,
+                      fileIds.some((fileId) => fileId.startsWith("clf-")),
                       actualModelId || config.defaultBestModel,
                     )
                   } else {

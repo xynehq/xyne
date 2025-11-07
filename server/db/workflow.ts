@@ -267,7 +267,7 @@ export const getWorkflowExecutionByIdWithChecks = async (
   trx: TxnOrClient,
   id: string,
   workspaceId: number,
-  userId: number,
+  userId: number
 ): Promise<SelectWorkflowExecution | null> => {
   const [execution] = await trx
     .select()

@@ -24,6 +24,12 @@ import {
   handleAttachmentDeleteSchema,
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
+import {
+  slackDocumentsApi,
+  SlackEntitiesApi,
+  slackListSchema,
+  slackSearchSchema,
+} from "@/api/slack"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
@@ -1409,6 +1415,9 @@ export const AppRoutes = app
     zValidator("query", searchSchema),
     SearchSlackChannels,
   )
+  // Slack Entity API routes
+  .get("/slack/entities", SlackEntitiesApi)
+  .get('/slack/documents', slackDocumentsApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/users/api-keys", GetUserApiKeys)
   .post(

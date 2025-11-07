@@ -473,6 +473,7 @@ interface PillValue {
   app?: Apps
   entity?: string
   url?: string
+  parentThreadId?: string
 }
 
 interface PillQueryItem {

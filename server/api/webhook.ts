@@ -261,9 +261,9 @@ async function waitForExecution(executionId: string, timeoutMs: number) {
 export const webhookRouter = new Hono()
 
 // Register webhook (called when saving webhook tool)
-webhookRouter.post('/register', zValidator('json', webhookConfigSchema), async (c: Context) => {
+webhookRouter.post('/register', zValidator('json', webhookConfigSchema), async (c) => {
   try {
-    const config = await c.req.json<WebhookConfig>() 
+    const config = c.req.valid('json') 
     const { workflowTemplateId, toolId } = c.req.query()
 
     await webhookRegistry.registerWebhook(config.path, workflowTemplateId, toolId, config)
