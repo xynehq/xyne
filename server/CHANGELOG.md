@@ -1,3 +1,10 @@
+## [3.30.9](https://github.com/xynehq/xyne/compare/v3.30.8...v3.30.9) (2025-11-07)
+
+
+### Bug Fixes
+
+* errors in slack bot ([#1083](https://github.com/xynehq/xyne/issues/1083)) ([323df91](https://github.com/xynehq/xyne/commit/323df917da1ee10e193e755448340bafc1f4c018))
+
 ## [3.30.8](https://github.com/xynehq/xyne/compare/v3.30.7...v3.30.8) (2025-11-07)
 
 
