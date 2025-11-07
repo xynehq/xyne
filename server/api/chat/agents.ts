@@ -4021,7 +4021,7 @@ export const AgentMessageApi = async (c: Context) => {
                   userMetadata,
                   0.5,
                   fileIds,
-                  agentAppEnums,  // ✅ Now properly extracted
+                  agentAppEnums,
                   userRequestsReasoning,
                   agentPromptForLLM,
                   understandSpan,

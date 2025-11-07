@@ -2603,7 +2603,6 @@ export async function* generateAnswerFromDualRag(
           alpha: userAlpha, // Use personalized alpha
           collectionSelections: agentSpecificCollectionSelections,
           selectedItem: selectedItem, 
-          // TODO LATER (Phase 2 enhancements):
           dataSourceIds: [],        // Empty array (todo: support data sources later)
           channelIds: channelIds,
           span: kbSearchSpan,       // Pass the span for tracing
@@ -2754,7 +2753,7 @@ export async function* generateAnswerFromDualRag(
     )
   }
 
-  
+
   // STEP 6: CONTEXT BUILDING
   const startIndex = isReasoning ? previousResultsLength : 0
   // Apply intelligent chunk selection based on document relevance and chunk scores
