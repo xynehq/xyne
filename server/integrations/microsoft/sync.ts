@@ -207,7 +207,7 @@ export const getOneDriveDelta = async (
 const oneDriveFileToVespa = async (
   file: OneDriveFile,
   userEmail: string,
-  updatedPermissions: string[]
+  updatedPermissions: string[],
 ): Promise<VespaFileWithDrivePermission | null> => {
   try {
     const entity = file.file?.mimeType
@@ -419,7 +419,7 @@ export const handleOneDriveChange = async (
 
   // Handle deleted files
   if (change.deleted) {
-  try {
+    try {
       const doc = await getDocumentOrSpreadsheet(docId)
       if (doc) {
         // Check if its spreadsheet
@@ -433,17 +433,17 @@ export const handleOneDriveChange = async (
             stats,
             userEmail,
           )
-      } else {
-        // Safe to remove: change.deleted only appears for owners, 
-        // meaning the file is permanently deleted
-        await DeleteDocument(docId, fileSchema)
+        } else {
+          // Safe to remove: change.deleted only appears for owners,
+          // meaning the file is permanently deleted
+          await DeleteDocument(docId, fileSchema)
           stats.removed += 1
           stats.summary += `${docId} removed\n`
-      }
+        }
       } else {
         Logger.error(`No document with docId ${docId} found to delete in Vespa`)
-    }
-  } catch (err) {
+      }
+    } catch (err) {
       Logger.error(
         err,
         `Failed to delete document in Vespa: ${err}, but continuing sync engine execution.`,
@@ -461,11 +461,21 @@ export const handleOneDriveChange = async (
       stats.added += 1
     }
 
-    const currentPermissions = (existingDoc?.fields as VespaFileWithDrivePermission)?.permissions ?? []
+    const currentPermissions =
+      (existingDoc?.fields as VespaFileWithDrivePermission)?.permissions ?? []
     const updatedPermissions = await getFilePermissions(graphClient, change.id)
 
-    const newUsers = updatedPermissions.filter(email => !currentPermissions.includes(email))
-    const removedUsers = currentPermissions.filter(email => !updatedPermissions.includes(email))
+    if (updatedPermissions.length === 0) {
+      Logger.error(`No user found for the OneDrive file ${docId}`)
+      return stats
+    }
+
+    const newUsers = updatedPermissions.filter(
+      (email) => !currentPermissions.includes(email),
+    )
+    const removedUsers = currentPermissions.filter(
+      (email) => !updatedPermissions.includes(email),
+    )
 
     if (existingDoc) {
       if (newUsers.length) {
@@ -477,7 +487,11 @@ export const handleOneDriveChange = async (
     }
 
     // Convert to Vespa format
-    let vespaData = await oneDriveFileToVespa(change, userEmail , updatedPermissions)
+    let vespaData = await oneDriveFileToVespa(
+      change,
+      userEmail,
+      updatedPermissions,
+    )
     if (!vespaData) {
       Logger.error(`Could not convert OneDrive file ${docId} to Vespa format`)
       return stats
