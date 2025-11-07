@@ -2487,13 +2487,7 @@ export async function* generateAnswerFromDualRag(
       }
     }
 
-    // Apply intelligent chunk selection based on document relevance and chunk scores
-    chunksPerDocument = await getChunkCountPerDoc(
-      combinedSearchResponse,
-      targetChunks,
-      email,
-      fileSearchSpan,
-    )
+
     fileSearchSpan?.end()
   }
   loggerWithChild({ email: email }).info(
@@ -2548,7 +2542,6 @@ export async function* generateAnswerFromDualRag(
         )
         selectedItem = selectedItems
         
-        // TODO: Next step - extract KB collection IDs from selectedItems[Apps.KnowledgeBase]
         if (selectedItems[Apps.KnowledgeBase]) {
           const kbItemIds = selectedItems[Apps.KnowledgeBase]
           
@@ -2757,6 +2750,13 @@ export async function* generateAnswerFromDualRag(
 
   // STEP 6: CONTEXT BUILDING
   const startIndex = isReasoning ? previousResultsLength : 0
+  // Apply intelligent chunk selection based on document relevance and chunk scores
+    chunksPerDocument = await getChunkCountPerDoc(
+      combinedSearchResponse,
+      targetChunks,
+      email,
+      generateAnswerSpan,
+    )
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
     let content = await answerContextMap(
       v as VespaSearchResults,
