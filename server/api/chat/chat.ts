@@ -2639,20 +2639,7 @@ export async function* generateAnswerFromDualRag(
 
     kbSearchSpan?.end()
   }
-  // Right now, combinedSearchResponse has:
-  // [attachment1, attachment2, kb1, kb2, kb3, kb4]
-  // Sort all results (both attachments and KB) by relevance score
-  if (combinedSearchResponse.length > 0) {
-    combinedSearchResponse.sort((a, b) => b.relevance - a.relevance)
 
-    loggerWithChild({ email: email }).info(
-      `[generateAnswerFromDualRagx] Sorted ${combinedSearchResponse.length} results by relevance. ` +
-        `Top score: ${combinedSearchResponse[0]?.relevance.toFixed(3)}, ` +
-        `Bottom score: ${combinedSearchResponse[
-          combinedSearchResponse.length - 1
-        ]?.relevance.toFixed(3)}`,
-    )
-  }
 
   // STEP 5: THREAD/SLACK HANDLING
   loggerWithChild({ email: email }).info(
@@ -2748,6 +2735,26 @@ export async function* generateAnswerFromDualRag(
     }
   }
 
+
+  
+
+  // Right now, combinedSearchResponse has:
+  // [attachment1, attachment2, kb1, kb2, kb3, kb4]
+  // Sort all results (both attachments and KB) by relevance score
+  if (combinedSearchResponse.length > 0) {
+    combinedSearchResponse.sort(
+      (a, b) => Number(b.relevance ?? 0) - Number(a.relevance ?? 0),
+    )
+
+    const topScore = Number(combinedSearchResponse[0]?.relevance ?? 0).toFixed(3)
+    const bottomScore = Number(combinedSearchResponse.at(-1)?.relevance ?? 0).toFixed(3)
+
+    loggerWithChild({ email }).info(
+      `[generateAnswerFromDualRag] Sorted ${combinedSearchResponse.length} results by relevance. Top: ${topScore}, Bottom: ${bottomScore}`,
+    )
+  }
+
+  
   // STEP 6: CONTEXT BUILDING
   const startIndex = isReasoning ? previousResultsLength : 0
   // Apply intelligent chunk selection based on document relevance and chunk scores
