@@ -17,10 +17,7 @@ import webhookExecutionService from "@/services/webhookExecutionService"
 import webhookAuthService from "@/services/webhookAuthService"
 import webhookIntegrationService from "@/services/webhookIntegrationService"
 import { webhookRegistry, type WebhookConfig } from "@/services/webhookRegistry"
-import { getWorkflowTemplateByExternalIdWithPermissionCheck } from "@/db/workflow"
-import { getUserFromJWT } from "@/db/user"
 import config from "@/config"
-const { JwtPayloadKey } = config
 
 const Logger = getLogger(Subsystem.WorkflowApi)
 
@@ -158,7 +155,7 @@ async function extractRequestData(c: Context, config: WebhookConfig) {
 
 // Execute workflow from webhook trigger
 async function executeWorkflowFromWebhook(
-  templateId: number,
+  templateId: string,
   requestData: any,
   config: WebhookConfig
 ): Promise<string> {
@@ -267,24 +264,7 @@ export const webhookRouter = new Hono()
 webhookRouter.post('/register', zValidator('json', webhookConfigSchema), async (c: Context) => {
   try {
     const config = await c.req.json<WebhookConfig>() 
-    const { workflowTemplateExternalId, toolId } = c.req.query()
-    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-
-    const workflow = await getWorkflowTemplateByExternalIdWithPermissionCheck(
-      db,
-      workflowTemplateExternalId,
-      user.workspaceId,
-      user.id
-    )
-    if (!workflow) {
-      throw new Error("workflow not found or user doesn't have access")
-    }
-
-    const workflowTemplateId = workflow.id
-
-    if (!workflowTemplateId || !toolId) {
-      throw new HTTPException(400, { message: "workflowTemplateId and toolId required" })
-    }
+    const { workflowTemplateId, toolId } = c.req.query()
 
     await webhookRegistry.registerWebhook(config.path, workflowTemplateId, toolId, config)
 

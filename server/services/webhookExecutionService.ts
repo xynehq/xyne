@@ -11,11 +11,12 @@ import { eq, sql, and, inArray } from "drizzle-orm"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { WorkflowStatus, ToolExecutionStatus, StepType } from "@/types/workflowTypes"
+import { getWorkflowStepTemplatesByTemplateId, getWorkflowTemplateByIdWithPermissionCheck } from "@/db/workflow"
 
 const Logger = getLogger(Subsystem.WorkflowApi)
 
 export interface WebhookExecutionContext {
-  workflowTemplateId: number
+  workflowTemplateId: string
   webhookPath: string
   requestData: any
   executionId?: string
@@ -36,7 +37,12 @@ export class WebhookExecutionService {
   async executeWorkflowFromWebhook(context: WebhookExecutionContext): Promise<string> {
     try {
       // Get workflow template
-      const template = await this.getWorkflowTemplate(context.workflowTemplateId)
+      const template = await getWorkflowTemplateByIdWithPermissionCheck(
+        db,
+        context.workflowTemplateId,
+        context.workspaceId,
+        context.userId
+      )
       if (!template) {
         throw new Error(`Workflow template ${context.workflowTemplateId} not found`)
       }
@@ -45,7 +51,7 @@ export class WebhookExecutionService {
       const execution = await this.createWorkflowExecution(template, context)
 
       // Get workflow steps
-      const steps = await this.getWorkflowSteps(context.workflowTemplateId)
+      const steps = await getWorkflowStepTemplatesByTemplateId(db, context.workflowTemplateId)
 
       // Create step executions
       await this.createStepExecutions(execution.id, steps, context)
@@ -60,16 +66,6 @@ export class WebhookExecutionService {
       Logger.error(`Failed to execute workflow from webhook: ${error}`)
       throw error
     }
-  }
-
-  private async getWorkflowTemplate(templateId: number) {
-    const [template] = await db
-      .select()
-      .from(workflowTemplate)
-      .where(eq(workflowTemplate.id, templateId))
-      .limit(1)
-
-    return template
   }
 
   private async createWorkflowExecution(template: any, context: WebhookExecutionContext) {
@@ -103,16 +99,6 @@ export class WebhookExecutionService {
       .returning()
 
     return execution
-  }
-
-  private async getWorkflowSteps(templateId: number) {
-    const stepsRaw = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
-    const steps = this.topologicalSortSteps(stepsRaw)
-
-    return steps
   }
 
   // Utility function to sort steps based on their dependencies (prevStepIds/nextStepIds)
@@ -450,7 +436,7 @@ Please analyze this webhook request and provide insights.`
     }
   }
 
-  private async getWorkflowTools(templateId: number) {
+  private async getWorkflowTools(templateId: string) {
     try {
       Logger.info(`🔧 getWorkflowTools for template: ${templateId}`)
       

@@ -1087,7 +1087,7 @@ export const createAgentForWorkflow = async (
  * @returns Object with hasUnauthorized flag and details of unauthorized agents
  */
 export async function hasUnauthorizedAgent(
-  workflowTemplateId: number,
+  workflowTemplateId: string,
   updatedUserEmails: string[],
   workspaceId: number
 ): Promise<{

@@ -201,12 +201,11 @@ import {
   getWorkflowExecutionByIdWithChecks, 
   getWorkflowStepTemplateById, 
   getWorkflowStepTemplatesByTemplateId, 
-  getWorkflowTemplateByExternalIdWithPermissionCheck, 
-  updateWorkflowTemplateByExternalId,
   createWorkflowExecution,
   createWorkflowStepExecutionsFromSteps,
   getWorkflowTemplateByIdWithPermissionCheck,
   getWorkflowStepExecutionByIdWithChecks,
+  updateWorkflowTemplateById,
 } from "@/db/workflow"
 import {
   getWorkflowUsers,
@@ -388,11 +387,11 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
       db,
       c.get(JwtPayloadKey)
     )
-    const templateExternalId = c.req.param("templateExternalId")
+    const templateId = c.req.param("templateId")
 
-    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
-      templateExternalId,
+      templateId,
       user.workspaceId,
       user.id
     )
@@ -442,7 +441,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
     Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${user.workspaceId}, workspaceExternalId=${workspaceExternalId}`)
 
-    const templateExternalId = c.req.param("templateExternalId")
+    const templateId = c.req.param("templateId")
     const contentType = c.req.header("content-type") || ""
 
     let requestData: any = {}
@@ -479,9 +478,9 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     }
 
     // Get template and validate (allow access to user's own or public templates)
-    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
-      templateExternalId,
+      templateId,
       user.workspaceId,
       user.id
     )
@@ -831,12 +830,12 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 export const ExecuteWorkflowTemplateApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const templateExternalId = c.req.param("templateExternalId")
+    const templateId = c.req.param("templateId")
     const requestData = await c.req.json()
 
-    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
-      templateExternalId,
+      templateId,
       user.workspaceId,
       user.id
     )
@@ -3430,7 +3429,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       }
     )
 
-    const templateExternalId = template.external_id
+    const templateId = template.id
 
     // Create workflow tools first (needed for step tool references)
     const toolIdMap = new Map<string, string>() // frontend tool ID -> backend tool ID
@@ -3704,9 +3703,9 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       rootStepId = rootStep?.id || createdSteps[0].id
 
       // Update template with root step ID
-      await updateWorkflowTemplateByExternalId(
+      await updateWorkflowTemplateById(
         db,
-        templateExternalId,
+        templateId,
         {
           rootWorkflowStepTemplateId: rootStepId,
         }
@@ -3752,12 +3751,12 @@ export const ExecuteTemplateApi = ExecuteWorkflowTemplateApi
 export const UpdateWorkflowTemplateApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const templateExternalId = c.req.param("templateExternalId")
+    const templateId = c.req.param("templateId")
     const requestData = await c.req.json<UpdateWorkflowTemplateRequest>()
     
-    const existingTemplate = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+    const existingTemplate = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
-      templateExternalId,
+      templateId,
       user.workspaceId,
       user.id
     )
@@ -3768,7 +3767,7 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
 
     // Check for unauthorized agents when updating user permissions
     if (requestData.userEmails !== undefined && requestData.userEmails.length > 0) {
-      Logger.info(`Checking for unauthorized agents when updating workflow ${templateExternalId} permissions with user emails: ${requestData.userEmails.join(', ')}`)
+      Logger.info(`Checking for unauthorized agents when updating workflow ${templateId} permissions with user emails: ${requestData.userEmails.join(', ')}`)
       
       const authorizationCheck = await hasUnauthorizedAgent(
         existingTemplate.id,
@@ -3777,7 +3776,7 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
       )
 
       if (authorizationCheck.hasUnauthorized) {
-        Logger.warn(`Unauthorized agents found in workflow ${templateExternalId}`)
+        Logger.warn(`Unauthorized agents found in workflow ${templateId}`)
         
         // Create detailed error message with agent information
         const unauthorizedDetails = authorizationCheck.unauthorizedAgents.map(agent => 
@@ -3795,14 +3794,14 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
         }, 403)
       }
 
-      Logger.info(`All agents in workflow ${templateExternalId} are properly authorized for the provided users`)
+      Logger.info(`All agents in workflow ${templateId} are properly authorized for the provided users`)
     }
 
     // Update workflow and sync user permissions in a transaction
     const result = await db.transaction(async (trx) => {
-      const updatedTemplate = await updateWorkflowTemplateByExternalId(
+      const updatedTemplate = await updateWorkflowTemplateById(
         trx,
-        templateExternalId,
+        templateId,
         {
           name: requestData.name,
           description: requestData.description,
@@ -3882,9 +3881,9 @@ export const CreateWorkflowExecutionApi = async (c: Context) => {
     )
     const requestData = await c.req.json()
 
-    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
-      requestData.workflowTemplateExternalId,
+      requestData.workflowTemplateId,
       user.workspaceId,
       user.id
     )
@@ -4360,10 +4359,10 @@ export const DeleteWorkflowToolApi = async (c: Context) => {
 export const AddStepToWorkflowApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const templateId = c.req.param("templateExternalId")
+    const templateId = c.req.param("templateId")
     const requestData = await c.req.json()
 
-    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -4426,7 +4425,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     // 4. Handle step connections
     if (isFirstStep) {
       // This is the first/root step
-      await updateWorkflowTemplateByExternalId(
+      await updateWorkflowTemplateById(
         db,
         templateId,
         {
@@ -4465,7 +4464,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     }
 
     // 5. Return the complete updated template with new step
-    const updatedTemplate = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+    const updatedTemplate = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
       templateId,
       user.workspaceId,
@@ -4580,9 +4579,9 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       // If no next steps, set to null
       newRootStepId = nextStepIds.length > 0 ? nextStepIds[0] : null
 
-      await updateWorkflowTemplateByExternalId(
+      await updateWorkflowTemplateById(
         db,
-        template.external_id,
+        template.id,
         {
           rootWorkflowStepTemplateId: newRootStepId,
         }
@@ -4656,9 +4655,9 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     }
 
     // 9. Get updated workflow data
-    const updatedTemplate = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+    const updatedTemplate = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
-      template.external_id,
+      template.id,
       user.workspaceId,
       user.id
     )
@@ -4870,12 +4869,12 @@ export const GetGeminiModelEnumsApi = async (c: Context) => {
 export const GetWorkflowUsersApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const templateExternalId = c.req.param("templateExternalId")
+    const templateId = c.req.param("templateId")
 
     // Get workflow template and validate access
-    const template = await getWorkflowTemplateByExternalIdWithPermissionCheck(
+    const template = await getWorkflowTemplateByIdWithPermissionCheck(
       db,
-      templateExternalId,
+      templateId,
       user.workspaceId,
       user.id
     )
@@ -4895,7 +4894,7 @@ export const GetWorkflowUsersApi = async (c: Context) => {
     return c.json({
       success: true,
       data: {
-        workflowId: template.external_id,
+        workflowId: template.id,
         workflowName: template.name,
         users: workflowUsers,
         totalUsers: workflowUsers.length,
@@ -5270,7 +5269,7 @@ export const GetJiraMetadataApi = async (c: Context) => {
  * Execute workflow from webhook trigger (following reference pattern)
  */
 async function executeWorkflowFromWebhook(
-  templateId: number,
+  templateId: string,
   requestData: any,
   config: { webhookId: string; createdBy: string; rawPayload?: any }
 ): Promise<string> {
@@ -5355,7 +5354,7 @@ function redactJiraWebhookData(eventData: any): Record<string, any> {
 async function triggerWorkflowFromWebhook(
   webhookId: string,
   eventData: any,
-  workflowTemplateId: number,
+  workflowTemplateId: string,
   createdBy: string,
   rawPayload?: any
 ): Promise<{ executionId: string; rootStepId: string }> {

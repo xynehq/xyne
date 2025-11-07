@@ -18,7 +18,7 @@ import { and, eq, isNull, desc, or, inArray } from "drizzle-orm"
 export const checkUserWorkflowAccess = async (
   trx: TxnOrClient,
   userId: number,
-  workflowId: number,
+  workflowId: string,
 ): Promise<SelectUserWorkflowPermission | null> => {
   const permissionArr = await trx
     .select()
@@ -60,7 +60,7 @@ export const grantUserWorkflowPermission = async (
 export const updateUserWorkflowPermission = async (
   trx: TxnOrClient,
   userId: number,
-  workflowId: number,
+  workflowId: string,
   role: UserWorkflowRole,
 ): Promise<SelectUserWorkflowPermission | null> => {
   const permissionArr = await trx
@@ -87,7 +87,7 @@ export const updateUserWorkflowPermission = async (
 //Get all users (owner + shard + viewer) for a workflow
 export const getWorkflowUsers = async (
   trx: TxnOrClient,
-  workflowId: number,
+  workflowId: string,
 ): Promise<UserWorkflowPermissionWithDetails[]> => {
   const results = await trx
     .select({
@@ -98,7 +98,7 @@ export const getWorkflowUsers = async (
         photoLink: users.photoLink,
       },
       workflow: {
-        externalId: workflowTemplate.external_id,
+        id: workflowTemplate.id,
         name: workflowTemplate.name,
         description: workflowTemplate.description,
         version: workflowTemplate.version
@@ -118,7 +118,7 @@ export const getWorkflowUsers = async (
 export const revokeUserWorkflowPermission = async (
   trx: TxnOrClient,
   userId: number,
-  workflowId: number,
+  workflowId: string,
 ): Promise<boolean> => {
   const result = await trx
     .delete(userWorkflowPermissions)
@@ -142,7 +142,7 @@ export const revokeUserWorkflowPermission = async (
  */
 export const syncWorkflowUserPermissions = async (
   trx: TxnOrClient,
-  workflowId: number,
+  workflowId: string,
   userEmails: string[],
   workspaceId: number,
 ): Promise<void> => {

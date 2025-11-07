@@ -1452,20 +1452,20 @@ export const AppRoutes = app
     CreateComplexWorkflowTemplateApi,
   )
   .get("/workflow/templates", ListWorkflowTemplatesApi)
-  .get("/workflow/templates/:templateExternalId", GetWorkflowTemplateApi)
-  .get("/workflow/templates/:templateExternalId/permissions",GetWorkflowUsersApi)
+  .get("/workflow/templates/:templateId", GetWorkflowTemplateApi)
+  .get("/workflow/templates/:templateId/permissions",GetWorkflowUsersApi)
   .put(
-    "/workflow/templates/:templateExternalId",
+    "/workflow/templates/:templateId",
     zValidator("json", updateWorkflowTemplateSchema),
     UpdateWorkflowTemplateApi,
   )
-  .post("/workflow/templates/:templateExternalId/execute", ExecuteTemplateApi)
+  .post("/workflow/templates/:templateId/execute", ExecuteTemplateApi)
   .post(
-    "/workflow/templates/:templateExternalId/execute-with-input",
+    "/workflow/templates/:templateId/execute-with-input",
     ExecuteWorkflowWithInputApi,
   )
   .post(
-    "/workflow/templates/:templateExternalId/steps",
+    "/workflow/templates/:templateId/steps",
     zValidator("json", addStepToWorkflowSchema),
     AddStepToWorkflowApi,
   )

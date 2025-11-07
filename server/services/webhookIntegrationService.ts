@@ -32,7 +32,7 @@ export class WebhookIntegrationService {
   }
 
   async createWebhookTool(
-    workflowTemplateId: number,
+    workflowTemplateId: string,
     config: WebhookToolConfig,
     userId: number,
     workspaceId: number
@@ -228,7 +228,7 @@ export class WebhookIntegrationService {
     }
   }
 
-  private async getWorkflowTemplateIdFromTool(toolId: string): Promise<number | null> {
+  private async getWorkflowTemplateIdFromTool(toolId: string): Promise<string | null> {
     try {
       // This is a simplified approach - in a real implementation you'd properly join the tables
       const steps = await db

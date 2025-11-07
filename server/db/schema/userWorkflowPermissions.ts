@@ -27,7 +27,7 @@ export const userWorkflowPermissions = pgTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    workflowId: integer("workflow_id")
+    workflowId: uuid("workflow_id")
       .notNull()
       .references(() => workflowTemplate.id, { onDelete: "cascade" }),
     role: userWorkflowRoleEnum("role")
@@ -86,7 +86,7 @@ export const userWorkflowPermissionWithDetailsSchema = z.object({
       photoLink: z.string().nullable(),
     }),
     workflow: z.object({
-      externalId: z.string(),
+      id: z.string(),
       name: z.string(),
       description: z.string().nullable(),
       version: z.string(),

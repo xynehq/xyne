@@ -63,8 +63,7 @@ export const toolExecutionStatusEnum = pgEnum("tool_execution_status", Object.va
 
 // 1. Workflow Templates Table (renamed from workflow_templates)
 export const workflowTemplate = pgTable("workflow_template", {
-  id: serial("id").notNull().primaryKey(),
-  external_id: uuid("external_id").notNull().defaultRandom(),
+  id: uuid("id").notNull().primaryKey().defaultRandom(),
   name: text("name").notNull(),
   workspaceId: integer("workspace_id")
     .notNull()
@@ -87,14 +86,12 @@ export const workflowTemplate = pgTable("workflow_template", {
     .notNull()
     .default(sql`NOW()`),
   // Removed: workspaceId, deletedAt
-}, (table) => ({
-  workflowExternalIdIndex: uniqueIndex("workflow_external_id_unique_index").on(table.external_id),
-}))
+})
 
 // 2. Workflow Step Templates Table (renamed from workflow_step_templates)
 export const workflowStepTemplate = pgTable("workflow_step_template", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
-  workflowTemplateId: integer("workflow_template_id")
+  workflowTemplateId: uuid("workflow_template_id")
     .notNull()
     .references(() => workflowTemplate.id),
   name: text("name").notNull(),
@@ -146,7 +143,7 @@ export const workflowExecution = pgTable("workflow_execution", {
   workspaceId: integer("workspace_id")
     .notNull()
     .references(() => workspaces.id),
-  workflowTemplateId: integer("workflow_template_id")
+  workflowTemplateId: uuid("workflow_template_id")
     .notNull()
     .references(() => workflowTemplate.id),
   name: text("name").notNull(),
@@ -275,10 +272,6 @@ export const publicWorkflowTemplateSchema = selectWorkflowTemplateSchema
     workspaceId: true,
     userId: true,
   })
-  .transform(({ external_id, ...rest }) => ({
-    ...rest,          // keep other fields unchanged
-    id: external_id,  // rename external_id -> id since frontend expects 'id'
-  }));
 
 export const publicWorkflowExecutionSchema = selectWorkflowExecutionSchema.omit(
   {
@@ -317,7 +310,7 @@ export const updateWorkflowToolSchema = createWorkflowToolSchema
   })
 
 export const createWorkflowStepTemplateSchema = z.object({
-  workflowTemplateId: z.number().int(),
+  workflowTemplateId: z.uuid(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   type: z.enum(Object.values(StepType) as [string, ...string[]]).default(StepType.AUTOMATED),
@@ -407,7 +400,7 @@ export const createComplexWorkflowTemplateSchema = z.object({
 })
 
 export const createWorkflowExecutionSchema = z.object({
-  workflowTemplateExternalId: z.uuid(),
+  workflowTemplateId: z.uuid(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),

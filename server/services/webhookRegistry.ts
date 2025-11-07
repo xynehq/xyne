@@ -21,7 +21,7 @@ type WebhookConfig = {
 class WebhookRegistrationService {
   private static instance: WebhookRegistrationService
   private registeredWebhooks: Map<string, {
-    workflowTemplateId: number
+    workflowTemplateId: string
     toolId: string
     config: WebhookConfig
     httpMethod: string
@@ -36,7 +36,7 @@ class WebhookRegistrationService {
 
   async registerWebhook(
     path: string, 
-    workflowTemplateId: number, 
+    workflowTemplateId: string, 
     toolId: string, 
     config: WebhookConfig
   ): Promise<void> {
