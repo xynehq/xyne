@@ -53,7 +53,7 @@ class OrderedWindowFinder {
     }
     merged.sort((a, b) => a.pos - b.pos);
 
-    const need = validTokenCount; // Use count of tokens that actually have occurrences
+    const need = Math.floor(validTokenCount * 0.8); // Use 80% of tokens that actually have occurrences
     let have = 0;
     const cnt = new Map<number, number>();
 
