@@ -35,7 +35,7 @@ import {
   formSubmissionSchema,
 } from "@/db/schema/workflows"
 import { users } from "@/db/schema"
-import { getUserByEmail, getUserFromJWT } from "@/db/user"
+import { getUserById, getUserFromJWT } from "@/db/user"
 import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { type CreateAgentPayload } from "./agent"
 import {
@@ -193,6 +193,7 @@ import {
   type AttachmentUploadResponse,
   type WorkflowFileUpload,
 } from "@/api/workflowFileHandler"
+import { getWorkflowExecutionById } from "@/db/workflow"
 
 
 
@@ -572,10 +573,6 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           requestData.description || `Execution of ${template[0].name}`,
         metadata: {
           ...requestData.metadata,
-          executionContext: {
-            userEmail: user.email,
-            workspaceId: workspaceExternalId,
-          }
         },
         status: WorkflowStatus.ACTIVE,
         rootWorkflowStepExeId: null,
@@ -2361,75 +2358,27 @@ const extractContentFromPath = (
 }
 
 // Helper function to get execution context (user info) from workflow execution
-//Workflow-Todo : after DB Changes we might not need this function as we can fetch userId and workspaceId directly from workflowExecution table
 const getExecutionContext = async (executionId: string): Promise<{
   workspaceId: string
   userEmail: string
-  workspaceInternalId: string
-  userId: string
+  workspaceInternalId: number
+  userId: number
 } | null> => {
   try {
-    // Get workflow execution to access metadata
-    const [execution] = await db
-      .select()
-      .from(workflowExecution)
-      .where(eq(workflowExecution.id, executionId))
-
+    const execution = await getWorkflowExecutionById(db, executionId)
     if (!execution) {
       Logger.warn(`No execution found for execution ${executionId}`)
       return null
     }
+    const user = await getUserById(db, execution.userId)
 
-    // Check if execution context was stored in metadata (for manual executions)
-    const context = execution.metadata as any
-    if (context && context.executionContext) {
-      Logger.info(`✅ Found execution context in metadata for ${executionId}`)
-      return context.executionContext
+    const executionContext = {
+      workspaceId: user.workspaceExternalId,
+      userEmail: user.email,
+      workspaceInternalId: user.workspaceId,
+      userId: user.id
     }
-
-    // For webhook-triggered executions, get user info from execution record
-    if (execution.userId && execution.workspaceId) {
-      Logger.info(`🔄 Getting execution context from user/workspace IDs for webhook execution ${executionId}`)
-      
-      // Import user module to get user details
-      const { users, workspaces } = await import("@/db/schema")
-      
-      // Get user details
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, execution.userId))
-        .limit(1)
-      
-      // Get workspace details  
-      const [workspace] = await db
-        .select()
-        .from(workspaces)
-        .where(eq(workspaces.id, execution.workspaceId))
-        .limit(1)
-      
-      if (user && workspace) {
-        const executionContext = {
-          workspaceId: workspace.externalId || workspace.id.toString(),
-          userEmail: user.email,
-          workspaceInternalId: workspace.id.toString(),
-          userId: user.id.toString()
-        }
-        
-        Logger.info(`✅ Created execution context for webhook execution:`, {
-          userEmail: executionContext.userEmail,
-          workspaceId: executionContext.workspaceId,
-          userId: executionContext.userId
-        })
-        
-        return executionContext
-      } else {
-        Logger.warn(`❌ Could not find user (${execution.userId}) or workspace (${execution.workspaceId}) for execution ${executionId}`)
-      }
-    }
-
-    Logger.warn(`❌ No execution context available for execution ${executionId}`)
-    return null
+    return executionContext
   } catch (error) {
     Logger.error(error, `Failed to get execution context for ${executionId}`)
     return null
@@ -5329,13 +5278,6 @@ async function triggerWorkflowFromWebhook(
         description: `Triggered by ${eventData.event} on ${eventData.issue?.key || eventData.project?.name || 'unknown'}`,
         metadata: {
           ...redactJiraWebhookData(eventData),
-          // Add execution context for AI agent and other tools that need user info
-          executionContext: templateOwner ? {
-            workspaceId: templateOwner.workspaceExternalId, // External ID for getUserAndWorkspaceByEmail
-            userEmail: templateOwner.email,
-            workspaceInternalId: templateOwner.workspaceInternalId,
-            userId: template[0].userId,
-          } : undefined,
         },
         status: WorkflowStatus.ACTIVE,
         rootWorkflowStepExeId: null,

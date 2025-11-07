@@ -184,15 +184,11 @@ export const createWorkflowExecution = async (
 export const getWorkflowExecutionById = async (
   trx: TxnOrClient,
   id: string,
-  workspaceId: number,
-  userId: number,
 ): Promise<SelectWorkflowExecution | null> => {
   const [execution] = await trx
     .select()
     .from(workflowExecution)
     .where(and(
-      eq(workflowExecution.workspaceId, workspaceId),
-      eq(workflowExecution.userId, userId),
       eq(workflowExecution.id, id),
     ))
     .limit(1)
