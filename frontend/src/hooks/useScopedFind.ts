@@ -555,7 +555,7 @@ export function useScopedFind(
           if (debug) {
             console.log("PDF or Spreadsheet detected", pageIndex)
           }
-          if (pageIndex !== undefined) {
+          if (pageIndex !== undefined && pageIndex >= 0) {
             if (debug) {
               console.log("Going to page or subsheet:", pageIndex)
             }
