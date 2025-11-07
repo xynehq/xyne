@@ -16,7 +16,9 @@ import {
   WorkflowStatus,
   StepType,
   ToolType,
+  ToolCategory,
   ToolExecutionStatus,
+  TemplateState,
 } from "@/types/workflowTypes"
 import { workspaces } from "./workspaces"
 import { users } from "./users"
@@ -55,9 +57,13 @@ export const workflowStatusEnum = pgEnum("workflow_status", Object.values(Workfl
 
 export const stepTypeEnum = pgEnum("step_type", Object.values(StepType) as [string, ...string[]])
 
+export const toolCategoryEnum = pgEnum("tool_category", Object.values(ToolCategory) as [string, ...string[]])
+
 export const toolTypeEnum = pgEnum("tool_type", Object.values(ToolType) as [string, ...string[]])
 
 export const toolExecutionStatusEnum = pgEnum("tool_execution_status", Object.values(ToolExecutionStatus) as [string, ...string[]])
+
+export const templateStateEnum = pgEnum("template_state", Object.values(TemplateState) as [string, ...string[]])
 
 // 1. Workflow Templates Table (renamed from workflow_templates)
 export const workflowTemplate = pgTable("workflow_template", {
@@ -75,6 +81,7 @@ export const workflowTemplate = pgTable("workflow_template", {
   description: text("description"),
   version: text("version").notNull().default("1.0.0"),
   status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
+  state: templateStateEnum("state").notNull().default("inactive"),
   config: jsonb("config").default({}),
   rootWorkflowStepTemplateId: uuid("root_workflow_step_template_id"), // UUID reference
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -84,6 +91,7 @@ export const workflowTemplate = pgTable("workflow_template", {
     .notNull()
     .default(sql`NOW()`),
   // Removed: workspaceId, deletedAt
+  
 })
 
 // 2. Workflow Step Templates Table (renamed from workflow_step_templates)
@@ -120,9 +128,11 @@ export const workflowTool = pgTable("workflow_tool", {
   userId: integer("user_id")
     .notNull()
     .references(() => users.id),
+  category: toolCategoryEnum("category").notNull().default(ToolCategory.ACTION),
   type: toolTypeEnum("type").notNull(),
   value: jsonb("value"), // Can store string, number, or object based on tool type
   config: jsonb("config").default({}),
+  inputCount: integer("input_count").default(1), // Number of inputs required for this tool
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
@@ -197,6 +207,7 @@ export const toolExecution = pgTable("tool_execution", {
     .references(() => workflowTool.id),
   workflowExecutionId: uuid("workflow_execution_id").notNull(), // Renamed from stepId
   status: toolExecutionStatusEnum("status").notNull().default(ToolExecutionStatus.PENDING),
+  input: jsonb("input"), // Input data for tool execution
   result: jsonb("result"), // Execution result/output
   // Removed: errorMessage column
   startedAt: timestamp("started_at", { withTimezone: true }),
@@ -442,3 +453,12 @@ export type UpdateWorkflowStepExecutionRequest = z.infer<
 >
 export type FormSubmissionRequest = z.infer<typeof formSubmissionSchema>
 export type AddStepToWorkflowRequest = z.infer<typeof addStepToWorkflowSchema>
+
+// Re-export enums for convenience
+export {
+  WorkflowStatus,
+  StepType,
+  ToolType,
+  ToolCategory,
+  ToolExecutionStatus,
+} from "@/types/workflowTypes"

@@ -1,0 +1,197 @@
+import PgBoss from "pg-boss"
+import config from "@/config"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+import { db } from "@/db/client"
+import { workflowStepExecution, workflowStepTemplate } from "@/db/schema/workflows"
+import { eq } from "drizzle-orm"
+import { stepExecutor } from "./step-executor"
+import type { StepExecutionResult, ExecutionPacket } from "./types"
+
+const Logger = getLogger(Subsystem.ExecutionEngine)
+
+const url = config.getDatabaseUrl()
+export const executionBoss = new PgBoss({
+  connectionString: url,
+  monitorIntervalSeconds: 600,
+})
+
+// Single execution queue for all workflow execution tasks
+export const ExecutionQueue = "execution"
+
+/**
+ * Initialize pg-boss for execution engine usage
+ * - Starts pg-boss connection
+ * - Creates single execution queue
+ * - Initializes worker for all execution tasks
+ */
+export const initExecutionEngineQueue = async () => {
+  Logger.info("Execution Engine Queue init - starting pg-boss")
+  await executionBoss.start()
+  
+  Logger.info("Creating ExecutionQueue")
+  await executionBoss.createQueue(ExecutionQueue)
+  
+  await initExecutionWorker()
+  
+  Logger.info("Execution Engine Queue initialization complete")
+}
+
+/**
+ * Initialize single execution worker
+ */
+const initExecutionWorker = async () => {
+  Logger.info("Initializing execution worker...")
+  
+  // Single execution worker - handles all execution tasks
+  await executionBoss.work(ExecutionQueue, async (jobs) => {
+    for (const job of jobs) {
+      try {
+        const packet = job.data as ExecutionPacket
+        
+        Logger.info(`🔄 EXECUTION WORKER PICKED UP PACKET:`)
+        Logger.info(`   Template ID: ${packet.template_id}`)
+        Logger.info(`   Workflow ID: ${packet.workflow_id}`)
+        Logger.info(`   Step ID: ${packet.step_id}`)
+        Logger.info(`   Tool ID: ${packet.tool_id}`)
+        Logger.info(`   Input: ${JSON.stringify(packet.input)}`)
+        Logger.info(`   Job ID: ${job.id}`)
+        
+        // Execute the step using StepExecutor
+        const result = await stepExecutor.executeStep(packet)
+        
+        // Log execution result
+        Logger.info(`📋 Step execution result:`, {
+          success: result.success,
+          nextAction: result.nextAction,
+          error: result.error
+        })
+
+        // Queue next steps if execution should continue
+        if (result.nextAction === 'continue') {
+          await queueNextSteps(packet, result)
+        }
+        
+        Logger.info(`✅ Packet processing completed for job ${job.id}`)
+        
+      } catch (error) {
+        Logger.error(error, `❌ Error processing execution packet for job ${job.id}`)
+      }
+    }
+  })
+  
+  Logger.info("Execution worker initialized successfully")
+}
+
+/**
+ * Send execution packet to the queue
+ * @param packet - Execution packet data
+ * @param executeAt - Optional timestamp for scheduled execution (ISO string, Date, or seconds)
+ */
+export const sendExecutionPacket = async (packet: ExecutionPacket, executeAt?: string): Promise<string> => {
+  try {
+    let jobId: string | null
+    
+    if (executeAt) {
+      // Use sendAfter for scheduled execution
+      jobId = await executionBoss.sendAfter(ExecutionQueue, packet, {}, executeAt)
+      Logger.info(`📅 Scheduled execution packet for ${executeAt} with job ID: ${jobId}`)
+    } else {
+      // Use regular send for immediate execution
+      jobId = await executionBoss.send(ExecutionQueue, packet)
+      Logger.info(`📤 Sent execution packet to queue with job ID: ${jobId}`)
+    }
+    
+    if (!jobId) {
+      throw new Error("Failed to get job ID from queue")
+    }
+    
+    Logger.info(`   Template: ${packet.template_id}, Workflow: ${packet.workflow_id}, Step: ${packet.step_id}, Tool: ${packet.tool_id}`)
+    Logger.info(`   Input: ${JSON.stringify(packet.input)}`)
+    return jobId
+  } catch (error) {
+    Logger.error(error, `Failed to send execution packet to queue`)
+    throw error
+  }
+}
+
+// Error handling
+executionBoss.on("error", (error) => {
+  Logger.error(error, `Execution Engine Queue error: ${error.message}`)
+})
+
+// executionBoss.on("monitor-states", (states) => {
+//   Logger.debug(`Execution Queue States: ${JSON.stringify(states, null, 2)}`)
+// })
+
+/**
+ * Queue next steps for execution based on current step result
+ */
+export const queueNextSteps = async (currentPacket: ExecutionPacket, result: StepExecutionResult): Promise<void> => {
+  // Get current step to find its next step IDs
+  const [currentStep] = await db
+    .select()
+    .from(workflowStepExecution)
+    .where(eq(workflowStepExecution.id, currentPacket.step_id))
+    .limit(1)
+
+  if (!currentStep || !currentStep.nextStepIds || currentStep.nextStepIds.length === 0) {
+    Logger.info("No next steps to queue")
+    return
+  }
+
+  Logger.info(`🔗 Queueing ${currentStep.nextStepIds.length} next steps`)
+
+  for (const nextStepId of currentStep.nextStepIds) {
+    try {
+      // Get next step details to find its tools
+      const [nextStep] = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.id, nextStepId))
+        .limit(1)
+
+      if (!nextStep) {
+        Logger.warn(`Next step ${nextStepId} not found, skipping`)
+        continue
+      }
+      
+      // Get template step to extract tool IDs
+      const [templateStep] = await db
+        .select()
+        .from(workflowStepTemplate)
+        .where(eq(workflowStepTemplate.id, nextStep.workflowStepTemplateId))
+        .limit(1)
+
+      if (!templateStep) {
+        Logger.warn(`Template step for ${nextStepId} not found, skipping`)
+        continue
+      }
+
+      // Queue each tool from the template step
+      const toolIds = templateStep.toolIds || []
+      for (const toolId of toolIds) {
+        const nextPacket: ExecutionPacket = {
+          template_id: currentPacket.template_id,
+          workflow_id: currentPacket.workflow_id,
+          step_id: nextStepId,
+          tool_id: toolId,
+          input: result.toolResult.result || {}, // Pass previous step output as input
+        }
+
+        // Queue next step (scheduled if next_execute_at is present)
+        const jobId = await sendExecutionPacket(nextPacket, result.next_execute_at)
+        
+        if (result.next_execute_at) {
+          Logger.info(`⏰ Scheduled next step '${nextStep.name}' for ${result.next_execute_at} with job ID: ${jobId}`)
+        } else {
+          Logger.info(`➡️ Queued next step '${nextStep.name}' with job ID: ${jobId}`)
+        }
+      }
+    } catch (error) {
+      Logger.error(error, `Failed to queue next step ${nextStepId}`)
+    }
+  }
+
+  Logger.info(`✅ Finished queueing next steps`)
+}

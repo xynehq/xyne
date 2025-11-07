@@ -138,7 +138,7 @@ export const getToolExecutionById = async (
     .where(eq(toolExecution.id, id))
     .limit(1)
 
-  return execution ? ({ ...execution, result: execution.result as any }) : null
+  return execution ? ({ ...execution, input: execution.input as any, result: execution.result as any }) : null
 }
 
 export const getToolExecutionsByWorkflowExecution = async (
@@ -151,7 +151,7 @@ export const getToolExecutionsByWorkflowExecution = async (
     .where(eq(toolExecution.workflowExecutionId, workflowExecutionId))
     .orderBy(desc(toolExecution.createdAt))
   
-  return results.map(result => ({ ...result, result: result.result as any }))
+  return results.map(result => ({ ...result,input: result.input as any, result: result.result as any }))
 }
 
 export const getToolExecutionsByTool = async (
@@ -164,7 +164,7 @@ export const getToolExecutionsByTool = async (
     .where(eq(toolExecution.workflowToolId, workflowToolId))
     .orderBy(desc(toolExecution.createdAt))
   
-  return results.map(result => ({ ...result, result: result.result as any }))
+  return results.map(result => ({ ...result,input: result.input as any, result: result.result as any }))
 }
 
 export const updateToolExecution = async (
@@ -181,7 +181,7 @@ export const updateToolExecution = async (
     .where(eq(toolExecution.id, id))
     .returning()
 
-  return updated ? ({ ...updated, result: updated.result as any }) : null
+  return updated ? ({ ...updated,input: updated.input as any, result: updated.result as any }) : null
 }
 
 export const markToolExecutionStarted = async (
