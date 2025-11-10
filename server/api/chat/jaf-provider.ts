@@ -5,7 +5,7 @@ import type {
   Message as JAFMessage,
   Agent as JAFAgent,
 } from "@xynehq/jaf"
-import { getTextContent } from "@xynehq/jaf"
+import { getTextContent, makeLiteLLMProvider } from "@xynehq/jaf"
 import { Models } from "@/ai/types"
 import type {
   JSONSchema7,
@@ -33,6 +33,10 @@ export type MakeXyneJAFProviderOptions = {
 export const makeXyneJAFProvider = <Ctx>(
   _opts: MakeXyneJAFProviderOptions = {},
 ): JAFModelProvider<Ctx> => {
+  if(_opts.baseURL && _opts.apiKey) {
+    return makeLiteLLMProvider<Ctx>(_opts.baseURL, _opts.apiKey)
+  }
+  
   return {
     async getCompletion(state, agent, runCfg) {
       const model = runCfg.modelOverride ?? agent.modelConfig?.name
@@ -41,6 +45,7 @@ export const makeXyneJAFProvider = <Ctx>(
       }
 
       const provider = getAISDKProviderByModel(model as Models)
+      console.log(`Using model ${model} with provider ${provider}`)
       const modelConfig = MODEL_CONFIGURATIONS[model as Models]
       const actualModelId = modelConfig?.actualName ?? model
       const languageModel = provider.languageModel(actualModelId)

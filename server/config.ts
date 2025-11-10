@@ -41,6 +41,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 let defaultFastModel: Models = "" as Models
 let defaultBestModel: Models = "" as Models
+let defaultBestModelAgenticMode: Models = "" as Models
 let AwsAccessKey = ""
 let AwsSecretKey = ""
 let OpenAIKey = ""
@@ -57,6 +58,9 @@ let VertexAIModel = ""
 let aiProviderBaseUrl = ""
 let isReasoning = false
 let sqlInferenceModel = ""
+let LiteLLMApiKey = ""
+let LiteLLMModel = ""
+let LiteLLMBaseUrl = ""
 
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
@@ -170,6 +174,18 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     : Models.Vertex_Claude_Sonnet_4 // Default best model
   sqlInferenceModel = Models.Vertex_Claude_Sonnet_4
 }
+if(process.env["LITELLM_API_KEY"] && process.env["LITELLM_MODEL"]) {
+  if (process.env["LITELLM_BASE_URL"]) {
+    if (!isURLValid(process.env["LITELLM_BASE_URL"])) {
+      console.warn(`Configuration Warning : Encountered invalid base url`)
+    } else {
+      LiteLLMBaseUrl = process.env["LITELLM_BASE_URL"]
+    }
+  }
+  LiteLLMApiKey = process.env["LITELLM_API_KEY"]
+  LiteLLMModel = process.env["LITELLM_MODEL"]
+  defaultBestModelAgenticMode = LiteLLMModel as Models
+}
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
 
@@ -224,6 +240,9 @@ export default {
   sqlInferenceModel,
   VertexProjectId,
   VertexRegion,
+  LiteLLMApiKey,
+  LiteLLMModel,
+  LiteLLMBaseUrl,
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
@@ -232,6 +251,7 @@ export default {
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute
   defaultBestModel,
+  defaultBestModelAgenticMode,
   defaultFastModel,
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec

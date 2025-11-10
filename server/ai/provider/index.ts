@@ -26,6 +26,9 @@ const {
   VertexProjectId,
   VertexRegion,
   VertexAIModel,
+  LiteLLMApiKey,
+  LiteLLMModel,
+  LiteLLMBaseUrl,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -100,6 +103,7 @@ import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
 import { VertexAiProvider, VertexProvider } from "@/ai/provider/vertex_ai"
+import { LiteLLM, LiteLLMProvider } from "@/ai/provider/Litellm/LiteLLM"
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock"
 import { createOpenAI } from "@ai-sdk/openai"
 import { createVertex } from "@ai-sdk/google-vertex"
@@ -215,6 +219,7 @@ let togetherProvider: LLMProvider | null = null
 let fireworksProvider: LLMProvider | null = null
 let geminiProvider: LLMProvider | null = null
 let vertexProvider: LLMProvider | null = null
+let liteLLMProvider: LLMProvider | null = null
 let bedrockAISDKProvider: ProviderV2 | null = null
 let openaiAISDKProvider: ProviderV2 | null = null
 
@@ -308,6 +313,17 @@ const initializeProviders = (): void => {
     Logger.info(`Initialized VertexAI provider with ${provider} backend`)
   }
 
+  if (LiteLLMApiKey && LiteLLMModel) {
+    const liteLLM = new LiteLLM({
+      apiKey: LiteLLMApiKey,
+      baseURL: LiteLLMBaseUrl,
+    })
+    liteLLMProvider = new LiteLLMProvider(liteLLM)
+    Logger.info(
+      `Initialized LiteLLM provider with base URL: ${LiteLLMBaseUrl || "default"}`,
+    )
+  }
+
   if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
     Logger.warn(
       `Not using base_url: base_url is defined, but neither OpenAI nor Together API key was provided.`,
@@ -324,6 +340,7 @@ const getProviders = (): {
   [AIProviders.Fireworks]: LLMProvider | null
   [AIProviders.GoogleAI]: LLMProvider | null
   [AIProviders.VertexAI]: LLMProvider | null
+  [AIProviders.LiteLLM]: LLMProvider | null
 } => {
   initializeProviders()
   if (
@@ -333,7 +350,8 @@ const getProviders = (): {
     !togetherProvider &&
     !fireworksProvider &&
     !geminiProvider &&
-    !vertexProvider
+    !vertexProvider &&
+    !liteLLMProvider
   ) {
     throw new Error("No valid API keys or model provided")
   }
@@ -346,6 +364,7 @@ const getProviders = (): {
     [AIProviders.Fireworks]: fireworksProvider,
     [AIProviders.GoogleAI]: geminiProvider,
     [AIProviders.VertexAI]: vertexProvider,
+    [AIProviders.LiteLLM]: liteLLMProvider,
   }
 }
 
@@ -366,6 +385,10 @@ const getProviderMap = (): Partial<Record<AIProviders, LLMProvider>> => {
   return providerMap
 }
 
+export const getProviderTypeByModel = (modelId: Models): AIProviders | null => {
+  return ModelToProviderMap[modelId]
+}
+
 export const getProviderByModel = (modelId: Models): LLMProvider => {
   const ProviderMap = getProviderMap()
 
@@ -381,7 +404,9 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
             ? AIProviders.GoogleAI
             : VertexProjectId && VertexRegion
               ? AIProviders.VertexAI
-              : null
+              : LiteLLMApiKey && LiteLLMModel
+                ? AIProviders.LiteLLM
+                : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")

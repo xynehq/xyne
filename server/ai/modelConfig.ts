@@ -500,6 +500,15 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   websearch: true,
   //   deepResearch: true, // Pro experimental, good research capabilities
   // },
+  [Models.GLM_4_5]: {
+    actualName: "glm-45-fp8",
+    labelName: ModelDisplayNames.LITELLM_GLM_4_5,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: false,
+    deepResearch: false,
+    description: "Tailored for reasoning, coding, and agentic abilities",
+  },
 }
 
 // Model display name mappings - using the new enum-based approach
@@ -533,6 +542,8 @@ export const getAvailableModels = (config: {
   VertexAIModel?: string
   VertexProjectId?: string
   VertexRegion?: string
+  LiteLLMApiKey?: string
+  LiteLLMModel?: string
 }) => {
   const availableModels: Array<{
     actualName: string
@@ -639,6 +650,22 @@ export const getAvailableModels = (config: {
           description: model.description,
         })
       })
+  } 
+  if (config.LiteLLMApiKey && config.LiteLLMModel) {
+    // Add only LiteLLM model
+    Object.values(MODEL_CONFIGURATIONS)
+      .filter((model) => model.provider === AIProviders.LiteLLM)
+      .forEach((model) => {
+        availableModels.push({
+          actualName: model.actualName ?? "",
+          labelName: model.labelName,
+          provider: "LiteLLM",
+          reasoning: model.reasoning,
+          websearch: model.websearch,
+          deepResearch: model.deepResearch,
+          description: model.description,
+        })
+      })
   }
 
   return availableModels
@@ -659,6 +686,8 @@ export const getAvailableModelsLegacy = (config: {
   VertexAIModel?: string
   VertexProjectId?: string
   VertexRegion?: string
+  LiteLLMApiKey?: string
+  LiteLLMModel?: string
 }) => {
   const newModels = getAvailableModels(config)
   return newModels.map(
@@ -698,11 +727,19 @@ export const getActiveProvider = (): AIProviders | null => {
   return null
 }
 
+export const getLiteLLMProvider = (): AIProviders | null => {
+  if (config.LiteLLMApiKey && config.LiteLLMModel) {
+    return AIProviders.LiteLLM
+  }
+  return null
+}
+
 // Function to convert friendly model label back to the correct provider-specific model enum
 export const getModelValueFromLabel = (
   label: string,
 ): Models | string | null => {
   const activeProvider = getActiveProvider()
+  const liteLLMProvider = getLiteLLMProvider()
 
   if (!activeProvider) {
     return null
@@ -712,7 +749,7 @@ export const getModelValueFromLabel = (
   const modelEntry = Object.entries(MODEL_CONFIGURATIONS).find(
     ([modelKey, config]) => {
       const matches =
-        config.labelName === label && config.provider === activeProvider
+        config.labelName === label && (config.provider === activeProvider || config.provider === liteLLMProvider)
       return matches
     },
   )
@@ -749,6 +786,11 @@ export const getModelValueFromLabel = (
         return config.VertexAIModel
       }
       break
+    case AIProviders.LiteLLM:
+      if (config.LiteLLMModel && label === config.LiteLLMModel) {
+        return config.LiteLLMModel
+      }
+      break
   }
 
   return null
@@ -769,6 +811,7 @@ export const getModelValueFromLabelLegacy = (
     FireworksAIModel?: string
     GeminiAIModel?: string
     VertexAIModel?: string
+    LiteLLMModel?: string
   },
 ): string | null => {
   // Create reverse mapping from display names to actual model values
@@ -829,6 +872,15 @@ export const getModelValueFromLabelLegacy = (
         (MODEL_DISPLAY_NAMES[config.VertexAIModel] || config.VertexAIModel))
   ) {
     return config.VertexAIModel
+  }
+
+  if (
+    config.LiteLLMModel &&
+    (label === config.LiteLLMModel ||
+      label ===
+        (MODEL_DISPLAY_NAMES[config.LiteLLMModel] || config.LiteLLMModel))
+  ) {
+    return config.LiteLLMModel
   }
 
   return null

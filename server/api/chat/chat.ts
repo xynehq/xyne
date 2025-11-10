@@ -7450,6 +7450,8 @@ export const GetAvailableModelsApi = async (c: Context) => {
       VertexAIModel: config.VertexAIModel,
       VertexProjectId: config.VertexProjectId,
       VertexRegion: config.VertexRegion,
+      LiteLLMApiKey: config.LiteLLMApiKey,
+      LiteLLMModel: config.LiteLLMModel,
     })
 
     // Filter out actualName and provider fields before sending to frontend
