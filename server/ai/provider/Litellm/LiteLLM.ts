@@ -55,21 +55,9 @@ export class LiteLLMProvider extends BaseProvider {
       // Use default error message if parsing fails
     }
 
-    if (response.status === 401) {
-      throw new Error(
-        `LiteLLM API error: LiteLLM - ${errorMessage}`
-      );
-    }
-
-    if (response.status === 429) {
-      throw new Error(
-        `LiteLLM API error: LiteLLM - ${errorMessage}`
-      );
-    }
-
     throw new Error(
       `LiteLLM API error: LiteLLM - ${errorMessage}`,
-      { cause: response.status >= 500 }
+      { cause: response }
     );
   }
 
@@ -98,10 +86,7 @@ export class LiteLLMProvider extends BaseProvider {
         messages: [
           {
             role: "system",
-            content:
-              modelParams.systemPrompt! +
-              "\n\n" +
-              "Important: In case you don't have the context, you can use the images in the context to answer questions.",
+            content: modelParams.systemPrompt || ""
           },
           ...transformedMessages,
         ],
@@ -158,33 +143,58 @@ export class LiteLLMProvider extends BaseProvider {
         )
       }
 
+      // Safely extract the first choice
+      const firstChoice = data.choices && Array.isArray(data.choices) && data.choices.length > 0
+        ? data.choices[0]
+        : null
+
+      // Extract message content safely
+      const messageContent = firstChoice?.message?.content || ""
+      
+      // Extract tool calls safely
+      const toolCallsArray = firstChoice?.message?.tool_calls
+      const hasValidToolCalls = Array.isArray(toolCallsArray) && toolCallsArray.length > 0
+
+      // Extract usage information with safe defaults
+      const inputTokens = data.usage?.prompt_tokens ?? 0
+      const outputTokens = data.usage?.completion_tokens ?? 0
+      const totalTokens = data.usage?.total_tokens ?? 0
+
+      // Get cost configuration with correct fallback shape
+      const costConfig = modelDetailsMap[modelParams.modelId]?.cost?.onDemand ?? {
+        pricePerThousandInputTokens: 0,
+        pricePerThousandOutputTokens: 0,
+      }
+
       return {
-        text: data.choices[0].message.content || "",
+        text: messageContent,
         cost: calculateCost(
           {
-            inputTokens: data.usage?.prompt_tokens || 0,
-            outputTokens: data.usage?.completion_tokens || 0,
+            inputTokens,
+            outputTokens,
           },
-          modelDetailsMap[modelParams.modelId]?.cost?.onDemand || {
-            input: 0,
-            output: 0,
-          },
+          costConfig,
         ),
-        ...(data.choices?.[0]?.message?.tool_calls?.length
+        metadata: {
+          usage: {
+            inputTokens,
+            outputTokens,
+            totalTokens,
+          },
+        },
+        ...(hasValidToolCalls
           ? {
-              tool_calls: (data.choices[0].message.tool_calls || []).map(
-                (tc: any) => ({
-                  id: tc.id || "",
-                  type: "function" as const,
-                  function: {
-                    name: tc.function?.name || "",
-                    arguments:
-                      typeof tc.function?.arguments === "string"
-                        ? tc.function.arguments
-                        : JSON.stringify(tc.function?.arguments || {}),
-                  },
-                }),
-              ),
+              tool_calls: toolCallsArray.map((tc: any) => ({
+                id: tc.id || "",
+                type: "function" as const,
+                function: {
+                  name: tc.function?.name || "",
+                  arguments:
+                    typeof tc.function?.arguments === "string"
+                      ? tc.function.arguments
+                      : JSON.stringify(tc.function?.arguments || {}),
+                },
+              })),
             }
           : {}),
       }
@@ -225,10 +235,7 @@ export class LiteLLMProvider extends BaseProvider {
         messages: [
           {
             role: "system",
-            content:
-              modelParams.systemPrompt! +
-              "\n\n" +
-              "Important: In case you don't have the context, you can use the images in the context to answer questions.",
+            content: modelParams.systemPrompt || ""
           },
           ...transformedMessages,
         ],
@@ -347,15 +354,16 @@ export class LiteLLMProvider extends BaseProvider {
 
                 // Handle usage/cost information (usually in the last chunk)
                 if (parsed.usage) {
+                  const costConfig = modelDetailsMap[modelParams.modelId]?.cost?.onDemand ?? {
+                    pricePerThousandInputTokens: 0,
+                    pricePerThousandOutputTokens: 0,
+                  }
                   accumulatedCost = calculateCost(
                     {
                       inputTokens: parsed.usage.prompt_tokens || 0,
                       outputTokens: parsed.usage.completion_tokens || 0,
                     },
-                    modelDetailsMap[modelParams.modelId]?.cost?.onDemand || {
-                      input: 0,
-                      output: 0,
-                    },
+                    costConfig,
                   )
                 }
 

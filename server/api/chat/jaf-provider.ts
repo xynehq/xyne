@@ -45,7 +45,6 @@ export const makeXyneJAFProvider = <Ctx>(
       }
 
       const provider = getAISDKProviderByModel(model as Models)
-      console.log(`Using model ${model} with provider ${provider}`)
       const modelConfig = MODEL_CONFIGURATIONS[model as Models]
       const actualModelId = modelConfig?.actualName ?? model
       const languageModel = provider.languageModel(actualModelId)
