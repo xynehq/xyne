@@ -1,3 +1,10 @@
+## [3.30.11](https://github.com/xynehq/xyne/compare/v3.30.10...v3.30.11) (2025-11-10)
+
+
+### Bug Fixes
+
+* Webhook Node conflicted issues fixed and removed logs ([#1201](https://github.com/xynehq/xyne/issues/1201)) ([5e60fec](https://github.com/xynehq/xyne/commit/5e60fec41a88373599cdb11259bf2012108d2ec7))
+
 ## [3.30.10](https://github.com/xynehq/xyne/compare/v3.30.9...v3.30.10) (2025-11-10)
 
 
