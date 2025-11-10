@@ -44,12 +44,31 @@ interface ReasoningStep {
   iterationToolName?: string
 }
 
+interface ClarificationOption {
+  id: string
+  label: string
+}
+
+interface ClarificationRequest {
+  clarificationId: string
+  question: string
+  options: ClarificationOption[]
+  context?: any
+}
+
 interface EnhancedReasoningProps {
   content: string
   isStreaming?: boolean
   className?: string
   citations?: Citation[]
   citationMap?: Record<number, number>
+  clarificationRequest?: ClarificationRequest
+  waitingForClarification?: boolean
+  onClarificationSelect?: (
+    selectedOptionId: string,
+    selectedOptionLabel: string,
+    customInput?: string,
+  ) => void
 }
 
 // Process reasoning content to include citation links and format parameters
@@ -813,12 +832,16 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   className,
   citations = [],
   citationMap,
+  clarificationRequest,
+  waitingForClarification,
+  onClarificationSelect,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [steps, setSteps] = useState<ReasoningStep[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const hasAutoCollapsedRef = useRef(false)
+  const [customClarificationInput, setCustomClarificationInput] = useState("")
   const [progressState, setProgressState] = useState<{
     state: ProgressState
     text: string
@@ -961,17 +984,19 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   }, [isStreaming])
 
   // Auto-collapse when streaming ends (only once)
+  // BUT: Don't auto-collapse when waiting for clarification
   useEffect(() => {
     if (
       !isStreaming &&
       steps.length > 0 &&
       !isCollapsed &&
-      !hasAutoCollapsedRef.current
+      !hasAutoCollapsedRef.current &&
+      !waitingForClarification
     ) {
       setIsCollapsed(true)
       hasAutoCollapsedRef.current = true // Mark that auto-collapse has happened
     }
-  }, [isStreaming, steps.length, isCollapsed])
+  }, [isStreaming, steps.length, isCollapsed, waitingForClarification])
 
   // Auto-scroll to bottom when new content arrives during streaming
   useEffect(() => {
@@ -996,7 +1021,7 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
     }
   }, [steps, isStreaming, isCollapsed, userHasScrolled])
 
-  if (!content.trim() && !isStreaming) {
+  if (!content.trim() && !isStreaming && !clarificationRequest) {
     return null
   }
 
@@ -1069,6 +1094,97 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
               ) : (
                 <div className="py-4 text-gray-500 dark:text-gray-400 text-sm">
                   No reasoning steps available
+                </div>
+              )}
+
+              {/* HITL: Show clarification UI when waiting for user input */}
+              {waitingForClarification && clarificationRequest && (
+                <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <svg
+                        className="w-5 h-5 text-blue-600 dark:text-blue-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">
+                        {clarificationRequest.question}
+                      </p>
+                      <div className="space-y-2">
+                        {clarificationRequest.options.map((option) => (
+                          <button
+                            key={option.id}
+                            onClick={() =>
+                              onClarificationSelect &&
+                              onClarificationSelect(option.id, option.label)
+                            }
+                            className="w-full text-left px-4 py-3 bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
+                          >
+                            <span className="text-sm text-gray-700 dark:text-gray-200">
+                              {option.label}
+                            </span>
+                          </button>
+                        ))}
+
+                        {/* Custom input section */}
+                        <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-700">
+                          <label className="block text-xs font-medium text-blue-800 dark:text-blue-200 mb-2">
+                            Or provide a custom response:
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={customClarificationInput}
+                              onChange={(e) =>
+                                setCustomClarificationInput(e.target.value)
+                              }
+                              onKeyDown={(e) => {
+                                if (
+                                  e.key === "Enter" &&
+                                  customClarificationInput.trim()
+                                ) {
+                                  onClarificationSelect?.(
+                                    "custom",
+                                    customClarificationInput.trim(),
+                                    customClarificationInput.trim(),
+                                  )
+                                  setCustomClarificationInput("")
+                                }
+                              }}
+                              placeholder="Enter your custom response..."
+                              className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+                            />
+                            <button
+                              onClick={() => {
+                                if (customClarificationInput.trim()) {
+                                  onClarificationSelect?.(
+                                    "custom",
+                                    customClarificationInput.trim(),
+                                    customClarificationInput.trim(),
+                                  )
+                                  setCustomClarificationInput("")
+                                }
+                              }}
+                              disabled={!customClarificationInput.trim()}
+                              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg transition-colors"
+                            >
+                              Submit
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

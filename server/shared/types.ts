@@ -522,6 +522,8 @@ export enum ChatSSEvents {
   DeepResearchReasoning = "drr",
   Error = "er",
   AttachmentUpdate = "au",
+  ClarificationRequested = "cr",
+  ClarificationProvided = "cp",
 }
 
 const messageMetadataSchema = z.object({
