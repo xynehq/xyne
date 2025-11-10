@@ -28,17 +28,69 @@ export default function WebhookConfigurationUI({
   initialConfig,
   toolData,
 }: WebhookConfigurationUIProps) {
-  const [config, setConfig] = useState<WebhookConfig>({
-    webhookUrl: "",
-    httpMethod: "GET",
-    path: "",
-    authentication: "none",
-    selectedCredential: undefined,
-    responseMode: "immediately",
-    options: {},
-    headers: {},
-    queryParams: {},
-    requestBody: "",
+  // Initialize config from props
+  const [config, setConfig] = useState<WebhookConfig>(() => {
+    // First priority: use initialConfig if provided
+    if (initialConfig) {
+      return initialConfig
+    }
+    
+    // Second priority: extract from toolData (workflow tools structure)
+    if (toolData) {
+      let extractedConfig: WebhookConfig
+      
+      // Handle workflow tool structure: { type: 'webhook', value: {...}, config: {...} }
+      if (toolData.type === 'webhook' && toolData.value && toolData.config) {
+        const valueData = toolData.value
+        const configData = toolData.config
+        
+        extractedConfig = {
+          webhookUrl: valueData.webhookUrl || "",
+          httpMethod: (valueData.httpMethod || "GET") as WebhookConfig['httpMethod'],
+          path: valueData.path || "",
+          authentication: (configData.authentication || "none") as WebhookConfig['authentication'],
+          selectedCredential: configData.selectedCredential || undefined,
+          responseMode: (configData.responseMode || "immediately") as WebhookConfig['responseMode'],
+          options: configData.options || {},
+          headers: configData.headers || {},
+          queryParams: configData.queryParams || {},
+          requestBody: valueData.requestBody || configData.requestBody || "",
+        }
+      } else {
+        // Handle legacy structures
+        const valueData = toolData.value || toolData.val || toolData
+        const configData = toolData.config || toolData
+        
+        extractedConfig = {
+          webhookUrl: valueData.webhookUrl || configData.webhookUrl || "",
+          httpMethod: (valueData.httpMethod || configData.httpMethod || "GET") as WebhookConfig['httpMethod'],
+          path: valueData.path || configData.path || "",
+          authentication: (configData.authentication || "none") as WebhookConfig['authentication'],
+          selectedCredential: configData.selectedCredential || undefined,
+          responseMode: (configData.responseMode || "immediately") as WebhookConfig['responseMode'],
+          options: configData.options || {},
+          headers: configData.headers || {},
+          queryParams: configData.queryParams || {},
+          requestBody: valueData.requestBody || configData.requestBody || "",
+        }
+      }
+      
+      return extractedConfig
+    }
+    
+    // Default config if no data provided
+    return {
+      webhookUrl: "",
+      httpMethod: "GET",
+      path: "",
+      authentication: "none",
+      selectedCredential: undefined,
+      responseMode: "immediately",
+      options: {},
+      headers: {},
+      queryParams: {},
+      requestBody: "",
+    }
   })
 
   const [newHeaderKey, setNewHeaderKey] = useState("")
@@ -51,54 +103,40 @@ export default function WebhookConfigurationUI({
   const [originalConfig, setOriginalConfig] = useState<WebhookConfig | null>(null)
   const [selectedCredentialData, setSelectedCredentialData] = useState<Credential | null>(null)
 
-  // Initialize config from initialConfig or toolData
+  // Handle prop changes - force update when toolData changes
   useEffect(() => {
-    let newConfig: WebhookConfig
-
-    if (initialConfig) {
-      newConfig = initialConfig
-    } else if (toolData) {
-      // Handle toolData structure: { value: {...}, config: {...} }
-      const valueData = toolData.value || toolData.val || {}
-      const configData = toolData.config || {}
+    if (!originalConfig) {
+      setOriginalConfig(config)
+      setHasChanges(false)
+    }
+    
+    if (toolData && toolData.type === 'webhook' && toolData.value && toolData.config) {
+      const valueData = toolData.value
+      const configData = toolData.config
       
-      console.log("🔧 Initializing webhook config from toolData:", { valueData, configData })
-      
-      newConfig = {
-        webhookUrl: valueData.webhookUrl || configData.webhookUrl || "",
-        httpMethod: valueData.httpMethod || configData.httpMethod || "POST",
-        path: valueData.path || configData.path || "",
-        authentication: configData.authentication || "none",
+      const newConfig: WebhookConfig = {
+        webhookUrl: valueData.webhookUrl || "",
+        httpMethod: (valueData.httpMethod || "GET") as WebhookConfig['httpMethod'],
+        path: valueData.path || "",
+        authentication: (configData.authentication || "none") as WebhookConfig['authentication'],
         selectedCredential: configData.selectedCredential || undefined,
-        responseMode: configData.responseMode || "immediately",
+        responseMode: (configData.responseMode || "immediately") as WebhookConfig['responseMode'],
         options: configData.options || {},
         headers: configData.headers || {},
         queryParams: configData.queryParams || {},
-        requestBody: configData.requestBody || "",
+        requestBody: valueData.requestBody || configData.requestBody || "",
       }
       
-      console.log("🔧 Extracted path from toolData:", valueData.path)
-    } else {
-      // Default config for new webhooks
-      newConfig = {
-        webhookUrl: "",
-        httpMethod: "GET",
-        path: "",
-        authentication: "none",
-        selectedCredential: undefined,
-        responseMode: "immediately",
-        options: {},
-        headers: {},
-        queryParams: {},
-        requestBody: "",
-      }
+      // Force update the config
+      setConfig(newConfig)
+      setOriginalConfig(newConfig)
+      setHasChanges(false)
+    } else if (initialConfig) {
+      setConfig(initialConfig)
+      setOriginalConfig(initialConfig)
+      setHasChanges(false)
     }
-
-    console.log("🔧 Setting webhook config:", newConfig)
-    setConfig(newConfig)
-    setOriginalConfig(newConfig)
-    setHasChanges(false)
-  }, [initialConfig, toolData])
+  }, [toolData, initialConfig, config, originalConfig])
 
   // Track changes in config
   useEffect(() => {
@@ -302,13 +340,11 @@ export default function WebhookConfigurationUI({
       
       if (selectedToolCred && selectedToolCred.basic_auth) {
         // Use the pre-encoded basic_auth from tool config
-        console.log('🔧 Using basic_auth from tool config:', selectedToolCred.basic_auth)
         curlCommand += ` \\\n--header 'Authorization: Basic ${selectedToolCred.basic_auth}'`
       } else if (selectedCredentialData && selectedCredentialData.user && selectedCredentialData.password) {
         // Create Basic Auth token from fetched credential data
         const credentials = `${selectedCredentialData.user}:${selectedCredentialData.password}`
         const basicAuthToken = btoa(credentials) // Base64 encode
-        console.log('🔧 Creating basic_auth from credential data:', basicAuthToken)
         curlCommand += ` \\\n--header 'Authorization: Basic ${basicAuthToken}'`
       } else {
         // Fallback message if credential data is not available

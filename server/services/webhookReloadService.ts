@@ -1,6 +1,7 @@
 import { ToolType } from "@/types/workflowTypes"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import WebhookHandler from "@/services/WebhookHandler"
 
 const Logger = getLogger(Subsystem.WorkflowApi)
 
@@ -14,33 +15,17 @@ export function hasWebhookTools(tools: Array<{ type: string }>): boolean {
 }
 
 /**
- * Makes an internal API call to reload webhooks
- * This triggers the existing /workflow/webhook-api/reload endpoint functionality
+ * Triggers webhook reload by calling the WebhookHandler directly
  */
 export async function triggerWebhookReload(): Promise<{ success: boolean; count?: number; error?: string }> {
   try {
     Logger.info("🔄 Triggering webhook reload...")
     
-    // Make internal HTTP request to the webhook reload endpoint
-    const response = await fetch('http://localhost:3000/workflow/webhook-api/reload', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    })
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-    }
-    
-    const result = await response.json()
+    // Call WebhookHandler directly instead of making HTTP request
+    const result = await WebhookHandler.reloadWebhooks()
     Logger.info(`✅ Webhook reload completed: ${result.count} webhooks loaded`)
     
-    return {
-      success: result.success,
-      count: result.count,
-      error: result.error
-    }
+    return result
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     Logger.error(`Failed to trigger webhook reload: ${errorMessage}`)
