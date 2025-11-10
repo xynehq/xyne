@@ -1,5 +1,6 @@
 import { Flow, TemplateFlow } from "../Types"
 import { api } from "../../../api"
+import { UserMetadata, UserWorkflowRole } from "@/server/shared/types"
 
 // Credential types
 export interface Credential {
@@ -42,6 +43,8 @@ interface WorkflowTemplate {
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
+  role?: UserWorkflowRole
+  SharedUserMetadata?: UserMetadata
   rootStep?: {
     id: string
     workflowTemplateId: string
@@ -67,7 +70,7 @@ interface WorkflowTemplate {
 }
 
 interface ApiTemplate {
-  id: number
+  id: string
   workspaceId: number
   userId: number
   name: string

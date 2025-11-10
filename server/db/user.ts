@@ -13,6 +13,8 @@ import {
   type SelectUser,
   syncJobs,
   connectors,
+  type UserMetadata,
+  userMetadataSchema,
 } from "@/db/schema"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import { createId } from "@paralleldrive/cuid2"
@@ -228,6 +230,17 @@ export const getUserById = async (
     throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
   }
   return parsedRes.data
+}
+
+export const getUserMetaData = async(
+  trx: TxnOrClient,
+  userId: number
+): Promise<UserMetadata> => {
+  const user = await getUserById(
+    trx,
+    userId
+  )
+  return userMetadataSchema.parse(user)
 }
 
 export const getUsersByWorkspace = async (

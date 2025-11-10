@@ -309,6 +309,7 @@ import {
   ServeWorkflowFileApi,
   GetGeminiModelEnumsApi,
   GetVertexAIModelEnumsApi,
+  GetWorkflowUsersApi,
   TestJiraConnectionApi,
   RegisterJiraWebhookApi,
   GetJiraWebhooksApi,
@@ -1477,6 +1478,7 @@ export const AppRoutes = app
   )
   .get("/workflow/templates", ListWorkflowTemplatesApi)
   .get("/workflow/templates/:templateId", GetWorkflowTemplateApi)
+  .get("/workflow/templates/:templateId/permissions",GetWorkflowUsersApi)
   .put(
     "/workflow/templates/:templateId",
     zValidator("json", updateWorkflowTemplateSchema),

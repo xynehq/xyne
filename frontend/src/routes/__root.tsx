@@ -18,6 +18,9 @@ function RootContent() {
         onReject={rejectCall}
         onDismiss={dismissCall}
       />
+      <div className="fixed bottom-0 right-5 z-50 text-xs text-gray-400 dark:text-gray-500 font-mono pointer-events-none">
+        v{__APP_VERSION__}
+      </div>
     </>
   )
 }
