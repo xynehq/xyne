@@ -457,7 +457,7 @@ export const getAISDKProviderByModel = (modelId: Models): ProviderV2 => {
             ? AIProviders.GoogleAI
             : VertexProjectId && VertexRegion
               ? AIProviders.VertexAI
-              : null
+                : null
   switch (providerType) {
     case AIProviders.VertexAI: {
       if (!VertexProjectId || !VertexRegion) {

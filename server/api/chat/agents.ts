@@ -1818,17 +1818,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           modelConfig: { name: agenticModelId },
         }
 
-        let modelProvider: ModelProvider<JAFAdapterCtx> | null = null
-        const isUsingLiteLLMProvider =
-          getProviderTypeByModel(agenticModelId) === AIProviders.LiteLLM
-        if (isUsingLiteLLMProvider) {
-          modelProvider = makeLiteLLMProvider<JAFAdapterCtx>(
-            LiteLLMBaseUrl,
-            LiteLLMApiKey,
-          )
-        } else {
-          modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
-        }
+        const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
 
         const agentRegistry = new Map<string, JAFAgent<JAFAdapterCtx, string>>([
           [jafAgent.name, jafAgent],
@@ -1949,8 +1939,6 @@ export const MessageWithToolsApi = async (c: Context) => {
         const yieldedImageCitations = new Map<number, Set<number>>()
         let currentTurn = 0
         let totalToolCalls = 0
-        // Track previous content length for LiteLLM provider (which sends full accumulated content)
-        let previousAssistantContentLength = 0
 
         for await (const evt of runStream<JAFAdapterCtx, string>(
           runState,
@@ -1977,10 +1965,6 @@ export const MessageWithToolsApi = async (c: Context) => {
           switch (evt.type) {
             case "turn_start": {
               currentTurn = evt.data.turn
-              // Reset previous content length for new turn (only needed for LiteLLM)
-              if (isUsingLiteLLMProvider) {
-                previousAssistantContentLength = 0
-              }
               const turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
               turnSpan.setAttribute("turn_number", currentTurn)
               turnSpan.setAttribute("agent_name", evt.data.agentName)
@@ -2141,99 +2125,45 @@ export const MessageWithToolsApi = async (c: Context) => {
                   event: ChatSSEvents.Reasoning,
                   data: data,
                 })
-                // Reset previous content length when tool calls are present (only for LiteLLM)
-                if (isUsingLiteLLMProvider) {
-                  previousAssistantContentLength = 0
-                }
                 break
               }
 
-              // No tool calls: stream as user-visible answer text, with on-the-fly citations
-              if (isUsingLiteLLMProvider) {
-                // LiteLLM provider sends full accumulated content each time, so extract only the delta
-                const newContent = content.slice(previousAssistantContentLength)
+              // XyneJAF provider: chunk the content as before
+              const chunkSize = 200
+              for (let i = 0; i < content.length; i += chunkSize) {
+                const chunk = content.slice(i, i + chunkSize)
+                answer += chunk
+                await stream.writeSSE({
+                  event: ChatSSEvents.ResponseUpdate,
+                  data: chunk,
+                })
 
-                if (newContent.length > 0) {
-                  // Update answer with new content
-                  answer += newContent
-
-                  // Stream the new delta directly (no need to chunk it further)
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: newContent,
-                  })
-
-                  // Check for citations in the updated answer
-                  for await (const cit of checkAndYieldCitationsForAgent(
-                    answer,
-                    yieldedCitations,
-                    gatheredFragments,
-                    yieldedImageCitations,
-                    email ?? "",
-                  )) {
-                    if (cit.citation) {
-                      const { index, item } = cit.citation
-                      citations.push(item)
-                      citationMap[index] = citations.length - 1
-                      await stream.writeSSE({
-                        event: ChatSSEvents.CitationsUpdate,
-                        data: JSON.stringify({
-                          contextChunks: citations,
-                          citationMap,
-                        }),
-                      })
-                      citationValues[index] = item
-                    }
-                    if (cit.imageCitation) {
-                      imageCitations.push(cit.imageCitation)
-                      await stream.writeSSE({
-                        event: ChatSSEvents.ImageCitationUpdate,
-                        data: JSON.stringify(cit.imageCitation),
-                      })
-                    }
+                for await (const cit of checkAndYieldCitationsForAgent(
+                  answer,
+                  yieldedCitations,
+                  gatheredFragments,
+                  yieldedImageCitations,
+                  email ?? "",
+                )) {
+                  if (cit.citation) {
+                    const { index, item } = cit.citation
+                    citations.push(item)
+                    citationMap[index] = citations.length - 1
+                    await stream.writeSSE({
+                      event: ChatSSEvents.CitationsUpdate,
+                      data: JSON.stringify({
+                        contextChunks: citations,
+                        citationMap,
+                      }),
+                    })
+                    citationValues[index] = item
                   }
-                }
-
-                // Update previous content length for next delta calculation
-                previousAssistantContentLength = content.length
-              } else {
-                // XyneJAF provider: chunk the content as before
-                const chunkSize = 200
-                for (let i = 0; i < content.length; i += chunkSize) {
-                  const chunk = content.slice(i, i + chunkSize)
-                  answer += chunk
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: chunk,
-                  })
-
-                  for await (const cit of checkAndYieldCitationsForAgent(
-                    answer,
-                    yieldedCitations,
-                    gatheredFragments,
-                    yieldedImageCitations,
-                    email ?? "",
-                  )) {
-                    if (cit.citation) {
-                      const { index, item } = cit.citation
-                      citations.push(item)
-                      citationMap[index] = citations.length - 1
-                      await stream.writeSSE({
-                        event: ChatSSEvents.CitationsUpdate,
-                        data: JSON.stringify({
-                          contextChunks: citations,
-                          citationMap,
-                        }),
-                      })
-                      citationValues[index] = item
-                    }
-                    if (cit.imageCitation) {
-                      imageCitations.push(cit.imageCitation)
-                      await stream.writeSSE({
-                        event: ChatSSEvents.ImageCitationUpdate,
-                        data: JSON.stringify(cit.imageCitation),
-                      })
-                    }
+                  if (cit.imageCitation) {
+                    imageCitations.push(cit.imageCitation)
+                    await stream.writeSSE({
+                      event: ChatSSEvents.ImageCitationUpdate,
+                      data: JSON.stringify(cit.imageCitation),
+                    })
                   }
                 }
               }

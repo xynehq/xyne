@@ -5,8 +5,9 @@ import type {
   Message as JAFMessage,
   Agent as JAFAgent,
 } from "@xynehq/jaf"
-import { getTextContent, makeLiteLLMProvider } from "@xynehq/jaf"
-import { Models } from "@/ai/types"
+import { getTextContent } from "@xynehq/jaf"
+import { Models, AIProviders } from "@/ai/types"
+import { ModelToProviderMap } from "@/ai/mappers"
 import type {
   JSONSchema7,
   JSONValue,
@@ -23,6 +24,8 @@ import type {
   LanguageModelV2ToolCallPart,
   LanguageModelV2ToolResultPart,
 } from "@ai-sdk/provider"
+import OpenAI from "openai"
+import config from "@/config"
 import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
 
 export type MakeXyneJAFProviderOptions = {
@@ -33,10 +36,6 @@ export type MakeXyneJAFProviderOptions = {
 export const makeXyneJAFProvider = <Ctx>(
   _opts: MakeXyneJAFProviderOptions = {},
 ): JAFModelProvider<Ctx> => {
-  if(_opts.baseURL && _opts.apiKey) {
-    return makeLiteLLMProvider<Ctx>(_opts.baseURL, _opts.apiKey)
-  }
-  
   return {
     async getCompletion(state, agent, runCfg) {
       const model = runCfg.modelOverride ?? agent.modelConfig?.name
@@ -44,9 +43,143 @@ export const makeXyneJAFProvider = <Ctx>(
         throw new Error(`Model not specified for agent ${agent.name}`)
       }
 
-      const provider = getAISDKProviderByModel(model as Models)
       const modelConfig = MODEL_CONFIGURATIONS[model as Models]
       const actualModelId = modelConfig?.actualName ?? model
+      
+      // Check if this is a LiteLLM model - use OpenAI client directly like JAF does
+      const providerType = ModelToProviderMap[model as Models]
+      
+      if (providerType === AIProviders.LiteLLM) {
+        // Use OpenAI client directly for LiteLLM (same as JAF's makeLiteLLMProvider)
+        const { LiteLLMBaseUrl, LiteLLMApiKey } = config
+        const baseURL = LiteLLMBaseUrl
+        const apiKey = LiteLLMApiKey || "anything"
+
+        const client = new OpenAI({
+          baseURL: baseURL,
+          apiKey: apiKey,
+          dangerouslyAllowBrowser: true,
+        })
+
+        // Build messages in OpenAI format
+        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
+        
+        // Add system message
+        messages.push({
+          role: "system",
+          content: agent.instructions(state),
+        })
+
+        // Convert JAF messages to OpenAI format
+        for (const message of state.messages) {
+          if (message.role === "user") {
+            const text = getTextContent(message.content) || ""
+            messages.push({
+              role: "user",
+              content: text,
+            })
+          } else if (message.role === "assistant") {
+            const text = getTextContent(message.content) || ""
+            const toolCalls = message.tool_calls?.map((tc) => ({
+              id: tc.id,
+              type: "function" as const,
+              function: {
+                name: tc.function.name,
+                arguments:
+                  typeof tc.function.arguments === "string"
+                    ? tc.function.arguments
+                    : JSON.stringify(tc.function.arguments),
+              },
+            }))
+
+            messages.push({
+              role: "assistant",
+              content: text || null,
+              ...(toolCalls && toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+            })
+          } else if (message.role === "tool") {
+            const toolCallId = (message as { tool_call_id?: string }).tool_call_id
+            const content = getTextContent(message.content) || ""
+            if (toolCallId) {
+              messages.push({
+                role: "tool",
+                tool_call_id: toolCallId,
+                content: content,
+              })
+            }
+          }
+        }
+
+        // Build tools in OpenAI format
+        const tools = buildFunctionTools(agent).map((tool) => ({
+          type: "function" as const,
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema as any,
+          },
+        }))
+
+        const advRun = (
+          state.context as {
+            advancedConfig?: {
+              run?: {
+                parallelToolCalls: boolean
+                toolChoice: "auto" | "none" | "required" | undefined
+              }
+            }
+          }
+        )?.advancedConfig?.run
+
+        // Create completion request
+        const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+          model: actualModelId,
+          messages: messages,
+          temperature: agent.modelConfig?.temperature,
+          max_tokens: agent.modelConfig?.maxTokens,
+          ...(tools.length > 0 ? { tools } : {}),
+          ...(tools.length > 0 && advRun?.toolChoice
+            ? { tool_choice: advRun.toolChoice }
+            : {}),
+        }
+
+        if (agent.outputCodec) {
+          params.response_format = { type: "json_object" }
+        }
+
+        const resp = await client.chat.completions.create(params)
+
+        // Return in JAF format (same as JAF's makeLiteLLMProvider)
+        const choice = resp.choices[0]
+        const message = choice?.message
+        
+        const toolCalls = message?.tool_calls
+          ?.filter((tc) => tc.type === "function" && "function" in tc)
+          ?.map((tc) => {
+            const toolCall = tc as Extract<typeof tc, { type: "function"; function: any }>
+            return {
+              id: toolCall.id || "",
+              type: "function" as const,
+              function: {
+                name: toolCall.function.name || "",
+                arguments:
+                  typeof toolCall.function.arguments === "string"
+                    ? toolCall.function.arguments
+                    : JSON.stringify(toolCall.function.arguments || {}),
+              },
+            }
+          })
+        
+        return {
+          message: {
+            content: message?.content || null,
+            ...(toolCalls && toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+          },
+        }
+      }
+
+      // For other providers, use AI SDK as before
+      const provider = getAISDKProviderByModel(model as Models)
       const languageModel = provider.languageModel(actualModelId)
 
       const prompt = buildPromptFromMessages(
