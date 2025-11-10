@@ -13,6 +13,7 @@ import vectorIcon from "@/assets/vector.svg"
 import playIcon from "@/assets/play.svg"
 import emptyStateIcon from "@/assets/empty-state.svg"
 import { ChevronDown, Plus, Layout, ChevronRight, Search } from "lucide-react"
+import { UserMetadata, UserWorkflowRole } from "@/server/shared/types"
 
 interface WorkflowTemplate {
   id: string;
@@ -34,6 +35,8 @@ interface WorkflowTemplate {
   rootWorkflowStepTemplateId: string;
   createdAt: string;
   updatedAt: string;
+  role?: UserWorkflowRole; // User's role for this workflow (Owner, Editor, Viewer)
+  SharedUserMetadata?: UserMetadata;
   steps?: Array<{
     id: string;
     workflowTemplateId: string;
@@ -141,7 +144,7 @@ function WorkflowComponent() {
   const [isExecutionMode, setIsExecutionMode] = useState(false)
   const [workflowSearchTerm, setWorkflowSearchTerm] = useState("")
   const [isBuilderMode, setIsBuilderMode] = useState(true) // true for create/edit, false for view-only
-  const [workflowFilter, setWorkflowFilter] = useState<"all" | "public">("all")
+  const [workflowFilter, setWorkflowFilter] = useState<"all" | "personal" | "shared" | "public">("all")
 
   const fetchWorkflows = async () => {
     try {
@@ -756,6 +759,26 @@ function WorkflowComponent() {
                       All
                     </button>
                     <button
+                      onClick={() => setWorkflowFilter("personal")}
+                      className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                        workflowFilter === "personal"
+                          ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+                          : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                      }`}
+                    >
+                      Personal
+                    </button>
+                    <button
+                      onClick={() => setWorkflowFilter("shared")}
+                      className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                        workflowFilter === "shared"
+                          ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+                          : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                      }`}
+                    >
+                      Shared
+                    </button>
+                    <button
                       onClick={() => setWorkflowFilter("public")}
                       className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
                         workflowFilter === "public"
@@ -763,7 +786,7 @@ function WorkflowComponent() {
                           : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                       }`}
                     >
-                      Public workflows
+                      Public 
                     </button>
                   </div>
                   
@@ -789,11 +812,26 @@ function WorkflowComponent() {
                       workflow.name.toLowerCase().includes(workflowSearchTerm.toLowerCase())
                     )
 
-                    // Apply additional filtering based on workflowFilter
+                    
+                    // Apply additional filtering based on workflowFilter and role
+                    if (workflowFilter === "personal") {
+                      filteredWorkflows = filteredWorkflows.filter(workflow =>
+                        workflow.role === "owner" && !workflow.isPublic
+                      )
+                    }
+                    if (workflowFilter === "shared") {
+                      filteredWorkflows = filteredWorkflows.filter(workflow => 
+                        workflow.role === "shared"
+                      )
+                    }
                     if (workflowFilter === "public") {
-                      filteredWorkflows = filteredWorkflows.filter(workflow => workflow.isPublic)
-                    }                     
+                      filteredWorkflows = filteredWorkflows.filter(workflow => 
+                        workflow.isPublic 
+                      )
+                    }
 
+                    console.log(filteredWorkflows)
+                    
                     if (filteredWorkflows.length > 0) {
                       // If 4 or fewer workflows, show fixed 4-column grid with placeholders
                       if (filteredWorkflows.length <= 4) {

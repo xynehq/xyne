@@ -122,6 +122,7 @@ export type {
   SelectPublicChat,
   PublicWorkspace,
   SelectPublicAgent,
+  UserMetadata
   // @ts-ignore
 } from "@/db/schema"
 
@@ -545,6 +546,12 @@ export enum UserAgentRole {
   Editor = "editor", // User who can edit the agent
   Viewer = "viewer", // User who can only view/use the agent
   Shared = "shared", // User who has been shared the agent (general access)
+}
+
+export enum UserWorkflowRole {
+  Owner = "owner", // User who owns/created the workflow
+  Shared = "shared", // User has been shared the workflow
+  Viewer = "viewer", // User's role if workflow is public
 }
 
 export enum MessageFeedback {
