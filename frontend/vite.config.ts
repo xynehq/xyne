@@ -7,6 +7,7 @@ import svgr from "vite-plugin-svgr"
 import fs from "fs"
 import { viteStaticCopy } from "vite-plugin-static-copy"
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite"
+import pkg from "./package.json"
 
 export default defineConfig(({ mode }) => {
   // Load environment variables from .env.production if in production mode,
@@ -24,6 +25,9 @@ export default defineConfig(({ mode }) => {
     ...env,
   }
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
     plugins: [
       TanStackRouterVite({
         routeFileIgnorePattern: "\\.test\\.(ts|tsx|js|jsx)$",

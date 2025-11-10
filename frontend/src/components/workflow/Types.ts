@@ -1,3 +1,5 @@
+import { UserMetadata, UserWorkflowRole } from "@/server/shared/types"
+
 export interface UserDetail {
   id: string
   name: string
@@ -228,6 +230,7 @@ export interface WorkflowTemplate {
   id: string
   name: string
   userId: number
+  SharedUserMetadata?: UserMetadata
   workspaceId: number
   description: string
   version: string
@@ -244,6 +247,7 @@ export interface WorkflowTemplate {
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
+  role?: UserWorkflowRole
   rootStep?: {
     id: string
     workflowTemplateId: string

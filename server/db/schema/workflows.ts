@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm"
 import {
   uuid,
   pgTable,
+  serial,
   text,
   integer,
   timestamp,
@@ -9,6 +10,7 @@ import {
   boolean,
   pgEnum,
   customType,
+  uniqueIndex,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -265,6 +267,12 @@ export type InsertToolExecution = z.infer<typeof insertToolExecutionSchema>
 
 // Public schemas (for API responses)
 export const publicWorkflowTemplateSchema = selectWorkflowTemplateSchema
+  .omit({
+    id: true,
+    workspaceId: true,
+    userId: true,
+  })
+
 export const publicWorkflowExecutionSchema = selectWorkflowExecutionSchema.omit(
   {
     completedBy: true,
@@ -302,7 +310,7 @@ export const updateWorkflowToolSchema = createWorkflowToolSchema
   })
 
 export const createWorkflowStepTemplateSchema = z.object({
-  workflowTemplateId: z.string().uuid(),
+  workflowTemplateId: z.uuid(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   type: z.enum(Object.values(StepType) as [string, ...string[]]).default(StepType.AUTOMATED),
@@ -322,7 +330,15 @@ export const executeWorkflowSchema = z.object({
 
 // Additional schemas required by server.ts
 export const updateWorkflowTemplateSchema =
-  createWorkflowTemplateSchema.partial()
+  createWorkflowTemplateSchema.partial().extend({
+    isPublic: z.boolean().optional(),
+    status: z.enum(WorkflowStatus).optional(),
+    userEmails: z
+      .array(z.email())
+      .min(1)
+      .transform((arr) => Array.from(new Set(arr.map((e) => e.toLowerCase()))))
+      .optional(),
+  })
 
 // Complex workflow template creation schema for frontend workflow builder
 export const createComplexWorkflowTemplateSchema = z.object({
@@ -384,7 +400,7 @@ export const createComplexWorkflowTemplateSchema = z.object({
 })
 
 export const createWorkflowExecutionSchema = z.object({
-  workflowTemplateId: z.string().uuid(),
+  workflowTemplateId: z.uuid(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),

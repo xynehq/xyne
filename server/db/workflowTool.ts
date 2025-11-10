@@ -7,8 +7,11 @@ import {
   type SelectToolExecution,
   type InsertWorkflowTool,
   type InsertToolExecution,
+  selectWorkflowToolSchema,
+  selectToolExecutionSchema,
 } from "@/db/schema"
 import { ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
+import { z } from "zod"
 
 // Tool Operations
 export const createWorkflowTool = async (
@@ -32,9 +35,10 @@ export const createWorkflowTool = async (
     })
     .returning()
 
-  return tool as SelectWorkflowTool
+  return selectWorkflowToolSchema.parse(tool)
 }
 
+// doesn't perform user validation
 export const getWorkflowToolById = async (
   trx: TxnOrClient,
   id: string,
@@ -45,8 +49,44 @@ export const getWorkflowToolById = async (
     .where(eq(workflowTool.id, id))
     .limit(1)
 
-  return tool ? ({ ...tool, value: tool.value as any, config: tool.config as any }) : null
+  return tool ? selectWorkflowToolSchema.parse(tool) : null
 }
+
+export const getWorkflowToolByIdWithChecks = async (
+  trx: TxnOrClient,
+  id: string,
+  workspaceId: number,
+  userId: number,
+): Promise<SelectWorkflowTool | null> => {
+  const [tool] = await trx
+    .select()
+    .from(workflowTool)
+    .where(and(
+      eq(workflowTool.id, id),
+      eq(workflowTool.workspaceId, workspaceId),
+      eq(workflowTool.userId, userId),
+    ))
+    .limit(1)
+
+  return tool ? selectWorkflowToolSchema.parse(tool) : null
+}
+
+export const getAccessibleWorkflowTools = async (
+  trx: TxnOrClient,
+  workspaceId: number,
+  userId: number,
+): Promise<SelectWorkflowTool[]> => {
+  const results = await trx
+    .select()
+    .from(workflowTool)
+    .where(and(
+      eq(workflowTool.workspaceId, workspaceId),
+      eq(workflowTool.userId, userId),
+    ))
+  
+  return z.array(selectWorkflowToolSchema).parse(results)
+}
+
 
 export const getAllWorkflowTools = async (
   trx: TxnOrClient,
@@ -54,11 +94,14 @@ export const getAllWorkflowTools = async (
   const results = await trx
     .select()
     .from(workflowTool)
-    .orderBy(desc(workflowTool.createdAt))
   
-  return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
+  return z.array(selectWorkflowToolSchema).parse(results)
 }
 
+/*
+  Doesn't check for user access, 
+  only to be used with already authenticated toolIds
+*/
 export const getWorkflowToolsByIds = async (
   trx: TxnOrClient,
   toolIds: string[],
@@ -69,9 +112,8 @@ export const getWorkflowToolsByIds = async (
     .select()
     .from(workflowTool)
     .where(inArray(workflowTool.id, toolIds))
-    .orderBy(desc(workflowTool.createdAt))
   
-  return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
+  return z.array(selectWorkflowToolSchema).parse(results)
 }
 
 export const updateWorkflowTool = async (
@@ -88,7 +130,7 @@ export const updateWorkflowTool = async (
     .where(eq(workflowTool.id, id))
     .returning()
 
-  return updated ? ({ ...updated, value: updated.value as any, config: updated.config as any }) : null
+  return updated ? selectWorkflowToolSchema.parse(updated) : null
 }
 
 // Note: The new schema doesn't have soft deletes (deletedAt field)
@@ -113,6 +155,8 @@ export const createToolExecution = async (
     workflowExecutionId: string
     status?: ToolExecutionStatus
     result?: any
+    startedAt?: Date
+    completedAt?: Date
   },
 ): Promise<SelectToolExecution> => {
   const [execution] = await trx
@@ -120,12 +164,14 @@ export const createToolExecution = async (
     .values({
       workflowToolId: data.workflowToolId,
       workflowExecutionId: data.workflowExecutionId,
-      status: data.status || ToolExecutionStatus.PENDING,
+      status: data.status,
       result: data.result,
+      startedAt: data.startedAt,
+      completedAt: data.completedAt
     })
     .returning()
 
-  return execution as SelectToolExecution
+  return selectToolExecutionSchema.parse(execution)
 }
 
 export const getToolExecutionById = async (
@@ -138,7 +184,7 @@ export const getToolExecutionById = async (
     .where(eq(toolExecution.id, id))
     .limit(1)
 
-  return execution ? ({ ...execution, result: execution.result as any }) : null
+  return execution ? selectToolExecutionSchema.parse(execution) : null
 }
 
 export const getToolExecutionsByWorkflowExecution = async (
@@ -149,9 +195,8 @@ export const getToolExecutionsByWorkflowExecution = async (
     .select()
     .from(toolExecution)
     .where(eq(toolExecution.workflowExecutionId, workflowExecutionId))
-    .orderBy(desc(toolExecution.createdAt))
   
-  return results.map(result => ({ ...result, result: result.result as any }))
+  return z.array(selectToolExecutionSchema).parse(results)
 }
 
 export const getToolExecutionsByTool = async (
@@ -162,9 +207,8 @@ export const getToolExecutionsByTool = async (
     .select()
     .from(toolExecution)
     .where(eq(toolExecution.workflowToolId, workflowToolId))
-    .orderBy(desc(toolExecution.createdAt))
   
-  return results.map(result => ({ ...result, result: result.result as any }))
+  return z.array(selectToolExecutionSchema).parse(results)
 }
 
 export const updateToolExecution = async (
@@ -181,7 +225,7 @@ export const updateToolExecution = async (
     .where(eq(toolExecution.id, id))
     .returning()
 
-  return updated ? ({ ...updated, result: updated.result as any }) : null
+  return updated ? selectToolExecutionSchema.parse(updated) : null
 }
 
 export const markToolExecutionStarted = async (

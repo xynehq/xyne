@@ -1957,7 +1957,7 @@ export const GetChunkContentApi = async (c: Context) => {
       pageIndex =
         Array.isArray(pageNums) && typeof pageNums[0] === "number"
           ? pageNums[0]
-          : 0
+          : -1
     }
 
     if (!chunkContent) {

@@ -1102,7 +1102,7 @@ export function extractNamesFromIntent(intent: any): MailParticipant {
 
   return result
 }
-
+// // this helper function checks if the given value conforms to the AppSelectionMap structure
 export function isAppSelectionMap(value: any): value is AppSelectionMap {
   if (!value || typeof value !== "object") {
     return false
