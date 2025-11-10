@@ -46,16 +46,10 @@ export const userWorkflowPermissions = pgTable(
       table.userId,
       table.workflowId,
     ),
-    // Index for efficient queries by user
-    userIdIndex: index("user_workflow_permissions_user_id_index").on(
-      table.userId,
-    ),
     // Index for efficient queries by workflow
     workflowIdIndex: index("user_workflow_permissions_workflow_id_index").on(
       table.workflowId,
     ),
-    // Index for efficient queries by role
-    roleIndex: index("user_workflow_permissions_role_index").on(table.role),
   }),
 )
 
