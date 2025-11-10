@@ -45,7 +45,6 @@ export {
   WebSearchEntity,
   KnowledgeBaseEntity,
   datasourceSchema,
- 
 } from "@xyne/vespa-ts/types"
 export type {
   Entity,
@@ -58,7 +57,7 @@ export type {
   Span,
   VespaChatContainerSearch,
   VespaChatUserSearch,
-  VespaSearchResults
+  VespaSearchResults,
 } from "@xyne/vespa-ts/types"
 
 export type VespaFile = z.infer<typeof VespaFileSchema>

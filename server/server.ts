@@ -16,6 +16,7 @@ import {
   messageSchema,
   SearchApi,
   chatStopSchema,
+  chatClarificationSchema,
   SearchSlackChannels,
   agentChatMessageSchema,
   chatTitleSchema,
@@ -324,14 +325,18 @@ import {
   formSubmissionSchema,
   listWorkflowExecutionsQuerySchema,
 } from "@/api/workflow"
-import { 
-  workflowTool, 
-  workflowStepTemplate, 
-  workflowTemplate, 
-  workflowExecution, 
-  workflowStepExecution 
+import {
+  workflowTool,
+  workflowStepTemplate,
+  workflowTemplate,
+  workflowExecution,
+  workflowStepExecution,
 } from "@/db/schema/workflows"
-import { ToolType, WorkflowStatus, ToolExecutionStatus } from "@/types/workflowTypes"
+import {
+  ToolType,
+  WorkflowStatus,
+  ToolExecutionStatus,
+} from "@/types/workflowTypes"
 import { sql, eq } from "drizzle-orm"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
@@ -388,7 +393,7 @@ import {
 } from "./db/schema"
 import { sendMailHelper } from "@/api/testEmail"
 import { emailService } from "./services/emailService"
-import { AgentMessageApi } from "./api/chat/agents"
+import { AgentMessageApi, ProvideClarificationApi } from "./api/chat/agents"
 import {
   checkOverallSystemHealth,
   checkPaddleOCRHealth,
@@ -1282,10 +1287,13 @@ app.get("/workflow/webhook-api/reload", async (c) => {
     const result = await webhookHandler.reloadWebhooks()
     return c.json(result)
   } catch (error) {
-    return c.json({
-      success: false,
-      error: error instanceof Error ? error.message : String(error)
-    }, 500)
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      500,
+    )
   }
 })
 
@@ -1295,10 +1303,13 @@ app.get("/workflow/webhook-api/list", async (c) => {
     const result = webhookHandler.listWebhooks()
     return c.json(result)
   } catch (error) {
-    return c.json({
-      success: false,
-      error: error instanceof Error ? error.message : String(error)
-    }, 500)
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      500,
+    )
   }
 })
 
@@ -1342,6 +1353,11 @@ export const AppRoutes = app
   .post("/chat/rename", zValidator("json", chatRenameSchema), ChatRenameApi)
   .post("/chat/delete", zValidator("json", chatDeleteSchema), ChatDeleteApi)
   .post("/chat/stop", zValidator("json", chatStopSchema), StopStreamingApi)
+  .post(
+    "/chat/clarification",
+    zValidator("json", chatClarificationSchema),
+    ProvideClarificationApi,
+  )
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory)
   .get(
     "/chat/favorites",
@@ -1416,7 +1432,7 @@ export const AppRoutes = app
   )
   // Slack Entity API routes
   .get("/slack/entities", SlackEntitiesApi)
-  .get('/slack/documents', slackDocumentsApi)
+  .get("/slack/documents", slackDocumentsApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/users/api-keys", GetUserApiKeys)
   .post(

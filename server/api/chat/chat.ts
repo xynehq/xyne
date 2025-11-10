@@ -3901,9 +3901,7 @@ function processPublicAgentsCollectionSelections(
 
     // parsing for the new type of integration which we are going to save
     if (isAppSelectionMap(publicAgent.appIntegrations)) {
-      const { selectedItems } = parseAppSelections(
-        publicAgent.appIntegrations,
-      )
+      const { selectedItems } = parseAppSelections(publicAgent.appIntegrations)
 
       // Extract collection selections from knowledge_base selections
       if (selectedItems[Apps.KnowledgeBase]) {
@@ -3933,9 +3931,12 @@ function processPublicAgentsCollectionSelections(
           if (agentSpecificCollectionSelections.length === 0) {
             // Create the first agent specific collection selection if it doesn't exist
             agentSpecificCollectionSelections.push({
-              collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+              collectionIds:
+                collectionIds.length > 0 ? collectionIds : undefined,
               collectionFolderIds:
-                collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+                collectionFolderIds.length > 0
+                  ? collectionFolderIds
+                  : undefined,
               collectionFileIds:
                 collectionFileIds.length > 0 ? collectionFileIds : undefined,
             })
@@ -3943,19 +3944,27 @@ function processPublicAgentsCollectionSelections(
             // Add the other agent specific collection selections with deduplication using Sets
             const collectionSelection = agentSpecificCollectionSelections[0]
             if (collectionIds.length > 0) {
-              const existingIds = new Set(collectionSelection.collectionIds || [])
-              collectionIds.forEach(id => existingIds.add(id))
+              const existingIds = new Set(
+                collectionSelection.collectionIds || [],
+              )
+              collectionIds.forEach((id) => existingIds.add(id))
               collectionSelection.collectionIds = Array.from(existingIds)
             }
             if (collectionFolderIds.length > 0) {
-              const existingFolderIds = new Set(collectionSelection.collectionFolderIds || [])
-              collectionFolderIds.forEach(id => existingFolderIds.add(id))
-              collectionSelection.collectionFolderIds = Array.from(existingFolderIds)
+              const existingFolderIds = new Set(
+                collectionSelection.collectionFolderIds || [],
+              )
+              collectionFolderIds.forEach((id) => existingFolderIds.add(id))
+              collectionSelection.collectionFolderIds =
+                Array.from(existingFolderIds)
             }
             if (collectionFileIds.length > 0) {
-              const existingFileIds = new Set(collectionSelection.collectionFileIds || [])
-              collectionFileIds.forEach(id => existingFileIds.add(id))
-              collectionSelection.collectionFileIds = Array.from(existingFileIds)
+              const existingFileIds = new Set(
+                collectionSelection.collectionFileIds || [],
+              )
+              collectionFileIds.forEach((id) => existingFileIds.add(id))
+              collectionSelection.collectionFileIds =
+                Array.from(existingFileIds)
             }
           }
         }
@@ -4627,7 +4636,7 @@ export const MessageApi = async (c: Context) => {
       c,
       async (stream) => {
         streamKey = `${chat.externalId}` // Create the stream key
-        activeStreams.set(streamKey, stream) // Add stream to the map
+        activeStreams.set(streamKey, { stream }) // Add stream to the map
         loggerWithChild({ email: email }).info(
           `Added stream ${streamKey} to active streams map.`,
         )
@@ -6147,7 +6156,7 @@ export const MessageRetryApi = async (c: Context) => {
     return streamSSE(
       c,
       async (stream) => {
-        activeStreams.set(streamKey!, stream)
+        activeStreams.set(streamKey!, { stream })
         const streamSpan = rootSpan.startSpan("stream_response")
         streamSpan.setAttribute("chatId", originalMessage.chatExternalId)
         let wasStreamClosedPrematurely = false
@@ -7071,8 +7080,8 @@ export const StopStreamingApi = async (c: Context) => {
     }
 
     const streamKey = chatId
-    const stream = activeStreams.get(streamKey)
-
+    const activeStream = activeStreams.get(streamKey)
+    const stream = activeStream?.stream
     if (stream) {
       loggerWithChild({ email: email }).info(
         `[StopStreamingApi] Closing active stream: ${streamKey}.`,
