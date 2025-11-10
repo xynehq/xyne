@@ -184,7 +184,10 @@ export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
 export const addStdioMCPConnectorSchema = z.object({
   command: z.string(),
-  args: z.array(z.string()),
+  args: z.union([
+    z.array(z.string()),
+    z.string().transform((val) => (val ? val.split(" ").filter(Boolean) : [])),
+  ]),
   name: z.string(),
   appType: z.string(),
 })
