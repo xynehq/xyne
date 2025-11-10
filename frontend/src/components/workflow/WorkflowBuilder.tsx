@@ -154,6 +154,7 @@ import {
   AddIcon,
   FormDocumentIcon,
   JiraIcon,
+  SlackIcon,
 } from "./WorkflowIcons"
 import {
   workflowExecutionsAPI,
@@ -166,6 +167,7 @@ import HttpRequestConfigUI, { HttpRequestConfig } from "./HttpRequestConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
 import WebhookConfigurationUI, { WebhookConfig } from "./WebhookConfigurationUI"
 import { JiraConfigurationUI, JiraConfig } from "./JiraConfigurationUI"
+import SlackTriggerConfigUI, { SlackTriggerConfig } from "./SlackTriggerConfigUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
@@ -1435,6 +1437,143 @@ const StepNode: React.FC<NodeProps> = ({
     )
   }
 
+  // Special rendering for Slack Trigger nodes and steps with slack_trigger tools
+  const hasSlackTriggerTool = tools && tools.length > 0 && tools[0].type === "slack_trigger"
+  if (step.type === "slack_trigger" || hasSlackTriggerTool) {
+    const config =
+      (step as any).config ||
+      (hasSlackTriggerTool && tools?.[0]?.config) ||
+      (hasSlackTriggerTool && tools?.[0]?.val) ||
+      {}
+
+    const triggerTypeLabels = {
+      app_mention: "App Mention",
+      direct_message: "Direct Message",
+      message_in_channel: "Message in Channel"
+    }
+
+    const triggerLabel = config.triggerType ? triggerTypeLabels[config.triggerType as keyof typeof triggerTypeLabels] : "Slack Trigger"
+    const channelInfo = config.channelId ? ` in ${config.channelId}` : ""
+
+    return (
+      <>
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
+            ? "border-gray-800 dark:border-gray-300 shadow-lg"
+            : "border-gray-300 dark:border-gray-600"
+            }`}
+          style={{
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            boxShadow: "0 0 0 2px #E2E2E2",
+          }}
+        >
+          {/* Header with icon and title */}
+          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
+            {/* Purple Slack icon with background */}
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-purple-50 dark:bg-purple-900/50"
+              style={{
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
+              }}
+            >
+              <SlackIcon width={16} height={16} />
+            </div>
+
+            <h3
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
+              style={{
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
+              }}
+            >
+              {config.title || step.name || "Slack Trigger"}
+            </h3>
+          </div>
+
+          {/* Full-width horizontal divider */}
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
+
+          {/* Description text */}
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {config.description || `Trigger on: ${triggerLabel}${channelInfo}`}
+            </p>
+          </div>
+
+          {/* ReactFlow Handles - invisible but functional */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          {/* Bottom center connection point - visual only */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
+
+          {/* Add Next Step Button */}
+          {hasNext && (
+            <div
+              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+              style={{ top: "calc(100% + 8px)" }}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                const event = new CustomEvent("openWhatHappensNext", {
+                  detail: { nodeId: id },
+                })
+                window.dispatchEvent(event)
+              }}
+            >
+              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+              <div
+                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                style={{
+                  width: "28px",
+                  height: "28px",
+                }}
+              >
+                <svg
+                  className="w-4 h-4 text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
   const getNodeClasses = () => {
     const baseClasses =
       "rounded-2xl border-2 transition-all duration-300 ease-in-out p-6 min-w-[180px] min-h-[90px] text-center flex flex-col items-center justify-center cursor-pointer relative backdrop-blur-sm"
@@ -2038,6 +2177,13 @@ const TriggersSidebar = ({
       enabled: true,
     },
     {
+      id: "slack_trigger",
+      name: "Slack Trigger",
+      description: "Trigger workflow from Slack app mentions, DMs, or channel messages",
+      icon: <SlackIcon width={20} height={20} />,
+      enabled: true,
+    },
+    {
       id: "manual",
       name: "Trigger Manually",
       description:
@@ -2334,6 +2480,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   )
   const [jiraInitialConfig, setJiraInitialConfig] = useState<any>(undefined)
   const [jiraToolId, setJiraToolId] = useState<string | undefined>(undefined)
+  const [showSlackTriggerConfigUI, setShowSlackTriggerConfigUI] = useState(false)
+  const [selectedSlackTriggerNodeId, setSelectedSlackTriggerNodeId] = useState<string | null>(
+    null,
+  )
+  const [slackTriggerInitialConfig, setSlackTriggerInitialConfig] = useState<any>(undefined)
+  const [slackTriggerToolId, setSlackTriggerToolId] = useState<string | undefined>(undefined)
   const [zoomLevel, setZoomLevel] = useState(100)
   const [showToolsSidebar, setShowToolsSidebar] = useState(false)
   const [selectedNodeTools] = useState<Tool[] | null>(
@@ -2776,7 +2928,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                 nodeData.step.type === "schedule" ||
                 nodeData.step.type === "app_event" ||
                 nodeData.step.type === "webhook" ||
-                nodeData.step.type === "jira")
+                nodeData.step.type === "jira" ||
+                nodeData.step.type === "slack_trigger")
       })
 
       if (lastSavedHash === "" && hasValidTrigger) {
@@ -2857,6 +3010,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
       setShowJiraConfigUI(false)
+      setShowSlackTriggerConfigUI(false)
       setSelectedNodeForNext(null)
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
@@ -2882,7 +3036,7 @@ setShowWebhookConfigUI(false)
           setShowEmailConfigUI(true)
           break
 
-case "http_request":
+        case "http_request":
           // Open HTTP Request config sidebar
           setSelectedHttpRequestNodeId(node.id)
           setShowHttpRequestConfigUI(true)
@@ -2927,6 +3081,12 @@ case "http_request":
             setJiraToolId(undefined)
             setJiraInitialConfig(undefined)
           }
+          break
+
+        case "slack_trigger":
+          // Open Slack Trigger config sidebar 
+          setShowSlackTriggerConfigUI(true)
+          setSelectedSlackTriggerNodeId(node.id)
           break
 
         case "ai_agent":
@@ -3149,6 +3309,7 @@ case "http_request":
       setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
       setShowJiraConfigUI(false)
+      setShowSlackTriggerConfigUI(false)
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
       setShowWhatHappensNextUI(true)
@@ -3163,6 +3324,7 @@ case "http_request":
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
       setShowJiraConfigUI(false)
+      setShowSlackTriggerConfigUI(false)
 
       setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
@@ -3426,6 +3588,17 @@ case "http_request":
         setShowTriggersSidebar(false)
         setSelectedJiraNodeId("pending") // Temporary ID to indicate we're in creation mode
         setShowJiraConfigUI(true)
+        setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
+        // Reset zoom to 100%
+        setZoomLevel(100)
+        setTimeout(() => {
+          zoomTo(1)
+        }, 50)
+      } else if (triggerId === "slack_trigger") {
+        // Close TriggersSidebar with slide-out animation when SlackTriggerConfigUI opens
+        setShowTriggersSidebar(false)
+        setSelectedSlackTriggerNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowSlackTriggerConfigUI(true)
         setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
         // Reset zoom to 100%
         setZoomLevel(100)
@@ -4431,6 +4604,119 @@ const handleWebhookConfigSave = useCallback(
     [selectedJiraNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges, getToolIdFromStepId, showSnackbarMessage],
   )
 
+  const handleSlackTriggerConfigBack = useCallback(() => {
+    setShowSlackTriggerConfigUI(false)
+    setSlackTriggerInitialConfig(undefined)
+
+    // If we're in creation mode (pending), go back to triggers sidebar
+    if (selectedSlackTriggerNodeId === "pending") {
+      setShowTriggersSidebar(true)
+      setSelectedSlackTriggerNodeId(null)
+      // If we were in pending mode (creating new trigger), show empty canvas again
+      if (nodes.length === 0) {
+        setShowEmptyCanvas(true)
+      }
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedSlackTriggerNodeId(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) =>
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedSlackTriggerNodeId, nodes.length, setNodes])
+
+  const handleSlackTriggerConfigSave = useCallback(
+    async (slackTriggerConfig: SlackTriggerConfig) => {
+      try {
+        if (selectedSlackTriggerNodeId === "pending") {
+          // Create a new node with the Slack Trigger config (only local state update)
+          const newNodeId = String(nodeCounter + 1)
+          setNodeCounter(nodeCounter + 1)
+
+          const newNode: Node = {
+            id: newNodeId,
+            type: "stepNode",
+            position: { x: 400, y: 100 },
+            data: {
+              step: {
+                id: newNodeId,
+                name: slackTriggerConfig.title || "Slack Trigger",
+                status: "PENDING",
+                contents: [],
+                type: "slack_trigger",
+                config: slackTriggerConfig,
+              },
+              tools: [
+                {
+                  id: `slack_trigger_${newNodeId}`,
+                  type: "slack_trigger",
+                  config: slackTriggerConfig,
+                  value: slackTriggerConfig,
+                },
+              ],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true,
+            },
+          }
+
+          setNodes([newNode])
+          setSelectedNodes([])
+        } else if (selectedSlackTriggerNodeId && selectedSlackTriggerNodeId !== "pending") {
+          console.log("yoyoyo 3...",selectedSlackTriggerNodeId)
+          // Update existing Slack Trigger - only update local node state
+          // Actual DB save will happen when user saves workflow"
+          setNodes((prevNodes) =>
+            prevNodes.map((node) => {
+              if (node.id === selectedSlackTriggerNodeId) {
+                const existingTools = Array.isArray(node.data?.tools) ? node.data.tools : []
+                const existingToolId = existingTools.length > 0 ? existingTools[0].id : `slack_trigger_${selectedSlackTriggerNodeId}`
+                const existingStep = node.data?.step || {}
+
+                return {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...existingStep,
+                      name: slackTriggerConfig.title || "Slack Trigger",
+                      type: "slack_trigger",
+                      config: slackTriggerConfig,
+                    },
+                    tools: [
+                      {
+                        id: existingToolId,
+                        type: "slack_trigger",
+                        config: slackTriggerConfig,
+                        value: slackTriggerConfig,
+                      },
+                    ],
+                    hasNext: !edges.some(edge => edge.source === selectedSlackTriggerNodeId),
+                  },
+                }
+              }
+              return node
+            }),
+          )
+        }
+
+        setShowSlackTriggerConfigUI(false)
+        setSelectedSlackTriggerNodeId(null)
+        setZoomLevel(100)
+
+        setTimeout(() => {
+          smartFitWorkflow()
+        }, 50)
+      } catch (error) {
+        console.error("Failed to save Slack Trigger configuration:", error)
+        showSnackbarMessage("Failed to save Slack Trigger configuration. Please try again.", "error")
+      }
+    },
+    [selectedSlackTriggerNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges, showSnackbarMessage, nodeCounter],
+  )
+
   const handleResultClick = useCallback((result: any) => {
     setSelectedResult(result)
     setShowResultModal(true)
@@ -5062,6 +5348,31 @@ const handleWebhookConfigSave = useCallback(
           onSave={handleJiraConfigSave}
           initialConfig={jiraInitialConfig}
           toolId={jiraToolId}
+        />
+
+        {/* Slack Trigger Configuration Sidebar */}
+        <SlackTriggerConfigUI
+          isVisible={showSlackTriggerConfigUI}
+          onBack={handleSlackTriggerConfigBack}
+          onClose={() => {
+            setShowSlackTriggerConfigUI(false)
+            setSelectedSlackTriggerNodeId(null)
+            setSlackTriggerInitialConfig(undefined)
+            setSlackTriggerToolId(undefined)
+            setNodes((prevNodes) =>
+              prevNodes.map(node => ({ ...node, selected: false }))
+            )
+            setSelectedNodes([])
+            // If we were in pending mode (creating new trigger), show empty canvas again
+            if (nodes.length === 0) {
+              setShowEmptyCanvas(true)
+            }
+          }}
+          onSave={handleSlackTriggerConfigSave}
+          initialConfig={slackTriggerInitialConfig}
+          toolId={slackTriggerToolId}
+          showBackButton={selectedSlackTriggerNodeId === "pending"}
+          builder={builder}
         />
       </div>
 

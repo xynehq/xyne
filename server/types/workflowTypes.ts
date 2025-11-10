@@ -23,6 +23,7 @@ export enum ToolType {
   WEBHOOK = "webhook",
   HTTP_REQUEST = "http_request",
   JIRA = "jira",
+  SLACK_TRIGGER = "slack_trigger",
 }
 
 export enum ToolExecutionStatus {

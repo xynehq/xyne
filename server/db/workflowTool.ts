@@ -1,4 +1,4 @@
-import { and, eq, desc, inArray } from "drizzle-orm"
+import { and, eq, desc, inArray, sql } from "drizzle-orm"
 import type { TxnOrClient } from "@/types"
 import {
   workflowTool,
@@ -7,6 +7,8 @@ import {
   type SelectToolExecution,
   type InsertWorkflowTool,
   type InsertToolExecution,
+  workflowTemplate,
+  workflowStepTemplate,
 } from "@/db/schema"
 import { ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
 
@@ -72,6 +74,58 @@ export const getWorkflowToolsByIds = async (
     .orderBy(desc(workflowTool.createdAt))
   
   return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
+}
+
+/**
+ * Gets workflow templates based on the type of initial trigger
+ */
+export const getSlackTriggersInWorkflows = async (
+  txn: TxnOrClient,
+  userId: number,
+  workspaceId: number,
+): Promise<{
+  workflowId: string,
+  workflowName: string,
+  workflowDescription: string | null,
+  toolId: string,
+  toolConfig: any,
+  toolValue: any
+}[]> => {
+  const workflows = await txn
+    .select({
+      workflowId: workflowTemplate.id,
+      workflowName: workflowTemplate.name,
+      workflowDescription: workflowTemplate.description,
+      toolId: workflowTool.id,
+      toolConfig: workflowTool.config,
+      toolValue: workflowTool.value,
+    })
+    .from(workflowTemplate)
+    .innerJoin(
+      workflowStepTemplate,
+      eq(workflowStepTemplate.workflowTemplateId, workflowTemplate.id)
+    )
+    .innerJoin(
+      workflowTool,
+      sql`${workflowTool.id} = ANY(${workflowStepTemplate.toolIds})`
+    )
+    .where(
+      and(
+        eq(workflowTool.type, ToolType.SLACK_TRIGGER),
+        eq(workflowTemplate.workspaceId, workspaceId),
+        eq(workflowTemplate.userId, userId),
+      )
+    )
+    .groupBy(
+      workflowTemplate.id,
+      workflowTemplate.name,
+      workflowTemplate.description,
+      workflowTool.id,
+      workflowTool.config,
+      workflowTool.value
+    )
+
+    return workflows
 }
 
 export const updateWorkflowTool = async (
