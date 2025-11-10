@@ -1194,7 +1194,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             lowerIntegration.startsWith("ds_")
           ) {
             // ds- is the prefix for datasource externalId
-            //what is the difference between datasource and knowledge base
             agentSpecificDataSourceIds.push(integration)
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
@@ -1384,6 +1383,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       collectionSelections: agentSpecificCollectionSelections,
     })
   } else {
+    Logger.info(
+      `[GENERATEITERATIVETIMEFILTERANDQUERYREWRITE] Performing agent search with apps: ${agentAppEnums.join(
+        ", ",
+      )}, dataSources: ${agentSpecificDataSourceIds.join(
+        ", ",
+      )}, channelIds: ${channelIds.join(", ")}`,
+    )
+    Logger.info((`agentSpecificDataSourceIds is as follows: ${JSON.stringify(agentSpecificDataSourceIds)}, channelIds is as ${JSON.stringify(channelIds)} `)  )
     searchResults = await searchVespaAgent(
       message,
       email,
@@ -1991,6 +1998,7 @@ async function* generateAnswerFromGivenContext(
     const fileSearchSpan = generateAnswerSpan?.startSpan("file_search")
     let results
     if (isValidPath) {
+      // handle valid path casee
       if (folderIds?.length) {
         results = await searchCollectionRAG(messageText, undefined, folderIds)
       } else {
@@ -2000,6 +2008,9 @@ async function* generateAnswerFromGivenContext(
         combinedSearchResponse.push(...results.root.children)
       }
     } else {
+      // Split into 3 groups
+      // Search each group
+      // Push results to combinedSearchResponse
       const collectionFileIds = fileIds.filter(
         (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
       )
@@ -2226,8 +2237,7 @@ async function* generateAnswerFromGivenContext(
   initialContextSpan?.end()
 
   loggerWithChild({ email: email }).info(
-    `[Selected Context Path] Number of contextual chunks being passed: ${
-      combinedSearchResponse?.length || 0
+    `[Selected Context Path] Number of contextual chunks being passed: ${combinedSearchResponse?.length || 0
     }`,
   )
 
@@ -2272,6 +2282,600 @@ async function* generateAnswerFromGivenContext(
     generateAnswerSpan?.end()
     return
   }
+  if (config.isReasoning && userRequestsReasoning) {
+    previousResultsLength += combinedSearchResponse?.length || 0
+  }
+  generateAnswerSpan?.end()
+}
+/**
+ * generateAnswerFromDualRag - Performs RAG on both attachments and KB
+ *
+ * This function combines:
+ * - Attachment search (like generateAnswerFromGivenContext)
+ * - KB search (like UnderstandMessageAndAnswer)
+ *
+ * Results are merged, ranked by relevance, and passed to the LLM.
+ */
+
+export async function* generateAnswerFromDualRag(
+  input: string,
+  email: string,
+  userCtx: string,
+  userMetadata: UserMetadataType,
+  alpha: number = 0.5,
+  fileIds: string[],// contains all attachement fileids
+  agentAppEnums: Apps[],
+  userRequestsReasoning: boolean,
+  agentPrompt?: string,
+  passedSpan?: Span,
+  threadIds?: string[],
+  attachmentFileIds?: string[],// contains image attachments 
+  isMsgWithSources?: boolean,
+  modelId?: string,
+  isValidPath?: boolean,
+  folderIds?: string[],
+): AsyncIterableIterator<
+  ConverseResponse & {
+    citation?: { index: number; item: any }
+    imageCitation?: ImageCitation
+  }
+> {
+  const message = input
+  const messageText = parseMessageText(message)
+  loggerWithChild({ email: email }).info(
+    { email },
+    `generateAnswerFromDualRag - input: ${messageText}`,
+  )
+  loggerWithChild({ email: email }).info(
+    `generateAnswerFromDualRag - agentAppEnums received: ${JSON.stringify(
+      agentAppEnums,
+    )}`,
+  )
+  loggerWithChild({ email: email }).info(
+    `generateAnswerFromDualRag - fileIds received: ${JSON.stringify(fileIds)}`,
+  )
+  loggerWithChild({ email: email }).info(
+    `generateAnswerFromDualRag - attachmentFileIds received: ${JSON.stringify(
+      attachmentFileIds,
+    )}`,
+  )
+  let userAlpha = alpha
+  try {
+    const personalization = await getUserPersonalizationByEmail(db, email)
+    if (personalization) {
+      const nativeRankParams =
+        personalization.parameters?.[SearchModes.NativeRank]
+      if (nativeRankParams?.alpha !== undefined) {
+        userAlpha = nativeRankParams.alpha
+        loggerWithChild({ email: email }).info(
+          { email, alpha: userAlpha },
+          "[Dual RAG ] Using personalized alpha for iterative RAG",
+        )
+      } else {
+        loggerWithChild({ email: email }).info(
+          { email },
+          "[Dual RAG ] No personalized alpha found in settings, using default for iterative RAG",
+        )
+      }
+    } else {
+      loggerWithChild({ email: email }).warn(
+        { email },
+        "[Dual RAG ] User personalization settings not found, using default alpha for iterative RAG",
+      )
+    }
+  } catch (err) {
+    loggerWithChild({ email: email }).error(
+      err,
+      "[Dual RAG ] Failed to fetch personalization for iterative RAG, using default alpha",
+      { email },
+    )
+  }
+
+  const generateAnswerSpan = passedSpan?.startSpan("generateAnswerFromDualRag")
+
+  generateAnswerSpan?.setAttribute("fileIds_count", fileIds?.length || 0)
+  generateAnswerSpan?.setAttribute(
+    "agentApps_count",
+    agentAppEnums?.length || 0,
+  )
+
+  const selectedContext = isContextSelected(message)
+  const builtUserQuery = selectedContext
+    ? buildUserQuery(selectedContext)
+    : message
+
+  let previousResultsLength = 0
+  const combinedSearchResponse: VespaSearchResult[] = []
+  //How many chunks to take from each document
+  let chunksPerDocument: number[] = []
+  //Total budget of chunks (120 is empirically validated)
+  const targetChunks = 120
+
+  
+  if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
+    const fileSearchSpan = generateAnswerSpan?.startSpan("file_search")
+    let results
+    if (isValidPath) {
+      // handle valid path casee
+      generateAnswerSpan?.setAttribute("valid_path", true)
+      if (folderIds?.length) {
+        results = await searchCollectionRAG(messageText, undefined, folderIds)
+      } else {
+        results = await searchCollectionRAG(messageText, fileIds, undefined)
+      }
+      if (results.root.children) {
+        combinedSearchResponse.push(...results.root.children)
+      }
+    } else {
+      // Split into 3 groups
+      // Search each group
+      // Push results to combinedSearchResponse
+      const collectionFileIds = fileIds.filter(
+        (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
+      )
+      loggerWithChild({ email }).info(
+        `[Dual RAG ] Collection file IDs identified: ${JSON.stringify(
+          collectionFileIds,
+        )}`,
+      )
+      const nonCollectionFileIds = fileIds.filter(
+        (fid) => !fid.startsWith("clf-") && !fid.startsWith("att"),
+      )
+      loggerWithChild({ email }).info(
+        `[Dual RAG ] Non-collection file IDs identified: ${JSON.stringify(
+          nonCollectionFileIds,
+        )}`,
+      )
+
+      const allAttachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
+
+  
+      loggerWithChild({ email }).info(
+        `[Dual RAG ] Attachment file IDs identified: ${JSON.stringify(
+          allAttachmentFileIds,
+        )}`,
+      )
+
+      if (nonCollectionFileIds && nonCollectionFileIds.length > 0) {
+        loggerWithChild({ email }).info(
+          `[Dual RAG ] Searching non-collection file IDs: ${JSON.stringify(
+            nonCollectionFileIds,
+          )} and calling searchVespaInFiles`,
+        )
+        results = await searchVespaInFiles(
+          builtUserQuery,
+          email,
+          nonCollectionFileIds,
+          {
+            limit: fileIds?.length,
+            alpha: userAlpha,
+          },
+        )
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
+      if (collectionFileIds && collectionFileIds.length > 0) {
+        results = await searchCollectionRAG(
+          messageText,
+          collectionFileIds,
+          undefined,
+        )
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
+      if (allAttachmentFileIds && allAttachmentFileIds.length > 0) {
+        loggerWithChild({ email }).info(
+          `[Dual RAG ] Searching attachment file IDs: ${JSON.stringify(
+            allAttachmentFileIds,
+          )} and calling searchVespaInFiles`,
+        )
+        results = await searchVespaInFiles(
+          builtUserQuery,
+          email,
+          allAttachmentFileIds,
+          {
+            limit: fileIds?.length,
+            alpha: userAlpha,
+            rankProfile: SearchModes.AttachmentRank,
+          },
+        )
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
+    }
+
+
+    fileSearchSpan?.end()
+  }
+  loggerWithChild({ email: email }).info(
+    `[DUAL RAG ] Total attachment-based results collected: ${combinedSearchResponse.length}`,
+  )
+
+  // now query the KB if agentAppEnums is provided
+  if (agentAppEnums && agentAppEnums.length > 0) {
+ 
+    // Step 1: Initialize variables to store parsed data
+    let agentSpecificCollectionSelections: Array<{
+      collectionIds?: string[]
+      collectionFolderIds?: string[]
+      collectionFileIds?: string[]
+    }> = []
+    let selectedItem: Partial<Record<Apps, string[]>> = {}
+
+    // Step 2: Parse agentPrompt JSON
+    if (agentPrompt) {
+      loggerWithChild({ email }).info(
+        `[generateAnswerFromDualRag] agentPrompt received: ${agentPrompt}`,
+      )
+
+      let agentPromptData: { appIntegrations?: any } = {}
+
+
+      try {
+        agentPromptData = JSON.parse(agentPrompt)
+      } catch (error) {
+        loggerWithChild({ email }).warn(
+          "[generateAnswerFromDualRag] Failed to parse agentPrompt JSON",
+          { error, agentPrompt },
+        )
+      }
+      loggerWithChild({ email }).info(
+        `[generateAnswerFromDualRag] Is app selection map: ${isAppSelectionMap(agentPromptData.appIntegrations)}`,
+      )
+
+
+      // Step 3: Extract collection selections
+      if (isAppSelectionMap(agentPromptData.appIntegrations)) {
+        const { selectedApps, selectedItems } = parseAppSelections(
+          agentPromptData.appIntegrations,
+        )
+        
+        // Debug log to see what parseAppSelections returned
+        loggerWithChild({ email }).info(
+          `[generateAnswerFromDualRag] selectedApps: ${JSON.stringify(selectedApps)}`,
+        )
+        loggerWithChild({ email }).info(
+          `[generateAnswerFromDualRag] selectedItems: ${JSON.stringify(selectedItems)}`,
+        )
+        selectedItem = selectedItems
+        
+        if (selectedItems[Apps.KnowledgeBase]) {
+          const kbItemIds = selectedItems[Apps.KnowledgeBase]
+          
+          const collectionIds: string[] = []
+          const collectionFolderIds: string[] = []
+          const collectionFileIds: string[] = []
+          
+          for (const itemId of kbItemIds) {
+            if (itemId.startsWith("cl-")) {
+              collectionIds.push(itemId.replace(/^cl[-_]/, ""))
+            } else if (itemId.startsWith("clfd-")) {
+              collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
+            } else if (itemId.startsWith("clf-")) {
+              collectionFileIds.push(
+                ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
+              )
+            }
+          }
+          
+          if (
+            collectionIds.length > 0 ||
+            collectionFolderIds.length > 0 ||
+            collectionFileIds.length > 0
+          ) {
+            agentSpecificCollectionSelections.push({
+              collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
+              collectionFolderIds:
+                collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
+              collectionFileIds:
+                collectionFileIds.length > 0 ? collectionFileIds : undefined,
+            })
+          }
+          
+          loggerWithChild({ email }).info(
+            `[generateAnswerFromDualRag] Built collection selections: ${JSON.stringify(agentSpecificCollectionSelections)}`,
+          )
+        }
+
+      }
+    }
+
+    const kbSearchSpan = generateAnswerSpan?.startSpan("kb_search")
+    const channelIds = agentPrompt ? getChannelIdsFromAgentPrompt(agentPrompt) : []
+    kbSearchSpan?.setAttribute("apps", agentAppEnums.join(","))
+    loggerWithChild({ email: email }).info(
+      `[DUAL RAG] Starting KB search. Apps to search: ${agentAppEnums.join(", ")}`,
+    )
+
+    let kbResults: VespaSearchResponse | null = null
+    try {
+      kbResults = await searchVespaAgent(
+        builtUserQuery, // The user's question
+        email, // User email for permissions
+        null, // app filter - null means "use AgentApps param" (phse)
+        null, // entity filter - null means "all entity types"
+        agentAppEnums, // 🆕 The agent's configured apps!
+        {
+          limit: 6, // Max 6 results from KB
+          alpha: userAlpha, // Use personalized alpha
+          collectionSelections: agentSpecificCollectionSelections,
+          selectedItem: selectedItem, 
+          dataSourceIds: [],        // Empty array (todo: support data sources later)
+          channelIds: channelIds,
+          span: kbSearchSpan,       // Pass the span for tracing
+        },
+      )
+
+      loggerWithChild({ email: email }).info(
+        `[generateAnswerFromDualRag] KB search completed. Found ${
+          kbResults?.root?.children?.length || 0
+        } results`,
+      )
+    } catch (error) {
+      loggerWithChild({ email: email }).error(
+        error,
+        "[generateAnswerFromDualRag] KB search failed, continuing with attachment results only",
+      )
+      kbResults = null // Graceful degradation
+    }
+
+    // Add KB results to the combined array
+    if (kbResults?.root?.children && kbResults.root.children.length > 0) {
+      combinedSearchResponse.push(...kbResults.root.children)
+
+      loggerWithChild({ email: email }).info(
+        `[DUAL RAG] Added ${kbResults.root.children.length} KB results to combined 
+  array. Total results now: ${combinedSearchResponse.length}`,
+      )
+    } else {
+      loggerWithChild({ email: email }).info(
+        "[DUAL RAG] No KB results found to add",
+      )
+    }
+
+    kbSearchSpan?.end()
+  }
+
+
+  // STEP 5: THREAD/SLACK HANDLING
+  loggerWithChild({ email: email }).info(
+    `generateAnswerFromDualRag - threadIds received: 
+  ${JSON.stringify(threadIds)}`,
+  )
+
+  // Part A: Email thread expansion
+  if (threadIds && threadIds.length > 0) {
+    loggerWithChild({ email: email }).info(
+      `Fetching email threads for threadIds: ${threadIds.join(", ")}`,
+    )
+    const threadSpan = generateAnswerSpan?.startSpan("fetch_email_threads")
+    threadSpan?.setAttribute("threadIds", JSON.stringify(threadIds))
+
+    try {
+      const threadResults = await SearchEmailThreads(threadIds, email)
+      loggerWithChild({ email: email }).info(
+        `Thread search results: ${JSON.stringify({
+          threadIds,
+          resultCount: threadResults?.root?.children?.length || 0,
+          hasResults: !!(
+            threadResults?.root?.children &&
+            threadResults.root.children.length > 0
+          ),
+        })}`,
+      )
+
+      if (
+        threadResults.root.children &&
+        threadResults.root.children.length > 0
+      ) {
+        const existingDocIds = new Set(
+          combinedSearchResponse.map((child: any) => child.fields.docId),
+        )
+
+        // Use the helper function to process thread results
+        const { addedCount, threadInfo } = processThreadResults(
+          threadResults.root.children,
+          existingDocIds,
+          combinedSearchResponse,
+        )
+        loggerWithChild({ email: email }).info(
+          `Added ${addedCount} additional emails from ${threadIds.length} threads 
+  (no limits applied)`,
+        )
+        threadSpan?.setAttribute("added_email_count", addedCount)
+        threadSpan?.setAttribute(
+          "total_thread_emails_found",
+          threadResults.root.children.length,
+        )
+        threadSpan?.setAttribute("thread_info", JSON.stringify(threadInfo))
+      }
+    } catch (error) {
+      loggerWithChild({ email: email }).error(
+        error,
+        `Error fetching email threads: ${getErrorMessage(error)}`,
+      )
+      threadSpan?.setAttribute("error", getErrorMessage(error))
+    }
+
+    threadSpan?.end()
+  }
+
+  // Part B: Slack channel expansion
+  const initialResults = [...(combinedSearchResponse || [])]
+  for (const v of initialResults) {
+    if (
+      v.fields &&
+      "sddocname" in v.fields &&
+      v.fields.sddocname === chatContainerSchema
+    ) {
+      const channelId = (v.fields as any).docId
+      loggerWithChild({ email: email }).info(`Processing chat container with docId: ${channelId}`)
+
+      if (channelId) {
+        const searchResults = await searchSlackInVespa(messageText, email, {
+          limit: 10,
+          channelIds: [channelId],
+        })
+        if (searchResults.root.children) {
+          combinedSearchResponse.push(...searchResults.root.children)
+          const threadMessages = await getThreadContext(
+            searchResults,
+            email,
+            generateAnswerSpan,
+          )
+          if (threadMessages?.root?.children) {
+            combinedSearchResponse.push(...threadMessages.root.children)
+          }
+        }
+      }
+    }
+  }
+
+
+  
+
+  // Right now, combinedSearchResponse has:
+  // [attachment1, attachment2, kb1, kb2, kb3, kb4]
+  // Sort all results (both attachments and KB) by relevance score
+  if (combinedSearchResponse.length > 0) {
+    combinedSearchResponse.sort(
+      (a, b) => Number(b.relevance ?? 0) - Number(a.relevance ?? 0),
+    )
+
+    const topScore = Number(combinedSearchResponse[0]?.relevance ?? 0).toFixed(3)
+    const bottomScore = Number(combinedSearchResponse.at(-1)?.relevance ?? 0).toFixed(3)
+
+    loggerWithChild({ email }).info(
+      `[generateAnswerFromDualRag] Sorted ${combinedSearchResponse.length} results by relevance. Top: ${topScore}, Bottom: ${bottomScore}`,
+    )
+  }
+
+
+  // STEP 6: CONTEXT BUILDING
+  const startIndex = isReasoning ? previousResultsLength : 0
+  // Apply intelligent chunk selection based on document relevance and chunk scores
+    chunksPerDocument = await getChunkCountPerDoc(
+      combinedSearchResponse,
+      targetChunks,
+      email,
+      generateAnswerSpan,
+    )
+  const contextPromises = combinedSearchResponse?.map(async (v, i) => {
+    let content = await answerContextMap(
+      v as VespaSearchResults,
+      userMetadata,
+      i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
+      true,
+      isMsgWithSources,
+      message,
+    )
+
+    // Special handling for Slack channels - add creator info
+    if (
+      v.fields &&
+      "sddocname" in v.fields &&
+      v.fields.sddocname === chatContainerSchema &&
+      (v.fields as any).creator
+    ) {
+      try {
+        const creator = await getDocumentOrNull(
+          chatUserSchema,
+          (v.fields as any).creator,
+        )
+        if (creator) {
+          content += `\nCreator: ${(creator.fields as any).name}`
+        }
+      } catch (error) {
+        loggerWithChild({ email }).error(
+          error,
+          `Failed to fetch creator for chat container`,
+        )
+      }
+    }
+    return isMsgWithSources ? content : `Index ${i + startIndex} \n ${content}`
+  })
+
+  const resolvedContexts = contextPromises
+    ? await Promise.all(contextPromises)
+    : []
+
+  const initialContext = cleanContext(resolvedContexts.join("\n"))
+  const { imageFileNames } = extractImageFileNames(
+    initialContext,
+    combinedSearchResponse,
+  )
+
+  const finalImageFileNames = imageFileNames || []
+
+  if (attachmentFileIds?.length) {
+    finalImageFileNames.push(
+      ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
+    )
+  }
+
+  const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
+  initialContextSpan?.setAttribute(
+    "context_length",
+    initialContext?.length || 0,
+  )
+  // Do not log raw context; log size/hash only
+  initialContextSpan?.setAttribute("context_length_only", initialContext?.length || 0)
+  initialContextSpan?.setAttribute(
+    "number_of_chunks",
+    combinedSearchResponse?.length || 0,
+  )
+  initialContextSpan?.end()
+
+
+  loggerWithChild({ email: email }).info(
+    `[DUAL RAG] Number of contextual chunks being passed: ${
+      combinedSearchResponse.length || 0
+    }`,
+  )
+
+  // STEP 7: LLM STREAMING
+  const iterator = baselineRAGJsonStream(
+    builtUserQuery,
+    userCtx,
+    userMetadata,
+    initialContext,
+    {
+      stream: true,
+      modelId: modelId ? (modelId as Models) : defaultBestModel,
+      reasoning: config.isReasoning && userRequestsReasoning,
+      agentPrompt,
+      imageFileNames: finalImageFileNames,
+    },
+    true,
+    isMsgWithSources,
+  )
+
+  const answer = yield* processIterator(
+    iterator,
+    combinedSearchResponse,
+    previousResultsLength,
+    userRequestsReasoning,
+    email,
+    isMsgWithSources,
+  )
+
+  if (answer) {
+    generateAnswerSpan?.setAttribute("answer_found", true)
+    generateAnswerSpan?.end()
+    return
+  } else if (!answer) {
+    const noAnswerSpan = generateAnswerSpan?.startSpan("no_answer_response")
+    yield {
+      text: "From the selected context, I could not find any information to answer it, please change your query",
+    }
+    noAnswerSpan?.end()
+    generateAnswerSpan?.end()
+    return
+  }
+
   if (config.isReasoning && userRequestsReasoning) {
     previousResultsLength += combinedSearchResponse?.length || 0
   }
@@ -3992,9 +4596,12 @@ export async function* UnderstandMessageAndAnswer(
   )
   passedSpan?.setAttribute("alpha", alpha)
   passedSpan?.setAttribute("message_count", messages.length)
+
   const isGenericItemFetch = classification.type === QueryType.GetItems
+
   const isFilteredItemSearch =
     classification.type === QueryType.SearchWithFilters
+
   const isFilteredSearchSortedByRecency =
     classification.filterQuery &&
     classification.filters.sortDirection === "desc"
@@ -4010,6 +4617,7 @@ export async function* UnderstandMessageAndAnswer(
     )
 
     const count = classification.filters.count || chatPageSize
+
     const answerIterator = generateMetadataQueryAnswer(
       message,
       messages,
