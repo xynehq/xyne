@@ -294,7 +294,7 @@ export const handleAttachmentUpload = async (c: Context) => {
             vespaId = `${fileId}_sheet_${(processingResults[0] as SheetProcessingResult).totalSheets}`
           }
           // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
-          for (const [resultIndex, processingResult] of processingResults.entries()) {
+          for (const processingResult of processingResults) {
             let docId = fileId
             let fileName = file.name
 
@@ -667,6 +667,117 @@ export const handleThumbnailServe = async (c: Context) => {
     loggerWithChild({ email }).error(
       error,
       `Error serving thumbnail ${c.req.param("fileId")}`,
+    )
+    throw error
+  }
+}
+// Simple file upload handler for ASR (stores file temporarily and returns URL)
+export const handleSimpleFileUpload = async (c: Context) => {
+  const logger = getLogger(Subsystem.Api).child({ module: "simpleFileUpload" })
+
+  try {
+    const { sub } = c.get(JwtPayloadKey)
+    const email = sub
+
+    const formData = await c.req.formData()
+    const file = formData.get("file")
+
+    if (!file || !(file instanceof File)) {
+      throw new HTTPException(400, {
+        message: "No valid file uploaded",
+      })
+    }
+
+    // Create uploads directory if it doesn't exist
+    const uploadsDir = join(process.cwd(), "uploads", "asr")
+    await mkdir(uploadsDir, { recursive: true })
+
+    // Generate unique filename
+    const timestamp = Date.now()
+    const originalName = file.name || "upload"
+    const safeBaseName = originalName.replace(/[^a-zA-Z0-9.-]/g, "_")
+    const filename = `${timestamp}-${safeBaseName}`
+    const filePath = join(uploadsDir, filename)
+
+    // Write file to disk
+    const arrayBuffer = await file.arrayBuffer()
+    await fs.writeFile(filePath, Buffer.from(arrayBuffer))
+
+    logger.info({ email, filename, size: file.size, type: file.type }, "File uploaded successfully")
+
+    // Return file URL (can be accessed via file serving endpoint)
+    const fileUrl = `/api/v1/files/asr/${filename}`
+
+    return c.json({
+      success: true,
+      url: fileUrl,
+      filename,
+      size: file.size,
+      type: file.type,
+    })
+  } catch (error) {
+    const err = error as Error
+    logger.error({ error: err.message, stack: err.stack }, "Error uploading file")
+    throw error
+  }
+}
+
+// Serve uploaded ASR files
+export const serveASRFile = async (c: Context) => {
+  const logger = getLogger(Subsystem.Api).child({ module: "serveASRFile" })
+
+  try {
+    const filename = c.req.param("filename")
+
+    if (!filename) {
+      throw new HTTPException(400, { message: "Filename is required" })
+    }
+
+    const uploadsDir = join(process.cwd(), "uploads", "asr")
+    const filePath = join(uploadsDir, filename)
+
+    // Normalize and ensure no path traversal outside uploadsDir
+    const normalizedPath = path.normalize(filePath)
+    const normalizedRoot = path.normalize(uploadsDir) + path.sep
+    if (!normalizedPath.startsWith(normalizedRoot)) {
+      logger.warn({ filename }, "Path traversal attempt detected")
+      throw new HTTPException(400, { message: "Invalid filename" })
+    }
+
+    // Check if file exists
+    try {
+      await fs.access(normalizedPath)
+    } catch {
+      throw new HTTPException(404, { message: "File not found" })
+    }
+
+    logger.info({ filename }, "Serving ASR file")
+
+    // Read and serve file
+    const fileBuffer = await fs.readFile(normalizedPath)
+
+    // Determine content type from extension
+    const ext = path.extname(filename).toLowerCase()
+    const contentTypeMap: Record<string, string> = {
+      ".mp3": "audio/mpeg",
+      ".wav": "audio/wav",
+      ".m4a": "audio/mp4",
+      ".ogg": "audio/ogg",
+      ".flac": "audio/flac",
+      ".mp4": "video/mp4",
+      ".webm": "video/webm",
+    }
+    const contentType = contentTypeMap[ext] || "application/octet-stream"
+
+    return c.newResponse(fileBuffer as any, 200, {
+      "Content-Type": contentType,
+      "Content-Length": fileBuffer.length.toString(),
+    })
+  } catch (error) {
+    const err = error as Error
+    logger.error(
+      { error: err.message, stack: err.stack, filename: c.req.param("filename") },
+      "Error serving ASR file",
     )
     throw error
   }
