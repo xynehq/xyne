@@ -1,3 +1,10 @@
+## [3.30.10](https://github.com/xynehq/xyne/compare/v3.30.9...v3.30.10) (2025-11-10)
+
+
+### Bug Fixes
+
+* zod validation issue in the MCP connector for stdio ([#1203](https://github.com/xynehq/xyne/issues/1203)) ([762a99b](https://github.com/xynehq/xyne/commit/762a99b9ac3b25c9dc7d1faa26a78d12fc526357))
+
 ## [3.30.9](https://github.com/xynehq/xyne/compare/v3.30.8...v3.30.9) (2025-11-07)
 
 
