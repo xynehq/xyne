@@ -52,12 +52,20 @@ export const makeXyneJAFProvider = <Ctx>(
       if (providerType === AIProviders.LiteLLM) {
         // Use OpenAI client directly for LiteLLM (same as JAF's makeLiteLLMProvider)
         const { LiteLLMBaseUrl, LiteLLMApiKey } = config
-        const baseURL = LiteLLMBaseUrl
-        const apiKey = LiteLLMApiKey || "anything"
+        if (!LiteLLMBaseUrl) {
+          throw new Error(
+            "LiteLLM base URL not configured. Cannot route LiteLLM provider calls.",
+          )
+        }
+        if (!LiteLLMApiKey) {
+          throw new Error(
+            "LiteLLM API key not configured. Cannot route LiteLLM provider calls.",
+          )
+        }
 
         const client = new OpenAI({
-          baseURL: baseURL,
-          apiKey: apiKey,
+          baseURL: LiteLLMBaseUrl,
+          apiKey: LiteLLMApiKey,
         })
 
         // Build messages in OpenAI format

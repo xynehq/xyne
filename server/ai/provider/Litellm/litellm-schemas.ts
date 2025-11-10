@@ -13,14 +13,19 @@ import { z } from 'zod'
  * LiteLLM provider configuration schema
  */
 export const LiteLLMConfigSchema = z.object({
-  apiKey: z.string().min(1, 'API key is required'),
-  baseUrl: z.string().url().optional(),
+  apiKey: z.string().min(1, {
+    error: (issue) => {
+      if (issue.code === 'too_small') {
+        return 'API key is required';
+      }
+    },
+  }),
+  baseURL: z.string().url().optional(),
   timeout: z.number().positive().default(30000),
   retries: z.number().int().min(0).max(5).default(3),
   rateLimiting: z.boolean().default(true),
   enableLogging: z.boolean().default(true),
-  //@ts-ignore
-  customHeaders: z.record(z.string()).optional(),
+  customHeaders: z.record(z.string(), z.string()).optional(), 
   proxyUrl: z.string().url().optional()
 })
 
@@ -74,8 +79,7 @@ export const LiteLLMRequestSchema = z.object({
     function: z.object({
       name: z.string(),
       description: z.string(),
-      //@ts-ignore
-      parameters: z.record(z.unknown())
+      parameters: z.record(z.string(), z.unknown())
     })
   })).optional(),
   tool_choice: z.union([
