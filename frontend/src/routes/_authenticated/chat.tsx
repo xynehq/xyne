@@ -335,15 +335,6 @@ export const ChatPage = ({
         }
       : null
 
-  // Debug: Log when currentResp has clarification
-  if (currentResp?.clarificationRequest) {
-    console.log("[ChatPage] currentResp has clarification:", {
-      isStreaming,
-      waitingForClarification,
-      clarificationRequest: currentResp.clarificationRequest,
-    })
-  }
-
   const [showRagTrace, setShowRagTrace] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     null,
