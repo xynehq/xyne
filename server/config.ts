@@ -174,7 +174,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     : Models.Vertex_Claude_Sonnet_4 // Default best model
   sqlInferenceModel = Models.Vertex_Claude_Sonnet_4
 }
-if(process.env["LITELLM_API_KEY"] && process.env["LITELLM_MODEL"]) {
+if (process.env["LITELLM_API_KEY"] && process.env["LITELLM_MODEL"]) {
   if (process.env["LITELLM_BASE_URL"]) {
     if (!isURLValid(process.env["LITELLM_BASE_URL"])) {
       console.warn(`Configuration Warning : Encountered invalid base url`)

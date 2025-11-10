@@ -1809,8 +1809,9 @@ export const MessageWithToolsApi = async (c: Context) => {
             role: m.messageRole === MessageRole.User ? "user" : "assistant",
             content: m.message,
           }))
-        const agenticModelId = defaultBestModelAgenticMode !== "" as Models ? defaultBestModelAgenticMode : defaultBestModel
-
+        const agenticModelId: Models = defaultBestModelAgenticMode !== ""  as Models
+          ? (defaultBestModelAgenticMode as Models)
+          : defaultBestModel
         const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
           name: "xyne-agent",
           instructions: () => agentInstructions(),

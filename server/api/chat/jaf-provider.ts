@@ -58,7 +58,6 @@ export const makeXyneJAFProvider = <Ctx>(
         const client = new OpenAI({
           baseURL: baseURL,
           apiKey: apiKey,
-          dangerouslyAllowBrowser: true,
         })
 
         // Build messages in OpenAI format
@@ -140,6 +139,9 @@ export const makeXyneJAFProvider = <Ctx>(
           ...(tools.length > 0 ? { tools } : {}),
           ...(tools.length > 0 && advRun?.toolChoice
             ? { tool_choice: advRun.toolChoice }
+            : {}),
+          ...(tools.length > 0 && advRun?.parallelToolCalls !== undefined
+            ? { parallel_tool_calls: advRun.parallelToolCalls }
             : {}),
         }
 

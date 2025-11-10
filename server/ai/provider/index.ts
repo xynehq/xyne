@@ -2176,7 +2176,11 @@ export const extractBestDocumentIndexes = async (
 ): Promise<number[]> => {
   try {
     if (!params.modelId) {
-      params.modelId = defaultBestModelAgenticMode !== "" as Models ? defaultBestModelAgenticMode : defaultBestModel
+      const agenticModel = defaultBestModelAgenticMode && defaultBestModelAgenticMode !== "" as Models
+        ? defaultBestModelAgenticMode as Models 
+        : null
+
+      params.modelId = agenticModel || defaultBestModel
     }
 
     params.systemPrompt = extractBestDocumentsPrompt(query, retrievedContext)

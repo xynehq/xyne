@@ -101,7 +101,7 @@ export const LiteLLMRequestSchema = z.object({
     z.object({
       type: z.literal("enabled"),
       budget_tokens: z.number().int().positive()
-    }).optional()
+    })
   ]).optional(),
   response_format: z.object({
     type: z.literal("json_object")

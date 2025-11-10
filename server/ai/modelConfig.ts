@@ -786,11 +786,12 @@ export const getModelValueFromLabel = (
         return config.VertexAIModel
       }
       break
-    case AIProviders.LiteLLM:
-      if (config.LiteLLMModel && label === config.LiteLLMModel) {
-        return config.LiteLLMModel
-      }
-      break
+  }
+
+  if (liteLLMProvider) {
+    if (config.LiteLLMModel && label === config.LiteLLMModel) {
+      return config.LiteLLMModel
+    }
   }
 
   return null
