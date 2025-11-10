@@ -621,7 +621,7 @@ async function performSynthesis(
         ),
       },
     )
-    synthesisSpan.setAttribute("model_id", defaultBestModel)
+    synthesisSpan.setAttribute("model_id", (modelId as Models) || defaultBestModel)
     synthesisSpan.setAttribute(
       "response_length",
       synthesisResponse.text?.length || 0,
@@ -1809,17 +1809,18 @@ export const MessageWithToolsApi = async (c: Context) => {
             role: m.messageRole === MessageRole.User ? "user" : "assistant",
             content: m.message,
           }))
+        const agenticModelId = defaultBestModelAgenticMode !== "" as Models ? defaultBestModelAgenticMode : defaultBestModel
 
         const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
           name: "xyne-agent",
           instructions: () => agentInstructions(),
           tools: allJAFTools,
-          modelConfig: { name: defaultBestModelAgenticMode !== "" as Models ? defaultBestModelAgenticMode : defaultBestModel },
+          modelConfig: { name: agenticModelId },
         }
 
         let modelProvider: ModelProvider<JAFAdapterCtx> | null = null
         const isUsingLiteLLMProvider =
-          getProviderTypeByModel(defaultBestModelAgenticMode) === AIProviders.LiteLLM
+          getProviderTypeByModel(agenticModelId) === AIProviders.LiteLLM
         if (isUsingLiteLLMProvider) {
           modelProvider = makeLiteLLMProvider<JAFAdapterCtx>(
             LiteLLMBaseUrl,
@@ -1846,7 +1847,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentRegistry,
           modelProvider,
           maxTurns: 10,
-          modelOverride: defaultBestModelAgenticMode !== "" as Models ? defaultBestModelAgenticMode : defaultBestModel,
+          modelOverride: agenticModelId,
           onAfterToolExecution: async (
             toolName: string,
             result: any,
@@ -1882,7 +1883,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   message,
                   contextStrings,
                   {
-                    modelId: config.defaultBestModel,
+                    modelId: agenticModelId,
                     json: false,
                     stream: false,
                   },
@@ -2412,7 +2413,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   imageCitations: imageCitations,
                   message: processMessage(answer, citationMap),
                   thinking: thinking,
-                  modelId: defaultBestModel,
+                  modelId: agenticModelId,
                   cost: totalCost.toString(),
                   tokensUsed: totalTokens,
                 })

@@ -17,6 +17,7 @@ const {
   FireworksApiKey,
   TogetherAIModel,
   defaultBestModel,
+  defaultBestModelAgenticMode,
   defaultFastModel,
   isReasoning,
   EndThinkingToken,
@@ -2175,7 +2176,7 @@ export const extractBestDocumentIndexes = async (
 ): Promise<number[]> => {
   try {
     if (!params.modelId) {
-      params.modelId = defaultBestModel
+      params.modelId = defaultBestModelAgenticMode !== "" as Models ? defaultBestModelAgenticMode : defaultBestModel
     }
 
     params.systemPrompt = extractBestDocumentsPrompt(query, retrievedContext)
