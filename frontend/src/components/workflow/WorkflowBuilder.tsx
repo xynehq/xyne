@@ -1,5 +1,6 @@
 import React, { useCallback, useState, useEffect, useRef } from "react"
 import { Bot, Mail, Globe } from "lucide-react"
+import WorkflowNode from "./WorkflowNode"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -170,6 +171,7 @@ import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
 import WebhookConfigurationUI, { WebhookConfig } from "./WebhookConfigurationUI"
 import { JiraConfigurationUI, JiraConfig } from "./JiraConfigurationUI"
 import SlackTriggerConfigUI, { SlackTriggerConfig } from "./SlackTriggerConfigUI"
+import SlackMessageConfigUI, { SlackMessageConfig } from "./SlackMessageConfigUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
@@ -247,254 +249,60 @@ const StepNode: React.FC<NodeProps> = ({
     // Get config from step or tool
     const aiConfig =
       (step as any).config || (hasAIAgentTool && tools?.[0]?.val) || {}
+    
+    const getTitle = () => {
+      // First try to get name from workflow_tools[index].val.name
+      if (hasAIAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.name) {
+        return (tools[0].val as any).name
+      }
+      // Try to get name from workflow_tools[index].value.name
+      if (hasAIAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.name) {
+        return (tools[0] as any).value.name
+      }
+      // Fallback to existing logic
+      return step.name || aiConfig?.name || "AI Agent"
+    }
+
+    const getDescription = () => {
+      // First try to get description from workflow_tools[index].val.description
+      if (hasAIAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+        return (tools[0].val as any).description
+      }
+      // Try to get description from workflow_tools[index].value.description
+      if (hasAIAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+        return (tools[0] as any).value.description
+      }
+      // Fallback to existing logic
+      return step.description ||
+        aiConfig?.description ||
+        `AI agent to analyze and summarize documents using ${aiConfig?.model || "gpt-oss-120b"}.`
+    }
+
     const isConfigured =
       (aiConfig?.name && aiConfig?.name.trim() !== "") ||
       step.name ||
       step.description ||
       (hasAIAgentTool && tools?.[0])
 
-    if (!isConfigured) {
-      // Show only icon when not configured
-      return (
-        <>
-          <div
-            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-              ? "border-gray-800 dark:border-gray-300 shadow-lg"
-              : "border-gray-300 dark:border-gray-600"
-              }`}
-            style={{
-              width: "80px",
-              height: "80px",
-              borderRadius: "12px",
-              boxShadow: "0 0 0 2px #E2E2E2",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {/* Blue bot icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0 bg-blue-50 dark:bg-blue-900/50"
-              style={{
-                display: "flex",
-                width: "32px",
-                height: "32px",
-                padding: "6px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "6px",
-              }}
-            >
-              <Bot width={20} height={20} color="#2563EB" />
-            </div>
-
-            {/* ReactFlow Handles - invisible but functional */}
-            <Handle
-              type="target"
-              position={Position.Top}
-              id="top"
-              isConnectable={isConnectable}
-              className="opacity-0"
-            />
-
-            <Handle
-              type="source"
-              position={Position.Bottom}
-              id="bottom"
-              isConnectable={isConnectable}
-              className="opacity-0"
-            />
-
-            {/* Bottom center connection point - visual only */}
-            <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-              <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-            </div>
-
-            {/* Add Next Step Button for unconfigured AI Agent */}
-            {hasNext && (
-              <div
-                className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-                style={{ top: "calc(100% + 8px)" }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  const event = new CustomEvent("openWhatHappensNext", {
-                    detail: { nodeId: id },
-                  })
-                  window.dispatchEvent(event)
-                }}
-              >
-                <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-                <div
-                  className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                  style={{
-                    width: "28px",
-                    height: "28px",
-                  }}
-                >
-                  <svg
-                    className="w-4 h-4 text-white"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                </div>
-              </div>
-            )}
-          </div>
-        </>
-      )
-    }
-
-    // Show full content when configured
     return (
-      <>
-        <div
-          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-            ? "border-gray-800 dark:border-gray-300 shadow-lg"
-            : "border-gray-300 dark:border-gray-600"
-            }`}
-          style={{
-            width: "320px",
-            minHeight: "122px",
-            borderRadius: "12px",
-            boxShadow: "0 0 0 2px #E2E2E2",
-          }}
-        >
-          {/* Header with icon and title */}
-          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
-            {/* Blue bot icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0 bg-blue-50 dark:bg-blue-900/50"
-              style={{
-                display: "flex",
-                width: "24px",
-                height: "24px",
-                padding: "4px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "4.8px",
-              }}
-            >
-              <Bot width={16} height={16} color="#2563EB" />
-            </div>
-
-            <h3
-              className="text-gray-800 dark:text-gray-200 truncate flex-1"
-              style={{
-                fontFamily: "Inter",
-                fontSize: "14px",
-                fontStyle: "normal",
-                fontWeight: "600",
-                lineHeight: "normal",
-                letterSpacing: "-0.14px",
-              }}
-            >
-              {(() => {
-                // First try to get name from workflow_tools[index].val.name
-                if (hasAIAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.name) {
-                  return (tools[0].val as any).name
-                }
-
-                // Try to get name from workflow_tools[index].value.name
-                if (hasAIAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.name) {
-                  return (tools[0] as any).value.name
-                }
-
-                // Fallback to existing logic
-                return step.name || aiConfig?.name || "AI Agent"
-              })()}
-            </h3>
-          </div>
-
-          {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
-
-          {/* Description text */}
-          <div className="px-4 pb-4">
-            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {(() => {
-                // First try to get description from workflow_tools[index].val.description
-                if (hasAIAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
-                  return (tools[0].val as any).description
-                }
-
-                // Try to get description from workflow_tools[index].value.description
-                if (hasAIAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
-                  return (tools[0] as any).value.description
-                }
-
-                // Fallback to existing logic
-                return step.description ||
-                  aiConfig?.description ||
-                  `AI agent to analyze and summarize documents using ${aiConfig?.model || "gpt-oss-120b"}.`
-              })()}
-            </p>
-          </div>
-
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-          </div>
-
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                style={{
-                  width: "28px",
-                  height: "28px",
-                }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
-        </div>
-      </>
+      <WorkflowNode
+        icon={<Bot />}
+        title={getTitle()}
+        description={getDescription()}
+        isConfigured={isConfigured}
+        iconColor="#2563EB"
+        iconBgColorClass="bg-blue-50 dark:bg-blue-900/50"
+        id={id}
+        selected={selected}
+        isConnectable={isConnectable}
+        hasNext={hasNext}
+        onNextStepClick={(nodeId) => {
+          const event = new CustomEvent("openWhatHappensNext", {
+            detail: { nodeId },
+          })
+          window.dispatchEvent(event)
+        }}
+      />
     )
   }
 
@@ -509,254 +317,61 @@ const StepNode: React.FC<NodeProps> = ({
       emailConfig?.to_email ||
       (hasEmailTool && tools?.[0]?.config?.to_email) ||
       []
+
+    const getTitle = () => {
+      // First try to get title from workflow_tools[index].val.title
+      if (hasEmailTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+        return (tools[0].val as any).title
+      }
+      // Try to get title from workflow_tools[index].value.title
+      if (hasEmailTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+        return (tools[0] as any).value.title
+      }
+      // Fallback to existing logic
+      return step.name || "Email"
+    }
+
+    const getDescription = () => {
+      // First try to get description from workflow_tools[index].val.description
+      if (hasEmailTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+        return (tools[0].val as any).description
+      }
+      // Try to get description from workflow_tools[index].value.description
+      if (hasEmailTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+        return (tools[0] as any).value.description
+      }
+      // Always generate description from email addresses
+      return (emailAddresses && emailAddresses.length > 0
+        ? `Send emails to ${emailAddresses.join(", ")}`
+        : "Send automated email notifications to specified recipients.")
+    }
+
     // Consider configured if has email addresses OR if step has name/description
-    const isConfigured =
+    const isConfigured = Boolean(
       (Array.isArray(emailAddresses) && emailAddresses.length > 0) ||
       step.name ||
       step.description
+    )
 
-    if (!isConfigured) {
-      // Show only icon when not configured
-      return (
-        <>
-          <div
-            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-              ? "border-gray-800 dark:border-gray-300 shadow-lg"
-              : "border-gray-300 dark:border-gray-600"
-              }`}
-            style={{
-              width: "80px",
-              height: "80px",
-              borderRadius: "12px",
-              boxShadow: "0 0 0 2px #E2E2E2",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {/* Purple mail icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0 bg-purple-50 dark:bg-purple-900/50"
-              style={{
-                display: "flex",
-                width: "32px",
-                height: "32px",
-                padding: "6px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "6px",
-              }}
-            >
-              <Mail width={20} height={20} color="#7C3AED" />
-            </div>
-
-            {/* ReactFlow Handles - invisible but functional */}
-            <Handle
-              type="target"
-              position={Position.Top}
-              id="top"
-              isConnectable={isConnectable}
-              className="opacity-0"
-            />
-
-            <Handle
-              type="source"
-              position={Position.Bottom}
-              id="bottom"
-              isConnectable={isConnectable}
-              className="opacity-0"
-            />
-
-            {/* Bottom center connection point - visual only */}
-            <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-              <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-            </div>
-
-            {/* Add Next Step Button for unconfigured Email */}
-            {hasNext && (
-              <div
-                className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-                style={{ top: "calc(100% + 8px)" }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  const event = new CustomEvent("openWhatHappensNext", {
-                    detail: { nodeId: id },
-                  })
-                  window.dispatchEvent(event)
-                }}
-              >
-                <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-                <div
-                  className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                  style={{
-                    width: "28px",
-                    height: "28px",
-                  }}
-                >
-                  <svg
-                    className="w-4 h-4 text-white"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                </div>
-              </div>
-            )}
-          </div>
-        </>
-      )
-    }
-
-    // Show full content when configured
     return (
-      <>
-        <div
-          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-            ? "border-gray-800 dark:border-gray-300 shadow-lg"
-            : "border-gray-300 dark:border-gray-600"
-            }`}
-          style={{
-            width: "320px",
-            minHeight: "122px",
-            borderRadius: "12px",
-            boxShadow: "0 0 0 2px #E2E2E2",
-          }}
-        >
-          {/* Header with icon and title */}
-          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
-            {/* Purple mail icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0 bg-purple-50 dark:bg-purple-900/50"
-              style={{
-                display: "flex",
-                width: "24px",
-                height: "24px",
-                padding: "4px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "4.8px",
-              }}
-            >
-              <Mail width={16} height={16} color="#7C3AED" />
-            </div>
-
-            <h3
-              className="text-gray-800 dark:text-gray-200 truncate flex-1"
-              style={{
-                fontFamily: "Inter",
-                fontSize: "14px",
-                fontStyle: "normal",
-                fontWeight: "600",
-                lineHeight: "normal",
-                letterSpacing: "-0.14px",
-              }}
-            >
-              {(() => {
-                // First try to get title from workflow_tools[index].val.title
-                if (hasEmailTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
-                  return (tools[0].val as any).title
-                }
-
-                // Try to get title from workflow_tools[index].value.title
-                if (hasEmailTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
-                  return (tools[0] as any).value.title
-                }
-
-                // Fallback to existing logic
-                return step.name || "Email"
-              })()}
-            </h3>
-          </div>
-
-          {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
-
-          {/* Description text */}
-          <div className="px-4 pb-4">
-            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {(() => {
-                // First try to get description from workflow_tools[index].val.description
-                if (hasEmailTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
-                  return (tools[0].val as any).description
-                }
-
-                // Try to get description from workflow_tools[index].value.description
-                if (hasEmailTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
-                  return (tools[0] as any).value.description
-                }
-
-                // Always generate description from email addresses
-                return (emailAddresses && emailAddresses.length > 0
-                  ? `Send emails to ${emailAddresses.join(", ")}`
-                  : "Send automated email notifications to specified recipients.")
-              })()}
-            </p>
-          </div>
-
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-          </div>
-
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                style={{
-                  width: "28px",
-                  height: "28px",
-                }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
-        </div>
-      </>
+      <WorkflowNode
+        icon={<Mail />}
+        title={getTitle()}
+        description={getDescription()}
+        isConfigured={isConfigured}
+        iconColor="#7C3AED"
+        iconBgColorClass="bg-purple-50 dark:bg-purple-900/50"
+        id={id}
+        selected={selected}
+        isConnectable={isConnectable}
+        hasNext={hasNext}
+        onNextStepClick={(nodeId) => {
+          const event = new CustomEvent("openWhatHappensNext", {
+            detail: { nodeId },
+          })
+          window.dispatchEvent(event)
+        }}
+      />
     )
   }
 
@@ -768,674 +383,321 @@ const StepNode: React.FC<NodeProps> = ({
       (step as any).config || 
       (hasHttpRequestTool && tools?.[0]?.val) || 
       {}
-    const isConfigured = 
+
+    const getTitle = () => {
+      // First try to get title from workflow_tools[index]
+      const toolData = hasHttpRequestTool && tools?.[0] ? tools[0].val : null
+      if (toolData && typeof toolData === 'object' && (toolData as any)?.title) {
+        return (toolData as any).title
+      }
+      
+      // Then try step name
+      if (step.name && step.name.trim() !== "") {
+        return step.name
+      }
+      
+      // Then try step description
+      if (step.description && step.description.trim() !== "") {
+        return step.description
+      }
+      
+      // Default fallback with method and URL
+      const method = httpConfig?.method || 'GET'
+      const url = httpConfig?.url
+      
+      if (url && url.trim() !== '') {
+        const displayUrl = url.length > 25 ? `${url.substring(0, 25)}...` : url
+        return `${method} ${displayUrl}`
+      } else {
+        return 'HTTP Request'
+      }
+    }
+
+    const getDescription = () => {
+      const method = httpConfig?.method || 'GET'
+      const url = httpConfig?.url
+      
+      if (url && url.trim() !== '') {
+        // Show method and URL if configured
+        const displayUrl = url.length > 30 ? `${url.substring(0, 30)}...` : url
+        return `${method} • ${displayUrl}`
+      } else {
+        // Show placeholder text for unconfigured node
+        return 'Click to configure HTTP request'
+      }
+    }
+
+    const isConfigured = Boolean(
       httpConfig?.url || 
       step.name || 
       step.description ||
       (hasHttpRequestTool && tools?.[0])
+    )
 
-    if (!isConfigured) {
-      // Show only icon when not configured
-      return (
-        <>
-          <div
-            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
-              selected 
-                ? "border-gray-800 dark:border-gray-300 shadow-lg" 
-                : "border-gray-300 dark:border-gray-600"
-            }`}
-            style={{
-              width: "80px",
-              height: "80px",
-              borderRadius: "12px",
-              boxShadow: "0 0 0 2px #E2E2E2",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {/* Green HTTP icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0 bg-green-50 dark:bg-green-900/50"
-              style={{
-                display: "flex",
-                width: "32px",
-                height: "32px",
-                padding: "6px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "6px",
-              }}
-            >
-              <Globe width={20} height={20} color="#16A34A" />
-            </div>
-
-            {/* ReactFlow Handles - invisible but functional */}
-            <Handle
-              type="target"
-              position={Position.Top}
-              id="top"
-              isConnectable={isConnectable}
-              className="opacity-0"
-            />
-
-            <Handle
-              type="source"
-              position={Position.Bottom}
-              id="bottom"
-              isConnectable={isConnectable}
-              className="opacity-0"
-            />
-
-            {/* Bottom center connection point - visual only */}
-            <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-              <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-            </div>
-
-            {/* Add Next Step Button for unconfigured HTTP Request */}
-            {hasNext && (
-              <div
-                className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-                style={{ top: "calc(100% + 8px)" }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  const event = new CustomEvent("openWhatHappensNext", {
-                    detail: { nodeId: id },
-                  })
-                  window.dispatchEvent(event)
-                }}
-              >
-                <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-                <div
-                  className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                  style={{
-                    width: "28px",
-                    height: "28px",
-                  }}
-                >
-                  <svg
-                    className="w-4 h-4 text-white"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                </div>
-              </div>
-            )}
-          </div>
-        </>
-      )
-    }
-
-    // Show full content when configured
     return (
-      <>
-        <div
-          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
-            selected 
-              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
-              : "border-gray-300 dark:border-gray-600"
-          }`}
-          style={{
-            width: "320px",
-            minHeight: "122px",
-            borderRadius: "12px",
-            boxShadow: "0 0 0 2px #E2E2E2",
-          }}
-        >
-          {/* Header with icon and title */}
-          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
-            {/* Green HTTP icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0 bg-green-50 dark:bg-green-900/50"
-              style={{
-                display: "flex",
-                width: "24px",
-                height: "24px",
-                padding: "4px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "4.8px",
-              }}
-            >
-              <Globe width={16} height={16} color="#16A34A" />
-            </div>
-            <h3
-              className="text-gray-800 dark:text-gray-200 truncate flex-1"
-              style={{
-                fontFamily: "Inter",
-                fontSize: "14px",
-                fontStyle: "normal",
-                fontWeight: "600",
-                lineHeight: "normal",
-                letterSpacing: "-0.14px",
-              }}
-            >
-              {(() => {
-                // First try to get title from workflow_tools[index]
-                const toolData = hasHttpRequestTool && tools?.[0] ? tools[0].val : null
-                if (toolData && typeof toolData === 'object' && (toolData as any)?.title) {
-                  return (toolData as any).title
-                }
-                
-                // Then try step name
-                if (step.name && step.name.trim() !== "") {
-                  return step.name
-                }
-                
-                // Then try step description
-                if (step.description && step.description.trim() !== "") {
-                  return step.description
-                }
-                
-                // Default fallback with method and URL
-                const method = httpConfig?.method || 'GET'
-                const url = httpConfig?.url
-                
-                if (url && url.trim() !== '') {
-                  const displayUrl = url.length > 25 ? `${url.substring(0, 25)}...` : url
-                  return `${method} ${displayUrl}`
-                } else {
-                  return 'HTTP Request'
-                }
-              })()}
-            </h3>
-          </div>
-
-          {/* Body content */}
-          <div className="px-4 pb-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              {(() => {
-                const method = httpConfig?.method || 'GET'
-                const url = httpConfig?.url
-                
-                if (url && url.trim() !== '') {
-                  // Show method and URL if configured
-                  const displayUrl = url.length > 30 ? `${url.substring(0, 30)}...` : url
-                  return `${method} • ${displayUrl}`
-                } else {
-                  // Show placeholder text for unconfigured node
-                  return 'Click to configure HTTP request'
-                }
-              })()}
-            </div>
-          </div>
-
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-          </div>
-
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                style={{
-                  width: "28px",
-                  height: "28px",
-                }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
-        </div>
-      </>
+      <WorkflowNode
+        icon={<Globe />}
+        title={getTitle()}
+        description={getDescription()}
+        isConfigured={isConfigured}
+        iconColor="#16A34A"
+        iconBgColorClass="bg-green-50 dark:bg-green-900/50"
+        id={id}
+        selected={selected}
+        isConnectable={isConnectable}
+        hasNext={hasNext}
+        onNextStepClick={(nodeId) => {
+          const event = new CustomEvent("openWhatHappensNext", {
+            detail: { nodeId },
+          })
+          window.dispatchEvent(event)
+        }}
+      />
     )
   }
 
   // Special rendering for webhook nodes and steps with webhook tools
   const hasWebhookTool = tools && tools.length > 0 && tools[0].type === "webhook"
   if (step.type === "webhook" || hasWebhookTool) {
+    const getTitle = () => {
+      // First try to get title from workflow_tools[index].val.title
+      if (hasWebhookTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+        return (tools[0].val as any).title
+      }
+      
+      // Try to get title from workflow_tools[index].value.title
+      if (hasWebhookTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+        return (tools[0] as any).value.title
+      }
+      
+      // Fallback to "Webhook" title
+      return "Webhook"
+    }
+
+    const getDescription = () => {
+      // First try to get description from workflow_tools[index].val.description
+      if (hasWebhookTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+        return (tools[0].val as any).description
+      }
+      
+      // Try to get description from workflow_tools[index].value.description
+      if (hasWebhookTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+        return (tools[0] as any).value.description
+      }
+      
+      // If step has description, use it next
+      if (step.description) {
+        return step.description
+      }
+      // Get config from step or tool
+      const webhookConfig =
+        (step as any).config ||
+        (hasWebhookTool && tools?.[0]?.val) ||
+        {}
+      // Build description from webhook configuration
+      if (webhookConfig?.webhookUrl || webhookConfig?.path) {
+        const method = webhookConfig?.httpMethod || 'POST'
+        const url = webhookConfig?.webhookUrl || `${window.location.origin}/workflow/webhook${webhookConfig?.path || ''}`
+        const auth = webhookConfig?.authentication === 'none' ? 'No authentication' : 
+                    webhookConfig?.authentication === 'basic' ? 'Basic authentication' :
+                    webhookConfig?.authentication === 'bearer' ? 'Bearer token authentication' :
+                    webhookConfig?.authentication === 'api_key' ? 'API key authentication' : 'No authentication'
+        
+        return `${method} ${url} • ${auth}`
+      }
+      // Fallback description
+      return "Webhook endpoint to receive HTTP requests and trigger workflow execution"
+    }
+
+    const isConfigured = Boolean(
+      (hasWebhookTool && tools?.[0]) ||
+      step.name ||
+      step.description
+    )
+
     return (
-      <>
-        <div
-          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
-            selected 
-              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
-              : "border-gray-300 dark:border-gray-600"
-          }`}
-          style={{
-            width: "320px",
-            minHeight: "122px",
-            borderRadius: "12px",
-            boxShadow: "0 0 0 2px #E2E2E2",
-          }}
-        >
-          {/* Header with icon and title */}
-          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
-            {/* Orange webhook icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0 bg-orange-50 dark:bg-orange-900/50"
-              style={{
-                display: "flex",
-                width: "24px",
-                height: "24px",
-                padding: "4px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "4.8px",
-              }}
-            >
-              <WebhookIcon width={16} height={16} />
-            </div>
-            <h3
-              className="text-gray-800 dark:text-gray-200 truncate flex-1"
-              style={{
-                fontFamily: "Inter",
-                fontSize: "14px",
-                fontStyle: "normal",
-                fontWeight: "600",
-                lineHeight: "normal",
-                letterSpacing: "-0.14px",
-              }}
-            >
-              {(() => {
-                // First try to get title from workflow_tools[index].val.title
-                if (hasWebhookTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
-                  return (tools[0].val as any).title
-                }
-                
-                // Try to get title from workflow_tools[index].value.title
-                if (hasWebhookTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
-                  return (tools[0] as any).value.title
-                }
-                
-                // Fallback to "Webhook" title
-                return "Webhook"
-              })()}
-            </h3>
-          </div>
-          {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
-          {/* Description text */}
-          <div className="px-4 pb-4">
-            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {(() => {
-                // First try to get description from workflow_tools[index].val.description
-                if (hasWebhookTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
-                  return (tools[0].val as any).description
-                }
-                
-                // Try to get description from workflow_tools[index].value.description
-                if (hasWebhookTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
-                  return (tools[0] as any).value.description
-                }
-                
-                // If step has description, use it next
-                if (step.description) {
-                  return step.description
-                }
-                // Get config from step or tool
-                const webhookConfig =
-                  (step as any).config ||
-                  (hasWebhookTool && tools?.[0]?.val) ||
-                  {}
-                // Build description from webhook configuration
-                if (webhookConfig?.webhookUrl || webhookConfig?.path) {
-                  const method = webhookConfig?.httpMethod || 'POST'
-                  const url = webhookConfig?.webhookUrl || `${window.location.origin}/workflow/webhook${webhookConfig?.path || ''}`
-                  const auth = webhookConfig?.authentication === 'none' ? 'No authentication' : 
-                              webhookConfig?.authentication === 'basic' ? 'Basic authentication' :
-                              webhookConfig?.authentication === 'bearer' ? 'Bearer token authentication' :
-                              webhookConfig?.authentication === 'api_key' ? 'API key authentication' : 'No authentication'
-                  
-                  return `${method} ${url} • ${auth}`
-                }
-                // Fallback description
-                return "Webhook endpoint to receive HTTP requests and trigger workflow execution"
-              })()}
-            </p>
-          </div>
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-          </div>
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                style={{
-                  width: "28px",
-                  height: "28px",
-                }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
-        </div>
-      </>
+      <WorkflowNode
+        icon={<WebhookIcon />}
+        title={getTitle()}
+        description={getDescription()}
+        isConfigured={isConfigured}
+        iconColor="#EA580C"
+        iconBgColorClass="bg-orange-50 dark:bg-orange-900/50"
+        id={id}
+        selected={selected}
+        isConnectable={isConnectable}
+        hasNext={hasNext}
+        onNextStepClick={(nodeId) => {
+          const event = new CustomEvent("openWhatHappensNext", {
+            detail: { nodeId },
+          })
+          window.dispatchEvent(event)
+        }}
+      />
     )
   }
 
   // Special rendering for form submission nodes and steps with form tools
   const hasFormTool = tools && tools.length > 0 && tools[0].type === "form"
   if (step.type === "form_submission" || hasFormTool) {
+    const getTitle = () => {
+      // First try to get title from workflow_tools[index].val.title
+      if (hasFormTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+        return (tools[0].val as any).title
+      }
+
+      // Try to get title from workflow_tools[index].value.title
+      if (hasFormTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+        return (tools[0] as any).value.title
+      }
+
+      // Fallback to existing logic
+      return step.name ||
+        (step as any).config?.title ||
+        (hasFormTool && tools?.[0] && typeof tools[0].val === 'object' && tools[0].val?.title) ||
+        "Form Submission"
+    }
+
+    const getDescription = () => {
+      // First try to get description from workflow_tools[index].val.description
+      if (hasFormTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+        return (tools[0].val as any).description
+      }
+
+      // Try to get description from workflow_tools[index].value.description
+      if (hasFormTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+        return (tools[0] as any).value.description
+      }
+
+      // If step has description, use it next
+      if (step.description) {
+        return step.description
+      }
+
+      // Get config from step or tool
+      const config =
+        (step as any).config ||
+        (hasFormTool && tools?.[0]?.val) ||
+        {}
+
+      // If user has configured the form, show form details
+      if (
+        config?.title ||
+        config?.description ||
+        (config?.fields && config.fields.length > 0)
+      ) {
+        const fieldCount = config?.fields?.length || 0
+        const fields = config?.fields || []
+
+        // Build description based on what's configured
+        let description = ""
+
+        if (config.description) {
+          description = config.description
+
+          // Add field information even with custom description
+          if (fields.length > 0) {
+            const fieldDescriptions = fields.map((field: any) => {
+              if (field.type === "file") {
+                return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
+              } else if (field.type === "email") {
+                return `Enter ${field.name || "email address"}`
+              } else if (field.type === "text") {
+                return `Enter ${field.name || "text"}`
+              } else if (field.type === "textarea") {
+                return `Enter ${field.name || "detailed text"}`
+              } else if (field.type === "number") {
+                return `Enter ${field.name || "number"}`
+              }
+              return `${field.name || field.type}`
+            })
+
+            description += `. ${fieldDescriptions.join(", ")}`
+          }
+        } else if (config.title) {
+          description = `Form "${config.title}" with ${fieldCount} field${fieldCount !== 1 ? "s" : ""}`
+
+          // Add field details
+          if (fields.length > 0) {
+            const fieldDescriptions = fields.map((field: any) => {
+              if (field.type === "file") {
+                return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
+              } else if (field.type === "email") {
+                return `Enter ${field.name || "email address"}`
+              } else if (field.type === "text") {
+                return `Enter ${field.name || "text"}`
+              } else if (field.type === "textarea") {
+                return `Enter ${field.name || "detailed text"}`
+              } else if (field.type === "number") {
+                return `Enter ${field.name || "number"}`
+              }
+              return `${field.name || field.type}`
+            })
+
+            if (fieldDescriptions.length === 1) {
+              description = fieldDescriptions[0]
+            } else {
+              description += `. Fields: ${fieldDescriptions.join(", ")}`
+            }
+          }
+        } else if (fieldCount > 0) {
+          // Show field details when only fields are configured
+          const fieldDescriptions = fields.map((field: any) => {
+            if (field.type === "file") {
+              return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
+            } else if (field.type === "email") {
+              return `Enter ${field.name || "email address"}`
+            } else if (field.type === "text") {
+              return `Enter ${field.name || "text"}`
+            } else if (field.type === "textarea") {
+              return `Enter ${field.name || "detailed text"}`
+            } else if (field.type === "number") {
+              return `Enter ${field.name || "number"}`
+            }
+            return `${field.name || field.type}`
+          })
+
+          if (fieldDescriptions.length === 1) {
+            description = fieldDescriptions[0]
+          } else {
+            description = `Form with ${fieldCount} fields: ${fieldDescriptions.join(", ")}`
+          }
+        }
+
+        return description || "Custom form configuration"
+      }
+
+      // Fallback content when no configuration
+      return "Upload a file in formats such as text, PDF, or Word."
+    }
+
+    const isConfigured = Boolean(
+      (hasFormTool && tools?.[0]) ||
+      step.name ||
+      step.description ||
+      (step as any).config?.title ||
+      (step as any).config?.fields
+    )
+
     return (
-      <>
-        <div
-          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-            ? "border-gray-800 dark:border-gray-300 shadow-lg"
-            : "border-gray-300 dark:border-gray-600"
-            }`}
-          style={{
-            width: "320px",
-            minHeight: "122px",
-            borderRadius: "12px",
-            boxShadow: "0 0 0 2px #E2E2E2",
-          }}
-        >
-          {/* Header with icon and title */}
-          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
-            {/* Green document icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0 bg-green-50 dark:bg-green-900/50"
-              style={{
-                display: "flex",
-                width: "24px",
-                height: "24px",
-                padding: "4px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "4.8px",
-              }}
-            >
-              <FormDocumentIcon width={16} height={16} />
-            </div>
-
-            <h3
-              className="text-gray-800 dark:text-gray-200 truncate flex-1"
-              style={{
-                fontFamily: "Inter",
-                fontSize: "14px",
-                fontStyle: "normal",
-                fontWeight: "600",
-                lineHeight: "normal",
-                letterSpacing: "-0.14px",
-              }}
-            >
-              {(() => {
-                // First try to get title from workflow_tools[index].val.title
-                if (hasFormTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
-                  return (tools[0].val as any).title
-                }
-
-                // Try to get title from workflow_tools[index].value.title
-                if (hasFormTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
-                  return (tools[0] as any).value.title
-                }
-
-                // Fallback to existing logic
-                return step.name ||
-                  (step as any).config?.title ||
-                  (hasFormTool && tools?.[0] && typeof tools[0].val === 'object' && tools[0].val?.title) ||
-                  "Form Submission"
-              })()}
-            </h3>
-          </div>
-
-          {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
-
-          {/* Description text */}
-          <div className="px-4 pb-4">
-            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {(() => {
-                // First try to get description from workflow_tools[index].val.description
-                if (hasFormTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
-                  return (tools[0].val as any).description
-                }
-
-                // Try to get description from workflow_tools[index].value.description
-                if (hasFormTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
-                  return (tools[0] as any).value.description
-                }
-
-                // If step has description, use it next
-                if (step.description) {
-                  return step.description
-                }
-
-                // Get config from step or tool
-                const config =
-                  (step as any).config ||
-                  (hasFormTool && tools?.[0]?.val) ||
-                  {}
-
-                // If user has configured the form, show form details
-                if (
-                  config?.title ||
-                  config?.description ||
-                  (config?.fields && config.fields.length > 0)
-                ) {
-                  const fieldCount = config?.fields?.length || 0
-                  const fields = config?.fields || []
-
-                  // Build description based on what's configured
-                  let description = ""
-
-                  if (config.description) {
-                    description = config.description
-
-                    // Add field information even with custom description
-                    if (fields.length > 0) {
-                      const fieldDescriptions = fields.map((field: any) => {
-                        if (field.type === "file") {
-                          return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
-                        } else if (field.type === "email") {
-                          return `Enter ${field.name || "email address"}`
-                        } else if (field.type === "text") {
-                          return `Enter ${field.name || "text"}`
-                        } else if (field.type === "textarea") {
-                          return `Enter ${field.name || "detailed text"}`
-                        } else if (field.type === "number") {
-                          return `Enter ${field.name || "number"}`
-                        }
-                        return `${field.name || field.type}`
-                      })
-
-                      description += `. ${fieldDescriptions.join(", ")}`
-                    }
-                  } else if (config.title) {
-                    description = `Form "${config.title}" with ${fieldCount} field${fieldCount !== 1 ? "s" : ""}`
-
-                    // Add field details
-                    if (fields.length > 0) {
-                      const fieldDescriptions = fields.map((field: any) => {
-                        if (field.type === "file") {
-                          return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
-                        } else if (field.type === "email") {
-                          return `Enter ${field.name || "email address"}`
-                        } else if (field.type === "text") {
-                          return `Enter ${field.name || "text"}`
-                        } else if (field.type === "textarea") {
-                          return `Enter ${field.name || "detailed text"}`
-                        } else if (field.type === "number") {
-                          return `Enter ${field.name || "number"}`
-                        }
-                        return `${field.name || field.type}`
-                      })
-
-                      if (fieldDescriptions.length === 1) {
-                        description = fieldDescriptions[0]
-                      } else {
-                        description += `. Fields: ${fieldDescriptions.join(", ")}`
-                      }
-                    }
-                  } else if (fieldCount > 0) {
-                    // Show field details when only fields are configured
-                    const fieldDescriptions = fields.map((field: any) => {
-                      if (field.type === "file") {
-                        return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
-                      } else if (field.type === "email") {
-                        return `Enter ${field.name || "email address"}`
-                      } else if (field.type === "text") {
-                        return `Enter ${field.name || "text"}`
-                      } else if (field.type === "textarea") {
-                        return `Enter ${field.name || "detailed text"}`
-                      } else if (field.type === "number") {
-                        return `Enter ${field.name || "number"}`
-                      }
-                      return `${field.name || field.type}`
-                    })
-
-                    if (fieldDescriptions.length === 1) {
-                      description = fieldDescriptions[0]
-                    } else {
-                      description = `Form with ${fieldCount} fields: ${fieldDescriptions.join(", ")}`
-                    }
-                  }
-
-                  return description || "Custom form configuration"
-                }
-
-                // Fallback content when no configuration
-                return "Upload a file in formats such as text, PDF, or Word."
-              })()}
-            </p>
-          </div>
-
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-          </div>
-
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                style={{
-                  width: "28px",
-                  height: "28px",
-                }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
-        </div>
-      </>
+      <WorkflowNode
+        icon={<FormDocumentIcon />}
+        title={getTitle()}
+        description={getDescription()}
+        isConfigured={isConfigured}
+        iconColor="#16A34A"
+        iconBgColorClass="bg-green-50 dark:bg-green-900/50"
+        id={id}
+        selected={selected}
+        isConnectable={isConnectable}
+        hasNext={hasNext}
+        onNextStepClick={(nodeId) => {
+          const event = new CustomEvent("openWhatHappensNext", {
+            detail: { nodeId },
+          })
+          window.dispatchEvent(event)
+        }}
+      />
     )
   }
 
@@ -1451,128 +713,64 @@ const StepNode: React.FC<NodeProps> = ({
     const triggerTypeLabels = {
       app_mention: "App Mention",
       direct_message: "Direct Message",
-      message_in_channel: "Message in Channel"
     }
 
+    const isConfigured = Boolean(config.title || step.name || config.triggerType || config.description)
     const triggerLabel = config.triggerType ? triggerTypeLabels[config.triggerType as keyof typeof triggerTypeLabels] : "Slack Trigger"
     const channelInfo = config.channelId ? ` in ${config.channelId}` : ""
 
     return (
-      <>
-        <div
-          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-            ? "border-gray-800 dark:border-gray-300 shadow-lg"
-            : "border-gray-300 dark:border-gray-600"
-            }`}
-          style={{
-            width: "320px",
-            minHeight: "122px",
-            borderRadius: "12px",
-            boxShadow: "0 0 0 2px #E2E2E2",
-          }}
-        >
-          {/* Header with icon and title */}
-          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
-            {/* Purple Slack icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0 bg-purple-50 dark:bg-purple-900/50"
-              style={{
-                display: "flex",
-                width: "24px",
-                height: "24px",
-                padding: "4px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "4.8px",
-              }}
-            >
-              <SlackIcon width={16} height={16} />
-            </div>
+      <WorkflowNode
+        icon={<SlackIcon />}
+        title={config.title || step.name || "Slack Trigger"}
+        description={config.description || `Trigger on: ${triggerLabel}${channelInfo}`}
+        isConfigured={isConfigured}
+        iconColor="#7C3AED"
+        iconBgColorClass="bg-purple-50 dark:bg-purple-900/50"
+        id={id}
+        selected={selected}
+        isConnectable={isConnectable}
+        hasNext={hasNext}
+        onNextStepClick={(nodeId) => {
+          const event = new CustomEvent("openWhatHappensNext", {
+            detail: { nodeId },
+          })
+          window.dispatchEvent(event)
+        }}
+      />
+    )
+  }
 
-            <h3
-              className="text-gray-800 dark:text-gray-200 truncate flex-1"
-              style={{
-                fontFamily: "Inter",
-                fontSize: "14px",
-                fontStyle: "normal",
-                fontWeight: "600",
-                lineHeight: "normal",
-                letterSpacing: "-0.14px",
-              }}
-            >
-              {config.title || step.name || "Slack Trigger"}
-            </h3>
-          </div>
+  // Special rendering for Slack Message nodes and steps with slack_message tools
+  const hasSlackMessageTool = tools && tools.length > 0 && tools[0].type === "slack_message"
+  if (step.type === "slack_message" || hasSlackMessageTool) {
+    const config =
+      (step as any).config ||
+      (hasSlackMessageTool && tools?.[0]?.config) ||
+      (hasSlackMessageTool && tools?.[0]?.val) ||
+      {}
 
-          {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
+    const isConfigured = Boolean(config.title || step.name || config.message || config.channel)
 
-          {/* Description text */}
-          <div className="px-4 pb-4">
-            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {config.description || `Trigger on: ${triggerLabel}${channelInfo}`}
-            </p>
-          </div>
-
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-          </div>
-
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                style={{
-                  width: "28px",
-                  height: "28px",
-                }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
-        </div>
-      </>
+    return (
+      <WorkflowNode
+        icon={<SlackIcon />}
+        title={config.title || step.name || "Slack Message"}
+        description={config.description || `Send message to Slack${config.channel ? ` in ${config.channel}` : ""}`}
+        isConfigured={isConfigured}
+        iconColor="#7C3AED"
+        iconBgColorClass="bg-purple-50 dark:bg-purple-900/50"
+        id={id}
+        selected={selected}
+        isConnectable={isConnectable}
+        hasNext={hasNext}
+        onNextStepClick={(nodeId) => {
+          const event = new CustomEvent("openWhatHappensNext", {
+            detail: { nodeId },
+          })
+          window.dispatchEvent(event)
+        }}
+      />
     )
   }
 
@@ -2488,6 +1686,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   )
   const [slackTriggerInitialConfig, setSlackTriggerInitialConfig] = useState<any>(undefined)
   const [slackTriggerToolId, setSlackTriggerToolId] = useState<string | undefined>(undefined)
+  const [showSlackMessageConfigUI, setShowSlackMessageConfigUI] = useState(false)
+  const [selectedSlackMessageNodeId, setSelectedSlackMessageNodeId] = useState<string | null>(
+    null,
+  )
   const [zoomLevel, setZoomLevel] = useState(100)
   const [showToolsSidebar, setShowToolsSidebar] = useState(false)
   const [selectedNodeTools] = useState<Tool[] | null>(
@@ -3009,10 +2211,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
-setShowWebhookConfigUI(false)
+      setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
       setShowJiraConfigUI(false)
       setShowSlackTriggerConfigUI(false)
+      setShowSlackMessageConfigUI(false)
       setSelectedNodeForNext(null)
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
@@ -3022,6 +2225,8 @@ setShowWebhookConfigUI(false)
       setSelectedHttpRequestNodeId(null)
       setSelectedWebhookNodeId(null)
       setSelectedJiraNodeId(null)
+      setSelectedSlackTriggerNodeId(null)
+      setSelectedSlackMessageNodeId(null)
 
       // Handle different tool types
       switch (toolType) {
@@ -3089,6 +2294,11 @@ setShowWebhookConfigUI(false)
           // Open Slack Trigger config sidebar 
           setShowSlackTriggerConfigUI(true)
           setSelectedSlackTriggerNodeId(node.id)
+          break
+
+        case "slack_message":
+          setShowSlackMessageConfigUI(true)
+          setSelectedSlackMessageNodeId(node.id)
           break
 
         case "ai_agent":
@@ -3639,6 +2849,15 @@ setShowWebhookConfigUI(false)
         // Keep selectedNodeForNext for later node creation on save
         setSelectedHttpRequestNodeId("pending") // Temporary ID to indicate we're in creation mode
         setShowHttpRequestConfigUI(true)
+        // Note: Keep WhatHappensNextUI visible in background (z-40)
+        // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
+      }
+    } else if (actionId === "slack_message") {
+      // When Slack Message is selected from WhatHappensNextUI, keep it visible in background
+      if (selectedNodeForNext) {
+        // Keep selectedNodeForNext for later node creation on save
+        setSelectedSlackMessageNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowSlackMessageConfigUI(true)
         // Note: Keep WhatHappensNextUI visible in background (z-40)
         // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
       }
@@ -4667,7 +3886,6 @@ const handleWebhookConfigSave = useCallback(
           setNodes([newNode])
           setSelectedNodes([])
         } else if (selectedSlackTriggerNodeId && selectedSlackTriggerNodeId !== "pending") {
-          console.log("yoyoyo 3...",selectedSlackTriggerNodeId)
           // Update existing Slack Trigger - only update local node state
           // Actual DB save will happen when user saves workflow"
           setNodes((prevNodes) =>
@@ -4719,7 +3937,162 @@ const handleWebhookConfigSave = useCallback(
     [selectedSlackTriggerNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges, showSnackbarMessage, nodeCounter],
   )
 
-  const handleResultClick = useCallback((result: any) => {
+  const handleSlackMessageConfigBack = useCallback(() => {
+    setShowSlackMessageConfigUI(false)
+    // If we're in creation mode (pending), go back to the "What Happens Next" menu
+    if (selectedSlackMessageNodeId === "pending" && selectedNodeForNext) {
+      // Ensure WhatHappensNextUI is visible when we go back
+      setShowWhatHappensNextUI(true)
+      setSelectedSlackMessageNodeId(null)
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedSlackMessageNodeId(null)
+      setSelectedNodeForNext(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) =>
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedSlackMessageNodeId, selectedNodeForNext, setNodes])
+
+  const handleSlackMessageConfigSave = useCallback(
+    async (slackMessageConfig: SlackMessageConfig) => {
+      // Handle save logic similar to other components
+      if (selectedSlackMessageNodeId === "pending" && selectedNodeForNext) {
+        // Create new Slack Message node when saving configuration
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        if (sourceNode) {
+          const newNodeId = `slack-message-${nodeCounter}`
+          
+          // Create the tool object for Slack Message
+          const slackMessageTool = {
+            id: `tool-${newNodeId}`,
+            type: "slack_message",
+            val: slackMessageConfig,
+            value: slackMessageConfig,
+            config: slackMessageConfig,
+          }
+
+          // Create new node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: "Slack Message",
+                type: "slack_message",
+                status: "pending",
+                contents: [],
+                config: slackMessageConfig,
+              },
+              tools: [slackMessageTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + button on new step
+            },
+            draggable: true,
+            selected: true, // Select the newly created node
+          }
+
+          // Create edge connecting source to new node
+          const newEdge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "smoothstep",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            pathOptions: {
+              borderRadius: 20,
+              offset: 20,
+            },
+            markerEnd: {
+              type: "arrowclosed" as const,
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          } as any
+
+          // Update nodes and edges
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node since it now has a next step
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      hasNext: false,
+                    },
+                    selected: false, // Deselect source node
+                  }
+                : node.id === newNodeId
+                  ? node // Keep new node selected
+                  : { ...node, selected: false }, // Deselect all other nodes
+            ),
+          )
+        }
+      } else if (selectedSlackMessageNodeId && selectedSlackMessageNodeId !== "pending") {
+        // Update existing Slack Message node with the configuration
+        const slackMessageTool = {
+          id: getToolIdFromStepId(selectedSlackMessageNodeId),
+          type: "slack_message",
+          val: slackMessageConfig,
+          value: slackMessageConfig,
+          config: slackMessageConfig,
+        }
+
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === selectedSlackMessageNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step || {}),
+                      name: "Slack Message",
+                      config: slackMessageConfig,
+                    },
+                    tools: [slackMessageTool],
+                    hasNext: !edges.some(edge => edge.source === selectedSlackMessageNodeId),
+                  },
+                }
+              : node,
+          ),
+        )
+      }
+
+      // Reset zoom and auto-fit workflow after saving configuration
+      setZoomLevel(100)
+      setTimeout(() => {
+        smartFitWorkflow()
+      }, 50)
+
+      setShowSlackMessageConfigUI(false)
+      setSelectedSlackMessageNodeId(null)
+      setSelectedNodeForNext(null)
+    },
+    [selectedSlackMessageNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow, getToolIdFromStepId],
+  )
+
+    const handleResultClick = useCallback((result: any) => {
     setSelectedResult(result)
     setShowResultModal(true)
   }, [])
@@ -5378,12 +4751,30 @@ const handleWebhookConfigSave = useCallback(
         />
       </div>
 
+
+        {/* Slack Message Configuration Sidebar */}
+        <SlackMessageConfigUI
+          isVisible={showSlackMessageConfigUI}
+          onBack={handleSlackMessageConfigBack}
+          onSave={handleSlackMessageConfigSave}
+          onClose={() => {
+            setShowSlackMessageConfigUI(false)
+            setSelectedSlackMessageNodeId(null)
+            setSelectedNodeForNext(null)
+            // Clear all node selections when sidebar closes
+            setNodes((prevNodes) =>
+              prevNodes.map(node => ({ ...node, selected: false }))
+            )
+            setSelectedNodes([])
+          }}
+        />
+
       {/* Execution Result Modal */}
       <ExecutionResultModal
         isVisible={showResultModal}
         result={selectedResult}
         onClose={handleResultModalClose}
-      />
+        />
 
       {/* Workflow Execution Modal */}
       {showExecutionModal && (createdTemplate || selectedTemplate) && (() => {

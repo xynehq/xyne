@@ -3,42 +3,30 @@ import { SlackIcon } from "./WorkflowIcons"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 import { X } from "lucide-react"
 
-export interface SlackTriggerConfig {
-  triggerType: "app_mention" | "direct_message" 
-  channelIds?: string[]
+export interface SlackMessageConfig {
+  channelId: string
+  message: string
   title?: string
   description?: string
 }
 
-interface SlackTriggerConfigUIProps {
+interface SlackMessageConfigUIProps {
   isVisible: boolean
   onBack: () => void
   onClose: () => void
-  onSave: (config: SlackTriggerConfig) => Promise<void>
-  initialConfig?: SlackTriggerConfig
+  onSave: (config: SlackMessageConfig) => Promise<void>
+  initialConfig?: SlackMessageConfig
   toolId?: string
   showBackButton?: boolean
   builder?: boolean
 }
 
-const defaultConfig: SlackTriggerConfig = {
-  triggerType: "app_mention",
+const defaultConfig: SlackMessageConfig = {
+  channelId: "",
+  message: "",
 }
 
-const triggerTypeOptions = [
-  {
-    value: "app_mention" as const,
-    label: "App Mention",
-    description: "When bot/app is mentioned in channel with @botname",
-  },
-  {
-    value: "direct_message" as const,
-    label: "Direct Message (DM)",
-    description: "When a user sends a direct message to the bot",
-  },
-]
-
-export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
+export const SlackMessageConfigUI: React.FC<SlackMessageConfigUIProps> = ({
   isVisible,
   onBack,
   onClose,
@@ -47,12 +35,11 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
   showBackButton = false,
   builder = true,
 }) => {
-  const [config, setConfig] = useState<SlackTriggerConfig>(
+  const [config, setConfig] = useState<SlackMessageConfig>(
     initialConfig || defaultConfig,
   )
   const [errors, setErrors] = useState<string[]>([])
   const [isSaving, setIsSaving] = useState(false)
-  const [dropdownOpen, setDropdownOpen] = useState(false)
   const [channels, setChannels] = useState<Array<{ id: string; name: string }>>([])
   const [channelsLoading, setChannelsLoading] = useState(false)
   const [channelInput, setChannelInput] = useState("")
@@ -64,7 +51,7 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
     }
   }, [initialConfig])
 
-  // Fetch channels when component mounts or when channel dropdown is opened
+  // Fetch channels when component mounts
   useEffect(() => {
     const fetchChannels = async () => {
       try {
@@ -84,15 +71,12 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
     }
   }, [isVisible])
 
-  // Close dropdowns when clicking outside
+  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement
       if (showSuggestions && !target.closest('.channel-input-container')) {
         setShowSuggestions(false)
-      }
-      if (dropdownOpen && !target.closest('.trigger-dropdown-container')) {
-        setDropdownOpen(false)
       }
     }
 
@@ -100,21 +84,17 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showSuggestions, dropdownOpen])
+  }, [showSuggestions])
 
   const validateConfig = (): { valid: boolean; errors: string[] } => {
     const validationErrors: string[] = []
 
-    if (!config.triggerType) {
-      validationErrors.push("Trigger type is required")
+    if (!config.channelId) {
+      validationErrors.push("Channel selection is required")
     }
 
-    if (config.triggerType === "app_mention") {
-      if (!config.channelIds || config.channelIds.length === 0) {
-        validationErrors.push(
-          "At least one channel is required for 'App Mention' trigger",
-        )
-      }
+    if (!config.message || config.message.trim() === "") {
+      validationErrors.push("Message content is required")
     }
 
     if (config.title && config.title.length > 100) {
@@ -125,53 +105,40 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
       validationErrors.push("Description must be 500 characters or less")
     }
 
+    if (config.message && config.message.length > 4000) {
+      validationErrors.push("Message must be 4000 characters or less")
+    }
+
     return {
       valid: validationErrors.length === 0,
       errors: validationErrors,
     }
   }
 
-  const handleAddChannel = (channelName: string) => {
-    const currentChannels = config.channelIds || []
-
+  const handleSelectChannel = (channelName: string) => {
     // Normalize channel name (remove # if present)
     const normalizedChannel = channelName.startsWith('#') ? channelName.slice(1) : channelName
 
-    // Check if already added
-    if (currentChannels.includes(normalizedChannel)) {
-      return
-    }
-
-    // If adding "all", replace all existing channels with just "all"
-    if (normalizedChannel === "all") {
-      setConfig({
-        ...config,
-        channelIds: ["all"]
-      })
-    } else {
-      // Add individual channel
-      setConfig({
-        ...config,
-        channelIds: [...currentChannels, normalizedChannel]
-      })
-    }
+    setConfig({
+      ...config,
+      channelId: normalizedChannel
+    })
 
     setChannelInput("")
     setShowSuggestions(false)
     setErrors([])
   }
 
-  const handleRemoveChannel = (channelId: string) => {
-    const currentChannels = config.channelIds || []
-    setConfig({
-      ...config,
-      channelIds: currentChannels.filter(id => id !== channelId)
-    })
-  }
-
   const handleChannelInputChange = (value: string) => {
     setChannelInput(value)
-    // Keep suggestions open as long as input is focused
+    
+    // If input is cleared, clear the selected channel
+    if (!value.trim()) {
+      setConfig({
+        ...config,
+        channelId: ""
+      })
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -200,16 +167,12 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
     try {
       await onSave(config)
     } catch (error) {
-      console.error("Failed to save Slack trigger config:", error)
+      console.error("Failed to save Slack message config:", error)
       setErrors(["Failed to save configuration. Please try again."])
     } finally {
       setIsSaving(false)
     }
   }
-
-  const selectedOption = triggerTypeOptions.find(
-    (opt) => opt.value === config.triggerType,
-  )
 
   if (!isVisible) return null
 
@@ -237,7 +200,7 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
             )}
             <SlackIcon width={20} height={20} />
             <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 tracking-wider uppercase">
-              SLACK TRIGGER
+              SLACK MESSAGE
             </div>
           </div>
           <button
@@ -260,91 +223,31 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-        {/* Trigger Type Dropdown */}
-        <div>
+        {/* Channel Selection */}
+        <div className="space-y-2">
           <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-2">
-            Trigger Type <span className="text-red-500">*</span>
+            Select Channel <span className="text-red-500">*</span>
           </label>
-          <div className="relative trigger-dropdown-container">
-            <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="w-full px-3 py-2.5 text-left bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:border-gray-400 dark:hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div>
-                    <div className="text-sm font-medium text-slate-700 dark:text-gray-300">
-                      {selectedOption?.label}
-                    </div>
-                  </div>
+
+          {/* Selected Channel Display */}
+          {config.channelId && (
+            <div className="mb-2">
+              <div className="flex items-center justify-between p-1 bg-gray-50 dark:bg-gray-800 rounded-lg w-fit">
+                <div className="text-xs font-medium text-slate-900 dark:text-gray-300">
+                  {config.channelId}
                 </div>
-                <svg
-                  className={`w-4 h-4 text-gray-400 transition-transform ${
-                    dropdownOpen ? "rotate-180" : ""
-                  }`}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
+                <button
+                  onClick={() => setConfig({ ...config, channelId: "" })}
+                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
                 >
-                  <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
+                  <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                </button>
               </div>
-            </button>
+            </div>
+          )}
 
-            {/* Dropdown Menu */}
-            {dropdownOpen && (
-              <div className="absolute z-10 w-full mt-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg overflow-hidden">
-                {triggerTypeOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => {
-                      setConfig({ ...config, triggerType: option.value })
-                      setDropdownOpen(false)
-                      setErrors([])
-                    }}
-                    className={`w-full px-3 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                      config.triggerType === option.value
-                        ? "bg-blue-50 dark:bg-blue-900/20"
-                        : ""
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex-1">
-                        <div className="text-xs font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                          {option.label}
-                          {config.triggerType === option.value && (
-                            <svg
-                              className="w-3 h-3 text-blue-600"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                          )}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {option.description}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Channel Input (Conditional) */}
-        {config.triggerType === "app_mention" && (
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-2">
-              Add Channels <span className="text-red-500">*</span>
-            </label>
-
-            {/* Channel Input with Autocomplete */}
+          {/* Channel Input with Autocomplete */}
+          {!config.channelId && (
             <div className="relative channel-input-container">
               <input
                 type="text"
@@ -352,26 +255,13 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
                 onChange={(e) => handleChannelInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onFocus={() => setShowSuggestions(true)}
-                placeholder="Type channel name or 'all'"
+                placeholder="Type channel name"
                 className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-900 dark:text-gray-300"
               />
 
               {/* Autocomplete Suggestions */}
-              {showSuggestions && !config.channelIds?.includes("all") && (
+              {showSuggestions && (
                 <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {/* "All" Option */}
-                  <button
-                    onClick={() => handleAddChannel("all")}
-                    className="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                  >
-                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      all
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      Listen to all channels
-                    </div>
-                  </button>
-
                   {/* Channel Suggestions */}
                   {channelsLoading ? (
                     <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -385,7 +275,7 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
                     filteredChannels.slice(0, 10).map((channel) => (
                       <button
                         key={channel.id}
-                        onClick={() => handleAddChannel(channel.name)}
+                        onClick={() => handleSelectChannel(channel.name)}
                         className="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                       >
                         <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -397,31 +287,26 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
                 </div>
               )}
             </div>
+          )}
+        </div>
 
-
-            {/* Added Channels */}
-            {config.channelIds && config.channelIds.length > 0 && (
-              <div className="space-y-2 mt-4">
-                {config.channelIds.map((channelId) => (
-                  <div
-                    key={channelId}
-                    className="flex items-center justify-between p-1 bg-gray-50 dark:bg-gray-800 rounded-lg w-fit"
-                  >
-                    <div className="text-xs font-medium text-slate-90 dark:text-gray-300">
-                      {channelId}
-                    </div>
-                    <button
-                      onClick={() => handleRemoveChannel(channelId)}
-                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-                    >
-                      <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+        {/* Message Content */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-2">
+            Message <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            value={config.message}
+            onChange={(e) => setConfig({ ...config, message: e.target.value })}
+            placeholder="Enter the message to send to the channel..."
+            maxLength={4000}
+            rows={5}
+            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-900 dark:text-gray-300 resize-none"
+          />
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {config.message.length}/4000 characters
           </div>
-        )}
+        </div>
 
         {/* Title Input (Optional) */}
         <div>
@@ -432,7 +317,7 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
             type="text"
             value={config.title || ""}
             onChange={(e) => setConfig({ ...config, title: e.target.value })}
-            placeholder="e.g., 'Support Request Trigger'"
+            placeholder="e.g., 'Send Notification'"
             maxLength={100}
             className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-medium text-slate-700 dark:text-gray-300"
           />
@@ -449,7 +334,7 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
             onChange={(e) =>
               setConfig({ ...config, description: e.target.value })
             }
-            placeholder="e.g., 'Triggers when users request support via Slack'"
+            placeholder="e.g., 'Sends notification message to team channel'"
             maxLength={500}
             rows={3}
             className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-medium text-slate-700 dark:text-gray-300 resize-none"
@@ -503,7 +388,7 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
                 : "cursor-pointer"
             }`}
           >
-            {isSaving ? "Saving..." : "Save Trigger Configuration"}
+            {isSaving ? "Saving..." : "Save Message Configuration"}
           </button>
         )}
       </div>
@@ -511,4 +396,4 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
   )
 }
 
-export default SlackTriggerConfigUI
+export default SlackMessageConfigUI

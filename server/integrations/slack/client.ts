@@ -1,4 +1,4 @@
-import { WebClient } from "@slack/web-api"
+import { WebClient, type ConversationsListResponse } from "@slack/web-api"
 import { SocketModeClient, type LogLevel } from "@slack/socket-mode"
 import type { View } from "@slack/types"
 import { db } from "@/db/client"
@@ -44,6 +44,7 @@ import { checkAgentWithNoIntegrations } from "@/api/chat/agents"
 import { agentWithNoIntegrationsQuestion } from "@/ai/provider"
 import type { ConverseResponseWithCitations } from "@/api/chat/types"
 import { getSlackTriggersInWorkflows } from "@/db/workflowTool"
+import { webcrypto } from "crypto"
 
 const Logger = getLogger(Subsystem.Slack)
 
@@ -2372,6 +2373,25 @@ const processSlackDM = async (event: any) => {
       }
     }
   }
+}
+
+export const listSlackChannels = async (): Promise<{
+  id: string,
+  name: string, 
+}[]> => {
+  const response = await webClient!.conversations.list()
+  if (!response.channels) {
+    Logger.error("channels not recieved from conversations")
+    throw new Error("Channels absent in conversation response")
+  }
+  const channels = response.channels
+    .filter(ch => (ch.name && ch.id))
+    .map(ch => ({
+      id: ch.id!,
+      name: ch.name! 
+    }))
+
+  return channels
 }
 
 // Export Socket Mode status and control functions

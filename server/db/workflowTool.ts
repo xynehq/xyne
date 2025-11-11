@@ -1,4 +1,4 @@
-import { and, eq, desc, inArray, sql } from "drizzle-orm"
+import { and, eq, desc, inArray, sql, or } from "drizzle-orm"
 import type { TxnOrClient } from "@/types"
 import {
   workflowTool,
@@ -11,6 +11,7 @@ import {
   workflowStepTemplate,
   selectWorkflowToolSchema,
   selectToolExecutionSchema,
+  userWorkflowPermissions,
 } from "@/db/schema"
 import { ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
 import { z } from "zod"
@@ -149,13 +150,20 @@ export const getSlackTriggersInWorkflows = async (
     )
     .innerJoin(
       workflowTool,
-      sql`${workflowTool.id} = ANY(${workflowStepTemplate.toolIds})`
+      inArray(workflowTool.id, workflowStepTemplate.toolIds)
+    )
+    .leftJoin(
+      userWorkflowPermissions,
+      eq(userWorkflowPermissions.workflowId, workflowTemplate.id)
     )
     .where(
       and(
         eq(workflowTool.type, ToolType.SLACK_TRIGGER),
         eq(workflowTemplate.workspaceId, workspaceId),
-        eq(workflowTemplate.userId, userId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(userWorkflowPermissions.userId, userId)
+        ),
       )
     )
     .groupBy(
