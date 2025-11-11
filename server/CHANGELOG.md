@@ -1,3 +1,10 @@
+## [3.30.13](https://github.com/xynehq/xyne/compare/v3.30.12...v3.30.13) (2025-11-11)
+
+
+### Bug Fixes
+
+* **mimeMap:** Add the mapping for md files ([#1207](https://github.com/xynehq/xyne/issues/1207)) ([32a9dc7](https://github.com/xynehq/xyne/commit/32a9dc7c433e48245847ad5aa7f9846747034c5c))
+
 ## [3.30.12](https://github.com/xynehq/xyne/compare/v3.30.11...v3.30.12) (2025-11-11)
 
 
