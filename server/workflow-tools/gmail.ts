@@ -1,11 +1,42 @@
-import { ToolType, ToolCategory } from "@/types/workflowTypes"
+import { ToolType, ToolCategory, ToolExecutionStatus } from "@/types/workflowTypes"
 import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
 import { z } from "zod"
 
 export class GmailTool implements WorkflowTool {
   type = ToolType.GMAIL
   category = ToolCategory.ACTION
-  triggerIfActive = false
+  
+  defaultConfig = {
+    inputCount: 1,
+    outputCount: 1,
+    options: {
+      to: {
+        type: "array",
+        default: [],
+        optional: false
+      },
+      cc: {
+        type: "array",
+        default: [],
+        optional: true
+      },
+      bcc: {
+        type: "array", 
+        default: [],
+        optional: true
+      },
+      from: {
+        type: "string",
+        default: "",
+        optional: true
+      },
+      priority: {
+        type: "select",
+        default: "normal",
+        optional: true
+      }
+    }
+  }
 
   inputSchema = z.object({
     subject: z.string().optional(),
@@ -39,8 +70,8 @@ export class GmailTool implements WorkflowTool {
     workflowContext: WorkflowContext
   ): Promise<ToolExecutionResult> {
     return {
-      status: "success",
-      result: {
+      status: ToolExecutionStatus.COMPLETED,
+      output: {
         message: "Gmail task completed",
         data: input,
       },

@@ -10,9 +10,12 @@ import { SlackTool } from "./slack"
 import { GmailTool } from "./gmail"
 import { AgentTool } from "./agent"
 import { MergedNodeTool } from "./merged-node"
-import { ConditionalTool } from "./conditional"
+import { SwitchTool } from "./switch"
 import { ManualTriggerTool } from "./manual-trigger"
 import { SchedulerTriggerTool } from "./scheduler-trigger"
+import { WebhookTool } from "./webhook"
+import { HttpRequestTool } from "./http-request"
+import { JiraTool } from "./jira"
 
 // Create tool registry - centralized access point for all workflow tools
 export const toolRegistry: ToolRegistry = {
@@ -24,9 +27,12 @@ export const toolRegistry: ToolRegistry = {
   [ToolType.GMAIL]: new GmailTool(),
   [ToolType.AGENT]: new AgentTool(),
   [ToolType.MERGED_NODE]: new MergedNodeTool(),
-  [ToolType.CONDITIONAL]: new ConditionalTool(),
+  [ToolType.SWITCH]: new SwitchTool(),
   [ToolType.MANUAL_TRIGGER]: new ManualTriggerTool(),
   [ToolType.SCHEDULER_TRIGGER]: new SchedulerTriggerTool(),
+  [ToolType.WEBHOOK]: new WebhookTool(),
+  [ToolType.HTTP_REQUEST]: new HttpRequestTool(),
+  [ToolType.JIRA]: new JiraTool(),
 }
 
 // Helper function to get a tool by type
@@ -81,6 +87,9 @@ export * from "./slack"
 export * from "./gmail"
 export * from "./agent"
 export * from "./merged-node"
-export * from "./conditional"
+export * from "./switch"
 export * from "./manual-trigger"
 export * from "./scheduler-trigger"
+export * from "./webhook"
+export * from "./http-request"
+export * from "./jira"

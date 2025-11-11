@@ -90,6 +90,7 @@ export const workflowTemplate = pgTable("workflow_template", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
+  deprecated: boolean("deprecated").notNull().default(false),
   // Removed: workspaceId, deletedAt
   
 })
@@ -116,6 +117,7 @@ export const workflowStepTemplate = pgTable("workflow_step_template", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
+  deprecated: boolean("deprecated").notNull().default(false),
   // Removed: deletedAt
 })
 

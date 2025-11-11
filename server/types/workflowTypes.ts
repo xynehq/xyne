@@ -30,7 +30,7 @@ export enum ToolType {
   WEBHOOK = "webhook",
   HTTP_REQUEST = "http_request",
   JIRA = "jira",
-  CONDITIONAL = "conditional",
+  SWITCH = "switch",
   MANUAL_TRIGGER = "manual_trigger",
   SCHEDULER_TRIGGER = "scheduler_trigger",
 }
@@ -40,6 +40,7 @@ export enum ToolExecutionStatus {
   RUNNING = "running",
   COMPLETED = "completed",
   FAILED = "failed",
+  AWAITING_USER_INPUT = "awaiting_user_input",
 }
 
 export enum TemplateState {

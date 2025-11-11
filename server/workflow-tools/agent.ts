@@ -1,11 +1,32 @@
-import { ToolType, ToolCategory } from "@/types/workflowTypes"
+import { ToolType, ToolCategory, ToolExecutionStatus } from "@/types/workflowTypes"
 import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
 import { z } from "zod"
 
 export class AgentTool implements WorkflowTool {
   type = ToolType.AGENT
   category = ToolCategory.ACTION
-  triggerIfActive = false
+  
+  defaultConfig = {
+    inputCount: 1,
+    outputCount: 1,
+    options: {
+      agentId: {
+        type: "string",
+        default: "",
+        optional: false
+      },
+      prompt: {
+        type: "string",
+        default: "",
+        optional: true
+      },
+      timeout: {
+        type: "number",
+        default: 120000,
+        optional: true
+      }
+    }
+  }
 
   inputSchema = z.object({})
   outputSchema = z.object({})
@@ -17,8 +38,8 @@ export class AgentTool implements WorkflowTool {
     workflowContext: WorkflowContext
   ): Promise<ToolExecutionResult> {
     return {
-      status: "success",
-      result: {
+      status: ToolExecutionStatus.COMPLETED,
+      output: {
         agent_response: "Agent task completed",
         task: input.task || "No task specified",
       },

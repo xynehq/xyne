@@ -73,6 +73,8 @@ export interface ExecutionPacket {
   step_id: string
   tool_id: string
   input: Record<string, any> // JSON input data for tool execution
+  previous_tool_id?: string // Optional previous tool ID
+  previous_step_id?: string // Optional previous step ID
 }
 
 // Step execution result interface

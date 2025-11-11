@@ -110,7 +110,7 @@ export class WorkflowExecutor {
     const templateSteps = await db
       .select()
       .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+      .where(and(eq(workflowStepTemplate.workflowTemplateId, templateId),eq(workflowStepTemplate.deprecated, false)))
 
     const visited = new Set<string>()
     const stepExecutions = new Map<string, string>()
@@ -137,7 +137,7 @@ export class WorkflowExecutor {
           nextStepIds: [],
           toolExecIds: [],
           createdAt: new Date(),
-          metadata: {},
+          metadata: {"stepExecutedCount":0,"inputToolIds":{},"outputToolIds":{}},
         })
         .returning()
         .then(([stepExec]) => {
@@ -145,71 +145,95 @@ export class WorkflowExecutor {
         })
     }
     
-    //traverse the graph to set prev/next step execution IDs
-    for(const rootStep of rootSteps) {
-      // const stepExecId = stepExecutions.get(rootStep.id)
-      // createEdgesOfStepExecution(stepExecId)
-      await this.traverseGraphAndCreateExecutionEdges(rootStep,templateStepMaps, stepExecutions, visited, db)
+
+    // Update step executions with relationships and metadata mapping
+    for (const [templateStepId, stepExecId] of stepExecutions) {
+      const templateStep = templateStepMaps.get(templateStepId)
+      if (!templateStep) continue
+
+      // Get previous step execution IDs
+      const prevStepExecIds: string[] = []
+      if (templateStep.prevStepIds && templateStep.prevStepIds.length > 0) {
+        for (const prevTemplateId of templateStep.prevStepIds) {
+          const prevStepExecId = stepExecutions.get(prevTemplateId)
+          if (prevStepExecId) {
+            prevStepExecIds.push(prevStepExecId)
+          }
+        }
+      }
+
+      // Get next step execution IDs
+      const nextStepExecIds: string[] = []
+      if (templateStep.nextStepIds && templateStep.nextStepIds.length > 0) {
+        for (const nextTemplateId of templateStep.nextStepIds) {
+          const nextStepExecId = stepExecutions.get(nextTemplateId)
+          if (nextStepExecId) {
+            nextStepExecIds.push(nextStepExecId)
+          }
+        }
+      }
+
+      // Process metadata to replace template IDs with step execution IDs
+      let updatedMetadata = { ...templateStep.metadata }
+      
+      // Handle outRoutes mapping: out<num>:templateIds[] -> out<num>:stepExecIds[]
+      if (templateStep.metadata?.outRoutes) {
+        const updatedOutRoutes: Record<string, string[]> = {}
+        for (const [routeKey, templateIds] of Object.entries(templateStep.metadata.outRoutes)) {
+          const templateIdArray = Array.isArray(templateIds) ? templateIds : [templateIds as string]
+          const targetStepExecIds: string[] = []
+          
+          for (const templateId of templateIdArray) {
+            const targetStepExecId = stepExecutions.get(templateId)
+            if (targetStepExecId) {
+              targetStepExecIds.push(targetStepExecId)
+            }
+          }
+          
+          if (targetStepExecIds.length > 0) {
+            updatedOutRoutes[routeKey] = targetStepExecIds
+          }
+        }
+        updatedMetadata.outRoutes = updatedOutRoutes
+      }
+
+      // Handle inRoutes mapping: in<num>:templateIds[] -> in<num>:stepExecIds[]
+      if (templateStep.metadata?.inRoutes) {
+        const updatedInRoutes: Record<string, string[]> = {}
+        for (const [routeKey, templateIds] of Object.entries(templateStep.metadata.inRoutes)) {
+          const templateIdArray = Array.isArray(templateIds) ? templateIds : [templateIds as string]
+          const sourceStepExecIds: string[] = []
+          
+          for (const templateId of templateIdArray) {
+            const sourceStepExecId = stepExecutions.get(templateId)
+            if (sourceStepExecId) {
+              sourceStepExecIds.push(sourceStepExecId)
+            }
+          }
+          
+          if (sourceStepExecIds.length > 0) {
+            updatedInRoutes[routeKey] = sourceStepExecIds
+          }
+        }
+        updatedMetadata.inRoutes = updatedInRoutes
+      }
+
+      // Add step execution count
+      updatedMetadata.stepExecutedCount = 0
+
+      // Update the step execution with relationships and metadata
+      await db
+        .update(workflowStepExecution)
+        .set({
+          prevStepIds: prevStepExecIds,
+          nextStepIds: nextStepExecIds,
+          metadata: updatedMetadata,
+        })
+        .where(eq(workflowStepExecution.id, stepExecId))
     }
 
     return stepExecutions
   }
-
-
-  private async traverseGraphAndCreateExecutionEdges(rootStep: any, templateStepMaps: Map<string, any>, stepExecutions: Map<string, string>, visited: Set<string>, db: any) {
-    // Implementation for traversing the graph and creating execution edges
-    const stack = [rootStep]
-    
-    while (stack.length > 0) {
-      const currentStep = stack.pop()
-      if (!currentStep || visited.has(currentStep.id)) {
-        continue
-      }
-      visited.add(currentStep.id)
-
-      // Create execution edges for the current step
-      const stepExecId = stepExecutions.get(currentStep.id)
-      // if (stepExecId) {
-      //   createEdgesOfStepExecution(stepExecId)
-      // }
-
-      // Get next steps from the templateStepMaps
-      const nextTemplateSteps: string[] = templateStepMaps.get(currentStep.id)?.nextStepIds || []
-      
-      for (const nextTemplateStepId of nextTemplateSteps) {
-        //get the exec step and create edges
-        const nextStepExecId = stepExecutions.get(nextTemplateStepId)
-        if (stepExecId && nextStepExecId) {
-          //create edges between stepExecId and nextStepExecId
-          
-          // Update current step's nextStepIds array
-          await db
-            .update(workflowStepExecution)
-            .set({
-              nextStepIds: sql`array_append(${workflowStepExecution.nextStepIds}, ${nextStepExecId})`,
-              updatedAt: new Date(),
-            })
-            .where(eq(workflowStepExecution.id, stepExecId))
-
-          // Update next step's prevStepIds array  
-          await db
-            .update(workflowStepExecution)
-            .set({
-              prevStepIds: sql`array_append(${workflowStepExecution.prevStepIds}, ${stepExecId})`,
-              updatedAt: new Date(),
-            })
-            .where(eq(workflowStepExecution.id, nextStepExecId))
-        }
-
-        // Push the next template step onto the stack for further traversal
-        const nextTemplateStep = templateStepMaps.get(nextTemplateStepId)
-        if (nextTemplateStep && !visited.has(nextTemplateStep.id)) {
-          stack.push(nextTemplateStep)
-        }
-      }
-    }
-  }
-
 
   // Push root nodes to execution queue
   private async pushRootNodesToQueue(rootNodes: Awaited<ReturnType<typeof this.validateRootNodeTriggers>>, stepExecutions: Map<string,string>, executionId: string): Promise<void> {

@@ -48,7 +48,7 @@ export const handleManualTrigger = async (c: Context) => {
       .where(
         and(
           eq(toolExecution.workflowExecutionId, workflowId),
-          eq(toolExecution.status, ToolExecutionStatus.PENDING)
+          eq(toolExecution.status, ToolExecutionStatus.AWAITING_USER_INPUT)
         )
       )
       .limit(1)
@@ -99,8 +99,8 @@ export const handleManualTrigger = async (c: Context) => {
       stepId: stepId,
       toolId: toolExec.workflowToolId,
       toolResult: {
-        status: 'success' as const,
-        result: toolExec.result || {}
+        status: ToolExecutionStatus.COMPLETED,
+        output: toolExec.result || {}
       },
       nextAction: 'continue' as const
     }
@@ -179,7 +179,7 @@ export const handleTemplateStateChange = async (template: SelectWorkflowTemplate
             continue
           }
 
-          // Get tool implementation to check triggerIfActive
+          // Get tool implementation
           const toolImplementation = getTool(toolConfig.type as any)
           switch (toolConfig.type) {
             case ToolType.SCHEDULER_TRIGGER:

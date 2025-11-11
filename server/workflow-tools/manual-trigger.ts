@@ -1,11 +1,32 @@
-import { ToolType, ToolCategory } from "@/types/workflowTypes"
-import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
+import { ToolType, ToolCategory, ToolExecutionStatus } from "@/types/workflowTypes"
+import type { WorkflowTool, ToolExecutionResult, WorkflowContext,defaultToolConfig } from "./types"
 import { z } from "zod"
 
 export class ManualTriggerTool implements WorkflowTool {
   type = ToolType.MANUAL_TRIGGER
   category = ToolCategory.TRIGGER
-  triggerIfActive = false
+  
+  defaultConfig:defaultToolConfig = {
+    inputCount: 0, // No input required for trigger
+    outputCount: 1,
+    options: {
+      buttonText: {
+        type: "string",
+        default: "Start Workflow",
+        optional: true
+      },
+      description: {
+        type: "string",
+        default: "",
+        optional: true
+      },
+      requireConfirmation: {
+        type: "boolean",
+        default: false,
+        optional: true
+      }
+    }
+  }
 
   inputSchema = z.object({
     triggeredBy: z.string().optional(),
@@ -34,15 +55,15 @@ export class ManualTriggerTool implements WorkflowTool {
   ): Promise<ToolExecutionResult> {
     try {
       return {
-        status: "awaiting_user_input",
-        result: {
+        status: ToolExecutionStatus.AWAITING_USER_INPUT,
+        output: {
           triggeredAt: new Date().toISOString()
         },
       }
     } catch (error) {
       return {
-        status: "error",
-        result: {
+        status: ToolExecutionStatus.FAILED,
+        output: {
           triggeredAt: new Date().toISOString(),
           triggeredBy: input.triggeredBy || "unknown",
           triggerReason: `Manual trigger failed: ${error instanceof Error ? error.message : String(error)}`,

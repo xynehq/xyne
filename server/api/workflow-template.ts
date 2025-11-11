@@ -17,6 +17,7 @@ import {
 import { eq, inArray, sql, and, or } from "drizzle-orm"
 import { handleTemplateStateChange } from "@/execution-engine/triggers"
 
+
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.WorkflowApi)
@@ -25,7 +26,7 @@ const Logger = getLogger(Subsystem.WorkflowApi)
 export const workflowTemplateRouter = new Hono()
 
 import { getSupportedToolTypes, getTool, getToolCategory } from "@/workflow-tools/registry"
-import { TemplateState, ToolType } from "@/types/workflowTypes"
+import { TemplateState, ToolType, WorkflowStatus } from "@/types/workflowTypes"
 
 // Helper function to get category from tool type - now uses the category from the tool files themselves
 const getCategoryFromType = (toolType: string): string => {
@@ -132,8 +133,6 @@ export const GetAvailableToolTypesApi = async (c: Context) => {
       return {
         type: toolType,
         category: getCategoryFromType(toolType),
-        inputSchema: parseZodSchema(schemas.inputSchema),
-        configSchema: parseZodSchema(schemas.configSchema),
       }
     })
 
@@ -171,8 +170,7 @@ export const GetToolTypeSchemaApi = async (c: Context) => {
       data: {
         type: toolType,
         category: getCategoryFromType(toolType),
-        inputSchema: parseZodSchema(schemas.inputSchema),
-        configSchema: parseZodSchema(schemas.configSchema),
+        defaultConfig: schemas.defaultConfig,
       },
     })
   } catch (error) {
@@ -183,11 +181,38 @@ export const GetToolTypeSchemaApi = async (c: Context) => {
   }
 }
 
+export const workflowToolConfigSchema = z.object({
+  inputCount: z.number(),
+  outputCount: z.number(),
+  options: z.record(z.string(), z.object({
+    type: z.string(),
+    default: z.any().optional(),
+    limit: z.number().optional(),
+    values: z.array(z.any()).optional(),
+    optional: z.boolean().optional()
+  })).optional()
+}).loose()
+
+//schema for nodes
+const NodeSchema = z.object({
+  uuid: z.string(),
+  name: z.string(),
+  type: z.string(),
+  description: z.string().optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
+  tool: z.object({
+    type: z.string(),
+    category: z.string(),
+    value: z.any().optional(),
+    config: workflowToolConfigSchema
+  })
+})
+
 // Schema for creating workflow template
 export const createTemplateSchema = z.object({
   name: z.string().min(1),
-  nodes: z.array(z.any()),
-  connections: z.array(z.any()),
+  nodes: z.array(NodeSchema),
+  connections: z.array(z.array(z.string())),
   description: z.string().optional(),
   isPublic: z.boolean().default(false),
   version: z.string().default("1.0.0"),
@@ -197,13 +222,9 @@ export const createTemplateSchema = z.object({
 export const updateTemplateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).optional(),
-  nodes: z.array(z.any()).optional(),
-  connections: z.array(z.any()).optional(),
   description: z.string().optional(),
   isPublic: z.boolean().optional(),
-  version: z.string().optional(),
-  newNodes: z.array(z.any()).optional(),
-  newConnections: z.array(z.any()).optional(),
+  version: z.string().optional()
 })
 
 // Schema for deleting workflow template
@@ -240,6 +261,7 @@ export const templateResponseSchema = z.object({
     prevStepIds: z.array(z.string()).nullable(),
     nextStepIds: z.array(z.string()).nullable(),
     toolId: z.string().nullable(),
+    metadata:z.object().optional()
   })),
   tools: z.array(z.object({
     id: z.string(),
@@ -257,14 +279,16 @@ export const templateResponseSchema = z.object({
 })
 
 export type TemplateResponse = z.infer<typeof templateResponseSchema>
+export type workflowToolType = z.infer<typeof workflowToolConfigSchema>
 
 // Create workflow template API
 export const CreateTemplateApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const requestData = await c.req.json()
-    
-    const { name, nodes, connections, description, isPublic, version } = requestData
+
+    const validatedData = createTemplateSchema.parse(requestData)
+    const { name, nodes, connections, description, isPublic, version } = validatedData
 
     // Validate template before creating
     const validation = await validateTemplateLogic(nodes, connections)
@@ -276,88 +300,132 @@ export const CreateTemplateApi = async (c: Context) => {
       }, 400)
     }
 
-    // Create the main workflow template
-    const [template] = await db
-      .insert(workflowTemplate)
-      .values({
-        name,
-        userId: user.id,
-        workspaceId: user.workspaceId,
-        description,
-        isPublic: isPublic || false,
-        version: version || "1.0.0",
-        status: "draft",
-        config: {},
-      })
-      .returning()
+    // Execute all database operations in a single transaction
+    const { template, stepIdMap, toolIdMap } = await db.transaction(async (tx) => {
+      // 1. Create the main workflow template
+      const [template] = await tx
+        .insert(workflowTemplate)
+        .values({
+          name,
+          userId: user.id,
+          workspaceId: user.workspaceId,
+          description,
+          isPublic: isPublic || false,
+          version: version || "1.0.0",
+          status: "draft",
+          config: {},
+        })
+        .returning()
 
-    // Create tools for each node (one tool per step)
-    const toolIdMap = new Map<string, string>()
-    
-    for (const node of nodes) {
-      if (node.tool) {
-        const [createdTool] = await db
-          .insert(workflowTool)
+      // 2. Create tools for each node (one tool per step)
+      const toolIdMap = new Map<string, string>()
+      
+      for (const node of nodes) {
+        if (node.tool) {
+          const [createdTool] = await tx
+            .insert(workflowTool)
+            .values({
+              category: node.tool.category || getCategoryFromType(node.tool.type),
+              type: node.tool.type,
+              workspaceId: user.workspaceId,
+              userId: user.id,
+              value: node.tool.value || {},
+              config: node.tool.config || {},
+            })
+            .returning()
+
+          toolIdMap.set(node.uuid, createdTool.id)
+        }
+      }
+
+      // 3. Create step templates
+      const stepIdMap = new Map<string, string>()
+      
+      for (const node of nodes) {
+        const [createdStep] = await tx
+          .insert(workflowStepTemplate)
           .values({
-            category: node.tool.category || getCategoryFromType(node.tool.type),
-            type: node.tool.type,
-            workspaceId: user.workspaceId,
-            userId: user.id,
-            value: node.tool.value || {},
-            config: node.tool.config || {},
+            workflowTemplateId: template.id,
+            name: node.name,
+            description: node.description || "",
+            type: node.type === "manual" ? "manual" : "automated",
+            timeEstimate: 180,
+            metadata: node.metadata || {},
+            prevStepIds: [],
+            nextStepIds: [],
+            toolIds: toolIdMap.has(node.uuid) ? [toolIdMap.get(node.uuid)!] : [],
           })
           .returning()
         
-        toolIdMap.set(node.name, createdTool.id)
+        stepIdMap.set(node.uuid, createdStep.id)
       }
-    }
 
-    // Create step templates
-    const stepIdMap = new Map<string, string>()
-    
-    for (const node of nodes) {
-      const [createdStep] = await db
-        .insert(workflowStepTemplate)
-        .values({
-          workflowTemplateId: template.id,
-          name: node.name,
-          description: node.description || "",
-          type: node.type === "manual" ? "manual" : "automated",
-          timeEstimate: 180,
-          metadata: node.metadata || {},
-          prevStepIds: [],
+      // 4. Calculate step relationships from connections
+      const stepUpdates = new Map<string, {
+        nextStepIds: string[],
+        prevStepIds: string[],
+        outRoutes: Record<string, string[]>,
+        inRoutes: Record<string, string[]>
+      }>()
+
+      // Initialize updates for all steps
+      for (const [nodeUuid, stepId] of stepIdMap) {
+        stepUpdates.set(stepId, {
           nextStepIds: [],
-          toolIds: toolIdMap.has(node.name) ? [toolIdMap.get(node.name)!] : [],
+          prevStepIds: [],
+          outRoutes: {},
+          inRoutes: {}
         })
-        .returning()
-      
-      stepIdMap.set(node.name, createdStep.id)
-    }
-
-    // Update step relationships based on connections
-    for (const connection of connections) {
-      const [sourceName, targetName] = connection.split('-')
-      const sourceStepId = stepIdMap.get(sourceName)
-      const targetStepId = stepIdMap.get(targetName)
-      
-      if (sourceStepId && targetStepId) {
-        // Update source step's nextStepIds
-        await db
-          .update(workflowStepTemplate)
-          .set({
-            nextStepIds: sql`array_append(${workflowStepTemplate.nextStepIds}, ${targetStepId})`,
-          })
-          .where(eq(workflowStepTemplate.id, sourceStepId))
-        
-        // Update target step's prevStepIds
-        await db
-          .update(workflowStepTemplate)
-          .set({
-            prevStepIds: sql`array_append(${workflowStepTemplate.prevStepIds}, ${sourceStepId})`,
-          })
-          .where(eq(workflowStepTemplate.id, targetStepId))
       }
-    }
+
+      // Build relationships from connections
+      for (const connection of connections) {
+        const [[sourceId, outRoute], [targetId, inRoute]] = extractUUIDFromArray(connection)
+        const sourceStepId = stepIdMap.get(sourceId)
+        const targetStepId = stepIdMap.get(targetId)
+        
+        if (sourceStepId && targetStepId) {
+          // Update source step
+          const sourceUpdate = stepUpdates.get(sourceStepId)!
+          sourceUpdate.nextStepIds.push(targetStepId)
+          
+          // Initialize outRoute array if it doesn't exist
+          if (!sourceUpdate.outRoutes[`out${outRoute}`]) {
+            sourceUpdate.outRoutes[`out${outRoute}`] = []
+          }
+          sourceUpdate.outRoutes[`out${outRoute}`].push(targetStepId)
+
+          // Update target step  
+          const targetUpdate = stepUpdates.get(targetStepId)!
+          targetUpdate.prevStepIds.push(sourceStepId)
+          
+          // Initialize inRoute array if it doesn't exist
+          if (!targetUpdate.inRoutes[`in${inRoute}`]) {
+            targetUpdate.inRoutes[`in${inRoute}`] = []
+          }
+          targetUpdate.inRoutes[`in${inRoute}`].push(sourceStepId)
+        }
+      }
+
+      // Apply all updates in batch
+      for (const [stepId, update] of stepUpdates) {
+        const metadata = {
+          ...(Object.keys(update.outRoutes).length > 0 && { outRoutes: update.outRoutes }),
+          ...(Object.keys(update.inRoutes).length > 0 && { inRoutes: update.inRoutes })
+        }
+
+        await tx
+          .update(workflowStepTemplate)
+          .set({
+            nextStepIds: update.nextStepIds,
+            prevStepIds: update.prevStepIds,
+            ...(Object.keys(metadata).length > 0 && { metadata })
+          })
+          .where(eq(workflowStepTemplate.id, stepId))
+      }
+
+      return { template, stepIdMap, toolIdMap }
+    })
 
     // Get the created steps with their relationships
     const createdSteps = await db
@@ -395,13 +463,14 @@ export const CreateTemplateApi = async (c: Context) => {
         value: tool.value,
         config: tool.config,
       })),
-      connections: connections.map((conn: string) => {
-        const [sourceName, targetName] = conn.split('-')
-        const sourceStep = createdSteps.find(s => s.name === sourceName)
-        const targetStep = createdSteps.find(s => s.name === targetName)
+      connections: connections.map((conn: string[]) => {
+        // const [sourceName, targetName] = conn.split('-')
+        const [[sourceId,], [targetId,]] = extractUUIDFromArray(conn)
+        const sourceStep = createdSteps.find(s => s.id === stepIdMap.get(sourceId))
+        const targetStep = createdSteps.find(s => s.id === stepIdMap.get(targetId))
         return {
-          source: sourceName,
-          target: targetName,
+          source: sourceStep?.name || '',
+          target: targetStep?.name || '',
           sourceStepId: sourceStep?.id,
           targetStepId: targetStep?.id,
         }
@@ -423,7 +492,74 @@ export const CreateTemplateApi = async (c: Context) => {
 
 // Update workflow template API
 export const UpdateTemplateApi = async (c: Context) => {
-  // TODO: Add function logic
+  try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
+    const requestData = await c.req.json()
+    
+    const validatedData = updateTemplateSchema.parse(requestData)
+    const { id, name, description, isPublic, version } = validatedData
+
+    // Validate template exists and user has access
+    const [existingTemplate] = await db
+      .select()
+      .from(workflowTemplate)
+      .where(and(
+        eq(workflowTemplate.id, id),
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(workflowTemplate.userId, user.id),
+        )
+      ))
+
+    if (!existingTemplate) {
+      throw new HTTPException(404, {
+        message: "Workflow template not found or access denied",
+      })
+    }
+
+    if(existingTemplate.deprecated === true){
+      throw new HTTPException(400, {
+        message: "Workflow template is deprecated and cannot be updated",
+      })
+    }
+
+    // Build update object with only provided fields
+    const updateData: Partial<typeof workflowTemplate.$inferInsert> = {
+      updatedAt: new Date(),
+    }
+
+    if (name !== undefined) updateData.name = name
+    if (description !== undefined) updateData.description = description
+    if (isPublic !== undefined) updateData.isPublic = isPublic
+    if (version !== undefined) updateData.version = version
+
+    // Update the template
+    const [updatedTemplate] = await db
+      .update(workflowTemplate)
+      .set(updateData)
+      .where(eq(workflowTemplate.id, id))
+      .returning()
+
+    Logger.info(`✅ Updated workflow template ${id}`)
+
+    return c.json({
+      success: true,
+      data: {
+        template: {
+          ...updatedTemplate,
+          createdAt: updatedTemplate.createdAt.toISOString(),
+          updatedAt: updatedTemplate.updatedAt.toISOString(),
+        }
+      },
+      message: "Workflow template updated successfully",
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to update workflow template")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
 }
 
 // Get workflow template API
@@ -439,14 +575,26 @@ export const GetTemplateApi = async (c: Context) => {
       .where(eq(workflowTemplate.id, templateId))
 
     if (!template) {
-      throw new HTTPException(404, { message: "Template not found" })
+      return c.json({
+        success: false,
+        error: "TEMPLATE_NOT_FOUND",
+        message: "Workflow template not found"
+      }, 404)
+    }
+
+    if (template.deprecated === true) {
+      return c.json({
+        success: false,
+        error: "TEMPLATE_DEPRECATED", 
+        message: "Workflow template has been deprecated and is no longer accessible"
+      }, 404)
     }
 
     // Get the steps for this template
     const steps = await db
       .select()
       .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+      .where(and(eq(workflowStepTemplate.workflowTemplateId, templateId), eq(workflowStepTemplate.deprecated, false)))
 
     // Get all tools used in this template
     const toolIds = steps.flatMap(step => step.toolIds || [])
@@ -483,6 +631,7 @@ export const GetTemplateApi = async (c: Context) => {
         prevStepIds: step.prevStepIds,
         nextStepIds: step.nextStepIds,
         toolId: step.toolIds && step.toolIds.length > 0 ? step.toolIds[0] : null,
+        matadata: step.metadata || {}
       })),
       tools: tools.map(tool => ({
         id: tool.id,
@@ -519,11 +668,76 @@ export const GetTemplateApi = async (c: Context) => {
 
 // Delete workflow template API
 export const DeleteTemplateApi = async (c: Context) => {
-  // TODO: Add function logic
+  try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
+    const id = c.req.param("templateId")
+
+    // Validate template exists and user has access
+    const [existingTemplate] = await db
+      .select()
+      .from(workflowTemplate)
+      .where(and(
+        eq(workflowTemplate.id, id),
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(workflowTemplate.userId, user.id),
+        )
+      ))
+
+    if (!existingTemplate) {
+      throw new HTTPException(404, {
+        message: "Workflow template not found or access denied",
+      })
+    }
+
+    // Check if template is already deprecated
+    if (existingTemplate.deprecated === true) {
+      throw new HTTPException(400, {
+        message: "Workflow template is already deprecated",
+      })
+    }
+
+    // Update template status to deprecated instead of hard delete
+    const [updatedTemplate] = await db
+      .update(workflowTemplate)
+      .set({
+        deprecated: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(workflowTemplate.id, id))
+      .returning()
+
+    Logger.info(`✅ Marked workflow template ${id} as deprecated`)
+
+    return c.json({
+      success: true,
+      data: {
+        template: {
+          ...updatedTemplate,
+          createdAt: updatedTemplate.createdAt.toISOString(),
+          updatedAt: updatedTemplate.updatedAt.toISOString(),
+        }
+      },
+      message: "Workflow template marked as deprecated successfully",
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to delete workflow template")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
 }
 
+const extractUUIDFromArray = (routeIds: string[]):string[][] => {
+  const [source, outRoute = "1"] = routeIds[0].split('_')
+  const [dest, inRoute = "1"] = routeIds[1].split('_')
+  return [[source, outRoute],[dest, inRoute]]
+}
+
+
 // Helper function for template validation logic
-export const validateTemplateLogic = async (nodes: any[], connections: string[]) => {
+export const validateTemplateLogic = async (nodes: any[], connections: string[][]) => {
 
     // Build a graph to find disjoint workflows
     const nodeMap = new Map()
@@ -532,7 +746,7 @@ export const validateTemplateLogic = async (nodes: any[], connections: string[])
 
     // Initialize node map
     nodes.forEach((node: any) => {
-      nodeMap.set(node.name, {
+      nodeMap.set(node.uuid, {
         ...node,
         visited: false,
         hasIncoming: false,
@@ -541,8 +755,8 @@ export const validateTemplateLogic = async (nodes: any[], connections: string[])
     })
 
     // Process connections to identify incoming/outgoing relationships
-    connections.forEach((conn: string) => {
-      const [source, target] = conn.split('-')
+    connections.forEach((conn: string[]) => {
+      const [[source,], [target,]] = extractUUIDFromArray(conn) 
       incomingConnections.add(target)
       outgoingConnections.add(source)
       
@@ -566,8 +780,8 @@ export const validateTemplateLogic = async (nodes: any[], connections: string[])
       currentWorkflow.push(node)
 
       // Find all connected nodes
-      connections.forEach((conn: string) => {
-        const [source, target] = conn.split('-')
+      connections.forEach((conn: string[]) => {
+        const [[source,], [target,]] = extractUUIDFromArray(conn)
         if (source === nodeName && nodeMap.has(target)) {
           dfs(target, currentWorkflow)
         }
@@ -594,8 +808,8 @@ export const validateTemplateLogic = async (nodes: any[], connections: string[])
       const workflowNodeNames = new Set(workflow.map(n => n.name))
       const rootNodes = workflow.filter(node => {
         // Check if this node has any incoming connections from within this workflow
-        return !connections.some((conn: string) => {
-          const [source, target] = conn.split('-')
+        return !connections.some((conn: string[]) => {
+          const [[source,], [target,]] = extractUUIDFromArray(conn)
           return target === node.name && workflowNodeNames.has(source)
         })
       })

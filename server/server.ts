@@ -339,13 +339,15 @@ import {
   createTemplateSchema,
   validateTemplateSchema,
 } from "@/api/workflow-template"
+import { AddTemplateStepApiHandler, addTemplateStepSchema, UpdateTemplateStepApiHandler, updateTemplateStepSchema, DeleteTemplateStepApiHandler, deleteTemplateStepSchema, deleteLink, deleteLinkSchema } from "@/api/workflow-template-step"
 import { TemplateState } from "@/types/workflowTypes"
 import { 
   ExecuteTemplateHandler, 
   GetExecutionStatusApi, 
   StopExecutionApi, 
   GetEngineHealthApi,
-  HandleManualTrigger
+  HandleManualTrigger,
+  GetWorkflowExecutionDetailsApi
 } from "@/api/workflow-execution"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
@@ -1531,10 +1533,31 @@ export const AppRoutes = app
   .get("/workflow/template/:templateId", GetTemplateApi)
   .put("/workflow/template/:templateId", UpdateTemplateApi)
   .delete("/workflow/template/:templateId", DeleteTemplateApi)
+  .post(
+    "/workflow/template/step/add",
+    zValidator("json", addTemplateStepSchema),
+    AddTemplateStepApiHandler
+  )
+  .put(
+    "/workflow/template/step/update",
+    zValidator("json", updateTemplateStepSchema),
+    UpdateTemplateStepApiHandler
+  )
+  .delete(
+    "/workflow/template/step/delete",
+    zValidator("json", deleteTemplateStepSchema),
+    DeleteTemplateStepApiHandler
+  )
+  .delete(
+    "/workflow/template/step/delete-link",
+    zValidator("json", deleteLinkSchema),
+    deleteLink
+  )
   .post("/workflow/template/execute", ExecuteTemplateHandler)
   .post("/workflow/template/activate", (c: Context) => HandleStateChangeTemplateApi(c, TemplateState.ACTIVE))
   .post("/workflow/template/deactivate", (c: Context) => HandleStateChangeTemplateApi(c, TemplateState.INACTIVE))
   .get("/workflow/execution/:executionId/status", GetExecutionStatusApi)
+  .get("/workflow/execution/:executionId/details", GetWorkflowExecutionDetailsApi)
   .post("/workflow/execution/:executionId/stop", StopExecutionApi)
   .get("/workflow/engine/health", GetEngineHealthApi)
   .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)

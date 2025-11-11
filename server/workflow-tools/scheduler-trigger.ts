@@ -1,13 +1,37 @@
-import { ToolType, ToolCategory } from "@/types/workflowTypes"
-import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
-import { z } from "zod"
+import { ToolType, ToolCategory, ToolExecutionStatus } from "@/types/workflowTypes"
+import type { WorkflowTool, ToolExecutionResult, WorkflowContext, defaultToolConfig} from "./types"
+import { optional, z } from "zod"
 import { messageQueue, type ExecutionRequest } from "@/execution-engine/message-queue"  
 import type { SelectWorkflowTemplate } from "@/db/schema/workflows"
 export class SchedulerTriggerTool implements WorkflowTool {
   type = ToolType.SCHEDULER_TRIGGER
   category = ToolCategory.TRIGGER
-  triggerIfActive = true
-
+  defaultConfig: defaultToolConfig = {
+    inputCount : 0,
+    outputCount : 1,
+    options:{
+      trigger_after_seconds: {
+        type: "number",
+        default: 60,
+        optional: true,
+      },
+      trigger_at: {
+        type: "string",
+        default: new Date().toISOString(),
+        optional: true,
+      },
+      cron_expression: {
+        type: "string",
+        default: "",
+        optional: true,
+      },
+      timezone: {
+        type: "string",
+        default: "UTC",
+        optional: true,
+      },
+    }
+  }
   inputSchema = z.object({})
   
   outputSchema = z.object({
@@ -22,7 +46,6 @@ export class SchedulerTriggerTool implements WorkflowTool {
     trigger_at: z.string().optional(),
     cron_expression: z.string().optional(),
     timezone: z.string().default("UTC"),
-    maxExecutions: z.number().positive().optional()
   })
 
   async execute(
@@ -60,28 +83,19 @@ export class SchedulerTriggerTool implements WorkflowTool {
         scheduleMetadata.timezone = config.timezone || 'UTC'
         scheduleMetadata.recurring = true
       }
-      
-      // Check if max executions reached
-      // const isLastExecution = config.maxExecutions 
-      //   ? executionCount >= config.maxExecutions 
-      //   : (config.scheduleType || "once") === "once"
-
-      // // Calculate next execution time (behavior to be implemented later)
-      // const nextExecutionAt = isLastExecution 
-      //   ? undefined 
-      //   : this.calculateNextExecution(config, currentTime)
 
       return {
-        status: "success",
-        result: {
-          triggeredAt: currentTime.toISOString()
+        status: ToolExecutionStatus.COMPLETED,
+        output: {
+          triggeredAt: currentTime.toISOString(),
+          count:30
         },
         metadata: scheduleMetadata
       }
     } catch (error) {
       return {
-        status: "error",
-        result: {
+        status: ToolExecutionStatus.FAILED,
+        output: {
           triggeredAt: new Date().toISOString(),
           scheduleType: config.scheduleType || "once",
           executionCount: input.executionCount || 0,

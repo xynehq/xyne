@@ -1,4 +1,4 @@
-import { ToolType, ToolCategory } from "@/types/workflowTypes"
+import { ToolType, ToolCategory, ToolExecutionStatus } from "@/types/workflowTypes"
 import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
 import { z } from "zod"
 
@@ -21,7 +21,28 @@ const convertToMilliseconds = (duration: number, unit: string): number => {
 export class DelayTool implements WorkflowTool {
   type = ToolType.DELAY
   category = ToolCategory.SYSTEM
-  triggerIfActive = false
+  
+  defaultConfig = {
+    inputCount: 1,
+    outputCount: 1,
+    options: {
+      duration: {
+        type: "number",
+        default: 5,
+        optional: false
+      },
+      unit: {
+        type: "select",
+        default: "seconds",
+        optional: false
+      },
+      message: {
+        type: "string",
+        default: "Waiting...",
+        optional: true
+      }
+    }
+  }
 
   inputSchema = z.object({
     durationOverride: z.number().positive().optional(),
@@ -57,8 +78,8 @@ export class DelayTool implements WorkflowTool {
       const delayedUntil = new Date(Date.now() + milliseconds).toISOString()
 
       return {
-        status: "success",
-        result: {
+        status: ToolExecutionStatus.COMPLETED,
+        output: {
           delayedFor: duration,
           unit,
           delayedUntil,
@@ -67,8 +88,8 @@ export class DelayTool implements WorkflowTool {
       }
     } catch (error) {
       return {
-        status: "error",
-        result: {
+        status: ToolExecutionStatus.FAILED,
+        output: {
           delayedFor: 0,
           unit: config.unit || "seconds",
           delayedUntil: new Date().toISOString(),

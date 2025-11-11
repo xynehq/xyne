@@ -1,11 +1,37 @@
-import { ToolType, ToolCategory } from "@/types/workflowTypes"
+import { ToolType, ToolCategory, ToolExecutionStatus } from "@/types/workflowTypes"
 import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
 import { z } from "zod"
 
 export class FormTool implements WorkflowTool {
   type = ToolType.FORM
   category = ToolCategory.ACTION
-  triggerIfActive = false
+  
+  defaultConfig = {
+    inputCount: 1,
+    outputCount: 1,
+    options: {
+      title: {
+        type: "string",
+        default: "Form",
+        optional: false
+      },
+      description: {
+        type: "string",
+        default: "",
+        optional: true
+      },
+      fields: {
+        type: "array",
+        default: [],
+        optional: false
+      },
+      submitButtonText: {
+        type: "string",
+        default: "Submit",
+        optional: true
+      }
+    }
+  }
 
   inputSchema = z.object({
     formData: z.record(z.string(), z.any()).optional(),
@@ -40,8 +66,8 @@ export class FormTool implements WorkflowTool {
   ): Promise<ToolExecutionResult> {
     try {
       return {
-        status: "awaiting_user_input",
-        result: {
+        status: ToolExecutionStatus.AWAITING_USER_INPUT,
+        output: {
           form_id: `form_${Date.now()}`,
           form_title: config.title || "Form Input Required",
           form_description: config.description || "Please fill out the form",
@@ -52,8 +78,8 @@ export class FormTool implements WorkflowTool {
       }
     } catch (error) {
       return {
-        status: "error",
-        result: {
+        status: ToolExecutionStatus.FAILED,
+        output: {
           form_id: "",
           form_title: config.title || "Form Input Required",
           form_description: config.description || "Please fill out the form",

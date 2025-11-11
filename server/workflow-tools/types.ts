@@ -1,7 +1,6 @@
-import type { SelectWorkflowTemplate } from "@/db/schema/workflows"
+import type { SelectWorkflowTemplate, ToolExecutionStatus } from "@/db/schema/workflows"
 import { ToolType, ToolCategory } from "@/types/workflowTypes"
-import { z } from "zod"
-
+import {type workflowToolType} from "@/api/workflow-template"
 // Workflow context object passed to tools
 export interface WorkflowContext {
   templateId: string
@@ -12,19 +11,19 @@ export interface WorkflowContext {
 
 // Tool execution result
 export interface ToolExecutionResult {
-  status: "success" | "error" | "awaiting_user_input" | "partial_success"
-  result: Record<string, any>
+  status: ToolExecutionStatus
+  output: Record<string, any>
   metadata?: Record<string, any>
+  nextStepRoutes?: string[]
 }
+
+export type defaultToolConfig = workflowToolType
 
 // Workflow tool interface with schemas
 export interface WorkflowTool {
   type: ToolType
   category: ToolCategory
-  inputSchema: z.ZodSchema<any>
-  outputSchema: z.ZodSchema<any>
-  configSchema: z.ZodSchema<any>
-  triggerIfActive: boolean
+  defaultConfig: defaultToolConfig
   execute(input: Record<string, any>, config: Record<string, any>, workflowContext: WorkflowContext): Promise<ToolExecutionResult>
   handleActiveTrigger?(config: Record<string, any>, template:SelectWorkflowTemplate): Promise<Record<string, string>>
   handleInactiveTrigger?(config: Record<string, any>, template:SelectWorkflowTemplate): Promise<Record<string, string>>

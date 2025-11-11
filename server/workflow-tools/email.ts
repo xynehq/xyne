@@ -1,11 +1,37 @@
-import { ToolType, ToolCategory } from "@/types/workflowTypes"
+import { ToolType, ToolCategory, ToolExecutionStatus } from "@/types/workflowTypes"
 import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
 import { z } from "zod"
 
 export class EmailTool implements WorkflowTool {
   type = ToolType.EMAIL
   category = ToolCategory.ACTION
-  triggerIfActive = false
+  
+  defaultConfig = {
+    inputCount: 1,
+    outputCount: 1,
+    options: {
+      recipients: {
+        type: "array",
+        default: [],
+        optional: false
+      },
+      subject: {
+        type: "string",
+        default: "",
+        optional: false
+      },
+      template: {
+        type: "string",
+        default: "",
+        optional: true
+      },
+      priority: {
+        type: "select",
+        default: "normal",
+        optional: true
+      }
+    }
+  }
 
   inputSchema = z.object({
     recipients_override: z.union([z.string(), z.array(z.string())]).optional(),
@@ -45,8 +71,8 @@ export class EmailTool implements WorkflowTool {
       const recipientList = Array.isArray(recipients) ? recipients : [recipients]
       
       return {
-        status: "success",
-        result: {
+        status: ToolExecutionStatus.COMPLETED,
+        output: {
           emails_sent: recipientList.length,
           total_recipients: recipientList.length,
           all_sent: true,
@@ -65,8 +91,8 @@ export class EmailTool implements WorkflowTool {
       }
     } catch (error) {
       return {
-        status: "error",
-        result: {
+        status: ToolExecutionStatus.FAILED,
+        output: {
           emails_sent: 0,
           total_recipients: 0,
           all_sent: false,
