@@ -1,3 +1,17 @@
+## [3.30.11](https://github.com/xynehq/xyne/compare/v3.30.10...v3.30.11) (2025-11-10)
+
+
+### Bug Fixes
+
+* Webhook Node conflicted issues fixed and removed logs ([#1201](https://github.com/xynehq/xyne/issues/1201)) ([5e60fec](https://github.com/xynehq/xyne/commit/5e60fec41a88373599cdb11259bf2012108d2ec7))
+
+## [3.30.10](https://github.com/xynehq/xyne/compare/v3.30.9...v3.30.10) (2025-11-10)
+
+
+### Bug Fixes
+
+* zod validation issue in the MCP connector for stdio ([#1203](https://github.com/xynehq/xyne/issues/1203)) ([762a99b](https://github.com/xynehq/xyne/commit/762a99b9ac3b25c9dc7d1faa26a78d12fc526357))
+
 ## [3.30.9](https://github.com/xynehq/xyne/compare/v3.30.8...v3.30.9) (2025-11-07)
 
 

@@ -68,4 +68,12 @@ export const userPublicSchema = selectUserSchema.omit({
   workspaceId: true,
 })
 
+export const userMetadataSchema = userPublicSchema.omit({
+  role: true,
+  timeZone: true,
+  refreshToken: true
+})
+
+export type UserMetadata = z.infer<typeof userMetadataSchema>
+
 export type PublicUser = z.infer<typeof userPublicSchema>

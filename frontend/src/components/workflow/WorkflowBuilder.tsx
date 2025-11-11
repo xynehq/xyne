@@ -56,6 +56,8 @@ interface WorkflowTemplate {
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
+  role?: UserWorkflowRole
+  SharedUserMetadata?: UserMetadata
   steps?: Array<{
     id: string
     workflowTemplateId: string
@@ -172,7 +174,7 @@ import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
 import ConfirmationPopup from "../ui/ConfirmationPopup"
-import { SelectPublicAgent } from "@/server/shared/types"
+import { SelectPublicAgent, UserMetadata, UserWorkflowRole } from "@/server/shared/types"
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
