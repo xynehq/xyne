@@ -1,3 +1,10 @@
+## [3.30.12](https://github.com/xynehq/xyne/compare/v3.30.11...v3.30.12) (2025-11-11)
+
+
+### Bug Fixes
+
+* sending workflowId ([#1208](https://github.com/xynehq/xyne/issues/1208)) ([e01b8ca](https://github.com/xynehq/xyne/commit/e01b8ca882226e5a97690e99f44588c7f3ffdc57))
+
 ## [3.30.11](https://github.com/xynehq/xyne/compare/v3.30.10...v3.30.11) (2025-11-10)
 
 
