@@ -95,6 +95,8 @@ const EXTENSION_MIME_MAP: Record<string, string> = {
   ".webp": "image/webp",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
+  ".md": "text/markdown",     
+  ".markdown": "text/markdown",
 }
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
