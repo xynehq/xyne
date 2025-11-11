@@ -215,6 +215,9 @@ const Index = () => {
     agentId?: string | null,
     toolsList?: ToolsListItem[],
     selectedModel?: string,
+    _isFollowUp?: boolean,
+    _selectedKbItems?: string[],
+    _isMessageAgentsMode?: boolean,
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
