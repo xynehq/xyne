@@ -2337,7 +2337,9 @@ const VirtualizedMessages = React.forwardRef<
                 !isSharedChat &&
                 message.externalId &&
                 index === messages.length - 1
-
+              const shouldWireClarification =
+                !!currentResp &&
+                message.externalId === (currentResp.messageId || "current-resp")
               return (
                 <div
                   key={virtualItem.key}
@@ -2421,7 +2423,7 @@ const VirtualizedMessages = React.forwardRef<
                         message.waitingForClarification || false
                       }
                       provideClarification={
-                        message.externalId === "current-resp"
+                        shouldWireClarification
                           ? provideClarification
                           : undefined
                       }
