@@ -344,7 +344,7 @@ export const CreateCollectionApi = async (c: Context) => {
       },
       {
         retryLimit: 3,
-        expireInHours: 12,
+        expireInSeconds: 43200,
       },
     )
     loggerWithChild({ email: userEmail }).info(
@@ -926,7 +926,7 @@ export const CreateFolderApi = async (c: Context) => {
       },
       {
         retryLimit: 3,
-        expireInHours: 12,
+        expireInSeconds: 43200,
       },
     )
 
@@ -1076,7 +1076,7 @@ async function ensureFolderPath(
       },
       {
         retryLimit: 3,
-        expireInHours: 12,
+        expireInSeconds: 43200,
       },
     )
 
@@ -1538,7 +1538,7 @@ export const UploadFilesApi = async (c: Context) => {
           { fileId: item.id, type: ProcessingJobType.FILE },
           {
             retryLimit: 3,
-            expireInHours: 12,
+            expireInSeconds: 43200,
           },
         )
 

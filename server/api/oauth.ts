@@ -178,7 +178,7 @@ export const OAuthCallback = async (c: Context) => {
       }
       // Enqueue the background job within the same transaction
       const jobId = await boss.send(SaaSQueue, SaasJobPayload, {
-        expireInHours: JobExpiryHours,
+        expireInSeconds: JobExpiryHours * 3600,
       })
       loggerWithChild({ email: email }).info(
         `Job ${jobId} enqueued for connection ${connector.id}`,
