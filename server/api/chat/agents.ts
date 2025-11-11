@@ -1934,6 +1934,9 @@ export const MessageWithToolsApi = async (c: Context) => {
         let currentTurn = 0
         let totalToolCalls = 0
 
+        console.log('[XYNE:AGENTS] 🎯 About to call runStream from local JAF');
+        console.log('[XYNE:AGENTS] RunState:', { runId, traceId, messageCount: initialMessages.length });
+        
         for await (const evt of runStream<JAFAdapterCtx, string>(
           runState,
           runCfg,
