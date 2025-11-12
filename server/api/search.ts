@@ -187,7 +187,7 @@ export const agentChatMessageSchema = z.object({
   message: z.string(),
   chatId: z.string().optional(),
   path: z.string().optional(),
-  ownerEmail: z.string(),
+  ownerEmail: z.string().optional(),
   modelId: z.string().min(1),
   isReasoningEnabled: z
     .string()
