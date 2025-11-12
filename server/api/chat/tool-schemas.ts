@@ -9,6 +9,7 @@
  */
 
 import { z } from "zod"
+import { ToolReviewFindingSchema } from "./agent-schemas"
 import type { Apps, Entity, MailParticipant } from "@xyne/vespa-ts/types"
 
 // ============================================================================
@@ -111,11 +112,10 @@ export const SubTaskSchema = z.object({
 // toDoWrite input schema
 export const ToDoWriteInputSchema = z.object({
   goal: z.string().describe("The overarching goal to accomplish"),
-  tasks: z.array(SubTaskSchema).min(1).describe("Sequential tasks, each representing one sub-goal"),
-  reasoning: z.string().optional().describe("Chain of thought explaining the plan"),
-  needsClarification: z.boolean().optional().default(false),
-  clarificationPrompt: z.string().optional().describe("Question to ask if clarification needed"),
-  candidateAgents: z.array(z.string()).optional().describe("Custom agents that might help"),
+  subTasks: z
+    .array(SubTaskSchema)
+    .min(1)
+    .describe("Sequential tasks, each representing one sub-goal"),
 })
 
 export type ToDoWriteInput = z.infer<typeof ToDoWriteInputSchema>
@@ -124,15 +124,8 @@ export type ToDoWriteInput = z.infer<typeof ToDoWriteInputSchema>
 export const ToDoWriteOutputSchema = z.object({
   result: z.string().describe("Confirmation message"),
   plan: z.object({
-    id: z.string(),
     goal: z.string(),
     subTasks: z.array(SubTaskSchema),
-    chainOfThought: z.string(),
-    needsClarification: z.boolean(),
-    clarificationPrompt: z.string().nullable(),
-    candidateAgents: z.array(z.string()),
-    createdAt: z.number(),
-    updatedAt: z.number(),
   }),
 })
 
@@ -302,8 +295,22 @@ export const ReviewAgentOutputSchema = z.object({
   unmetExpectations: z
     .array(z.string())
     .describe("List of expectation goals that remain unmet"),
-  gaps: z.array(z.string()).describe("Information gaps or blockers"),
-  suggestedActions: z.array(z.string()).describe("Follow-up steps to take"),
+  planChangeNeeded: z
+    .boolean()
+    .describe("Whether the current plan needs to be updated"),
+  planChangeReason: z
+    .string()
+    .optional()
+    .describe("Why a plan change is required"),
+  toolFeedback: z
+    .array(ToolReviewFindingSchema)
+    .describe("Per-tool assessment for this turn"),
+  anomaliesDetected: z
+    .boolean()
+    .describe("Whether any anomalies were found"),
+  anomalies: z
+    .array(z.string())
+    .describe("Descriptions of detected anomalies"),
 })
 
 export type ReviewAgentOutput = z.infer<typeof ReviewAgentOutputSchema>
@@ -344,7 +351,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
     examples: [{
       input: {
         goal: "Find what Alex says about Q4",
-        tasks: [
+        subTasks: [
           {
             id: "task_1",
             description: "Identify which Alex user is referring to",
@@ -362,15 +369,15 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
       output: {
         result: "Plan created successfully",
         plan: {
-          id: "plan_123",
           goal: "Find what Alex says about Q4",
-          subTasks: [],
-          chainOfThought: "",
-          needsClarification: false,
-          clarificationPrompt: null,
-          candidateAgents: [],
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
+          subTasks: [
+            {
+              id: "task_1",
+              description: "Identify which Alex user is referring to",
+              status: "pending" as const,
+              toolsRequired: ["searchGoogleContacts"],
+            },
+          ],
         },
       },
       scenario: "Creating a task-based plan for ambiguous query",

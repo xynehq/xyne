@@ -29,15 +29,8 @@ export interface SubTask {
  * PlanState - Execution plan with task-based sequential execution
  */
 export interface PlanState {
-  id: string
   goal: string
   subTasks: SubTask[]
-  chainOfThought: string
-  needsClarification: boolean
-  clarificationPrompt: string | null
-  candidateAgents: string[]
-  createdAt: number
-  updatedAt: number
 }
 
 /**
@@ -153,6 +146,7 @@ export interface ToolExecutionRecord {
   connectorId: string | null
   agentName: string
   arguments: Record<string, unknown>
+  turnNumber: number
   expectedResults?: ToolExpectation
   startedAt: Date
   durationMs: number
@@ -170,30 +164,27 @@ export interface ToolExecutionRecord {
 // REVIEW SCHEMAS
 // ============================================================================
 
-/**
- * ReviewAction - Suggested action from review agent
- */
-export interface ReviewAction {
-  type: "clarify" | "reorder" | "add_step" | "remove_step" | "stop"
-  target?: string // substep ID
-  prompt?: string // for clarifications
-  reason: string
+export interface ToolReviewFinding {
+  toolName: string
+  outcome: "met" | "missed" | "error"
+  summary: string
+  expectationGoal?: string
+  followUp?: string
 }
 
 /**
  * ReviewResult - Output from automatic turn-end review
  */
 export interface ReviewResult {
-  status: "ok" | "error"
-  qualityScore: number // 0-1
-  completeness: number // 0-1
-  relevance: number // 0-1
-  needsMoreData: boolean
-  gaps: string[]
-  suggestedActions: ReviewAction[]
-  recommendation: "proceed" | "gather_more" | "clarify_query" | "replan"
-  updatedPlan?: PlanState
+  status: "ok" | "needs_attention"
   notes: string
+  toolFeedback: ToolReviewFinding[]
+  unmetExpectations: string[]
+  planChangeNeeded: boolean
+  planChangeReason?: string
+  anomaliesDetected: boolean
+  anomalies: string[]
+  recommendation: "proceed" | "gather_more" | "clarify_query" | "replan"
 }
 
 /**
@@ -266,15 +257,8 @@ export const SubTaskSchema = z.object({
 })
 
 export const PlanStateSchema = z.object({
-  id: z.string(),
   goal: z.string(),
   subTasks: z.array(SubTaskSchema),
-  chainOfThought: z.string(),
-  needsClarification: z.boolean(),
-  clarificationPrompt: z.string().nullable(),
-  candidateAgents: z.array(z.string()),
-  createdAt: z.number(),
-  updatedAt: z.number(),
 })
 
 export const ListCustomAgentsInputSchema = z.object({
@@ -301,22 +285,22 @@ export const ToolExpectationSchema = z.object({
 
 export type ToolExpectation = z.infer<typeof ToolExpectationSchema>
 
-export const ReviewActionSchema = z.object({
-  type: z.enum(["clarify", "reorder", "add_step", "remove_step", "stop"]),
-  target: z.string().optional(),
-  prompt: z.string().optional(),
-  reason: z.string(),
+export const ToolReviewFindingSchema = z.object({
+  toolName: z.string(),
+  outcome: z.enum(["met", "missed", "error"]),
+  summary: z.string(),
+  expectationGoal: z.string().optional(),
+  followUp: z.string().optional(),
 })
 
 export const ReviewResultSchema = z.object({
-  status: z.enum(["ok", "error"]),
-  qualityScore: z.number().min(0).max(1),
-  completeness: z.number().min(0).max(1),
-  relevance: z.number().min(0).max(1),
-  needsMoreData: z.boolean(),
-  gaps: z.array(z.string()),
-  suggestedActions: z.array(ReviewActionSchema),
-  recommendation: z.enum(["proceed", "gather_more", "clarify_query", "replan"]),
-  updatedPlan: PlanStateSchema.optional(),
+  status: z.enum(["ok", "needs_attention"]),
   notes: z.string(),
+  toolFeedback: z.array(ToolReviewFindingSchema),
+  unmetExpectations: z.array(z.string()),
+  planChangeNeeded: z.boolean(),
+  planChangeReason: z.string().optional(),
+  anomaliesDetected: z.boolean(),
+  anomalies: z.array(z.string()),
+  recommendation: z.enum(["proceed", "gather_more", "clarify_query", "replan"]),
 })

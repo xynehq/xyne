@@ -147,16 +147,17 @@ import {
   ToolResponse,
   type ToolResult,
   type ToolCall,
+  type Tool,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
 import {
   buildMCPJAFTools,
   type FinalToolsList as JAFinalToolsList,
-  type JAFAdapterCtx,
   buildToolsOverview,
   buildContextSection,
 } from "@/api/chat/jaf-adapter"
+import type { AgentRunContext } from "./agent-schemas"
 import { getRecordBypath } from "@/db/knowledgeBase"
 import { getDateForAI } from "@/utils/index"
 import { validateVespaIdInAgentIntegrations } from "@/search/utils"
@@ -1735,17 +1736,68 @@ export const MessageWithToolsApi = async (c: Context) => {
         // Compose JAF tools: internal + MCP
         const toolsCompositionSpan =
           jafProcessingSpan.startSpan("tools_composition")
-        const baseCtx: JAFAdapterCtx = {
-          email: sub,
-          userCtx: ctx,
+        const userIdString = String(user.externalId ?? user.id ?? sub)
+        const userNumericId =
+          typeof user.id === "number"
+            ? user.id
+            : (user as Record<string, any>)?.numericId
+        const workspaceNumericId =
+          typeof workspace?.id === "number"
+            ? workspace.id
+            : (workspace as Record<string, any>)?.numericId
+        const baseCtx: AgentRunContext = {
+          user: {
+            email: sub,
+            workspaceId,
+            id: userIdString,
+            numericId: userNumericId,
+            workspaceNumericId,
+          },
+          chat: {
+            externalId: chatId || generateRunId(),
+            metadata: {},
+          },
+          message: {
+            text: message,
+            attachments: attachmentMetadata.map((meta) => ({
+              fileId: meta.fileId,
+              isImage: Boolean(meta.isImage),
+            })),
+            timestamp: new Date().toISOString(),
+          },
+          plan: null,
+          currentSubTask: null,
+          userContext: ctx,
           agentPrompt: agentPromptForLLM,
-          userMessage: message,
+          clarifications: [],
+          ambiguityResolved: false,
+          toolCallHistory: [],
+          contextFragments: gatheredFragments,
+          seenDocuments,
+          totalLatency: 0,
+          totalCost: 0,
+          tokenUsage: {
+            input: 0,
+            output: 0,
+          },
+          availableAgents: [],
+          usedAgents: [],
+          enabledTools: new Set<string>(),
+          failedTools: new Map(),
+          retryCount: 0,
+          maxRetries: 3,
+          review: {
+            lastReviewTurn: null,
+            reviewFrequency: 5,
+            lastReviewSummary: null,
+          },
+          decisions: [],
         }
         const internalTools = [
           ...googleTools,
           searchGlobalTool,
           getSlackRelatedMessagesTool,
-        ]
+        ] as Array<Tool<unknown, AgentRunContext>>
         const mcpJAFTools = buildMCPJAFTools(finalToolsList)
         const allJAFTools = [...internalTools, ...mcpJAFTools]
         toolsCompositionSpan.setAttribute(
@@ -1805,20 +1857,20 @@ export const MessageWithToolsApi = async (c: Context) => {
             content: m.message,
           }))
 
-        const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
+        const jafAgent: JAFAgent<AgentRunContext, string> = {
           name: "xyne-agent",
           instructions: () => agentInstructions(),
           tools: allJAFTools,
           modelConfig: { name: defaultBestModel },
         }
 
-        const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
+        const modelProvider = makeXyneJAFProvider<AgentRunContext>()
 
-        const agentRegistry = new Map<string, JAFAgent<JAFAdapterCtx, string>>([
+        const agentRegistry = new Map<string, JAFAgent<AgentRunContext, string>>([
           [jafAgent.name, jafAgent],
         ])
 
-        const runState: JAFRunState<JAFAdapterCtx> = {
+        const runState: JAFRunState<AgentRunContext> = {
           runId,
           traceId,
           messages: initialMessages,
@@ -1827,7 +1879,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           turnCount: 0,
         }
 
-        const runCfg: JAFRunConfig<JAFAdapterCtx> = {
+        const runCfg: JAFRunConfig<AgentRunContext> = {
           agentRegistry,
           modelProvider,
           maxTurns: 10,
@@ -1838,7 +1890,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             context: {
               toolCall: ToolCall
               args: any
-              state: JAFRunState<JAFAdapterCtx>
+              state: JAFRunState<AgentRunContext>
               agentName: string
               executionTime: number
               status: string | ToolResult
@@ -1937,7 +1989,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         console.log('[XYNE:AGENTS] 🎯 About to call runStream from local JAF');
         console.log('[XYNE:AGENTS] RunState:', { runId, traceId, messageCount: initialMessages.length });
         
-        for await (const evt of runStream<JAFAdapterCtx, string>(
+        for await (const evt of runStream<AgentRunContext, string>(
           runState,
           runCfg,
           async (event: TraceEvent) => {

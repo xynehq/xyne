@@ -52,7 +52,8 @@ export const searchGmailTool: Tool<GmailSearchToolParams, Ctx> = {
     parameters: toToolSchemaParameters(gmailSearchToolSchema),
   },
   async execute(params: WithExcludedIds<GmailSearchToolParams>, context: Ctx) {
-    const { email, agentPrompt } = context
+    const email = context.user.email
+    const agentPrompt = context.agentPrompt
 
     try {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)

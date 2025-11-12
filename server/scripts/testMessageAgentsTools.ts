@@ -49,7 +49,10 @@ async function simulateToolLifecycle() {
     [],
     new Set<string>(),
     expectations[0]?.expectation,
-    async () => {}
+    async (payload) => {
+      console.log("Reasoning event:", payload)
+    },
+    1
   )
 
   console.log(

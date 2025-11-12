@@ -24,6 +24,7 @@ import config from "@/config"
 import type { UserMetadataType } from "@/types"
 
 const Logger = getLogger(Subsystem.Chat)
+const DEFAULT_SLACK_LOOKBACK_MS = 72 * 60 * 60 * 1000
 
 const userMetadata: UserMetadataType = {
   userTimezone: "Asia/Kolkata",
@@ -74,7 +75,8 @@ export const getSlackRelatedMessagesTool: Tool<
     params: WithExcludedIds<GetSlackRelatedMessagesParams>,
     context: Ctx,
   ) {
-    const { email, agentPrompt } = context
+    const email = context.user.email
+    const agentPrompt = context.agentPrompt
 
     if (!email) {
       return ToolResponse.error(
@@ -103,10 +105,29 @@ export const getSlackRelatedMessagesTool: Tool<
       const hasScope =
         params.channelName || params.user || params.timeRange || params.mentions
 
-      if (!hasScope && !params.query) {
+      const shouldApplyFallbackRange = !hasScope && !params.query
+      const scopedTimeRange =
+        params.timeRange ||
+        (shouldApplyFallbackRange ? buildDefaultRecentRange() : undefined)
+
+      if (shouldApplyFallbackRange) {
+        Logger.debug(
+          "[getSlackRelatedMessages] No filters provided. Defaulting to the last 72 hours."
+        )
+      }
+
+      let normalizedTimestampRange:
+        | {
+            from?: number
+            to?: number
+          }
+        | undefined
+      try {
+        normalizedTimestampRange = normalizeTimestampRange(scopedTimeRange)
+      } catch {
         return ToolResponse.error(
-          ToolErrorCodes.MISSING_REQUIRED_FIELD,
-          "Please provide at least one filter (e.g., channelName, user, date range, or query) to scope the Slack message search.",
+          ToolErrorCodes.INVALID_INPUT,
+          "Invalid timeRange supplied. Provide ISO-8601 values for startTime and endTime.",
           { toolName: "getSlackRelatedMessages" },
         )
       }
@@ -116,7 +137,7 @@ export const getSlackRelatedMessagesTool: Tool<
         offset: Math.max(params.offset || 0, 0),
         filterQuery: params.query,
         sortBy: (params.sortBy || "desc") as "asc" | "desc",
-        dateFrom: params.timeRange || null,
+        dateFrom: scopedTimeRange || null,
       }
 
       // Build search parameters based on what's provided
@@ -128,12 +149,7 @@ export const getSlackRelatedMessagesTool: Tool<
         asc: searchOptions.sortBy === "asc",
         limit: searchOptions.limit,
         offset: searchOptions.offset,
-        timestampRange: params.timeRange
-          ? {
-              from: params.timeRange.startTime,
-              to: params.timeRange.endTime,
-            }
-          : undefined,
+        timestampRange: normalizedTimestampRange,
         agentChannelIds: channelIds.length > 0 ? channelIds : undefined,
         mentions:
           params.mentions && params.mentions.length > 0
@@ -155,6 +171,12 @@ export const getSlackRelatedMessagesTool: Tool<
         return ToolResponse.success("No messages found", {
           toolName: "getSlackRelatedMessages",
           contexts: [],
+          diagnostics: {
+            appliedTimeRange: scopedTimeRange || null,
+            usedDefaultTimeRange: shouldApplyFallbackRange,
+            channelName: params.channelName,
+            user: params.user,
+          },
         })
       }
 
@@ -252,6 +274,13 @@ export const getSlackRelatedMessagesTool: Tool<
       return ToolResponse.success(fragments.map((v) => v.content).join("\n"), {
         toolName: "getSlackRelatedMessages",
         contexts: fragments,
+        diagnostics: {
+          appliedTimeRange: scopedTimeRange || null,
+          usedDefaultTimeRange: shouldApplyFallbackRange,
+          channelName: params.channelName,
+          user: params.user,
+          mentions: params.mentions,
+        },
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -263,4 +292,40 @@ export const getSlackRelatedMessagesTool: Tool<
       )
     }
   },
+}
+
+function buildDefaultRecentRange(): {
+  startTime: string
+  endTime: string
+} {
+  const end = new Date()
+  const start = new Date(end.getTime() - DEFAULT_SLACK_LOOKBACK_MS)
+  return {
+    startTime: start.toISOString(),
+    endTime: end.toISOString(),
+  }
+}
+
+function normalizeTimestampRange(
+  range?: { startTime?: string; endTime?: string }
+): { from?: number; to?: number } | undefined {
+  if (!range) {
+    return undefined
+  }
+  const normalized: { from?: number; to?: number } = {}
+  if (range.startTime) {
+    const from = Date.parse(range.startTime)
+    if (Number.isNaN(from)) {
+      throw new Error("Invalid startTime")
+    }
+    normalized.from = from
+  }
+  if (range.endTime) {
+    const to = Date.parse(range.endTime)
+    if (Number.isNaN(to)) {
+      throw new Error("Invalid endTime")
+    }
+    normalized.to = to
+  }
+  return Object.keys(normalized).length ? normalized : undefined
 }

@@ -1,0 +1,197 @@
+import { getTracer } from "@/tracer"
+import { getLogger, getLoggerWithChild } from "@/logger"
+import { Subsystem } from "@/types"
+import { getErrorMessage, splitGroupedCitationsWithSpaces } from "@/utils"
+import {
+  AttachmentEntity,
+  type VespaSearchResult,
+} from "@xyne/vespa-ts/types"
+import type {
+  Citation,
+  ImageCitation,
+  MinimalAgentFragment,
+} from "./types"
+import {
+  getCitationToImage,
+  mimeTypeMap,
+  textToCitationIndex,
+  textToImageCitationIndex,
+} from "./utils"
+
+const Logger = getLogger(Subsystem.Chat)
+const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
+export type CitationYieldEvent = {
+  citation?: { index: number; item: Citation }
+  imageCitation?: ImageCitation
+}
+
+/**
+ * Shared citation extraction utility used by agentic chat flows.
+ * Mirrors the behavior from MessageWithToolsApi but lives in a reusable module.
+ */
+export const checkAndYieldCitationsForAgent = async function* (
+  textInput: string,
+  yieldedCitations: Set<number>,
+  fragments: MinimalAgentFragment[],
+  yieldedImageCitations?: Map<number, Set<number>>,
+  email = "",
+): AsyncGenerator<CitationYieldEvent, void, unknown> {
+  const tracer = getTracer("chat")
+  const span = tracer.startSpan("checkAndYieldCitationsForAgent")
+
+  try {
+    span.setAttribute("text_input_length", textInput.length)
+    span.setAttribute("results_count", fragments.length)
+    span.setAttribute("yielded_citations_size", yieldedCitations.size)
+    span.setAttribute("has_image_citations", !!yieldedImageCitations)
+    span.setAttribute("user_email", email)
+
+    const text = splitGroupedCitationsWithSpaces(textInput)
+    let match: RegExpExecArray | null
+    let imgMatch: RegExpExecArray | null
+    let citationsProcessed = 0
+    let imageCitationsProcessed = 0
+    let citationsYielded = 0
+    let imageCitationsYielded = 0
+
+    while (
+      (match = textToCitationIndex.exec(text)) !== null ||
+      (imgMatch = textToImageCitationIndex.exec(text)) !== null
+    ) {
+      if (match) {
+        citationsProcessed++
+        const citationIndex = parseInt(match[1], 10)
+        if (!yieldedCitations.has(citationIndex)) {
+          const fragment = fragments[citationIndex - 1]
+          if (!fragment?.source?.docId || !fragment.source?.url) {
+            Logger.info(
+              "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
+            )
+            continue
+          }
+
+          if (
+            Object.values(AttachmentEntity).includes(
+              fragment.source.entity as AttachmentEntity,
+            )
+          ) {
+            continue
+          }
+
+          yield { citation: { index: citationIndex, item: fragment.source } }
+          yieldedCitations.add(citationIndex)
+          citationsYielded++
+        }
+      } else if (imgMatch && yieldedImageCitations) {
+        imageCitationsProcessed++
+        const parts = imgMatch[1].split("_")
+        if (parts.length >= 2) {
+          const docIndex = parseInt(parts[0], 10)
+          const imageIndex = parseInt(parts[1], 10)
+
+          if (
+            !yieldedImageCitations.has(docIndex) ||
+            !yieldedImageCitations.get(docIndex)?.has(imageIndex)
+          ) {
+            const fragment = fragments[docIndex]
+            if (fragment) {
+              const imageSpan = span.startSpan("process_image_citation")
+              try {
+                imageSpan.setAttribute("citation_key", imgMatch[1])
+                imageSpan.setAttribute("doc_index", docIndex)
+                imageSpan.setAttribute("image_index", imageIndex)
+
+                const imageData = await getCitationToImage(
+                  imgMatch[1],
+                  {
+                    id: fragment.id,
+                    relevance: fragment.confidence,
+                    fields: {
+                      docId: fragment.source.docId,
+                    } as any,
+                  } as VespaSearchResult,
+                  email,
+                )
+
+                if (imageData) {
+                  if (!imageData.imagePath || !imageData.imageBuffer) {
+                    loggerWithChild({ email }).error(
+                      "Invalid imageData structure returned",
+                      { citationKey: imgMatch[1], imageData },
+                    )
+                    imageSpan.setAttribute("processing_success", false)
+                    imageSpan.setAttribute(
+                      "error_reason",
+                      "invalid_image_data",
+                    )
+                    imageSpan.end()
+                    continue
+                  }
+                  yield {
+                    imageCitation: {
+                      citationKey: imgMatch[1],
+                      imagePath: imageData.imagePath,
+                      imageData: imageData.imageBuffer.toString("base64"),
+                      ...(imageData.extension
+                        ? { mimeType: mimeTypeMap[imageData.extension] }
+                        : {}),
+                      item: fragment.source,
+                    },
+                  }
+                  imageCitationsYielded++
+                  imageSpan.setAttribute("processing_success", true)
+                  imageSpan.setAttribute(
+                    "image_size",
+                    imageData.imageBuffer.length,
+                  )
+                  imageSpan.setAttribute(
+                    "image_extension",
+                    imageData.extension || "unknown",
+                  )
+                }
+                imageSpan.end()
+              } catch (error) {
+                imageSpan.addEvent("image_processing_error", {
+                  message: getErrorMessage(error),
+                  stack: (error as Error).stack || "",
+                })
+                imageSpan.setAttribute("processing_success", false)
+                imageSpan.end()
+                loggerWithChild({ email }).error(
+                  error,
+                  "Error processing image citation",
+                  { citationKey: imgMatch[1], error: getErrorMessage(error) },
+                )
+              }
+              if (!yieldedImageCitations.has(docIndex)) {
+                yieldedImageCitations.set(docIndex, new Set<number>())
+              }
+              yieldedImageCitations.get(docIndex)?.add(imageIndex)
+            } else {
+              loggerWithChild({ email }).warn(
+                "Found a citation index but could not find it in the search result ",
+                imageIndex,
+                fragments.length,
+              )
+              continue
+            }
+          }
+        }
+      }
+    }
+
+    span.setAttribute("citations_processed", citationsProcessed)
+    span.setAttribute("image_citations_processed", imageCitationsProcessed)
+    span.setAttribute("citations_yielded", citationsYielded)
+    span.setAttribute("image_citations_yielded", imageCitationsYielded)
+    span.end()
+  } catch (error) {
+    span.addEvent("error", {
+      message: getErrorMessage(error),
+      stack: (error as Error).stack || "",
+    })
+    span.end()
+    throw error
+  }
+}

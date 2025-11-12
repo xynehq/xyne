@@ -25,7 +25,7 @@ import type {
 import { ToolExpectationSchema, ReviewResultSchema } from "./agent-schemas"
 import { getTracer } from "@/tracer"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { Subsystem, type UserMetadataType } from "@/types"
+import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import config from "@/config"
 import { Models, type ModelParams } from "@/ai/types"
 import {
@@ -41,15 +41,12 @@ import {
   type Tool,
   type ToolCall,
   type ToolResult,
+  type TraceEvent,
 } from "@xynehq/jaf"
 import { makeXyneJAFProvider } from "./jaf-provider"
-import {
-  buildInternalJAFTools,
-  type JAFAdapterCtx,
-  buildContextSection,
-} from "./jaf-adapter"
+import { buildContextSection } from "./jaf-adapter"
 import { getErrorMessage } from "@/utils"
-import { ChatSSEvents } from "@/shared/types"
+import { ChatSSEvents, AgentReasoningStepType } from "@/shared/types"
 import type { MinimalAgentFragment, Citation, ImageCitation } from "./types"
 import {
   extractBestDocumentIndexes,
@@ -74,14 +71,168 @@ import type { VespaSearchResult, VespaSearchResults } from "@xyne/vespa-ts/types
 import { expandSheetIds } from "@/search/utils"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { db } from "@/db/client"
+import { insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
+import { insertMessage } from "@/db/message"
+import { storeAttachmentMetadata } from "@/db/attachment"
+import { ChatType, type SelectChat, type SelectMessage } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getUserAccessibleAgents } from "@/db/userAgentPermission"
 import { ExecuteAgentForWorkflow } from "@/api/agent/workflowAgentUtils"
 import { getDateForAI } from "@/utils/index"
+import googleTools from "./tools/google"
+import { searchGlobalTool, fallbackTool } from "./tools/global"
+import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
+import type { AttachmentMetadata } from "@/shared/types"
+import { processMessage } from "./utils"
+import { checkAndYieldCitationsForAgent } from "./citation-utils"
 
 const { defaultBestModel, defaultFastModel, JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
+type ReasoningPayload = {
+  text: string
+  step?: {
+    type?: string
+    iteration?: number
+    toolName?: string
+    status?: string
+    stepSummary?: string
+    [key: string]: unknown
+  }
+  quickSummary?: string
+  aiSummary?: string
+  [key: string]: unknown
+}
+
+type ReasoningEmitter = (payload: ReasoningPayload) => Promise<void>
+
+async function streamReasoningStep(
+  emitter: ReasoningEmitter | undefined,
+  text: string,
+  extra?: {
+    type?: string
+    iteration?: number
+    toolName?: string
+    status?: string
+    detail?: string
+    [key: string]: unknown
+  }
+): Promise<void> {
+  if (!emitter) return
+  try {
+    // Build the step object to match agents.ts structure
+    const step: Record<string, unknown> = {}
+    
+    // Set type - infer from context if not provided
+    if (extra?.type) {
+      step.type = extra.type
+    } else if (extra?.iteration !== undefined && text.toLowerCase().includes('turn') && text.toLowerCase().includes('started')) {
+      step.type = AgentReasoningStepType.Iteration
+    } else {
+      step.type = AgentReasoningStepType.LogMessage
+    }
+    
+    if (extra?.iteration !== undefined) step.iteration = extra.iteration
+    if (extra?.toolName !== undefined) step.toolName = extra.toolName
+    if (extra?.status !== undefined) step.status = extra.status
+    if (extra?.detail !== undefined) step.detail = extra.detail
+    
+    // Include any other extra properties in step
+    Object.keys(extra || {}).forEach(key => {
+      if (!['type', 'iteration', 'toolName', 'status', 'detail'].includes(key)) {
+        step[key] = (extra as any)[key]
+      }
+    })
+    
+    await emitter({
+      text,
+      step: Object.keys(step).length > 0 ? step : undefined,
+      quickSummary: text, // Use text as fallback summary
+    })
+  } catch (error) {
+    Logger.warn(
+      { err: error instanceof Error ? error.message : String(error) },
+      "Failed to stream reasoning step"
+    )
+  }
+}
+
+function truncateValue(value: string, maxLength = 160): string {
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, maxLength - 1)}…`
+}
+
+function formatToolArgumentsForReasoning(
+  args: Record<string, unknown>
+): string {
+  if (!args || typeof args !== "object") {
+    return "{}"
+  }
+  const entries = Object.entries(args)
+  if (entries.length === 0) {
+    return "{}"
+  }
+  const parts = entries.map(([key, value]) => {
+    let serialized: string
+    if (typeof value === "string") {
+      serialized = `"${truncateValue(value, 80)}"`
+    } else if (
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value === null
+    ) {
+      serialized = String(value)
+    } else {
+      try {
+        serialized = truncateValue(JSON.stringify(value), 80)
+      } catch {
+        serialized = "[unserializable]"
+      }
+    }
+    return `${key}: ${serialized}`
+  })
+  const combined = parts.join(", ")
+  return truncateValue(combined, 400)
+}
+
+function buildTurnToolReasoningSummary(
+  turnNumber: number,
+  records: ToolExecutionRecord[]
+): string {
+  const lines = records.map((record, idx) => {
+    const argsSummary = formatToolArgumentsForReasoning(record.arguments)
+    return `${idx + 1}. ${record.toolName} (${argsSummary})`
+  })
+  return `Tools executed in turn ${turnNumber}:\n${lines.join("\n")}`
+}
+
+function getMetadataLayers(
+  result: any
+): Record<string, unknown>[] {
+  const layers: Record<string, unknown>[] = []
+  const metadata = result?.metadata
+  if (metadata && typeof metadata === "object") {
+    layers.push(metadata as Record<string, unknown>)
+    const nested = (metadata as Record<string, unknown>).metadata
+    if (nested && typeof nested === "object") {
+      layers.push(nested as Record<string, unknown>)
+    }
+  }
+  return layers
+}
+
+function getMetadataValue<T = unknown>(
+  result: any,
+  key: string
+): T | undefined {
+  for (const layer of getMetadataLayers(result)) {
+    if (key in layer) {
+      return layer[key] as T
+    }
+  }
+  return undefined
+}
 
 /**
  * Initialize AgentRunContext with default values
@@ -155,7 +306,11 @@ async function performAutomaticReview(
   fullContext: AgentRunContext
 ): Promise<ReviewResult> {
   try {
-    const review = await runReviewLLM(fullContext, {
+    const reviewContext: AgentRunContext = {
+      ...fullContext,
+      toolCallHistory: input.toolCallHistory,
+    }
+    const review = await runReviewLLM(reviewContext, {
       focus: "turn_end",
       turnNumber: input.turnNumber,
       expectedResults: input.expectedResults,
@@ -164,15 +319,14 @@ async function performAutomaticReview(
   } catch (error) {
     Logger.error(error, "Automatic review failed, falling back to default response")
     return {
-      status: "ok",
-      qualityScore: 0.6,
-      completeness: 0.6,
-      relevance: 0.6,
-      needsMoreData: false,
-      gaps: [],
-      suggestedActions: [],
-      recommendation: "proceed",
+      status: "needs_attention",
       notes: `Automatic review fallback for turn ${input.turnNumber}: ${getErrorMessage(error)}`,
+      toolFeedback: [],
+      unmetExpectations: [],
+      planChangeNeeded: false,
+      anomaliesDetected: false,
+      anomalies: [],
+      recommendation: "proceed",
     }
   }
 }
@@ -186,6 +340,103 @@ function getAttachmentPhaseMetadata(
   context: AgentRunContext
 ): AttachmentPhaseMetadata {
   return (context.chat.metadata as AttachmentPhaseMetadata) || {}
+}
+
+type ChatBootstrapParams = {
+  chatId?: string
+  email: string
+  user: { id: number; email: string }
+  workspace: { id: number; externalId: string }
+  message: string
+  fileIds: string[]
+  attachmentMetadata: AttachmentMetadata[]
+  modelId?: string
+  agentId?: string | null
+}
+
+type ChatBootstrapResult = {
+  chat: SelectChat
+  userMessage: SelectMessage
+}
+
+async function ensureChatAndPersistUserMessage(
+  params: ChatBootstrapParams
+): Promise<ChatBootstrapResult> {
+  return await db.transaction(async (tx) => {
+    if (!params.chatId) {
+      const chat = await insertChat(tx, {
+        workspaceId: params.workspace.id,
+        workspaceExternalId: params.workspace.externalId,
+        userId: params.user.id,
+        email: params.user.email,
+        title: "Untitled",
+        attachments: [],
+        agentId: params.agentId ?? undefined,
+        chatType: ChatType.Default,
+      })
+
+      const userMessage = await insertMessage(tx, {
+        chatId: chat.id,
+        userId: params.user.id,
+        workspaceExternalId: params.workspace.externalId,
+        chatExternalId: chat.externalId,
+        messageRole: MessageRole.User,
+        email: params.user.email,
+        sources: [],
+        message: params.message,
+        modelId: (params.modelId as Models) || defaultBestModel,
+        fileIds: params.fileIds,
+      })
+
+      if (params.attachmentMetadata.length > 0) {
+        await storeAttachmentSafely(tx, params.email, userMessage.externalId, params.attachmentMetadata)
+      }
+
+      return { chat, userMessage }
+    }
+
+    const chat = await updateChatByExternalIdWithAuth(
+      tx,
+      params.chatId,
+      params.email,
+      {}
+    )
+
+    const userMessage = await insertMessage(tx, {
+      chatId: chat.id,
+      userId: params.user.id,
+      workspaceExternalId: params.workspace.externalId,
+      chatExternalId: chat.externalId,
+      messageRole: MessageRole.User,
+      email: params.user.email,
+      sources: [],
+      message: params.message,
+      modelId: (params.modelId as Models) || defaultBestModel,
+      fileIds: params.fileIds,
+    })
+
+    if (params.attachmentMetadata.length > 0) {
+      await storeAttachmentSafely(tx, params.email, userMessage.externalId, params.attachmentMetadata)
+    }
+
+    return { chat, userMessage }
+  })
+}
+
+async function storeAttachmentSafely(
+  tx: Parameters<typeof storeAttachmentMetadata>[0],
+  email: string,
+  messageExternalId: string,
+  attachments: AttachmentMetadata[]
+) {
+  try {
+    await storeAttachmentMetadata(tx, messageExternalId, attachments, email)
+  } catch (error) {
+    loggerWithChild({ email }).error(
+      error,
+      `Failed to store attachment metadata for message ${messageExternalId}`
+    )
+  }
 }
 
 async function vespaResultToAttachmentFragment(
@@ -270,17 +521,16 @@ export async function beforeToolExecutionHook(
   toolName: string,
   args: any,
   context: AgentRunContext,
-  emitSSE?: (event: string, data: any) => Promise<void>
+  reasoningEmitter?: ReasoningEmitter
 ): Promise<any | null> {
   // 0. Validate input against schema
   const validation = validateToolInput(toolName, args)
   if (!validation.success) {
-    if (emitSSE) {
-      await emitSSE(
-        ChatSSEvents.Reasoning,
-        `⚠️ Invalid input for ${toolName}: ${validation.error.message}`
-      )
-    }
+    await streamReasoningStep(
+      reasoningEmitter,
+      `⚠️ Invalid input for ${toolName}: ${validation.error.message}`,
+      { toolName }
+    )
     Logger.warn(
       `Tool input validation failed for ${toolName}: ${validation.error.message}`
     )
@@ -297,24 +547,22 @@ export async function beforeToolExecutionHook(
   )
 
   if (isDuplicate) {
-    if (emitSSE) {
-      await emitSSE(
-        ChatSSEvents.Reasoning,
-        `⚠️ Skipping duplicate ${toolName} call`
-      )
-    }
+    await streamReasoningStep(
+      reasoningEmitter,
+      `Skipping redundant tool call to '${toolName}'.`,
+      { toolName, status: "skipped" }
+    )
     return null // Skip execution
   }
 
   // 2. Failed tool budget check
   const failureInfo = context.failedTools.get(toolName)
   if (failureInfo && failureInfo.count >= 3) {
-    if (emitSSE) {
-      await emitSSE(
-        ChatSSEvents.Reasoning,
-        `⚠️ ${toolName} has failed ${failureInfo.count} times, blocked`
-      )
-    }
+    await streamReasoningStep(
+      reasoningEmitter,
+      `Tool '${toolName}' has failed ${failureInfo.count} times and is now blocked.`,
+      { toolName, status: "blocked" }
+    )
     return null // Skip execution
   }
 
@@ -354,7 +602,8 @@ export async function afterToolExecutionHook(
   messagesWithNoErrResponse: Message[],
   gatheredFragmentskeys: Set<string>,
   expectedResult: ToolExpectation | undefined,
-  emitSSE?: (event: string, data: any) => Promise<void>
+  reasoningEmitter?: ReasoningEmitter,
+  turnNumber?: number
 ): Promise<string | null> {
   const { state, executionTime, status, args } = hookContext
   const context = state.context as AgentRunContext
@@ -365,6 +614,7 @@ export async function afterToolExecutionHook(
     connectorId: result?.metadata?.connectorId || null,
     agentName: hookContext.agentName,
     arguments: args,
+    turnNumber: typeof turnNumber === "number" ? turnNumber : 0,
     expectedResults: expectedResult,
     startedAt: new Date(Date.now() - executionTime),
     durationMs: executionTime,
@@ -403,13 +653,21 @@ export async function afterToolExecutionHook(
   }
 
   // 5. Extract and filter contexts
-  const contexts = result?.metadata?.contexts
+  const contexts = getMetadataValue<MinimalAgentFragment[]>(result, "contexts")
   if (Array.isArray(contexts) && contexts.length > 0) {
     const filteredContexts = contexts.filter(
       (c: MinimalAgentFragment) => !gatheredFragmentskeys.has(c.id)
     )
 
     if (filteredContexts.length > 0) {
+      await streamReasoningStep(
+        reasoningEmitter,
+        `Received ${filteredContexts.length} document${
+          filteredContexts.length === 1 ? "" : "s"
+        }. Now filtering and ranking the most relevant ones.`,
+        { toolName }
+      )
+
       const contextStrings = filteredContexts.map(
         (v: MinimalAgentFragment) => {
           context.seenDocuments.add(v.id)
@@ -451,6 +709,14 @@ export async function afterToolExecutionHook(
           // Update record with actual fragments added
           record.fragmentsAdded = selectedDocs.map((d) => d.id)
 
+          await streamReasoningStep(
+            reasoningEmitter,
+            `Filtered down to ${selectedDocs.length} best document${
+              selectedDocs.length === 1 ? "" : "s"
+            } for analysis.`,
+            { toolName, detail: selectedDocs.map((doc) => doc.source.title || doc.id).join(", ") }
+          )
+
           // Emit SSE event (ToolMetric event to be added to ChatSSEvents later)
           // if (emitSSE) {
           //   await emitSSE(ChatSSEvents.ToolMetric, {
@@ -465,6 +731,11 @@ export async function afterToolExecutionHook(
           return selectedDocs.map((doc) => doc.content).join("\n")
         }
       } catch (error) {
+        await streamReasoningStep(
+          reasoningEmitter,
+          "Context ranking failed, retaining all retrieved documents.",
+          { toolName }
+        )
         // Fallback: add all contexts if extraction fails
         filteredContexts.forEach((doc: MinimalAgentFragment) => {
           const key = doc.id
@@ -488,6 +759,73 @@ export async function afterToolExecutionHook(
   //     fragmentsAdded: record.fragmentsAdded.length,
   //   })
   // }
+
+  if (
+    toolName === "toDoWrite" &&
+    result &&
+    typeof result === "object" &&
+    result.status === "success"
+  ) {
+    const plan = result.data?.plan as PlanState | undefined
+    if (plan) {
+      const nextStep = plan.subTasks?.[0]?.description || "No sub-tasks defined."
+      await streamReasoningStep(
+        reasoningEmitter,
+        `Plan created: ${plan.goal || "Goal not specified"}. Next step: ${nextStep}`,
+        { toolName }
+      )
+    }
+  }
+
+  if (
+    toolName === "list_custom_agents" &&
+    result &&
+    typeof result === "object" &&
+    result.status === "success"
+  ) {
+    const agents = getMetadataValue<ListCustomAgentsOutput["agents"]>(
+      result,
+      "agents"
+    )
+    const agentCount = Array.isArray(agents) ? agents.length : 0
+    await streamReasoningStep(
+      reasoningEmitter,
+      agentCount
+        ? `Found ${agentCount} suitable agent${agentCount === 1 ? "" : "s"}. Evaluating options...`
+        : "No suitable custom agents found. Continuing with built-in tools.",
+      { toolName, detail: agentCount ? agents?.map((a) => a.agentName).join(", ") : undefined }
+    )
+  }
+
+  if (
+    toolName === "run_public_agent" &&
+    result &&
+    typeof result === "object" &&
+    result.status === "success"
+  ) {
+    const agentId = getMetadataValue<string>(result, "agentId")
+    const agentName =
+      context.availableAgents.find((agent) => agent.agentId === agentId)
+        ?.agentName || agentId || "unknown agent"
+    await streamReasoningStep(
+      reasoningEmitter,
+      `Received response from '${agentName}' agent.`,
+      { toolName, detail: agentName }
+    )
+  }
+
+  if (
+    toolName === "fall_back" &&
+    result &&
+    typeof result === "object" &&
+    result.status === "success"
+  ) {
+    await streamReasoningStep(
+      reasoningEmitter,
+      "Fallback analysis completed. Captured reasoning on why earlier attempts failed.",
+      { toolName }
+    )
+  }
 
   return null
 }
@@ -637,6 +975,129 @@ function summarizeFragments(
     .join("\n")
 }
 
+function buildDefaultReviewPayload(notes?: string): ReviewResult {
+  return {
+    status: "ok",
+    notes: notes?.trim() || "Review completed with no notable findings.",
+    toolFeedback: [],
+    unmetExpectations: [],
+    planChangeNeeded: false,
+    planChangeReason: undefined,
+    anomaliesDetected: false,
+    anomalies: [],
+    recommendation: "proceed",
+  }
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
+
+function normalizeToolFeedbackEntry(
+  entry: unknown
+): ReviewResult["toolFeedback"][number] | null {
+  if (!entry || typeof entry !== "object") return null
+  const candidate = entry as Record<string, unknown>
+  const toolName =
+    typeof candidate.toolName === "string" ? candidate.toolName.trim() : ""
+  const summary =
+    typeof candidate.summary === "string" ? candidate.summary.trim() : ""
+  if (!toolName || !summary) {
+    return null
+  }
+  const outcome =
+    candidate.outcome === "met" ||
+    candidate.outcome === "missed" ||
+    candidate.outcome === "error"
+      ? candidate.outcome
+      : "missed"
+  const expectationGoal =
+    typeof candidate.expectationGoal === "string" &&
+    candidate.expectationGoal.trim().length > 0
+      ? candidate.expectationGoal.trim()
+      : undefined
+  const followUp =
+    typeof candidate.followUp === "string" &&
+    candidate.followUp.trim().length > 0
+      ? candidate.followUp.trim()
+      : undefined
+  return {
+    toolName,
+    outcome,
+    summary,
+    expectationGoal,
+    followUp,
+  }
+}
+
+function normalizeRecommendation(
+  value: unknown
+): ReviewResult["recommendation"] {
+  return value === "gather_more" ||
+    value === "clarify_query" ||
+    value === "replan"
+    ? value
+    : "proceed"
+}
+
+function normalizeReviewResponse(payload: unknown): ReviewResult {
+  if (typeof payload === "string") {
+    return buildDefaultReviewPayload(payload)
+  }
+  if (!payload || typeof payload !== "object") {
+    return buildDefaultReviewPayload()
+  }
+
+  const raw = payload as Record<string, unknown>
+  const base = buildDefaultReviewPayload(
+    typeof raw.notes === "string" ? raw.notes : undefined
+  )
+
+  const toolFeedback = Array.isArray(raw.toolFeedback)
+    ? raw.toolFeedback
+        .map((entry) => normalizeToolFeedbackEntry(entry))
+        .filter(
+          (entry): entry is ReviewResult["toolFeedback"][number] =>
+            entry !== null
+        )
+    : []
+  const unmetExpectations = normalizeStringArray(raw.unmetExpectations)
+  const anomalies = normalizeStringArray(raw.anomalies)
+  const planChangeNeeded = Boolean(raw.planChangeNeeded)
+
+  const normalized: ReviewResult = {
+    ...base,
+    status: raw.status === "needs_attention" ? "needs_attention" : "ok",
+    toolFeedback,
+    unmetExpectations,
+    planChangeNeeded,
+    planChangeReason: base.planChangeReason,
+    anomaliesDetected: Boolean(raw.anomaliesDetected) || anomalies.length > 0,
+    anomalies,
+    recommendation: normalizeRecommendation(raw.recommendation),
+  }
+
+  if (planChangeNeeded) {
+    const reason =
+      typeof raw.planChangeReason === "string"
+        ? raw.planChangeReason.trim()
+        : ""
+    normalized.planChangeReason = reason || undefined
+  } else {
+    normalized.planChangeReason = undefined
+  }
+
+  if (typeof raw.notes === "string" && raw.notes.trim().length > 0) {
+    normalized.notes = raw.notes.trim()
+  }
+
+  return normalized
+}
+
 async function runReviewLLM(
   context: AgentRunContext,
   options?: {
@@ -654,18 +1115,30 @@ async function runReviewLLM(
     stream: false,
     temperature: 0,
     maxTokens: 800,
-    systemPrompt: `You are a senior reviewer ensuring agentic executions satisfy their expected results. 
-Respond strictly in JSON adhering to this schema: ${JSON.stringify({
+    systemPrompt: `You are a senior reviewer ensuring each agentic turn honors the agreed plan and tool expectations.
+- Inspect every tool call from this turn, compare the outputs with the expected results, and decide whether each tool met or missed expectations.
+- Evaluate the current plan to see if it still fits the evidence gathered from the tool calls; suggest plan changes when necessary.
+- Detect anomalies (unexpected behaviors, contradictory data, missing outputs) and call them out explicitly.
+Respond strictly in JSON matching this schema: ${JSON.stringify({
       status: "ok",
-      qualityScore: 0,
-      completeness: 0,
-      relevance: 0,
-      needsMoreData: false,
-      gaps: [],
-      suggestedActions: [],
+      notes: "Summary of overall findings",
+      toolFeedback: [
+        {
+          toolName: "Tool that ran",
+          outcome: "met|missed|error",
+          summary: "What happened and whether expectation was satisfied",
+          expectationGoal: "Expectation or success criteria that applies",
+          followUp: "Specific follow-up if needed",
+        },
+      ],
+      unmetExpectations: ["List of expectation goals still open"],
+      planChangeNeeded: false,
+      planChangeReason: "Why plan needs updating if true",
+      anomaliesDetected: false,
+      anomalies: ["Description of anomalies"],
       recommendation: "proceed",
-      notes: "string",
-    })}`,
+    })}
+- Only emit keys defined in the schema; do not add prose outside the JSON object.`,
   }
 
   const payload = [
@@ -703,30 +1176,59 @@ Respond strictly in JSON adhering to this schema: ${JSON.stringify({
   }
 
   const parsed = jsonParseLLMOutput(text)
-  const validation = ReviewResultSchema.safeParse(parsed)
+  const normalized = normalizeReviewResponse(parsed)
+  const validation = ReviewResultSchema.safeParse(normalized)
   if (!validation.success) {
+    Logger.error(
+      { error: validation.error.format(), raw: parsed },
+      "Review result does not match schema"
+    )
     throw new Error("Review result does not match schema")
   }
   return validation.data
 }
 
 function buildInternalToolAdapters(): Tool<unknown, AgentRunContext>[] {
-  const internalTools = buildInternalJAFTools()
-  return internalTools.map((tool) => ({
-    schema: tool.schema,
-    async execute(args, context) {
-      const adapterCtx: JAFAdapterCtx = {
-        email: context.user.email,
-        userCtx: context.userContext,
-        agentPrompt: context.agentPrompt,
-        userMessage: context.message.text,
-      }
-      return tool.execute(
-        args,
-        adapterCtx as unknown as JAFAdapterCtx
-      )
+  const baseTools = [
+    createToDoWriteTool(),
+    searchGlobalTool,
+    ...googleTools,
+    getSlackRelatedMessagesTool,
+    fallbackTool,
+  ] as Array<Tool<unknown, AgentRunContext>>
+
+  return baseTools
+}
+
+function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
+  return {
+    schema: {
+      name: "toDoWrite",
+      description: TOOL_SCHEMAS.toDoWrite.description,
+      parameters: TOOL_SCHEMAS.toDoWrite.inputSchema,
     },
-  }))
+    async execute(args, context) {
+      const validation = validateToolInput<PlanState>("toDoWrite", args)
+      if (!validation.success) {
+        return ToolResponse.error(
+          "INVALID_INPUT",
+          validation.error.message
+        )
+      }
+
+      const plan: PlanState = {
+        goal: validation.data.goal,
+        subTasks: validation.data.subTasks,
+      }
+
+      context.plan = plan
+
+      return ToolResponse.success({
+        result: `Plan updated with ${plan.subTasks.length} sub-task${plan.subTasks.length === 1 ? "" : "s"}.`,
+        plan,
+      })
+    },
+  }
 }
 
 function buildCustomAgentTools(): Array<Tool<unknown, AgentRunContext>> {
@@ -868,12 +1370,13 @@ function createReviewTool(): Tool<unknown, AgentRunContext> {
       const reviewOutput = {
         result: review.notes,
         recommendation: review.recommendation,
-        metExpectations: review.gaps.length === 0,
-        unmetExpectations: review.gaps,
-        gaps: review.gaps,
-        suggestedActions: review.suggestedActions.map(
-          (action) => `${action.type}: ${action.reason}`
-        ),
+        metExpectations: review.unmetExpectations.length === 0,
+        unmetExpectations: review.unmetExpectations,
+        planChangeNeeded: review.planChangeNeeded,
+        planChangeReason: review.planChangeReason,
+        toolFeedback: review.toolFeedback,
+        anomaliesDetected: review.anomaliesDetected,
+        anomalies: review.anomalies,
       }
 
       const outputValidation =
@@ -1073,15 +1576,60 @@ export async function MessageAgents(c: Context): Promise<Response> {
       dateForAI,
     }
     const userCtxString = userContext(userAndWorkspace)
+    const messageFileIds = Array.from(
+      new Set([
+        ...referencedFileIds,
+        ...attachmentMetadata.map((meta) => meta.fileId),
+      ])
+    )
+
+    let chatRecord: SelectChat
+    try {
+      const bootstrap = await ensureChatAndPersistUserMessage({
+        chatId,
+        email,
+        user: { id: user.id, email: user.email },
+        workspace: { id: workspace.id, externalId: workspace.externalId },
+        message,
+        fileIds: messageFileIds,
+        attachmentMetadata,
+        modelId: defaultBestModel,
+      })
+      chatRecord = bootstrap.chat
+    } catch (error) {
+      loggerWithChild({ email }).error(
+        error,
+        "Failed to persist user turn for MessageAgents"
+      )
+      const errMsg =
+        error instanceof Error ? error.message : "Unknown persistence error"
+      if (errMsg.includes("Chat not found")) {
+        throw new HTTPException(404, { message: "Chat not found" })
+      }
+      throw new HTTPException(500, {
+        message: "Failed to initialize chat for request",
+      })
+    }
+    rootSpan.setAttribute("chatId", chatRecord.externalId)
     
     return streamSSE(c, async (stream) => {
       try {
+        let thinkingLog = ""
+        const emitReasoningStep: ReasoningEmitter = async (payload) => {
+          if (stream.closed) return
+          thinkingLog += `${JSON.stringify(payload)}\n`
+          await stream.writeSSE({
+            event: ChatSSEvents.Reasoning,
+            data: JSON.stringify(payload),
+          })
+        }
+
         // Initialize context with actual data
         const agentContext = initializeAgentContext(
           email,
           workspaceId,
           user.id,
-          chatId || `chat-${Date.now()}`,
+          chatRecord.externalId,
           message,
           attachmentsForContext,
           {
@@ -1109,11 +1657,23 @@ export async function MessageAgents(c: Context): Promise<Response> {
         } | null = null
 
         if (referencedFileIds.length > 0) {
+          await streamReasoningStep(
+            emitReasoningStep,
+            "Analyzing user-provided attachments..."
+          )
           initialAttachmentContext = await prepareInitialAttachmentContext(
             referencedFileIds,
             userMetadata,
             message
           )
+          if (initialAttachmentContext) {
+            await streamReasoningStep(
+              emitReasoningStep,
+              `Extracted ${initialAttachmentContext.fragments.length} context fragment${
+                initialAttachmentContext.fragments.length === 1 ? "" : "s"
+              } from attachments.`
+            )
+          }
         }
         if (initialAttachmentContext) {
           initialAttachmentContext.fragments.forEach((fragment) => {
@@ -1171,6 +1731,18 @@ export async function MessageAgents(c: Context): Promise<Response> {
           turnCount: 0,
         }
 
+        const messagesWithNoErrResponse: Message[] = [
+          {
+            role: ConversationRole.USER,
+            content: [{ text: message }],
+          },
+        ]
+
+        const pendingExpectations: PendingExpectation[] = []
+        const expectationHistory = new Map<number, PendingExpectation[]>()
+        const expectedResultsByCallId = new Map<string, ToolExpectation>()
+        const toolCallTurnMap = new Map<string, number>()
+
         // Configure run with hooks
         const runCfg: JAFRunConfig<AgentRunContext> = {
           agentRegistry,
@@ -1190,39 +1762,21 @@ export async function MessageAgents(c: Context): Promise<Response> {
               expectationForCall = expectedResultsByCallId.get(callId)
               expectedResultsByCallId.delete(callId)
             }
+            const turnForCall = callId ? toolCallTurnMap.get(callId) : undefined
+            if (callId) {
+              toolCallTurnMap.delete(callId)
+            }
             const content = await afterToolExecutionHook(
               toolName,
               result,
               hookContext,
               message,
-              initialMessages,
+              messagesWithNoErrResponse,
               gatheredFragmentsKeys,
               expectationForCall,
-              async (event, data) => {
-                await stream.writeSSE({ event, data: JSON.stringify(data) })
-              }
+              emitReasoningStep,
+              turnForCall
             )
-            
-            // Special handling for toDoWrite to extract plan
-            if (toolName === "toDoWrite" && result) {
-              const planData = typeof result === 'object' && 'data' in result 
-                ? result.data?.plan || result.data 
-                : null
-              if (planData) {
-                const context = hookContext.state.context as AgentRunContext
-                context.plan = {
-                  id: planData.id || `plan_${Date.now()}`,
-                  goal: planData.goal,
-                  subTasks: planData.subTasks || planData.tasks || [],
-                  chainOfThought: planData.reasoning || "",
-                  needsClarification: planData.needsClarification || false,
-                  clarificationPrompt: planData.clarificationPrompt || null,
-                  candidateAgents: planData.candidateAgents || [],
-                  createdAt: planData.createdAt || Date.now(),
-                  updatedAt: Date.now(),
-                }
-              }
-            }
             
             return content
           },
@@ -1240,32 +1794,82 @@ export async function MessageAgents(c: Context): Promise<Response> {
         let currentTurn = 0
         let answer = ""
         const citations: Citation[] = []
+        const imageCitations: ImageCitation[] = []
         const citationMap: Record<number, number> = {}
+        const yieldedCitations = new Set<number>()
+        const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
-        const pendingExpectations: PendingExpectation[] = []
-        const expectationHistory = new Map<number, PendingExpectation[]>()
-        const expectedResultsByCallId = new Map<string, ToolExpectation>()
+
+        const streamAnswerText = async (text: string) => {
+          if (!text) return
+          const chunkSize = 200
+          for (let i = 0; i < text.length; i += chunkSize) {
+            const chunk = text.slice(i, i + chunkSize)
+            answer += chunk
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseUpdate,
+              data: chunk,
+            })
+
+            for await (const citationEvent of checkAndYieldCitationsForAgent(
+              answer,
+              yieldedCitations,
+              agentContext.contextFragments,
+              yieldedImageCitations,
+              email,
+            )) {
+              if (citationEvent.citation) {
+                const { index, item } = citationEvent.citation
+                citations.push(item)
+                citationMap[index] = citations.length - 1
+                await stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: citations,
+                    citationMap,
+                  }),
+                })
+              }
+              if (citationEvent.imageCitation) {
+                imageCitations.push(citationEvent.imageCitation)
+                await stream.writeSSE({
+                  event: ChatSSEvents.ImageCitationUpdate,
+                  data: JSON.stringify(citationEvent.imageCitation),
+                })
+              }
+            }
+          }
+        }
+        const traceEventHandler = async (event: TraceEvent) => {
+          if (event.type !== "before_tool_execution") return undefined
+          return beforeToolExecutionHook(
+            event.data.toolName,
+            event.data.args,
+            agentContext,
+            emitReasoningStep
+          )
+        }
 
         for await (const evt of runStream<AgentRunContext, string>(
           runState,
-          runCfg
+          runCfg,
+          traceEventHandler
         )) {
           if (stream.closed) break
 
           switch (evt.type) {
             case "turn_start":
               currentTurn = evt.data.turn
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  text: `Turn ${currentTurn} started`,
-                  iteration: currentTurn,
-                }),
-              })
+              await streamReasoningStep(
+                emitReasoningStep,
+                `Turn ${currentTurn} started`,
+                { iteration: currentTurn }
+              )
               break
 
             case "tool_requests":
               for (const toolCall of evt.data.toolCalls) {
+                toolCallTurnMap.set(toolCall.id, currentTurn)
                 const assignedExpectation = consumePendingExpectation(
                   pendingExpectations,
                   toolCall.name
@@ -1276,52 +1880,96 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     assignedExpectation.expectation
                   )
                 }
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
-                    text: `Tool selected: ${toolCall.name}`,
-                    toolName: toolCall.name,
-                  }),
-                })
+                await streamReasoningStep(
+                  emitReasoningStep,
+                  `Tool selected: ${toolCall.name}`,
+                  { toolName: toolCall.name }
+                )
+
+                if (toolCall.name === "toDoWrite") {
+                  await streamReasoningStep(
+                    emitReasoningStep,
+                    "Formulating a step-by-step plan...",
+                    { toolName: toolCall.name }
+                  )
+                } else if (toolCall.name === "list_custom_agents") {
+                  await streamReasoningStep(
+                    emitReasoningStep,
+                    "Searching for specialized agents that can help...",
+                    { toolName: toolCall.name }
+                  )
+                } else if (toolCall.name === "run_public_agent") {
+                  const agentId = (toolCall.args as { agentId?: string })?.agentId
+                  const agentName =
+                    agentContext.availableAgents.find(
+                      (agent) => agent.agentId === agentId
+                    )?.agentName || agentId || "selected agent"
+                  await streamReasoningStep(
+                    emitReasoningStep,
+                    `Delegating sub-task to the '${agentName}' agent...`,
+                    { toolName: toolCall.name, detail: agentName }
+                  )
+                } else if (toolCall.name === "fall_back") {
+                  await streamReasoningStep(
+                    emitReasoningStep,
+                    "Initial strategy was unsuccessful. Activating fallback search to find an answer.",
+                    { toolName: toolCall.name }
+                  )
+                }
               }
               break
 
             case "tool_call_start":
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  text: `Executing ${evt.data.toolName}...`,
-                  toolName: evt.data.toolName,
-                }),
-              })
+              await streamReasoningStep(
+                emitReasoningStep,
+                `Executing ${evt.data.toolName}...`,
+                { toolName: evt.data.toolName }
+              )
               break
 
             case "tool_call_end":
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  text: `Tool ${evt.data.toolName} completed`,
-                  toolName: evt.data.toolName,
-                  status: evt.data.status,
-                }),
-              })
+              await streamReasoningStep(
+                emitReasoningStep,
+                `Tool ${evt.data.toolName} completed`,
+                { toolName: evt.data.toolName, status: evt.data.status }
+              )
               break
 
             case "turn_end":
               // DETERMINISTIC REVIEW: Run after every turn completes
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  text: `Turn ${evt.data.turn} completed. Running automatic review...`,
-                  iteration: evt.data.turn,
-                }),
-              })
+              await streamReasoningStep(
+                emitReasoningStep,
+                "Turn complete. Reviewing progress and results...",
+                { iteration: evt.data.turn }
+              )
+
+              const currentTurnToolHistory =
+                agentContext.toolCallHistory.filter(
+                  (record) => record.turnNumber === evt.data.turn
+                )
+
+              if (currentTurnToolHistory.length > 0) {
+                await streamReasoningStep(
+                  emitReasoningStep,
+                  buildTurnToolReasoningSummary(
+                    evt.data.turn,
+                    currentTurnToolHistory
+                  ),
+                  { iteration: evt.data.turn }
+                )
+              } else {
+                await streamReasoningStep(
+                  emitReasoningStep,
+                  `No tools were executed in turn ${evt.data.turn}.`,
+                  { iteration: evt.data.turn }
+                )
+              }
               
               const reviewResult = await performAutomaticReview(
                 {
                   turnNumber: evt.data.turn,
                   contextFragments: agentContext.contextFragments,
-                  toolCallHistory: agentContext.toolCallHistory,
+                  toolCallHistory: currentTurnToolHistory,
                   plan: agentContext.plan,
                   expectedResults:
                     expectationHistory.get(evt.data.turn) || [],
@@ -1334,17 +1982,17 @@ export async function MessageAgents(c: Context): Promise<Response> {
               agentContext.review.lastReviewTurn = evt.data.turn
               
               // Stream review results to client
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  text: `Review complete: ${reviewResult.recommendation}`,
-                  reviewSummary: reviewResult.notes,
-                  qualityScore: reviewResult.qualityScore,
-                  completeness: reviewResult.completeness,
-                  relevance: reviewResult.relevance,
-                  gaps: reviewResult.gaps,
-                }),
-              })
+              await streamReasoningStep(
+                emitReasoningStep,
+                `Review complete. Recommendation: ${reviewResult.recommendation}. Plan change needed: ${reviewResult.planChangeNeeded ? "yes" : "no"}.`,
+                {
+                  iteration: evt.data.turn,
+                  status: reviewResult.status,
+                  detail: reviewResult.notes,
+                  anomaliesDetected: reviewResult.anomaliesDetected,
+                  review: reviewResult,
+                }
+              )
 
               const attachmentState = getAttachmentPhaseMetadata(agentContext)
               if (attachmentState.initialAttachmentPhase) {
@@ -1353,36 +2001,44 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   initialAttachmentPhase: false,
                 }
               }
-              
-              // If review suggests replanning, update the plan
-              if (reviewResult.recommendation === 'replan' && reviewResult.updatedPlan) {
-                agentContext.plan = reviewResult.updatedPlan
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
-                    text: 'Plan updated based on review feedback',
-                    updatedPlan: reviewResult.updatedPlan,
-                  }),
-                })
-              }
               pendingExpectations.length = 0
               break
 
             case "assistant_message":
               const content = getTextContent(evt.data.message.content) || ""
+              const hasToolCalls =
+                Array.isArray(evt.data.message?.tool_calls) &&
+                (evt.data.message.tool_calls?.length ?? 0) > 0
+
+              if (hasToolCalls) {
+                await streamReasoningStep(
+                  emitReasoningStep,
+                  content || "Model planned tool usage."
+                )
+                break
+              }
+
               if (content) {
                 const extractedExpectations = extractExpectedResults(content)
                 if (extractedExpectations.length > 0) {
+                  await streamReasoningStep(
+                    emitReasoningStep,
+                    "Setting expectations for tool calls...",
+                    { iteration: currentTurn }
+                  )
+                  for (const expectation of extractedExpectations) {
+                    await streamReasoningStep(
+                      emitReasoningStep,
+                      `Expectation for '${expectation.toolName}': ${expectation.expectation.goal}`,
+                      { toolName: expectation.toolName }
+                    )
+                  }
                   pendingExpectations.push(...extractedExpectations)
                   const accumulated = expectationHistory.get(currentTurn) || []
                   accumulated.push(...extractedExpectations)
                   expectationHistory.set(currentTurn, accumulated)
                 }
-                answer += content
-                await stream.writeSSE({
-                  event: ChatSSEvents.ResponseUpdate,
-                  data: content,
-                })
+                await streamAnswerText(content)
               }
               break
 
@@ -1391,10 +2047,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               if (typeof output === "string" && output.length > 0) {
                 const remaining = output.slice(answer.length)
                 if (remaining) {
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: remaining,
-                  })
+                  await streamAnswerText(remaining)
                 }
               }
               break
@@ -1409,26 +2062,33 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 
                 // Calculate costs and tokens
                 const totalCost = agentContext.totalCost
-                const totalTokens = agentContext.tokenUsage.input + agentContext.tokenUsage.output
+                const totalTokens =
+                  agentContext.tokenUsage.input + agentContext.tokenUsage.output
+
+                try {
+                  const msg = await insertMessage(db, {
+                    chatId: chatRecord.id,
+                    userId: user.id,
+                    workspaceExternalId: workspace.externalId,
+                    chatExternalId: chatRecord.externalId,
+                    messageRole: MessageRole.Assistant,
+                    email: user.email,
+                    sources: citations,
+                    imageCitations,
+                    message: processMessage(answer, citationMap),
+                    thinking: thinkingLog,
+                    modelId: defaultBestModel,
+                    cost: totalCost.toString(),
+                    tokensUsed: totalTokens,
+                  })
+                  assistantMessageId = msg.externalId
+                } catch (error) {
+                  loggerWithChild({ email }).error(
+                    error,
+                    "Failed to persist assistant response"
+                  )
+                }
                 
-                // TODO: Import and use insertMessage from @/db/message
-                // const msg = await insertMessage(db, {
-                //   chatId: chat.id,
-                //   userId: user.id,
-                //   workspaceExternalId: workspace.externalId,
-                //   chatExternalId: agentContext.chat.externalId,
-                //   messageRole: MessageRole.Assistant,
-                //   email: user.email,
-                //   sources: citations,
-                //   message: answer,
-                //   thinking: "", // TODO: Collect thinking/reasoning
-                //   modelId: defaultBestModel,
-                //   cost: totalCost.toString(),
-                //   tokensUsed: totalTokens,
-                // })
-                // assistantMessageId = msg.externalId
-                
-                // For now, log the response
                 loggerWithChild({ email }).info({
                   answer,
                   citations: citations.length,

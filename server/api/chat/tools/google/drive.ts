@@ -44,7 +44,8 @@ export const searchDriveFilesTool: Tool<DriveSearchToolParams, Ctx> = {
     params: DriveSearchToolParams & { excludedIds?: string[] },
     context: Ctx,
   ) {
-    const { email, agentPrompt } = context
+    const email = context.user.email
+    const agentPrompt = context.agentPrompt
 
     try {
       if (!email) {

@@ -45,7 +45,8 @@ export const searchCalendarEventsTool: Tool<CalendarSearchToolParams, Ctx> = {
     params: WithExcludedIds<CalendarSearchToolParams>,
     context: Ctx,
   ) {
-    const { email, agentPrompt } = context
+    const email = context.user.email
+    const agentPrompt = context.agentPrompt
 
     try {
       if (!email) {

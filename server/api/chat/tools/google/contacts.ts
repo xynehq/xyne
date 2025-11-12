@@ -34,7 +34,7 @@ export const searchGoogleContactsTool: Tool<ContactsSearchToolParams, Ctx> = {
     params: ContactsSearchToolParams & { excludedIds?: string[] },
     context: Ctx,
   ) {
-    const { email } = context
+    const email = context.user.email
 
     try {
       if (!email) {

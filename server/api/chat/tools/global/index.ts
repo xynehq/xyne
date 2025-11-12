@@ -77,7 +77,8 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
     parameters: toToolSchemaParameters(searchGlobalToolSchema),
   },
   async execute(params: WithExcludedIds<SearchGlobalToolParams>, context: Ctx) {
-    const { email, agentPrompt, userMessage } = context
+    const email = context.user.email
+    const agentPrompt = context.agentPrompt
 
     try {
       if (!email) {
@@ -148,7 +149,7 @@ export const fallbackTool: Tool<FallbackToolParams, Ctx> = {
   },
   async execute(params: FallbackToolParams, context: Ctx) {
     const Logger = getLogger(Subsystem.Chat)
-    const { userCtx } = context
+    const userCtx = context.userContext
     try {
       // Generate detailed reasoning about why the search failed
       const fallbackResponse = await generateFallback(
