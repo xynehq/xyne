@@ -19,7 +19,7 @@ import { executeAgentForWorkflowWithRag, hasUnauthorizedAgent } from "./agent/wo
 import { db } from "@/db/client"
 import { sharedVespaService as vespa } from "../search/vespaService"
 import { FileProcessorService, type SheetProcessingResult } from "@/services/fileProcessor"
-import { Apps, KbItemsSchema } from "@xyne/vespa-ts/types"
+import { Apps, KbItemsSchema, fileSchema } from "@xyne/vespa-ts/types"
 import { attachmentFileTypeMap } from "@/shared/types"
 import { getFileType } from "shared/fileUtils"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
@@ -2878,6 +2878,9 @@ ${JSON.stringify(httpResult.data, null, 2)}`
             contentType?: string
           }> = []
 
+          // Get execution context for workspace/user info
+          const executionContext = await getExecutionContext(executionId)
+          
           // Process all previous steps to extract content and attachments (same as AI agent)
           const stepKeys = Object.keys(previousStepResults)
           Logger.info(`📧 Email processing ${stepKeys.length} previous steps for attachments`)
@@ -2907,20 +2910,24 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                 
                 for (const attachmentId of allAttachmentIds) {
                   try {
-                    // Convert attachment ID to file metadata using the attachment system
-                    const { getAttachmentMetadata } = await import("@/services/attachmentService")
-                    const attachmentMetadata = await getAttachmentMetadata(attachmentId)
+                    // Get attachment metadata from Vespa instead of file system
+                    const vespaResults = await vespa.searchVespaInFiles(`id:${attachmentId}`, executionContext?.userEmail || "", [attachmentId], {})
                     
-                    if (attachmentMetadata && attachmentMetadata.filePath) {
+                    if (vespaResults?.root?.children && vespaResults.root.children.length > 0) {
+                      const fileData = vespaResults.root.children[0] as any
+                      const filePath = fileData.url || fileData.path
+                      
+                    if (filePath) {
                       const fs = await import('fs')
-                      if (fs.existsSync(attachmentMetadata.filePath)) {
+                      if (fs.existsSync(filePath)) {
                         attachments.push({
-                          filename: attachmentMetadata.originalFileName || attachmentMetadata.fileName,
-                          path: attachmentMetadata.filePath,
-                          contentType: attachmentMetadata.mimetype
+                          filename: fileData.title || fileData.name || `attachment-${attachmentId}`,
+                          path: filePath,
+                          contentType: fileData.mime_type || 'application/octet-stream'
                         })
-                        Logger.info(`📎 Adding form attachment: ${attachmentMetadata.originalFileName} from ${attachmentMetadata.filePath}`)
+                        Logger.info(`📎 Adding form attachment: ${fileData.title} from ${filePath}`)
                       }
+                    }
                     }
                   } catch (err) {
                     Logger.warn(`Could not process attachment ${attachmentId}:`, err)
@@ -2937,19 +2944,24 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                 for (const attachment of stepAttachments) {
                   if (attachment?.attachmentId) {
                     try {
-                      const { getAttachmentMetadata } = await import("@/services/attachmentService")
-                      const attachmentMetadata = await getAttachmentMetadata(attachment.attachmentId)
+                      // Get attachment metadata from Vespa instead of file system
+                      const vespaResults = await vespa.searchVespaInFiles(`id:${attachment.attachmentId}`, executionContext?.userEmail || "", [attachment.attachmentId], {})
                       
-                      if (attachmentMetadata && attachmentMetadata.filePath) {
+                      if (vespaResults?.root?.children && vespaResults.root.children.length > 0) {
+                        const fileData = vespaResults.root.children[0] as any
+                        const filePath = fileData.url || fileData.path
+                        
+                      if (filePath) {
                         const fs = await import('fs')
-                        if (fs.existsSync(attachmentMetadata.filePath)) {
+                        if (fs.existsSync(filePath)) {
                           attachments.push({
-                            filename: attachmentMetadata.originalFileName || attachmentMetadata.fileName,
-                            path: attachmentMetadata.filePath,
-                            contentType: attachmentMetadata.mimetype
+                            filename: fileData.title || fileData.name || `attachment-${attachment.attachmentId}`,
+                            path: filePath,
+                            contentType: fileData.mime_type || 'application/octet-stream'
                           })
-                          Logger.info(`📎 Adding direct attachment: ${attachmentMetadata.originalFileName} from ${attachmentMetadata.filePath}`)
+                          Logger.info(`📎 Adding direct attachment: ${fileData.title} from ${filePath}`)
                         }
+                      }
                       }
                     } catch (err) {
                       Logger.warn(`Could not process direct attachment ${attachment.attachmentId}:`, err)
@@ -2979,33 +2991,33 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                 
                 try {
                   // Retrieve file from Vespa using attachment service  
-                  const { sharedVespaService: vespa, fileSchema } = await import('../search/vespaService')
+                  const { sharedVespaService: vespa } = await import('../search/vespaService')
                   
                   Logger.info(`🔍 Retrieving Q&A attachment from Vespa:`, { 
                     attachmentId,
-                    schemaName: fileSchema.name,
-                    documentId: `${fileSchema.name}:${attachmentId}`
+                    schemaName: fileSchema,
+                    documentId: `${fileSchema}:${attachmentId}`
                   })
                   const vespaDoc = await vespa.getDocumentOrNull(fileSchema, attachmentId)
                   Logger.info(`📄 Vespa document result:`, { 
                     found: !!vespaDoc, 
                     hasFields: !!vespaDoc?.fields,
-                    hasContent: !!vespaDoc?.fields?.content,
-                    contentType: typeof vespaDoc?.fields?.content,
-                    contentLength: vespaDoc?.fields?.content ? vespaDoc.fields.content.length : 0,
+                    hasContent: !!(vespaDoc?.fields as any)?.content,
+                    contentType: typeof (vespaDoc?.fields as any)?.content,
+                    contentLength: (vespaDoc?.fields as any)?.content ? (vespaDoc?.fields as any).content.length : 0,
                     documentId: attachmentId,
-                    schemaUsed: fileSchema.name,
+                    schemaUsed: fileSchema,
                     fieldKeys: vespaDoc?.fields ? Object.keys(vespaDoc.fields) : []
                   })
                   
                   if (vespaDoc && vespaDoc.fields) {
                     // For Q&A results, the Base64 content is stored in metadata.base64Content
-                    let base64Content = vespaDoc.fields.content // Try content field first (for regular attachments)
+                    let base64Content = (vespaDoc.fields as any).content // Try content field first (for regular attachments)
                     
                     // If no content field, check metadata for Q&A results
-                    if (!base64Content && vespaDoc.fields.metadata) {
+                    if (!base64Content && (vespaDoc.fields as any).metadata) {
                       try {
-                        const metadata = JSON.parse(vespaDoc.fields.metadata)
+                        const metadata = JSON.parse((vespaDoc.fields as any).metadata)
                         base64Content = metadata.base64Content
                         Logger.info(`📄 Using Base64 content from metadata for Q&A results`)
                       } catch (error) {
@@ -3016,7 +3028,7 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                     Logger.info(`📄 Vespa content info:`, { 
                       contentLength: base64Content ? base64Content.length : 0,
                       contentType: typeof base64Content,
-                      contentSource: vespaDoc.fields.content ? 'content field' : 'metadata field'
+                      contentSource: (vespaDoc.fields as any).content ? 'content field' : 'metadata field'
                     })
                     if (base64Content) {
                       const tmpFilePath = `/tmp/email_attachment_${attachmentId}_${Date.now()}.xlsx`
@@ -7222,7 +7234,7 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
         success: true,
         status: "processing",
         message: "Q&A processing is currently running in background",
-        processingStartedAt: qaStepExecution.startedAt
+        processingStartedAt: qaStepExecution.createdAt
       })
     }
 
