@@ -163,6 +163,7 @@ import {
 } from "./api/ApiHandlers"
 import WhatHappensNextUI from "./WhatHappensNextUI"
 import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
+import QAAgentConfigUI, { QAAgentConfig } from "./QAAgentConfigUI"
 import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import HttpRequestConfigUI, { HttpRequestConfig } from "./HttpRequestConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
@@ -430,6 +431,287 @@ const StepNode: React.FC<NodeProps> = ({
                 return step.description ||
                   aiConfig?.description ||
                   `AI agent to analyze and summarize documents using ${aiConfig?.model || "gpt-oss-120b"}.`
+              })()}
+            </p>
+          </div>
+
+          {/* ReactFlow Handles - invisible but functional */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          {/* Bottom center connection point - visual only */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
+
+          {/* Add Next Step Button */}
+          {hasNext && (
+            <div
+              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+              style={{ top: "calc(100% + 8px)" }}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                const event = new CustomEvent("openWhatHappensNext", {
+                  detail: { nodeId: id },
+                })
+                window.dispatchEvent(event)
+              }}
+            >
+              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+              <div
+                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                style={{
+                  width: "28px",
+                  height: "28px",
+                }}
+              >
+                <svg
+                  className="w-4 h-4 text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  // Special rendering for Q&A Agent nodes and steps with qa_agent tools
+  const hasQAAgentTool =
+    tools && tools.length > 0 && tools[0].type === "qa_agent"
+  if (step.type === "qa_agent" || hasQAAgentTool) {
+    // Get config from step or tool
+    const qaConfig =
+      (step as any).config || (hasQAAgentTool && tools?.[0]?.val) || {}
+    
+    // Check if this is an existing agent or needs configuration
+    const isExistingAgent = qaConfig?.isExistingAgent || 
+      (hasQAAgentTool && tools?.[0]?.val && typeof tools?.[0]?.val === 'object' && (tools?.[0]?.val as any)?.isExistingAgent)
+    const isConfigured = isExistingAgent || 
+      (qaConfig?.name && qaConfig?.name.trim() !== "") ||
+      step.name ||
+      step.description ||
+      (hasQAAgentTool && tools?.[0])
+
+    if (!isConfigured) {
+      // Show only icon when not configured
+      return (
+        <>
+          <div
+            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
+              ? "border-gray-800 dark:border-gray-300 shadow-lg"
+              : "border-gray-300 dark:border-gray-600"
+              }`}
+            style={{
+              width: "80px",
+              height: "80px",
+              borderRadius: "12px",
+              boxShadow: "0 0 0 2px #E2E2E2",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {/* Green bot icon with background for Q&A */}
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-green-50 dark:bg-green-900/50"
+              style={{
+                display: "flex",
+                width: "32px",
+                height: "32px",
+                padding: "6px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "6px",
+              }}
+            >
+              <Bot width={20} height={20} color="#16A34A" />
+            </div>
+
+            {/* ReactFlow Handles - invisible but functional */}
+            <Handle
+              type="target"
+              position={Position.Top}
+              id="top"
+              isConnectable={isConnectable}
+              className="opacity-0"
+            />
+
+            <Handle
+              type="source"
+              position={Position.Bottom}
+              id="bottom"
+              isConnectable={isConnectable}
+              className="opacity-0"
+            />
+
+            {/* Bottom center connection point - visual only */}
+            <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+              <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+            </div>
+
+            {/* Add Next Step Button for unconfigured Q&A Agent */}
+            {hasNext && (
+              <div
+                className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+                style={{ top: "calc(100% + 8px)" }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  const event = new CustomEvent("openWhatHappensNext", {
+                    detail: { nodeId: id },
+                  })
+                  window.dispatchEvent(event)
+                }}
+              >
+                <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+                <div
+                  className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                  }}
+                >
+                  <svg
+                    className="w-4 h-4 text-white"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )
+    }
+
+    // Show full content when configured
+    return (
+      <>
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
+            ? "border-gray-800 dark:border-gray-300 shadow-lg"
+            : "border-gray-300 dark:border-gray-600"
+            }`}
+          style={{
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            boxShadow: "0 0 0 2px #E2E2E2",
+          }}
+          onClick={(e) => {
+            // Don't stop propagation - let the event bubble up to the main node click handler
+            console.log('Q&A Node Clicked - allowing normal node click behavior')
+            // The normal node click handler (onNodeClick) will handle opening the agents sidebar for editing
+          }}
+        >
+          {/* Header with icon and title */}
+          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
+            {/* Green bot icon with background for Q&A */}
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-green-50 dark:bg-green-900/50"
+              style={{
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
+              }}
+            >
+              <Bot width={16} height={16} color="#16A34A" />
+            </div>
+
+            <h3
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
+              style={{
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
+              }}
+            >
+              {(() => {
+                // Check if this is using an existing agent
+                if (isExistingAgent) {
+                  const agentName = qaConfig?.agentName || 
+                    (hasQAAgentTool && tools?.[0]?.val && typeof tools?.[0]?.val === 'object' && (tools?.[0]?.val as any)?.agentName)
+                  return agentName ? `Q&A - ${agentName}` : "Q&A Agent"
+                }
+
+                // First try to get name from workflow_tools[index].val.name
+                if (hasQAAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.name) {
+                  return (tools[0].val as any).name
+                }
+
+                // Try to get name from workflow_tools[index].value.name
+                if (hasQAAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.name) {
+                  return (tools[0] as any).value.name
+                }
+
+                // Fallback to existing logic
+                return step.name || qaConfig?.name || "Q&A Agent"
+              })()}
+            </h3>
+          </div>
+
+          {/* Full-width horizontal divider */}
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
+
+          {/* Description text */}
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {(() => {
+                // Check if this is using an existing agent
+                if (isExistingAgent) {
+                  const agentName = qaConfig?.agentName || 
+                    (hasQAAgentTool && tools?.[0]?.val && typeof tools?.[0]?.val === 'object' && (tools?.[0]?.val as any)?.agentName)
+                  return `Q&A agent processing Excel questions using ${agentName || 'selected agent'}.`
+                }
+
+                // First try to get description from workflow_tools[index].val.description
+                if (hasQAAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                  return (tools[0].val as any).description
+                }
+
+                // Try to get description from workflow_tools[index].value.description
+                if (hasQAAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                  return (tools[0] as any).value.description
+                }
+
+                // Fallback to existing logic
+                return step.description ||
+                  qaConfig?.description ||
+                  `Q&A agent to process Excel questions using ${qaConfig?.model || "vertex-gemini-2-5-flash"}.`
               })()}
             </p>
           </div>
@@ -2281,12 +2563,14 @@ interface WorkflowBuilderProps {
   isEditableMode?: boolean
   builder?: boolean // true for create mode, false for view mode
   onViewExecution?: (executionId: string) => void
+  onWorkflowUpdate?: (updatedWorkflow: Flow | TemplateFlow) => void
 }
 
 
 
 // Internal component that uses ReactFlow hooks
 const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
+  flow,
   onStepClick,
   onBackToWorkflows,
   onRefreshWorkflows,
@@ -2295,6 +2579,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   isEditableMode,
   builder = true, // Default to builder mode
   onViewExecution,
+  onWorkflowUpdate,
 }) => {
   // Console log the builder prop value
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([])
@@ -2336,6 +2621,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   )
   const [jiraInitialConfig, setJiraInitialConfig] = useState<any>(undefined)
   const [jiraToolId, setJiraToolId] = useState<string | undefined>(undefined)
+  const [showQAAgentConfigUI, setShowQAAgentConfigUI] = useState(false)
+  const [selectedQAAgentNodeId, setSelectedQAAgentNodeId] = useState<string | null>(
+    null,
+  )
+  const [qaAgentSelectionMode, setQAAgentSelectionMode] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(100)
   const [showToolsSidebar, setShowToolsSidebar] = useState(false)
   const [selectedNodeTools] = useState<Tool[] | null>(
@@ -2379,6 +2669,24 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const initialEdges: Edge[] = []
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+
+  // Helper function to extract allowed file types from a root node
+  const extractAllowedFileTypesFromRootNode = (rootNode: Node | null): string[] => {
+    console.log("Extracting allowed file types from root node:", rootNode)
+    
+    // Your working implementation with safe navigation
+    try {
+      const tools = rootNode?.data?.tools
+      const fileTypes = tools && Array.isArray(tools) && tools.length > 0 ? tools[0]?.value?.fields?.[0]?.fileTypes : undefined
+      if (fileTypes && Array.isArray(fileTypes) && fileTypes.length > 0) {
+        return fileTypes.filter(type => type && typeof type === 'string' && type.trim() !== '')
+      }
+    } catch (error) {
+      console.warn("Error extracting file types:", error)
+    }
+    
+    return ["txt", "pdf", "docx", "doc", "xlsx", "xls"]
+  }
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
   // Utility function to get tool ID from step ID
@@ -2464,14 +2772,198 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   // helper function to handle agents selection from sidebar   
   const handleOnAgentSelect = useCallback((agent: SelectPublicAgent) => {
-    setSelectedAgentForPreview(agent)
-    setExistingAgentConfigMode("preview")
-    setShowExistingAgentConfigUI(true)
+    if (qaAgentSelectionMode) {
+      // Handle Q&A Agent selection
+      handleQAAgentSelection(agent)
+      setQAAgentSelectionMode(false)
+    } else {
+      // Handle regular agent selection
+      setSelectedAgentForPreview(agent)
+      setExistingAgentConfigMode("preview")
+      setShowExistingAgentConfigUI(true)
+    }
 
     // Close the agents sidebar
     setShowAgentsSidebar(false)
-  }, [])
+  }, [qaAgentSelectionMode])
 
+  const handleQAAgentSelection = useCallback((agent: SelectPublicAgent) => {
+    if (selectedNodeForNext) {
+      const targetNode = nodes.find((n) => n.id === selectedNodeForNext)
+      if (!targetNode) return
+
+      // Check if we're updating an existing Q&A node or creating a new one
+      const tools = targetNode.data?.tools as Tool[] | undefined
+      const isExistingQANode = tools && tools.length > 0 && tools[0].type === "qa_agent"
+      
+      if (isExistingQANode) {
+        // Update existing Q&A node with new agent selection
+        const qaAgentTool = {
+          id: tools[0].id || `tool-${selectedNodeForNext}`,
+          type: "qa_agent",
+          val: {
+            agentId: agent.externalId,
+            agentName: agent.name,
+            isExistingAgent: true,
+          },
+          value: {
+            agentId: agent.externalId,
+            agentName: agent.name,
+            isExistingAgent: true,
+          },
+          config: {
+            agentId: agent.externalId,
+            name: agent.name,
+            description: `Q&A agent using ${agent.name}`,
+            isExistingAgent: true,
+          },
+        }
+
+        // Update the existing node
+        setNodes((prevNodes) =>
+          prevNodes.map((node) =>
+            node.id === selectedNodeForNext
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step as any),
+                      name: `Q&A - ${agent.name}`,
+                      description: `Q&A agent using ${agent.name}`,
+                      config: {
+                        ...(node.data.step as any)?.config,
+                        agentId: agent.externalId,
+                        agentName: agent.name,
+                        isExistingAgent: true,
+                      },
+                    },
+                    tools: [qaAgentTool],
+                  },
+                  selected: false,
+                }
+              : { ...node, selected: false }
+          )
+        )
+        
+        // Reset state for existing node update
+        setSelectedNodeForNext(null)
+      } else {
+        // Create new Q&A Agent node using the selected agent
+        const newNodeId = `qa-agent-${nodeCounter}`
+
+        // Create the tool object for Q&A Agent using the selected agent
+        const qaAgentTool = {
+          id: `tool-${newNodeId}`,
+          type: "qa_agent",
+          val: {
+            agentId: agent.externalId,
+            agentName: agent.name,
+            isExistingAgent: true,
+          },
+          value: {
+            agentId: agent.externalId,
+            agentName: agent.name,
+            isExistingAgent: true,
+          },
+          config: {
+            agentId: agent.externalId,
+            name: agent.name,
+            description: `Q&A agent using ${agent.name}`,
+            isExistingAgent: true,
+          },
+        }
+
+        // Create new node positioned below the source node
+        const newNode = {
+          id: newNodeId,
+          type: "stepNode",
+          position: {
+            x: 400, // Consistent X position for perfect straight line alignment
+            y: targetNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+          },
+          data: {
+            step: {
+              id: newNodeId,
+              name: `Q&A - ${agent.name}`,
+              description: `Q&A agent using ${agent.name}`,
+              type: "automated",
+              status: "pending",
+              contents: [],
+              config: {
+                agentId: agent.externalId,
+                agentName: agent.name,
+                isExistingAgent: true,
+              },
+            },
+            tools: [qaAgentTool],
+            isActive: false,
+            isCompleted: false,
+            hasNext: true, // Show + button on new step
+          },
+          draggable: true,
+          selected: true, // Select the newly created node
+        }
+
+        // Create edge connecting source to new node
+        const newEdge = {
+          id: `${selectedNodeForNext}-${newNodeId}`,
+          source: selectedNodeForNext,
+          target: newNodeId,
+          type: "smoothstep",
+          animated: false,
+          style: {
+            stroke: "#D1D5DB",
+            strokeWidth: 2,
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+          },
+          pathOptions: {
+            borderRadius: 20,
+            offset: 20,
+          },
+          markerEnd: {
+            type: "arrowclosed" as const,
+            color: "#D1D5DB",
+          },
+          sourceHandle: "bottom",
+          targetHandle: "top",
+        } as any
+
+        // Update nodes and edges
+        setNodes((prevNodes) => [...prevNodes, newNode])
+        setEdges((prevEdges) => [...prevEdges, newEdge])
+        setNodeCounter((prev) => prev + 1)
+
+        // Remove hasNext from source node since it now has a next step
+        setNodes((prevNodes) =>
+          prevNodes.map((node) =>
+            node.id === selectedNodeForNext
+              ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  hasNext: false,
+                },
+                selected: false, // Deselect source node
+              }
+              : node.id === newNodeId
+                ? node // Keep new node selected
+                : { ...node, selected: false }, // Deselect all other nodes
+          ),
+        )
+
+        // Reset state
+        setSelectedNodeForNext(null)
+
+        // Reset zoom and auto-fit workflow after creating node
+        setZoomLevel(100)
+        setTimeout(() => {
+          smartFitWorkflow()
+        }, 50)
+      }
+    }
+  }, [selectedNodeForNext, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow])
 
   const handleSaveExistingAgentToCanvas = useCallback((agent: SelectPublicAgent) => {
     if (selectedNodeForNext) {
@@ -2947,6 +3439,36 @@ case "http_request":
           }
           break
 
+        case "qa_agent":
+          // Check if this is an existing agent or workflow agent
+          const qaTools = node.data?.tools as Tool[] | undefined
+          const isExistingQAAgent = qaTools?.[0]?.config?.isExistingAgent
+          const hasQAAgentTool = qaTools && qaTools.length > 0 && qaTools[0].type === "qa_agent"
+          
+          // Check if Q&A agent is configured (has an agent assigned)
+          const qaConfig = (node.data?.step as any)?.config || (hasQAAgentTool && qaTools?.[0]?.val) || {}
+          const isQAConfigured = isExistingQAAgent || 
+            (qaConfig?.agentId && qaConfig?.agentName) ||
+            (hasQAAgentTool && qaTools?.[0]?.val && typeof qaTools?.[0]?.val === 'object' && (qaTools?.[0]?.val as any)?.agentId)
+
+          
+          if (isExistingQAAgent && isQAConfigured) {
+            // ✅ Open in "view" mode (no Save button) - same as AI agents
+            setSelectedExistingAgentNodeId(node.id)
+            setExistingAgentConfigMode("view")
+            setShowExistingAgentConfigUI(true)
+          } else if (isQAConfigured) {
+            // ✅ Show Q&A agent config UI if configured
+            setSelectedQAAgentNodeId(node.id)
+            setShowQAAgentConfigUI(true)
+          } else {
+            // ✅ Show agents sidebar for agent selection if not configured
+            setSelectedNodeForNext(node.id)
+            setShowAgentsSidebar(true)
+            setQAAgentSelectionMode(true)
+          }
+          break
+
 
 
         default:
@@ -3182,6 +3704,7 @@ case "http_request":
       "openTriggersSidebar" as any,
       handleOpenTriggersSidebar,
     )
+
 
     return () => {
       window.removeEventListener(
@@ -3451,6 +3974,15 @@ case "http_request":
         // Note: Keep WhatHappensNextUI visible in background (z-40)
         // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
       }
+    } else if (actionId === "qa_agent") {
+      // When Q&A Agent is selected, show the agents sidebar for Q&A agent selection
+      if (selectedNodeForNext) {
+        setShowAgentsSidebar(true)
+        // Set a flag to indicate this is for Q&A agent selection
+        setQAAgentSelectionMode(true)
+        // Close the WhatHappensNextUI since we're opening the agents sidebar
+        setShowWhatHappensNextUI(false)
+      }
     } else if (actionId === "email") {
       // When Email is selected from WhatHappensNextUI, keep it visible in background
       if (selectedNodeForNext) {
@@ -3470,9 +4002,10 @@ case "http_request":
         // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
       }
     } else if (actionId === "select_agents") {
-      // When Select Agents is selected, show the agents sidebar
+      // When Select Agents is selected, show the agents sidebar for regular agent selection
       if (selectedNodeForNext) {
         setShowAgentsSidebar(true)
+        // Do NOT set QAAgentSelectionMode - this creates regular agent nodes, not Q&A nodes
         // Close the WhatHappensNextUI since we're opening a different sidebar
         setShowWhatHappensNextUI(false)
       }
@@ -3498,6 +4031,26 @@ case "http_request":
       setSelectedNodes([])
     }
   }, [selectedAgentNodeId, selectedNodeForNext, setNodes])
+
+  const handleQAAgentConfigBack = useCallback(() => {
+    setShowQAAgentConfigUI(false)
+
+    // If we're in creation mode (pending), go back to the "What Happens Next" menu
+    if (selectedQAAgentNodeId === "pending" && selectedNodeForNext) {
+      // Ensure WhatHappensNextUI is visible when we go back
+      setShowWhatHappensNextUI(true)
+      setSelectedQAAgentNodeId(null)
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedQAAgentNodeId(null)
+      setSelectedNodeForNext(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) =>
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedQAAgentNodeId, selectedNodeForNext, setNodes])
 
   const handleAIAgentConfigSave = useCallback(
     (agentConfig: AIAgentConfig) => {
@@ -3660,6 +4213,161 @@ case "http_request":
       setSelectedNodeForNext(null)
     },
     [selectedAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
+  )
+
+  const handleQAAgentConfigSave = useCallback(
+    (agentConfig: QAAgentConfig) => {
+      if (selectedQAAgentNodeId === "pending" && selectedNodeForNext) {
+        // Create new Q&A Agent node when saving configuration
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        if (sourceNode) {
+          const newNodeId = `qa-agent-${nodeCounter}`
+
+          // Default description for Q&A agent
+          const formattedDescription = "Q&A agent to process Excel questions"
+
+          // Create the tool object for Q&A Agent
+          const qaAgentTool = {
+            id: `tool-${newNodeId}`,
+            type: "qa_agent",
+            val: agentConfig, // Use 'val' to match template structure
+            value: agentConfig, // Also include 'value' for compatibility
+            config: {
+              model: agentConfig.model,
+              name: agentConfig.name,
+              description: formattedDescription,
+            },
+          }
+
+          // Create new node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: agentConfig.name,
+                description: formattedDescription,
+                type: "automated",
+                status: "pending",
+                contents: [],
+                config: {
+                  ...agentConfig,
+                  description: formattedDescription,
+                },
+              },
+              tools: [qaAgentTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + button on new step
+            },
+            draggable: true,
+            selected: true, // Select the newly created node
+          }
+
+          // Create edge connecting source to new node
+          const newEdge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "smoothstep",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            pathOptions: {
+              borderRadius: 20,
+              offset: 20,
+            },
+            markerEnd: {
+              type: "arrowclosed" as const,
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          } as any
+
+          // Update nodes and edges
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node since it now has a next step
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    hasNext: false,
+                  },
+                  selected: false, // Deselect source node
+                }
+                : node.id === newNodeId
+                  ? node // Keep new node selected
+                  : { ...node, selected: false }, // Deselect all other nodes
+            ),
+          )
+        }
+      } else if (selectedQAAgentNodeId && selectedQAAgentNodeId !== "pending") {
+        // Update existing Q&A Agent node with the configuration
+        const formattedDescription = "Q&A agent to process Excel questions"
+
+        const qaAgentTool = {
+          id: getToolIdFromStepId(selectedQAAgentNodeId),
+          type: "qa_agent",
+          val: agentConfig,
+          value: agentConfig,
+          config: {
+            model: agentConfig.model,
+            name: agentConfig.name,
+            description: formattedDescription,
+          },
+        }
+
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === selectedQAAgentNodeId
+              ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  step: {
+                    ...(node.data.step || {}),
+                    name: agentConfig.name,
+                    config: {
+                      ...agentConfig,
+                      description: formattedDescription,
+                    },
+                  },
+                  tools: [qaAgentTool],
+                  hasNext: !edges.some(edge => edge.source === selectedQAAgentNodeId),
+                },
+              }
+              : node,
+          ),
+        )
+      }
+
+      // Reset zoom and auto-fit workflow after saving configuration
+      setZoomLevel(100)
+      setTimeout(() => {
+        smartFitWorkflow()
+      }, 50)
+
+      setShowQAAgentConfigUI(false)
+      setSelectedQAAgentNodeId(null)
+      setSelectedNodeForNext(null)
+    },
+    [selectedQAAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
   )
 
   const handleEmailConfigBack = useCallback(() => {
@@ -4807,7 +5515,7 @@ const handleWebhookConfigSave = useCallback(
         />
 
         {/* AI Agent Config Sidebar */}
-        {!showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showJiraConfigUI && (
+        {!showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showJiraConfigUI && !showQAAgentConfigUI && (
           <AIAgentConfigUI
             isVisible={showAIAgentConfigUI}
             onBack={handleAIAgentConfigBack}
@@ -4843,7 +5551,7 @@ const handleWebhookConfigSave = useCallback(
             }
           />
         )}
-        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && (
+        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showQAAgentConfigUI && (
           <ExistingAgentConfigUI
             isVisible={showExistingAgentConfigUI}
             mode={existingAgentConfigMode}
@@ -4875,7 +5583,12 @@ const handleWebhookConfigSave = useCallback(
         {!showWhatHappensNextUI &&
           !showAIAgentConfigUI &&
           !showEmailConfigUI &&
-          !showOnFormSubmissionUI && (
+          !showOnFormSubmissionUI &&
+          !showExistingAgentConfigUI &&
+          !showWebhookConfigUI &&
+          !showHttpRequestConfigUI &&
+          !showJiraConfigUI &&
+          !showQAAgentConfigUI && (
             <AgentsSidebar
               isVisible={showAgentsSidebar}
               onClose={() => {
@@ -4890,7 +5603,7 @@ const handleWebhookConfigSave = useCallback(
           )}
 
         {/* Email Config Sidebar */}
-        {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showJiraConfigUI && (
+        {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showJiraConfigUI && !showQAAgentConfigUI && (
           <EmailConfigUI
             isVisible={showEmailConfigUI}
             onBack={handleEmailConfigBack}
@@ -4927,8 +5640,46 @@ const handleWebhookConfigSave = useCallback(
           />
         )}
 
+        {/* Q&A Agent Config Sidebar */}
+        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showJiraConfigUI && (
+          <QAAgentConfigUI
+            isVisible={showQAAgentConfigUI}
+            onBack={handleQAAgentConfigBack}
+            onClose={() => {
+              setShowQAAgentConfigUI(false)
+              setSelectedQAAgentNodeId(null)
+              setSelectedNodeForNext(null)
+              setNodes((prevNodes) =>
+                prevNodes.map(node => ({ ...node, selected: false }))
+              )
+              setSelectedNodes([])
+            }}
+            onSave={handleQAAgentConfigSave}
+            showBackButton={selectedQAAgentNodeId === "pending"}
+            builder={builder}
+            toolData={
+              selectedQAAgentNodeId
+                ? (() => {
+                  const node = nodes.find((n) => n.id === selectedQAAgentNodeId)
+                  const tools = node?.data?.tools as Tool[] | undefined
+                  return tools && tools.length > 0 ? tools[0] : undefined
+                })()
+                : undefined
+            }
+            toolId={selectedQAAgentNodeId ? getToolIdFromStepId(selectedQAAgentNodeId) : undefined}
+            stepData={
+              selectedQAAgentNodeId
+                ? (() => {
+                  const node = nodes.find((n) => n.id === selectedQAAgentNodeId)
+                  return node?.data?.step
+                })()
+                : undefined
+            }
+          />
+        )}
+
         {/* HTTP Request Config Sidebar */}
-        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showWebhookConfigUI && (
+        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showWebhookConfigUI && !showQAAgentConfigUI && (
           <HttpRequestConfigUI
             isVisible={showHttpRequestConfigUI}
             onBack={handleHttpRequestConfigBack}
@@ -5089,7 +5840,18 @@ const handleWebhookConfigSave = useCallback(
             workflowName={template?.name || "Custom Workflow"}
             workflowDescription={template?.description || "User-created workflow"}
             templateId={templateId}
-            workflowTemplate={templateId ? template || undefined : undefined}
+            allowedFileTypes={extractAllowedFileTypesFromRootNode(
+              nodes.find(node => 
+                (node.type === 'form' || node.type === 'stepNode') && node.data
+              ) || null
+            )}
+            workflowData={{
+              name: template?.name || "Custom Workflow",
+              description: template?.description || "User-created workflow",
+              nodes: nodes,
+              edges: edges,
+              metadata: template
+            }}
             onViewExecution={onViewExecution}
           />
         )
@@ -5143,6 +5905,7 @@ const handleWebhookConfigSave = useCallback(
           setPendingRefreshCallback(null)
         }}
       />
+
     </div>
   )
 }

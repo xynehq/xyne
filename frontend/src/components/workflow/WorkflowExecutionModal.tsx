@@ -7,16 +7,9 @@ import { workflowExecutionsAPI } from "./api/ApiHandlers"
 import { api } from "../../api"
 import { WorkflowExecutionModalProps } from "./Types"
 
-const SUPPORTED_FILE_TYPES = {
-  // Text files
-  "text/plain": "text",
-  // Documents
-  "application/pdf": "PDF",
-  "application/msword": "Word",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
-}
 
 const MAX_FILE_SIZE = 40 * 1024 * 1024 // 40MB
+
 
 export function WorkflowExecutionModal({
   isOpen,
@@ -24,6 +17,7 @@ export function WorkflowExecutionModal({
   workflowName,
   workflowDescription,
   templateId,
+  allowedFileTypes = ["txt", "pdf", "docx", "doc", "xlsx", "xls"],
   onViewExecution,
 }: WorkflowExecutionModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -41,6 +35,13 @@ export function WorkflowExecutionModal({
   const [maxRetries] = useState(3)
   const [executionId, setExecutionId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Use provided allowedFileTypes with validation and default fallback
+  const fileTypes = (allowedFileTypes && allowedFileTypes.length > 0) 
+    ? allowedFileTypes.filter(type => type && type.trim() !== '') 
+    : ["txt", "pdf", "docx", "doc", "xlsx", "xls"]
+  const acceptAttribute = fileTypes.map(type => `.${type}`).join(',')
+  const supportedFormatsText = fileTypes.join(', ')
 
   // Cleanup polling on component unmount
   useEffect(() => {
@@ -136,9 +137,10 @@ export function WorkflowExecutionModal({
       return `File size exceeds 40MB limit. Current size: ${(file.size / 1024 / 1024).toFixed(1)}MB`
     }
 
-    // Check file type
-    if (!SUPPORTED_FILE_TYPES[file.type as keyof typeof SUPPORTED_FILE_TYPES]) {
-      return `Unsupported file type: ${file.type}. Supported formats include text, PDF, and Word files.`
+    // Check file type using dynamic allowed types
+    const fileExtension = file.name.split('.').pop()?.toLowerCase()
+    if (!fileExtension || !fileTypes.includes(fileExtension)) {
+      return `Unsupported file type. Please select a file with one of these formats: ${supportedFormatsText}`
     }
 
     return null
@@ -336,7 +338,50 @@ export function WorkflowExecutionModal({
         // Reset retry count on successful request
         currentRetryCount = 0        
 
-        if (statusData.status === "completed") {
+        if (statusData.status === "completed" || statusData.status === "active") {
+          // Check if any step is awaiting user selection for Q&A
+          const qaStepAwaitingSelection = statusData.stepExecutions?.find((step: any) => {
+            const toolExecs = statusData.toolExecutions?.filter((t: any) => 
+              step.toolExecIds?.includes(t.id) && t.toolType === 'qa_agent'
+            ) || []
+            return toolExecs.some((tool: any) => tool.result?.awaitingUserSelection)
+          })
+          
+          if (qaStepAwaitingSelection) {
+            // Find the Q&A tool execution with awaiting selection
+            const qaToolExec = statusData.toolExecutions?.find((t: any) => 
+              qaStepAwaitingSelection.toolExecIds?.includes(t.id) && 
+              t.toolType === 'qa_agent' && 
+              t.result?.awaitingUserSelection
+            )
+            
+            if (qaToolExec) {
+              console.log("🎯 Q&A tool execution found with awaitingUserSelection - triggering modal", qaToolExec)
+              stopPolling()
+              setIsProcessing(false)
+              
+              // Trigger Q&A execution modal
+              const event = new CustomEvent("openQAExecution", {
+                detail: {
+                  nodeId: qaStepAwaitingSelection.id,
+                  stepData: {
+                    ...qaStepAwaitingSelection,
+                    result: qaToolExec.result,
+                    executionId: executionId
+                  },
+                  toolData: qaToolExec,
+                  workflowData: { execution: statusData }
+                }
+              })
+              console.log("🚀 Dispatching openQAExecution event", event.detail)
+              window.dispatchEvent(event)
+              
+              // Close the execution modal
+              onClose()
+              return
+            }
+          }
+          
           stopPolling()
           setIsProcessing(false)
           setIsCompleted(true)
@@ -594,7 +639,7 @@ export function WorkflowExecutionModal({
 
                     {/* Supported formats */}
                     <p className="text-gray-500 dark:text-gray-500 text-sm text-center leading-relaxed">
-                      Supported formats include text, PDF, and Word files
+                      Supported formats: {supportedFormatsText}
                       <br />
                       (max 40MB per file).
                     </p>
@@ -607,7 +652,7 @@ export function WorkflowExecutionModal({
                 type="file"
                 onChange={handleFileSelect}
                 className="hidden"
-                accept=".txt,.pdf,.doc,.docx"
+                accept={acceptAttribute}
               />
 
               {/* Error Display */}

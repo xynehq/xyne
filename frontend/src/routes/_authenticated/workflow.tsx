@@ -1024,6 +1024,21 @@ function WorkflowComponent() {
                   }}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
+                  onWorkflowUpdate={(updatedWorkflow) => {
+                    // Update the selectedTemplate with fresh data from polling
+                    console.log("🔄 Parent received workflow update:", updatedWorkflow)
+                    setSelectedTemplate({
+                      ...updatedWorkflow,
+                      description: updatedWorkflow.description || '',
+                      version: updatedWorkflow.version || '1.0',
+                      config: updatedWorkflow.config || {},
+                      isPublic: selectedTemplate?.isPublic || false,
+                      rootWorkflowStepTemplateId: (updatedWorkflow as any).rootWorkflowStepTemplateId || '',
+                      createdAt: (updatedWorkflow as any).createdAt || new Date().toISOString(),
+                      updatedAt: (updatedWorkflow as any).updatedAt || new Date().toISOString(),
+                      rootStep: (updatedWorkflow as any).rootStep || null
+                    })
+                  }}
                 />
               ) : (
                 <WorkflowBuilder 
@@ -1040,6 +1055,12 @@ function WorkflowComponent() {
                   isEditableMode={selectedTemplate === null}
                   builder={isBuilderMode}
                   onViewExecution={handleViewExecution}
+                  onWorkflowUpdate={(updatedWorkflow) => {
+                    // Update the flow with fresh data from polling (for WorkflowBuilder)
+                    console.log("🔄 Parent received workflow update (Builder):", updatedWorkflow)
+                    // Note: WorkflowBuilder uses 'flow' prop differently, so this might need different handling
+                    // For now, just log it to see if it's called
+                  }}
                 />
               )}
             </div>
