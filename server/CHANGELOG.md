@@ -1,3 +1,10 @@
+## [3.31.2](https://github.com/xynehq/xyne/compare/v3.31.1...v3.31.2) (2025-11-12)
+
+
+### Bug Fixes
+
+* **types:** Made the ownerEmail optional ([#1215](https://github.com/xynehq/xyne/issues/1215)) ([40c0c96](https://github.com/xynehq/xyne/commit/40c0c9657447c919ca805e31be0f5a9666319b4d))
+
 ## [3.31.1](https://github.com/xynehq/xyne/compare/v3.31.0...v3.31.1) (2025-11-12)
 
 
