@@ -13,6 +13,7 @@ import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { and, asc, desc, eq, isNull, sql, or, inArray } from "drizzle-orm"
 import { UploadStatus } from "@/shared/types"
+import { getUserByEmail } from "./user"
 
 // Collection CRUD operations
 export const createCollection = async (
@@ -1012,11 +1013,18 @@ export const updateParentStatus = async (
   }
 }
 
-export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
+export const getRecordBypath = async (
+  path: string,
+  trx: TxnOrClient,
+  ownerEmail: string,
+) => {
   let collectionName: string
   let directoryPath: string
   let currItem: string
-
+  let user = await getUserByEmail(trx, ownerEmail)
+  if (!user[0]) {
+    throw new Error("Invalid User")
+  }
   // Remove leading slash if present
   const cleanPath = path.startsWith("/") ? path.substring(1) : path
   const segments = cleanPath.split("/")
@@ -1049,7 +1057,11 @@ export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
     .select({ id: collections.id })
     .from(collections)
     .where(
-      and(eq(collections.name, collectionName), isNull(collections.deletedAt)),
+      and(
+        eq(collections.name, collectionName),
+        eq(collections.ownerId, user[0].id),
+        isNull(collections.deletedAt),
+      ),
     )
 
   if (!collection) {
