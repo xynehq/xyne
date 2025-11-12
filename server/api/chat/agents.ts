@@ -3039,7 +3039,7 @@ export const AgentMessageApi = async (c: Context) => {
     let ids
     let isValidPath: boolean = false
     if (path) {
-      ids = await getRecordBypath(path, db, ownerEmail)
+      ids = await getRecordBypath(path, db, ownerEmail || "")
       if (ids != null) {
         // Check if the vespaId exists in the agent's app integrations using our validation function
         if (!(await validateVespaIdInAgentIntegrations(agentForDb, ids))) {
