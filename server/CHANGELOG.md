@@ -1,3 +1,10 @@
+## [3.31.1](https://github.com/xynehq/xyne/compare/v3.31.0...v3.31.1) (2025-11-12)
+
+
+### Bug Fixes
+
+* **pathBasedRag:** Add ownerEmail check to access correct collection ([#1212](https://github.com/xynehq/xyne/issues/1212)) ([1f10488](https://github.com/xynehq/xyne/commit/1f10488c154b10f8d5600ce38ff8c68932733508))
+
 # [3.31.0](https://github.com/xynehq/xyne/compare/v3.30.13...v3.31.0) (2025-11-12)
 
 
