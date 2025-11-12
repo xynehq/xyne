@@ -14,6 +14,7 @@ import XyneIcon from "@/assets/assistant-logo.svg?react"
 import SvgIcon from "@/assets/mcp.svg?react"
 import ExpandIcon from "@/assets/expand-text-input.svg?react"
 import { textToCitationIndex } from "@/utils/chatUtils.tsx"
+import { ClarificationRequest } from "@/hooks/useChatStream"
 
 // Simple hash function to generate stable IDs from content
 const generateStableId = (content: string, index: number): number => {
@@ -42,18 +43,6 @@ interface ReasoningStep {
   action?: string
   isIterationSummary?: boolean
   iterationToolName?: string
-}
-
-interface ClarificationOption {
-  id: string
-  label: string
-}
-
-interface ClarificationRequest {
-  clarificationId: string
-  question: string
-  options: ClarificationOption[]
-  context?: any
 }
 
 interface EnhancedReasoningProps {
