@@ -1,3 +1,10 @@
+# [3.31.0](https://github.com/xynehq/xyne/compare/v3.30.13...v3.31.0) (2025-11-12)
+
+
+### Features
+
+* **agentic:** Added HITL support ([#1205](https://github.com/xynehq/xyne/issues/1205)) ([5633ae5](https://github.com/xynehq/xyne/commit/5633ae5097ceaf6174d0bc6f6bf2418464894a7d))
+
 ## [3.30.13](https://github.com/xynehq/xyne/compare/v3.30.12...v3.30.13) (2025-11-11)
 
 
