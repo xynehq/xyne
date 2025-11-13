@@ -54,10 +54,6 @@ import {
   type JAFAdapterCtx,
 } from "@/api/chat/jaf-adapter"
 import { fallbackTool } from "./tools/global"
-import {
-  addErrMessageToMessage,
-  checkAndYieldCitationsForAgent,
-} from "./utils"
 import { AgentSteps } from "./agentSteps"
 const {
   JwtPayloadKey,

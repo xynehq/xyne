@@ -37,8 +37,8 @@ import {
   KnowledgeBaseEntity,
   MailAttachmentEntity,
   WebSearchEntity,
-  AttachmentEntity,
   type MailParticipant,
+  AttachmentEntity,
 } from "@xyne/vespa-ts/types"
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
@@ -1365,7 +1365,6 @@ export const checkAndYieldCitationsForAgent = async function* (
   const tracer = getTracer("chat")
   const span = tracer.startSpan("checkAndYieldCitationsForAgent")
   const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
-
   try {
     span.setAttribute("text_input_length", textInput.length)
     span.setAttribute("results_count", results.length)

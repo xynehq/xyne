@@ -92,7 +92,7 @@ export class AgentSteps {
                     messages: [],
                 },
             )
-            summarySpan.setAttribute("model_id", defaultFastModel)
+            summarySpan.setAttribute("model_id", (modelId as Models) || defaultFastModel)
             summarySpan.end()
 
             const summaryResponse = summary.text || ""
@@ -262,7 +262,7 @@ export class AgentSteps {
         reasoningStep: AgentReasoningStep,
         userQuery: string,
     ): Promise<void> {
-        const stepId = `step_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        const stepId = `step_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
         const timestamp = Date.now()
 
         if (reasoningStep.type === AgentReasoningStepType.Iteration) {
