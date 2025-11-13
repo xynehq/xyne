@@ -1,3 +1,10 @@
+## [3.31.3](https://github.com/xynehq/xyne/compare/v3.31.2...v3.31.3) (2025-11-13)
+
+
+### Bug Fixes
+
+* **deps:** fix circular deps error ([#1218](https://github.com/xynehq/xyne/issues/1218)) ([a3880d5](https://github.com/xynehq/xyne/commit/a3880d5f90846613647dab299325c28c435eae2c))
+
 ## [3.31.2](https://github.com/xynehq/xyne/compare/v3.31.1...v3.31.2) (2025-11-12)
 
 

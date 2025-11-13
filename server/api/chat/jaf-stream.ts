@@ -6,35 +6,35 @@ import {
 
 import { db } from "@/db/client"
 import { insertMessage, getChatMessagesWithAuth } from "@/db/message"
-import { getToolsByConnectorId } from "@/db/tool"
-import { type SelectChat, type SelectMessage } from "@/db/schema"
-import { getLogger, getLoggerWithChild } from "@/logger"
+import { type SelectChat } from "@/db/schema"
+import { getLogger } from "@/logger"
 import {
   AgentReasoningStepType,
   ApiKeyScopes,
   ChatSSEvents,
   type AgentReasoningStep,
 } from "@/shared/types"
-import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
-import { getErrorMessage, splitGroupedCitationsWithSpaces } from "@/utils"
+import { MessageRole, Subsystem } from "@/types"
+import { getErrorMessage } from "@/utils"
 
 import { SSEStreamingApi, streamSSE } from "hono/streaming" // Import SSEStreamingApi
 import { type Span, type Tracer } from "@/tracer"
 
 import { insertChatTrace } from "@/db/chatTrace"
-
 import { activeStreams } from "./stream"
 import {
   type Citation,
   type ImageCitation,
   type MinimalAgentFragment,
 } from "./types"
-import { processMessage } from "./utils"
+import {
+  addErrMessageToMessage,
+  checkAndYieldCitationsForAgent,
+  processMessage,
+} from "./utils"
 import config from "@/config"
 import {
   runStream,
-  generateRunId,
-  generateTraceId,
   getTextContent,
   type Agent as JAFAgent,
   type Message as JAFMessage,
@@ -48,24 +48,12 @@ import {
   type ToolCall,
   InterruptionStatus,
 } from "@xynehq/jaf"
-// Replace LiteLLM provider with Xyne-backed JAF provider
-import { makeXyneJAFProvider } from "./jaf-provider"
 import {
   buildMCPJAFTools,
   type FinalToolsList as JAFinalToolsList,
   type JAFAdapterCtx,
-  buildToolsOverview,
-  buildContextSection,
 } from "@/api/chat/jaf-adapter"
-import { getRecordBypath } from "@/db/knowledgeBase"
-import { getDateForAI } from "@/utils/index"
-import { validateVespaIdInAgentIntegrations } from "@/search/utils"
-import { getAuth, safeGet } from "../agent"
-import { applyFollowUpContext } from "@/utils/parseAttachment"
-import { expandSheetIds } from "@/search/utils"
-import { googleTools, searchGlobalTool } from "@/api/chat/tools/index"
 import { fallbackTool } from "./tools/global"
-import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
 import {
   addErrMessageToMessage,
   checkAndYieldCitationsForAgent,
@@ -112,7 +100,6 @@ type ChatContext = {
 }
 
 const Logger = getLogger(Subsystem.Chat)
-const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 export const JafStreamer = async (
   runState: JAFRunState<JAFAdapterCtx>,
   runConfig: JAFRunConfig<JAFAdapterCtx>,

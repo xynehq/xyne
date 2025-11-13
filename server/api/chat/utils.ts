@@ -50,7 +50,11 @@ import {
   type AgentReasoningStep,
   type AttachmentMetadata,
 } from "@/shared/types"
-import type { Citation, MinimalAgentFragment, ImageCitation } from "@/api/chat/types"
+import type {
+  Citation,
+  ImageCitation,
+  MinimalAgentFragment,
+} from "@/api/chat/types"
 import { getFolderItems, SearchEmailThreads } from "@/search/vespa"
 import { getLoggerWithChild, getLogger } from "@/logger"
 import { getTracer, type Span } from "@/tracer"
@@ -1360,7 +1364,6 @@ export const checkAndYieldCitationsForAgent = async function* (
 > {
   const tracer = getTracer("chat")
   const span = tracer.startSpan("checkAndYieldCitationsForAgent")
-  const Logger = getLogger(Subsystem.Chat)
   const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
   try {
@@ -1389,7 +1392,7 @@ export const checkAndYieldCitationsForAgent = async function* (
           const item = results[citationIndex - 1]
 
           if (!item?.source?.docId || !item.source?.url) {
-            Logger.info(
+            loggerWithChild({ email: email }).info(
               "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
             )
             continue
