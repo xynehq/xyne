@@ -1,3 +1,52 @@
+## [3.31.2](https://github.com/xynehq/xyne/compare/v3.31.1...v3.31.2) (2025-11-12)
+
+
+### Bug Fixes
+
+* **types:** Made the ownerEmail optional ([#1215](https://github.com/xynehq/xyne/issues/1215)) ([40c0c96](https://github.com/xynehq/xyne/commit/40c0c9657447c919ca805e31be0f5a9666319b4d))
+
+## [3.31.1](https://github.com/xynehq/xyne/compare/v3.31.0...v3.31.1) (2025-11-12)
+
+
+### Bug Fixes
+
+* **pathBasedRag:** Add ownerEmail check to access correct collection ([#1212](https://github.com/xynehq/xyne/issues/1212)) ([1f10488](https://github.com/xynehq/xyne/commit/1f10488c154b10f8d5600ce38ff8c68932733508))
+
+# [3.31.0](https://github.com/xynehq/xyne/compare/v3.30.13...v3.31.0) (2025-11-12)
+
+
+### Features
+
+* **agentic:** Added HITL support ([#1205](https://github.com/xynehq/xyne/issues/1205)) ([5633ae5](https://github.com/xynehq/xyne/commit/5633ae5097ceaf6174d0bc6f6bf2418464894a7d))
+
+## [3.30.13](https://github.com/xynehq/xyne/compare/v3.30.12...v3.30.13) (2025-11-11)
+
+
+### Bug Fixes
+
+* **mimeMap:** Add the mapping for md files ([#1207](https://github.com/xynehq/xyne/issues/1207)) ([32a9dc7](https://github.com/xynehq/xyne/commit/32a9dc7c433e48245847ad5aa7f9846747034c5c))
+
+## [3.30.12](https://github.com/xynehq/xyne/compare/v3.30.11...v3.30.12) (2025-11-11)
+
+
+### Bug Fixes
+
+* sending workflowId ([#1208](https://github.com/xynehq/xyne/issues/1208)) ([e01b8ca](https://github.com/xynehq/xyne/commit/e01b8ca882226e5a97690e99f44588c7f3ffdc57))
+
+## [3.30.11](https://github.com/xynehq/xyne/compare/v3.30.10...v3.30.11) (2025-11-10)
+
+
+### Bug Fixes
+
+* Webhook Node conflicted issues fixed and removed logs ([#1201](https://github.com/xynehq/xyne/issues/1201)) ([5e60fec](https://github.com/xynehq/xyne/commit/5e60fec41a88373599cdb11259bf2012108d2ec7))
+
+## [3.30.10](https://github.com/xynehq/xyne/compare/v3.30.9...v3.30.10) (2025-11-10)
+
+
+### Bug Fixes
+
+* zod validation issue in the MCP connector for stdio ([#1203](https://github.com/xynehq/xyne/issues/1203)) ([762a99b](https://github.com/xynehq/xyne/commit/762a99b9ac3b25c9dc7d1faa26a78d12fc526357))
+
 ## [3.30.9](https://github.com/xynehq/xyne/compare/v3.30.8...v3.30.9) (2025-11-07)
 
 

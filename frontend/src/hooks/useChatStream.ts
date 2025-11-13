@@ -30,6 +30,19 @@ interface DeepResearchStep {
   fullReasoningContent?: string // Complete reasoning content when step is done
 }
 
+// Clarification types for HITL
+export interface ClarificationOption {
+  id: string
+  label: string
+}
+
+export interface ClarificationRequest {
+  clarificationId: string
+  question: string
+  options: ClarificationOption[]
+  context?: any
+}
+
 // Module-level storage for persistent EventSource connections
 interface StreamState {
   es: EventSource
@@ -49,6 +62,10 @@ interface StreamState {
   // Character animation display versions
   displayPartial: string
   animationManager: CharacterAnimationManager
+
+  // HITL clarification state
+  clarificationRequest?: ClarificationRequest
+  waitingForClarification: boolean
 }
 
 interface StreamInfo {
@@ -64,6 +81,9 @@ interface StreamInfo {
   isRetrying?: boolean
   // Character animation display versions
   displayPartial: string
+  // HITL clarification state
+  clarificationRequest?: ClarificationRequest
+  waitingForClarification: boolean
 }
 
 // Global map to store active streams - persists across component unmounts
@@ -239,24 +259,28 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
       if (triedRefresh) {
         // After refresh, try up to 3 more times before giving up
         if (retryCount >= maxRetries) {
-          reject(new Error(`Connection failed after token refresh and ${maxRetries} retry attempts`))
+          reject(
+            new Error(
+              `Connection failed after token refresh and ${maxRetries} retry attempts`,
+            ),
+          )
           return
         }
-        
+
         retryCount++
         // Exponential backoff: 100ms, 200ms, 400ms
         const delay = 100 * Math.pow(2, retryCount - 1)
         setTimeout(() => make(), delay)
         return
       }
-      
+
       triedRefresh = true
       try {
         const refresh = await fetch("/api/v1/refresh-token", {
           method: "POST",
           credentials: "include",
         })
-        
+
         if (refresh.ok) {
           // Small delay before retry to avoid rapid reconnection
           setTimeout(() => make(), 100)
@@ -292,7 +316,7 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
 
         es.onerror = async (e) => {
           clearTimeout(connectionTimeout)
-          
+
           if (isResolved) {
             // If already resolved, don't handle the error here
             return
@@ -306,7 +330,11 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
         }
       } catch (error) {
         if (!isResolved) {
-          reject(new Error(`Failed to create EventSource: ${error instanceof Error ? error.message : 'Unknown error'}`))
+          reject(
+            new Error(
+              `Failed to create EventSource: ${error instanceof Error ? error.message : "Unknown error"}`,
+            ),
+          )
         }
       }
     }
@@ -442,6 +470,9 @@ export const startStream = async (
     // Character animation display versions
     displayPartial: "",
     animationManager: new CharacterAnimationManager(),
+    // HITL clarification state
+    clarificationRequest: undefined,
+    waitingForClarification: false,
   }
 
   activeStreams.set(streamKey, streamState)
@@ -601,6 +632,46 @@ export const startStream = async (
       onTitleUpdate(event.data)
     }
   })
+
+  // HITL: Handle clarification requests
+  streamState.es.addEventListener(
+    ChatSSEvents.ClarificationRequested,
+    (event) => {
+      try {
+        const clarificationData: ClarificationRequest = JSON.parse(event.data)
+        streamState.clarificationRequest = clarificationData
+        streamState.waitingForClarification = true
+        streamState.isStreaming = false // Pause streaming
+
+        notifySubscribers(streamKey)
+      } catch (error) {
+        console.error(
+          "[ClarificationRequested] Error parsing clarification request:",
+          error,
+          event.data,
+        )
+      }
+    },
+  )
+
+  // HITL: Handle clarification responses
+  streamState.es.addEventListener(
+    ChatSSEvents.ClarificationProvided,
+    (event) => {
+      try {
+        const { clarificationId, selectedId } = JSON.parse(event.data)
+        console.log(
+          `Clarification provided: ${clarificationId} -> ${selectedId}`,
+        )
+        streamState.waitingForClarification = false
+        streamState.clarificationRequest = undefined
+        streamState.isStreaming = true // Resume streaming
+        notifySubscribers(streamKey)
+      } catch (error) {
+        console.error("Error parsing clarification response:", error)
+      }
+    },
+  )
 
   streamState.es.addEventListener(ChatSSEvents.End, async () => {
     streamState.es.close()
@@ -769,6 +840,8 @@ export const getStreamState = (streamKey: string): StreamInfo => {
       chatId: undefined,
       isStreaming: false,
       displayPartial: "",
+      clarificationRequest: undefined,
+      waitingForClarification: false,
     }
   }
 
@@ -783,6 +856,8 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     chatId: stream.chatId,
     isStreaming: stream.isStreaming,
     displayPartial: stream.displayPartial,
+    clarificationRequest: stream.clarificationRequest,
+    waitingForClarification: stream.waitingForClarification,
   }
 }
 
@@ -1074,6 +1149,10 @@ export const useChatStream = (
         // Character animation display versions
         displayPartial: "",
         animationManager: new CharacterAnimationManager(),
+
+        // HITL clarification state
+        clarificationRequest: undefined,
+        waitingForClarification: false,
       }
 
       activeStreams.set(retryStreamKey, streamState)
@@ -1310,11 +1389,73 @@ export const useChatStream = (
     [currentStreamKey, queryClient, chatId, setRetryIsStreaming],
   )
 
+  const provideClarification = useCallback(
+    async (
+      clarificationId: string,
+      selectedOptionId: string,
+      selectedOptionLabel: string,
+      customInput?: string,
+    ) => {
+      if (!chatId) {
+        console.error(
+          "[provideClarification] Cannot provide clarification without a chatId",
+        )
+        return
+      }
+
+      try {
+        // Call the clarification API endpoint
+        // Use fetch directly in case the generated types haven't been updated yet
+        const response = await api.chat.clarification.$post({
+          json: {
+            chatId,
+            clarificationId,
+            selectedOption: {
+              selectedOptionId,
+              selectedOption: selectedOptionLabel,
+              customInput: customInput || undefined,
+            },
+          },
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error("[provideClarification] API error:", errorText)
+          throw new Error(
+            `Failed to provide clarification: ${response.status} ${errorText}`,
+          )
+        }
+
+        // Clear the clarification request from the stream state
+        const stream = activeStreams.get(chatId)
+        if (stream) {
+          stream.clarificationRequest = undefined
+          stream.waitingForClarification = false
+          stream.isStreaming = true // Resume streaming
+          notifySubscribers(chatId)
+        } else {
+          console.warn(
+            "[provideClarification] No active stream found for chatId:",
+            chatId,
+          )
+        }
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to provide clarification. Please try again.",
+          variant: "destructive",
+        })
+      }
+    },
+    [chatId],
+  )
+
   return {
     ...streamInfo,
     startStream: wrappedStartStream,
     stopStream: wrappedStopStream,
     retryMessage,
     onTitleUpdate,
+    provideClarification,
   }
 }

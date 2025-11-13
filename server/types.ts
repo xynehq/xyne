@@ -184,7 +184,27 @@ export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
 export const addStdioMCPConnectorSchema = z.object({
   command: z.string(),
-  args: z.array(z.string()),
+  args: z.union([
+    z.array(z.string()),
+    z.string().transform((val) => {
+      if (!val) {
+        return []
+      }
+      // Use regex to handle quoted arguments, allowing spaces within arguments
+      // Supports both single and double quotes
+      const args = val.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? []
+      return args.map((arg) => {
+        // Remove surrounding quotes if present
+        if (
+          (arg.startsWith('"') && arg.endsWith('"')) ||
+          (arg.startsWith("'") && arg.endsWith("'"))
+        ) {
+          return arg.slice(1, -1)
+        }
+        return arg
+      })
+    }),
+  ]),
   name: z.string(),
   appType: z.string(),
 })
