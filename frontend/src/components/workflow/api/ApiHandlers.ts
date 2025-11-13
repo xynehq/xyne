@@ -1061,6 +1061,32 @@ export const workflowToolsAPI = {
       throw error
     }
   },
+
+  /**
+   * Fetch Slack metadata (channels)
+   */
+  async fetchSlackMetadata(): Promise<{
+    channels: Array<{ id: string; name: string }>
+  }> {
+    try {
+      const response = await api.workflow.tools.slack.metadata.$post()
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+
+      // Transform the array of channel names to objects with id and name
+      const channels = result.data?.channels || []
+
+      return { channels }
+    } catch (error) {
+      console.error("❌ Failed to fetch Slack metadata:", error)
+      throw error
+    }
+  },
 }
 
 // Workflow Steps API for adding and editing steps

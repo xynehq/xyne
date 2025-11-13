@@ -8,6 +8,7 @@ import {
   ChevronRight,
   X,
   BoomBox,
+  MessageSquare,
 } from "lucide-react"
 
 interface WhatHappensNextUIProps {
@@ -45,6 +46,12 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       name: "Email",
       description: "Send emails to added mails",
       icon: <Mail className="w-5 h-5" />,
+    },
+    {
+      id: "slack_message",
+      name: "Slack Message",
+      description: "Post messages to Slack channels",
+      icon: <MessageSquare className="w-5 h-5" />,
     },
     {
       id: "select_agents",
@@ -113,8 +120,8 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
           <div
             key={action.id}
             onClick={() => {
-              if (action.id === "ai_agent" || action.id === "email" || action.id === "http_request" || action.id === "select_agents") {
-                // For AI Agent, Email, HTTP Request, and Select Agents, trigger custom event to open respective ConfigUI
+              if (action.id === "ai_agent" || action.id === "email" || action.id === "http_request" || action.id === "select_agents" || action.id === "slack_message") {
+                // For AI Agent, Email, HTTP Request, Select Agents, and Slack Message, trigger custom event to open respective ConfigUI
                 onSelectAction(action.id)
                 onClose() // Close WhatHappensNextUI
               }

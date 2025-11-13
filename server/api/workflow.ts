@@ -219,6 +219,7 @@ import {
   createWorkflowTool,
   createToolExecution,
 } from "@/db/workflowTool"
+import { listSlackChannels } from "@/integrations/slack/client"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -3344,30 +3345,32 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       c.get(JwtPayloadKey)
     )
 
-
+    
+    
     let jwtPayload
     try {
       jwtPayload = c.get(JwtPayloadKey)
     } catch (e) {
       Logger.info("No JWT payload found in context")
     }
-
+    
     const userEmail = jwtPayload?.sub
     if (!userEmail) {
       throw new HTTPException(400, { message: "Could not get the email of the user" })
     }
-
+    
     // Get workspace ID from JWT payload
     const workspaceId = jwtPayload?.workspaceId
     if (!workspaceId) {
       throw new HTTPException(400, { message: "No workspace ID in token" })
     }
-
+    
     // Get user ID for agent creation
     const userId = user.id
-
+    
     const requestData = await c.req.json()
-
+    console.log(JSON.stringify(requestData, null, 2))
+    
     // Create the main workflow template
     const template = await createWorkflowTemplate(
       db,
@@ -5817,5 +5820,22 @@ export const ServeWorkflowFileApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
+  }
+}
+
+// Gets metadata like channels for slack nodes  
+// Workflow-todo: currently defaults to xyne bot with
+// hardcoded creds
+export const getSlackMetadataApi = async (c: Context) => {
+  try {
+    const channels = await listSlackChannels()
+    return c.json({
+      success: true,
+      data: {
+        channels,
+      }
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to get slack metadata")
   }
 }

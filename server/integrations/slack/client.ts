@@ -1,4 +1,4 @@
-import { WebClient } from "@slack/web-api"
+import { WebClient, type ConversationsListResponse } from "@slack/web-api"
 import { SocketModeClient, type LogLevel } from "@slack/socket-mode"
 import type { View } from "@slack/types"
 import { db } from "@/db/client"
@@ -26,6 +26,7 @@ import {
   type SearchCacheEntry,
   type AgentCacheEntry,
   type DbUser,
+  type SlackTriggerTool,
 } from "./types"
 import { ACTION_IDS, EVENT_CACHE_TTL } from "./config"
 import { getUserAccessibleAgents } from "@/db/userAgentPermission"
@@ -42,6 +43,8 @@ import type { SelectPublicAgent } from "@/db/schema"
 import { checkAgentWithNoIntegrations } from "@/api/chat/agents"
 import { agentWithNoIntegrationsQuestion } from "@/ai/provider"
 import type { ConverseResponseWithCitations } from "@/api/chat/types"
+import { getSlackTriggersInWorkflows } from "@/db/workflowTool"
+import { webcrypto } from "crypto"
 
 const Logger = getLogger(Subsystem.Slack)
 
@@ -1414,6 +1417,171 @@ const processSlackText = (text: string): string => {
     .trim()
 }
 
+
+/**
+ * Handles /workflows command - lists available workflows with SLACK_TRIGGER
+ */
+const handleWorkflowsCommand = async (
+  client: WebClient,
+  channel: string,
+  user: string,
+  dbUser: DbUser,
+  thread_ts: string,
+  isDM: boolean
+) => {
+  try {
+    const workflowTriggers = await getSlackTriggersInWorkflows(
+      db,
+      dbUser.id,
+      dbUser.workspaceId
+    )
+
+    if (workflowTriggers.length === 0) {
+      const message = "📋 No workflows with Slack triggers found.\n\nCreate a workflow with a Slack Trigger tool to see it here."
+
+      if (isDM) {
+        await client.chat.postMessage({
+          channel,
+          text: message,
+        })
+      } else {
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: message,
+          thread_ts,
+        })
+      }
+      return
+    }
+
+    // Format workflows list
+    let message = "*📋 Available Workflows:*\n\n"
+    workflowTriggers.forEach((wf, index: number) => {
+      message += `${index + 1}. *${wf.workflowName}*\n`
+      if (wf.workflowDescription) {
+        message += `   _${wf.workflowDescription}_\n`
+      }
+      message += `   Run with: \`/${wf.workflowName.toLowerCase().replace(/\s+/g, "-")}\`\n\n`
+    })
+
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: message,
+      })
+    } else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: message,
+        thread_ts,
+      })
+    }
+  } catch (error) {
+    Logger.error(error, "Error handling /workflows command")
+    const errorMsg = "❌ Failed to fetch workflows. Please try again."
+
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: errorMsg,
+      })
+    } else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: errorMsg,
+        thread_ts,
+      })
+    }
+  }
+}
+
+/**
+ * Handles /{workflow-name} command - triggers workflow execution 
+ */
+const handleWorkflowExecutionCommand = async (
+  client: WebClient,
+  channel: string,
+  user: string,
+  workflowCommand: string,
+  data: string,
+  dbUser: DbUser,
+  thread_ts: string,
+  matchedTrigger: SlackTriggerTool,
+  isDM: boolean
+) => {
+  try {
+    // Extract workflow name from command (remove leading /)
+    const workflowName = workflowCommand.substring(1).toLowerCase().replace(/-/g, " ")
+
+    if (!matchedTrigger) {
+      const message = `❌ Workflow "${workflowName}" not found.\n\nUse \`/workflows\` to see available workflows.`
+
+      if (isDM) {
+        await client.chat.postMessage({
+          channel,
+          text: message,
+        })
+      } else {
+        await client.chat.postEphemeral({
+          channel,
+          user,
+          text: message,
+          thread_ts,
+        })
+      }
+      return
+    }
+
+    // DUMMY EXECUTION - Just log and send message
+    Logger.info({
+      workflowId: matchedTrigger.workflowId,
+      workflowName: matchedTrigger.workflowName,
+      userId: dbUser.id,
+      channelId: channel,
+      data,
+    }, "Workflow execution triggered (dummy)")
+
+    const message = `✅ *Workflow "${matchedTrigger.workflowName}" triggered!*\n\n` +
+      ` Workflow ID: \`${matchedTrigger.workflowId}\`\n` +
+      ` Input Data: \`${data || "(none)"}\`\n` +
+      ` User: <@${user}>\n\n`
+
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: message,
+      })
+    } else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: message,
+        thread_ts,
+      })
+    }
+  } catch (error) {
+    Logger.error(error, "Error handling workflow execution command")
+    const errorMsg = "❌ Failed to execute workflow. Please try again."
+
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: errorMsg,
+      })
+    } else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: errorMsg,
+        thread_ts,
+      })
+    }
+  }
+}
+
 /**
  * Handles command dispatch based on the processed text
  */
@@ -1426,7 +1594,9 @@ const handleSlackCommand = async (
   thread_ts: string,
   isDM: boolean, 
 ): Promise<void> => {
-  if (processedText.toLowerCase().startsWith("/agents")) {
+  if (processedText.toLowerCase().startsWith("/workflows")) {
+    await handleWorkflowsCommand(client, channel, user, dbUser, thread_ts, isDM)
+  } else if (processedText.toLowerCase().startsWith("/agents")) {
     await handleAgentsCommand(client, channel, user, dbUser, thread_ts, isDM)
   } else if (processedText.toLowerCase().startsWith("/search ")) {
     const query = processedText.substring(8).trim()
@@ -1440,15 +1610,45 @@ const handleSlackCommand = async (
       isDM
     )
   } else if (processedText.startsWith("/")) {
-    await handleAgentSearchCommand(
-      client,
-      channel,
-      user,
-      processedText,
-      dbUser,
-      thread_ts,
-      isDM
+    // Try to match workflow execution command first
+    const parts = processedText.split(/\s+/)
+    const command = parts[0].toLowerCase()
+    const data = parts.slice(1).join(" ")
+    const workflowName = command.substring(1).replace(/-/g, " ")
+
+    // Check if this is a workflow command
+    const workflowTriggers: SlackTriggerTool[] = await getSlackTriggersInWorkflows(
+      db,
+      dbUser.id,
+      dbUser.workspaceId
     )
+
+    const matchedTrigger = workflowTriggers.find((wf) => wf.workflowName.toLowerCase() === workflowName)
+
+    if (matchedTrigger) {
+      await handleWorkflowExecutionCommand(
+        client,
+        channel,
+        user,
+        command,
+        data,
+        dbUser,
+        thread_ts,
+        matchedTrigger,
+        isDM
+      )
+    } else {
+      // Fall back to agent search command
+      await handleAgentSearchCommand(
+        client,
+        channel,
+        user,
+        processedText,
+        dbUser,
+        thread_ts,
+        isDM
+      )
+    }
   } else if (processedText.toLowerCase() === "help") {
     await handleHelpCommand(
       client,
@@ -1493,7 +1693,6 @@ const validateSlackUser = async (
       await client.chat.postMessage({
         channel,
         text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible.",
-        thread_ts: threadTs
       })
     } else {
       await client.chat.postEphemeral({
@@ -1517,7 +1716,6 @@ const validateSlackUser = async (
       await client.chat.postMessage({
         channel,
         text: "It seems you're not registered in our system. Please contact support.",
-        thread_ts: threadTs
       })
     } else {
       await client.chat.postEphemeral({
@@ -2175,6 +2373,25 @@ const processSlackDM = async (event: any) => {
       }
     }
   }
+}
+
+export const listSlackChannels = async (): Promise<{
+  id: string,
+  name: string, 
+}[]> => {
+  const response = await webClient!.conversations.list()
+  if (!response.channels) {
+    Logger.error("channels not recieved from conversations")
+    throw new Error("Channels absent in conversation response")
+  }
+  const channels = response.channels
+    .filter(ch => (ch.name && ch.id))
+    .map(ch => ({
+      id: ch.id!,
+      name: ch.name! 
+    }))
+
+  return channels
 }
 
 // Export Socket Mode status and control functions

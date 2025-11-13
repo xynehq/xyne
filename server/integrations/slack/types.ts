@@ -67,6 +67,15 @@ export interface ConversationMessage {
   content: string
 }
 
+export interface SlackTriggerTool{
+  workflowId: string,
+  workflowName: string,
+  workflowDescription: string | null,
+  toolId: string,
+  toolConfig: any,
+  toolValue: any
+}
+
 // Runtime validation functions
 export function isValidSearchResult(obj: unknown): obj is SearchResult {
   if (!obj || typeof obj !== "object") return false
