@@ -83,8 +83,6 @@ export class LiteLLMProvider extends BaseProvider {
         tool_choice: tools ? (params.tool_choice ?? "auto") : undefined,
         response_format: modelParams.json ? { type: "json_object" } : undefined,
       }
-
-      Logger.info(`📞 Calling LiteLLM model: ${modelParams.modelId} with params: ${JSON.stringify(requestParams, null, 2)}`)
       
       const response = await client.chat.completions.create(requestParams)
 
@@ -192,8 +190,6 @@ export class LiteLLMProvider extends BaseProvider {
         response_format: modelParams.json ? { type: "json_object" } : undefined,
         stream: true,
       }
-
-      Logger.info(`📡 Streaming LiteLLM model: ${modelParams.modelId} with params: ${JSON.stringify(requestParams, null, 2)}`)
 
       let accumulatedCost = 0
       let toolCalls: any[] = []
