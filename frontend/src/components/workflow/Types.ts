@@ -292,7 +292,6 @@ export interface WorkflowExecutionModalProps {
   workflowName: string
   workflowDescription: string
   templateId?: string
-  workflowTemplate?: WorkflowTemplate
   workflowData?: {
     name: string
     description: string
@@ -302,6 +301,7 @@ export interface WorkflowExecutionModalProps {
     edges: any[]
     metadata?: any
   }
+  allowedFileTypes?: string[]
   onViewExecution?: (executionId: string) => void
 }
 

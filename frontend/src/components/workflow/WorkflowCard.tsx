@@ -4,8 +4,26 @@ import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { WorkflowShareModal } from "./WorkflowShareModal"
 import { ConfirmationPopup } from "@/components/ui/ConfirmationPopup"
 import botLogo from "@/assets/bot-logo.svg"
-import { WorkflowCardProps } from "./Types"
+import { WorkflowCardProps,WorkflowTemplate } from "./Types"
 import { Users, Lock, Share2 } from "lucide-react"
+
+
+const extractAllowedFileTypes = (workflow: WorkflowTemplate): string[] => {
+  const formTool = workflow.rootStep?.tool
+  if (formTool && formTool.type === 'form') {
+    const formFields = formTool.value?.fields || formTool.config?.fields || []
+    for (const field of formFields) {
+      if (field.type === 'file' && field.fileTypes && Array.isArray(field.fileTypes)) {
+        const customTypes = field.fileTypes.filter((type: string) => type && type.trim() !== '')
+        if (customTypes.length > 0) {
+          return customTypes
+        }
+      }
+    }
+  }
+  // Return default file types if no custom types found
+  return ["txt", "pdf", "docx", "doc", "xlsx", "xls"]
+}
 
 export function WorkflowCard({
   workflow,
@@ -141,7 +159,7 @@ export function WorkflowCard({
         workflowName={workflow.name}
         workflowDescription={workflow.description}
         templateId={workflow.id}
-        workflowTemplate={workflow}
+        allowedFileTypes={extractAllowedFileTypes(workflow)}
         onViewExecution={onViewExecution}
       />
 
