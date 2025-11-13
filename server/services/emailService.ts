@@ -1,5 +1,5 @@
 import { SESClient, SendEmailCommand, SendRawEmailCommand } from "@aws-sdk/client-ses"
-import { readFile } from "node:fs/promises"
+import { readFile, stat } from "node:fs/promises"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
@@ -153,6 +153,29 @@ class SimpleEmailService {
       contentType?: string
     }>
   }): Promise<string> {
+    const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024 // 5MB per file
+    const MAX_EMAIL_SIZE = 10 * 1024 * 1024 // 10MB SES limit
+    
+    let totalSize = Buffer.byteLength(body, 'utf8')
+    
+    // Validate attachment sizes before reading
+    for (const attachment of attachments) {
+      try {
+        const stats = await stat(attachment.path)
+        if (stats.size > MAX_ATTACHMENT_SIZE) {
+          throw new Error(`Attachment ${attachment.filename} exceeds maximum size of ${MAX_ATTACHMENT_SIZE / 1024 / 1024}MB`)
+        }
+        totalSize += stats.size
+      } catch (statError) {
+        Logger.error(`❌ Failed to get file stats for attachment: ${attachment.path}`, statError)
+        throw new Error(`Could not access attachment file: ${attachment.filename}`)
+      }
+    }
+    
+    if (totalSize > MAX_EMAIL_SIZE) {
+      throw new Error(`Total email size exceeds SES limit of ${MAX_EMAIL_SIZE / 1024 / 1024}MB`)
+    }
+
     const boundary = `boundary_${Date.now()}_${Math.random().toString(36)}`
     
     let rawEmail = `From: ${this.fromEmail}\r\n`

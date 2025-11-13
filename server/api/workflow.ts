@@ -627,6 +627,17 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .update(workflowExecution)
       .set({ rootWorkflowStepExeId: rootStepExecution.id })
       .where(eq(workflowExecution.id, execution.id))
+    
+    // // Mark root step as ACTIVE when workflow starts
+    // await db
+    //   .update(workflowStepExecution)
+    //   .set({ 
+    //     status: WorkflowStatus.ACTIVE,
+    //     updatedAt: new Date()
+    //   })
+    //   .where(eq(workflowStepExecution.id, rootStepExecution.id))
+    
+    // Logger.info(`🚀 Marked root step as ACTIVE: ${rootStepExecution.name} (${rootStepExecution.id})`)
 
     // Process file uploads and create tool execution
     let toolExecutionRecord = null
@@ -1095,7 +1106,7 @@ const executeAutomatedWorkflowSteps = async (
         (s) => s.workflowStepTemplateId === nextStepTemplateId,
       )
 
-      if (nextStep && nextStep.type === StepType.AUTOMATED) {
+      if (nextStep ) {
         Logger.info(
           `Executing automated step: ${nextStep.name} (${nextStep.id})`,
         )
@@ -1704,11 +1715,11 @@ Please analyze this webhook request and provide insights.`,
     const isWebhookTriggered = execution?.metadata && 
       (execution.metadata as any).triggerType === 'webhook'
 
-    // If step is manual and not webhook-triggered, wait for user input
-    if (step.type === StepType.MANUAL && !isWebhookTriggered) {
-      Logger.info(`⏸️ Manual step encountered, waiting for user input: ${step.name}`)
-      return previousResults
-    }
+    // // If step is manual and not webhook-triggered, wait for user input
+    // if (step.type === StepType.MANUAL && !isWebhookTriggered) {
+    //   Logger.info(`⏸️ Manual step encountered, waiting for user input: ${step.name}`)
+    //   return previousResults
+    // }
 
     // Get the tool for this step from the step template (not execution)
     const stepTemplate = await getWorkflowStepTemplateById(
@@ -1976,6 +1987,7 @@ Please analyze this webhook request and provide insights.`,
         const nextStep = allStepExecutions.find(
           (s) => s.workflowStepTemplateId === nextStepId,
         )
+        Logger.info(`➡️ Processing next step ${i + 1}/${step.nextStepIds.length}: Template ID ${nextStepId}`)
 
         if (nextStep) {
           // Check if all prerequisite steps are completed before executing
@@ -1986,52 +1998,26 @@ Please analyze this webhook request and provide insights.`,
             continue
           }
           
-          // Determine if we should execute based on step type and status
-          if (nextStep.type === StepType.AUTOMATED) {
-            // Automated steps: execute immediately if not already completed
-            if (nextStep.status !== WorkflowStatus.COMPLETED) {
-              Logger.info(`⏭️ Executing automated step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.id})`)
-              
-              try {
-                await executeWorkflowChain(
-                  executionId,
-                  nextStep.id,
-                  tools,
-                  updatedResults,
-                )
-                
-                Logger.info(`✅ Completed automated step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
-              } catch (stepError) {
-                Logger.error(`❌ Failed to execute automated step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
-                // Continue with other steps even if one fails
-              }
-            } else {
-              Logger.info(`⏩ Automated step ${i + 1}/${step.nextStepIds.length} already completed: ${nextStep.name}`)
-            }
-          } else if (nextStep.type === StepType.MANUAL) {
-            // Manual steps: only continue if already completed by user
-            if (nextStep.status === WorkflowStatus.COMPLETED) {
-              Logger.info(`⏭️ Manual step already completed, continuing chain ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.id})`)
-              
-              try {
-                await executeWorkflowChain(
-                  executionId,
-                  nextStep.id,
-                  tools,
-                  updatedResults,
-                )
-                
-                Logger.info(`✅ Continued from manual step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
-              } catch (stepError) {
-                Logger.error(`❌ Failed to continue from manual step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
-              }
-            } else {
-              Logger.info(`⏸️ Waiting for manual step completion ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (status: ${nextStep.status})`)
-              // Stop here - don't execute further steps until this manual step is completed
-            }
-          } else if (isWebhookTriggered) {
-            // Webhook-triggered: execute regardless of type
-            Logger.info(`🪝 Webhook-triggered step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.id})`)
+          // Always mark next step as ACTIVE (regardless of manual/automated)
+          if (nextStep.status === WorkflowStatus.DRAFT) {
+            await db
+              .update(workflowStepExecution)
+              .set({
+                status: WorkflowStatus.ACTIVE,
+                updatedAt: new Date(),
+              })
+              .where(eq(workflowStepExecution.id, nextStep.id))
+            
+            // Update local object to reflect the change
+            nextStep.status = WorkflowStatus.ACTIVE
+            
+            Logger.info(`🔄 Marked step as ACTIVE: ${nextStep.name} (${nextStep.id})`)
+          }
+          
+          // Handle step execution based on type and completion status
+          if (nextStep.status === WorkflowStatus.COMPLETED) {
+            // Step already completed - continue workflow chain regardless of type
+            Logger.info(`⏩ Step ${i + 1}/${step.nextStepIds.length} already completed, continuing: ${nextStep.name}`)
             
             try {
               await executeWorkflowChain(
@@ -2040,11 +2026,32 @@ Please analyze this webhook request and provide insights.`,
                 tools,
                 updatedResults,
               )
-              
-              Logger.info(`✅ Completed webhook step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
+              Logger.info(`✅ Continued from completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
             } catch (stepError) {
-              Logger.error(`❌ Failed to execute webhook step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
+              Logger.error(`❌ Failed to continue from completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
             }
+          } else if (nextStep.type === StepType.AUTOMATED || isWebhookTriggered) {
+            // Automated steps or webhook-triggered: execute immediately
+            const stepTypeLabel = isWebhookTriggered ? 'webhook-triggered' : 'automated'
+            Logger.info(`⏭️ Executing ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.id})`)
+            
+            try {
+              await executeWorkflowChain(
+                executionId,
+                nextStep.id,
+                tools,
+                updatedResults,
+              )
+              Logger.info(`✅ Completed ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
+            } catch (stepError) {
+              Logger.error(`❌ Failed to execute ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
+            }
+          } else if (nextStep.type === StepType.MANUAL) {
+            // Manual steps: mark as ACTIVE and return (wait for user action)
+            Logger.info(`⏸️ Manual step marked as ACTIVE ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - waiting for user completion`)
+            
+            // Return here to stop execution chain until manual step is completed
+            return
           }
         } else {
           Logger.warn(`⚠️ Next step ${i + 1}/${step.nextStepIds.length} not found for template ID: ${nextStepId}`)
@@ -2182,9 +2189,27 @@ export const GetWorkflowExecutionStatusApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Workflow execution not found" })
     }
 
+    let finalStatus = execution.status
+
+    // Check for active manual steps if workflow is active
+    if (execution.status === "active") {
+      const stepExecutions = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+      
+      const activeManualSteps = stepExecutions.filter(step => 
+        step.type === "manual" && step.status === "active"
+      )
+      
+      if (activeManualSteps.length > 0) {
+        finalStatus = "input_required"
+      }
+    }
+
     return c.json({
       success: true,
-      status: execution.status,
+      status: finalStatus,
     })
   } catch (error) {
     Logger.error(error, "Failed to get workflow execution status")
@@ -4427,7 +4452,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           workflowTemplateId: template.id,
           name: stepData.name,
           description: stepData.description || "",
-          type: stepData.type === "form_submission" || stepData.type === "manual" ? "manual" : "automated",
+          type: stepData.type === "form_submission" || stepData.type === "manual" || stepData.type === "qa_agent" ? "manual" : "automated",
           timeEstimate: 180, // Default time estimate
           metadata: {
             icon: stepData.metadata?.icon,
@@ -6259,6 +6284,17 @@ async function triggerWorkflowFromWebhook(
       .update(workflowExecution)
       .set({ rootWorkflowStepExeId: rootStepExecution.id })
       .where(eq(workflowExecution.id, execution.id))
+    
+    // Mark root step as ACTIVE when workflow starts
+    await db
+      .update(workflowStepExecution)
+      .set({ 
+        status: WorkflowStatus.ACTIVE,
+        updatedAt: new Date()
+      })
+      .where(eq(workflowStepExecution.id, rootStepExecution.id))
+    
+    Logger.info(`🚀 Marked root step as ACTIVE: ${rootStepExecution.name} (${rootStepExecution.id})`)
 
     Logger.info({
       executionId: execution.id,
@@ -6978,35 +7014,53 @@ const processQAQuestionsInBackground = async (
 
       // Continue workflow execution after Q&A completion
       try {
-        // Find the next step to execute
+        // Find the next step to execute using nextStepIds
         const currentQAStep = qaStepExecution
         if (currentQAStep) {
           Logger.info(`🔄 Starting workflow continuation after Q&A step: ${currentQAStep.name}`)
           
-          // Get all workflow step templates for this workflow execution
-          const allStepTemplates = await db
+          // Get the current step template to access nextStepIds
+          const currentStepTemplate = await db
             .select()
             .from(workflowStepTemplate)
-            .where(eq(workflowStepTemplate.workflowTemplateId, execution.workflowTemplateId))
-            .orderBy(workflowStepTemplate.createdAt)
+            .where(eq(workflowStepTemplate.id, currentQAStep.workflowStepTemplateId))
+            .limit(1)
 
-          // Find current step index and next step
-          const currentStepIndex = allStepTemplates.findIndex(st => 
-            st.name?.toLowerCase() === currentQAStep.name?.toLowerCase()
-          )
+          if (currentStepTemplate.length === 0) {
+            Logger.warn(`❌ Could not find step template for step: ${currentQAStep.id}`)
+            return
+          }
+
+          const nextStepIds = currentStepTemplate[0].nextStepIds
           
-          if (currentStepIndex !== -1 && currentStepIndex < allStepTemplates.length - 1) {
-            const nextStepTemplate = allStepTemplates[currentStepIndex + 1]
+          if (!nextStepIds || nextStepIds.length === 0) {
+            Logger.info(`✅ Q&A step has no next steps - workflow completion`)
+            return
+          }
+
+          // Process each next step (supports branching)
+          for (const nextStepId of nextStepIds) {
+            const nextStepTemplate = await db
+              .select()
+              .from(workflowStepTemplate)
+              .where(eq(workflowStepTemplate.id, nextStepId))
+              .limit(1)
+
+            if (nextStepTemplate.length === 0) {
+              Logger.warn(`❌ Could not find next step template: ${nextStepId}`)
+              continue
+            }
+            const currentNextStepTemplate = nextStepTemplate[0]
             
             // Check if next step execution already exists
             let nextStepExecution = stepExecutions.find(se => 
-              se.workflowStepTemplateId === nextStepTemplate.id
+              se.workflowStepTemplateId === currentNextStepTemplate.id
             )
             
             if (nextStepExecution) {
               // Mark next step as active if it's not already completed
               if (nextStepExecution.status !== 'completed') {
-                Logger.info(`📍 Marking next step as active: ${nextStepTemplate.name}`)
+                Logger.info(`📍 Marking next step as active: ${currentNextStepTemplate.name}`)
                 
                 await db
                   .update(workflowStepExecution)
@@ -7017,7 +7071,7 @@ const processQAQuestionsInBackground = async (
               }
               
               // Continue workflow execution synchronously (no setImmediate)
-              Logger.info(`🚀 Starting workflow execution from step: ${nextStepTemplate.name}`)
+              Logger.info(`🚀 Starting workflow execution from step: ${currentNextStepTemplate.name}`)
               
               // Get tools for the workflow execution
               const tools = await db.select().from(workflowTool)
@@ -7038,8 +7092,6 @@ const processQAQuestionsInBackground = async (
             } else {
               Logger.info(`ℹ️ Next step execution not found, workflow may need manual step creation`)
             }
-          } else {
-            Logger.info(`ℹ️ Q&A step is the last step or step ordering issue`)
           }
         }
       } catch (backgroundContinuationError) {

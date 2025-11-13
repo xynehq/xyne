@@ -2,6 +2,7 @@ import React, { useCallback, useState, useEffect } from "react"
 import { Bot, Mail, Settings, X, FileTextIcon , FileText} from "lucide-react"
 import { getPreviousStepOutput } from "@/utils/workflowUtils"
 import { QAExecutionModal } from "./QAExecutionModal"
+import { api } from "../../api"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -1560,9 +1561,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   // Q&A execution modal state
   const [showQAExecutionModal, setShowQAExecutionModal] = useState(false)
   const [selectedQAExecutionNode, setSelectedQAExecutionNode] = useState<any>(null)
-  // Cleanup polling on component unmount
-  const [pollingInterval] = useState<NodeJS.Timeout | null>(null)
-
+  
   // Empty initial state
   const initialNodes: Node[] = []
   const initialEdges: Edge[] = []
@@ -1918,14 +1917,79 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
 
 
-  // Cleanup polling on component unmount
-  useEffect(() => {
-    return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
-      }
+  // Unified Polling Logic
+  const shouldContinuePolling = useCallback((workflowData: ExecutionWorkflowData) => {
+    if (!workflowData?.stepExecutions) return false
+    
+    // Check if workflow is completed or failed
+    if (workflowData.status === 'completed' || workflowData.status === 'failed') {
+      console.log("🛑 Stopping polling - workflow completed/failed:", workflowData.status)
+      return false
     }
-  }, [pollingInterval])
+    
+    const steps = workflowData.stepExecutions
+    
+    // Find current active step
+    const activeStep = steps.find((step: any) => step.status === 'active')
+    
+    // Check if any step is in processing status
+    const hasProcessingStep = steps.some((step: any) => step.status === 'processing')
+    
+    // Continue polling if:
+    // 1. Any step is in processing
+    // 2. Active step is automated
+    if (hasProcessingStep) {
+      console.log("🔄 Continuing polling - step in processing")
+      return true
+    }
+    if (activeStep && activeStep.type === 'automated') {
+      console.log("🔄 Continuing polling - active step is automated")
+      return true
+    }
+    
+    // Stop polling for manual steps (unless in processing)
+    console.log("🛑 Stopping polling - active step is manual and no processing steps")
+    return false
+  }, [])
+  
+  // Simple recursive polling function
+  const fetchAndPoll = useCallback(async (workflowId: string) => {
+    try {
+      console.log("📡 Fetching and polling workflow:", workflowId)
+      
+      // Trigger workflow execution progress
+      const response = await api.workflow.executions[workflowId].$get()
+      if (!response.ok) {
+        console.log("❌ Fetch failed, stopping polling")
+        return
+      }
+      
+      const result = await response.json()
+      console.log("📊 Received workflow data:", result.success)
+      
+      if (result.success && result.data) {
+        console.log("📈 Updating workflow data - old selectedTemplate.id:", selectedTemplate?.id)
+        console.log("📈 Updating workflow data - new data.id:", result.data?.id)
+        console.log("📈 Calling onWorkflowUpdate with:", {success: result.success, dataId: result.data.id, status: result.data.status})
+        
+        // Update parent component via callback - this should trigger UI re-render
+        onWorkflowUpdate?.(result)
+        
+        console.log("📈 onWorkflowUpdate called - parent should re-render UI")
+        
+        // Check if should continue polling
+        if (shouldContinuePolling(result.data)) {
+          console.log("⏰ Scheduling next poll in 5 seconds")
+          setTimeout(() => fetchAndPoll(workflowId), 5000)
+        } else {
+          console.log("🏁 Polling complete - workflow finished")
+        }
+      }
+    } catch (error) {
+      console.error('❌ Polling error:', error)
+    }
+  }, [shouldContinuePolling, onWorkflowUpdate])
+  
 
 
 
@@ -2047,15 +2111,15 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setShowQAExecutionModal(false)
           setSelectedQAExecutionNode(null)
         }}
-        nodeId={selectedQAExecutionNode?.nodeId || ''}
-        stepData={selectedQAExecutionNode?.stepData}
-        toolData={selectedQAExecutionNode?.toolData}
+        stepId={selectedQAExecutionNode?.stepData.id}
+
+        toolId={selectedQAExecutionNode?.toolData.id}
+ 
         workflowData={selectedTemplate}
-        onWorkflowUpdate={(updatedWorkflowData) => {
-          // Update the selectedTemplate with fresh data from polling
-          if (updatedWorkflowData && onWorkflowUpdate) {
-            // Notify parent component to update the workflow data
-            onWorkflowUpdate(updatedWorkflowData)
+        onProgress={() => {
+          if (selectedTemplate?.id) {
+            console.log("🚀 QA triggered - starting fetchAndPoll for:", selectedTemplate.id)
+            fetchAndPoll(selectedTemplate.id)
           }
         }}
       />

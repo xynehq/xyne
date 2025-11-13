@@ -2887,7 +2887,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               id: newNodeId,
               name: `Q&A - ${agent.name}`,
               description: `Q&A agent using ${agent.name}`,
-              type: "automated",
+              type: "qa_agent",
               status: "pending",
               contents: [],
               config: {
@@ -4252,7 +4252,7 @@ case "http_request":
                 id: newNodeId,
                 name: agentConfig.name,
                 description: formattedDescription,
-                type: "automated",
+                type: "qa_agent",
                 status: "pending",
                 contents: [],
                 config: {

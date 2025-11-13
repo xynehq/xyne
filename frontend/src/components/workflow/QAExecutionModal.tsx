@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { X, Bot, FileSpreadsheet, AlertCircle, CheckCircle, Loader } from "lucide-react"
@@ -6,11 +6,10 @@ import { X, Bot, FileSpreadsheet, AlertCircle, CheckCircle, Loader } from "lucid
 interface QAExecutionModalProps {
   isOpen: boolean
   onClose: () => void
-  nodeId: string
-  stepData?: any
-  toolData?: any
+  stepId: string
+  toolId: string
   workflowData?: any // Full workflow execution data
-  onWorkflowUpdate?: (updatedWorkflowData: any) => void // Callback to update parent with fresh data
+  onProgress?: () => void // Callback to trigger polling from parent
 }
 
 interface QAQuestion {
@@ -24,265 +23,125 @@ interface ExcelSheetMeta {
   columns: string[]
   rowCount: number
 }
-
-interface ExcelMetadata {
-  filename: string
-  fileId: string
-  filePath: string
-  sheets: ExcelSheetMeta[]
-}
-
 export function QAExecutionModal({
   isOpen,
   onClose,
-  nodeId,
-  stepData,
-  toolData,
+  stepId,
+  toolId,
   workflowData,
-  onWorkflowUpdate,
+  onProgress,
 }: QAExecutionModalProps) {
-  // State for Excel metadata and selection
-  const [excelMetadata, setExcelMetadata] = useState<ExcelMetadata | null>(null)
+  // State for user selections and local errors (these remain as state since they're user inputs)
   const [selectedSheetName, setSelectedSheetName] = useState<string>('')
   const [selectedColumnName, setSelectedColumnName] = useState<string>('')
-  const [questions, setQuestions] = useState<QAQuestion[]>([])
+  const [localError, setLocalError] = useState<string | null>(null)
+
+
+  const stepData = workflowData?.stepExecutions?.find((step: any) => 
+    step.id === stepId
+  )
+  const toolData = workflowData?.toolExecutions?.find((toolExec: any) => 
+    toolExec.id === toolId
+  )
+
   
-  // State for processing flow
-  const [currentStep, setCurrentStep] = useState<'loading' | 'selectSheet' | 'selectColumn' | 'processing' | 'completed'>('loading')
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
+  // Get step status from stepData  
+  const stepStatus = stepData?.status
+  
+  // Computed state derived from props
+  const excelMetadata = useMemo(() => {
+    // Extract metadata from toolData.result
+    if (toolData?.result) {
+      return toolData.result.qaMetadata || 
+             toolData.result.excelMetadata ||
+             toolData.result.metadata ||
+             (toolData.result.awaitingUserSelection && toolData.result.sheets ? {
+               filename: toolData.result.filename || 'Excel File',
+               fileId: toolData.result.fileId || '',
+               filePath: toolData.result.filePath || '',
+               sheets: toolData.result.sheets || []
+             } : null)
+    }
+    return null
+  }, [toolData])
+
+  const questions = useMemo(() => {
+    if (stepStatus === 'completed' && toolData?.result?.qaResults) {
+      const qaResults = toolData.result.qaResults
+      return qaResults.questionsAndAnswers.map((qa: any) => ({
+        question: qa.question,
+        answer: qa.answer,
+        status: qa.answer.startsWith('Error:') || qa.answer.includes('Failed to get answer') ? 'error' : 'completed'
+      }))
+    }
+    return []
+  }, [stepStatus, toolData])
+
+  const error = useMemo(() => {
+    // Local error takes priority (user-triggered errors)
+    if (localError) return localError
+    
+    // Then check prop-derived errors
+    if (!isOpen) return null
+    if (stepStatus === 'failed') {
+      if (toolData?.result?.error) return toolData.result.error
+      if (!toolData?.result?.awaitingUserSelection) return 'Q&A processing failed'
+    }
+    if (stepStatus && !['completed', 'processing', 'failed', 'active'].includes(stepStatus)) {
+      return `Unexpected step status: ${stepStatus}`
+    }
+    return null
+  }, [localError, isOpen, stepStatus, toolData])
+
+  const currentStep = useMemo(() => {
+    if (!isOpen) return 'loading'
+    if (stepStatus === 'completed') {
+      return 'completed'
+    }
+    if (stepStatus === 'processing') return 'processing'
+    if (stepStatus === 'failed') {
+      if (toolData?.result?.awaitingUserSelection && toolData?.result?.qaMetadata) return 'selectSheet'
+      return 'completed' // Show error state
+    }
+    if (stepStatus === 'active') {
+      if (excelMetadata) {
+        // If both sheet and column are selected, show column selection with button
+        if (selectedSheetName && selectedColumnName) return 'selectColumn'
+        // If sheet is selected but no column, show column selection
+        if (selectedSheetName && !selectedColumnName) return 'selectColumn'
+        // If no sheet is selected, show sheet selection
+        return 'selectSheet'
+      }
+      return 'loading'
+    }
+    
+    const result = 'loading'
+    return result
+  }, [isOpen, stepStatus, toolData, excelMetadata, selectedSheetName, selectedColumnName])
+
+  const isProcessing = stepStatus === 'processing'
 
   // Agent info
-  const agentName = toolData?.config?.agentName || toolData?.val?.agentName || 'Q&A Agent'
-  const agentId = toolData?.config?.agentId || toolData?.val?.agentId
+  const agentName = toolData?.result?.agentName
+  const agentId = toolData?.result?.agentId
   const executionId = workflowData?.id || workflowData?.execution?.id || stepData?.executionId
   
-  // Get step status from stepData
-  const stepStatus = stepData?.status
-
-  // Initialize modal state based on step status when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      console.log("🔍 QA Modal opened, step status:", stepStatus, { stepData, toolData })
-      setError(null) // Clear any previous errors
-      
-      if (stepStatus === 'completed') {
-        // Step is completed - show results immediately
-        console.log("✅ Step completed - loading results from toolData")
-        if (toolData?.result?.qaResults) {
-          const qaResults = toolData.result.qaResults
-          const processedQuestions = qaResults.questionsAndAnswers.map((qa: any) => ({
-            question: qa.question,
-            answer: qa.answer,
-            status: qa.answer.startsWith('Error:') || qa.answer.includes('Failed to get answer') ? 'error' : 'completed'
-          }))
-          setQuestions(processedQuestions)
-          setCurrentStep('completed')
-        } else {
-          setError('Q&A results not found in completed step')
-        }
-        
-      } else if (stepStatus === 'failed') {
-        // Step failed - check if it's a genuine error or just awaiting user input
-        console.log("❌ Step failed - checking failure reason")
-        
-        // If there's an explicit error message, this is a genuine failure
-        if (toolData?.result?.error) {
-          console.log("💥 Genuine failure with error:", toolData.result.error)
-          setError(toolData.result.error)
-          setCurrentStep('completed') // Show error state
-        } else if (toolData?.result?.awaitingUserSelection && toolData?.result?.qaMetadata) {
-          // No error but awaiting user selection - treat as active
-          console.log("🔄 Failed step is awaiting user selection - treating as active")
-          setExcelMetadata(toolData.result.qaMetadata)
-          setCurrentStep('selectSheet')
-        } else {
-          // Generic failure
-          console.log("❌ Generic failure - no specific error or metadata")
-          setError('Q&A processing failed')
-          setCurrentStep('completed') // Show error state
-        }
-        
-      } else if (stepStatus === 'processing') {
-        // Step is processing - show loader and start polling
-        console.log("⏳ Step is processing - starting polling")
-        setCurrentStep('processing')
-        setIsProcessing(true)
-        startPolling()
-        
-      } else if (stepStatus === 'active') {
-        // Step is active - load metadata and show questions interface
-        console.log("🚀 Step is active - loading Excel metadata")
-        loadExcelMetadata()
-      } else {
-        setError(`Unexpected step status: ${stepStatus}`)
-      }
-    } else {
-      // Clean up polling when modal closes
-      stopPolling()
-    }
-  }, [isOpen, stepStatus, stepData, toolData])
-
-  // Load Excel metadata for active steps
-  const loadExcelMetadata = () => {
-    // Check multiple possible locations for metadata
-    let metadata = null
-    
-    // Check toolData.result (most likely location for execution workflows)
-    if (toolData?.result) {
-      console.log("📋 Tool data result:", toolData.result)
-      
-      // Look for various possible metadata structures
-      metadata = toolData.result.qaMetadata || 
-                toolData.result.excelMetadata ||
-                toolData.result.metadata ||
-                (toolData.result.awaitingUserSelection && toolData.result.sheets ? {
-                  filename: toolData.result.filename || 'Excel File',
-                  fileId: toolData.result.fileId || '',
-                  filePath: toolData.result.filePath || '',
-                  sheets: toolData.result.sheets || []
-                } : null)
-    }
-    
-    // Fallback: check stepData.result
-    if (!metadata && stepData?.result?.qaMetadata) {
-      metadata = stepData.result.qaMetadata
-    }
-    
-    if (metadata) {
-      console.log("✅ Found Excel metadata:", metadata)
-      setExcelMetadata(metadata)
-      setCurrentStep('selectSheet')
-    } else {
-      console.log("❌ No Excel metadata found in:", { 
-        toolDataResult: toolData?.result, 
-        stepDataResult: stepData?.result 
-      })
-      setError('No Excel metadata found. Please ensure the Q&A agent has processed the Excel file.')
-    }
-  }
-
-  // Start polling for workflow execution status
-  const startPolling = () => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-    }
-    
-    console.log("🔄 Starting Q&A status polling")
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/v1/workflow/executions/${executionId}`, {
-          credentials: 'include'
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log("📊 Polling response:", data)
-          console.log("🔍 Looking for Q&A step with templateId:", stepData?.workflowStepTemplateId)
-          
-          // Update parent UI with fresh workflow data
-          if (onWorkflowUpdate && data.success) {
-            onWorkflowUpdate(data.data)
-          }
-          
-          // Find the Q&A step in the execution data
-          const qaStep = data.data?.stepExecutions?.find((step: any) => 
-            step.name?.toLowerCase().includes('q&a') || 
-            step.name?.toLowerCase().includes('qa') ||
-            step.workflowStepTemplateId === stepData?.workflowStepTemplateId
-          )
-          
-          if (qaStep) {
-            console.log("📝 Found Q&A step in polling:", qaStep.status)
-            
-            // Get the associated tool execution
-            const qaToolExecution = data.data?.toolExecutions?.find((tool: any) => 
-              tool.toolType === 'qa_agent' && qaStep.toolExecIds?.includes(tool.id)
-            )
-            console.log("🔧 Q&A tool execution:", qaToolExecution?.status, qaToolExecution?.result)
-            
-            if (qaStep.status === 'completed') {
-              stopPolling()
-              
-              if (qaToolExecution?.result?.qaResults) {
-                const qaResults = qaToolExecution.result.qaResults
-                const processedQuestions = qaResults.questionsAndAnswers.map((qa: any) => ({
-                  question: qa.question,
-                  answer: qa.answer,
-                  status: qa.answer.startsWith('Error:') || qa.answer.includes('Failed to get answer') ? 'error' : 'completed'
-                }))
-                setQuestions(processedQuestions)
-                console.log("📋 Loaded Q&A results from polling data:", processedQuestions.length, "questions")
-              } else {
-                console.log("⚠️ Q&A completed but no results found in polling data")
-              }
-              
-              setCurrentStep('completed')
-              setIsProcessing(false)
-              
-            } else if (qaStep.status === 'failed') {
-              stopPolling()
-              
-              // Check if there's an explicit error message - prioritize showing errors
-              if (qaToolExecution?.result?.error) {
-                console.log("💥 Polling found genuine failure with error:", qaToolExecution.result.error)
-                setError(qaToolExecution.result.error)
-                setCurrentStep('completed')
-                setIsProcessing(false)
-              } else if (qaToolExecution?.result?.awaitingUserSelection && qaToolExecution?.result?.qaMetadata) {
-                console.log("🔄 Polling found failed step awaiting user selection - treating as active")
-                // No error but awaiting user selection - treat as active
-                setExcelMetadata(qaToolExecution.result.qaMetadata)
-                setCurrentStep('selectSheet')
-                setIsProcessing(false)
-                setError(null)
-              } else {
-                // Generic failure
-                console.log("❌ Polling found generic failure")
-                setError('Q&A processing failed')
-                setCurrentStep('completed')
-                setIsProcessing(false)
-              }
-            }
-            // Continue polling for 'processing' status
-          }
-        }
-      } catch (error) {
-        console.error('❌ Polling error:', error)
-        // Continue polling despite errors
-      }
-    }, 5000) // Poll every 5 seconds
-    
-    setPollingInterval(interval)
-  }
-
-  // Stop polling
-  const stopPolling = () => {
-    if (pollingInterval) {
-      console.log("⏹️ Stopping Q&A status polling")
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
-    }
-  }
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      stopPolling()
-    }
-  }, [])
 
   // Function to process questions with the new async backend API
   const processQAQuestions = async () => {
     if (!selectedSheetName || !selectedColumnName || !agentId || !executionId) {
-      setError('Missing required information to process questions')
+      const missing = []
+      if (!selectedSheetName) missing.push('selectedSheetName')
+      if (!selectedColumnName) missing.push('selectedColumnName') 
+      if (!agentId) missing.push('agentId')
+      if (!executionId) missing.push('executionId')
+      
+      const errorMsg = `Missing required information: ${missing.join(', ')}`
+      setLocalError(errorMsg)
       return
     }
 
-    setIsProcessing(true)
-    setCurrentStep('processing')
-    setError(null)
+    setLocalError(null)
 
     try {
       const response = await fetch('/api/v1/workflow/qa/process', {
@@ -307,35 +166,25 @@ export function QAExecutionModal({
 
       // Check the response status
       if (result.status === 'processing') {
-        // Processing started successfully - start polling
-        console.log("✅ Q&A processing started - beginning polling")
-        startPolling()
+        // Processing started successfully - trigger parent polling
+        onProgress?.()
       } else if (result.status === 'completed' && result.data) {
         // Already completed - show results immediately
-        console.log("✅ Q&A already completed - showing results")
-        const processedQuestions = result.data.questionsAndAnswers.map((qa: any) => ({
-          question: qa.question,
-          answer: qa.answer,
-          status: qa.answer.startsWith('Error:') || qa.answer.includes('Failed to get answer') ? 'error' : 'completed'
-        }))
-        setQuestions(processedQuestions)
-        setCurrentStep('completed')
-        setIsProcessing(false)
+        // Results will be shown via props when polling updates
       } else {
         throw new Error(`Unexpected response status: ${result.status}`)
       }
 
     } catch (error) {
       console.error('Error processing Q&A questions:', error)
-      setError(`Failed to start Q&A processing: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      setIsProcessing(false)
+      setLocalError(`Failed to start Q&A processing: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
   const handleSheetSelection = (sheetName: string) => {
     setSelectedSheetName(sheetName)
     setSelectedColumnName('') // Reset column selection
-    setCurrentStep('selectColumn')
+    setLocalError(null) // Clear any previous errors
   }
 
   const handleColumnSelection = (columnName: string) => {
@@ -343,14 +192,10 @@ export function QAExecutionModal({
   }
 
   const handleClose = () => {
-    // Reset state
-    setExcelMetadata(null)
+    // Reset user selections and local state
     setSelectedSheetName('')
     setSelectedColumnName('')
-    setQuestions([])
-    setCurrentStep('loading')
-    setIsProcessing(false)
-    setError(null)
+    setLocalError(null)
     onClose()
   }
 
@@ -422,7 +267,7 @@ export function QAExecutionModal({
                     <SelectValue placeholder="Choose a sheet..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {excelMetadata.sheets.map((sheet) => (
+                    {excelMetadata.sheets.map((sheet: ExcelSheetMeta) => (
                       <SelectItem key={sheet.name} value={sheet.name}>
                         {sheet.name} ({sheet.rowCount} rows)
                       </SelectItem>
@@ -454,7 +299,7 @@ export function QAExecutionModal({
                     <SelectValue placeholder="Choose a column..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {excelMetadata.sheets.find(s => s.name === selectedSheetName)?.columns.map((column) => (
+                    {excelMetadata.sheets.find((s: ExcelSheetMeta) => s.name === selectedSheetName)?.columns.map((column: string) => (
                       <SelectItem key={column} value={column}>
                         {column}
                       </SelectItem>
@@ -519,7 +364,9 @@ export function QAExecutionModal({
           )}
 
           {/* Completed */}
-          {currentStep === 'completed' && questions.length > 0 && (
+          {(() => {
+            return currentStep === 'completed' && questions.length > 0
+          })() && (
             <div className="space-y-6">
               <div className="text-center">
                 <CheckCircle className="w-12 h-12 text-green-600 mx-auto mb-4" />
@@ -527,13 +374,13 @@ export function QAExecutionModal({
                   Q&A Processing Complete!
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-6">
-                  {questions.filter(q => q.status === 'completed').length} of {questions.length} questions processed successfully.
+                  {questions.filter((q: QAQuestion) => q.status === 'completed').length} of {questions.length} questions processed successfully.
                 </p>
               </div>
 
               {/* Results */}
               <div className="max-h-96 overflow-y-auto space-y-4">
-                {questions.map((qa, index) => (
+                {questions.map((qa: QAQuestion, index: number) => (
                   <div 
                     key={index}
                     className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg"

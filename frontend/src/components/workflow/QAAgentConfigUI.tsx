@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -46,6 +46,17 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
     isExistingAgent: false,
   })
 
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
+  const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
+  const [promptError, setPromptError] = useState<string | null>(null)
+
+  const [models, setModels] = useState<string[]>(["vertex-gemini-2-5-flash"])
+  const [isLoadingModels, setIsLoadingModels] = useState(false)
+  const [modelsLoaded, setModelsLoaded] = useState(false)
+
+  const getValidModelId = useCallback((modelId: string | undefined): string => {
+    return models.includes(modelId || "") ? (modelId as string) : (models[0] || "vertex-gemini-2-5-flash")
+  }, [models])
   
   React.useEffect(() => {
     if (isVisible) {
@@ -78,15 +89,7 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
       setIsModelDropdownOpen(false)
       setIsEnhancingPrompt(false)
     }
-  }, [isVisible, toolData, stepData])
-
-  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
-  const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
-
-  const [models, setModels] = useState<string[]>(["vertex-gemini-2-5-flash"])
-  const [isLoadingModels, setIsLoadingModels] = useState(false)
-  const [modelsLoaded, setModelsLoaded] = useState(false)
-
+  }, [isVisible, toolData, stepData, getValidModelId])
   
   React.useEffect(() => {
     if (isVisible && !modelsLoaded) {
@@ -122,11 +125,6 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
   const HIDDEN_APPEND_TEXT = "\n\nPlease convert the text output of the previous step in pure textual representation removing any html tags/escape sequences"
   
   
-  const getValidModelId = (modelId: string | undefined): string => {
-    return models.includes(modelId || "") ? (modelId as string) : (models[0] || "vertex-gemini-2-5-flash")
-  }
-
-  
   const getDisplaySystemPrompt = (systemPrompt: string): string => {
     if (systemPrompt.endsWith(HIDDEN_APPEND_TEXT)) {
       return systemPrompt.slice(0, -HIDDEN_APPEND_TEXT.length)
@@ -145,9 +143,11 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
   const enhanceSystemPrompt = async () => {
     const displayPrompt = getDisplaySystemPrompt(agentConfig.systemPrompt)
     if (!displayPrompt.trim()) {
-      alert("Please enter a system prompt first")
+      setPromptError("Please enter a system prompt first")
       return
     }
+    
+    setPromptError(null)
 
     setIsEnhancingPrompt(true)
 
@@ -476,15 +476,23 @@ Process each question independently and provide thoughtful, well-reasoned answer
             <Textarea
               id="system-prompt"
               value={getDisplaySystemPrompt(agentConfig.systemPrompt)}
-              onChange={(e) =>
+              onChange={(e) => {
                 setAgentConfig((prev) => ({
                   ...prev,
                   systemPrompt: getFullSystemPrompt(e.target.value),
                 }))
-              }
+                if (promptError) {
+                  setPromptError(null)
+                }
+              }}
               placeholder="Enter system prompt for Q&A processing"
               className="w-full min-h-[120px] resize-none dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
             />
+            {promptError && (
+              <p className="text-sm text-red-500 dark:text-red-400">
+                {promptError}
+              </p>
+            )}
             <p className="text-xs text-slate-500 dark:text-gray-400">
               Define how the AI agent should answer questions from Excel sheets.
             </p>

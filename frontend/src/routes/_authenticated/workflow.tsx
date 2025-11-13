@@ -1027,16 +1027,24 @@ function WorkflowComponent() {
                   onWorkflowUpdate={(updatedWorkflow) => {
                     // Update the selectedTemplate with fresh data from polling
                     console.log("🔄 Parent received workflow update:", updatedWorkflow)
+                    console.log("🔄 Type of updatedWorkflow:", typeof updatedWorkflow)
+                    console.log("🔄 updatedWorkflow.success:", (updatedWorkflow as any).success)
+                    console.log("🔄 updatedWorkflow.data:", (updatedWorkflow as any).data)
+                    
+                    // Extract the actual data from the API response structure
+                    const workflowData = (updatedWorkflow as any).success ? (updatedWorkflow as any).data : updatedWorkflow
+                    
+                    console.log("🔄 Setting selectedTemplate with:", workflowData)
                     setSelectedTemplate({
-                      ...updatedWorkflow,
-                      description: updatedWorkflow.description || '',
-                      version: updatedWorkflow.version || '1.0',
-                      config: updatedWorkflow.config || {},
+                      ...workflowData,
+                      description: workflowData.description || '',
+                      version: workflowData.version || '1.0',
+                      config: workflowData.config || {},
                       isPublic: selectedTemplate?.isPublic || false,
-                      rootWorkflowStepTemplateId: (updatedWorkflow as any).rootWorkflowStepTemplateId || '',
-                      createdAt: (updatedWorkflow as any).createdAt || new Date().toISOString(),
-                      updatedAt: (updatedWorkflow as any).updatedAt || new Date().toISOString(),
-                      rootStep: (updatedWorkflow as any).rootStep || null
+                      rootWorkflowStepTemplateId: workflowData.rootWorkflowStepTemplateId || '',
+                      createdAt: workflowData.createdAt || new Date().toISOString(),
+                      updatedAt: workflowData.updatedAt || new Date().toISOString(),
+                      rootStep: workflowData.rootStep || null
                     })
                   }}
                 />

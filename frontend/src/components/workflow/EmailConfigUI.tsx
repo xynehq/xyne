@@ -103,15 +103,6 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
   // Load existing data or reset to defaults when component becomes visible
   React.useEffect(() => {
     if (isVisible) {
-      // Debug logging to see what data we receive
-      console.log("🔍 EmailConfigUI - Debugging data:", {
-        stepData: stepData,
-        toolData: toolData,
-        stepDataConfig: stepData?.config,
-        toolDataValue: toolData?.value,
-        toolDataConfig: toolData?.config
-      })
-      
       // Try to load from the most complete data source
       let existingConfig = null
       
@@ -129,7 +120,6 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
       }
       
       if (existingConfig) {
-        console.log("🔍 EmailConfigUI - Existing config found:", existingConfig)
         const newConfig = {
           sendingFrom: existingConfig.sendingFrom || "no-reply@xyne.io",
           emailAddresses: existingConfig.emailAddresses || existingConfig.to_email || [],
@@ -138,7 +128,6 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
           bodyContent: existingConfig.bodyContent || '',
           bodyPath: existingConfig.bodyPath || existingConfig.content_path || '',
         }
-        console.log("🔍 EmailConfigUI - Setting config to:", newConfig)
         setEmailConfig(newConfig)
       } else {
         // Reset to defaults for new Email
@@ -241,7 +230,6 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
         }
 
         await workflowToolsAPI.updateTool(toolId, updatedToolData)
-        console.log("Email tool updated successfully")
       }
 
       // Call the parent save handler

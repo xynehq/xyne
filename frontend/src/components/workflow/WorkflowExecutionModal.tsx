@@ -27,6 +27,7 @@ export function WorkflowExecutionModal({
   const [isProcessing, setIsProcessing] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
   const [isFailed, setIsFailed] = useState(false)
+  const [isInputRequired, setIsInputRequired] = useState(false)
   const [processingMessage, setProcessingMessage] = useState<string>(
     "Processing the File",
   )
@@ -60,6 +61,7 @@ export function WorkflowExecutionModal({
     setIsProcessing(false)
     setIsCompleted(false)
     setIsFailed(false)
+    setIsInputRequired(false)
     setProcessingMessage("")
     setExecutionId(null)
     if (pollingIntervalRef.current) {
@@ -338,50 +340,54 @@ export function WorkflowExecutionModal({
         // Reset retry count on successful request
         currentRetryCount = 0        
 
-        if (statusData.status === "completed" || statusData.status === "active") {
-          // Check if any step is awaiting user selection for Q&A
-          const qaStepAwaitingSelection = statusData.stepExecutions?.find((step: any) => {
-            const toolExecs = statusData.toolExecutions?.filter((t: any) => 
-              step.toolExecIds?.includes(t.id) && t.toolType === 'qa_agent'
-            ) || []
-            return toolExecs.some((tool: any) => tool.result?.awaitingUserSelection)
-          })
+        // Check if any step is awaiting user selection for Q&A regardless of overall status
+        const qaStepAwaitingSelection = statusData.stepExecutions?.find((step: any) => {
+          const toolExecs = statusData.toolExecutions?.filter((t: any) => 
+            step.toolExecIds?.includes(t.id) && t.toolType === 'qa_agent'
+          ) || []
+          return toolExecs.some((tool: any) => tool.result?.awaitingUserSelection)
+        })
+        
+        if (qaStepAwaitingSelection) {
+          // Find the Q&A tool execution with awaiting selection
+          const qaToolExec = statusData.toolExecutions?.find((t: any) => 
+            qaStepAwaitingSelection.toolExecIds?.includes(t.id) && 
+            t.toolType === 'qa_agent' && 
+            t.result?.awaitingUserSelection
+          )
           
-          if (qaStepAwaitingSelection) {
-            // Find the Q&A tool execution with awaiting selection
-            const qaToolExec = statusData.toolExecutions?.find((t: any) => 
-              qaStepAwaitingSelection.toolExecIds?.includes(t.id) && 
-              t.toolType === 'qa_agent' && 
-              t.result?.awaitingUserSelection
-            )
+          if (qaToolExec) {
+            console.log("🎯 Q&A tool execution found with awaitingUserSelection - triggering modal", qaToolExec)
+            stopPolling()
+            setIsProcessing(false)
             
-            if (qaToolExec) {
-              console.log("🎯 Q&A tool execution found with awaitingUserSelection - triggering modal", qaToolExec)
-              stopPolling()
-              setIsProcessing(false)
-              
-              // Trigger Q&A execution modal
-              const event = new CustomEvent("openQAExecution", {
-                detail: {
-                  nodeId: qaStepAwaitingSelection.id,
-                  stepData: {
-                    ...qaStepAwaitingSelection,
-                    result: qaToolExec.result,
-                    executionId: executionId
-                  },
-                  toolData: qaToolExec,
-                  workflowData: { execution: statusData }
-                }
-              })
-              console.log("🚀 Dispatching openQAExecution event", event.detail)
-              window.dispatchEvent(event)
-              
-              // Close the execution modal
-              onClose()
-              return
-            }
+            // Trigger Q&A execution modal
+            const event = new CustomEvent("openQAExecution", {
+              detail: {
+                nodeId: qaStepAwaitingSelection.id,
+                stepData: {
+                  ...qaStepAwaitingSelection,
+                  result: qaToolExec.result,
+                  executionId: executionId
+                },
+                toolData: qaToolExec,
+                workflowData: { execution: statusData }
+              }
+            })
+            console.log("🚀 Dispatching openQAExecution event", event.detail)
+            window.dispatchEvent(event)
+            
+            // Close the execution modal
+            onClose()
+            return
           }
-          
+        }
+        
+        if (statusData.status === "input_required") {
+          stopPolling()
+          setIsProcessing(false)
+          setIsInputRequired(true)
+        } else if (statusData.status === "completed") {
           stopPolling()
           setIsProcessing(false)
           setIsCompleted(true)
@@ -541,6 +547,55 @@ export function WorkflowExecutionModal({
                   className="bg-black hover:bg-gray-800 text-white px-6 py-2 rounded-full font-medium"
                 >
                   Upload Another
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : isInputRequired ? (
+          // Input Required Page
+          <>
+            {/* Header */}
+            <div className="p-8 pb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                {workflowName}
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
+            </div>
+
+            {/* Input Required Content */}
+            <div className="px-8 pb-8">
+              <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl px-6 py-16 text-center bg-gray-50 dark:bg-gray-800 w-full min-h-[280px] flex flex-col items-center justify-center">
+                {/* Input Required Icon */}
+                <AlertCircle className="w-16 h-16 text-blue-500 mb-6" />
+
+                {/* Input Required Message */}
+                <p className="text-gray-900 dark:text-gray-100 text-lg font-medium mb-2">
+                  Input Required
+                </p>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
+                  Workflow is paused waiting for manual step completion
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 mt-6">
+                <Button
+                  onClick={() => {
+                    if (executionId && onViewExecution) {
+                      onViewExecution(executionId)
+                      handleClose()
+                    }
+                  }}
+                  disabled={!executionId}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  View Workflow
+                </Button>
+                <Button
+                  onClick={handleClose}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-2 rounded-full font-medium"
+                >
+                  Close
                 </Button>
               </div>
             </div>
