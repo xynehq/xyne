@@ -337,8 +337,8 @@ export const modelDetailsMap: Record<
     name:"glm-45-fp8",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0.05361,
-        pricePerThousandOutputTokens:0.19491,
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.00011,
       }
     }
   },

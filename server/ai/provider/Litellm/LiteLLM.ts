@@ -6,13 +6,7 @@ import { calculateCost } from "@/utils/index"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { modelDetailsMap } from "@/ai/mappers"
-import {
-  parseLiteLLMResponse,
-  parseLiteLLMStreamChunk,
-  parseLiteLLMError,
-  type LiteLLMResponse,
-  type LiteLLMStreamChunk,
-} from "@/ai/provider/Litellm/litellm-schemas"
+import OpenAI from "openai"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -22,20 +16,18 @@ interface LiteLLMClientConfig {
 }
 
 export class LiteLLM {
-  private apiKey: string
-  private baseURL: string
+  private client: OpenAI
 
   constructor(clientConfig: LiteLLMClientConfig) {
-    this.apiKey = clientConfig.apiKey
-    this.baseURL = clientConfig.baseURL
+    this.client = new OpenAI({
+      apiKey: clientConfig.apiKey,
+      baseURL: clientConfig.baseURL,
+      dangerouslyAllowBrowser: true
+    })
   }
 
-  getApiKey(): string {
-    return this.apiKey
-  }
-
-  getBaseURL(): string {
-    return this.baseURL
+  getClient(): OpenAI {
+    return this.client
   }
 }
 
@@ -44,33 +36,17 @@ export class LiteLLMProvider extends BaseProvider {
     super(client, AIProviders.LiteLLM)
   }
 
-  private async handleAPIError(response: Response): Promise<never> {
-    let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
-    
-    try {
-      const errorData = await response.json() as unknown;
-      const parsedError = parseLiteLLMError(errorData);
-      errorMessage = parsedError.error.message;
-    } catch {
-      // Use default error message if parsing fails
-    }
-
-    throw new Error(
-      `LiteLLM API error: LiteLLM - ${errorMessage}`,
-      { cause: response }
-    );
-  }
 
   async converse(
     messages: Message[],
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
-    const client = this.client as LiteLLM
+    const client = (this.client as LiteLLM).getClient()
 
     try {
       // Transform messages to OpenAI-compatible format
-      const transformedMessages: any[] = messages.map((message) => {
+      const transformedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = messages.map((message) => {
         const role = message.role === "assistant" ? "assistant" : "user"
         return {
           role,
@@ -78,87 +54,49 @@ export class LiteLLMProvider extends BaseProvider {
         }
       })
 
-      const apiKey = client.getApiKey()
-      const baseURL = client.getBaseURL()
+      const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+        {
+          role: "system",
+          content: modelParams.systemPrompt || ""
+        },
+        ...transformedMessages,
+      ]
 
-      const payload = {
+      const tools = params.tools && params.tools.length
+        ? params.tools.map((t) => ({
+            type: "function" as const,
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.parameters || { type: "object", properties: {} },
+            },
+          }))
+        : undefined
+
+      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
         model: modelParams.modelId,
-        messages: [
-          {
-            role: "system",
-            content: modelParams.systemPrompt || ""
-          },
-          ...transformedMessages,
-        ],
+        messages: openaiMessages,
         max_tokens: modelParams.maxTokens,
         temperature: modelParams.temperature,
         top_p: modelParams.topP,
-        ...(modelParams.json
-          ? { response_format: { type: "json_object" } }
-          : {}),
-        // Tool calling support
-        ...(params.tools && params.tools.length
-          ? {
-              tools: params.tools.map((t) => ({
-                type: "function" as const,
-                function: {
-                  name: t.name,
-                  description: t.description,
-                  parameters:
-                    t.parameters || { type: "object", properties: {} },
-                },
-              })),
-              tool_choice: params.tool_choice ?? "auto",
-            }
-          : {}),
+        tools,
+        tool_choice: tools ? (params.tool_choice ?? "auto") : undefined,
+        response_format: modelParams.json ? { type: "json_object" } : undefined,
       }
 
-      // Make direct HTTP call to LiteLLM proxy
-      const response = await fetch(`${baseURL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (!response.ok) {
-        await this.handleAPIError(response);
-      }
-
-      const responseText = await response.text()
-
-      let data: LiteLLMResponse
-      try {
-        const parsed = JSON.parse(responseText) as unknown
-        data = parseLiteLLMResponse(parsed)
-      } catch (parseError) {
-        Logger.error("Failed to parse LiteLLM response as JSON", {
-          error: parseError,
-          responseText: responseText.substring(0, 1000),
-        })
-        throw new Error(
-          `Invalid JSON response from LiteLLM: ${parseError instanceof Error ? parseError.message : "Unknown error"}`,
-        )
-      }
-
-      // Safely extract the first choice
-      const firstChoice = data.choices && Array.isArray(data.choices) && data.choices.length > 0
-        ? data.choices[0]
-        : null
-
-      // Extract message content safely
-      const messageContent = firstChoice?.message?.content || ""
+      Logger.info(`📞 Calling LiteLLM model: ${modelParams.modelId} with params: ${JSON.stringify(requestParams, null, 2)}`)
       
-      // Extract tool calls safely
-      const toolCallsArray = firstChoice?.message?.tool_calls
-      const hasValidToolCalls = Array.isArray(toolCallsArray) && toolCallsArray.length > 0
+      const response = await client.chat.completions.create(requestParams)
+
+      // Extract the first choice
+      const firstChoice = response.choices[0]
+      const messageContent = firstChoice.message.content || ""
+      const toolCalls = firstChoice.message.tool_calls
 
       // Extract usage information with safe defaults
-      const inputTokens = data.usage?.prompt_tokens ?? 0
-      const outputTokens = data.usage?.completion_tokens ?? 0
-      const totalTokens = data.usage?.total_tokens ?? 0
+      const inputTokens = response.usage?.prompt_tokens ?? 0
+      const outputTokens = response.usage?.completion_tokens ?? 0
+      const totalTokens = response.usage?.total_tokens ?? 0
 
       // Get cost configuration with correct fallback shape
       const costConfig = modelDetailsMap[modelParams.modelId]?.cost?.onDemand ?? {
@@ -182,17 +120,14 @@ export class LiteLLMProvider extends BaseProvider {
             totalTokens,
           },
         },
-        ...(hasValidToolCalls
+        ...(toolCalls && toolCalls.length > 0
           ? {
-              tool_calls: toolCallsArray.map((tc: any) => ({
-                id: tc.id || "",
+              tool_calls: toolCalls.map((tc) => ({
+                id: tc.id,
                 type: "function" as const,
                 function: {
-                  name: tc.function?.name || "",
-                  arguments:
-                    typeof tc.function?.arguments === "string"
-                      ? tc.function.arguments
-                      : JSON.stringify(tc.function?.arguments || {}),
+                  name: tc.type === "function" ? tc.function.name : "",
+                  arguments: tc.type === "function" ? tc.function.arguments : "",
                 },
               })),
             }
@@ -215,11 +150,11 @@ export class LiteLLMProvider extends BaseProvider {
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
-    const client = this.client as LiteLLM
+    const client = (this.client as LiteLLM).getClient()
 
     try {
       // Transform messages to OpenAI-compatible format
-      const transformedMessages: any[] = messages.map((message) => {
+      const transformedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = messages.map((message) => {
         const role = message.role === "assistant" ? "assistant" : "user"
         return {
           role,
@@ -227,171 +162,111 @@ export class LiteLLMProvider extends BaseProvider {
         }
       })
 
-      const apiKey = client.getApiKey()
-      const baseURL = client.getBaseURL()
+      const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+        {
+          role: "system",
+          content: modelParams.systemPrompt || ""
+        },
+        ...transformedMessages,
+      ]
 
-      const payload = {
+      const tools = params.tools && params.tools.length
+        ? params.tools.map((t) => ({
+            type: "function" as const,
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.parameters || { type: "object", properties: {} },
+            },
+          }))
+        : undefined
+
+      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
         model: modelParams.modelId,
-        messages: [
-          {
-            role: "system",
-            content: modelParams.systemPrompt || ""
-          },
-          ...transformedMessages,
-        ],
+        messages: openaiMessages,
         max_tokens: modelParams.maxTokens,
         temperature: modelParams.temperature,
         top_p: modelParams.topP,
+        tools,
+        tool_choice: tools ? (params.tool_choice ?? "auto") : undefined,
+        response_format: modelParams.json ? { type: "json_object" } : undefined,
         stream: true,
-        ...(modelParams.json
-          ? { response_format: { type: "json_object" } }
-          : {}),
-        // Tool calling support
-        ...(params.tools && params.tools.length
-          ? {
-              tools: params.tools.map((t) => ({
-                type: "function" as const,
-                function: {
-                  name: t.name,
-                  description: t.description,
-                  parameters:
-                    t.parameters || { type: "object", properties: {} },
-                },
-              })),
-              tool_choice: params.tool_choice ?? "auto",
-            }
-          : {}),
       }
 
-      let accumulatedText = ""
+      Logger.info(`📡 Streaming LiteLLM model: ${modelParams.modelId} with params: ${JSON.stringify(requestParams, null, 2)}`)
+
       let accumulatedCost = 0
       let toolCalls: any[] = []
       let hasYieldedToolCalls = false
 
-      // Make direct HTTP call to LiteLLM proxy with streaming
-      const response = await fetch(`${baseURL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(payload),
-      })
+      const stream = await client.chat.completions.create(requestParams)
 
-      if (!response.ok) {
-        await this.handleAPIError(response);
-      }
+      for await (const chunk of stream) {
+        const choice = chunk.choices?.[0]
+        if (!choice) continue
 
-      if (!response.body) {
-        throw new Error("No response body for streaming request")
-      }
+        const delta = choice.delta
+        const finishReason = choice.finish_reason
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read()
-
-          if (done) {
-            break
+        // Handle text content
+        if (delta?.content) {
+          yield {
+            text: delta.content,
+            cost: 0, // Cost will be yielded at the end
           }
+        }
 
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split("\n").filter((line) => line.trim() !== "")
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6)
-
-              if (data === "[DONE]") {
-                // Stream is complete
-                continue
+        // Handle tool calls
+        if (delta?.tool_calls) {
+          for (const toolCall of delta.tool_calls) {
+            const index = toolCall.index ?? 0
+            if (!toolCalls[index]) {
+              toolCalls[index] = {
+                id: toolCall.id || "",
+                type: "function" as const,
+                function: {
+                  name: "",
+                  arguments: "",
+                },
               }
-
-              try {
-                const parsedJson = JSON.parse(data) as unknown
-                const parsed: LiteLLMStreamChunk = parseLiteLLMStreamChunk(parsedJson)
-
-                const choice = parsed.choices?.[0]
-                if (!choice) continue
-
-                const delta = choice.delta
-                const finishReason = choice.finish_reason
-
-                // Handle text content
-                if (delta?.content) {
-                  accumulatedText += delta.content
-                  yield {
-                    text: delta.content,
-                    cost: 0, // Cost will be yielded at the end
-                  }
-                }
-
-                // Handle tool calls
-                if (delta?.tool_calls) {
-                  for (const toolCall of delta.tool_calls) {
-                    const index = toolCall.index ?? 0
-                    if (!toolCalls[index]) {
-                      toolCalls[index] = {
-                        id: toolCall.id || "",
-                        type: "function" as const,
-                        function: {
-                          name: "",
-                          arguments: "",
-                        },
-                      }
-                    }
-                    if (toolCall.function?.name) {
-                      toolCalls[index].function.name = toolCall.function.name
-                    }
-                    if (toolCall.function?.arguments) {
-                      toolCalls[index].function.arguments +=
-                        toolCall.function.arguments
-                    }
-                  }
-                }
-
-                // Handle usage/cost information (usually in the last chunk)
-                if (parsed.usage) {
-                  const costConfig = modelDetailsMap[modelParams.modelId]?.cost?.onDemand ?? {
-                    pricePerThousandInputTokens: 0,
-                    pricePerThousandOutputTokens: 0,
-                  }
-                  accumulatedCost = calculateCost(
-                    {
-                      inputTokens: parsed.usage.prompt_tokens || 0,
-                      outputTokens: parsed.usage.completion_tokens || 0,
-                    },
-                    costConfig,
-                  )
-                }
-
-                // Check if this is the final chunk
-                if (finishReason) {
-                  // Yield tool calls if we have any and haven't yielded them yet
-                  if (toolCalls.length > 0 && !hasYieldedToolCalls) {
-                    hasYieldedToolCalls = true
-                    yield {
-                      text: "",
-                      tool_calls: toolCalls,
-                    }
-                  }
-                }
-              } catch (parseError) {
-                Logger.warn("Failed to parse streaming chunk", {
-                  chunkData: data.substring(0, 200),
-                  error:
-                    parseError instanceof Error
-                      ? parseError.message
-                      : String(parseError),
-                })
-              }
+            }
+            if (toolCall.function?.name) {
+              toolCalls[index].function.name = toolCall.function.name
+            }
+            if (toolCall.function?.arguments) {
+              toolCalls[index].function.arguments +=
+                toolCall.function.arguments
             }
           }
         }
-      } finally {
-        reader.releaseLock()
+
+        // Handle usage/cost information (usually in the last chunk)
+        if ((chunk as any).usage) {
+          const usage = (chunk as any).usage
+          const costConfig = modelDetailsMap[modelParams.modelId]?.cost?.onDemand ?? {
+            pricePerThousandInputTokens: 0,
+            pricePerThousandOutputTokens: 0,
+          }
+          accumulatedCost = calculateCost(
+            {
+              inputTokens: usage.prompt_tokens || 0,
+              outputTokens: usage.completion_tokens || 0,
+            },
+            costConfig,
+          )
+        }
+
+        // Check if this is the final chunk
+        if (finishReason) {
+          // Yield tool calls if we have any and haven't yielded them yet
+          if (toolCalls.length > 0 && !hasYieldedToolCalls) {
+            hasYieldedToolCalls = true
+            yield {
+              text: "",
+              tool_calls: toolCalls,
+            }
+          }
+        }
       }
 
       // Yield final cost if we have it
