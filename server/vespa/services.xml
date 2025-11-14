@@ -26,8 +26,8 @@
         </http>
           
         <nodes>
-            <!-- 25% of JVM for this docproc container -->
-            <!-- If running on same host as query container, consider 30% + 30% to leave headroom -->
+            <!-- 25% of JVM for feed container -->
+            <!-- Running both containers on same host uses 50% total (25% + 25%), leaving 50% headroom -->
             <jvm allocated-memory="25%"/>  
             <node hostalias="node1"/>  
             <!-- If you have a separate physical node for feed, change to: <node hostalias="node2"/> -->
@@ -68,8 +68,8 @@
         </http>
           
         <nodes>
-            <!-- 25% of JVM for the search container -->
-            <!-- If running on same host as feed container, consider 25% + 25% to leave headroom -->
+            <!-- 25% of JVM for query container -->
+            <!-- Running both containers on same host uses 50% total (25% + 25%), leaving 50% headroom -->
             <jvm allocated-memory="25%"/>  
             <node hostalias="node1"/>  
             <!-- If you have a separate physical node for query, change to: <node hostalias="node2"/> -->

@@ -57,9 +57,8 @@ export const checkPostgresHealth = async (): Promise<HealthStatusResponse> => {
   }
 }
 
-// Check Vespa Health
-
-export async function checkVespaHealth(): Promise<HealthStatusResponse> {
+// Check Vespa Feed Container Health (port 8080)
+export async function checkVespaFeedHealth(): Promise<HealthStatusResponse> {
   const startTime = Date.now()
 
   try {
@@ -120,6 +119,8 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
 
               vespaDetails = {
                 endpoint,
+                container: "feed",
+                port: config.vespaFeedPort,
                 status: data.status,
                 metrics: data.metrics || {},
                 message: data.message || "",
@@ -140,7 +141,7 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
                 applicationStatus = "JSON_RESPONSE"
                 healthStatus = HealthStatusType.Healthy
               }
-              vespaDetails = { endpoint, ...data }
+              vespaDetails = { endpoint, container: "feed", port: config.vespaFeedPort, ...data }
             }
           } else {
             // Handle text/HTML responses
@@ -182,6 +183,8 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
 
             vespaDetails = {
               endpoint,
+              container: "feed",
+              port: config.vespaFeedPort,
               responseType: "text",
               responseLength: textData.length,
               preview: textData.substring(0, 100),
@@ -192,6 +195,8 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
           healthStatus = HealthStatusType.Degraded
           vespaDetails = {
             endpoint,
+            container: "feed",
+            port: config.vespaFeedPort,
             parseError:
               parseError instanceof Error
                 ? parseError.message
@@ -221,7 +226,261 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
       serviceName: ServiceName.vespa,
       responseTime: Date.now() - startTime,
       details: {
-        error: `All Vespa endpoints failed. Last error: ${lastError}`,
+        error: `All Vespa feed container endpoints failed. Last error: ${lastError}`,
+        container: "feed",
+        port: config.vespaFeedPort,
+      },
+    }
+  } catch (error) {
+    Logger.error(error, "Vespa feed container health check failed")
+    return {
+      status: HealthStatusType.Unhealthy,
+      serviceName: ServiceName.vespa,
+      responseTime: Date.now() - startTime,
+      details: {
+        error:
+          error instanceof Error ? error.message : "Vespa feed container connection failed",
+        container: "feed",
+        port: config.vespaFeedPort,
+      },
+    }
+  }
+}
+
+// Check Vespa Query Container Health (port 8081)
+export async function checkVespaQueryHealth(): Promise<HealthStatusResponse> {
+  const startTime = Date.now()
+
+  try {
+    const vespaUrl =
+      process.env.NODE_ENV === "production"
+        ? `http://${config.vespaBaseHost}:${config.vespaQueryPort}`
+        : `http://localhost:${config.vespaQueryPort}`
+
+    // Try multiple Vespa health endpoints in order of preference
+    const healthCheckEndpoints = [
+      "/state/v1/health", // State API health endpoint (JSON)
+      "/ApplicationStatus", // Primary Vespa application status
+      "/status.html", // Alternative status page
+      "/", // Root endpoint (basic connectivity)
+    ]
+
+    let lastError: string | null = null
+
+    for (const endpoint of healthCheckEndpoints) {
+      try {
+        const response = await fetch(`${vespaUrl}${endpoint}`, {
+          method: "GET",
+          signal: AbortSignal.timeout(5000), // 5 second timeout
+        })
+
+        const responseTime = Date.now() - startTime
+
+        if (!response.ok) {
+          lastError = `${endpoint}: HTTP ${response.status}`
+          continue
+        }
+
+        const contentType = response.headers.get("content-type")
+        let applicationStatus = "Unknown"
+        let vespaDetails: Record<string, any> = { endpoint, container: "query", port: config.vespaQueryPort }
+        let healthStatus: HealthStatusType = HealthStatusType.Healthy
+
+        try {
+          if (contentType?.includes("application/json")) {
+            const data = await response.json()
+
+            // Parse response returned by /state/v1/health
+            if (endpoint === "/state/v1/health") {
+              const statusCode = data?.status?.code || data.code
+              applicationStatus = statusCode || "UP"
+
+              // Determine health based on status code
+              if (statusCode === "up" || statusCode === "UP") {
+                healthStatus = HealthStatusType.Healthy
+                applicationStatus = "UP"
+              } else if (statusCode === "down" || statusCode === "DOWN") {
+                healthStatus = HealthStatusType.Unhealthy
+                applicationStatus = "DOWN"
+              } else if (statusCode) {
+                healthStatus = HealthStatusType.Degraded
+                applicationStatus = statusCode
+              }
+
+              vespaDetails = {
+                endpoint,
+                container: "query",
+                port: config.vespaQueryPort,
+                status: data.status,
+                metrics: data.metrics || {},
+                message: data.message || "",
+              }
+            } else {
+              // Parse other JSON responses
+              if (
+                data.status === "up" ||
+                data.state === "active" ||
+                data.generation?.active
+              ) {
+                applicationStatus = "UP"
+                healthStatus = HealthStatusType.Healthy
+              } else if (data.status || data.state) {
+                applicationStatus = data.status || data.state
+                healthStatus = HealthStatusType.Degraded
+              } else {
+                applicationStatus = "JSON_RESPONSE"
+                healthStatus = HealthStatusType.Healthy
+              }
+              vespaDetails = { endpoint, container: "query", port: config.vespaQueryPort, ...data }
+            }
+          } else {
+            // Handle text/HTML responses
+            const textData = await response.text()
+
+            if (endpoint === "/ApplicationStatus") {
+              if (textData.includes("<status>")) {
+                const statusMatch = textData.match(
+                  /<status[^>]*>([^<]+)<\/status>/i,
+                )
+                applicationStatus = statusMatch ? statusMatch[1] : "XML_PARSED"
+              } else if (textData.includes("generation")) {
+                applicationStatus = "GENERATION_ACTIVE"
+              } else if (textData.toLowerCase().includes("ok")) {
+                applicationStatus = "OK"
+              } else {
+                applicationStatus =
+                  textData.trim().substring(0, 50) || "TEXT_RESPONSE"
+              }
+            } else if (endpoint === "/status.html") {
+              if (
+                textData.includes("OK") ||
+                textData.includes("healthy") ||
+                textData.includes("running")
+              ) {
+                applicationStatus = "HEALTHY"
+              } else {
+                applicationStatus = "HTML_RESPONSE"
+              }
+            } else {
+              // Root endpoint
+              applicationStatus =
+                textData.length > 0 ? "RESPONDING" : "EMPTY_RESPONSE"
+              healthStatus =
+                textData.length > 0
+                  ? HealthStatusType.Degraded
+                  : HealthStatusType.Unhealthy
+            }
+
+            vespaDetails = {
+              endpoint,
+              container: "query",
+              port: config.vespaQueryPort,
+              responseType: "text",
+              responseLength: textData.length,
+              preview: textData.substring(0, 100),
+            }
+          }
+        } catch (parseError) {
+          applicationStatus = "PARSE_ERROR"
+          healthStatus = HealthStatusType.Degraded
+          vespaDetails = {
+            endpoint,
+            container: "query",
+            port: config.vespaQueryPort,
+            parseError:
+              parseError instanceof Error
+                ? parseError.message
+                : "Could not parse response",
+          }
+        }
+
+        return {
+          status: healthStatus,
+          serviceName: ServiceName.vespa,
+          responseTime,
+          details: {
+            applicationStatus,
+            endpoint,
+            ...vespaDetails,
+          },
+        }
+      } catch (endpointError) {
+        lastError = `${endpoint}: ${endpointError instanceof Error ? endpointError.message : "Connection failed"}`
+        continue // Try next endpoint
+      }
+    }
+
+    // If all endpoints failed
+    return {
+      status: HealthStatusType.Unhealthy,
+      serviceName: ServiceName.vespa,
+      responseTime: Date.now() - startTime,
+      details: {
+        error: `All Vespa query container endpoints failed. Last error: ${lastError}`,
+        container: "query",
+        port: config.vespaQueryPort,
+      },
+    }
+  } catch (error) {
+    Logger.error(error, "Vespa query container health check failed")
+    return {
+      status: HealthStatusType.Unhealthy,
+      serviceName: ServiceName.vespa,
+      responseTime: Date.now() - startTime,
+      details: {
+        error:
+          error instanceof Error ? error.message : "Vespa query container connection failed",
+        container: "query",
+        port: config.vespaQueryPort,
+      },
+    }
+  }
+}
+
+// Backward compatibility wrapper - checks both feed and query containers
+// Returns unhealthy if either container is unhealthy
+export async function checkVespaHealth(): Promise<HealthStatusResponse> {
+  const startTime = Date.now()
+
+  try {
+    const [feedHealth, queryHealth] = await Promise.all([
+      checkVespaFeedHealth(),
+      checkVespaQueryHealth(),
+    ])
+
+    // Determine combined status
+    let combinedStatus: HealthStatusType
+    if (
+      feedHealth.status === HealthStatusType.Unhealthy ||
+      queryHealth.status === HealthStatusType.Unhealthy
+    ) {
+      combinedStatus = HealthStatusType.Unhealthy
+    } else if (
+      feedHealth.status === HealthStatusType.Degraded ||
+      queryHealth.status === HealthStatusType.Degraded
+    ) {
+      combinedStatus = HealthStatusType.Degraded
+    } else {
+      combinedStatus = HealthStatusType.Healthy
+    }
+
+    const responseTime = Date.now() - startTime
+
+    return {
+      status: combinedStatus,
+      serviceName: ServiceName.vespa,
+      responseTime,
+      details: {
+        feedContainer: {
+          status: feedHealth.status,
+          responseTime: feedHealth.responseTime,
+          ...feedHealth.details,
+        },
+        queryContainer: {
+          status: queryHealth.status,
+          responseTime: queryHealth.responseTime,
+          ...queryHealth.details,
+        },
       },
     }
   } catch (error) {
@@ -232,7 +491,7 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
       responseTime: Date.now() - startTime,
       details: {
         error:
-          error instanceof Error ? error.message : "Vespa connection failed",
+          error instanceof Error ? error.message : "Vespa health check failed",
       },
     }
   }
@@ -292,15 +551,17 @@ export const checkOverallSystemHealth =
     Logger.info("Starting overall system health check...")
     const startTime = Date.now()
 
-    const [postgresHealth, vespaHealth, paddleOCRHealth] = await Promise.all([
+    const [postgresHealth, vespaFeedHealth, vespaQueryHealth, paddleOCRHealth] = await Promise.all([
       checkPostgresHealth(),
-      checkVespaHealth(),
+      checkVespaFeedHealth(),
+      checkVespaQueryHealth(),
       checkPaddleOCRHealth(),
     ])
 
     const services: ServiceHealthCheck = {
       postgres: postgresHealth,
-      vespa: vespaHealth,
+      vespaFeed: vespaFeedHealth,
+      vespaQuery: vespaQueryHealth,
       paddleOCR: paddleOCRHealth,
     }
 

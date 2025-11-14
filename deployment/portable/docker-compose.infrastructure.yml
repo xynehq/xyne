@@ -60,8 +60,8 @@ services:
     hostname: vespa
     runtime: nvidia
     ports:
-      - "${VESPA_PORT:-8080}:8080"
-      - "8081:8081"
+      - "${VESPA_FEED_PORT:-8080}:8080"
+      - "${VESPA_QUERY_PORT:-8081}:8081"
       - "19071:19071"
     volumes:
       - ${XYNE_DATA_DIR:-./data}/vespa-data:/opt/vespa/var
