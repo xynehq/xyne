@@ -45,7 +45,7 @@ const dependencies: VespaDependencies = {
   logger: Logger,
   config: vespaConfig,
   sourceSchemas: AllSources,
-  vespaEndpoint: config.vespaEndpoint,
+  vespaEndpoint: config.vespaEndpoint as any,
 }
 
 // Create a single shared vespa service instance

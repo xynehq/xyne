@@ -2,7 +2,8 @@ import { isURLValid } from "@/validate"
 import { Models } from "@/ai/types"
 import { AuthType } from "./shared/types"
 let vespaBaseHost = "0.0.0.0"
-let vespaPort = process.env.VESPA_PORT || 8080
+let vespaFeedPort = process.env.VESPA_FEED_PORT || 8080
+let vespaQueryPort = process.env.VESPA_QUERY_PORT || 8081
 let postgresBaseHost = "0.0.0.0"
 let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
@@ -207,7 +208,8 @@ export default {
   syncServerPort,
   syncServerHost,
   host,
-  vespaPort,
+  vespaFeedPort,
+  vespaQueryPort,
   // slack oauth does not work on http
   slackHost,
   AwsAccessKey,
@@ -259,7 +261,10 @@ export default {
   RefreshTokenTTL: 60 * 60 * 24 * 30, // Refresh token expires in 30 days
   MAX_IMAGE_SIZE_BYTES,
   MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
-  vespaEndpoint: `http://${vespaBaseHost}:8080`,
+  vespaEndpoint: {
+    documentEndpoint: `http://${vespaBaseHost}:${vespaFeedPort}`,
+    searchEndpoint: `http://${vespaBaseHost}:${vespaQueryPort}`,
+  },
   defaultRecencyDecayRate: 0.1, // Decay rate for recency scoring in Vespa searches
   CurrentAuthType,
   getDatabaseUrl,

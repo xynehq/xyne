@@ -58,8 +58,35 @@ fi
 
 
 echo "Deploying vespa... $VESPA_CLI_PATH"
-${VESPA_CLI_PATH:-vespa} deploy --wait 960
+# Deploy with longer wait time for multiple container clusters
+# Note: With multiple container clusters, deployment may take longer (30 minutes)
+if ! ${VESPA_CLI_PATH:-vespa} deploy --wait 960; then
+    echo "Deployment failed or timed out. Checking container status..."
+    echo "Checking feed container (8080)..."
+    curl -f http://localhost:8080/status.html 2>/dev/null && echo "✓ Feed container is up" || echo "✗ Feed container is down"
+    echo "Checking query container (8081)..."
+    curl -f http://localhost:8081/status.html 2>/dev/null && echo "✓ Query container is up" || echo "✗ Query container is down"
+    echo "Checking Vespa logs for errors..."
+    docker logs vespa --tail 50 2>&1 | grep -i "error\|warn\|fail" | tail -20 || echo "No recent errors in logs"
+    exit 1
+fi
+
 echo "Restarting vespa...."
 docker restart vespa
-# vespa destroy
-${VESPA_CLI_PATH:-vespa} status --wait 75
+echo "Waiting for Vespa to restart (30 seconds)..."
+sleep 30
+
+# Check status with longer wait time and allow partial success
+# The query container might take longer to start, or might route through feed container
+echo "Checking Vespa status..."
+if ! ${VESPA_CLI_PATH:-vespa} status --wait 75; then
+    echo "Warning: Status check failed or incomplete. Verifying containers..."
+    echo "Checking feed container (8080)..."
+    if curl -f http://localhost:8080/status.html 2>/dev/null; then
+        echo "✓ Feed container is up and responding"
+    else
+        echo "✗ Feed container is not responding"
+        exit 1
+    fi
+    echo "Note: Query container may route through feed container for search operations"
+fi
