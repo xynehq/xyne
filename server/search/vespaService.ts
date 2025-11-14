@@ -28,6 +28,8 @@ const vespaConfig = createDefaultConfig({
   cluster: CLUSTER,
   vespaMaxRetryAttempts: config.vespaMaxRetryAttempts,
   vespaRetryDelay: config.vespaRetryDelay,
+  feedEndpoint: config.vespaEndpoint.feedEndpoint,
+  queryEndpoint: config.vespaEndpoint.queryEndpoint,
 })
 
 const AllSources = [
@@ -45,7 +47,6 @@ const dependencies: VespaDependencies = {
   logger: Logger,
   config: vespaConfig,
   sourceSchemas: AllSources,
-  vespaEndpoint: config.vespaEndpoint as any,
 }
 
 // Create a single shared vespa service instance

@@ -262,8 +262,8 @@ export default {
   MAX_IMAGE_SIZE_BYTES,
   MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
   vespaEndpoint: {
-    documentEndpoint: `http://${vespaBaseHost}:${vespaFeedPort}`,
-    searchEndpoint: `http://${vespaBaseHost}:${vespaQueryPort}`,
+    feedEndpoint: `http://${vespaBaseHost}:${vespaFeedPort}`,
+    queryEndpoint: `http://${vespaBaseHost}:${vespaQueryPort}`,
   },
   defaultRecencyDecayRate: 0.1, // Decay rate for recency scoring in Vespa searches
   CurrentAuthType,

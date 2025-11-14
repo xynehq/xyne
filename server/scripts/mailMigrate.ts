@@ -102,7 +102,8 @@ export async function visit(options: VisitOptions): Promise<VisitResponse> {
     ...(continuation ? { continuation } : {}),
   })
 
-  const url = `${config.vespaEndpoint}/document/v1/${namespace}/${schema}/docid?${params.toString()}`
+  // Use document endpoint for document operations (port 8080)
+  const url = `${config.vespaEndpoint.feedEndpoint}/document/v1/${namespace}/${schema}/docid?${params.toString()}`
 
   try {
     const response = await fetch(url, {
@@ -155,7 +156,8 @@ export const fetchDocumentsWithContinuation = async (
 
 // Direct GET request to fetch document by mailId via search API
 export const getDocByMailId = async (mailId: string): Promise<any | null> => {
-  const url = `${config.vespaEndpoint}/search/?yql=select * from ${mailSchema} where mailId contains "${mailId}"`
+  // Use search endpoint for search operations (port 8081)
+  const url = `${config.vespaEndpoint.queryEndpoint}/search/?yql=select * from ${mailSchema} where mailId contains "${mailId}"`
 
   try {
     const response = await fetch(url, {

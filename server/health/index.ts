@@ -65,8 +65,8 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
   try {
     const vespaUrl =
       process.env.NODE_ENV === "production"
-        ? `http://${config.vespaBaseHost}:${config.vespaPort}`
-        : `http://localhost:${config.vespaPort}`
+        ? `http://${config.vespaBaseHost}:${config.vespaFeedPort}`
+        : `http://localhost:${config.vespaFeedPort}`
 
     // Try multiple Vespa health endpoints in order of preference
     const healthCheckEndpoints = [
