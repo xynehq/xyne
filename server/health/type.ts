@@ -14,8 +14,7 @@ export interface HealthStatusResponse {
 
 export interface ServiceHealthCheck {
   postgres: HealthStatusResponse
-  vespaFeed: HealthStatusResponse
-  vespaQuery: HealthStatusResponse
+  vespa: HealthStatusResponse
   paddleOCR: HealthStatusResponse
 }
 

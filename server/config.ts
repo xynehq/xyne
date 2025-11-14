@@ -2,8 +2,8 @@ import { isURLValid } from "@/validate"
 import { Models } from "@/ai/types"
 import { AuthType } from "./shared/types"
 let vespaBaseHost = "0.0.0.0"
-let vespaFeedPort = process.env.VESPA_FEED_PORT || 8080
-let vespaQueryPort = process.env.VESPA_QUERY_PORT || 8081
+let vespaFeedPort = parseInt(process.env.VESPA_FEED_PORT || "8080", 10)
+let vespaQueryPort = parseInt(process.env.VESPA_QUERY_PORT || "8081", 10)
 let postgresBaseHost = "0.0.0.0"
 let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
