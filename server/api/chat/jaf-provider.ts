@@ -1,5 +1,6 @@
 import { getAISDKProviderByModel } from "@/ai/provider"
 import { MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
+import config from "@/config"
 import type {
   ModelProvider as JAFModelProvider,
   Message as JAFMessage,
@@ -24,10 +25,221 @@ import type {
   LanguageModelV2ToolResultPart,
 } from "@ai-sdk/provider"
 import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
+import path from "path"
+import fs from "fs"
+import { regex, findImageByName } from "@/ai/provider/base"
+import type { AgentImageMetadata } from "./agent-schemas"
+const { IMAGE_CONTEXT_CONFIG } = config
+const IMAGE_BASE_DIR = path.resolve(
+  process.env.IMAGE_DIR || "downloads/xyne_images_db",
+)
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024
+const MIME_TYPE_MAP: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+}
 
 export type MakeXyneJAFProviderOptions = {
   baseURL?: string
   apiKey?: string
+}
+
+type ImageAwareContext = {
+  imageFileNames?: string[]
+  imageMetadata?: Map<string, AgentImageMetadata>
+  turnCount?: number
+  user?: { email?: string }
+}
+
+type ImagePromptPart = {
+  label: string
+  filePart: LanguageModelV2FilePart
+}
+
+const selectImagesForCall = (context: ImageAwareContext): string[] => {
+  console.info('[IMAGE addition][JAF Provider] selectImagesForCall called:', {
+    enabled: IMAGE_CONTEXT_CONFIG.enabled,
+    imageCount: context?.imageFileNames?.length || 0,
+    hasImageFileNames: !!context?.imageFileNames,
+    hasMetadata: context?.imageMetadata instanceof Map,
+    metadataSize: context?.imageMetadata instanceof Map ? context.imageMetadata.size : 0,
+    turnCount: context?.turnCount,
+    userEmail: context?.user?.email,
+    contextKeys: context ? Object.keys(context) : [],
+  })
+
+  if (
+    !IMAGE_CONTEXT_CONFIG.enabled ||
+    !context?.imageFileNames?.length ||
+    !(context.imageMetadata instanceof Map)
+  ) {
+    console.info('[IMAGE addition][JAF Provider] Image selection skipped:', {
+      reason: !IMAGE_CONTEXT_CONFIG.enabled ? 'disabled' : 
+              !context?.imageFileNames?.length ? 'no_images' : 
+              !(context.imageMetadata instanceof Map) ? 'no_metadata' : 'unknown',
+      enabled: IMAGE_CONTEXT_CONFIG.enabled,
+      imageCount: context?.imageFileNames?.length || 0,
+      hasMetadata: context?.imageMetadata instanceof Map,
+      userEmail: context?.user?.email,
+    })
+    return []
+  }
+
+  const currentTurn = context.turnCount ?? 0
+  const attachments: string[] = []
+  const recentImages: string[] = []
+  const skipped: Array<{ name: string; age: number; reason: string }> = []
+
+  for (const imageName of context.imageFileNames) {
+    const metadata = context.imageMetadata.get(imageName)
+    if (!metadata) {
+      skipped.push({ name: imageName, age: -1, reason: 'no_metadata' })
+      continue
+    }
+
+    if (metadata.isUserAttachment && IMAGE_CONTEXT_CONFIG.alwaysIncludeAttachments) {
+      attachments.push(imageName)
+      continue
+    }
+
+    const age = currentTurn - metadata.addedAtTurn
+    if (age <= IMAGE_CONTEXT_CONFIG.recencyWindow) {
+      recentImages.push(imageName)
+    } else {
+      skipped.push({ name: imageName, age, reason: 'too_old' })
+    }
+  }
+
+  const combined = [...attachments, ...recentImages]
+  const finalSelection = IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0 &&
+    combined.length > IMAGE_CONTEXT_CONFIG.maxImagesPerCall
+    ? combined.slice(0, IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
+    : combined // Pass all images when maxImagesPerCall is 0 (no limit)
+
+  console.info('[IMAGE addition][JAF Provider] Image selection turn', currentTurn, {
+    totalPool: context.imageFileNames.length,
+    attachments: attachments.length,
+    recent: recentImages.length,
+    skipped: skipped.length,
+    selected: finalSelection.length,
+    recencyWindow: IMAGE_CONTEXT_CONFIG.recencyWindow,
+    userEmail: context.user?.email,
+  })
+
+  return finalSelection
+}
+
+const findLastUserMessageIndex = (
+  messages: LanguageModelV2Message[],
+): number => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user") {
+      return i
+    }
+  }
+  return -1
+}
+
+const parseImageFileName = (
+  imageName: string,
+): { docIndex: string; docId: string; imageNumber: string } | null => {
+  const match = imageName.match(regex)
+  if (!match) {
+    console.warn(`[JAF Provider] Invalid image reference: ${imageName}`)
+    return null
+  }
+  const [, docIndex, docId, imageNumber] = match
+  if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
+    console.warn(`[JAF Provider] Suspicious docId detected: ${docId}`)
+    return null
+  }
+  return { docIndex, docId, imageNumber }
+}
+
+const buildLanguageModelImageParts = async (
+  imageFileNames: string[],
+): Promise<ImagePromptPart[]> => {
+  const loadStats = { success: 0, failed: 0, totalBytes: 0 }
+  
+  const parts = await Promise.all(
+    imageFileNames.map(async (imageName) => {
+      const parsed = parseImageFileName(imageName)
+      if (!parsed) {
+        loadStats.failed++
+        return null
+      }
+
+      const { docIndex, docId, imageNumber } = parsed
+      const imageDir = path.join(IMAGE_BASE_DIR, docId)
+      const resolvedPath = path.resolve(imageDir)
+      if (!resolvedPath.startsWith(IMAGE_BASE_DIR)) {
+        console.warn(
+          `[JAF Provider] Rejecting image path outside base dir: ${imageDir}`,
+        )
+        loadStats.failed++
+        return null
+      }
+
+      try {
+        const absolutePath = findImageByName(imageDir, imageNumber)
+        await fs.promises.access(absolutePath, fs.constants.F_OK)
+        const imageBytes = await fs.promises.readFile(absolutePath)
+
+        if (imageBytes.length > MAX_IMAGE_BYTES) {
+          console.warn(
+            `[JAF Provider] Skipping image ${absolutePath} due to size ${(imageBytes.length / (1024 * 1024)).toFixed(2)}MB`,
+          )
+          loadStats.failed++
+          return null
+        }
+
+        const extension = path.extname(absolutePath).toLowerCase()
+        const mediaType = MIME_TYPE_MAP[extension]
+        if (!mediaType) {
+          console.warn(
+            `[JAF Provider] Unsupported image format ${extension} for ${absolutePath}`,
+          )
+          loadStats.failed++
+          return null
+        }
+
+        loadStats.success++
+        loadStats.totalBytes += imageBytes.length
+
+        return {
+          label: `Image reference [${docIndex}_${imageNumber}] from document ${docId}.`,
+          filePart: {
+            type: "file",
+            filename: path.basename(absolutePath),
+            data: imageBytes,
+            mediaType,
+          },
+        }
+      } catch (error) {
+        console.warn(
+          `[JAF Provider] Failed to load image ${imageName}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        )
+        loadStats.failed++
+        return null
+      }
+    }),
+  )
+
+  const filtered = parts.filter((part): part is ImagePromptPart => Boolean(part))
+  
+  console.info('[IMAGE addition][JAF Provider] Image loading complete:', {
+    requested: imageFileNames.length,
+    loaded: loadStats.success,
+    failed: loadStats.failed,
+    totalMB: (loadStats.totalBytes / (1024 * 1024)).toFixed(2),
+  })
+  
+  return filtered
 }
 
 export const makeXyneJAFProvider = <Ctx>(
@@ -49,6 +261,51 @@ export const makeXyneJAFProvider = <Ctx>(
         state.messages,
         agent.instructions(state),
       )
+
+      const imageAwareContext = state.context as ImageAwareContext
+      console.info('[IMAGE addition][JAF Provider] getCompletion called with context:', {
+        hasContext: !!state.context,
+        hasImageFileNames: !!(state.context as any)?.imageFileNames,
+        imageFileNamesLength: ((state.context as any)?.imageFileNames)?.length || 0,
+        hasImageMetadata: ((state.context as any)?.imageMetadata) instanceof Map,
+        imageMetadataSize: ((state.context as any)?.imageMetadata) instanceof Map ? ((state.context as any)?.imageMetadata).size : 0,
+        turnCount: (state.context as any)?.turnCount,
+        userEmail: ((state.context as any)?.user)?.email,
+        contextType: typeof state.context,
+        model,
+        agentName: agent.name,
+      })
+      const selectedImages = selectImagesForCall(imageAwareContext)
+      
+      if (selectedImages.length > 0) {
+        const lastUserIndex = findLastUserMessageIndex(prompt)
+        
+        if (lastUserIndex !== -1) {
+          const imageParts = await buildLanguageModelImageParts(selectedImages)
+          if (imageParts.length > 0) {
+            const contentBefore = prompt[lastUserIndex].content.length
+            for (const { label, filePart } of imageParts) {
+              prompt[lastUserIndex].content.push(
+                { type: "text", text: label },
+                filePart,
+              )
+            }
+            console.info('[IMAGE addition][JAF Provider] Attached images to prompt:', {
+              turn: imageAwareContext.turnCount ?? 0,
+              messageIndex: lastUserIndex,
+              imagesAttached: imageParts.length,
+              contentPartsBefore: contentBefore,
+              contentPartsAfter: prompt[lastUserIndex].content.length,
+              userEmail: imageAwareContext.user?.email,
+            })
+          } else {
+            console.warn('[JAF Provider] No valid image parts built despite', selectedImages.length, 'selected')
+          }
+        } else {
+          console.warn('[JAF Provider] No user message found to attach', selectedImages.length, 'images to')
+        }
+      }
+
       const tools = buildFunctionTools(agent)
       const advRun = (
         state.context as {

@@ -21,6 +21,9 @@ import type {
   ToolFailureInfo,
   ToolExpectation,
   ToolExpectationAssignment,
+  AgentImageMetadata,
+  FinalSynthesisState,
+  AgentRuntimeCallbacks,
 } from "./agent-schemas"
 import { ToolExpectationSchema, ReviewResultSchema } from "./agent-schemas"
 import { getTracer } from "@/tracer"
@@ -64,10 +67,15 @@ import {
   type ListCustomAgentsOutput,
   ReviewAgentOutputSchema,
   type ToolOutput,
+  type ResourceAccessSummary,
 } from "./tool-schemas"
-import { searchToCitation } from "./utils"
+import { searchToCitation, extractImageFileNames } from "./utils"
 import { GetDocumentsByDocIds } from "@/search/vespa"
-import type { VespaSearchResult, VespaSearchResults } from "@xyne/vespa-ts/types"
+import {
+  Apps,
+  type VespaSearchResult,
+  type VespaSearchResults,
+} from "@xyne/vespa-ts/types"
 import { expandSheetIds } from "@/search/utils"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { db } from "@/db/client"
@@ -85,8 +93,26 @@ import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
 import type { AttachmentMetadata } from "@/shared/types"
 import { processMessage } from "./utils"
 import { checkAndYieldCitationsForAgent } from "./citation-utils"
+import {
+  evaluateAgentResourceAccess,
+  getUserConnectorState,
+  createEmptyConnectorState,
+  type UserConnectorState,
+} from "./resource-access"
+import {
+  getAgentByExternalIdWithPermissionCheck,
+  type SelectAgent,
+} from "@/db/agent"
+import { isCuid } from "@paralleldrive/cuid2"
+import { DEFAULT_TEST_AGENT_ID } from "@/shared/types"
+import { parseAgentAppIntegrations } from "./tools/utils"
 
-const { defaultBestModel, defaultFastModel, JwtPayloadKey } = config
+const {
+  defaultBestModel,
+  defaultFastModel,
+  JwtPayloadKey,
+  IMAGE_CONTEXT_CONFIG,
+} = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
@@ -207,6 +233,68 @@ function buildTurnToolReasoningSummary(
   return `Tools executed in turn ${turnNumber}:\n${lines.join("\n")}`
 }
 
+function registerImageReferences(
+  context: AgentRunContext,
+  imageNames: string[],
+  metadata: {
+    turnNumber: number
+    sourceFragmentId?: string | ((imageName: string) => string)
+    sourceToolName: string
+    isUserAttachment: boolean
+  }
+): number {
+  if (!Array.isArray(imageNames) || imageNames.length === 0) {
+    return 0
+  }
+
+  let added = 0
+  const skipped: string[] = []
+  
+  for (const imageName of imageNames) {
+    if (!imageName || context.imageMetadata.has(imageName)) {
+      skipped.push(imageName || 'empty')
+      continue
+    }
+    const fragmentId =
+      typeof metadata.sourceFragmentId === "function"
+        ? metadata.sourceFragmentId(imageName)
+        : metadata.sourceFragmentId ?? ""
+    context.imageFileNames.push(imageName)
+    context.imageMetadata.set(imageName, {
+      addedAtTurn: metadata.turnNumber,
+      sourceFragmentId: fragmentId,
+      sourceToolName: metadata.sourceToolName,
+      isUserAttachment: metadata.isUserAttachment,
+    })
+    added++
+  }
+  
+  if (added > 0) {
+    console.info('[IMAGE addition][Image Registry] Registered images:', {
+      added,
+      skipped: skipped.length,
+      totalNow: context.imageFileNames.length,
+      turn: metadata.turnNumber,
+      source: metadata.sourceToolName,
+      isAttachment: metadata.isUserAttachment,
+    })
+  }
+  
+  return added
+}
+
+function getFragmentIdFromImageName(
+  imageName: string,
+  fragmentIndexMap: Map<number, string>,
+  fallback = ""
+): string {
+  const separatorIdx = imageName.indexOf("_")
+  if (separatorIdx <= 0) return fallback
+  const docIndex = Number(imageName.slice(0, separatorIdx))
+  if (Number.isNaN(docIndex)) return fallback
+  return fragmentIndexMap.get(docIndex) ?? fallback
+}
+
 function getMetadataLayers(
   result: any
 ): Record<string, unknown>[] {
@@ -234,6 +322,124 @@ function getMetadataValue<T = unknown>(
   return undefined
 }
 
+function formatPlanForPrompt(plan: PlanState | null): string {
+  if (!plan) return ""
+  const lines = [`Goal: ${plan.goal}`]
+  plan.subTasks.forEach((task, idx) => {
+    const icon =
+      task.status === "completed"
+        ? "✓"
+        : task.status === "in_progress"
+          ? "→"
+          : task.status === "failed"
+            ? "✗"
+            : task.status === "blocked"
+              ? "!"
+              : "○"
+    const baseLine = `${idx + 1}. [${icon}] ${task.description}`
+    const detailParts: string[] = []
+    if (task.result) detailParts.push(`Result: ${task.result}`)
+    if (task.toolsRequired?.length) {
+      detailParts.push(`Tools: ${task.toolsRequired.join(", ")}`)
+    }
+    lines.push(
+      detailParts.length > 0 ? `${baseLine}\n   ${detailParts.join(" | ")}` : baseLine
+    )
+  })
+  return lines.join("\n")
+}
+
+function formatClarificationsForPrompt(
+  clarifications: AgentRunContext["clarifications"]
+): string {
+  if (!clarifications?.length) return ""
+  const formatted = clarifications
+    .map(
+      (clarification, idx) =>
+        `${idx + 1}. Q: ${clarification.question}\n   A: ${clarification.answer}`
+    )
+    .join("\n")
+  return formatted
+}
+
+function buildFinalSynthesisPayload(
+  context: AgentRunContext,
+  fragmentsLimit = Math.max(12, context.contextFragments.length || 1)
+): { systemPrompt: string; userMessage: string } {
+  const fragmentsSection = buildContextSection(context.contextFragments, fragmentsLimit)
+  const planSection = formatPlanForPrompt(context.plan)
+  const clarificationSection = formatClarificationsForPrompt(context.clarifications)
+  const workspaceSection = context.userContext?.trim()
+    ? `Workspace Context:\n${context.userContext}`
+    : ""
+
+  const parts = [
+    `User Question:\n${context.message.text}`,
+    planSection ? `Execution Plan Snapshot:\n${planSection}` : "",
+    clarificationSection ? `Clarifications Resolved:\n${clarificationSection}` : "",
+    workspaceSection,
+    fragmentsSection,
+  ].filter(Boolean)
+
+  const userMessage = parts.join("\n\n")
+
+  const systemPrompt = [
+    "You are Xyne, an enterprise research assistant generating the FINAL response for the user.",
+    "Produce one comprehensive answer grounded entirely in the provided context fragments and images.",
+    "Every factual statement MUST cite a fragment using square brackets like [3]. Never invent citations or group multiple indices in one bracket.",
+    "Incorporate relevant insights from referenced images (provided separately) when they strengthen the answer.",
+    "Do not mention internal tooling, planning steps, or this synthesis process.",
+    "Deliver the answer in well-structured paragraphs or bullet lists with clear section headers when appropriate.",
+  ].join(" ")
+
+  return { systemPrompt, userMessage }
+}
+
+function selectImagesForFinalSynthesis(
+  context: AgentRunContext
+): {
+  selected: string[]
+  total: number
+  dropped: string[]
+  userAttachmentCount: number
+} {
+  const total = context.imageFileNames.length
+  if (!IMAGE_CONTEXT_CONFIG.enabled || total === 0) {
+    return { selected: [], total, dropped: [], userAttachmentCount: 0 }
+  }
+
+  const attachmentNames: string[] = []
+  const otherNames: string[] = []
+
+  for (const imageName of context.imageFileNames) {
+    const metadata = context.imageMetadata.get(imageName)
+    if (metadata?.isUserAttachment) {
+      attachmentNames.push(imageName)
+    } else {
+      otherNames.push(imageName)
+    }
+  }
+
+  const prioritized = [...attachmentNames, ...otherNames]
+  let selected = prioritized
+  let dropped: string[] = []
+
+  if (
+    IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0 &&
+    prioritized.length > IMAGE_CONTEXT_CONFIG.maxImagesPerCall
+  ) {
+    selected = prioritized.slice(0, IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
+    dropped = prioritized.slice(IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
+  }
+
+  return {
+    selected,
+    total,
+    dropped,
+    userAttachmentCount: attachmentNames.length,
+  }
+}
+
 /**
  * Initialize AgentRunContext with default values
  */
@@ -250,6 +456,14 @@ function initializeAgentContext(
     workspaceNumericId?: number
   }
 ): AgentRunContext {
+  const finalSynthesis: FinalSynthesisState = {
+    requested: false,
+    completed: false,
+    suppressAssistantStreaming: false,
+    streamedText: "",
+    ackReceived: false,
+  }
+
   return {
     user: {
       email: userEmail,
@@ -276,6 +490,9 @@ function initializeAgentContext(
     toolCallHistory: [],
     contextFragments: [],
     seenDocuments: new Set<string>(),
+    imageFileNames: [],
+    imageMetadata: new Map<string, AgentImageMetadata>(),
+    turnCount: 0,
     totalLatency: 0,
     totalCost: 0,
     tokenUsage: {
@@ -294,6 +511,8 @@ function initializeAgentContext(
       lastReviewSummary: null,
     },
     decisions: [],
+    finalSynthesis,
+    runtime: undefined,
   }
 }
 
@@ -716,6 +935,79 @@ export async function afterToolExecutionHook(
             } for analysis.`,
             { toolName, detail: selectedDocs.map((doc) => doc.source.title || doc.id).join(", ") }
           )
+
+          if (IMAGE_CONTEXT_CONFIG.enabled && selectedDocs.length > 0) {
+            const vespaLikeResults = selectedDocs.map((doc, idx) => ({
+              id: doc.id,
+              relevance: 0,
+              fields: { docId: doc.source.docId },
+            })) as unknown as VespaSearchResult[]
+
+            const combinedContext = selectedDocs
+              .map((doc) => doc.content)
+              .join("\n")
+            
+            console.info('[IMAGE addition][Image Extraction] Processing tool result:', {
+              toolName,
+              turn: context.turnCount,
+              documentCount: selectedDocs.length,
+              contextLength: combinedContext.length,
+              currentImageCount: context.imageFileNames.length,
+            })
+            
+            const { imageFileNames: extractedImages } = extractImageFileNames(
+              combinedContext,
+              vespaLikeResults
+            )
+
+            console.info('[IMAGE addition][Image Extraction] Extracted image references:', {
+              toolName,
+              turn: context.turnCount,
+              extractedCount: extractedImages.length,
+              extractedImages: extractedImages.slice(0, 5),
+              currentContextImages: context.imageFileNames.length,
+            })
+
+            if (extractedImages.length > 0) {
+              const fragmentIndexMap = new Map<number, string>()
+              selectedDocs.forEach((doc, idx) => {
+                fragmentIndexMap.set(idx, doc.id)
+              })
+              const turnNumber =
+                typeof context.turnCount === "number" ? context.turnCount : 0
+              const addedImages = registerImageReferences(
+                context,
+                extractedImages,
+                {
+                  turnNumber,
+                  sourceFragmentId: (imageName: string) =>
+                    getFragmentIdFromImageName(
+                      imageName,
+                      fragmentIndexMap,
+                      selectedDocs[0]?.id || ""
+                    ),
+                  sourceToolName: toolName,
+                  isUserAttachment: false,
+                }
+              )
+              
+              console.info('[IMAGE addition][Image Registry] After registration:', {
+                toolName,
+                turn: turnNumber,
+                addedImages,
+                totalImagesNow: context.imageFileNames.length,
+                totalMetadataNow: context.imageMetadata.size,
+                firstFewImages: context.imageFileNames.slice(0, 3),
+              })
+              if (addedImages > 0) {
+                loggerWithChild({ email: context.user.email }).info(
+                  `Tracked ${addedImages} new image${
+                    addedImages === 1 ? "" : "s"
+                  } from ${toolName} on turn ${turnNumber}`
+                )
+              }
+            }
+          }
 
           // Emit SSE event (ToolMetric event to be added to ChatSSEvents later)
           // if (emitSSE) {
@@ -1195,9 +1487,83 @@ function buildInternalToolAdapters(): Tool<unknown, AgentRunContext>[] {
     ...googleTools,
     getSlackRelatedMessagesTool,
     fallbackTool,
+    createFinalSynthesisTool(),
   ] as Array<Tool<unknown, AgentRunContext>>
 
   return baseTools
+}
+
+type ToolAccessRequirement = {
+  requiredApp?: Apps
+  connectorFlag?: keyof UserConnectorState
+}
+
+const TOOL_ACCESS_REQUIREMENTS: Record<string, ToolAccessRequirement> = {
+  searchGmail: { requiredApp: Apps.Gmail, connectorFlag: "gmailSynced" },
+  searchDriveFiles: {
+    requiredApp: Apps.GoogleDrive,
+    connectorFlag: "googleDriveSynced",
+  },
+  searchCalendarEvents: {
+    requiredApp: Apps.GoogleCalendar,
+    connectorFlag: "googleCalendarSynced",
+  },
+  searchGoogleContacts: {
+    requiredApp: Apps.GoogleWorkspace,
+    connectorFlag: "googleWorkspaceSynced",
+  },
+  getSlackRelatedMessages: {
+    requiredApp: Apps.Slack,
+    connectorFlag: "slackConnected",
+  },
+}
+
+function deriveAllowedAgentApps(agentPrompt?: string): Set<Apps> | null {
+  if (!agentPrompt) return null
+  const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+  if (!agentAppEnums?.length) {
+    return null
+  }
+  return new Set(agentAppEnums)
+}
+
+function filterToolsByAvailability(
+  tools: Array<Tool<unknown, AgentRunContext>>,
+  params: {
+    connectorState: UserConnectorState
+    allowedAgentApps: Set<Apps> | null
+    email: string
+    agentId?: string
+  },
+): Array<Tool<unknown, AgentRunContext>> {
+  return tools.filter((tool) => {
+    const rule = TOOL_ACCESS_REQUIREMENTS[tool.schema.name]
+    if (!rule) return true
+
+    if (
+      rule.connectorFlag &&
+      !params.connectorState[rule.connectorFlag]
+    ) {
+      loggerWithChild({ email: params.email, agentId: params.agentId }).info(
+        `Disabling tool ${tool.schema.name}: connector '${rule.connectorFlag}' unavailable.`,
+      )
+      return false
+    }
+
+    if (
+      rule.requiredApp &&
+      params.allowedAgentApps &&
+      params.allowedAgentApps.size > 0 &&
+      !params.allowedAgentApps.has(rule.requiredApp)
+    ) {
+      loggerWithChild({ email: params.email, agentId: params.agentId }).info(
+        `Disabling tool ${tool.schema.name}: agent not configured for ${rule.requiredApp}.`,
+      )
+      return false
+    }
+
+    return true
+  })
 }
 
 function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
@@ -1396,6 +1762,132 @@ function createReviewTool(): Tool<unknown, AgentRunContext> {
   }
 }
 
+function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
+  return {
+    schema: {
+      name: "synthesize_final_answer",
+      description: TOOL_SCHEMAS.synthesize_final_answer.description,
+      parameters: TOOL_SCHEMAS.synthesize_final_answer.inputSchema,
+    },
+    async execute(_args, context) {
+      if (context.finalSynthesis.requested && context.finalSynthesis.completed) {
+        return ToolResponse.error(
+          "EXECUTION_FAILED",
+          "Final synthesis already completed for this run."
+        )
+      }
+
+      const streamAnswer = context.runtime?.streamAnswerText
+      if (!streamAnswer) {
+        return ToolResponse.error(
+          "EXECUTION_FAILED",
+          "Streaming channel unavailable. Cannot deliver final answer."
+        )
+      }
+
+      const { selected, total, dropped, userAttachmentCount } =
+        selectImagesForFinalSynthesis(context)
+
+      const { systemPrompt, userMessage } = buildFinalSynthesisPayload(context)
+      const fragmentsCount = context.contextFragments.length
+
+      context.finalSynthesis.requested = true
+      context.finalSynthesis.suppressAssistantStreaming = true
+      context.finalSynthesis.completed = false
+      context.finalSynthesis.streamedText = ""
+
+      await context.runtime?.emitReasoning?.({
+        text: `Initiating final synthesis with ${fragmentsCount} context fragments and ${selected.length}/${total} images (${userAttachmentCount} user attachments).`,
+        step: { type: AgentReasoningStepType.LogMessage },
+      })
+
+      const logger = loggerWithChild({ email: context.user.email })
+      if (dropped.length > 0) {
+        logger.info(
+          {
+            droppedCount: dropped.length,
+            limit: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
+            totalImages: total,
+          },
+          "Final synthesis image limit enforced; dropped oldest references."
+        )
+      }
+
+      const modelId = (defaultBestModel as Models) || Models.Gpt_4o
+      const modelParams: ModelParams = {
+        modelId,
+        systemPrompt,
+        stream: true,
+        temperature: 0.2,
+        max_new_tokens: 1500,
+        imageFileNames: selected,
+      }
+
+      const messages: Message[] = [
+        {
+          role: ConversationRole.USER,
+          content: [{ text: userMessage }],
+        },
+      ]
+
+      const provider = getProviderByModel(modelId)
+      let streamedCharacters = 0
+      let estimatedCostUsd = 0
+
+      try {
+        const iterator = provider.converseStream(messages, modelParams)
+        for await (const chunk of iterator) {
+          if (chunk.text) {
+            streamedCharacters += chunk.text.length
+            context.finalSynthesis.streamedText += chunk.text
+            await streamAnswer(chunk.text)
+          }
+          const chunkCost = chunk.metadata?.cost
+          if (typeof chunkCost === "number" && !Number.isNaN(chunkCost)) {
+            estimatedCostUsd += chunkCost
+          }
+        }
+
+        context.finalSynthesis.completed = true
+
+        await context.runtime?.emitReasoning?.({
+          text: "Final synthesis completed and streamed to the user.",
+          step: { type: AgentReasoningStepType.LogMessage },
+        })
+
+        return ToolResponse.success(
+          {
+            result: "Final answer streamed to user.",
+            streamed: true,
+            metadata: {
+              textLength: streamedCharacters,
+              totalImagesAvailable: total,
+              imagesProvided: selected.length,
+            },
+          },
+          {
+            estimatedCostUsd,
+          }
+        )
+      } catch (error) {
+        context.finalSynthesis.suppressAssistantStreaming = false
+        context.finalSynthesis.requested = false
+        context.finalSynthesis.completed = false
+        logger.error(
+          { err: error instanceof Error ? error.message : String(error) },
+          "Final synthesis tool failed."
+        )
+        return ToolResponse.error(
+          "EXECUTION_FAILED",
+          `Failed to synthesize final answer: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        )
+      }
+    },
+  }
+}
+
 /**
  * Build dynamic agent instructions including plan state and tool descriptions
  */
@@ -1512,6 +2004,11 @@ ${attachmentDirective ? `${attachmentDirective}\n` : ""}
 - Adjust strategy based on results
 - Don't retry failing tools more than 3 times
 
+# FINAL SYNTHESIS
+- When you have gathered everything needed, CALL \`synthesize_final_answer\` (no arguments). This tool composes and streams the actual response to the user.
+- Never output the final answer directly—always go through the tool.
+- After the tool completes, reply with a short acknowledgment like "Done." without calling more tools.
+
 # IMPORTANT Citation Format:
 - Use square brackets with the context index number: [1], [2], etc.
 - Place citations right after the relevant statement
@@ -1540,7 +2037,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
     // Parse request body to get actual query
     // @ts-ignore
     const body = c.req.valid("query")
-    let { message, chatId }: { message: string; chatId?: string } = body
+    let {
+      message,
+      chatId,
+      agentId: rawAgentId,
+    }: { message: string; chatId?: string; agentId?: string } = body
     
     if (!message) {
       throw new HTTPException(400, { message: "Message is required" })
@@ -1549,6 +2050,20 @@ export async function MessageAgents(c: Context): Promise<Response> {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     rootSpan.setAttribute("chatId", chatId || "new")
+
+    let normalizedAgentId =
+      typeof rawAgentId === "string" ? rawAgentId.trim() : undefined
+    if (normalizedAgentId === "") {
+      normalizedAgentId = undefined
+    }
+    if (normalizedAgentId === DEFAULT_TEST_AGENT_ID) {
+      normalizedAgentId = undefined
+    }
+    if (normalizedAgentId && !isCuid(normalizedAgentId)) {
+      throw new HTTPException(400, {
+        message: "Invalid agentId. Expected a valid CUID.",
+      })
+    }
 
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentsForContext = attachmentMetadata.map((meta) => ({
@@ -1562,6 +2077,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
           .flatMap((meta) => expandSheetIds(meta.fileId))
       )
     )
+    const imageAttachmentFileIds = Array.from(
+      new Set(attachmentMetadata.filter((meta) => meta.isImage).map((meta) => meta.fileId))
+    )
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -1569,6 +2087,37 @@ export async function MessageAgents(c: Context): Promise<Response> {
       email
     )
     const { user, workspace } = userAndWorkspace
+    let connectorState = createEmptyConnectorState()
+    try {
+      connectorState = await getUserConnectorState(db, email)
+    } catch (error) {
+      loggerWithChild({ email }).warn(
+        error,
+        "Failed to load user connector state; assuming no connectors",
+      )
+    }
+    let agentPromptForLLM: string | undefined
+    let resolvedAgentId: string | undefined
+    let agentRecord: SelectAgent | null = null
+    let allowedAgentApps: Set<Apps> | null = null
+
+    if (normalizedAgentId) {
+      agentRecord = await getAgentByExternalIdWithPermissionCheck(
+        db,
+        normalizedAgentId,
+        workspace.id,
+        user.id
+      )
+      if (!agentRecord) {
+        throw new HTTPException(403, {
+          message: "Access denied: You do not have permission to use this agent",
+        })
+      }
+      resolvedAgentId = agentRecord.externalId
+      agentPromptForLLM = JSON.stringify(agentRecord)
+      allowedAgentApps = deriveAllowedAgentApps(agentPromptForLLM)
+      rootSpan.setAttribute("agentId", resolvedAgentId)
+    }
     const userTimezone = user?.timeZone || "UTC"
     const dateForAI = getDateForAI({ userTimeZone: userTimezone })
     const userMetadata: UserMetadataType = {
@@ -1594,8 +2143,19 @@ export async function MessageAgents(c: Context): Promise<Response> {
         fileIds: messageFileIds,
         attachmentMetadata,
         modelId: defaultBestModel,
+        agentId: resolvedAgentId ?? undefined,
       })
       chatRecord = bootstrap.chat
+      const chatAgentId = chatRecord.agentId ?? undefined
+      if (resolvedAgentId && chatAgentId && chatAgentId !== resolvedAgentId) {
+        throw new HTTPException(400, {
+          message:
+            "This chat is already associated with a different agent. Please start a new chat for that agent.",
+        })
+      }
+      if (!resolvedAgentId && chatAgentId) {
+        resolvedAgentId = chatAgentId
+      }
     } catch (error) {
       loggerWithChild({ email }).error(
         error,
@@ -1611,6 +2171,28 @@ export async function MessageAgents(c: Context): Promise<Response> {
       })
     }
     rootSpan.setAttribute("chatId", chatRecord.externalId)
+
+    if (
+      resolvedAgentId &&
+      !agentRecord &&
+      resolvedAgentId !== DEFAULT_TEST_AGENT_ID
+    ) {
+      agentRecord = await getAgentByExternalIdWithPermissionCheck(
+        db,
+        resolvedAgentId,
+        workspace.id,
+        user.id
+      )
+      if (!agentRecord) {
+        throw new HTTPException(403, {
+          message:
+            "Access denied: You do not have permission to use the agent linked to this conversation",
+        })
+      }
+      agentPromptForLLM = JSON.stringify(agentRecord)
+      allowedAgentApps = deriveAllowedAgentApps(agentPromptForLLM)
+      rootSpan.setAttribute("agentId", resolvedAgentId)
+    }
     
     return streamSSE(c, async (stream) => {
       try {
@@ -1635,10 +2217,46 @@ export async function MessageAgents(c: Context): Promise<Response> {
           {
             userContext: userCtxString,
             workspaceNumericId: workspace.id,
+            agentPrompt: agentPromptForLLM,
           }
         )
 
-        const internalTools = buildInternalToolAdapters()
+        if (IMAGE_CONTEXT_CONFIG.enabled && imageAttachmentFileIds.length > 0) {
+          console.info('[IMAGE addition][Image Init] Processing user attachments:', {
+            imageAttachmentCount: imageAttachmentFileIds.length,
+            fileIds: imageAttachmentFileIds.slice(0, 5),
+            userEmail: email,
+          })
+          
+          const attachmentImageNames = imageAttachmentFileIds.map(
+            (fileId, index) => `${index}_${fileId}_${0}`
+          )
+          
+          console.info('[IMAGE addition][Image Init] Generated image names:', {
+            count: attachmentImageNames.length,
+            samples: attachmentImageNames.slice(0, 3),
+          })
+          
+          const added = registerImageReferences(agentContext, attachmentImageNames, {
+            turnNumber: 0,
+            sourceFragmentId: "user_attachment",
+            sourceToolName: "user_input",
+            isUserAttachment: true,
+          })
+          if (added > 0) {
+            loggerWithChild({ email }).info(
+              `Registered ${added} image attachment${added === 1 ? "" : "s"} for MessageAgents context`
+            )
+          }
+        }
+
+        const baseInternalTools = buildInternalToolAdapters()
+        const internalTools = filterToolsByAvailability(baseInternalTools, {
+          connectorState,
+          allowedAgentApps,
+          email,
+          agentId: resolvedAgentId,
+        })
         const customTools = buildCustomAgentTools()
         const allTools: Tool<unknown, AgentRunContext>[] = [
           ...internalTools,
@@ -1689,12 +2307,19 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
 
         // Build dynamic instructions
-        const instructions = () =>
-          buildAgentInstructions(
+        const instructions = () => {
+          console.info('[IMAGE addition][Instructions] Building agent instructions:', {
+            currentImageCount: agentContext.imageFileNames.length,
+            currentMetadataSize: agentContext.imageMetadata.size,
+            hasImageConfig: IMAGE_CONTEXT_CONFIG.enabled,
+            userEmail: email,
+          })
+          return buildAgentInstructions(
             agentContext,
             allTools.map((tool) => tool.schema.name),
             dateForAI
           )
+        }
 
         // Set up JAF agent
         const jafAgent: JAFAgent<AgentRunContext, string> = {
@@ -1840,6 +2465,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
             }
           }
         }
+        agentContext.runtime = {
+          streamAnswerText,
+          emitReasoning: emitReasoningStep,
+        }
         const traceEventHandler = async (event: TraceEvent) => {
           if (event.type !== "before_tool_execution") return undefined
           return beforeToolExecutionHook(
@@ -1859,6 +2488,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
           switch (evt.type) {
             case "turn_start":
+              runState.context.turnCount = evt.data.turn
               currentTurn = evt.data.turn
               await streamReasoningStep(
                 emitReasoningStep,
@@ -2018,6 +2648,17 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 break
               }
 
+              if (agentContext.finalSynthesis.suppressAssistantStreaming) {
+                if (content?.trim()) {
+                  agentContext.finalSynthesis.ackReceived = true
+                  await streamReasoningStep(
+                    emitReasoningStep,
+                    "Final synthesis acknowledged. Closing out the run."
+                  )
+                }
+                break
+              }
+
               if (content) {
                 const extractedExpectations = extractExpectedResults(content)
                 if (extractedExpectations.length > 0) {
@@ -2044,7 +2685,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
             case "final_output":
               const output = evt.data.output
-              if (typeof output === "string" && output.length > 0) {
+              if (
+                !agentContext.finalSynthesis.suppressAssistantStreaming &&
+                typeof output === "string" &&
+                output.length > 0
+              ) {
                 const remaining = output.slice(answer.length)
                 if (remaining) {
                   await streamAnswerText(remaining)
@@ -2195,8 +2840,36 @@ export async function listCustomAgentsSuitable(
     }
   }
 
-  const briefs = accessibleAgents.map((agent) =>
-    buildAgentBrief(agent)
+  let connectorState = createEmptyConnectorState()
+  try {
+    connectorState = await getUserConnectorState(db, params.userEmail)
+  } catch (error) {
+    loggerWithChild({ email: params.userEmail }).warn(
+      error,
+      "Failed to load connector state; defaulting to no connectors",
+    )
+  }
+
+  const resourceAccessByAgent = new Map<string, ResourceAccessSummary[]>()
+  const briefs = await Promise.all(
+    accessibleAgents.map(async (agent) => {
+      let resourceAccess: ResourceAccessSummary[] = []
+      try {
+        resourceAccess = await evaluateAgentResourceAccess({
+          agent,
+          userEmail: params.userEmail,
+          connectorState,
+        })
+      } catch (error) {
+        loggerWithChild({ email: params.userEmail }).warn(
+          error,
+          "Failed to evaluate resource access for agent",
+          { agentId: agent.externalId },
+        )
+      }
+      resourceAccessByAgent.set(agent.externalId, resourceAccess)
+      return buildAgentBrief(agent, resourceAccess)
+    }),
   )
 
   const systemPrompt = [
@@ -2243,9 +2916,13 @@ export async function listCustomAgentsSuitable(
     const validation = ListCustomAgentsOutputSchema.safeParse(parsed)
     if (validation.success) {
       const trimmedAgents = validation.data.agents.slice(0, maxAgents)
+      const enrichedAgents = trimmedAgents.map((agent) => ({
+        ...agent,
+        resourceAccess: resourceAccessByAgent.get(agent.agentId) ?? [],
+      }))
       return {
         result: validation.data.result,
-        agents: trimmedAgents,
+        agents: enrichedAgents,
         totalEvaluated: accessibleAgents.length,
       }
     }
@@ -2340,9 +3017,13 @@ type AgentBrief = {
   estimatedCost: "low" | "medium" | "high"
   averageLatency: number
   isPublic: boolean
+  resourceAccess?: ResourceAccessSummary[]
 }
 
-function buildAgentBrief(agent: any): AgentBrief {
+function buildAgentBrief(
+  agent: any,
+  resourceAccess?: ResourceAccessSummary[]
+): AgentBrief {
   const integrations = extractIntegrationKeys(agent.appIntegrations)
   const domains = deriveDomainsFromIntegrations(integrations)
   const capabilities = integrations.length ? integrations : domains
@@ -2355,6 +3036,7 @@ function buildAgentBrief(agent: any): AgentBrief {
     estimatedCost: agent.allowWebSearch ? "high" : "medium",
     averageLatency: 4500,
     isPublic: agent.isPublic,
+    resourceAccess,
   }
 }
 
@@ -2382,9 +3064,35 @@ function formatAgentBriefsForPrompt(briefs: AgentBrief[]): string {
 Description: ${brief.description || "N/A"}
 Capabilities: ${brief.capabilities.join(", ") || "N/A"}
 Domains: ${brief.domains.join(", ")}
-Estimated cost: ${brief.estimatedCost}`
+Estimated cost: ${brief.estimatedCost}
+Resource readiness: ${summarizeResourceAccess(brief.resourceAccess)}`
     )
     .join("\n\n")
+}
+
+function summarizeResourceAccess(
+  resourceAccess?: ResourceAccessSummary[]
+): string {
+  if (!resourceAccess || resourceAccess.length === 0) {
+    return "unknown"
+  }
+  return resourceAccess
+    .map((entry) => {
+      const detailParts: string[] = []
+      if (entry.availableItems?.length) {
+        detailParts.push(`${entry.availableItems.length} ok`)
+      }
+      if (entry.missingItems?.length) {
+        detailParts.push(`${entry.missingItems.length} blocked`)
+      }
+      if (entry.note && detailParts.length === 0) {
+        detailParts.push(entry.note)
+      }
+      const detail =
+        detailParts.length > 0 ? ` (${detailParts.join(", ")})` : ""
+      return `${entry.app}:${entry.status}${detail}`
+    })
+    .join("; ")
 }
 
 function buildHeuristicAgentSelection(
@@ -2397,11 +3105,19 @@ function buildHeuristicAgentSelection(
   const scored = briefs.map((brief) => {
     const text =
       `${brief.agentName} ${brief.description} ${brief.capabilities.join(" ")}`.toLowerCase()
-    const score =
+    const baseScore =
       tokens.reduce(
         (acc, token) => (text.includes(token) ? acc + 1 : acc),
         0
       ) / Math.max(tokens.length, 1)
+    const penalty = brief.resourceAccess?.some(
+      (entry) => entry.status === "missing"
+    )
+      ? 0.3
+      : brief.resourceAccess?.some((entry) => entry.status === "partial")
+        ? 0.15
+        : 0
+    const score = Math.max(baseScore - penalty, 0)
     return { brief, score }
   })
 
@@ -2418,6 +3134,7 @@ function buildHeuristicAgentSelection(
       confidence: Math.min(Math.max(score + 0.1, 0.3), 1),
       estimatedCost: brief.estimatedCost,
       averageLatency: brief.averageLatency,
+      resourceAccess: brief.resourceAccess,
     }))
 
   return {

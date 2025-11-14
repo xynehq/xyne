@@ -1774,6 +1774,9 @@ export const MessageWithToolsApi = async (c: Context) => {
           toolCallHistory: [],
           contextFragments: gatheredFragments,
           seenDocuments,
+          imageFileNames: [],
+          imageMetadata: new Map(),
+          turnCount: 0,
           totalLatency: 0,
           totalCost: 0,
           tokenUsage: {

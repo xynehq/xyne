@@ -9,6 +9,7 @@
  */
 
 import { z } from "zod"
+import { Apps } from "@xyne/vespa-ts/types"
 import { ToolReviewFindingSchema } from "./agent-schemas"
 import type { Apps, Entity, MailParticipant } from "@xyne/vespa-ts/types"
 
@@ -34,6 +35,7 @@ export enum ToolCategory {
   Clarification = "clarification",
   Review = "review",
   Fallback = "fallback",
+  Finalization = "finalization",
 }
 
 export interface ToolExample<TInput, TOutput> {
@@ -130,6 +132,34 @@ export const ToDoWriteOutputSchema = z.object({
 })
 
 export type ToDoWriteOutput = z.infer<typeof ToDoWriteOutputSchema>
+
+// ============================================================================ 
+// FINAL SYNTHESIS TOOL SCHEMAS
+// ============================================================================
+
+export const SynthesizeFinalAnswerInputSchema = z
+  .object({})
+  .describe("No arguments allowed. Invoke only when you are fully ready to deliver the final answer.")
+
+export const SynthesizeFinalAnswerOutputSchema = z.object({
+  result: z
+    .string()
+    .describe("Confirmation that the final synthesis was executed (the actual answer is streamed to the user)."),
+  streamed: z
+    .boolean()
+    .describe("Indicates whether the answer was streamed to the user directly during tool execution."),
+  metadata: z
+    .object({
+      textLength: z.number().describe("Characters streamed to the user."),
+      totalImagesAvailable: z.number().describe("Total tracked images across the run."),
+      imagesProvided: z.number().describe("Images forwarded to the final synthesis call, post limit."),
+    })
+    .partial()
+    .optional(),
+})
+
+export type SynthesizeFinalAnswerInput = z.infer<typeof SynthesizeFinalAnswerInputSchema>
+export type SynthesizeFinalAnswerOutput = z.infer<typeof SynthesizeFinalAnswerOutputSchema>
 
 // ============================================================================
 // SEARCH TOOL SCHEMAS
@@ -232,6 +262,20 @@ export const ListCustomAgentsInputSchema = z.object({
 export type ListCustomAgentsInput = z.infer<typeof ListCustomAgentsInputSchema>
 
 // List custom agents output
+const ResourceItemSchema = z.object({
+  id: z.string(),
+  label: z.string().optional(),
+  type: z.string().optional(),
+})
+
+const ResourceAccessSummarySchema = z.object({
+  app: z.nativeEnum(Apps),
+  status: z.enum(["available", "partial", "missing", "check_at_usage"]),
+  availableItems: z.array(ResourceItemSchema).optional(),
+  missingItems: z.array(ResourceItemSchema).optional(),
+  note: z.string().optional(),
+})
+
 export const ListCustomAgentsOutputSchema = z.object({
   result: z.string(),
   agents: z.array(z.object({
@@ -244,11 +288,14 @@ export const ListCustomAgentsOutputSchema = z.object({
     confidence: z.number().min(0).max(1),
     estimatedCost: z.enum(["low", "medium", "high"]),
     averageLatency: z.number(),
+    resourceAccess: z.array(ResourceAccessSummarySchema).optional(),
   })),
   totalEvaluated: z.number(),
 })
 
 export type ListCustomAgentsOutput = z.infer<typeof ListCustomAgentsOutputSchema>
+export type ResourceAccessItem = z.infer<typeof ResourceItemSchema>
+export type ResourceAccessSummary = z.infer<typeof ResourceAccessSummarySchema>
 
 // Run public agent input
 export const RunPublicAgentInputSchema = z.object({
@@ -483,6 +530,25 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
     category: ToolCategory.Fallback,
     inputSchema: FallbackToolInputSchema,
     outputSchema: FallbackToolOutputSchema,
+  },
+
+  // Finalization Tool
+  synthesize_final_answer: {
+    name: "synthesize_final_answer",
+    description: [
+      "MANDATORY FINAL STEP.",
+      "Call this tool exactly once when you have gathered all required context and are ready to deliver the final answer.",
+      "It streams the final response to the user using the full text + image context.",
+      "After calling this tool, do NOT call any other tools—simply acknowledge completion in your next assistant turn.",
+    ].join(" "),
+    category: ToolCategory.Finalization,
+    inputSchema: SynthesizeFinalAnswerInputSchema,
+    outputSchema: SynthesizeFinalAnswerOutputSchema,
+    prerequisites: [
+      "All necessary evidence collected",
+      "Citations ready",
+      "No further tool calls will be needed afterwards",
+    ],
   },
 }
 

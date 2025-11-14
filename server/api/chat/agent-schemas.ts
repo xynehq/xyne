@@ -72,6 +72,26 @@ export interface ReviewState {
   lastReviewSummary: string | null
 }
 
+export interface AgentImageMetadata {
+  addedAtTurn: number
+  sourceFragmentId: string
+  sourceToolName: string
+  isUserAttachment: boolean
+}
+
+export interface AgentRuntimeCallbacks {
+  streamAnswerText?: (text: string) => Promise<void>
+  emitReasoning?: (payload: Record<string, unknown>) => Promise<void>
+}
+
+export interface FinalSynthesisState {
+  requested: boolean
+  completed: boolean
+  suppressAssistantStreaming: boolean
+  streamedText: string
+  ackReceived: boolean
+}
+
 /**
  * AgentRunContext - Core state container for entire execution lifecycle
  */
@@ -109,6 +129,11 @@ export interface AgentRunContext {
   contextFragments: MinimalAgentFragment[]
   seenDocuments: Set<string> // Prevent re-fetching
 
+  // Image context tracking
+  imageFileNames: string[]
+  imageMetadata: Map<string, AgentImageMetadata>
+  turnCount: number
+
   // Performance metrics
   totalLatency: number
   totalCost: number
@@ -132,6 +157,10 @@ export interface AgentRunContext {
 
   // Decision log (for debugging)
   decisions: Decision[]
+
+  // Final synthesis tracking
+  finalSynthesis: FinalSynthesisState
+  runtime?: AgentRuntimeCallbacks
 }
 
 // ============================================================================
