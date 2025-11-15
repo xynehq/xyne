@@ -699,6 +699,15 @@ export type AgentReasoningStep =
   | AgentReasoningLogMessage
 
 export enum XyneTools {
+  // new tools
+  searchGmail = "searchGmail",
+  searchDriveFiles = "searchDriveFiles",
+  searchCalendarEvents = "searchCalendarEvents",
+  searchGoogleContacts = "searchGoogleContacts",
+  searchGlobal = "searchGlobal",
+  requestUserClarification = "request_user_clarification",
+
+  // old tools
   GetUserInfo = "get_user_info",
   MetadataRetrieval = "metadata_retrieval",
   Search = "search",
