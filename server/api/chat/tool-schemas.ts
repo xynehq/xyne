@@ -278,18 +278,21 @@ const ResourceAccessSummarySchema = z.object({
 
 export const ListCustomAgentsOutputSchema = z.object({
   result: z.string(),
-  agents: z.array(z.object({
-    agentId: z.string(),
-    agentName: z.string(),
-    description: z.string(),
-    capabilities: z.array(z.string()),
-    domains: z.array(z.string()),
-    suitabilityScore: z.number().min(0).max(1),
-    confidence: z.number().min(0).max(1),
-    estimatedCost: z.enum(["low", "medium", "high"]),
-    averageLatency: z.number(),
-    resourceAccess: z.array(ResourceAccessSummarySchema).optional(),
-  })),
+  agents: z
+    .array(z.object({
+      agentId: z.string(),
+      agentName: z.string(),
+      description: z.string(),
+      capabilities: z.array(z.string()),
+      domains: z.array(z.string()),
+      suitabilityScore: z.number().min(0).max(1),
+      confidence: z.number().min(0).max(1),
+      estimatedCost: z.enum(["low", "medium", "high"]),
+      averageLatency: z.number(),
+      resourceAccess: z.array(ResourceAccessSummarySchema).optional(),
+    }))
+    .nullable()
+    .describe("Ordered list of best-fit agents. Return null when no agent is sufficiently certain."),
   totalEvaluated: z.number(),
 })
 
@@ -492,22 +495,114 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   // Agent Tools
   list_custom_agents: {
     name: "list_custom_agents",
-    description: "Find relevant custom agents for a query. MUST be called before run_public_agent.",
+    description: [
+      "Find relevant custom agents for a query.",
+      "Parameters: query (user intent), requiredCapabilities (capabilities string[]), maxAgents (upper bound).",
+      "Always run this before calling run_public_agent; it returns null when no agent is confident enough.",
+      "Use the output to compare multiple candidates before choosing one.",
+    ].join(" "),
     category: ToolCategory.Agent,
     inputSchema: ListCustomAgentsInputSchema,
     outputSchema: ListCustomAgentsOutputSchema,
     prerequisites: ["Must be called before run_public_agent"],
+    examples: [
+      {
+        scenario: "Identify renewal-focused agents for ACME Q4 blockers",
+        input: {
+          query: "Need a renewal specialist who can review ACME Q4 blockers",
+          requiredCapabilities: ["renewal_strategy"],
+          maxAgents: 2,
+        },
+        output: {
+          result: "Two renewal specialists match the request.",
+          agents: [
+            {
+              agentId: "agent_renewal_nav",
+              agentName: "Renewal Navigator",
+              description: "Summarizes customer renewals and risks across ACME accounts.",
+              capabilities: ["renewal_strategy", "deal_health"],
+              domains: ["salesforce", "revops"],
+              suitabilityScore: 0.93,
+              confidence: 0.9,
+              estimatedCost: "medium",
+              averageLatency: 3800,
+              resourceAccess: [
+                {
+                  app: Apps.Slack,
+                  status: "available",
+                  availableItems: [{ id: "chan-ops", label: "#ops-alerts" }],
+                },
+              ],
+            },
+            {
+              agentId: "agent_revops_deepdive",
+              agentName: "RevOps Deep Dive",
+              description: "Explains revenue risk drivers for enterprise deals.",
+              capabilities: ["renewal_strategy", "pipeline_insights"],
+              domains: ["revops"],
+              suitabilityScore: 0.81,
+              confidence: 0.78,
+              estimatedCost: "low",
+              averageLatency: 3200,
+              resourceAccess: [
+                {
+                  app: Apps.GoogleDrive,
+                  status: "available",
+                },
+              ],
+            },
+          ],
+          totalEvaluated: 7,
+        },
+      },
+    ],
   },
 
   run_public_agent: {
     name: "run_public_agent",
-    description: "Execute a custom agent. Can only be used after ambiguity is resolved and list_custom_agents is called.",
+    description: [
+      "Execute a vetted custom agent using a precise query.",
+      "Arguments: agentId (from list_custom_agents), query (tailored instructions), optional context (extra grounding), optional maxTokens (cap output cost).",
+      "Only call this after ambiguity is resolved and you've logged why this specific agent is the best fit.",
+    ].join(" "),
     category: ToolCategory.Agent,
     inputSchema: RunPublicAgentInputSchema,
     outputSchema: ToolOutputSchema,
     prerequisites: [
       "Must call list_custom_agents first",
       "ambiguityResolved must be true",
+    ],
+    examples: [
+      {
+        scenario: "Delegate Delta Airlines renewal recap to Renewal Navigator",
+        input: {
+          agentId: "agent_renewal_nav",
+          query: "Summarize Delta Airlines Q3 renewal blockers and list owners for each blocker.",
+          context: "Delta Airlines confirmed as DAL GTM account; timeframe Q3 FY25.",
+          maxTokens: 900,
+        },
+        output: {
+          result: "Renewal Navigator summarized Delta Airlines blockers with owners.",
+          contexts: [
+            {
+              id: "delta-renewal-summary",
+              content: "Risk stems from security review and pending legal redlines.",
+              source: {
+                docId: "drive-doc-123",
+                title: "Delta Renewal Brief",
+                url: "https://drive.google.com/file/delta",
+                app: "GoogleDrive",
+                entity: "Delta Airlines",
+              },
+              confidence: 0.86,
+            },
+          ],
+          metadata: {
+            agentId: "agent_renewal_nav",
+            tokensUsed: 640,
+          },
+        },
+      },
     ],
   },
 

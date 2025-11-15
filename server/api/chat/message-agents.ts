@@ -24,6 +24,7 @@ import type {
   AgentImageMetadata,
   FinalSynthesisState,
   AgentRuntimeCallbacks,
+  SubTask,
 } from "./agent-schemas"
 import { ToolExpectationSchema, ReviewResultSchema } from "./agent-schemas"
 import { getTracer } from "@/tracer"
@@ -106,6 +107,7 @@ import {
 import { isCuid } from "@paralleldrive/cuid2"
 import { DEFAULT_TEST_AGENT_ID } from "@/shared/types"
 import { parseAgentAppIntegrations } from "./tools/utils"
+import { buildAgentPromptAddendum } from "./agentPromptCreation"
 
 const {
   defaultBestModel,
@@ -347,6 +349,26 @@ function formatPlanForPrompt(plan: PlanState | null): string {
     )
   })
   return lines.join("\n")
+}
+
+function selectActiveSubTaskId(plan: PlanState | null): string | null {
+  if (!plan || !Array.isArray(plan.subTasks) || plan.subTasks.length === 0) {
+    return null
+  }
+  const priority: Array<SubTask["status"]> = [
+    "in_progress",
+    "pending",
+    "blocked",
+  ]
+  for (const status of priority) {
+    const match = plan.subTasks.find(
+      (task) => task.status === status && task.id
+    )
+    if (match?.id) {
+      return match.id
+    }
+  }
+  return plan.subTasks[0]?.id ?? null
 }
 
 function formatClarificationsForPrompt(
@@ -1588,6 +1610,7 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
       }
 
       context.plan = plan
+      context.currentSubTask = selectActiveSubTaskId(plan)
 
       return ToolResponse.success({
         result: `Plan updated with ${plan.subTasks.length} sub-task${plan.subTasks.length === 1 ? "" : "s"}.`,
@@ -1635,8 +1658,11 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
         requiredCapabilities: validation.data.requiredCapabilities,
         maxAgents: validation.data.maxAgents,
       })
+      console.log("[list_custom_agents] input params:", validation.data)
+      console.log("[list_custom_agents] selection result:", result)
 
-      context.availableAgents = result.agents
+      const normalizedAgents = Array.isArray(result.agents) ? result.agents : []
+      context.availableAgents = normalizedAgents
       return ToolResponse.success(result.result, {
         metadata: result,
       })
@@ -1691,7 +1717,8 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         userEmail: context.user.email,
         workspaceExternalId: context.user.workspaceId,
       })
-
+      console.log("[run_public_agent] input params:", validation.data)
+      console.log("[run_public_agent] tool output:", toolOutput)
       context.usedAgents.push(agentCapability.agentId)
 
       return ToolResponse.success(toolOutput.result, {
@@ -1926,6 +1953,7 @@ function buildAgentInstructions(
   const contextSection = buildContextSection(context.contextFragments)
   const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
   const attachmentDirective = buildAttachmentDirective(context)
+  const promptAddendum = buildAgentPromptAddendum()
   
   let planSection = "\n<plan>\n"
   if (context.plan) {
@@ -1968,6 +1996,8 @@ ${agentSection}
 
 ${attachmentDirective ? `${attachmentDirective}\n` : ""}
 
+${promptAddendum}
+
 # PLANNING
 - ALWAYS start by creating a plan using toDoWrite
 - Break the goal into clear, sequential tasks (one sub-goal per task)
@@ -1984,6 +2014,11 @@ ${attachmentDirective ? `${attachmentDirective}\n` : ""}
 # TOOL CALLS & EXPECTATIONS
 - Use the model's native function/tool-call interface. Provide clean JSON arguments.
 - Do NOT wrap tool calls in custom XML—JAF already handles execution.
+- Before calling ANY search, calendar, Gmail, Drive, or other research tools, you MUST invoke \`list_custom_agents\` once per run. Treat the workflow as: plan -> list agents -> (maybe) run_public_agent -> other tools. If the selector returns \`null\`, explicitly log that no agent was suitable, then proceed with core tools.
+- Before calling \`run_public_agent\`, invoke \`list_custom_agents\`, compare every candidate, and respect a \`null\` result as "no delegate—continue with built-in tools."
+- Use \`run_custom_agent\` (the execution surface for selected specialists) immediately after choosing an agent from \`list_custom_agents\`; pass the specific agentId plus a rewritten query tailored to that agent.
+- When \`list_custom_agents\` returns high-confidence candidates, pause to assess the current sub-task and explicitly decide whether running one now accelerates the goal; document the rationale either way.
+- Only delegate when a specific agent's documented capabilities make it unquestionably suitable; otherwise keep iterating yourself.
 - After you decide which tools to call, emit a standalone expected-results block summarizing what each tool should achieve:
 <expected_results>
 [
@@ -2265,6 +2300,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
         agentContext.enabledTools = new Set(
           allTools.map((tool) => tool.schema.name)
         )
+        console.info("[MessageAgents] Tools exposed to LLM after filtering:", {
+          enabledTools: Array.from(agentContext.enabledTools),
+          email,
+          chatId: agentContext.chat.externalId,
+        })
 
         // Track gathered fragments
         const gatheredFragmentsKeys = new Set<string>()
@@ -2874,9 +2914,12 @@ export async function listCustomAgentsSuitable(
 
   const systemPrompt = [
     "You are routing queries to the best custom agent.",
-    "Return JSON with keys result, agents[], totalEvaluated.",
+    "Return JSON with keys result, agents (array|null), totalEvaluated.",
     "Each agent entry must include: agentId, agentName, description, capabilities[], domains[], suitabilityScore (0-1), confidence (0-1), estimatedCost ('low'|'medium'|'high'), averageLatency (ms).",
     `Select up to ${maxAgents} agents.`,
+    "If no agent is unquestionably suitable, set agents to null and explain why in result.",
+    "Only include an agent when you can cite concrete capability matches; otherwise leave it out.",
+    "You may return multiple agents when several are clearly relevant—rank the strongest ones first."
   ].join(" ")
 
   const payload = [
@@ -2915,11 +2958,17 @@ export async function listCustomAgentsSuitable(
     const parsed = jsonParseLLMOutput(text || "")
     const validation = ListCustomAgentsOutputSchema.safeParse(parsed)
     if (validation.success) {
-      const trimmedAgents = validation.data.agents.slice(0, maxAgents)
-      const enrichedAgents = trimmedAgents.map((agent) => ({
-        ...agent,
-        resourceAccess: resourceAccessByAgent.get(agent.agentId) ?? [],
-      }))
+      const trimmedAgentsRaw = validation.data.agents
+        ? validation.data.agents.slice(0, maxAgents)
+        : []
+      const trimmedAgents =
+        trimmedAgentsRaw.length > 0 ? trimmedAgentsRaw : null
+      const enrichedAgents = trimmedAgents
+        ? trimmedAgents.map((agent) => ({
+            ...agent,
+            resourceAccess: resourceAccessByAgent.get(agent.agentId) ?? [],
+          }))
+        : null
       return {
         result: validation.data.result,
         agents: enrichedAgents,
@@ -3138,8 +3187,10 @@ function buildHeuristicAgentSelection(
     }))
 
   return {
-    result: "Heuristic agent ranking",
-    agents: selected,
+    result: selected.length
+      ? "Heuristic agent ranking"
+      : "No high-confidence agents found heuristically",
+    agents: selected.length ? selected : null,
     totalEvaluated,
   }
 }
