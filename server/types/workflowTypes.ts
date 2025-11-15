@@ -2,6 +2,7 @@ export enum WorkflowStatus {
   DRAFT = "draft",
   ACTIVE = "active",
   PAUSED = "paused",
+  WAITING = "waiting",
   COMPLETED = "completed",
   FAILED = "failed",
 }
@@ -9,6 +10,12 @@ export enum WorkflowStatus {
 export enum StepType {
   MANUAL = "manual",
   AUTOMATED = "automated",
+}
+
+export enum ToolCategory {
+  TRIGGER = "trigger",
+  ACTION = "action",
+  SYSTEM = "system",
 }
 
 export enum ToolType {
@@ -23,6 +30,9 @@ export enum ToolType {
   WEBHOOK = "webhook",
   HTTP_REQUEST = "http_request",
   JIRA = "jira",
+  SWITCH = "switch",
+  MANUAL_TRIGGER = "manual_trigger",
+  SCHEDULER_TRIGGER = "scheduler_trigger",
 }
 
 export enum ToolExecutionStatus {
@@ -30,4 +40,10 @@ export enum ToolExecutionStatus {
   RUNNING = "running",
   COMPLETED = "completed",
   FAILED = "failed",
+  AWAITING_USER_INPUT = "awaiting_user_input",
+}
+
+export enum TemplateState {
+  ACTIVE = "active",
+  INACTIVE = "inactive",
 }

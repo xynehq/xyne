@@ -8,7 +8,7 @@ const Logger = getLogger(Subsystem.Queue)
 const url = config.getDatabaseUrl()
 export const boss = new PgBoss({
   connectionString: url,
-  monitorStateIntervalMinutes: 10,
+  monitorIntervalSeconds: 600,
 })
 
 export const FileProcessingQueue = `file-processing`
