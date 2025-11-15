@@ -68,6 +68,7 @@ services:
       nproc: 409600
     ports:
       - "8080:8080"
+      - "8081:8081"
       - "19071:19071"
     volumes:
       - ../server/vespa-data:/opt/vespa/var
