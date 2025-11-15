@@ -1024,6 +1024,29 @@ function WorkflowComponent() {
                   }}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
+                  onWorkflowUpdate={(updatedWorkflow) => {
+                    // Update the selectedTemplate with fresh data from polling
+                    console.log("🔄 Parent received workflow update:", updatedWorkflow)
+                    console.log("🔄 Type of updatedWorkflow:", typeof updatedWorkflow)
+                    console.log("🔄 updatedWorkflow.success:", (updatedWorkflow as any).success)
+                    console.log("🔄 updatedWorkflow.data:", (updatedWorkflow as any).data)
+                    
+                    // Extract the actual data from the API response structure
+                    const workflowData = (updatedWorkflow as any).success ? (updatedWorkflow as any).data : updatedWorkflow
+                    
+                    console.log("🔄 Setting selectedTemplate with:", workflowData)
+                    setSelectedTemplate({
+                      ...workflowData,
+                      description: workflowData.description || '',
+                      version: workflowData.version || '1.0',
+                      config: workflowData.config || {},
+                      isPublic: selectedTemplate?.isPublic || false,
+                      rootWorkflowStepTemplateId: workflowData.rootWorkflowStepTemplateId || '',
+                      createdAt: workflowData.createdAt || new Date().toISOString(),
+                      updatedAt: workflowData.updatedAt || new Date().toISOString(),
+                      rootStep: workflowData.rootStep || null
+                    })
+                  }}
                 />
               ) : (
                 <WorkflowBuilder 
@@ -1040,6 +1063,12 @@ function WorkflowComponent() {
                   isEditableMode={selectedTemplate === null}
                   builder={isBuilderMode}
                   onViewExecution={handleViewExecution}
+                  onWorkflowUpdate={(updatedWorkflow) => {
+                    // Update the flow with fresh data from polling (for WorkflowBuilder)
+                    console.log("🔄 Parent received workflow update (Builder):", updatedWorkflow)
+                    // Note: WorkflowBuilder uses 'flow' prop differently, so this might need different handling
+                    // For now, just log it to see if it's called
+                  }}
                 />
               )}
             </div>

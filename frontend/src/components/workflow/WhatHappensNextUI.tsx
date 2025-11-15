@@ -41,6 +41,12 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       icon: <Bot className="w-5 h-5" />,
     },
     {
+      id: "qa_agent",
+      name: "Q&A Agent",
+      description: "Process Excel questions with AI-powered answers",
+      icon: <Bot className="w-5 h-5 text-green-600" />,
+    },
+    {
       id: "email",
       name: "Email",
       description: "Send emails to added mails",
@@ -113,8 +119,8 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
           <div
             key={action.id}
             onClick={() => {
-              if (action.id === "ai_agent" || action.id === "email" || action.id === "http_request" || action.id === "select_agents") {
-                // For AI Agent, Email, HTTP Request, and Select Agents, trigger custom event to open respective ConfigUI
+              if (action.id === "ai_agent" || action.id === "qa_agent" || action.id === "email" || action.id === "http_request" || action.id === "select_agents") {
+                // For AI Agent, Q&A Agent, Email, HTTP Request, and Select Agents, trigger custom event to open respective ConfigUI
                 onSelectAction(action.id)
                 onClose() // Close WhatHappensNextUI
               }
