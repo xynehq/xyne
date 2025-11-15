@@ -11,6 +11,7 @@ export enum AIProviders {
   Fireworks = "fireworks",
   GoogleAI = "google-ai",
   VertexAI = "vertex-ai",
+  LiteLLM = "lite-llm",
 }
 
 // Sub-provider specific model enums
@@ -55,6 +56,10 @@ export enum OpenAIModels {
 export enum GoogleAIModels {
   Gemini_2_5_Flash = "googleai-gemini-2-5-flash",
   Gemini_2_0_Flash_Thinking = "googleai-gemini-2-0-flash-thinking",
+}
+
+export enum LiteLLMModels {
+  GLM_4_5 = "glm-45-fp8",
 }
 
 export enum VertexAIModels {
@@ -159,6 +164,7 @@ export enum Models {
   // Vertex_Gemini_1_5_Flash_8b_Exp_0827 = VertexAIModels.Gemini_1_5_Flash_8b_Exp_0827,
   // Vertex_Gemini_1_5_Pro_002 = VertexAIModels.Gemini_1_5_Pro_002,
   // Vertex_Gemini_1_5_Pro_Exp_0827 = VertexAIModels.Gemini_1_5_Pro_Exp_0827,
+  GLM_4_5 = LiteLLMModels.GLM_4_5, // GLM 4.5
 }
 
 // Model availability mapping - which providers support which models
@@ -189,6 +195,7 @@ export const ModelProviderAvailability: Record<string, AIProviders[]> = {
   "GPT-4o Mini": [AIProviders.OpenAI],
   "GPT-4": [AIProviders.OpenAI],
   "Gemini 2.0 Flash Thinking": [AIProviders.GoogleAI],
+  "GLM 4.5": [AIProviders.LiteLLM],
 }
 
 // Model display names enum - proper enum instead of string to string mapping
@@ -254,6 +261,7 @@ export enum ModelDisplayNames {
   // VERTEX_GEMINI_1_5_FLASH_8B_EXP_0827 = "Gemini 1.5 Flash 8B Exp 0827",
   // VERTEX_GEMINI_1_5_PRO_002 = "Gemini 1.5 Pro 002",
   // VERTEX_GEMINI_1_5_PRO_EXP_0827 = "Gemini 1.5 Pro Exp 0827",
+  LITELLM_GLM_4_5 = "GLM 4.5", // GLM 4.5
 }
 
 export enum QueryCategory {

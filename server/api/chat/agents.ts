@@ -18,6 +18,7 @@ import {
   baselineRAGOffJsonStream,
   agentWithNoIntegrationsQuestion,
   extractBestDocumentIndexes,
+  getProviderTypeByModel,
 } from "@/ai/provider"
 import { getConnectorById } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -32,6 +33,7 @@ import {
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 
 import {
+  AIProviders,
   Models,
   QueryType,
   type ConverseResponse,
@@ -151,6 +153,8 @@ import {
   ToolResponse,
   type ToolResult,
   type ToolCall,
+  makeLiteLLMProvider,
+  type ModelProvider,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -174,12 +178,15 @@ import { JafStreamer } from "./jaf-stream"
 const {
   JwtPayloadKey,
   defaultBestModel,
+  defaultBestModelAgenticMode,
   defaultFastModel,
   maxDefaultSummary,
   isReasoning,
   StartThinkingToken,
   EndThinkingToken,
   maxValidLinks,
+  LiteLLMApiKey,
+  LiteLLMBaseUrl,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
@@ -438,7 +445,7 @@ async function performSynthesis(
         ),
       },
     )
-    synthesisSpan.setAttribute("model_id", defaultBestModel)
+    synthesisSpan.setAttribute("model_id", (modelId as Models) || defaultBestModel)
     synthesisSpan.setAttribute(
       "response_length",
       synthesisResponse.text?.length || 0,
@@ -1592,12 +1599,16 @@ export const MessageWithToolsApi = async (c: Context) => {
             role: m.messageRole === MessageRole.User ? "user" : "assistant",
             content: m.message,
           }))
+        const isagenticModel = actualModelId === defaultBestModelAgenticMode || actualModelId === defaultBestModel;
+        const agenticModelId: Models = isagenticModel ? actualModelId as Models : defaultBestModelAgenticMode !== ""  as Models
+        ? (defaultBestModelAgenticMode as Models)
+        : defaultBestModel
 
         const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
           name: "xyne-agent",
           instructions: () => agentInstructions,
           tools: allJAFTools,
-          modelConfig: { name: defaultBestModel },
+          modelConfig: { name: agenticModelId },
         }
 
         const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
@@ -1619,7 +1630,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentRegistry,
           modelProvider,
           maxTurns: 10,
-          modelOverride: defaultBestModel,
+          modelOverride: agenticModelId,
           allowClarificationRequests: true,
           clarificationDescription: hitlClarificationDescription,
           onAfterToolExecution: async (
@@ -1657,7 +1668,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   message,
                   contextStrings,
                   {
-                    modelId: config.defaultBestModel,
+                    modelId: agenticModelId,
                     json: false,
                     stream: false,
                   },
