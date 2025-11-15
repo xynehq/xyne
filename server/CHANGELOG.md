@@ -1,3 +1,10 @@
+## [3.31.4](https://github.com/xynehq/xyne/compare/v3.31.3...v3.31.4) (2025-11-15)
+
+
+### Bug Fixes
+
+* **vespa config:** configured vespa with two containers ([#1220](https://github.com/xynehq/xyne/issues/1220)) ([9dbb4e2](https://github.com/xynehq/xyne/commit/9dbb4e2e29ff48bd8d94f7d6b8ed05bedf6bedbb))
+
 ## [3.31.3](https://github.com/xynehq/xyne/compare/v3.31.2...v3.31.3) (2025-11-13)
 
 
