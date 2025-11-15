@@ -544,8 +544,8 @@ async function fetchDatasourceFiles(
 
     Logger.info(`Executing Vespa query: ${yql}`)
 
-    // Make direct fetch to Vespa
-    const vespaEndpoint = configModule.default.vespaEndpoint
+    // Make direct fetch to Vespa - use search endpoint for search operations (port 8081)
+    const vespaEndpoint = configModule.default.vespaEndpoint.queryEndpoint
     const searchUrl = `${vespaEndpoint}/search/`
 
     Logger.debug(`Vespa endpoint: ${searchUrl}`)
