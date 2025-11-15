@@ -29,7 +29,8 @@ mock.module("../logger", () => ({
 
 describe("VespaClient", () => {
   let vespaClient: VespaClient
-  const endpoint = `http://${config.vespaBaseHost}:${config.vespaQueryPort}`
+  const queryendpoint = `http://${config.vespaBaseHost}:${config.vespaQueryPort}`
+  const feedEndpoint = `http://${config.vespaBaseHost}:${config.vespaFeedPort}`
   const mockPayload = {
     yql: "select * from sources * where true",
     query: "What is Vespa?",
@@ -52,7 +53,8 @@ describe("VespaClient", () => {
     vespaClient = new VespaClient(undefined, {
       vespaMaxRetryAttempts: 3,
       vespaRetryDelay: 100,
-      queryEndpoint: endpoint,
+      queryEndpoint: queryendpoint,
+      feedEndpoint: feedEndpoint
     })
   })
 
@@ -78,7 +80,7 @@ describe("VespaClient", () => {
     expect(result).toEqual(mockResponse)
     expect(global.fetch).toHaveBeenCalledTimes(1)
     expect(global.fetch).toHaveBeenCalledWith(
-      `${endpoint}/search/`,
+      `${queryendpoint}/search/`,
       {
         method: "POST",
         headers: {
