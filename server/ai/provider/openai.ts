@@ -575,3 +575,32 @@ export class OpenAIProvider extends BaseProvider {
     }
   }
 }
+
+/**
+ * Simple helper function to generate text using OpenAI
+ * Used for summary generation and other simple text generation tasks
+ */
+export async function generateText(params: {
+  model: string
+  prompt: string
+  maxTokens?: number
+  temperature?: number
+}): Promise<string> {
+  const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY || "",
+  })
+
+  const response = await client.chat.completions.create({
+    model: params.model,
+    messages: [
+      {
+        role: "user",
+        content: params.prompt,
+      },
+    ],
+    max_tokens: params.maxTokens || 500,
+    temperature: params.temperature || 0.7,
+  })
+
+  return response.choices[0]?.message?.content || ""
+}

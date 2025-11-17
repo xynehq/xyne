@@ -1,0 +1,437 @@
+schema zoho_ticket {
+
+  document zoho_ticket {
+
+    ##########################################
+   # 1. Core Identifiers
+    ##########################################
+
+   # Unique Zoho ticket ID (internal system identifier)
+    field id type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Customer-facing ticket number (shown to end-users)
+    field ticketNumber type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Contact (person) ID who created the ticket; stable even if email changes
+   # field contactId type string {
+   #   indexing: attribute | summary
+  #  attribute: fast-search
+   # }
+
+   # Department ID in Zoho (used for access control or routing)
+    field departmentId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Department display name (e.g. “Support”, “Engineering”)
+   # Helps filtering and analytics by department.
+    field departmentName type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+   # Account (company) name that owns the ticket (from accountId mapping)
+   # Useful for org-level analytics (e.g., all tickets from a merchant).
+    field accountName type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+   # Product or service name related to the issue (from productId)
+   # Enables product-based search filters.
+    field productName type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+   # Team name to which the ticket is assigned
+    field teamName type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    ##########################################
+   # 2. Core Ticket Fields
+    ##########################################
+
+   # Ticket subject/title; main searchable text
+    field subject type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+   # Ticket body (customer issue description)
+    field description type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+   # Category grouping (e.g., “Production Configurations”)
+   # For broad classification and filtering.
+    field category type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Sub-category for finer classification
+    field subCategory type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Ticket type: Incident, Problem, Request, or Question
+    field classification type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Ticket urgency (High, Medium, Low)
+    field priority type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Current ticket state (Open, Closed, On Hold)
+    field status type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Resolution summary entered by the agent when closing ticket
+   # Useful for search queries like “how was this fixed”.
+    field resolution type string {
+      indexing: attribute | summary | index
+      index: enable-bm25
+    }
+
+   # URL to open the ticket directly in Zoho Desk
+    field webUrl type string {
+      indexing: attribute | summary
+    }
+
+   # Source of ticket creation (Agent, System, API, Manual)
+    field sourceType type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Primary contact email (of person who raised ticket)
+    field email type string {
+      indexing: attribute | summary | index
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+   # Assigned agent’s email
+    field assigneeEmail type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Ticket creator (could be system or human agent)
+    field createdByEmail type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Last person/system who modified the ticket
+    field modifiedByEmail type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+    ##########################################
+   # 3. Boolean Flags
+    ##########################################
+
+   # True if SLA for resolution was breached
+    field isOverDue type bool { indexing: attribute | summary }
+
+   # True if SLA for first response was breached
+    field isResponseOverdue type bool { indexing: attribute | summary }
+
+   # True if the ticket is escalated for higher attention
+    field isEscalated type bool { indexing: attribute | summary }
+
+    ##########################################
+   # 4. Time Fields
+    ##########################################
+
+   # Ticket creation time (epoch ms)
+    field createdTime type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
+   # Last modification time
+    field modifiedTime type long {
+      indexing: attribute | summary
+    }
+
+   # Ticket closure time
+    field closedTime type long {
+      indexing: attribute | summary
+    }
+
+   # SLA due date for resolution
+    field dueDate type long {
+      indexing: attribute | summary
+    }
+
+   # Derived: Duration between created and closed (in days)
+   # Helps in SLA analytics and aging reports.
+    field daysToClose type double {
+      indexing: attribute | summary
+      attribute: fast-access
+    }
+
+    ##########################################
+  # 5. Derived & NLP Summaries
+    ##########################################
+
+   # Summarized conversation of all threads
+    field threadSummary type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+   # Summarized agent comments (internal + customer-facing)
+    field commentSummary type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+   # NLP summary representing ticket journey (from creation to resolution)
+    field wholeResolutionSummary type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+   # Email recipients (for thread-based search)
+    field to type array<string> {
+      indexing: index | summary | attribute
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+   # CC recipients
+    field cc type array<string> {
+      indexing: index | summary | attribute
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+   # BCC recipients (rare but included for completeness)
+    field bcc type array<string> {
+      indexing: index | summary | attribute
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+   # Mentions (users tagged in threads/comments)
+    field mentions type array<string> {
+      indexing: index | summary | attribute
+      attribute: fast-search
+      index: enable-bm25
+    }
+
+    ##########################################
+  # 6. Thread & Comment Structures
+    ##########################################
+
+  # Struct: individual attachment info (e.g., logs, screenshots)
+    struct attachmentType {
+      field attachmentName type string {}
+      field attachmentDetail type string {}
+    }
+
+   # Struct: one message in thread or comment
+   # Includes id, text, author, attachments, and reference link
+    struct threadSchema {
+      field id type string {}
+      field messageText type string {}
+      field attachmentDetails type array<attachmentType> {}
+      field authorEmail type string {}
+      field link type string {}
+    }
+
+   # All conversation threads in ticket
+    field threads type array<threadSchema> {
+      indexing: summary
+    }
+
+   # All comments (agent or system)
+    field comments type array<threadSchema> {
+      indexing: summary
+    }
+
+    ##########################################
+  # 7. Embeddings (for Semantic Search)
+    ##########################################
+
+   # Semantic vector for subject
+    field subject_embedding type tensor<bfloat16>(x[384]) {
+      indexing: attribute | index
+      attribute { distance-metric: angular }
+    }
+
+   # Semantic vector for description
+    field description_embedding type tensor<bfloat16>(x[384]) {
+      indexing: attribute | index
+      attribute { distance-metric: angular }
+    }
+
+   # Semantic vector for thread summary
+    field threadSummary_embedding type tensor<bfloat16>(x[384]) {
+      indexing: attribute | index
+      attribute { distance-metric: angular }
+    }
+
+   # Semantic vector for comment summary
+    field commentSummary_embedding type tensor<bfloat16>(x[384]) {
+      indexing: attribute | index
+      attribute { distance-metric: angular }
+    }
+
+   # Semantic vector for end-to-end resolution summary
+    field wholeResolutionSummary_embedding type tensor<bfloat16>(x[384]) {
+      indexing: attribute | index
+      attribute { distance-metric: angular }
+    }
+
+    ##########################################
+   # 8. Fuzzy Autocomplete
+    ##########################################
+
+  # Used for auto-suggest and partial matches on subject
+    field subject_fuzzy type string {
+      indexing: input subject | index
+      index: enable-bm25
+      match {
+        gram
+        gram-size: 3
+      }
+    }
+  }
+
+  ##########################################
+  # 9. Fieldsets (for query scoping)
+  ##########################################
+  fieldset default {
+    fields: subject, description, threadSummary, commentSummary, wholeResolutionSummary
+  }
+
+  fieldset autocomplete {
+    fields: subject
+  }
+
+  ##########################################
+  # 10. Rank Profiles
+  ##########################################
+
+  # Standard lexical BM25 relevance
+  rank-profile default_bm25 {
+    constants {
+      SUBJECT_WEIGHT: 2.0
+      DESCRIPTION_WEIGHT: 1.5
+      THREAD_WEIGHT: 1.0
+      COMMENT_WEIGHT: 0.5
+      RESOLUTION_WEIGHT: 1.0
+    }
+    first-phase {
+      expression:
+        (SUBJECT_WEIGHT * bm25(subject)) +
+        (DESCRIPTION_WEIGHT * bm25(description)) +
+        (THREAD_WEIGHT * bm25(threadSummary)) +
+        (COMMENT_WEIGHT * bm25(commentSummary)) +
+        (RESOLUTION_WEIGHT * bm25(wholeResolutionSummary))
+    }
+  }
+
+  # Hybrid: combines BM25 + vector similarity
+  rank-profile hybrid {
+    inputs {
+      query(q) tensor<bfloat16>(v[384])
+      query(alpha) double
+    }
+    constants {
+      THREAD_EMB_WEIGHT: 0.5
+      DESCRIPTION_EMB_WEIGHT: 0.2
+      SUBJECT_EMB_WEIGHT: 0.1
+      COMMENT_EMB_WEIGHT: 0.1
+      RESOLUTION_EMB_WEIGHT: 0.1
+    }
+    first-phase {
+      expression:
+        query(alpha) * (
+          (THREAD_EMB_WEIGHT * closeness(threadSummary_embedding, query(q))) +
+          (DESCRIPTION_EMB_WEIGHT * closeness(description_embedding, query(q))) +
+          (COMMENT_EMB_WEIGHT * closeness(commentSummary_embedding, query(q))) +
+          (SUBJECT_EMB_WEIGHT * closeness(subject_embedding, query(q))) +
+          (RESOLUTION_EMB_WEIGHT * closeness(wholeResolutionSummary_embedding, query(q)))
+        )
+    }
+  }
+
+  ##########################################
+  # 11. Summaries (for API/UI responses)
+  ##########################################
+  document-summary default {
+    summary id {}
+    summary ticketNumber {}
+    summary subject {}
+    summary description { bolding: on }
+    summary threadSummary { bolding: on }
+    summary commentSummary { bolding: on }
+    summary wholeResolutionSummary { bolding: on }
+    summary createdTime {}
+    summary closedTime {}
+    summary status {}
+    summary priority {}
+    summary category {}
+    summary subCategory {}
+    summary departmentName {}
+    summary accountName {}
+    summary productName {}
+    summary assigneeEmail {}
+  }
+
+  document-summary detailed {
+    summary id {}
+    summary ticketNumber {}
+    summary subject {}
+    summary description {}
+    summary threadSummary {}
+    summary commentSummary {}
+    summary wholeResolutionSummary {}
+    summary mentions {}
+    summary to {}
+    summary cc {}
+    summary bcc {}
+    summary threads {}
+    summary comments {}
+    summary createdTime {}
+    summary closedTime {}
+    summary daysToClose {}
+    summary status {}
+    summary priority {}
+    summary classification {}
+    summary departmentName {}
+    summary accountName {}
+    summary productName {}
+    summary email {}
+    summary assigneeEmail {}
+    summary createdByEmail {}
+    summary modifiedByEmail {}
+  }
+}

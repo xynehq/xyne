@@ -1,0 +1,668 @@
+## Zoho Ticket list api
+
+curl --location 'https://desk.zoho.com/api/v1/tickets?limit=2' \
+--header 'Authorization: Zoho-oauthtoken  1000.c1657cc447093669bf3b0b054224520a.66acd53e027a04348f1fedd4aeaae0aa' \
+--header 'Content-Type: application/json' \
+--header 'Cookie: JSESSIONID=AA23B4A9295E12B36A4B423612C79190; crmcsr=6b324ec5-a3b4-4a08-a221-04cabc79296f; zalb_2d3a2b5a21=92a1dcb3f315402f61d63a903b2bbee0; zalb_9a26c99460=84b5a076da4ea1ba0b64a38c8fd681c6; zd_group_name=eb67dbd99ad7832e0112ab054f03c8d26ee1d8d2ad1f38e0c618fd47e081ab69'
+
+{
+    "data": [
+        {
+            "id": "458844000283384647",
+            "ticketNumber": "754159",
+            "layoutId": "458844000213639528",
+            "email": "asingh20@univoedtech.com",
+            "phone": null,
+            "subject": "Re: UTR MAPPING",
+            "status": "Closed",
+            "statusType": "Closed",
+            "createdTime": "2025-10-28T07:05:14.000Z",
+            "category": "Order Status",
+            "language": "English",
+            "subCategory": "Conflicted Loan",
+            "priority": null,
+            "channel": "Email",
+            "dueDate": null,
+            "responseDueDate": null,
+            "commentCount": "0",
+            "sentiment": null,
+            "threadCount": "7",
+            "closedTime": "2025-10-28T08:10:02.000Z",
+            "onholdTime": null,
+            "accountId": "458844000182828077",
+            "departmentId": "458844000213531089",
+            "contactId": "458844000221984170",
+            "productId": null,
+            "assigneeId": "458844000252269070",
+            "teamId": null,
+            "relationshipType": "None",
+            "channelCode": null,
+            "isSpam": false,
+            "source": {
+                "extId": null,
+                "appName": null,
+                "appPhotoURL": null,
+                "permalink": null,
+                "type": "SYSTEM"
+            },
+            "lastThread": {
+                "channel": "EMAIL",
+                "isDraft": false,
+                "isForward": false,
+                "direction": "in"
+            },
+            "customerResponseTime": "2025-10-28T07:51:23.564Z",
+            "isArchived": false,
+            "webUrl": "https://desk.zoho.com/support/juspay4/ShowHomePage.do#Cases/dv/458844000283384647"
+        },
+        {
+            "id": "458844000283381143",
+            "ticketNumber": "754157",
+            "layoutId": "458844000213639528",
+            "email": "venkatesh.potharaju-v@adityabirlacapital.com",
+            "phone": null,
+            "subject": "Fibe Loan offers related",
+            "status": "Closed",
+            "statusType": "Closed",
+            "createdTime": "2025-10-28T06:59:41.000Z",
+            "category": "Non-Credit",
+            "language": "English",
+            "subCategory": "Non-Credit",
+            "priority": null,
+            "channel": "Email",
+            "dueDate": null,
+            "responseDueDate": null,
+            "commentCount": "0",
+            "sentiment": null,
+            "threadCount": "3",
+            "closedTime": "2025-10-28T07:09:50.000Z",
+            "onholdTime": null,
+            "accountId": "458844000126666346",
+            "departmentId": "458844000213531089",
+            "contactId": "458844000130719287",
+            "productId": null,
+            "assigneeId": "458844000252269070",
+            "teamId": null,
+            "relationshipType": "None",
+            "channelCode": null,
+            "isSpam": false,
+            "source": {
+                "extId": null,
+                "appName": null,
+                "appPhotoURL": null,
+                "permalink": null,
+                "type": "SYSTEM"
+            },
+            "lastThread": {
+                "channel": "EMAIL",
+                "isDraft": false,
+                "isForward": false,
+                "direction": "in"
+            },
+            "customerResponseTime": "2025-10-28T07:09:42.000Z",
+            "isArchived": false,
+            "webUrl": "https://desk.zoho.com/support/juspay4/ShowHomePage.do#Cases/dv/458844000283381143"
+        },
+    ]
+}
+
+
+## Zoho Individual Ticket API
+
+curl --location 'https://desk.zoho.com/api/v1/tickets/458844000278011542' \
+--header 'Authorization: Zoho-oauthtoken  1000.c1657cc447093669bf3b0b054224520a.66acd53e027a04348f1fedd4aeaae0aa' \
+--header 'Content-Type: application/json' \
+--header 'Cookie: JSESSIONID=AA23B4A9295E12B36A4B423612C79190; crmcsr=6b324ec5-a3b4-4a08-a221-04cabc79296f; zalb_2d3a2b5a21=92a1dcb3f315402f61d63a903b2bbee0; zalb_9a26c99460=84b5a076da4ea1ba0b64a38c8fd681c6; zd_group_name=eb67dbd99ad7832e0112ab054f03c8d26ee1d8d2ad1f38e0c618fd47e081ab69'
+
+
+{
+    "modifiedTime": "2025-10-27T07:18:33.000Z",
+    "subCategory": "Other Analytical Issues",
+    "statusType": "Closed",
+    "subject": "Re: Flipkart features not received",
+    "dueDate": null,
+    "departmentId": "458844000213531089",
+    "channel": "Email",
+    "onholdTime": null,
+    "language": "English",
+    "source": {
+        "appName": null,
+        "extId": null,
+        "permalink": null,
+        "type": "SYSTEM",
+        "uuid": null,
+        "appPhotoURL": null
+    },
+    "resolution": null,
+    "sharedDepartments": [],
+    "closedTime": "2025-09-21T20:07:20.000Z",
+    "approvalCount": "0",
+    "isOverDue": false,
+    "isTrashed": false,
+    "createdTime": "2025-09-19T16:35:47.000Z",
+    "id": "458844000278011542",
+    "isResponseOverdue": false,
+    "customerResponseTime": "2025-10-27T07:17:39.000Z",
+    "productId": null,
+    "contactId": "458844000161116905",
+    "threadCount": "8",
+    "secondaryContacts": [],
+    "priority": null,
+    "classification": "Duplicate",
+    "commentCount": "0",
+    "taskCount": "0",
+    "accountId": "458844000160847003",
+    "phone": null,
+    "webUrl": "https://desk.zoho.com/support/juspay4/ShowHomePage.do#Cases/dv/458844000278011542",
+    "isSpam": false,
+    "status": "Closed",
+    "entitySkills": [],
+    "ticketNumber": "743398",
+    "sentiment": null,
+    "isArchived": false,
+    "description": null,
+    "timeEntryCount": "0",
+    "channelRelatedInfo": null,
+    "responseDueDate": null,
+    "isDeleted": false,
+    "modifiedBy": "458844000000130015",
+    "followerCount": "0",
+    "email": "subham.maity@juspay.in",
+    "layoutDetails": {
+        "id": "458844000213639528",
+        "layoutName": "Credit"
+    },
+    "channelCode": null,
+    "isFollowing": false,
+    "cf": {
+        "cf_customer": null,
+        "cf_production_sandbox": "true",
+        "cf_success_rate": null,
+        "cf_is_ticket_escalated": "false",
+        "cf_subscription_mandate": null,
+        "cf_escalated_end_date": null,
+        "cf_recurring_mandate_business_decline": null,
+        "cf_did_it_take_multiple_releases_to_fix_this": null,
+        "cf_jira_created": null,
+        "cf_merchant_id": null,
+        "cf_tid": null,
+        "cf_eta_shared_with_the_merchant": null,
+        "cf_escalation_status": null,
+        "cf_product_features": null,
+        "cf_transaction_status_mismatch": null,
+        "cf_root_cause_identification": null,
+        "cf_release": null,
+        "cf_resolution_time": null,
+        "cf_service_name_package_version": null,
+        "cf_premium_upsell_feature": "false",
+        "cf_on_hold_over_48_hours": "false",
+        "cf_eta_waiting_on_merchant": null,
+        "cf_feature_request_addition": null,
+        "cf_trigger_follow_up": "false",
+        "cf_raised_in_response": null,
+        "cf_platform": null,
+        "cf_zoho_ticket_response": null,
+        "cf_integration_stage": null,
+        "cf_product_understanding": null,
+        "cf_existing_benchmark_1": null,
+        "cf_transaction_pending_for_long": null,
+        "cf_slack_thread_link": null,
+        "cf_nature_of_query": null,
+        "cf_juspay_merchant_id": null,
+        "cf_dashboard": null,
+        "cf_refund_successbut_customerdidnot_receive_money_test": null,
+        "cf_dba_name": null,
+        "cf_integration_query_type": null,
+        "cf_transaction_pending_for_long_test": null,
+        "cf_affected_pg_s": null,
+        "cf_slack_thread": null,
+        "cf_jira_link": null,
+        "cf_payment_gateway_credentials_acquired": "false",
+        "cf_rca_summary": null,
+        "cf_issue_description": null,
+        "cf_other_sdk_issues": null,
+        "cf_product_used": null,
+        "cf_jira_link_1": null,
+        "cf_merchants_impacted": null,
+        "cf_since_when_has_the_issue_existed": null,
+        "cf_money_debited_but_confirmation_not_received": null,
+        "cf_is_ticket_under_escalation": null,
+        "cf_is_merchant_live": "false",
+        "cf_payment_instruments": null,
+        "cf_did_you_use_mimir_to_solve_this": null,
+        "cf_payment_failed": null,
+        "cf_is_customization_required": null,
+        "cf_on_hold_start_time": null,
+        "cf_impacted_number_of_transaction_refund": null,
+        "cf_closed_end_date": null,
+        "cf_juspay_issue": null,
+        "cf_issue_identified_by": null,
+        "cf_recurring_mandate_technical_failure": null,
+        "cf_availability": null,
+        "cf_type_of_change_required": null,
+        "cf_ms_on_call_subtype": null,
+        "cf_date_time_1": null,
+        "cf_customer_queries": null,
+        "cf_sdk_incidence_sub_type": null,
+        "cf_affected_merchants": null,
+        "cf_mandate_registration_failure": null,
+        "cf_any_issue_in_finding_the_logs_for_the_issue": null,
+        "cf_sdk_performance_issues": null,
+        "cf_name_of_product": null,
+        "cf_is_frt_breached": "false",
+        "cf_caused_by_juspay_release": null,
+        "cf_features": null,
+        "cf_resolved_time": null,
+        "cf_query_type_test": null,
+        "cf_api_details": null,
+        "cf_start_time": null,
+        "cf_severity": "false",
+        "cf_impact_on": null,
+        "cf_incidence_type": null,
+        "cf_closing_ticket_upon_resolution": null,
+        "cf_show_eta_on_hold_date": "false",
+        "cf_product_name": null,
+        "cf_will_txn_audit_trail_resolve_this": null,
+        "cf_ticket_dependencies": null,
+        "cf_closed_start_date": null,
+        "cf_migration_type": null,
+        "cf_pgs_under_integration": null,
+        "cf_refund_incidence_sub_type": null,
+        "cf_eta_for_on_hold_tickets": null,
+        "cf_impact_analysis": null,
+        "cf_impacted_merchants": null,
+        "cf_system_issue": null,
+        "cf_select_pis": null,
+        "cf_on_hold_eta_commitment": null,
+        "cf_incidence_type_test": null,
+        "cf_unable_to_make_payment_test": null,
+        "cf_how_many_transactions_were_impacetd": null,
+        "cf_possibly_a_juspay_issue": "false",
+        "cf_affected_pgs": null,
+        "cf_transaction_not_reaching_terminal_state_for_long": null,
+        "cf_hyper_sdk_native_issues": null,
+        "cf_product_details": "Payment Page",
+        "cf_data_analysis": null,
+        "cf_slack_thread_available": null,
+        "cf_on_hold_end_time": null,
+        "cf_hdfc_resolution_time": null,
+        "cf_payment_gateway_credentials_required": null,
+        "cf_first_response_time": null,
+        "cf_customer_unable_to_make_payment": null,
+        "cf_integration_scope": null,
+        "cf_refund_status_is_success_but_customer_did_not_rece": null,
+        "cf_data_query_type": null,
+        "cf_ticket_genre": null,
+        "cf_product_name1": null,
+        "cf_refund_failed": null,
+        "cf_unable_to_initiate_refund_test": null,
+        "cf_txn_details_required": null,
+        "cf_hdfc_resolution_time_1": null,
+        "cf_mandate_type": null,
+        "cf_feature_request_type": null,
+        "cf_external": null,
+        "cf_payment_instrument_type": null,
+        "cf_query": null,
+        "cf_tokenization": null,
+        "cf_is_this_a_recurring_issue": null,
+        "cf_existing_benchmark": null,
+        "cf_rca_link": null,
+        "cf_delayed_success_transactions": null,
+        "cf_merchant_type": null,
+        "cf_transaction_incidence_sub_type": null,
+        "cf_payment_gateway": null,
+        "cf_refunds_are_pending_for_long": null,
+        "cf_refund_failed_1": null,
+        "cf_payment_failed_1": null,
+        "cf_last_update_time": null,
+        "cf_bug_reason": null,
+        "cf_failure_to_success": null,
+        "cf_release_time": null,
+        "cf_mid": null,
+        "cf_child_ticket_id": null,
+        "cf_resolution_time_1": "0.0",
+        "cf_merchant": null,
+        "cf_follow_up_counter": null,
+        "cf_query_type": null,
+        "cf_merchant_id_1": "Flipkart",
+        "cf_refund_status_mismatch": null,
+        "cf_did_eta_change_multiple_times": null,
+        "cf_impcated_merchants": null,
+        "cf_release_revert_time": null,
+        "cf_refund_unable_to_initiate_refunds": null,
+        "cf_environment": null,
+        "cf_merchant_id_corp_code": null,
+        "cf_issue_reported_by": null,
+        "cf_last_updated_time": null,
+        "cf_split_ticket_id": null,
+        "cf_integration_type": null,
+        "cf_mapping_issues": null,
+        "cf_webhooks": null,
+        "cf_feature_goal": null,
+        "cf_end_time": null
+    },
+    "slaId": null,
+    "layoutId": "458844000213639528",
+    "assigneeId": null,
+    "createdBy": "458844000000130015",
+    "teamId": null,
+    "tagCount": "0",
+    "attachmentCount": "0",
+    "isEscalated": false,
+    "category": "Analytics and Reporting"
+}
+
+
+## Zoho thread List API
+
+curl --location 'https://desk.zoho.com/api/v1/tickets/458844000271660867/threads?limit=2' \
+--header 'Authorization: Zoho-oauthtoken   1000.c1657cc447093669bf3b0b054224520a.66acd53e027a04348f1fedd4aeaae0aa' \
+--header 'Content-Type: application/json' \
+--header 'Cookie: JSESSIONID=AA23B4A9295E12B36A4B423612C79190; crmcsr=6b324ec5-a3b4-4a08-a221-04cabc79296f; zalb_2d3a2b5a21=92a1dcb3f315402f61d63a903b2bbee0; zalb_9a26c99460=84b5a076da4ea1ba0b64a38c8fd681c6; zd_group_name=eb67dbd99ad7832e0112ab054f03c8d26ee1d8d2ad1f38e0c618fd47e081ab69'
+
+
+{
+    "data": [
+        {
+            "id": "458844000276426336",
+            "channel": "EMAIL",
+            "canReply": true,
+            "contentType": "text/html",
+            "hasAttach": false,
+            "status": "SUCCESS",
+            "summary": "Dear Shivputra, Axio has been enabled now Arijit Mitra Product Solutions Engineer | HyperCredit HyperCredit | HyperCredit Features | Lending Partners | JusPay On Tue, Sep 9, 2025 a...",
+            "author": {
+                "id": null,
+                "name": "Arijit Mitra",
+                "email": null,
+                "photoURL": null,
+                "type": null,
+                "firstName": "Arijit Mitra",
+                "lastName": null
+            },
+            "attachmentCount": "0",
+            "sentiment": null,
+            "aspects": null,
+            "channelRelatedInfo": null,
+            "respondedIn": null,
+            "lastRatingIconURL": null,
+            "readReceipts": null,
+            "impersonatedUser": null,
+            "isDescriptionThread": false,
+            "source": {
+                "extId": null,
+                "appName": null,
+                "appPhotoURL": null,
+                "permalink": null,
+                "type": "SYSTEM"
+            },
+            "keyWords": null,
+            "actions": [],
+            "visibility": "public",
+            "createdTime": "2025-09-09T13:19:59.000Z",
+            "direction": "in",
+            "cc": "\"nandeesh kumar\"<nandeesh.kumar@juspay.in>,\"credit.support@juspay4.zohodesk.com\"<credit.support@juspay4.zohodesk.com>,\"juspay support\"<support@juspay.in>,\"stephen christopher a\"<stephenchristopher.a@starhealth.in>,\"samson subramanian\"<samson.subramanian@starhealth.in>,\"siva s\"<siva.s@starhealth.in>,\"sangeetha.e\"<accounts.payments@starhealth.in>,\"aditya kale\"<aditya.kale@juspay.in>,\"satpal singh\"<satpal.singh@juspay.in>,\"credit support\"<credit.support@juspay.in>,\"lathish reddy\"<lathish.reddy@juspay.in>,\"faizan anwar\"<faizan.anwar@juspay.in>,\"nishanth reddy\"<nishanth.reddy@juspay.in>",
+            "bcc": "",
+            "to": "\"shivputra neelakandan\"<shivputra.n@starhealth.in>",
+            "fromEmailAddress": "\"Arijit Mitra\"<arijit.mitra@juspay.in>",
+            "isForward": false
+        },
+        {
+            "id": "458844000276426342",
+            "channel": "EMAIL",
+            "canReply": true,
+            "contentType": "text/html",
+            "hasAttach": false,
+            "status": "SUCCESS",
+            "summary": "Dear Shivputra, Axio has been enabled now Arijit Mitra Product Solutions Engineer | HyperCredit HyperCredit | HyperCredit Features | Lending Partners | JusPay On Tue, Sep 9, 2025 a...",
+            "author": {
+                "id": null,
+                "name": "Arijit Mitra",
+                "email": null,
+                "photoURL": null,
+                "type": null,
+                "firstName": "Arijit Mitra",
+                "lastName": null
+            },
+            "attachmentCount": "0",
+            "sentiment": null,
+            "aspects": null,
+            "channelRelatedInfo": null,
+            "respondedIn": null,
+            "lastRatingIconURL": null,
+            "readReceipts": null,
+            "impersonatedUser": null,
+            "isDescriptionThread": false,
+            "source": {
+                "extId": null,
+                "appName": null,
+                "appPhotoURL": null,
+                "permalink": null,
+                "type": "SYSTEM"
+            },
+            "keyWords": null,
+            "actions": [],
+            "visibility": "public",
+            "createdTime": "2025-09-09T13:19:59.000Z",
+            "direction": "in",
+            "cc": "\"nandeesh kumar\"<nandeesh.kumar@juspay.in>,\"credit.support@juspay4.zohodesk.com\"<credit.support@juspay4.zohodesk.com>,\"juspay support\"<support@juspay.in>,\"stephen christopher a\"<stephenchristopher.a@starhealth.in>,\"samson subramanian\"<samson.subramanian@starhealth.in>,\"siva s\"<siva.s@starhealth.in>,\"sangeetha.e\"<accounts.payments@starhealth.in>,\"aditya kale\"<aditya.kale@juspay.in>,\"satpal singh\"<satpal.singh@juspay.in>,\"credit support\"<credit.support@juspay.in>,\"lathish reddy\"<lathish.reddy@juspay.in>,\"faizan anwar\"<faizan.anwar@juspay.in>,\"nishanth reddy\"<nishanth.reddy@juspay.in>",
+            "bcc": "",
+            "to": "\"shivputra neelakandan\"<shivputra.n@starhealth.in>",
+            "fromEmailAddress": "\"Arijit Mitra\"<arijit.mitra@juspay.in>",
+            "isForward": false
+        }
+    ]
+}
+
+
+## Zoho Individual Thread Api
+
+curl --location 'https://desk.zoho.com/api/v1/tickets/458844000271660867/threads/458844000276426336?include=plainText' \
+--header 'Authorization: Zoho-oauthtoken  1000.c1657cc447093669bf3b0b054224520a.66acd53e027a04348f1fedd4aeaae0aa' \
+--header 'Content-Type: application/json' \
+--header 'Cookie: JSESSIONID=543C319833FF86642DB01A1DF702ABAB; crmcsr=290f1a10-743a-4a9f-ba4a-8143661f8ea4; zalb_2d3a2b5a21=d4752ac50bc9a86ed469d30fc14cec52; zalb_9a26c99460=0a9f6cef733e53f3fd672ef2be931e5e; zd_group_name=eb67dbd99ad7832e0112ab054f03c8d26ee1d8d2ad1f38e0c618fd47e081ab69; JSESSIONID=AA23B4A9295E12B36A4B423612C79190; crmcsr=6b324ec5-a3b4-4a08-a221-04cabc79296f; zalb_2d3a2b5a21=92a1dcb3f315402f61d63a903b2bbee0; zalb_9a26c99460=84b5a076da4ea1ba0b64a38c8fd681c6; zd_group_name=eb67dbd99ad7832e0112ab054f03c8d26ee1d8d2ad1f38e0c618fd47e081ab69'
+
+
+{
+    "attachments": [],
+    "content": "<div><div dir=\"ltr\"><div>Dear&nbsp;Shivputra,<br><br>Axio has been&nbsp;enabled now&nbsp;<br><br><br></div><div><div dir=\"ltr\" class=\"x_1554430124gmail_signature\"><div dir=\"ltr\"><b>Arijit Mitra&nbsp;</b><br><font color=\"#000000\">Product Solutions Engineer | HyperCredit</font><br><a href=\"https://juspay.in/hypercredit/\" target=\"_blank\" rel=\"noreferrer\">HyperCredit</a> | <a href=\"https://juspay.in/hypercredit/#features\" target=\"_blank\" rel=\"noreferrer\">HyperCredit Features</a> | <a href=\"https://juspay.in/hypercredit/lenders/\" target=\"_blank\" rel=\"noreferrer\">Lending Partners</a> | <a href=\"https://juspay.in/\" target=\"_blank\" rel=\"noreferrer\">JusPay</a><br><img src=\"https://images.g2crowd.com/uploads/product/image/large_detail/large_detail_376011e4845bec8a28b7711b4f95fdd2/juspay.png\"><br></div></div></div><br></div><br><div class=\"x_1554430124gmail_quote x_1554430124gmail_quote_container\"><div dir=\"ltr\" class=\"x_1554430124gmail_attr\">On Tue, Sep 9, 2025 at 6:47 PM 'Shivputra Neelakandan' via Credit Support &lt;<a href=\"mailto:credit.support@juspay.in\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay.in</a>&gt; wrote:<br></div><blockquote class=\"x_1554430124gmail_quote\" style=\"margin: 0px 0px 0px 0.8ex; border-left: 1px solid rgb(204, 204, 204); padding-left: 1ex\"><div class=\"x_1554430124msg4465173244519495858\">\r\n\r\n\r\n\r\n\r\n<div dir=\"ltr\">\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nHi <a id=\"x_1554430124m_4465173244519495858OWAAM765174\" href=\"mailto:nandeesh.kumar@juspay.in\" target=\"_blank\" rel=\"noreferrer\">\r\n@Nandeesh</a>,</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nKindly enable Axio from FE, the issue has been sorted.</div>\r\n<div id=\"x_1554430124m_4465173244519495858Signature\">\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nBest regards,</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<table style=\"text-align: left; width: 525px; color: rgb(68, 68, 68); box-sizing: border-box; border-collapse: collapse; border-spacing: 0px\" id=\"x_1554430124m_4465173244519495858table_0\">\r\n<tbody>\r\n<tr>\r\n<td style=\"text-align: left; padding-right: 10px; vertical-align: middle; width: 180px; height: 179.833px; box-sizing: border-box\">\r\n<div style=\"text-align: left; line-height: 1.2; margin: 0px 0px 25px; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-weight: 700\">Shivputra Neelakandan</span><br>\r\nAssistant General Manager - StarPay - The Payment System of SHAI.</div>\r\n<div style=\"text-align: left; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt; color: rgb(51, 122, 183)\">\r\n<a style=\"color: rgb(51, 122, 183); text-decoration: none\" href=\"https://www.starhealth.in/\" target=\"_blank\" rel=\"noreferrer\"><img style=\"width: 156px; height: 68px\" height=\"68\" width=\"156\" alt=\"logo\"></a></div>\r\n</td>\r\n<td style=\"text-align: left; line-height: 1.2; border-left: 2px solid rgb(204, 204, 204); padding-left: 15px; vertical-align: top; width: 345px; height: 179.833px; box-sizing: border-box\">\r\n<div style=\"text-align: left; line-height: 1.2; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n+91 9444 96 8290<br>\r\n+91 9677 01 8290</div>\r\n<div style=\"text-align: left; line-height: 1.2; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-size: 12px\"><br>\r\n</span><a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a><br>\r\n<span style=\"color: rgb(0, 159, 174); font-weight: 700\"><a style=\"color: rgb(0, 159, 174); text-decoration: none\" href=\"http://www.starhealth.in/\" target=\"_blank\" rel=\"noreferrer\">www.starhealth.in/</a></span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 20px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt\">\r\n<span style=\"color: rgb(51, 122, 183)\"><a style=\"color: rgb(51, 122, 183); text-decoration: none\" href=\"https://www.facebook.com/shivputra.me/\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"facebook icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/fb.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a style=\"color: rgb(51, 122, 183); text-decoration: none\" href=\"https://in.linkedin.com/in/shivputra\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"linkedin icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/ln.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a style=\"color: rgb(51, 122, 183); text-decoration: none\" href=\"https://twitter.com/shivputra_me\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"twitter icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/tt.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a style=\"color: rgb(51, 122, 183); text-decoration: none\" href=\"https://wa.me/message/FASGFT6LK4TYO1\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"whatsapp icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/wa.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;&nbsp;</span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 5px 0px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-weight: 700\">Star Health and Allied Insurance Co. Ltd</span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 5px 0px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\nAcropolis, Dr Radha Krishnan Salai, CIT Colony, Royapettah, Chennai, Tamil Nadu - 600004, India.</div>\r\n</td>\r\n</tr>\r\n</tbody>\r\n</table>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<i><br>\r\n</i></div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 8pt; color: rgb(0, 0, 0)\">\r\n<i>The content of this email is confidential and intended for the recipient specified in message only. It is strictly forbidden to share any part of this message with any third party, without a written consent of the sender. If you received this message by\r\n mistake, please reply to this message and follow with its deletion, so that we can ensure such a mistake does not occur in the future.</i></div>\r\n</div>\r\n<div id=\"x_1554430124m_4465173244519495858appendonsend\"></div>\r\n<hr style=\"display: inline-block; width: 98%\">\r\n<div id=\"x_1554430124m_4465173244519495858divRplyFwdMsg\" dir=\"ltr\"><font face=\"Calibri, sans-serif\" style=\"font-size: 11pt\" color=\"#000000\"><b>From:</b> Nandeesh Kumar &lt;<a href=\"mailto:nandeesh.kumar@juspay.in\" target=\"_blank\" rel=\"noreferrer\">nandeesh.kumar@juspay.in</a>&gt;<br>\r\n<b>Sent:</b> Thursday, August 28, 2025 5:22 PM<br>\r\n<b>To:</b> Shivputra Neelakandan &lt;<a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a>&gt;<br>\r\n<b>Cc:</b> <a href=\"mailto:credit.support@juspay4.zohodesk.com\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay4.zohodesk.com</a> &lt;<a href=\"mailto:credit.support@juspay4.zohodesk.com\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay4.zohodesk.com</a>&gt;; juspay support &lt;<a href=\"mailto:support@juspay.in\" target=\"_blank\" rel=\"noreferrer\">support@juspay.in</a>&gt;; Stephen Christopher A &lt;<a href=\"mailto:stephenchristopher.a@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">stephenchristopher.a@starhealth.in</a>&gt;; Samson Subramanian &lt;<a href=\"mailto:samson.subramanian@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">samson.subramanian@starhealth.in</a>&gt;; Siva S &lt;<a href=\"mailto:siva.s@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">siva.s@starhealth.in</a>&gt;;\r\n Sangeetha.E &lt;<a href=\"mailto:accounts.payments@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">accounts.payments@starhealth.in</a>&gt;; aditya kale &lt;<a href=\"mailto:aditya.kale@juspay.in\" target=\"_blank\" rel=\"noreferrer\">aditya.kale@juspay.in</a>&gt;; satpal singh &lt;<a href=\"mailto:satpal.singh@juspay.in\" target=\"_blank\" rel=\"noreferrer\">satpal.singh@juspay.in</a>&gt;; credit support &lt;<a href=\"mailto:credit.support@juspay.in\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay.in</a>&gt;<br>\r\n<b>Subject:</b> Re: Re:[## 730293 ##] Re: Reg: Refund failure - Axio refund</font>\r\n<div>&nbsp;</div>\r\n</div>\r\n<div>\r\n<div style=\"background-color: yellow; padding: 10px\"><b>Caution:</b> This email originated outside of Star Health Insurance. To ensure organizational safety, kindly exercise utmost caution with attachments or links. ONLY open them if you recognize the sender\r\n and trust the content. </div>\r\n<br>\r\n<b>सावधान: </b>यह ईमेल स्टार हेल्थ इंश्योरेंस के बाहर से आया है। हमेशा सुरक्षित रहने के लिए कृपया किसी भी अटैचमेंट या लिंक पर क्लिक करते वक़्त अत्यधिक सावधानी बरतें। यदि आप ईमेल भेजने वाले को पहचानते हैं और आपको उनके द्वारा भेजे गए तथ्यों पर भरोसा हैं तो ही\r\n ईमेल खोलें।\r\n<div></div>\r\n<p></p>\r\n<br>\r\n<br>\r\n<div>\r\n<div dir=\"ltr\">\r\n<div>Hi Shiv,</div>\r\n<div><br>\r\n</div>\r\n<div>Axio has been disabled from the front-end now.</div>\r\n<div>\r\n<div dir=\"ltr\">\r\n<div dir=\"ltr\">\r\n<div><br>\r\n</div>\r\nRegards\r\n<div><b>Nandeesh Kumar</b></div>\r\n<div>Business &amp; Growth | <a href=\"https://juspay.in/hypercredit/\" target=\"_blank\" rel=\"noreferrer\">\r\nHyperCredit</a><br>\r\n</div>\r\n<div>9106610461 | <a href=\"mailto:nandeesh.kumar@juspay.in\" target=\"_blank\" rel=\"noreferrer\">nandeesh.kumar@juspay.in</a> |&nbsp;<a href=\"http://wa.me/0919106610461\" target=\"_blank\" rel=\"noreferrer\">WhatsApp</a> |\r\n<a href=\"https://www.linkedin.com/in/nandeeshk/\" target=\"_blank\" rel=\"noreferrer\">Linkedin</a></div>\r\n<div><b><a href=\"http://juspay.in\" target=\"_blank\" rel=\"noreferrer\"><img width=\"200\" height=\"39\" src=\"https://imgee.s3.amazonaws.com/imgee/a0baca393d534736b152750c7bde97f1.png\"></a><br>\r\n</b></div>\r\n</div>\r\n</div>\r\n</div>\r\n<br>\r\n</div>\r\n<br>\r\n<div>\r\n<div dir=\"ltr\">On Thu, Aug 28, 2025 at 5:09 PM Shivputra Neelakandan &lt;<a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a>&gt; wrote:<br>\r\n</div>\r\n<blockquote style=\"margin: 0px 0px 0px 0.8ex; border-left: 1px solid rgb(204, 204, 204); padding-left: 1ex\">\r\n<div>\r\n<div dir=\"ltr\">\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nHi <a id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015OWAAM523257\" href=\"mailto:nandeesh.kumar@juspay.in\" target=\"_blank\" rel=\"noreferrer\">\r\n@Nandeesh</a>,</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nKindly disable Axio from the front-end, until the refund issues gets resolved, the refund cases has been piled up.</div>\r\n<div id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015Signature\">\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nBest regards,</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<table id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015table_0\" style=\"text-align: left; width: 525px; color: rgb(68, 68, 68); box-sizing: border-box; border-collapse: collapse; border-spacing: 0px\">\r\n<tbody>\r\n<tr>\r\n<td style=\"text-align: left; padding-right: 10px; vertical-align: middle; width: 180px; height: 179.833px; box-sizing: border-box\">\r\n<div style=\"text-align: left; line-height: 1.2; margin: 0px 0px 25px; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-weight: 700\">Shivputra Neelakandan</span><br>\r\nAssistant General Manager - StarPay - The Payment System of SHAI.</div>\r\n<div style=\"text-align: left; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt; color: rgb(51, 122, 183)\">\r\n<a href=\"https://www.starhealth.in/\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img height=\"68\" width=\"156\" alt=\"logo\" style=\"width: 156px; height: 68px\"></a></div>\r\n</td>\r\n<td style=\"text-align: left; line-height: 1.2; border-left: 2px solid rgb(204, 204, 204); padding-left: 15px; vertical-align: top; width: 345px; height: 179.833px; box-sizing: border-box\">\r\n<div style=\"text-align: left; line-height: 1.2; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n+91 9444 96 8290<br>\r\n+91 9677 01 8290</div>\r\n<div style=\"text-align: left; line-height: 1.2; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-size: 12px\"><br>\r\n</span><a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a><br>\r\n<span style=\"color: rgb(0, 159, 174); font-weight: 700\"><a href=\"http://www.starhealth.in/\" style=\"color: rgb(0, 159, 174); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\">www.starhealth.in/</a></span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 20px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt\">\r\n<span style=\"color: rgb(51, 122, 183)\"><a href=\"https://www.facebook.com/shivputra.me/\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"facebook icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/fb.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a href=\"https://in.linkedin.com/in/shivputra\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"linkedin icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/ln.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a href=\"https://twitter.com/shivputra_me\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"twitter icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/tt.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a href=\"https://wa.me/message/FASGFT6LK4TYO1\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"whatsapp icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/wa.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;&nbsp;</span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 5px 0px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-weight: 700\">Star Health and Allied Insurance Co. Ltd</span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 5px 0px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\nAcropolis, Dr Radha Krishnan Salai, CIT Colony, Royapettah, Chennai, Tamil Nadu - 600004, India.</div>\r\n</td>\r\n</tr>\r\n</tbody>\r\n</table>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<i><br>\r\n</i></div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 8pt; color: rgb(0, 0, 0)\">\r\n<i>The content of this email is confidential and intended for the recipient specified in message only. It is strictly forbidden to share any part of this message with any third party, without a written consent of the sender. If you received this message by\r\n mistake, please reply to this message and follow with its deletion, so that we can ensure such a mistake does not occur in the future.</i></div>\r\n</div>\r\n<div id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015appendonsend\"></div>\r\n<hr style=\"display: inline-block; width: 98%\">\r\n<div id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015divRplyFwdMsg\" dir=\"ltr\"><font face=\"Calibri, sans-serif\" color=\"#000000\" style=\"font-size: 11pt\"><b>From:</b> Nandeesh Kumar &lt;<a href=\"mailto:nandeesh.kumar@juspay.in\" target=\"_blank\" rel=\"noreferrer\">nandeesh.kumar@juspay.in</a>&gt;<br>\r\n<b>Sent:</b> Thursday, August 28, 2025 1:07 PM<br>\r\n<b>To:</b> Shivputra Neelakandan &lt;<a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a>&gt;<br>\r\n<b>Cc:</b> <a href=\"mailto:credit.support@juspay4.zohodesk.com\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay4.zohodesk.com</a> &lt;<a href=\"mailto:credit.support@juspay4.zohodesk.com\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay4.zohodesk.com</a>&gt;; juspay support &lt;<a href=\"mailto:support@juspay.in\" target=\"_blank\" rel=\"noreferrer\">support@juspay.in</a>&gt;;\r\n Stephen Christopher A &lt;<a href=\"mailto:stephenchristopher.a@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">stephenchristopher.a@starhealth.in</a>&gt;; Samson Subramanian &lt;<a href=\"mailto:samson.subramanian@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">samson.subramanian@starhealth.in</a>&gt;;\r\n Siva S &lt;<a href=\"mailto:siva.s@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">siva.s@starhealth.in</a>&gt;; Sangeetha.E &lt;<a href=\"mailto:accounts.payments@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">accounts.payments@starhealth.in</a>&gt;; aditya kale &lt;<a href=\"mailto:aditya.kale@juspay.in\" target=\"_blank\" rel=\"noreferrer\">aditya.kale@juspay.in</a>&gt;;\r\n satpal singh &lt;<a href=\"mailto:satpal.singh@juspay.in\" target=\"_blank\" rel=\"noreferrer\">satpal.singh@juspay.in</a>&gt;; credit support &lt;<a href=\"mailto:credit.support@juspay.in\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay.in</a>&gt;<br>\r\n<b>Subject:</b> Re: Re:[## 730293 ##] Re: Reg: Refund failure - Axio refund</font>\r\n<div>&nbsp;</div>\r\n</div>\r\n<div>\r\n<div style=\"background-color: yellow; padding: 10px\"><b>Caution:</b> This email originated outside of Star Health Insurance. To ensure organizational safety, kindly exercise utmost caution with attachments or links. ONLY open them if you recognize the sender\r\n and trust the content. </div>\r\n<br>\r\n<b>सावधान: </b>यह ईमेल स्टार हेल्थ इंश्योरेंस के बाहर से आया है। हमेशा सुरक्षित रहने के लिए कृपया किसी भी अटैचमेंट या लिंक पर क्लिक करते वक़्त अत्यधिक सावधानी बरतें। यदि आप ईमेल भेजने वाले को पहचानते हैं और आपको उनके द्वारा भेजे गए तथ्यों पर भरोसा हैं तो ही\r\n ईमेल खोलें।\r\n<div></div>\r\n<p></p>\r\n<br>\r\n<br>\r\n<div>\r\n<div dir=\"ltr\">\r\n<div>Hi Shiv,</div>\r\n<div><br>\r\n</div>\r\n<div>This is still pending with Axio. Pushing them to resolve this asap.</div>\r\n<div>\r\n<div dir=\"ltr\">\r\n<div dir=\"ltr\">\r\n<div><br>\r\n</div>\r\nRegards\r\n<div><b>Nandeesh Kumar</b></div>\r\n<div>Business &amp; Growth | <a href=\"https://juspay.in/hypercredit/\" target=\"_blank\" rel=\"noreferrer\">\r\nHyperCredit</a><br>\r\n</div>\r\n<div>9106610461 | <a href=\"mailto:nandeesh.kumar@juspay.in\" target=\"_blank\" rel=\"noreferrer\">nandeesh.kumar@juspay.in</a> |&nbsp;<a href=\"http://wa.me/0919106610461\" target=\"_blank\" rel=\"noreferrer\">WhatsApp</a> |\r\n<a href=\"https://www.linkedin.com/in/nandeeshk/\" target=\"_blank\" rel=\"noreferrer\">Linkedin</a></div>\r\n<div><b><a href=\"http://juspay.in\" target=\"_blank\" rel=\"noreferrer\"><img width=\"200\" height=\"39\" src=\"https://imgee.s3.amazonaws.com/imgee/a0baca393d534736b152750c7bde97f1.png\"></a><br>\r\n</b></div>\r\n</div>\r\n</div>\r\n</div>\r\n<br>\r\n</div>\r\n<br>\r\n<div>\r\n<div dir=\"ltr\">On Thu, Aug 28, 2025 at 11:28 AM Shivputra Neelakandan &lt;<a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a>&gt; wrote:<br>\r\n</div>\r\n<blockquote style=\"margin: 0px 0px 0px 0.8ex; border-left: 1px solid rgb(204, 204, 204); padding-left: 1ex\">\r\n<div>\r\n<div dir=\"ltr\">\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nHi Team,</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nWill be there any update? It ha been 10 days we have not been updated.</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<div id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186Signature\">\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nBest regards,</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<table id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186table_0\" style=\"text-align: left; width: 525px; color: rgb(68, 68, 68); box-sizing: border-box; border-collapse: collapse; border-spacing: 0px\">\r\n<tbody>\r\n<tr>\r\n<td style=\"text-align: left; padding-right: 10px; vertical-align: middle; width: 180px; height: 179.833px; box-sizing: border-box\">\r\n<div style=\"text-align: left; line-height: 1.2; margin: 0px 0px 25px; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-weight: 700\">Shivputra Neelakandan</span><br>\r\nAssistant General Manager - StarPay - The Payment System of SHAI.</div>\r\n<div style=\"text-align: left; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt; color: rgb(51, 122, 183)\">\r\n<a href=\"https://www.starhealth.in/\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img height=\"68\" width=\"156\" alt=\"logo\" style=\"width: 156px; height: 68px\"></a></div>\r\n</td>\r\n<td style=\"text-align: left; line-height: 1.2; border-left: 2px solid rgb(204, 204, 204); padding-left: 15px; vertical-align: top; width: 345px; height: 179.833px; box-sizing: border-box\">\r\n<div style=\"text-align: left; line-height: 1.2; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n+91 9444 96 8290<br>\r\n+91 9677 01 8290</div>\r\n<div style=\"text-align: left; line-height: 1.2; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-size: 12px\"><br>\r\n</span><a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a><br>\r\n<span style=\"color: rgb(0, 159, 174); font-weight: 700\"><a href=\"http://www.starhealth.in/\" style=\"color: rgb(0, 159, 174); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\">www.starhealth.in/</a></span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 20px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt\">\r\n<span style=\"color: rgb(51, 122, 183)\"><a href=\"https://www.facebook.com/shivputra.me/\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"facebook icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/fb.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a href=\"https://in.linkedin.com/in/shivputra\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"linkedin icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/ln.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a href=\"https://twitter.com/shivputra_me\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"twitter icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/tt.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a href=\"https://wa.me/message/FASGFT6LK4TYO1\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"whatsapp icon\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/wa.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;&nbsp;</span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 5px 0px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-weight: 700\">Star Health and Allied Insurance Co. Ltd</span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 5px 0px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\nAcropolis, Dr Radha Krishnan Salai, CIT Colony, Royapettah, Chennai, Tamil Nadu - 600004, India.</div>\r\n</td>\r\n</tr>\r\n</tbody>\r\n</table>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<i><br>\r\n</i></div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 8pt; color: rgb(0, 0, 0)\">\r\n<i>The content of this email is confidential and intended for the recipient specified in message only. It is strictly forbidden to share any part of this message with any third party, without a written consent of the sender. If you received this message by\r\n mistake, please reply to this message and follow with its deletion, so that we can ensure such a mistake does not occur in the future.</i></div>\r\n</div>\r\n<div id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186appendonsend\"></div>\r\n<hr style=\"display: inline-block; width: 98%\">\r\n<div id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186divRplyFwdMsg\" dir=\"ltr\"><font face=\"Calibri, sans-serif\" color=\"#000000\" style=\"font-size: 11pt\"><b>From:</b> credit.support &lt;<a href=\"mailto:credit.support@juspay4.zohodesk.com\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay4.zohodesk.com</a>&gt;<br>\r\n<b>Sent:</b> Monday, August 11, 2025 5:08 PM<br>\r\n<b>To:</b> Nandeesh Kumar &lt;<a href=\"mailto:nandeesh.kumar@juspay.in\" target=\"_blank\" rel=\"noreferrer\">nandeesh.kumar@juspay.in</a>&gt;<br>\r\n<b>Cc:</b> <a href=\"mailto:credit.support@juspay4.zohodesk.com\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay4.zohodesk.com</a> &lt;<a href=\"mailto:credit.support@juspay4.zohodesk.com\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay4.zohodesk.com</a>&gt;; juspay support &lt;<a href=\"mailto:support@juspay.in\" target=\"_blank\" rel=\"noreferrer\">support@juspay.in</a>&gt;;\r\n Stephen Christopher A &lt;<a href=\"mailto:stephenchristopher.a@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">stephenchristopher.a@starhealth.in</a>&gt;; Samson Subramanian &lt;<a href=\"mailto:samson.subramanian@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">samson.subramanian@starhealth.in</a>&gt;;\r\n Siva S &lt;<a href=\"mailto:siva.s@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">siva.s@starhealth.in</a>&gt;; Sangeetha.E &lt;<a href=\"mailto:accounts.payments@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">accounts.payments@starhealth.in</a>&gt;; aditya kale &lt;<a href=\"mailto:aditya.kale@juspay.in\" target=\"_blank\" rel=\"noreferrer\">aditya.kale@juspay.in</a>&gt;;\r\n satpal singh &lt;<a href=\"mailto:satpal.singh@juspay.in\" target=\"_blank\" rel=\"noreferrer\">satpal.singh@juspay.in</a>&gt;; Shivputra Neelakandan &lt;<a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a>&gt;; credit support &lt;<a href=\"mailto:credit.support@juspay.in\" target=\"_blank\" rel=\"noreferrer\">credit.support@juspay.in</a>&gt;<br>\r\n<b>Subject:</b> Re:[## 730293 ##] Re: Reg: Refund failure - Axio refund</font>\r\n<div>&nbsp;</div>\r\n</div>\r\n<div>\r\n<div style=\"background-color: yellow; padding: 10px\"><b>Caution:</b> This email originated outside of Star Health Insurance. To ensure organizational safety, kindly exercise utmost caution with attachments or links. ONLY open them if you recognize the sender\r\n and trust the content. </div>\r\n<br>\r\n<b>सावधान: </b>यह ईमेल स्टार हेल्थ इंश्योरेंस के बाहर से आया है। हमेशा सुरक्षित रहने के लिए कृपया किसी भी अटैचमेंट या लिंक पर क्लिक करते वक़्त अत्यधिक सावधानी बरतें। यदि आप ईमेल भेजने वाले को पहचानते हैं और आपको उनके द्वारा भेजे गए तथ्यों पर भरोसा हैं तो ही\r\n ईमेल खोलें।\r\n<div></div>\r\n<p></p>\r\n<br>\r\n<br>\r\n<div>\r\n<div style=\"direction: ltr; font-size: 13px; font-family: Arial, Helvetica, sans-serif\">\r\n<div>\r\n<div style=\"color: rgb(34, 34, 34); box-sizing: border-box; outline: 0px; letter-spacing: 0.2px; background-color: rgb(255, 255, 255)\">\r\nDear Team,<br style=\"box-sizing: border-box; outline: 0px\">\r\n</div>\r\n<div style=\"color: rgb(34, 34, 34); box-sizing: border-box; outline: 0px; letter-spacing: 0.2px; background-color: rgb(255, 255, 255)\">\r\n<br style=\"box-sizing: border-box; outline: 0px\">\r\n</div>\r\n<div style=\"color: rgb(34, 34, 34); box-sizing: border-box; outline: 0px; letter-spacing: 0.2px; background-color: rgb(255, 255, 255)\">\r\nThank you for reaching out to us! We’ve received your request and our Merchant Success team is looking into it. You can expect to hear back from us shortly.<br style=\"box-sizing: border-box; outline: 0px\">\r\n</div>\r\n<div style=\"color: rgb(34, 34, 34); box-sizing: border-box; outline: 0px; letter-spacing: 0.2px; background-color: rgb(255, 255, 255)\">\r\n<br style=\"box-sizing: border-box; outline: 0px\">\r\n</div>\r\n<div style=\"color: rgb(34, 34, 34); box-sizing: border-box; outline: 0px; letter-spacing: 0.2px; background-color: rgb(255, 255, 255)\">\r\nRegards,</div>\r\n<div style=\"color: rgb(34, 34, 34); box-sizing: border-box; outline: 0px; letter-spacing: 0.2px; background-color: rgb(255, 255, 255)\">\r\nNikita Singh</div>\r\n<div><br>\r\n</div>\r\n<div>---- on Mon, 11 Aug 2025 15:44:08 +0530 <b>\"Nandeesh Kumar\"&lt;<a href=\"mailto:nandeesh.kumar@juspay.in\" target=\"_blank\" rel=\"noreferrer\">nandeesh.kumar@juspay.in</a>&gt;\r\n</b>wrote ---- <br>\r\n</div>\r\n</div>\r\n<div title=\"beforequote:::\"></div>\r\n<div>\r\n<blockquote style=\"border-left: 1px dotted rgb(229, 229, 229); margin-left: 5px; margin-right: 0px; padding-left: 5px\">\r\n<div>\r\n<div>\r\n<div dir=\"ltr\">\r\n<div><a href=\"mailto:credit.support@juspay.in\" id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186x_x_240902580plusReplyChip-0\" target=\"_blank\" rel=\"noreferrer\">+Credit Support</a>&nbsp;Can you please check this asap?<br>\r\n</div>\r\n<div>\r\n<div dir=\"ltr\">\r\n<div dir=\"ltr\">\r\n<div><br>\r\n</div>\r\n<div>Regards</div>\r\n<div><b>Nandeesh Kumar</b></div>\r\n<div>Business &amp; Growth | <a href=\"https://juspay.in/hypercredit/\" target=\"_blank\" rel=\"noreferrer\">\r\nHyperCredit</a><br>\r\n</div>\r\n<div>9106610461 | <a href=\"mailto:nandeesh.kumar@juspay.in\" target=\"_blank\" rel=\"noreferrer\">\r\nnandeesh.kumar@juspay.in</a> |&nbsp;<a href=\"http://wa.me/0919106610461\" target=\"_blank\" rel=\"noreferrer\">WhatsApp</a> |\r\n<a href=\"https://www.linkedin.com/in/nandeeshk/\" target=\"_blank\" rel=\"noreferrer\">\r\nLinkedin</a></div>\r\n<div><b><a href=\"http://juspay.in\" target=\"_blank\" rel=\"noreferrer\"><img height=\"39\" width=\"200\" style=\"max-width: 100%\" src=\"https://imgee.s3.amazonaws.com/imgee/a0baca393d534736b152750c7bde97f1.png\"></a><br>\r\n</b></div>\r\n</div>\r\n</div>\r\n</div>\r\n<div><br>\r\n</div>\r\n</div>\r\n<div><br>\r\n</div>\r\n<div>\r\n<div dir=\"ltr\">On Mon, Aug 11, 2025 at 3:20 PM Shivputra Neelakandan &lt;<a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a>&gt; wrote:<br>\r\n</div>\r\n<blockquote style=\"margin: 0px 0px 0px 0.8ex; border-left: 1px solid rgb(204, 204, 204); padding-left: 1ex\">\r\n<div>\r\n<div dir=\"ltr\">\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nHi <a href=\"mailto:support@juspay.in\" id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186x_x_240902580m_7603926010855582470OWAAM385024\" target=\"_blank\" rel=\"noreferrer\">\r\n@Juspay Support</a>,</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nWe are not able to initiate the refunds for Axio from Juspay dashboard, Kindly resolve this issue in priority.</div>\r\n<div id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186x_x_240902580m_7603926010855582470Signature\">\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\nBest regards,</div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<br>\r\n</div>\r\n<table id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186x_x_240902580m_7603926010855582470table_0\" style=\"text-align: left; width: 525px; color: rgb(68, 68, 68); box-sizing: border-box; border-collapse: collapse; border-spacing: 0px; max-width: 100%\">\r\n<tbody>\r\n<tr>\r\n<td style=\"text-align: left; padding-right: 10px; vertical-align: middle; width: 180px; height: 179.833px; box-sizing: border-box\">\r\n<div style=\"text-align: left; line-height: 1.2; margin: 0px 0px 25px; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-weight: 700\">Shivputra Neelakandan</span><br>\r\nAssistant General Manager - StarPay - The Payment System of SHAI.</div>\r\n<div style=\"text-align: left; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt; color: rgb(51, 122, 183)\">\r\n<a href=\"https://www.starhealth.in/\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"logo\" width=\"156\" height=\"68\" style=\"width: 156px; height: 68px; max-width: 100%\" src=\"\"></a></div>\r\n</td>\r\n<td style=\"text-align: left; line-height: 1.2; border-left: 2px solid rgb(204, 204, 204); padding-left: 15px; vertical-align: top; width: 345px; height: 179.833px; box-sizing: border-box\">\r\n<div style=\"text-align: left; line-height: 1.2; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n+91 9444 96 8290<br>\r\n+91 9677 01 8290</div>\r\n<div style=\"text-align: left; line-height: 1.2; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-size: 12px\"><br>\r\n</span><a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a><br>\r\n<span style=\"color: rgb(0, 159, 174); font-weight: 700\"><a href=\"http://www.starhealth.in/\" style=\"color: rgb(0, 159, 174); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\">www.starhealth.in/</a></span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 20px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 10pt\">\r\n<span style=\"color: rgb(51, 122, 183)\"><a href=\"https://www.facebook.com/shivputra.me/\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"facebook icon\" style=\"max-width: 100%\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/fb.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a href=\"https://in.linkedin.com/in/shivputra\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"linkedin icon\" style=\"max-width: 100%\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/ln.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a href=\"https://twitter.com/shivputra_me\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"twitter icon\" style=\"max-width: 100%\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/tt.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;\r\n</span><span style=\"color: rgb(51, 122, 183)\"><a href=\"https://wa.me/message/FASGFT6LK4TYO1\" style=\"color: rgb(51, 122, 183); text-decoration: none\" target=\"_blank\" rel=\"noreferrer\"><img alt=\"whatsapp icon\" style=\"max-width: 100%\" src=\"https://www.mail-signatures.com/signature-generator/img/templates/simple-and-light/wa.png\"></a></span><span style=\"color: rgb(0, 0, 0)\">&nbsp;&nbsp;&nbsp;&nbsp;</span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 5px 0px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\n<span style=\"font-weight: 700\">Star Health and Allied Insurance Co. Ltd</span></div>\r\n<div style=\"text-align: left; line-height: 1.2; margin: 5px 0px 0px; font-family: Tahoma, Geneva, sans-serif; font-size: 9pt; color: rgb(0, 0, 0)\">\r\nAcropolis, Dr Radha Krishnan Salai, CIT Colony, Royapettah, Chennai, Tamil Nadu - 600004, India.</div>\r\n</td>\r\n</tr>\r\n</tbody>\r\n</table>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 12pt; color: rgb(0, 0, 0)\">\r\n<i><br>\r\n</i></div>\r\n<div style=\"font-family: Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif; font-size: 8pt; color: rgb(0, 0, 0)\">\r\n<i>The content of this email is confidential and intended for the recipient specified in message only. It is strictly forbidden to share any part of this message with any third party, without a written consent of the sender. If you received this message by\r\n mistake, please reply to this message and follow with its deletion, so that we can ensure such a mistake does not occur in the future.</i></div>\r\n</div>\r\n<div id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186x_x_240902580m_7603926010855582470appendonsend\">\r\n</div>\r\n<div>\r\n<hr style=\"display: inline-block; width: 98%\">\r\n</div>\r\n<div dir=\"ltr\" id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186x_x_240902580m_7603926010855582470divRplyFwdMsg\">\r\n<div><font color=\"#000000\" face=\"Calibri, sans-serif\" style=\"font-size: 11pt\"><b>From:</b> Sangeetha.E &lt;<a href=\"mailto:accounts.payments@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">accounts.payments@starhealth.in</a>&gt;<br>\r\n<b>Sent:</b> Monday, August 11, 2025 2:56 PM<br>\r\n<b>To:</b> Shivputra Neelakandan &lt;<a href=\"mailto:shivputra.n@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">shivputra.n@starhealth.in</a>&gt;<br>\r\n<b>Cc:</b> Stephen Christopher A &lt;<a href=\"mailto:stephenchristopher.a@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">stephenchristopher.a@starhealth.in</a>&gt;; Samson Subramanian &lt;<a href=\"mailto:samson.subramanian@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">samson.subramanian@starhealth.in</a>&gt;;\r\n Siva S &lt;<a href=\"mailto:siva.s@starhealth.in\" target=\"_blank\" rel=\"noreferrer\">siva.s@starhealth.in</a>&gt;<br>\r\n<b>Subject:</b> Reg: Refund failure - Axio refund</font> </div>\r\n<div>&nbsp;</div>\r\n</div>\r\n<div>\r\n<div>\r\n<p>Sir,</p>\r\n<p>&nbsp;</p>\r\n<p>Find the attached cases refund processed during Jul 2025 status showing “FAILURE”</p>\r\n<p>&nbsp;</p>\r\n<p>Pls check and confirm how to proceed further.</p>\r\n<p>&nbsp;</p>\r\n<p>Regards</p>\r\n<p>E.Sangeetha</p>\r\n</div>\r\n</div>\r\n<div>-------------------------------------------------------------------------------------------------------------Disclaimer: This Message and its contents are intended solely for the addressee and is proprietary. Information in this mail is for Star Health\r\n and Allied Insurance Business Usage only. Any Use to other than the addressee is misuse and infringement to Proprietorship of Star Health and Allied Insurance. If you are not the addressee, please return the mail to the sender. Star Health and Allied Insurance\r\n cannot guarantee that e-mail communications are secure or error-free, as information could be intercepted, corrupted, amended, lost, destroyed, arrive late or incomplete, or contain viruses hence Star Health shall not be held liable for such e-mail communications.\r\n</div>\r\n</div>\r\n</div>\r\n</blockquote>\r\n</div>\r\n</div>\r\n</div>\r\n</blockquote>\r\n</div>\r\n</div>\r\n<div id=\"x_1554430124m_4465173244519495858x_m_-157066285325158015x_m_7996164825797557186x_ZDeskInteg\"></div>\r\n<br>\r\n</div>\r\n</div>\r\n-------------------------------------------------------------------------------------------------------------Disclaimer: This Message and its contents are intended solely for the addressee and is proprietary. Information in this mail is for Star Health and\r\n Allied Insurance Business Usage only. Any Use to other than the addressee is misuse and infringement to Proprietorship of Star Health and Allied Insurance. If you are not the addressee, please return the mail to the sender. Star Health and Allied Insurance\r\n cannot guarantee that e-mail communications are secure or error-free, as information could be intercepted, corrupted, amended, lost, destroyed, arrive late or incomplete, or contain viruses hence Star Health shall not be held liable for such e-mail communications.\r\n</div>\r\n</div>\r\n</blockquote>\r\n</div>\r\n<br>\r\n<font face=\"Trebuchet\"><span style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">The information contained in this electronic mail and any attachment(s) to this email are intended for the exclusive use of the addressee(s) and may contain proprietary,\r\n confidential or privileged information.&nbsp;</span><span style=\"background-color: rgb(255, 255, 255); font-size: 13.3333px\">Access to this e-mail and/or to the attachment by anyone else is unauthorized. If this is a forwarded message, the content and the views expressed\r\n in this E-MAIL may not reflect those of the Company.&nbsp;</span><span style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">If you are not the intended recipient, you should not disseminate, distribute or copy this e-mail. Please notify the sender immediately\r\n and destroy all copies of this message and any attachments.</span><br style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">\r\n<br style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">\r\n<span style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">WARNING: Computer viruses may be transmitted via email. The recipient should check this email and any attachments for the presence of viruses. The company accepts no liability for any damage\r\n caused by any virus transmitted by this email.</span></font></div>\r\n</div>\r\n-------------------------------------------------------------------------------------------------------------Disclaimer: This Message and its contents are intended solely for the addressee and is proprietary. Information in this mail is for Star Health and\r\n Allied Insurance Business Usage only. Any Use to other than the addressee is misuse and infringement to Proprietorship of Star Health and Allied Insurance. If you are not the addressee, please return the mail to the sender. Star Health and Allied Insurance\r\n cannot guarantee that e-mail communications are secure or error-free, as information could be intercepted, corrupted, amended, lost, destroyed, arrive late or incomplete, or contain viruses hence Star Health shall not be held liable for such e-mail communications.\r\n</div>\r\n</div>\r\n</blockquote>\r\n</div>\r\n<br>\r\n<font face=\"Trebuchet\"><span style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">The information contained in this electronic mail and any attachment(s) to this email are intended for the exclusive use of the addressee(s) and may contain proprietary,\r\n confidential or privileged information.&nbsp;</span><span style=\"background-color: rgb(255, 255, 255); font-size: 13.3333px\">Access to this e-mail and/or to the attachment by anyone else is unauthorized. If this is a forwarded message, the content and the views expressed\r\n in this E-MAIL may not reflect those of the Company.&nbsp;</span><span style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">If you are not the intended recipient, you should not disseminate, distribute or copy this e-mail. Please notify the sender immediately\r\n and destroy all copies of this message and any attachments.</span><br style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">\r\n<br style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">\r\n<span style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">WARNING: Computer viruses may be transmitted via email. The recipient should check this email and any attachments for the presence of viruses. The company accepts no liability for any damage\r\n caused by any virus transmitted by this email.</span></font></div>\r\n</div>\r\n-------------------------------------------------------------------------------------------------------------Disclaimer: This Message and its contents are intended solely for the addressee and is proprietary. Information in this mail is for Star Health and\r\n Allied Insurance Business Usage only. Any Use to other than the addressee is misuse and infringement to Proprietorship of Star Health and Allied Insurance. If you are not the addressee, please return the mail to the sender. Star Health and Allied Insurance\r\n cannot guarantee that e-mail communications are secure or error-free, as information could be intercepted, corrupted, amended, lost, destroyed, arrive late or incomplete, or contain viruses hence Star Health shall not be held liable for such e-mail communications.\r\n</div>\r\n\r\n</div></blockquote></div>\r\n\r\n<br>\r\n<font face=\"Trebuchet\"><span style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">The information contained in this electronic mail and any attachment(s) to this email are intended for the exclusive use of the addressee(s) and may contain proprietary, confidential or privileged information.&nbsp;</span><span style=\"background-color: rgb(255, 255, 255); font-size: 13.3333px\">Access to this e-mail and/or to the attachment by anyone else is unauthorized. If this is a forwarded message, the content and the views expressed in this E-MAIL may not reflect those of the Company.&nbsp;</span><span style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">If you are not the intended recipient, you should not disseminate, distribute or copy this e-mail. Please notify the sender immediately and destroy all copies of this message and any attachments.</span><br style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\"><br style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\"><span style=\"font-size: 12.8px; background-color: rgb(255, 255, 255)\">WARNING: Computer viruses may be transmitted via email. The recipient should check this email and any attachments for the presence of viruses. The company accepts no liability for any damage caused by any virus transmitted by this email.</span></font></div>",
+    "id": "458844000276426336",
+    "channel": "EMAIL",
+    "canReply": true,
+    "contentType": "text/html",
+    "hasAttach": false,
+    "status": "SUCCESS",
+    "replyTo": null,
+    "summary": "Dear Shivputra, Axio has been enabled now Arijit Mitra Product Solutions Engineer | HyperCredit HyperCredit | HyperCredit Features | Lending Partners | JusPay On Tue, Sep 9, 2025 a...",
+    "author": {
+        "id": null,
+        "name": "Arijit Mitra",
+        "email": null,
+        "photoURL": null,
+        "type": null,
+        "firstName": "Arijit Mitra",
+        "lastName": null
+    },
+    "attachmentCount": "0",
+    "sentiment": null,
+    "aspects": null,
+    "plainText": "Dear Shivputra, Axio has been enabled now Arijit Mitra Product Solutions Engineer | HyperCredit HyperCredit | HyperCredit Features | Lending Partners | JusPay On Tue, Sep 9, 2025 at 6:47 PM 'Shivputra Neelakandan' via Credit Support <credit.support@juspay.in> wrote: Hi @Nandeesh, Kindly enable Axio from FE, the issue has been sorted. Best regards, Shivputra Neelakandan Assistant General Manager - StarPay - The Payment System of SHAI. +91 9444 96 8290 +91 9677 01 8290 shivputra.n@starhealth.in www.starhealth.in/ Star Health and Allied Insurance Co. Ltd Acropolis, Dr Radha Krishnan Salai, CIT Colony, Royapettah, Chennai, Tamil Nadu - 600004, India. The content of this email is confidential and intended for the recipient specified in message only. It is strictly forbidden to share any part of this message with any third party, without a written consent of the sender. If you received this message by mistake, please reply to this message and follow with its deletion, so that we can ensure such a mistake does not occur in the future. From: Nandeesh Kumar <nandeesh.kumar@juspay.in> Sent: Thursday, August 28, 2025 5:22 PM To: Shivputra Neelakandan <shivputra.n@starhealth.in> Cc: credit.support@juspay4.zohodesk.com <credit.support@juspay4.zohodesk.com>; juspay support <support@juspay.in>; Stephen Christopher A <stephenchristopher.a@starhealth.in>; Samson Subramanian <samson.subramanian@starhealth.in>; Siva S <siva.s@starhealth.in>; Sangeetha.E <accounts.payments@starhealth.in>; aditya kale <aditya.kale@juspay.in>; satpal singh <satpal.singh@juspay.in>; credit support <credit.support@juspay.in> Subject: Re: Re:[## 730293 ##] Re: Reg: Refund failure - Axio refund Caution: This email originated outside of Star Health Insurance. To ensure organizational safety, kindly exercise utmost caution with attachments or links. ONLY open them if you recognize the sender and trust the content. सावधान: यह ईमेल स्टार हेल्थ इंश्योरेंस के बाहर से आया है। हमेशा सुरक्षित रहने के लिए कृपया किसी भी अटैचमेंट या लिंक पर क्लिक करते वक़्त अत्यधिक सावधानी बरतें। यदि आप ईमेल भेजने वाले को पहचानते हैं और आपको उनके द्वारा भेजे गए तथ्यों पर भरोसा हैं तो ही ईमेल खोलें। Hi Shiv, Axio has been disabled from the front-end now. Regards Nandeesh Kumar Business & Growth | HyperCredit 9106610461 | nandeesh.kumar@juspay.in | WhatsApp | Linkedin On Thu, Aug 28, 2025 at 5:09 PM Shivputra Neelakandan <shivputra.n@starhealth.in> wrote: Hi @Nandeesh, Kindly disable Axio from the front-end, until the refund issues gets resolved, the refund cases has been piled up. Best regards, Shivputra Neelakandan Assistant General Manager - StarPay - The Payment System of SHAI. +91 9444 96 8290 +91 9677 01 8290 shivputra.n@starhealth.in www.starhealth.in/ Star Health and Allied Insurance Co. Ltd Acropolis, Dr Radha Krishnan Salai, CIT Colony, Royapettah, Chennai, Tamil Nadu - 600004, India. The content of this email is confidential and intended for the recipient specified in message only. It is strictly forbidden to share any part of this message with any third party, without a written consent of the sender. If you received this message by mistake, please reply to this message and follow with its deletion, so that we can ensure such a mistake does not occur in the future. From: Nandeesh Kumar <nandeesh.kumar@juspay.in> Sent: Thursday, August 28, 2025 1:07 PM To: Shivputra Neelakandan <shivputra.n@starhealth.in> Cc: credit.support@juspay4.zohodesk.com <credit.support@juspay4.zohodesk.com>; juspay support <support@juspay.in>; Stephen Christopher A <stephenchristopher.a@starhealth.in>; Samson Subramanian <samson.subramanian@starhealth.in>; Siva S <siva.s@starhealth.in>; Sangeetha.E <accounts.payments@starhealth.in>; aditya kale <aditya.kale@juspay.in>; satpal singh <satpal.singh@juspay.in>; credit support <credit.support@juspay.in> Subject: Re: Re:[## 730293 ##] Re: Reg: Refund failure - Axio refund Caution: This email originated outside of Star Health Insurance. To ensure organizational safety, kindly exercise utmost caution with attachments or links. ONLY open them if you recognize the sender and trust the content. सावधान: यह ईमेल स्टार हेल्थ इंश्योरेंस के बाहर से आया है। हमेशा सुरक्षित रहने के लिए कृपया किसी भी अटैचमेंट या लिंक पर क्लिक करते वक़्त अत्यधिक सावधानी बरतें। यदि आप ईमेल भेजने वाले को पहचानते हैं और आपको उनके द्वारा भेजे गए तथ्यों पर भरोसा हैं तो ही ईमेल खोलें। Hi Shiv, This is still pending with Axio. Pushing them to resolve this asap. Regards Nandeesh Kumar Business & Growth | HyperCredit 9106610461 | nandeesh.kumar@juspay.in | WhatsApp | Linkedin On Thu, Aug 28, 2025 at 11:28 AM Shivputra Neelakandan <shivputra.n@starhealth.in> wrote: Hi Team, Will be there any update? It ha been 10 days we have not been updated. Best regards, Shivputra Neelakandan Assistant General Manager - StarPay - The Payment System of SHAI. +91 9444 96 8290 +91 9677 01 8290 shivputra.n@starhealth.in www.starhealth.in/ Star Health and Allied Insurance Co. Ltd Acropolis, Dr Radha Krishnan Salai, CIT Colony, Royapettah, Chennai, Tamil Nadu - 600004, India. The content of this email is confidential and intended for the recipient specified in message only. It is strictly forbidden to share any part of this message with any third party, without a written consent of the sender. If you received this message by mistake, please reply to this message and follow with its deletion, so that we can ensure such a mistake does not occur in the future. From: credit.support <credit.support@juspay4.zohodesk.com> Sent: Monday, August 11, 2025 5:08 PM To: Nandeesh Kumar <nandeesh.kumar@juspay.in> Cc: credit.support@juspay4.zohodesk.com <credit.support@juspay4.zohodesk.com>; juspay support <support@juspay.in>; Stephen Christopher A <stephenchristopher.a@starhealth.in>; Samson Subramanian <samson.subramanian@starhealth.in>; Siva S <siva.s@starhealth.in>; Sangeetha.E <accounts.payments@starhealth.in>; aditya kale <aditya.kale@juspay.in>; satpal singh <satpal.singh@juspay.in>; Shivputra Neelakandan <shivputra.n@starhealth.in>; credit support <credit.support@juspay.in> Subject: Re:[## 730293 ##] Re: Reg: Refund failure - Axio refund Caution: This email originated outside of Star Health Insurance. To ensure organizational safety, kindly exercise utmost caution with attachments or links. ONLY open them if you recognize the sender and trust the content. सावधान: यह ईमेल स्टार हेल्थ इंश्योरेंस के बाहर से आया है। हमेशा सुरक्षित रहने के लिए कृपया किसी भी अटैचमेंट या लिंक पर क्लिक करते वक़्त अत्यधिक सावधानी बरतें। यदि आप ईमेल भेजने वाले को पहचानते हैं और आपको उनके द्वारा भेजे गए तथ्यों पर भरोसा हैं तो ही ईमेल खोलें। Dear Team, Thank you for reaching out to us! We’ve received your request and our Merchant Success team is looking into it. You can expect to hear back from us shortly. Regards, Nikita Singh ---- on Mon, 11 Aug 2025 15:44:08 +0530 \"Nandeesh Kumar\"<nandeesh.kumar@juspay.in> wrote ---- +Credit Support Can you please check this asap? Regards Nandeesh Kumar Business & Growth | HyperCredit 9106610461 | nandeesh.kumar@juspay.in | WhatsApp | Linkedin On Mon, Aug 11, 2025 at 3:20 PM Shivputra Neelakandan <shivputra.n@starhealth.in> wrote: Hi @Juspay Support, We are not able to initiate the refunds for Axio from Juspay dashboard, Kindly resolve this issue in priority. Best regards, Shivputra Neelakandan Assistant General Manager - StarPay - The Payment System of SHAI. +91 9444 96 8290 +91 9677 01 8290 shivputra.n@starhealth.in www.starhealth.in/ Star Health and Allied Insurance Co. Ltd Acropolis, Dr Radha Krishnan Salai, CIT Colony, Royapettah, Chennai, Tamil Nadu - 600004, India. The content of this email is confidential and intended for the recipient specified in message only. It is strictly forbidden to share any part of this message with any third party, without a written consent of the sender. If you received this message by mistake, please reply to this message and follow with its deletion, so that we can ensure such a mistake does not occur in the future. From: Sangeetha.E <accounts.payments@starhealth.in> Sent: Monday, August 11, 2025 2:56 PM To: Shivputra Neelakandan <shivputra.n@starhealth.in> Cc: Stephen Christopher A <stephenchristopher.a@starhealth.in>; Samson Subramanian <samson.subramanian@starhealth.in>; Siva S <siva.s@starhealth.in> Subject: Reg: Refund failure - Axio refund Sir, Find the attached cases refund processed during Jul 2025 status showing “FAILURE” Pls check and confirm how to proceed further. Regards E.Sangeetha -------------------------------------------------------------------------------------------------------------Disclaimer: This Message and its contents are intended solely for the addressee and is proprietary. Information in this mail is for Star Health and Allied Insurance Business Usage only. Any Use to other than the addressee is misuse and infringement to Proprietorship of Star Health and Allied Insurance. If you are not the addressee, please return the mail to the sender. Star Health and Allied Insurance cannot guarantee that e-mail communications are secure or error-free, as information could be intercepted, corrupted, amended, lost, destroyed, arrive late or incomplete, or contain viruses hence Star Health shall not be held liable for such e-mail communications. -------------------------------------------------------------------------------------------------------------Disclaimer: This Message and its contents are intended solely for the addressee and is proprietary. Information in this mail is for Star Health and Allied Insurance Business Usage only. Any Use to other than the addressee is misuse and infringement to Proprietorship of Star Health and Allied Insurance. If you are not the addressee, please return the mail to the sender. Star Health and Allied Insurance cannot guarantee that e-mail communications are secure or error-free, as information could be intercepted, corrupted, amended, lost, destroyed, arrive late or incomplete, or contain viruses hence Star Health shall not be held liable for such e-mail communications. The information contained in this electronic mail and any attachment(s) to this email are intended for the exclusive use of the addressee(s) and may contain proprietary, confidential or privileged information. Access to this e-mail and/or to the attachment by anyone else is unauthorized. If this is a forwarded message, the content and the views expressed in this E-MAIL may not reflect those of the Company. If you are not the intended recipient, you should not disseminate, distribute or copy this e-mail. Please notify the sender immediately and destroy all copies of this message and any attachments. WARNING: Computer viruses may be transmitted via email. The recipient should check this email and any attachments for the presence of viruses. The company accepts no liability for any damage caused by any virus transmitted by this email. -------------------------------------------------------------------------------------------------------------Disclaimer: This Message and its contents are intended solely for the addressee and is proprietary. Information in this mail is for Star Health and Allied Insurance Business Usage only. Any Use to other than the addressee is misuse and infringement to Proprietorship of Star Health and Allied Insurance. If you are not the addressee, please return the mail to the sender. Star Health and Allied Insurance cannot guarantee that e-mail communications are secure or error-free, as information could be intercepted, corrupted, amended, lost, destroyed, arrive late or incomplete, or contain viruses hence Star Health shall not be held liable for such e-mail communications. The information contained in this electronic mail and any attachment(s) to this email are intended for the exclusive use of the addressee(s) and may contain proprietary, confidential or privileged information. Access to this e-mail and/or to the attachment by anyone else is unauthorized. If this is a forwarded message, the content and the views expressed in this E-MAIL may not reflect those of the Company. If you are not the intended recipient, you should not disseminate, distribute or copy this e-mail. Please notify the sender immediately and destroy all copies of this message and any attachments. WARNING: Computer viruses may be transmitted via email. The recipient should check this email and any attachments for the presence of viruses. The company accepts no liability for any damage caused by any virus transmitted by this email. -------------------------------------------------------------------------------------------------------------Disclaimer: This Message and its contents are intended solely for the addressee and is proprietary. Information in this mail is for Star Health and Allied Insurance Business Usage only. Any Use to other than the addressee is misuse and infringement to Proprietorship of Star Health and Allied Insurance. If you are not the addressee, please return the mail to the sender. Star Health and Allied Insurance cannot guarantee that e-mail communications are secure or error-free, as information could be intercepted, corrupted, amended, lost, destroyed, arrive late or incomplete, or contain viruses hence Star Health shall not be held liable for such e-mail communications. The information contained in this electronic mail and any attachment(s) to this email are intended for the exclusive use of the addressee(s) and may contain proprietary, confidential or privileged information. Access to this e-mail and/or to the attachment by anyone else is unauthorized. If this is a forwarded message, the content and the views expressed in this E-MAIL may not reflect those of the Company. If you are not the intended recipient, you should not disseminate, distribute or copy this e-mail. Please notify the sender immediately and destroy all copies of this message and any attachments. WARNING: Computer viruses may be transmitted via email. The recipient should check this email and any attachments for the presence of viruses. The company accepts no liability for any damage caused by any virus transmitted by this email.",
+    "channelRelatedInfo": null,
+    "readReceipts": null,
+    "impersonatedUser": null,
+    "source": {
+        "extId": null,
+        "appName": null,
+        "appPhotoURL": null,
+        "permalink": null,
+        "type": "SYSTEM"
+    },
+    "isContentTruncated": false,
+    "keyWords": null,
+    "fullContentURL": null,
+    "actions": [],
+    "createdTime": "2025-09-09T13:19:59.000Z",
+    "visibility": "public",
+    "isDescriptionThread": false,
+    "direction": "in",
+    "cc": "\"nandeesh kumar\"<nandeesh.kumar@juspay.in>,\"credit.support@juspay4.zohodesk.com\"<credit.support@juspay4.zohodesk.com>,\"juspay support\"<support@juspay.in>,\"stephen christopher a\"<stephenchristopher.a@starhealth.in>,\"samson subramanian\"<samson.subramanian@starhealth.in>,\"siva s\"<siva.s@starhealth.in>,\"sangeetha.e\"<accounts.payments@starhealth.in>,\"aditya kale\"<aditya.kale@juspay.in>,\"satpal singh\"<satpal.singh@juspay.in>,\"credit support\"<credit.support@juspay.in>,\"lathish reddy\"<lathish.reddy@juspay.in>,\"faizan anwar\"<faizan.anwar@juspay.in>,\"nishanth reddy\"<nishanth.reddy@juspay.in>",
+    "bcc": "",
+    "to": "\"shivputra neelakandan\"<shivputra.n@starhealth.in>",
+    "fromEmailAddress": "\"Arijit Mitra\"<arijit.mitra@juspay.in>",
+    "isForward": false
+}
+
+
+## Zoho List Comment api
+
+curl --location 'https://desk.zoho.com/api/v1/tickets/458844000275172707/comments' \
+--header 'Authorization: Zoho-oauthtoken  1000.c1657cc447093669bf3b0b054224520a.66acd53e027a04348f1fedd4aeaae0aa' \
+--header 'Content-Type: application/json' \
+--header 'Cookie: JSESSIONID=AA23B4A9295E12B36A4B423612C79190; crmcsr=6b324ec5-a3b4-4a08-a221-04cabc79296f; zalb_2d3a2b5a21=92a1dcb3f315402f61d63a903b2bbee0; zalb_9a26c99460=84b5a076da4ea1ba0b64a38c8fd681c6; zd_group_name=eb67dbd99ad7832e0112ab054f03c8d26ee1d8d2ad1f38e0c618fd47e081ab69'
+
+{
+  "data" : [ {
+    "modifiedTime" : "2017-01-24T14:12:45.000Z",
+    "attachments" : [ {
+      "size" : "12734",
+      "name" : "Attachment_edited.png",
+      "id" : "4000000008994",
+      "href" : "https://desk.zoho.com/api/v1/tickets/4000000528005/comments/4000000529001/attachments/4000000008994/content"
+    } ],
+    "commentedTime" : "2017-01-24T14:06:58.000Z",
+    "isPublic" : true,
+    "plainText" : "Sample zsu[@user:55616589]zsu and zsu[@team:31138000001254025_new team]zsu testing",
+    "id" : "4000000529001",
+    "contentType" : "html",
+    "content" : "<div>Sample zsu[@user:55616589]zsu and zsu[@team:31138000001254025_new team]zsu testing</div>",
+    "commenterId" : "4000000008692",
+    "mention" : [ {
+      "firstName" : "",
+      "lastName" : "pandees",
+      "photoURL" : null,
+      "offSet" : "7",
+      "length" : "28",
+      "id" : "31138000000573164",
+      "type" : "AGENT",
+      "email" : "carol@zylker.com",
+      "zuid" : "55616589"
+    }, {
+      "offSet" : "39",
+      "length" : "46",
+      "name" : "new team",
+      "id" : "31138000001254025",
+      "type" : "TEAM"
+    } ],
+    "commenter" : {
+      "firstName" : "Jade",
+      "lastName" : "Tywin",
+      "photoURL" : "https://desk.zoho.com/api/v1/agents/4000000008692/photo?orgId=292828",
+      "name" : "Jade Tywin",
+      "roleName" : "LightAgent",
+      "type" : "AGENT",
+      "email" : "jade12tywin@zylker.com"
+    }
+  }, {
+    "modifiedTime" : null,
+    "commentedTime" : "2017-01-24T14:14:37.000Z",
+    "isPublic" : false,
+    "plainText" : "zsu[@user:55616589]zsu Please fix this ASAP",
+    "id" : "4000000529007",
+    "contentType" : "html",
+    "content" : "<div>zsu[@user:55616589]zsu Please fix this ASAP</div>",
+    "commenterId" : "4000000008692",
+    "mention" : [ {
+      "firstName" : "",
+      "lastName" : "pandees",
+      "photoURL" : null,
+      "offSet" : "0",
+      "length" : "28",
+      "id" : "31138000000573164",
+      "type" : "AGENT",
+      "email" : "carol@zylker.com",
+      "zuid" : "55616589"
+    } ],
+    "commenter" : {
+      "firstName" : "Jade",
+      "lastName" : "Tywin",
+      "photoURL" : "https://desk.zoho.com/api/v1/portalUser/4000000008692/photo?orgId=292828",
+      "name" : "Jade Tywin",
+      "roleName" : "PortalUser",
+      "type" : "END_USER",
+      "email" : "jade12tywin@zylker.com"
+    }
+  } ]
+}
+
+
+
+
+## Zoho Ticket Attachment api
+curl --location 'https://desk.zoho.com/api/v1/tickets/458844000271660867/attachments?include=creator' \
+--header 'Authorization: Zoho-oauthtoken 1000.e6b182366109ef98e82c0e1d338350f8.49a0a2a9f4e16154323c818fe4199cd1' \
+--header 'Cookie: JSESSIONID=AA23B4A9295E12B36A4B423612C79190; crmcsr=6b324ec5-a3b4-4a08-a221-04cabc79296f; zalb_2d3a2b5a21=92a1dcb3f315402f61d63a903b2bbee0; zalb_9a26c99460=84b5a076da4ea1ba0b64a38c8fd681c6; zd_group_name=eb67dbd99ad7832e0112ab054f03c8d26ee1d8d2ad1f38e0c618fd47e081ab69'
+
+
+{
+  "data" : [ {
+    "creator" : {
+      "firstName" : "Jade",
+      "lastName" : "Tywin",
+      "photoURL" : "https://desk.zoho.com/api/v1/agents/1892000000047001/photo?orgId=298902",
+      "id" : "1892000000047001",
+      "email" : "jade@zylker.com"
+    },
+    "size" : "1079",
+    "creatorId" : "1892000000047001",
+    "name" : "issues.txt",
+    "createdTime" : "2013-11-06T10:25:03.000Z",
+    "isPublic" : true,
+    "id" : "1892000000047041",
+    "href" : "https://desk.zoho.com/api/v1/tickets/1892000001004024/attachments/1892000000047041/content"
+  }, {
+    "creator" : {
+      "firstName" : "Jade",
+      "lastName" : "Tywin",
+      "photoURL" : "https://desk.zoho.com/api/v1/agents/1892000000047001/photo?orgId=298902",
+      "id" : "1892000000047001",
+      "email" : "jade@zylker.com"
+    },
+    "size" : "135222",
+    "creatorId" : "1892000000047001",
+    "name" : "guidelines.pdf",
+    "createdTime" : "2014-03-05T06:16:15.000Z",
+    "isPublic" : true,
+    "id" : "1892000000089041",
+    "href" : "https://desk.zoho.com/api/v1/tickets/1892000001004024/attachments/1892000000089041/content"
+  }, {
+    "creator" : {
+      "firstName" : "Jade",
+      "lastName" : "Tywin",
+      "photoURL" : "https://desk.zoho.com/api/v1/agents/1892000000047001/photo?orgId=298902",
+      "id" : "1892000000047001",
+      "email" : "jade@zylker.com"
+    },
+    "size" : "97951",
+    "creatorId" : "1892000000042001",
+    "name" : "CreditHistory.pdf",
+    "createdTime" : "2016-06-21T10:15:34.000Z",
+    "isPublic" : false,
+    "id" : "1892000001052021",
+    "href" : "https://desk.zoho.com/api/v1/tickets/1892000001004024/attachments/1892000001052021/content"
+  }, {
+    "creator" : {
+      "firstName" : "Jade",
+      "lastName" : "Tywin",
+      "photoURL" : "https://desk.zoho.com/api/v1/agents/1892000000047001/photo?orgId=298902",
+      "id" : "1892000000047001",
+      "email" : "jade@zylker.com"
+    },
+    "size" : "97951",
+    "creatorId" : "1892000000042001",
+    "name" : "values.txt",
+    "createdTime" : "2016-06-21T10:15:49.000Z",
+    "isPublic" : false,
+    "id" : "1892000001052025",
+    "href" : "https://desk.zoho.com/api/v1/tickets/1892000001004024/attachments/1892000001052025/content"
+  } ]
+}

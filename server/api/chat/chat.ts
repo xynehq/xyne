@@ -70,6 +70,7 @@ import {
   type MessageReqType,
   DEFAULT_TEST_AGENT_ID,
   ApiKeyScopes,
+  AuthType,
 } from "@/shared/types"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import {
@@ -152,6 +153,8 @@ import {
   type SelectAgent,
 } from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
+import { connectors } from "@/db/schema/connectors"
+import { getConnectorByAppAndEmailId } from "@/db/connector"
 import {
   ragPipelineConfig,
   RagPipelineStages,
@@ -668,6 +671,20 @@ async function* processIterator(
           const parsableBuffer = cleanBuffer(buffer)
 
           parsed = jsonParseLLMOutput(parsableBuffer, ANSWER_TOKEN)
+
+          // Debug log: Show what the LLM is actually generating
+          if (parsed.answer && currentAnswer !== parsed.answer) {
+            const newPortion = parsed.answer.slice(currentAnswer.length)
+            if (newPortion) {
+              loggerWithChild({ email: email! }).info(
+                `🤖 LLM Raw Output Chunk:\n` +
+                `Previous length: ${currentAnswer.length}\n` +
+                `New portion (${newPortion.length} chars): ${JSON.stringify(newPortion)}\n` +
+                `Full answer so far (${parsed.answer.length} chars): ${JSON.stringify(parsed.answer.substring(0, 200))}...`
+              )
+            }
+          }
+
           // If we have a null answer, break this inner loop and continue outer loop
           // seen some cases with just "}"
           if (parsed.answer === null || parsed.answer === "}") {
@@ -675,14 +692,20 @@ async function* processIterator(
           }
           // If we have an answer and it's different from what we've seen
           if (parsed.answer && currentAnswer !== parsed.answer) {
-            if (currentAnswer === "") {
-              // First valid answer - send the whole thing
-              yield { text: parsed.answer }
-            } else {
-              // Subsequent chunks - send only the new part
-              const newText = parsed.answer.slice(currentAnswer.length)
+            // Calculate what's actually new - use currentAnswer.length as the baseline
+            // to avoid yielding duplicate text during incremental JSON parsing
+            const baseLength = currentAnswer.length
+            const newText = parsed.answer.slice(baseLength)
+
+            // CRITICAL: Update currentAnswer IMMEDIATELY to prevent race conditions
+            // in rapid-fire async iterations from re-processing the same text
+            currentAnswer = parsed.answer
+
+            // Only yield if there's actually new text (prevents duplicate yields)
+            if (newText.length > 0) {
               yield { text: newText }
             }
+
             yield* checkAndYieldCitations(
               parsed.answer,
               yieldedCitations,
@@ -692,7 +715,6 @@ async function* processIterator(
               yieldedImageCitations,
               isMsgWithKbItems,
             )
-            currentAnswer = parsed.answer
           }
         } catch (e) {
           // If we can't parse the JSON yet, continue accumulating
@@ -1109,6 +1131,32 @@ export async function buildContext(
   builtUserQuery?: string,
   isMsgWithKbItems?: boolean,
 ): Promise<string> {
+  // Check if results contain Zoho tickets - use JSON array format
+  const hasZohoTickets = results?.some(
+    (r) => (r as VespaSearchResults).fields?.sddocname === "zoho_ticket"
+  )
+
+  if (hasZohoTickets) {
+    // Build JSON array for Zoho tickets with index for citations
+    const ticketObjects = await Promise.all(
+      results.map(async (v, idx) => {
+        const ticket = await answerContextMap(
+          v as VespaSearchResults,
+          userMetadata,
+          maxSummaryCount,
+          undefined,
+          isMsgWithKbItems,
+          builtUserQuery,
+        )
+        // Add index for citations (ticket is already an object from constructZohoTicketContext)
+        return { index: idx, ...(ticket as Record<string, any>) }
+      })
+    )
+    // Return formatted JSON array
+    return JSON.stringify(ticketObjects, null, 2)
+  }
+
+  // Original format for other document types
   const contextPromises = results?.map(
     async (v, i) =>
       `Index ${i + startIndex} \n ${await answerContextMap(
@@ -1225,6 +1273,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               case "slack":
                 if (!agentAppEnums.includes(Apps.Slack))
                   agentAppEnums.push(Apps.Slack)
+                break
+              case Apps.ZohoDesk.toLowerCase():
+              case "zohodesk":
+                if (!agentAppEnums.includes(Apps.ZohoDesk))
+                  agentAppEnums.push(Apps.ZohoDesk)
                 break
               default:
                 loggerWithChild({ email: email }).warn(
@@ -1354,26 +1407,164 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     }
   }
 
+  // Always use default pageSize - let LLM filter/sort results
+  // Don't limit based on user's requested count (e.g., "show me 5 tickets")
+  // because LLM needs more context to pick the BEST 5, not just the first 5
   let userSpecifiedCount = pageSize
-  if (classification.filters.count) {
-    rootSpan?.setAttribute("userSpecifiedCount", classification.filters.count)
-    userSpecifiedCount = Math.min(
-      classification.filters.count,
-      config.maxUserRequestCount,
-    )
-  }
   if (classification.filterQuery) {
     message = classification.filterQuery
   }
+
+  // Build appFilters for Zoho Desk
+  const appFilters: Partial<Record<Apps, any[]>> = {}
+  const ticketParticipants = classification.filters.ticketParticipants
+  const timestampField = classification.filters.timestampField
+
+  // Log when ticketParticipants is detected from LLM classification
+  if (ticketParticipants && Object.keys(ticketParticipants).length > 0) {
+    loggerWithChild({ email: email }).info(
+      `[Iterative RAG] 🎯 LLM extracted ticketParticipants: ${JSON.stringify(ticketParticipants)}`,
+    )
+  }
+
+  // Log when timestampField is detected from LLM classification
+  if (timestampField) {
+    loggerWithChild({ email: email }).info(
+      `[Iterative RAG] 🕐 LLM extracted timestampField: ${timestampField}`,
+    )
+  }
+
+  // Store user's Zoho departmentIds for permission filtering (can be multiple)
+  let userDepartmentIds: string[] | undefined = undefined
+
+  // ALWAYS fetch departmentIds for Zoho Desk queries (needed for permission filtering)
+  if (agentAppEnums.includes(Apps.ZohoDesk) || classification.filters.apps?.includes(Apps.ZohoDesk)) {
+    loggerWithChild({ email: email }).info(
+      `[Iterative RAG] 🔧 Fetching Zoho Desk departmentIds for permissions...`,
+    )
+
+    // Fetch Zoho connector to get department permissions
+    try {
+      const zohoConnector = await getConnectorByAppAndEmailId(
+        db,
+        Apps.ZohoDesk,
+        AuthType.OAuth,
+        email,
+      )
+
+      if (zohoConnector?.oauthCredentials) {
+        try {
+          const credentials = JSON.parse(zohoConnector.oauthCredentials)
+          if (credentials.departmentIds && credentials.departmentIds.length > 0) {
+            userDepartmentIds = credentials.departmentIds // Store ALL department IDs
+            loggerWithChild({ email: email }).info(
+              `[Iterative RAG] 🔑 Found user's departmentIds for permissions: ${JSON.stringify(userDepartmentIds)}`,
+            )
+          }
+
+          loggerWithChild({ email: email }).info(
+            `[Iterative RAG] 🏢 Zoho Desk Connector Details:\n` +
+            `   User Email: ${email}\n` +
+            `   Connector ID: ${zohoConnector.id}\n` +
+            `   Workspace ID: ${zohoConnector.workspaceId}\n` +
+            `   Workspace External ID: ${zohoConnector.workspaceExternalId}\n` +
+            `   Department IDs: ${JSON.stringify(credentials.departmentIds || [])}\n` +
+            `   Department Names: ${JSON.stringify(credentials.departments || [])}\n` +
+            `   Connector Status: ${zohoConnector.status}`
+          )
+        } catch (parseError) {
+          loggerWithChild({ email: email }).warn(
+            `[Iterative RAG] ⚠️ Could not parse oauthCredentials`,
+            parseError
+          )
+        }
+      } else if (zohoConnector) {
+        loggerWithChild({ email: email }).warn(
+          `[Iterative RAG] ⚠️ Zoho connector found but no oauthCredentials:\n` +
+          `   Connector ID: ${zohoConnector.id}\n` +
+          `   Status: ${zohoConnector.status}`
+        )
+      } else {
+        loggerWithChild({ email: email }).warn(
+          `[Iterative RAG] ⚠️ No Zoho Desk connector found for user ${email}`
+        )
+      }
+    } catch (error) {
+      loggerWithChild({ email: email }).error(
+        `[Iterative RAG] ❌ Could not fetch Zoho connector details`,
+        error
+      )
+    }
+
+    // Only build appFilters if there are actual ticket filters or timestampField
+    if (ticketParticipants && Object.keys(ticketParticipants).length > 0 || timestampField) {
+      appFilters[Apps.ZohoDesk] = [
+        {
+          id: 1,
+          departmentName: ticketParticipants?.department,
+          status: ticketParticipants?.status,
+          priority: ticketParticipants?.priority,
+          assigneeEmail: ticketParticipants?.assignee,
+          category: ticketParticipants?.category,
+          timestampField: classification.filters.timestampField, // Optional: LLM-specified timestamp field (createdTime, modifiedTime, closedTime, dueDate)
+        },
+      ]
+      loggerWithChild({ email: email }).info(
+        `[Iterative RAG] ✅ Built appFilters: ${JSON.stringify(appFilters)}`,
+      )
+    }
+  } else if (ticketParticipants && Object.keys(ticketParticipants).length > 0 || timestampField) {
+    loggerWithChild({ email: email }).warn(
+      `[Iterative RAG] ⚠️ ticketParticipants or timestampField detected but Zoho Desk not in apps. agentAppEnums: ${JSON.stringify(agentAppEnums)}, classification.apps: ${JSON.stringify(classification.filters.apps)}`,
+    )
+  }
+
   let searchResults: VespaSearchResponse
   if (!agentPrompt) {
-    searchResults = await searchVespa(message, email, null, null, {
-      limit: pageSize,
-      alpha: userAlpha,
-      timestampRange,
-      span: initialSearchSpan,
-    })
+    // Check if we have appFilters - if yes, use searchVespaAgent for proper filtering support
+    const hasAppFilters = appFilters && Object.keys(appFilters).length > 0
+
+    if (hasAppFilters) {
+      loggerWithChild({ email: email }).info(
+        `[Iterative RAG] 🔄 Using searchVespaAgent for appFilters support. Apps: ${JSON.stringify(classification.filters.apps)}, entities: ${JSON.stringify(classification.filters.entities)}, appFilters: ${JSON.stringify(appFilters)}, departmentIds: ${JSON.stringify(userDepartmentIds)}, limit: ${userSpecifiedCount}`,
+      )
+      searchResults = await searchVespaAgent(
+        message,
+        email,
+        classification.filters.apps || null,
+        (classification.filters.entities || null) as any,
+        classification.filters.apps ? (classification.filters.apps as Apps[]) : [],
+        {
+          limit: userSpecifiedCount,
+          alpha: userAlpha,
+          timestampRange,
+          span: initialSearchSpan,
+          appFilters,
+          departmentIds: userDepartmentIds,
+        },
+      )
+    } else {
+      loggerWithChild({ email: email }).info(
+        `[Iterative RAG] 🔍 Calling searchVespa (no appFilters). Apps: ${JSON.stringify(classification.filters.apps)}, entities: ${JSON.stringify(classification.filters.entities)}, departmentIds: ${JSON.stringify(userDepartmentIds)}, limit: ${userSpecifiedCount}`,
+      )
+      searchResults = await searchVespa(
+        message,
+        email,
+        classification.filters.apps || null,
+        (classification.filters.entities || null) as any,
+        {
+          limit: userSpecifiedCount,
+          alpha: userAlpha,
+          timestampRange,
+          span: initialSearchSpan,
+          departmentIds: userDepartmentIds,
+        },
+      )
+    }
   } else {
+    loggerWithChild({ email: email }).info(
+      `[Iterative RAG] 🔍 Calling searchVespaAgent with appFilters: ${JSON.stringify(appFilters)}, departmentIds: ${JSON.stringify(userDepartmentIds)}, limit: ${userSpecifiedCount}`,
+    )
     searchResults = await searchVespaAgent(
       message,
       email,
@@ -1381,7 +1572,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       null,
       agentAppEnums,
       {
-        limit: pageSize,
+        limit: userSpecifiedCount, // Uses user-specified count if provided, otherwise defaults to pageSize (backward compatible)
         alpha: userAlpha,
         timestampRange,
         span: initialSearchSpan,
@@ -1389,6 +1580,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         channelIds: channelIds,
         collectionSelections: agentSpecificCollectionSelections,
         selectedItem: selectedItem, //agentIntegration format (app_integrations format)
+        appFilters,
+        departmentIds: userDepartmentIds,
       },
     )
   }
@@ -2472,6 +2665,11 @@ async function* generatePointQueryTimeExpansion(
                 if (!agentAppEnums.includes(Apps.Slack))
                   agentAppEnums.push(Apps.Slack)
                 break
+              case Apps.ZohoDesk.toLowerCase():
+              case "zohodesk":
+                if (!agentAppEnums.includes(Apps.ZohoDesk))
+                  agentAppEnums.push(Apps.ZohoDesk)
+                break
               default:
                 Logger.warn(
                   `Unknown integration type in agent prompt: ${integration}`,
@@ -2961,6 +3159,18 @@ async function* processResultsForMetadata(
     )
   } else {
     loggerWithChild({ email: email ?? "" }).info(`Using baselineRAGJsonStream`)
+
+    // Log the full prompt being sent to LLM
+    loggerWithChild({ email: email ?? "" }).info(
+      `\n${"=".repeat(80)}\n` +
+      `📤 FINAL PROMPT TO LLM:\n` +
+      `${"=".repeat(80)}\n` +
+      `User Query: ${input}\n\n` +
+      `User Context:\n${userCtx}\n\n` +
+      `Search Results Context (${context.length} chars):\n${context}\n` +
+      `${"=".repeat(80)}`
+    )
+
     iterator = baselineRAGJsonStream(
       input,
       userCtx,
@@ -3084,6 +3294,11 @@ async function* generateMetadataQueryAnswer(
                 if (!agentAppEnums.includes(Apps.Slack))
                   agentAppEnums.push(Apps.Slack)
                 break
+              case Apps.ZohoDesk.toLowerCase():
+              case "zohodesk":
+                if (!agentAppEnums.includes(Apps.ZohoDesk))
+                  agentAppEnums.push(Apps.ZohoDesk)
+                break
               case Apps.KnowledgeBase.toLowerCase():
                 if (!agentAppEnums.includes(Apps.KnowledgeBase))
                   agentAppEnums.push(Apps.KnowledgeBase)
@@ -3186,23 +3401,70 @@ async function* generateMetadataQueryAnswer(
       (timeDescription ? `, ${directionText} ${timeDescription}` : ""),
   )
   let schema: VespaSchema[] | null = null
+
+  // Custom mapper for Zoho Desk (app/entity → schema mapping)
+  const customAppMapper = (app: string): VespaSchema | null => {
+    if (app === "zoho-desk") return "zoho_ticket" as VespaSchema
+    return appToSchemaMapper(app)
+  }
+
+  const customEntityMapper = (entity: string, app?: string): VespaSchema | null => {
+    if (entity === "ticket" && (app === "zoho-desk" || apps?.includes("zoho-desk"))) {
+      return "zoho_ticket" as VespaSchema
+    }
+    return entityToSchemaMapper(entity, app)
+  }
+
   if (!entities?.length && apps?.length) {
     schema = [
       ...new Set(
-        apps.map((app) => appToSchemaMapper(app)).filter((s) => s !== null),
+        apps.map((app) => customAppMapper(app)).filter((s) => s !== null),
       ),
     ]
   } else if (entities?.length) {
     schema = [
       ...new Set(
         entities
-          .map((entity) => entityToSchemaMapper(entity))
+          .map((entity) => customEntityMapper(entity, apps?.[0]))
           .filter((s) => s !== null),
       ),
     ]
   }
 
   let items: VespaSearchResult[] = []
+
+  // Store user's Zoho departmentIds for permission filtering (can be multiple)
+  let userDepartmentIds: string[] | undefined = undefined
+
+  // ALWAYS fetch departmentIds for Zoho Desk queries (needed for permission filtering)
+  if (apps?.includes(Apps.ZohoDesk)) {
+    loggerWithChild({ email: email }).info(
+      `[SearchWithFilters] 🔧 Fetching Zoho Desk departmentIds for permissions...`,
+    )
+
+    // Fetch Zoho connector to get department permissions
+    try {
+      const zohoConnector = await getConnectorByAppAndEmailId(
+        db,
+        Apps.ZohoDesk,
+        AuthType.OAuth,
+        email,
+      )
+      if (zohoConnector?.oauthCredentials) {
+        const credentials = JSON.parse(zohoConnector.oauthCredentials)
+        if (credentials.departmentIds && credentials.departmentIds.length > 0) {
+          userDepartmentIds = credentials.departmentIds // Store ALL department IDs
+          loggerWithChild({ email: email }).info(
+            `[SearchWithFilters] 🔑 Found user's departmentIds for permissions: ${JSON.stringify(userDepartmentIds)}`,
+          )
+        }
+      }
+    } catch (error) {
+      loggerWithChild({ email: email }).error(
+        `[SearchWithFilters] ❌ Error fetching Zoho departmentIds: ${error}`,
+      )
+    }
+  }
 
   // Determine search strategy based on conditions
   if (
@@ -3246,6 +3508,7 @@ async function* generateMetadataQueryAnswer(
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
       mailParticipants: resolvedMailParticipants,
+      departmentIds: userDepartmentIds,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -3414,6 +3677,65 @@ async function* generateMetadataQueryAnswer(
       )
     }
 
+    // Build appFilters for Zoho Desk
+    const appFilters: Partial<Record<Apps, any[]>> = {}
+    const ticketParticipants = classification.filters.ticketParticipants
+
+    // Log when ticketParticipants is detected from LLM classification
+    if (ticketParticipants && Object.keys(ticketParticipants).length > 0) {
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.GetItems}] 🎯 LLM extracted ticketParticipants: ${JSON.stringify(ticketParticipants)}`,
+      )
+    }
+
+    // Build appFilters for Zoho Desk if detected
+    if (apps?.includes(Apps.ZohoDesk)) {
+      appFilters[Apps.ZohoDesk] = [
+        {
+          id: 1,
+          // People/Assignment filters
+          departmentName: ticketParticipants?.department,
+          assigneeEmail: ticketParticipants?.assignee,
+          email: ticketParticipants?.contact, // Maps to 'email' field in schema (primary contact)
+
+          // Status/Priority filters
+          status: ticketParticipants?.status,
+          priority: ticketParticipants?.priority,
+          classification: ticketParticipants?.classification,
+
+          // Categorization filters
+          category: ticketParticipants?.category,
+          subCategory: ticketParticipants?.subCategory,
+
+          // Organization/Product filters
+          accountName: ticketParticipants?.accountName,
+          productName: ticketParticipants?.productName,
+          teamName: ticketParticipants?.teamName,
+          merchantId: ticketParticipants?.merchantId,
+
+          // Email participant filters
+          to: ticketParticipants?.to,
+          cc: ticketParticipants?.cc,
+          bcc: ticketParticipants?.bcc,
+
+          // Channel filter
+          channel: ticketParticipants?.channel,
+
+          // Boolean flags
+          isOverDue: ticketParticipants?.isOverDue,
+          isResponseOverdue: ticketParticipants?.isResponseOverdue,
+          isEscalated: ticketParticipants?.isEscalated,
+        },
+      ]
+      loggerWithChild({ email: email }).info(
+        `[${QueryType.GetItems}] ✅ Built appFilters: ${JSON.stringify(appFilters)}`,
+      )
+    } else if (ticketParticipants && Object.keys(ticketParticipants).length > 0) {
+      loggerWithChild({ email: email }).warn(
+        `[${QueryType.GetItems}] ⚠️ ticketParticipants detected but Apps.ZohoDesk not in apps list. Apps: ${JSON.stringify(apps)}`,
+      )
+    }
+
     if (!schema) {
       loggerWithChild({ email: email }).error(
         `[generateMetadataQueryAnswer] Could not determine a valid schema for apps: ${JSON.stringify(apps)}, entities: ${JSON.stringify(entities)}`,
@@ -3438,7 +3760,7 @@ async function* generateMetadataQueryAnswer(
       }
       if (agentApps.length) {
         loggerWithChild({ email: email }).info(
-          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${agentApps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}`,
+          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${agentApps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}, appFilters: ${JSON.stringify(appFilters)}, departmentIds: ${JSON.stringify(userDepartmentIds)}`,
         )
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await getItems({
@@ -3454,6 +3776,8 @@ async function* generateMetadataQueryAnswer(
           channelIds,
           selectedItem: selectedItem,
           collectionSelections: agentSpecificCollectionSelections,
+          appFilters,
+          departmentIds: userDepartmentIds,
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -3462,7 +3786,7 @@ async function* generateMetadataQueryAnswer(
       }
     } else {
       loggerWithChild({ email: email }).info(
-        `[GetItems] Calling getItems - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}`,
+        `[GetItems] Calling getItems - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}, appFilters: ${JSON.stringify(appFilters)}, departmentIds: ${JSON.stringify(userDepartmentIds)}`,
       )
 
       const getItemsParams = {
@@ -3477,6 +3801,8 @@ async function* generateMetadataQueryAnswer(
         mailParticipants: resolvedMailParticipants || {},
         collectionSelections: agentSpecificCollectionSelections,
         selectedItem: selectedItem,
+        appFilters,
+        departmentIds: userDepartmentIds,
       }
 
       loggerWithChild({ email: email }).info(
@@ -3574,6 +3900,66 @@ async function* generateMetadataQueryAnswer(
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank
 
+    // Always use default pageSize - let LLM filter/sort results
+    // Don't limit based on user's requested count (e.g., "show me 5 tickets")
+    // because LLM needs more context to pick the BEST 5, not just the first 5
+    let swfUserSpecifiedCount = pageSize
+
+    // Build appFilters for Zoho Desk - only when ticketParticipants exists
+    const swfAppFilters: Partial<Record<Apps, any[]>> = {}
+    const swfTicketParticipants = classification.filters.ticketParticipants
+
+    if (
+      swfTicketParticipants &&
+      Object.keys(swfTicketParticipants).length > 0 &&
+      apps?.includes(Apps.ZohoDesk)
+    ) {
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] 🔧 Building appFilters for Zoho Desk...`,
+      )
+
+      swfAppFilters[Apps.ZohoDesk] = [
+        {
+          id: 1,
+          // People/Assignment filters
+          departmentName: swfTicketParticipants.department,
+          assigneeEmail: swfTicketParticipants.assignee,
+          email: swfTicketParticipants.contact, // Maps to 'email' field in schema (primary contact)
+
+          // Status/Priority filters
+          status: swfTicketParticipants.status,
+          priority: swfTicketParticipants.priority,
+          classification: swfTicketParticipants.classification,
+
+          // Categorization filters
+          category: swfTicketParticipants.category,
+          subCategory: swfTicketParticipants.subCategory,
+
+          // Organization/Product filters
+          accountName: swfTicketParticipants.accountName,
+          productName: swfTicketParticipants.productName,
+          teamName: swfTicketParticipants.teamName,
+          merchantId: swfTicketParticipants.merchantId,
+
+          // Email participant filters
+          to: swfTicketParticipants.to,
+          cc: swfTicketParticipants.cc,
+          bcc: swfTicketParticipants.bcc,
+
+          // Channel filter
+          channel: swfTicketParticipants.channel,
+
+          // Boolean flags
+          isOverDue: swfTicketParticipants.isOverDue,
+          isResponseOverdue: swfTicketParticipants.isResponseOverdue,
+          isEscalated: swfTicketParticipants.isEscalated,
+        },
+      ]
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] ✅ Built appFilters: ${JSON.stringify(swfAppFilters)}, departmentIds: ${JSON.stringify(userDepartmentIds)}`,
+      )
+    }
+
     let resolvedMailParticipants = {} as MailParticipant
     if (
       mailParticipants &&
@@ -3596,12 +3982,14 @@ async function* generateMetadataQueryAnswer(
     }
 
     const searchOptions = {
-      limit: pageSize,
+      limit: swfUserSpecifiedCount,
       alpha: userAlpha,
       rankProfile,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
       mailParticipants: resolvedMailParticipants,
+      ...(Object.keys(swfAppFilters).length > 0 && { appFilters: swfAppFilters }),
+      departmentIds: userDepartmentIds,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -3612,24 +4000,45 @@ async function* generateMetadataQueryAnswer(
 
       let searchResults: VespaSearchResponse
       if (!agentPrompt) {
-        searchResults = await searchVespa(
-          query,
-          email,
-          apps ?? null,
-          entities ?? null,
-          {
-            ...searchOptions,
-            limit: pageSize + pageSize * iteration,
-            offset: pageSize * iteration,
-          },
-        )
+        // Check if we have appFilters - if yes, use searchVespaAgent for proper filtering
+        const hasAppFilters = searchOptions.appFilters && Object.keys(searchOptions.appFilters).length > 0
+
+        if (hasAppFilters) {
+          loggerWithChild({ email: email }).info(
+            `[SearchWithFilters] 🔄 Using searchVespaAgent for appFilters support`,
+          )
+          searchResults = await searchVespaAgent(
+            query,
+            email,
+            apps ?? null,
+            (entities ?? null) as any,
+            apps ? (apps as Apps[]) : [],
+            {
+              ...searchOptions,
+              limit: pageSize + pageSize * iteration,
+              offset: pageSize * iteration,
+            },
+          )
+        } else {
+          searchResults = await searchVespa(
+            query,
+            email,
+            apps ?? null,
+            (entities ?? null) as any,
+            {
+              ...searchOptions,
+              limit: pageSize + pageSize * iteration,
+              offset: pageSize * iteration,
+            },
+          )
+        }
       } else {
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await searchVespaAgent(
           query,
           email,
           apps ?? null,
-          entities ?? null,
+          (entities ?? null) as any,
           agentAppEnums,
           {
             ...searchOptions,
@@ -3694,6 +4103,23 @@ async function* generateMetadataQueryAnswer(
         yield { text: METADATA_FALLBACK_TO_RAG }
         return
       }
+
+      // Log context being sent to LLM for debugging
+      const contextForLLM = await buildContext(
+        items,
+        20,
+        userMetadata,
+        0,
+        input,
+        agentSpecificCollectionSelections.length > 0,
+      )
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] 📝 Context being sent to LLM:\n` +
+        `   Items count: ${items.length}\n` +
+        `   Context length: ${contextForLLM.length} chars\n` +
+        `   First 500 chars:\n${contextForLLM.substring(0, 500)}\n` +
+        `   Last 500 chars:\n${contextForLLM.substring(Math.max(0, contextForLLM.length - 500))}`
+      )
 
       const answer = yield* processResultsForMetadata(
         items,
@@ -3872,8 +4298,15 @@ export async function* UnderstandMessageAndAnswer(
     classification.filterQuery &&
     classification.filters.sortDirection === "desc"
 
+  // Log classification for debugging flow
+  loggerWithChild({ email: email }).info(
+    `🎯 [FLOW START] Classification type: ${classification.type}, isGenericItemFetch: ${isGenericItemFetch}, isFilteredItemSearch: ${isFilteredItemSearch}, apps: ${JSON.stringify(classification.filters.apps)}, entities: ${JSON.stringify(classification.filters.entities)}`,
+  )
+
   if (isGenericItemFetch || isFilteredItemSearch) {
-    loggerWithChild({ email: email }).info("Metadata Retrieval")
+    loggerWithChild({ email: email }).info(
+      "📋 [METADATA PATH] Entering Metadata Retrieval",
+    )
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
     metadataRagSpan?.setAttribute("comment", "metadata retrieval")
@@ -3904,6 +4337,9 @@ export async function* UnderstandMessageAndAnswer(
     let hasYieldedAnswer = false
     for await (const answer of answerIterator) {
       if (answer.text === METADATA_NO_DOCUMENTS_FOUND) {
+        loggerWithChild({ email: email }).info(
+          "❌ [METADATA PATH] No documents found, returning error message",
+        )
         return yield {
           text: `I couldn't find any ${fallbackText(
             classification,
@@ -3911,7 +4347,7 @@ export async function* UnderstandMessageAndAnswer(
         }
       } else if (answer.text === METADATA_FALLBACK_TO_RAG) {
         loggerWithChild({ email: email }).info(
-          "No context found for metadata retrieval, moving to iterative RAG",
+          "⚠️ [METADATA PATH] No context found for metadata retrieval, falling back to Iterative RAG",
         )
         hasYieldedAnswer = false
       } else {
@@ -3921,7 +4357,19 @@ export async function* UnderstandMessageAndAnswer(
     }
 
     metadataRagSpan?.end()
-    if (hasYieldedAnswer) return
+    if (hasYieldedAnswer) {
+      loggerWithChild({ email: email }).info(
+        "✅ [METADATA PATH] Successfully returned answer from Metadata Retrieval",
+      )
+      return
+    }
+    loggerWithChild({ email: email }).info(
+      "➡️ [METADATA PATH] Metadata Retrieval completed, continuing to next flow...",
+    )
+  } else {
+    loggerWithChild({ email: email }).info(
+      `⏭️ [FLOW] Skipping Metadata Path (not GetItems or SearchWithFilters). Classification type: ${classification.type}`,
+    )
   }
 
   if (
@@ -3930,7 +4378,7 @@ export async function* UnderstandMessageAndAnswer(
   ) {
     // user is talking about an event
     loggerWithChild({ email: email }).info(
-      `Direction : ${classification.direction}`,
+      `📅 [EVENT PATH] Entering Event Time Expansion. Direction: ${classification.direction}`,
     )
     const eventRagSpan = passedSpan?.startSpan("event_time_expansion")
     eventRagSpan?.setAttribute("comment", "event time expansion")
@@ -3951,7 +4399,7 @@ export async function* UnderstandMessageAndAnswer(
     )
   } else {
     loggerWithChild({ email: email }).info(
-      "Iterative Rag : Query rewriting and time filtering",
+      "🔄 [ITERATIVE RAG PATH] Entering Iterative RAG: Query rewriting and time filtering",
     )
     const ragSpan = passedSpan?.startSpan("iterative_rag")
     ragSpan?.setAttribute("comment", "iterative rag")
@@ -4352,6 +4800,16 @@ export const MessageApi = async (c: Context) => {
       email,
     )
     const { user, workspace } = userAndWorkspace
+
+    // Log user and workspace details for Zoho Desk queries
+    loggerWithChild({ email: email }).info(
+      `[CHAT] 👤 User Details:\n` +
+      `   Email: ${user.email}\n` +
+      `   Workspace ID: ${workspace.id}\n` +
+      `   Workspace External ID: ${workspace.externalId}\n` +
+      `   User ID: ${user.id}`
+    )
+
     let messages: SelectMessage[] = []
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
@@ -5207,6 +5665,7 @@ export const MessageApi = async (c: Context) => {
               sortDirection,
               startTime,
               mailParticipants,
+              ticketParticipants,
               offset,
             } = parsed?.filters || {}
             classification = {
@@ -5223,6 +5682,7 @@ export const MessageApi = async (c: Context) => {
                 count,
                 offset: offset || 0,
                 mailParticipants: mailParticipants || {},
+                ticketParticipants: ticketParticipants || {},
               },
             } as QueryRouterLLMResponse
 
@@ -6521,6 +6981,8 @@ export const MessageRetryApi = async (c: Context) => {
                 entities,
                 sortDirection,
                 startTime,
+                mailParticipants,
+                ticketParticipants,
               } = parsed?.filters || {}
               classification = {
                 direction: parsed.temporalDirection,
@@ -6535,7 +6997,8 @@ export const MessageRetryApi = async (c: Context) => {
                   startTime,
                   count,
                   offset: parsed?.filters?.offset || 0,
-                  mailParticipants: parsed?.filters?.mailParticipants || {},
+                  mailParticipants: mailParticipants || {},
+                  ticketParticipants: ticketParticipants || {},
                 },
               } as QueryRouterLLMResponse
 

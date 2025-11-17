@@ -1,0 +1,284 @@
+{
+    "modifiedTime": "2025-10-22T12:42:30.000Z",
+    "subCategory": "Webhooks Configuration Changes",
+    ##"statusType": "Closed",   ## We have status field already
+    "subject": "Re: Webhook Configuration - SMU",
+    "dueDate": null,
+    
+    "departmentId": "458844000213531089",
+    { "departmentName": "Support",}, ## Need to extract from department Api or can have static mapping,
+    ```"channel": "Email",   ##-- medium from which ticket has come
+    # "onholdTime": null,  -- Time for which ticket was on hold
+    # "language": "English",
+    # "source": {          --- Who has created { manual, Agent, App, Api etc.}
+    #     "appName": null,
+    #     "extId": null, 
+    #     "permalink": null,
+    #     "type": "SYSTEM",
+    #     "uuid": null,
+    #     "appPhotoURL": null
+    # },
+    ##``` "sourceType" : null,  ## Who has created { manual, Agent, App, Api etc.}
+    "resolution": null,   #resolution is a short text summary of how the issue was resolved, filled in by the agent (support representative) when they close the ticket.
+    ```"sharedDepartments": [],
+    "closedTime": "2025-10-13T05:44:36.000Z",
+    #"approvalCount": "0",
+    "isOverDue": false,  ## For SLA (Service level agreement), like how many are overdue (breachec SLA of resolved time)
+   # "isTrashed": false,  ## We have to filter out trashed tickets, no ingestion
+    "createdTime": "2025-10-12T09:35:14.000Z",
+    "id": "458844000281137319",    ## Ticket unique id
+    "isResponseOverdue": false, ## If the first response is not sent within the SLA time window, this flag becomes true.
+    --```"customerResponseTime": "2025-10-22T12:42:30.395Z",
+    #"productId": null,
+    { "productName": "UPI"}, ## Need to extract from product Api or can have static mapping,
+    ##``"contactId": "458844000157530234",  ### its the person from the company who raised, email could be changed, so should we keep it
+    ###"threadCount": "19",
+    ###"secondaryContacts": [],
+    "priority": "Low",
+    "classification": "Request",   ## Could be Incident, Problem, Question, Request
+    ##"commentCount": "0",
+    ##"taskCount": "0",
+    ###"accountId": "458844000173043001",  ## This the company id to which contact id and this ticket belongs
+    ```{ "accountName": "U-NEXT PVT LTD"}, ## Need to extract from account Api or can have static mapping,
+    #"phone": null,
+   ``` "webUrl": "https://desk.zoho.com/support/juspay4/ShowHomePage.do#Cases/dv/458844000281137319", ## URL to access ticket in Zoho Desk
+    ##"isSpam": false,
+    "status": "Closed",
+    ##"entitySkills": [],
+    ```"ticketNumber": "750028",  ## Ticket number visible to customer (Public ticket identifier)
+   ## "sentiment": null,
+   ## "isArchived": false,
+    "description": null,
+   ## "timeEntryCount": "0",
+   ##"channelRelatedInfo": null,
+    ##"responseDueDate": null,
+    ##"isDeleted": false,
+   ##"modifiedBy": "458844000000130015",  ## Who modified last time (agent id, it could be human or system also)
+   ```{modifiedByEmail: "xyz.com"},  ## Need to extract from agent API or can have static mapping
+   ##"followerCount": "0",
+    "email": "kshitiz.srivastava@u-next.com",  ## Contact email who raised the ticket (the contactId one)
+    ```"layoutDetails": {                      ## This layout defines the custom fields available in the ticket 
+        "id": "458844000213639528",
+        "layoutName": "Credit"
+    },
+    ##"channelCode": null,   ## Channel code from which ticket has come
+   ## "isFollowing": false, 
+    "cf": { 
+        ##"cf_customer": null,
+      ##  "cf_production_sandbox": "true",
+       ## "cf_success_rate": null,
+      ##  "cf_is_ticket_escalated": "false",
+       ## "cf_subscription_mandate": null,
+        "cf_escalated_end_date": null,
+       ## "cf_recurring_mandate_business_decline": null,
+      ##  "cf_did_it_take_multiple_releases_to_fix_this": null,
+      ##  "cf_jira_created": null,
+      ##  "cf_merchant_id": null,
+      ##  "cf_tid": null,
+      ##  "cf_eta_shared_with_the_merchant": null,
+     ##   "cf_escalation_status": null,
+     ##   "cf_product_features": null,
+     ##   "cf_transaction_status_mismatch": null,
+     ##   "cf_root_cause_identification": null,
+     ##   "cf_release": null,
+      ##  "cf_resolution_time": null,
+      ##  "cf_service_name_package_version": null,
+     ##   "cf_premium_upsell_feature": "false",
+       ## "cf_on_hold_over_48_hours": "false",
+      ##  "cf_eta_waiting_on_merchant": null,
+      ##  "cf_feature_request_addition": null,
+     ##   "cf_trigger_follow_up": "false",
+        ##"cf_raised_in_response": null,
+      ##  "cf_platform": null,
+     ##   "cf_zoho_ticket_response": null,
+      ##  "cf_integration_stage": null,
+      ##  "cf_product_understanding": null,
+      ##  "cf_existing_benchmark_1": null,
+     ##   "cf_transaction_pending_for_long": null,
+      ##  "cf_slack_thread_link": null,
+      ##  "cf_nature_of_query": null,
+      ##  "cf_juspay_merchant_id": null,
+      ##  "cf_dashboard": null,
+       ## "cf_refund_successbut_customerdidnot_receive_money_test": null,
+       ## "cf_dba_name": null,
+      ##  "cf_integration_query_type": null,
+     ##   "cf_transaction_pending_for_long_test": null,
+     ##   "cf_affected_pg_s": null,
+      ##  "cf_slack_thread": null,
+      ##  "cf_jira_link": null,
+      ##  "cf_payment_gateway_credentials_acquired": "false",
+        # "cf_rca_summary": null,
+        # "cf_issue_description": null,
+        # "cf_other_sdk_issues": null,
+        # "cf_product_used": null,
+        # "cf_jira_link_1": null,
+        # "cf_merchants_impacted": null,
+        # "cf_since_when_has_the_issue_existed": null,
+        # "cf_money_debited_but_confirmation_not_received": null,
+        # "cf_is_ticket_under_escalation": null,
+       ## "cf_is_merchant_live": "false",
+        # "cf_payment_instruments": null,
+        # "cf_did_you_use_mimir_to_solve_this": null,
+        # "cf_payment_failed": null,
+        # "cf_is_customization_required": null,
+         ``"cf_on_hold_start_time": null,
+        # "cf_impacted_number_of_transaction_refund": null,
+        # "cf_closed_end_date": null,
+        # "cf_juspay_issue": null,
+        # "cf_issue_identified_by": null,
+        # "cf_recurring_mandate_technical_failure": null,
+        # "cf_availability": null,
+        # "cf_type_of_change_required": null,
+        # "cf_ms_on_call_subtype": null,
+        # "cf_date_time_1": null,
+        # "cf_customer_queries": null,
+        # "cf_sdk_incidence_sub_type": null,
+        # "cf_affected_merchants": null,
+        # "cf_mandate_registration_failure": null,
+        # "cf_any_issue_in_finding_the_logs_for_the_issue": null,
+        # "cf_sdk_performance_issues": null,
+        # "cf_name_of_product": null,
+       ## "cf_is_frt_breached": "false",
+        # "cf_caused_by_juspay_release": null,
+        # "cf_features": null,
+       ## "cf_resolved_time": "2025-10-13T05:44:32.000Z",
+        # "cf_query_type_test": null,
+        # "cf_api_details": null,
+        # "cf_start_time": null,
+       ## "cf_severity": "false",
+        # "cf_impact_on": null,
+        # "cf_incidence_type": null,
+        # "cf_closing_ticket_upon_resolution": null,
+        # "cf_show_eta_on_hold_date": "false",
+        # "cf_product_name": null,
+        # "cf_will_txn_audit_trail_resolve_this": null,
+        # "cf_ticket_dependencies": null,
+        # "cf_closed_start_date": null,
+        # "cf_migration_type": null,
+        # "cf_pgs_under_integration": null,
+        # "cf_refund_incidence_sub_type": null,
+        # "cf_eta_for_on_hold_tickets": null,
+        # "cf_impact_analysis": null,
+        # "cf_impacted_merchants": null,
+        # "cf_system_issue": null,
+        # "cf_select_pis": null,
+        # "cf_on_hold_eta_commitment": null,
+        # "cf_incidence_type_test": null,
+        # "cf_unable_to_make_payment_test": null,
+        # "cf_how_many_transactions_were_impacetd": null,
+       ## "cf_possibly_a_juspay_issue": "false",
+        # "cf_affected_pgs": null,
+        # "cf_transaction_not_reaching_terminal_state_for_long": null,
+        # "cf_hyper_sdk_native_issues": null,
+       ``"cf_product_details": "Payment Page",
+        # "cf_data_analysis": null,
+        # "cf_slack_thread_available": null,
+         ``"cf_on_hold_end_time": null,
+        # "cf_hdfc_resolution_time": null,
+        # "cf_payment_gateway_credentials_required": null,
+        "cf_first_response_time": "2025-10-13T05:44:24.000Z",
+        # "cf_customer_unable_to_make_payment": null,
+        # "cf_integration_scope": null,
+        # "cf_refund_status_is_success_but_customer_did_not_rece": null,
+        # "cf_data_query_type": null,
+        # "cf_ticket_genre": null,
+        # "cf_product_name1": null,
+        # "cf_refund_failed": null,
+        # "cf_unable_to_initiate_refund_test": null,
+        # "cf_txn_details_required": null,
+        # "cf_hdfc_resolution_time_1": null,
+        # "cf_mandate_type": null,
+        # "cf_feature_request_type": null,
+        # "cf_external": null,
+        # "cf_payment_instrument_type": null,
+        # "cf_query": null,
+        # "cf_tokenization": null,
+        # "cf_is_this_a_recurring_issue": null,
+        # "cf_existing_benchmark": null,
+        # "cf_rca_link": null,
+        # "cf_delayed_success_transactions": null,
+        # "cf_merchant_type": null,
+        # "cf_transaction_incidence_sub_type": null,
+        # "cf_payment_gateway": null,
+        # "cf_refunds_are_pending_for_long": null,
+        # "cf_refund_failed_1": null,
+        # "cf_payment_failed_1": null,
+        # "cf_last_update_time": null,
+        # "cf_bug_reason": null,
+        # "cf_failure_to_success": null,
+        # "cf_release_time": null,
+        # "cf_mid": null,
+        # "cf_child_ticket_id": null,
+        "cf_resolution_time_1": "1.24",
+        # "cf_merchant": null,
+        # "cf_follow_up_counter": null,
+        # "cf_query_type": null,
+        "cf_merchant_id_1": "SMU",
+        # "cf_refund_status_mismatch": null,
+        # "cf_did_eta_change_multiple_times": null,
+        # "cf_impcated_merchants": null,
+        # "cf_release_revert_time": null,
+        # "cf_refund_unable_to_initiate_refunds": null,
+        # "cf_environment": null,
+        # "cf_merchant_id_corp_code": null,
+        # "cf_issue_reported_by": null,
+        # "cf_last_updated_time": null,
+        # "cf_split_ticket_id": null,
+        # "cf_integration_type": null,
+        # "cf_mapping_issues": null,
+        # "cf_webhooks": null,
+        # "cf_feature_goal": null,
+        # "cf_end_time": null
+    },
+    ##"slaId": null,      ## Internal SLA config reference
+    ##"layoutId": "458844000213639528",  ##Internal layout reference
+    ##"assigneeId": "458844000213915003",   ## Agent to whom ticket is assigned (human or system)
+    {"assigneeEmail": "xyz@gmail.com"}, ## Need to extract from agent Api or can have static mapping,
+   ## "createdBy": "458844000000130015",  ## Who created the ticket (agent id or system)
+    {"createdByEmail": "xyz@gmail.com"}, ## Need to extract from agent Api or can have static mapping,
+    ##"teamId": null,  ## Team to which ticket is assigned
+    {"teamName": }, ## fetch from team ID
+   ## "tagCount": "0",
+   ## "attachmentCount": "0",
+    "isEscalated": false,  ## If ticket is escalated for higher attention
+    "category": "Production Configurations",
+
+
+
+    #### Derived Fields: 
+    "threadSummary": text,
+     "commentSummary": text,
+     "daysToClose": text, ## closed - created 
+     "to": array<text>,
+     "cc": array<text>,
+     "bcc": array<text>,
+    "mentions": array<text>,
+    "wholeResolutionSummary": text,   ## From Start to End
+    
+
+    ## For Thread (it will be a little schema)
+
+    type attachementType: {
+        attachmentName: text,
+        attachmentDetail: text
+    },
+    type threadSchema: {
+         "messageText": text,
+         "attachmentDetails": array<attachmentType>,
+         "authorEmail": text,
+         ```"link": text,   ### https://desk.zoho.in/support/juspay/ShowThread.do?ticketId=458844000276420123&threadId=458844000276426336   or https://desk.zoho.in/support/<portal_name>/ShowHomePage.do#Cases/dv/<TICKET_ID>/Notes/<COMMENT_ID>  for comments
+        
+
+
+
+    },
+    "threads": array<threadSchema>,
+    "comments": array<threadSchema>
+
+    
+
+    
+
+}
+
+

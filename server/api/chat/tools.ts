@@ -2,6 +2,9 @@ import { answerContextMap } from "@/ai/context"
 import { getLogger } from "@/logger"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import { delay, getErrorMessage } from "@/utils"
+import { AuthType, Apps as SharedApps } from "@/shared/types"
+import { db } from "@/db/client"
+import { getConnectorByAppAndEmailId } from "@/db/connector"
 
 import { getTracer, type Span, type Tracer } from "@/tracer"
 import {
@@ -10,9 +13,9 @@ import {
   searchVespaInFiles,
   getItems,
   SearchVespaThreads,
-  getThreadItems,
+  //getThreadItems,
   searchVespaAgent,
-  getSlackUserDetails,
+  //getSlackUserDetails,
 } from "@/search/vespa"
 import {
   Apps,
@@ -330,6 +333,36 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     return { result: errorMsg, error: "Missing email", contexts: [] }
   }
 
+  // Fetch user's Zoho departmentId for permission filtering if querying Zoho Desk
+  let userDepartmentId: string | undefined = undefined
+  const appsArray = Array.isArray(app) ? app : app ? [app] : []
+  if (appsArray.includes(Apps.ZohoDesk) || (agentAppEnums && agentAppEnums.includes(Apps.ZohoDesk))) {
+    try {
+      const zohoConnector = await getConnectorByAppAndEmailId(
+        db,
+        Apps.ZohoDesk,
+        AuthType.OAuth,
+        email,
+      )
+
+      if (zohoConnector?.oauthCredentials) {
+        try {
+          const credentials = JSON.parse(zohoConnector.oauthCredentials)
+          if (credentials.departmentIds && credentials.departmentIds.length > 0) {
+            userDepartmentId = credentials.departmentIds[0]
+            Logger.info(`[executeVespaSearch] Found user's departmentId for permissions: ${userDepartmentId}`, { email })
+          }
+        } catch (parseError) {
+          Logger.warn("[executeVespaSearch] Could not parse oauthCredentials", { email, parseError })
+        }
+      } else {
+        Logger.warn("[executeVespaSearch] Zoho connector found but no oauthCredentials", { email })
+      }
+    } catch (error) {
+      Logger.error("[executeVespaSearch] Could not fetch Zoho connector details", { email, error })
+    }
+  }
+
   let searchResults: VespaSearchResponse | null = null
   const commonSearchOptions: Partial<VespaQueryConfig> = {
     limit,
@@ -346,6 +379,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     owner,
     eventStatus,
     attendees: eventAttendees || null,
+    departmentId: userDepartmentId,
   }
 
   const fromTimestamp = timestampRange?.from

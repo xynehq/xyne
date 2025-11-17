@@ -394,13 +394,39 @@ export type MailParticipant = z.infer<typeof MailParticipantSchema>
 
 // Ticket Participant Schema for Zoho Desk filtering
 export const TicketParticipantSchema = z.object({
-  assignee: z.array(z.string()).optional(),
-  contact: z.array(z.string()).optional(),
-  department: z.array(z.string()).optional(),
-  status: z.array(z.string()).optional(),
-  priority: z.array(z.string()).optional(),
-  category: z.array(z.string()).optional(),
-  subject: z.array(z.string()).optional(),
+  // People/Assignment filters
+  assignee: z.array(z.string()).optional(), // Assignee emails
+  contact: z.array(z.string()).optional(), // Contact/requester emails
+  department: z.array(z.string()).optional(), // Department names
+
+  // Status/Priority filters
+  status: z.array(z.string()).optional(), // Open, Closed, On Hold, etc.
+  priority: z.array(z.string()).optional(), // High, Medium, Low
+  classification: z.array(z.string()).optional(), // Incident, Problem, Request, Question
+
+  // Categorization filters
+  category: z.array(z.string()).optional(), // Main category
+  subCategory: z.array(z.string()).optional(), // Sub-category
+  subject: z.array(z.string()).optional(), // Ticket subject keywords
+
+  // Organization/Product filters
+  accountName: z.array(z.string()).optional(), // Company/Account names
+  productName: z.array(z.string()).optional(), // Product names
+  teamName: z.array(z.string()).optional(), // Team names
+  merchantId: z.array(z.string()).optional(), // Merchant IDs (custom field)
+
+  // Email participant filters (for thread-based search)
+  to: z.array(z.string()).optional(), // Email recipients
+  cc: z.array(z.string()).optional(), // CC recipients
+  bcc: z.array(z.string()).optional(), // BCC recipients
+
+  // Channel/Source filters
+  channel: z.array(z.string()).optional(), // Email, Phone, Chat, Web, etc.
+
+  // Boolean flags
+  isOverDue: z.boolean().optional(), // SLA overdue tickets
+  isResponseOverdue: z.boolean().optional(), // First response overdue
+  isEscalated: z.boolean().optional(), // Escalated tickets
 })
 
 export type TicketParticipant = z.infer<typeof TicketParticipantSchema>
@@ -411,6 +437,7 @@ export const FiltersSchema = z.object({
   entities: z.array(entitySchema).nullable(),
   startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
+  timestampField: z.enum(["createdTime", "modifiedTime", "closedTime", "dueDate"]).optional(), // Optional: which timestamp field to filter on (for schemas with multiple time fields like zoho_ticket)
   sortDirection: z.string().optional(),
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
   offset: z.preprocess((val) => (val == null ? 0 : val), z.number()),

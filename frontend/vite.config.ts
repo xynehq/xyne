@@ -110,6 +110,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: "0.0.0.0",
+      allowedHosts: ['1d3f98c817b9.ngrok-free.app'],
       proxy: {
         "/api": {
           target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",

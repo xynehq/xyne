@@ -216,6 +216,8 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
       app = Apps.KnowledgeBase
     } else if (appName == "slack") {
       app = Apps.Slack
+    } else if (appName == "zohodesk") {
+      app = Apps.ZohoDesk
     } else if (appName == "google-workspace") app = Apps.GoogleWorkspace
     else {
       app = appName as unknown as Apps

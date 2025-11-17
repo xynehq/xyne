@@ -57,12 +57,12 @@ export async function handleZohoDeskSync(
   if (specificConnectorId) {
     // Sync specific connector
     Logger.info("✅ ZOHO SYNC HANDLER: Fetching specific connector", {
-      connectorId: specificConnectorId
+      connectorId: specificConnectorId,
     })
     const connector = await getZohoConnector(specificConnectorId)
     if (!connector) {
       Logger.error("❌ ZOHO SYNC HANDLER: Connector not found", {
-        connectorId: specificConnectorId
+        connectorId: specificConnectorId,
       })
       throw new Error(`Connector not found: ${specificConnectorId}`)
     }
@@ -71,9 +71,12 @@ export async function handleZohoDeskSync(
     // Sync all Zoho Desk connectors
     Logger.info("✅ ZOHO SYNC HANDLER: Fetching all Zoho Desk connectors")
     connectorsToSync = await getAllZohoDeskConnectors()
-    Logger.info(`✅ ZOHO SYNC HANDLER: Found ${connectorsToSync.length} connectors`, {
-      connectorIds: connectorsToSync.map(c => c.id),
-    })
+    Logger.info(
+      `✅ ZOHO SYNC HANDLER: Found ${connectorsToSync.length} connectors`,
+      {
+        connectorIds: connectorsToSync.map((c) => c.id),
+      },
+    )
   }
 
   if (connectorsToSync.length === 0) {
@@ -157,7 +160,9 @@ async function syncConnector(connector: SelectConnector): Promise<void> {
 
     try {
       // 3. Initialize Zoho client (admin credentials only)
-      Logger.info("✅ SYNC CONNECTOR: Initializing Zoho client", { connectorId })
+      Logger.info("✅ SYNC CONNECTOR: Initializing Zoho client", {
+        connectorId,
+      })
 
       // Verify this is an admin connector (not a user OAuth connector)
       if (!connector.credentials) {
@@ -165,7 +170,9 @@ async function syncConnector(connector: SelectConnector): Promise<void> {
           connectorId,
           hasOAuthCredentials: !!connector.oauthCredentials,
         })
-        throw new Error("Connector does not have admin credentials - only admin connectors can sync")
+        throw new Error(
+          "Connector does not have admin credentials - only admin connectors can sync",
+        )
       }
 
       const credentials = JSON.parse(connector.credentials as string)
@@ -184,7 +191,10 @@ async function syncConnector(connector: SelectConnector): Promise<void> {
         refreshToken: credentials.refreshToken,
       })
 
-      Logger.info("✅ SYNC CONNECTOR: Zoho client initialized with admin token", { connectorId })
+      Logger.info(
+        "✅ SYNC CONNECTOR: Zoho client initialized with admin token",
+        { connectorId },
+      )
 
       // 4. Get last sync time from connector state
       const state = connector.state as ZohoDeskOAuthIngestionState | {}
@@ -202,42 +212,47 @@ async function syncConnector(connector: SelectConnector): Promise<void> {
         console.log(`   Start Date: ${lastModifiedTime}`)
         console.log(`   End Date: ${now}`)
         console.log(`   Connector ID: ${connectorId}`)
-        Logger.info("🆕 SYNC CONNECTOR: FIRST-TIME SYNC - Fetching from past year", {
-          startDate: lastModifiedTime,
-          endDate: now,
-          connectorId,
-          timeRange: `${lastModifiedTime} → ${now}`,
-        })
+        Logger.info(
+          "🆕 SYNC CONNECTOR: FIRST-TIME SYNC - Fetching from past year",
+          {
+            startDate: lastModifiedTime,
+            endDate: now,
+            connectorId,
+            timeRange: `${lastModifiedTime} → ${now}`,
+          },
+        )
       } else {
         console.log("\n🔄 INCREMENTAL SYNC - Only fetching modified tickets")
         console.log(`   Last Sync Time: ${lastModifiedTime}`)
         console.log(`   Current Time: ${now}`)
         console.log(`   Connector ID: ${connectorId}`)
-        console.log(`   ⏰ Will only process tickets modified AFTER: ${lastModifiedTime}\n`)
-        Logger.info("🔄 SYNC CONNECTOR: INCREMENTAL SYNC - Only fetching modified tickets", {
-          lastSyncTime: lastModifiedTime,
-          currentTime: now,
-          connectorId,
-          timeRange: `${lastModifiedTime} → ${now}`,
-          message: "⏰ Will only process tickets modified after last sync timestamp",
-        })
+        console.log(
+          `   ⏰ Will only process tickets modified AFTER: ${lastModifiedTime}\n`,
+        )
+        Logger.info(
+          "🔄 SYNC CONNECTOR: INCREMENTAL SYNC - Only fetching modified tickets",
+          {
+            lastSyncTime: lastModifiedTime,
+            currentTime: now,
+            connectorId,
+            timeRange: `${lastModifiedTime} → ${now}`,
+            message:
+              "⏰ Will only process tickets modified after last sync timestamp",
+          },
+        )
       }
 
       // 5. Check if queue is ready
       if (!boss) {
-        Logger.error("❌ SYNC CONNECTOR: PgBoss instance not available", { connectorId })
+        Logger.error("❌ SYNC CONNECTOR: PgBoss instance not available", {
+          connectorId,
+        })
         throw new Error("Queue system not initialized")
       }
 
       // 6. Sync tickets
       Logger.info("🎫 SYNC CONNECTOR: Starting ticket sync", { connectorId })
-      await syncTickets(
-        client,
-        connector,
-        lastModifiedTime,
-        metrics,
-        ingestion,
-      )
+      await syncTickets(client, connector, lastModifiedTime, metrics, ingestion)
       Logger.info("✅ SYNC CONNECTOR: Ticket sync completed", {
         connectorId,
         ticketsFetched: metrics.ticketsFetched,
@@ -261,7 +276,9 @@ async function syncConnector(connector: SelectConnector): Promise<void> {
       console.log(`   Connector ID: ${connectorId}`)
       console.log(`   Previous sync time: ${lastModifiedTime}`)
       console.log(`   New sync time: ${newLastModifiedTime}`)
-      console.log(`   🔄 Next sync will only process tickets modified after: ${newLastModifiedTime}\n`)
+      console.log(
+        `   🔄 Next sync will only process tickets modified after: ${newLastModifiedTime}\n`,
+      )
 
       Logger.info("📝 Updated connector state with new sync timestamp", {
         connectorId,
@@ -323,7 +340,8 @@ async function syncConnector(connector: SelectConnector): Promise<void> {
           connectorId,
           errorMessage: error instanceof Error ? error.message : String(error),
           errorStack: error instanceof Error ? error.stack : undefined,
-          errorType: error instanceof Error ? error.constructor.name : typeof error,
+          errorType:
+            error instanceof Error ? error.constructor.name : typeof error,
         },
         "❌ ZOHO DESK SYNC FAILED - DETAILS BELOW",
       )
@@ -370,7 +388,8 @@ async function syncConnector(connector: SelectConnector): Promise<void> {
         connectorId,
         errorMessage: error instanceof Error ? error.message : String(error),
         errorStack: error instanceof Error ? error.stack : undefined,
-        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorType:
+          error instanceof Error ? error.constructor.name : typeof error,
       },
       "❌ FATAL ERROR IN ZOHO DESK SYNC - DETAILS BELOW",
     )
@@ -393,9 +412,13 @@ async function syncTickets(
   let hasMore = true
 
   console.log("\n📊 TICKET SYNC START")
-  console.log(`   Timestamp Filter: ${lastModifiedTime || 'NONE (fetching all)'}`)
+  console.log(
+    `   Timestamp Filter: ${lastModifiedTime || "NONE (fetching all)"}`,
+  )
   if (lastModifiedTime) {
-    console.log(`   ⏰ Will SKIP tickets with modifiedTime <= ${lastModifiedTime}`)
+    console.log(
+      `   ⏰ Will SKIP tickets with modifiedTime <= ${lastModifiedTime}`,
+    )
   }
   console.log("")
 
@@ -431,7 +454,9 @@ async function syncTickets(
     // Fetch detailed info for the LAST ticket to check if we should continue
     const lastTicket = tickets[tickets.length - 1]
     console.log(`\n🔍 BATCH BOUNDARY CHECK`)
-    console.log(`   Fetching details for last ticket in batch: ${lastTicket.ticketNumber || lastTicket.id}`)
+    console.log(
+      `   Fetching details for last ticket in batch: ${lastTicket.ticketNumber || lastTicket.id}`,
+    )
 
     const lastTicketDetail = await client.fetchTicketById(lastTicket.id)
     const lastTicketModifiedTime = lastTicketDetail.modifiedTime
@@ -440,12 +465,17 @@ async function syncTickets(
     console.log(`   Last sync threshold: ${lastModifiedTime}`)
 
     // Determine if this should be the last batch
-    const shouldStopAfterBatch = lastModifiedTime && lastTicketModifiedTime <= lastModifiedTime
+    const shouldStopAfterBatch =
+      lastModifiedTime && lastTicketModifiedTime <= lastModifiedTime
 
     if (shouldStopAfterBatch) {
-      console.log(`   ⏹️  Last ticket is older than threshold - will stop after this batch\n`)
+      console.log(
+        `   ⏹️  Last ticket is older than threshold - will stop after this batch\n`,
+      )
     } else {
-      console.log(`   ✅ Last ticket is newer than threshold - will continue after this batch\n`)
+      console.log(
+        `   ✅ Last ticket is newer than threshold - will continue after this batch\n`,
+      )
     }
 
     Logger.info("🔍 Batch boundary check", {
@@ -480,7 +510,9 @@ async function syncTickets(
 
         // Log first 5 and every 10th ticket to avoid spam
         if (metrics.ticketsFetched <= 5 || metrics.ticketsFetched % 10 === 0) {
-          console.log(`✅ Queued ticket #${metrics.ticketsFetched}: ${ticket.ticketNumber || ticket.id}`)
+          console.log(
+            `✅ Queued ticket #${metrics.ticketsFetched}: ${ticket.ticketNumber || ticket.id}`,
+          )
         }
 
         Logger.info("✅ Queued ticket for processing", {
@@ -495,7 +527,8 @@ async function syncTickets(
           {
             ticketId: ticket.id,
             ticketNumber: ticket.ticketNumber,
-            errorMessage: error instanceof Error ? error.message : String(error),
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
             errorStack: error instanceof Error ? error.stack : undefined,
             ticketJobData: {
               ticketId: ticket.id,
@@ -516,7 +549,9 @@ async function syncTickets(
     console.log(`   Tickets in batch: ${tickets.length}`)
     console.log(`   Queued: ${queuedInBatch}`)
     console.log(`   Total queued so far: ${metrics.ticketsFetched}`)
-    console.log(`   Stop after this batch? ${shouldStopAfterBatch ? 'YES' : 'NO'}\n`)
+    console.log(
+      `   Stop after this batch? ${shouldStopAfterBatch ? "YES" : "NO"}\n`,
+    )
 
     Logger.info("📊 Batch processing summary", {
       batchNumber: batchNum,
@@ -553,7 +588,9 @@ async function syncTickets(
 
     // Stop if last ticket was old
     if (shouldStopAfterBatch) {
-      console.log(`\n🏁 SYNC COMPLETE - Last ticket in batch was older than threshold`)
+      console.log(
+        `\n🏁 SYNC COMPLETE - Last ticket in batch was older than threshold`,
+      )
       console.log(`   Total tickets queued: ${metrics.ticketsFetched}`)
       console.log(`   Last sync timestamp: ${lastModifiedTime}\n`)
 
@@ -575,7 +612,7 @@ async function syncTickets(
 
   console.log("\n✅ TICKET SYNC COMPLETE")
   console.log(`   Total tickets queued: ${metrics.ticketsFetched}`)
-  console.log(`   Sync type: ${lastModifiedTime ? 'INCREMENTAL' : 'FULL'}`)
+  console.log(`   Sync type: ${lastModifiedTime ? "INCREMENTAL" : "FULL"}`)
   if (lastModifiedTime) {
     console.log(`   Only processed tickets modified after: ${lastModifiedTime}`)
   }
@@ -617,7 +654,9 @@ async function getAllZohoDeskConnectors(): Promise<SelectConnector[]> {
     .where(eq(connectors.app, Apps.ZohoDesk))
 
   // Filter to only admin connectors (those with credentials field)
-  const adminConnectors = results.filter(c => c.credentials !== null && c.credentials !== undefined)
+  const adminConnectors = results.filter(
+    (c) => c.credentials !== null && c.credentials !== undefined,
+  )
 
   Logger.info("✅ Filtered to admin connectors only", {
     totalConnectors: results.length,

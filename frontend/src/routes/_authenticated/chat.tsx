@@ -8,6 +8,7 @@ import {
   useRouter,
   useRouterState,
   useSearch,
+  useParams,
 } from "@tanstack/react-router"
 import {
   Bookmark,
@@ -214,7 +215,7 @@ export const ChatPage = ({
   agentWhiteList,
 }: ChatPageProps) => {
   const { theme } = useTheme()
-  const params = Route.useParams()
+  const params = useParams({ strict: false })
   const router = useRouter()
   const chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",

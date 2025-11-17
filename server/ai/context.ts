@@ -203,6 +203,90 @@ const processSheetQuery = async (
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
 
+// Function for handling Zoho Desk ticket context - returns clean JSON object
+const constructZohoTicketContext = (
+  fields: any,
+  relevance: number,
+  userTimezone: string,
+): any => {
+  // Build clean JSON object with only essential fields
+  const ticket: any = {
+    ticketId: fields.ticketNumber || fields.id || "",
+    subject: fields.subject || "",
+    status: fields.status || "",
+    department: fields.departmentName || "",
+  }
+
+  // Add optional fields only if they exist
+  if (fields.priority) ticket.priority = fields.priority
+  if (fields.category) ticket.category = fields.category
+  if (fields.subCategory) ticket.subCategory = fields.subCategory
+  if (fields.classification) ticket.classification = fields.classification
+  if (fields.assigneeEmail) ticket.assignee = fields.assigneeEmail
+  if (fields.email) ticket.requester = fields.email
+
+  // Email participant fields (to/cc/bcc)
+  if (fields.to && Array.isArray(fields.to) && fields.to.length > 0) {
+    ticket.to = fields.to
+  }
+  if (fields.cc && Array.isArray(fields.cc) && fields.cc.length > 0) {
+    ticket.cc = fields.cc
+  }
+  if (fields.bcc && Array.isArray(fields.bcc) && fields.bcc.length > 0) {
+    ticket.bcc = fields.bcc
+  }
+
+  // Organization/Product fields
+  if (fields.accountName) ticket.accountName = fields.accountName
+  if (fields.productName) ticket.productName = fields.productName
+  if (fields.teamName) ticket.teamName = fields.teamName
+  if (fields.channel) ticket.channel = fields.channel
+
+  // Boolean flags
+  if (fields.isOverDue === true) ticket.isOverDue = true
+  if (fields.isResponseOverdue === true) ticket.isResponseOverdue = true
+  if (fields.isEscalated === true) ticket.isEscalated = true
+
+  // Add timestamps in readable format
+  if (typeof fields.createdTime === "number" && isFinite(fields.createdTime)) {
+    ticket.createdAt = new Date(fields.createdTime).toISOString().split("T")[0] // YYYY-MM-DD
+  }
+  if (typeof fields.modifiedTime === "number" && isFinite(fields.modifiedTime)) {
+    ticket.modifiedAt = new Date(fields.modifiedTime).toISOString().split("T")[0]
+  }
+  if (typeof fields.closedTime === "number" && isFinite(fields.closedTime)) {
+    ticket.closedAt = new Date(fields.closedTime).toISOString().split("T")[0]
+  }
+
+  // Add description if exists (truncated)
+  if (fields.description) {
+    ticket.description = fields.description.substring(0, 200) +
+      (fields.description.length > 200 ? "..." : "")
+  }
+
+  // Add resolution if exists (truncated)
+  if (fields.resolution) {
+    ticket.resolution = fields.resolution.substring(0, 200) +
+      (fields.resolution.length > 200 ? "..." : "")
+  }
+
+  if (fields.webUrl) ticket.url = fields.webUrl
+
+  // Add summary fields for comprehensive ticket context
+  // These contain all thread conversations, comments, and attachment content
+  if (fields.threadSummary) {
+    ticket.threadSummary = fields.threadSummary
+  }
+  if (fields.commentSummary) {
+    ticket.commentSummary = fields.commentSummary
+  }
+  if (fields.wholeResolutionSummary) {
+    ticket.wholeResolutionSummary = fields.wholeResolutionSummary
+  }
+
+  return ticket
+}
+
 export const constructToolContext = (
   tool_schema: string,
   toolName: string,
@@ -1025,6 +1109,12 @@ export const answerContextMap = async (
       maxSummaryChunks,
       isSelectedFiles,
       isMsgWithKbItems,
+    )
+  } else if (searchResult.fields.sddocname === "zoho_ticket") {
+    return constructZohoTicketContext(
+      searchResult.fields,
+      searchResult.relevance,
+      userMetadata.userTimezone,
     )
   } else {
     throw new Error(

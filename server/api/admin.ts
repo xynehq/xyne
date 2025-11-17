@@ -333,7 +333,10 @@ const getAuthorizationUrl = async (
     // Zoho Desk OAuth
     const newState = JSON.stringify({ app, random: state })
     url = new URL("https://accounts.zoho.com/oauth/v2/auth")
-    url.searchParams.set("scope", "Desk.tickets.ALL,Desk.settings.READ,Desk.basic.READ")
+    url.searchParams.set(
+      "scope",
+      "Desk.tickets.ALL,Desk.settings.READ,Desk.basic.READ",
+    )
     url.searchParams.set("client_id", clientId!)
     url.searchParams.set("response_type", "code")
     url.searchParams.set("redirect_uri", `${config.host}/callback`)
@@ -388,14 +391,16 @@ export const StartOAuth = async (c: Context) => {
   // For Zoho Desk, use global config instead of database provider
   let provider: SelectOAuthProvider
   if (app === Apps.ZohoDesk) {
-    loggerWithChild({ email: sub }).info("✅ Using global Zoho config for OAuth start")
+    loggerWithChild({ email: sub }).info(
+      "✅ Using global Zoho config for OAuth start",
+    )
     // Use environment config for Zoho Desk OAuth
     provider = {
       id: 0, // Dummy value, not used
-      externalId: 'zoho-desk-global',
+      externalId: "zoho-desk-global",
       clientId: config.ZohoClientId,
       clientSecret: config.ZohoClientSecret,
-      oauthScopes: ['Desk.tickets.READ', 'Desk.basic.READ'],
+      oauthScopes: ["Desk.tickets.READ", "Desk.basic.READ"],
       workspaceId: userRes[0].workspaceId,
       workspaceExternalId: userRes[0].workspaceExternalId,
       userId: userRes[0].id,
@@ -417,7 +422,7 @@ export const StartOAuth = async (c: Context) => {
   const url = await getAuthorizationUrl(c, app, provider)
   loggerWithChild({ email: sub }).info("✅ OAuth URL generated", {
     app,
-    redirectUri: url.searchParams.get('redirect_uri'),
+    redirectUri: url.searchParams.get("redirect_uri"),
   })
   return c.redirect(url.toString())
 }
@@ -538,11 +543,14 @@ export const CreateZohoDeskConnector = async (c: Context) => {
       refreshToken,
     })
 
-    // Try to refresh access token to verify credentials
+    // Refresh access token to verify credentials
+    let accessToken: string
     try {
-      await testClient.refreshAccessToken()
+      // refreshAccessToken returns the access token directly
+      accessToken = await testClient.refreshAccessToken()
       loggerWithChild({ email: sub }).info(
-        "Zoho Desk refresh token verified successfully",
+        "✅ ADMIN CONNECTOR: Zoho Desk refresh token verified successfully",
+        { hasAccessToken: !!accessToken, tokenLength: accessToken.length }
       )
     } catch (error) {
       loggerWithChild({ email: sub }).error(
@@ -557,6 +565,45 @@ export const CreateZohoDeskConnector = async (c: Context) => {
       )
     }
 
+    // Fetch user information including department IDs (same as OAuth flow)
+    // TODO: Commented out due to OAuth scope limitations - requires Desk.settings.READ scope
+    // Using hardcoded Credit department until proper OAuth scope is configured
+    /*
+    loggerWithChild({ email: sub }).info(
+      "✅ ADMIN CONNECTOR: Fetching admin user department info",
+    )
+    const userInfo = await testClient.fetchUserInfo()
+
+    loggerWithChild({ email: sub }).info(
+      "✅ ADMIN CONNECTOR: User info fetched",
+      {
+        email: userInfo.email,
+        departmentCount: userInfo.associatedDepartmentIds.length,
+        departments: userInfo.associatedDepartmentIds,
+      },
+    )
+    */
+
+    // Hardcoded department info - Credit department (458844000213531089)
+    const userInfo = {
+      email: sub,
+      associatedDepartmentIds: ["458844000213531089"],
+      associatedDepartments: [
+        {
+          id: "458844000213531089",
+          name: "Credit",
+        },
+      ],
+    }
+
+    loggerWithChild({ email: sub }).info(
+      "✅ ADMIN CONNECTOR: Using hardcoded Credit department",
+      {
+        departmentId: "458844000213531089",
+        departmentName: "Credit",
+      },
+    )
+
     return await db.transaction(async (trx) => {
       // Create connector with verified credentials
       const credentials = JSON.stringify({
@@ -564,6 +611,18 @@ export const CreateZohoDeskConnector = async (c: Context) => {
         clientId: config.ZohoClientId,
         clientSecret: config.ZohoClientSecret,
         refreshToken,
+      })
+
+      // Store OAuth credentials with department IDs (same format as OAuth callback)
+      const oauthCredentials = JSON.stringify({
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        tokenType: "Bearer",
+        expiresIn: 3600, // Default to 1 hour (Zoho's standard token expiry)
+        scope: "Desk.tickets.ALL,Desk.settings.READ,Desk.basic.READ",
+        // Store department IDs for permissions
+        departmentIds: userInfo.associatedDepartmentIds,
+        departments: userInfo.associatedDepartments,
       })
 
       const connector = await insertConnector(
@@ -576,10 +635,10 @@ export const CreateZohoDeskConnector = async (c: Context) => {
         AuthType.OAuth,
         Apps.ZohoDesk,
         {}, // initial state
-        credentials, // credentials as JSON string
-        null, // metadata
-        null, // oauth credentials
-        null, // department ID (not needed for admin)
+        credentials, // credentials as JSON string (for syncing)
+        email, // subject
+        oauthCredentials, // OAuth credentials with departmentIds (for searching)
+        null, // apiKey
         ConnectorStatus.Connected, // Set as connected since we verified the token
       )
 
@@ -588,13 +647,20 @@ export const CreateZohoDeskConnector = async (c: Context) => {
       }
 
       loggerWithChild({ email: sub }).info(
-        `Zoho Desk connector created and verified: ${connector.id}`,
+        `✅ ADMIN CONNECTOR: Zoho Desk connector created with department permissions`,
+        {
+          connectorId: connector.id,
+          departmentIds: userInfo.associatedDepartmentIds,
+          departments: userInfo.associatedDepartments,
+        },
       )
 
       return c.json({
         success: true,
-        message: "Zoho Desk connector created successfully. Refresh token verified.",
+        message:
+          "Zoho Desk connector created successfully. Refresh token verified and department permissions stored.",
         connectorId: connector.id,
+        departmentIds: userInfo.associatedDepartmentIds,
       })
     })
   } catch (error) {
@@ -1730,48 +1796,51 @@ export const IngestMoreChannelApi = async (c: Context) => {
     }
 
     // Import ingestion functions for database operations
-    const { createIngestion, hasActiveIngestion } = await import("@/db/ingestion")
+    const { createIngestion, hasActiveIngestion } = await import(
+      "@/db/ingestion"
+    )
 
     // Prevent concurrent ingestions using database transaction to avoid race conditions
     // This atomically checks for active ingestions and creates new one if none exist
     const ingestion = await db.transaction(async (trx) => {
       const hasActive = await hasActiveIngestion(trx, user.id, connector.id)
       if (hasActive) {
-        throw new HTTPException(409, { 
-          message: "An ingestion is already in progress for this connector. Please wait for it to complete or cancel it first." 
+        throw new HTTPException(409, {
+          message:
+            "An ingestion is already in progress for this connector. Please wait for it to complete or cancel it first.",
         })
       }
 
       // Create ingestion record with initial metadata for resumability
       // All state needed for resuming is stored in the metadata field
       return await createIngestion(trx, {
-      userId: user.id,
-      connectorId: connector.id,
-      workspaceId: connector.workspaceId,
-      status: "pending",
-      metadata: {
-        slack: {
-          // Data sent to frontend via WebSocket for progress display
-          websocketData: {
-            connectorId: connector.externalId,
-            progress: {
-              totalChannels: payload.channelsToIngest.length,
-              processedChannels: 0,
-              totalMessages: 0,
-              processedMessages: 0,
+        userId: user.id,
+        connectorId: connector.id,
+        workspaceId: connector.workspaceId,
+        status: "pending",
+        metadata: {
+          slack: {
+            // Data sent to frontend via WebSocket for progress display
+            websocketData: {
+              connectorId: connector.externalId,
+              progress: {
+                totalChannels: payload.channelsToIngest.length,
+                processedChannels: 0,
+                totalMessages: 0,
+                processedMessages: 0,
+              },
+            },
+            // Internal state data for resumability
+            ingestionState: {
+              channelsToIngest: payload.channelsToIngest,
+              startDate: payload.startDate,
+              endDate: payload.endDate,
+              includeBotMessage: payload.includeBotMessage,
+              currentChannelIndex: 0, // Resume from this channel
+              lastUpdated: new Date().toISOString(),
             },
           },
-          // Internal state data for resumability
-          ingestionState: {
-            channelsToIngest: payload.channelsToIngest,
-            startDate: payload.startDate,
-            endDate: payload.endDate,
-            includeBotMessage: payload.includeBotMessage,
-            currentChannelIndex: 0,  // Resume from this channel
-            lastUpdated: new Date().toISOString(),
-          },
         },
-      },
       })
     })
 
@@ -1785,7 +1854,7 @@ export const IngestMoreChannelApi = async (c: Context) => {
       payload.endDate,
       email,
       payload.includeBotMessage,
-      ingestion.id,  // Pass ingestion ID for progress tracking
+      ingestion.id, // Pass ingestion ID for progress tracking
     ).catch((error) => {
       loggerWithChild({ email: sub }).error(
         error,
@@ -2411,10 +2480,7 @@ export const GetKbVespaContent = async (c: Context) => {
     // console.log("Fetched Vespa Doc ID:", vespaDocId)
     const schema = rawSchema as VespaSchema
 
-    const documentData = await GetDocument(
-      schema,
-      vespaDocId,
-    )
+    const documentData = await GetDocument(schema, vespaDocId)
 
     if (!documentData || !("fields" in documentData) || !documentData.fields) {
       loggerWithChild({ email: userEmail }).warn(
@@ -2474,7 +2540,9 @@ export const StartZohoDeskSyncApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
 
   try {
-    loggerWithChild({ email: sub }).info("🚀 ZOHO SYNC: Admin triggered manual sync")
+    loggerWithChild({ email: sub }).info(
+      "🚀 ZOHO SYNC: Admin triggered manual sync",
+    )
 
     const userRes = await getUserByEmail(db, sub)
     if (!userRes || !userRes.length) {
@@ -2494,7 +2562,7 @@ export const StartZohoDeskSyncApi = async (c: Context) => {
 
     loggerWithChild({ email: sub }).info(
       "✅ ZOHO SYNC: Job queued successfully",
-      { queue: SyncZohoDeskQueue }
+      { queue: SyncZohoDeskQueue },
     )
 
     return c.json({

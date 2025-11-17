@@ -193,7 +193,7 @@ schema user {
 
     rank-profile initial {
        inputs {
-            query(e) tensor<bfloat16>(v[DIMS])
+            query(e) tensor<bfloat16>(v[768])
             query(alpha) double 
         }
 

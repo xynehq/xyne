@@ -36,6 +36,8 @@ import {
   type TicketJob,
   type AttachmentJob,
 } from "@/integrations/zoho/queue"
+import { startSummaryWorker } from "@/workers/summary-worker"
+import { SUMMARY_QUEUE_NAME } from "./summary-generation"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
 const SYNC_JOB_AUTH_TYPE_CLEANUP = "cleanup"
@@ -82,6 +84,7 @@ export const init = async () => {
   await boss.createQueue(ProcessZohoDeskAttachmentQueue)
   await boss.createQueue(SyncToolsQueue)
   await boss.createQueue(CleanupAttachmentsQueue)
+  await boss.createQueue(SUMMARY_QUEUE_NAME)
   await initWorkers()
 }
 
@@ -359,7 +362,7 @@ const initWorkers = async () => {
     }
   })
 
-   await boss.work(SyncZohoDeskQueue, async ([job]) => {
+  await boss.work(SyncZohoDeskQueue, async ([job]) => {
     const startTime = Date.now()
     try {
       await handleZohoDeskSync(job as PgBoss.Job<{ connectorId: number }>)
@@ -440,50 +443,50 @@ const initWorkers = async () => {
     },
   )
 
- //Zoho Desk Attachment Processing Worker - processes OCR for attachments
-  // await boss.work(
-  //   ProcessZohoDeskAttachmentQueue,
-  //   { batchSize: 5 },
-  //   async (jobs) => {
-  //     await Promise.all(
-  //       jobs.map(async (job) => {
-  //         const startTime = Date.now()
-  //         try {
-  //           await processAttachmentJob(job as PgBoss.Job<AttachmentJob>)
-  //           const endTime = Date.now()
-  //           syncJobSuccess.inc(
-  //             {
-  //               sync_job_name: ProcessZohoDeskAttachmentQueue,
-  //               sync_job_auth_type: AuthType.OAuth,
-  //             },
-  //             1,
-  //           )
-  //           syncJobDuration.observe(
-  //             {
-  //               sync_job_name: ProcessZohoDeskAttachmentQueue,
-  //               sync_job_auth_type: AuthType.OAuth,
-  //             },
-  //             endTime - startTime,
-  //           )
-  //         } catch (error) {
-  //           const errorMessage = getErrorMessage(error)
-  //           Logger.error(
-  //             error,
-  //             `Error processing Zoho Desk attachment ${errorMessage} ${(error as Error).stack}`,
-  //           )
-  //           syncJobError.inc(
-  //             {
-  //               sync_job_name: ProcessZohoDeskAttachmentQueue,
-  //               sync_job_auth_type: AuthType.OAuth,
-  //               sync_job_error_type: `${errorMessage}`,
-  //             },
-  //             1,
-  //           )
-  //         }
-  //       }),
-  //     )
-  //   },
-  // )
+  //Zoho Desk Attachment Processing Worker - processes OCR for attachments
+  await boss.work(
+    ProcessZohoDeskAttachmentQueue,
+    { batchSize: 5 },
+    async (jobs) => {
+      await Promise.all(
+        jobs.map(async (job) => {
+          const startTime = Date.now()
+          try {
+            await processAttachmentJob(job as PgBoss.Job<AttachmentJob>)
+            const endTime = Date.now()
+            syncJobSuccess.inc(
+              {
+                sync_job_name: ProcessZohoDeskAttachmentQueue,
+                sync_job_auth_type: AuthType.OAuth,
+              },
+              1,
+            )
+            syncJobDuration.observe(
+              {
+                sync_job_name: ProcessZohoDeskAttachmentQueue,
+                sync_job_auth_type: AuthType.OAuth,
+              },
+              endTime - startTime,
+            )
+          } catch (error) {
+            const errorMessage = getErrorMessage(error)
+            Logger.error(
+              error,
+              `Error processing Zoho Desk attachment ${errorMessage} ${(error as Error).stack}`,
+            )
+            syncJobError.inc(
+              {
+                sync_job_name: ProcessZohoDeskAttachmentQueue,
+                sync_job_auth_type: AuthType.OAuth,
+                sync_job_error_type: `${errorMessage}`,
+              },
+              1,
+            )
+          }
+        }),
+      )
+    },
+  )
 
   await boss.work(CleanupAttachmentsQueue, async () => {
     const startTime = Date.now()
@@ -525,6 +528,9 @@ const initWorkers = async () => {
       )
     }
   })
+
+  // Initialize summary generation worker
+  await startSummaryWorker()
 }
 
 export const ProgressEvent = "progress-event"

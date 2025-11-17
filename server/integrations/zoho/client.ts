@@ -15,7 +15,9 @@ import type {
   ZohoErrorResponse,
 } from "./types"
 
-const logger = getLogger(Subsystem.Integrations).child({ module: "zoho-client" })
+const logger = getLogger(Subsystem.Integrations).child({
+  module: "zoho-client",
+})
 
 export class ZohoDeskClient {
   private config: ZohoDeskConfig
@@ -82,7 +84,9 @@ export class ZohoDeskClient {
   async refreshAccessToken(): Promise<string> {
     // If there's an ongoing refresh, wait for it instead of starting a new one
     if (ZohoDeskClient.ongoingRefresh) {
-      logger.info("⏳ Token refresh API call already in progress, waiting for it to complete (no duplicate API call)")
+      logger.info(
+        "⏳ Token refresh API call already in progress, waiting for it to complete (no duplicate API call)",
+      )
       try {
         const token = await ZohoDeskClient.ongoingRefresh
         this.accessToken = token
@@ -105,10 +109,16 @@ export class ZohoDeskClient {
       ZohoDeskClient.globalTokenExpiresAt &&
       ZohoDeskClient.globalTokenExpiresAt > Date.now()
     ) {
-      logger.debug("✅ Reusing valid global access token (no API call needed)", {
-        expiresIn: Math.floor((ZohoDeskClient.globalTokenExpiresAt - Date.now()) / 1000) + "s",
-        tokenLength: ZohoDeskClient.globalAccessToken.length,
-      })
+      logger.debug(
+        "✅ Reusing valid global access token (no API call needed)",
+        {
+          expiresIn:
+            Math.floor(
+              (ZohoDeskClient.globalTokenExpiresAt - Date.now()) / 1000,
+            ) + "s",
+          tokenLength: ZohoDeskClient.globalAccessToken.length,
+        },
+      )
       this.accessToken = ZohoDeskClient.globalAccessToken
       this.tokenExpiresAt = ZohoDeskClient.globalTokenExpiresAt
       return ZohoDeskClient.globalAccessToken
@@ -132,9 +142,13 @@ export class ZohoDeskClient {
         }
 
         console.log("\n🔑 ZOHO TOKEN REFRESH: Calling Zoho OAuth API")
-        console.log(`   Endpoint: https://${this.config.accountsDomain}/oauth/v2/token`)
+        console.log(
+          `   Endpoint: https://${this.config.accountsDomain}/oauth/v2/token`,
+        )
         console.log(`   Timeout: 30 seconds`)
-        console.log(`   Client ID: ${this.config.clientId?.substring(0, 20)}...`)
+        console.log(
+          `   Client ID: ${this.config.clientId?.substring(0, 20)}...`,
+        )
         console.log("")
 
         const response = await this.accountsClient.post<ZohoTokenResponse>(
@@ -163,7 +177,9 @@ export class ZohoDeskClient {
             errorDescription: (response.data as any).error_description,
             fullResponse: response.data,
           })
-          throw new Error(`Zoho API error: ${(response.data as any).error} - ${(response.data as any).error_description || 'No description'}`)
+          throw new Error(
+            `Zoho API error: ${(response.data as any).error} - ${(response.data as any).error_description || "No description"}`,
+          )
         }
 
         if (!response.data?.access_token) {
@@ -187,22 +203,30 @@ export class ZohoDeskClient {
         this.accessToken = accessToken
         this.tokenExpiresAt = expiresAt
 
-        logger.info("✅ Zoho access token refreshed via API and stored globally for reuse", {
-          expiresIn: expiresIn + "s",
-          tokenLength: accessToken.length,
-          message: "All subsequent requests will reuse this token without API calls",
-        })
+        logger.info(
+          "✅ Zoho access token refreshed via API and stored globally for reuse",
+          {
+            expiresIn: expiresIn + "s",
+            tokenLength: accessToken.length,
+            message:
+              "All subsequent requests will reuse this token without API calls",
+          },
+        )
 
         return accessToken
       } catch (error) {
         console.log("\n❌ ZOHO TOKEN REFRESH: Failed to refresh access token")
-        console.log("=" .repeat(80))
-        console.log(`   Error Type: ${error instanceof Error ? error.constructor.name : typeof error}`)
-        console.log(`   Error Message: ${error instanceof Error ? error.message : String(error)}`)
+        console.log("=".repeat(80))
+        console.log(
+          `   Error Type: ${error instanceof Error ? error.constructor.name : typeof error}`,
+        )
+        console.log(
+          `   Error Message: ${error instanceof Error ? error.message : String(error)}`,
+        )
         if (error instanceof Error && error.stack) {
           console.log(`   Stack Trace:\n${error.stack}`)
         }
-        console.log("=" .repeat(80))
+        console.log("=".repeat(80))
         console.log("")
 
         logger.error("❌ Failed to refresh Zoho access token", {
@@ -238,7 +262,6 @@ export class ZohoDeskClient {
     ZohoDeskClient.lastApiCallTime = Date.now()
   }
 
-
   /**
    * Make an authenticated API request
    */
@@ -250,9 +273,12 @@ export class ZohoDeskClient {
   ): Promise<T> {
     // Ensure we have a token for first request
     if (!this.accessToken) {
-      logger.debug("🔑 Instance has no token yet, checking for global token or refreshing", {
-        endpoint,
-      })
+      logger.debug(
+        "🔑 Instance has no token yet, checking for global token or refreshing",
+        {
+          endpoint,
+        },
+      )
       await this.refreshAccessToken()
       logger.debug("✅ Token obtained", {
         tokenLength: this.accessToken?.length,
@@ -280,10 +306,13 @@ export class ZohoDeskClient {
 
         // Verify token still exists after rate limiting
         if (!this.accessToken) {
-          logger.error("❌ Token disappeared after rate limiting! Refreshing again...", {
-            endpoint,
-            attempt,
-          })
+          logger.error(
+            "❌ Token disappeared after rate limiting! Refreshing again...",
+            {
+              endpoint,
+              attempt,
+            },
+          )
           await this.refreshAccessToken()
           logger.info("✅ After emergency refresh:", {
             tokenExists: !!this.accessToken,
@@ -398,14 +427,17 @@ export class ZohoDeskClient {
     )
 
     // Log the response structure to debug
-    logger.info({
-      ticketId,
-      hasResponse: !!response,
-      responseType: typeof response,
-      hasTicketNumber: !!(response as any)?.ticketNumber,
-      ticketNumber: (response as any)?.ticketNumber,
-      responseKeys: response ? Object.keys(response).slice(0, 10) : [], // First 10 keys only
-    }, "📥 Received ticket response from Zoho")
+    logger.info(
+      {
+        ticketId,
+        hasResponse: !!response,
+        responseType: typeof response,
+        hasTicketNumber: !!(response as any)?.ticketNumber,
+        ticketNumber: (response as any)?.ticketNumber,
+        responseKeys: response ? Object.keys(response).slice(0, 10) : [], // First 10 keys only
+      },
+      "📥 Received ticket response from Zoho",
+    )
 
     return response
   }
@@ -431,13 +463,16 @@ export class ZohoDeskClient {
       params,
     )
 
-    logger.info({
-      ticketId,
-      from,
-      hasResponse: !!response,
-      hasData: !!(response as any)?.data,
-      dataLength: (response as any)?.data?.length,
-    }, "📥 Received threads response from Zoho")
+    logger.info(
+      {
+        ticketId,
+        from,
+        hasResponse: !!response,
+        hasData: !!(response as any)?.data,
+        dataLength: (response as any)?.data?.length,
+      },
+      "📥 Received threads response from Zoho",
+    )
 
     return response
   }
@@ -445,7 +480,10 @@ export class ZohoDeskClient {
   /**
    * Fetch a single thread by ID with full content
    */
-  async fetchThreadById(ticketId: string, threadId: string): Promise<ZohoThread> {
+  async fetchThreadById(
+    ticketId: string,
+    threadId: string,
+  ): Promise<ZohoThread> {
     const params = {
       include: "plainText", // Include full plain text content
     }
@@ -487,20 +525,26 @@ export class ZohoDeskClient {
       from += limit
     }
 
-    logger.info("📋 Fetched thread list, now fetching full content for each thread", {
-      ticketId,
-      threadCount: threadsList.length,
-    })
+    logger.info(
+      "📋 Fetched thread list, now fetching full content for each thread",
+      {
+        ticketId,
+        threadCount: threadsList.length,
+      },
+    )
 
     // Step 2: Fetch each thread individually to get full content
     const fullThreads: ZohoThread[] = []
     for (let i = 0; i < threadsList.length; i++) {
       const thread = threadsList[i]
       try {
-        logger.info(`📥 Fetching individual thread ${i + 1}/${threadsList.length}`, {
-          ticketId,
-          threadId: thread.id,
-        })
+        logger.info(
+          `📥 Fetching individual thread ${i + 1}/${threadsList.length}`,
+          {
+            ticketId,
+            threadId: thread.id,
+          },
+        )
         const fullThread = await this.fetchThreadById(ticketId, thread.id)
 
         logger.info(`✅ Fetched thread with full content`, {
@@ -528,7 +572,9 @@ export class ZohoDeskClient {
     logger.info("✅ Fetched all threads with full content", {
       ticketId,
       totalThreads: fullThreads.length,
-      threadsWithFullText: fullThreads.filter(t => t.plainText && t.plainText.length > 100).length,
+      threadsWithFullText: fullThreads.filter(
+        (t) => t.plainText && t.plainText.length > 100,
+      ).length,
     })
 
     return fullThreads
@@ -555,13 +601,16 @@ export class ZohoDeskClient {
       params,
     )
 
-    logger.info({
-      ticketId,
-      from,
-      hasResponse: !!response,
-      hasData: !!(response as any)?.data,
-      dataLength: (response as any)?.data?.length,
-    }, "📥 Received comments response from Zoho")
+    logger.info(
+      {
+        ticketId,
+        from,
+        hasResponse: !!response,
+        hasData: !!(response as any)?.data,
+        dataLength: (response as any)?.data?.length,
+      },
+      "📥 Received comments response from Zoho",
+    )
 
     return response
   }
@@ -676,14 +725,17 @@ export class ZohoDeskClient {
       `/tickets/${ticketId}/attachments`,
     )
 
-    logger.info({
-      ticketId,
-      hasResponse: !!response,
-      responseType: typeof response,
-      hasData: !!(response as any)?.data,
-      responseKeys: response ? Object.keys(response) : [],
-      dataLength: (response as any)?.data?.length,
-    }, "📥 Received attachments response from Zoho")
+    logger.info(
+      {
+        ticketId,
+        hasResponse: !!response,
+        responseType: typeof response,
+        hasData: !!(response as any)?.data,
+        responseKeys: response ? Object.keys(response) : [],
+        dataLength: (response as any)?.data?.length,
+      },
+      "📥 Received attachments response from Zoho",
+    )
 
     return response.data || []
   }
@@ -727,15 +779,14 @@ export class ZohoDeskClient {
     try {
       logger.info("Fetching agent by ID", { agentId })
 
-      const response = await this.makeRequest<any>(
-        "GET",
-        `/agents/${agentId}`,
-      )
+      const response = await this.makeRequest<any>("GET", `/agents/${agentId}`)
 
       return {
         id: response.id,
         email: response.emailId || response.email || "",
-        name: response.name || `${response.firstName || ""} ${response.lastName || ""}`.trim(),
+        name:
+          response.name ||
+          `${response.firstName || ""} ${response.lastName || ""}`.trim(),
       }
     } catch (error: any) {
       console.log("\n❌ FAILED TO FETCH AGENT - ERROR DETAILS:")
@@ -743,7 +794,10 @@ export class ZohoDeskClient {
       console.log("Status:", error.response?.status)
       console.log("Error Code:", error.response?.data?.errorCode)
       console.log("Error Message:", error.response?.data?.message)
-      console.log("Full Response Data:", JSON.stringify(error.response?.data, null, 2))
+      console.log(
+        "Full Response Data:",
+        JSON.stringify(error.response?.data, null, 2),
+      )
       console.log("")
       logger.warn("Failed to fetch agent", {
         agentId,
@@ -781,7 +835,10 @@ export class ZohoDeskClient {
       console.log("Status:", error.response?.status)
       console.log("Error Code:", error.response?.data?.errorCode)
       console.log("Error Message:", error.response?.data?.message)
-      console.log("Full Response Data:", JSON.stringify(error.response?.data, null, 2))
+      console.log(
+        "Full Response Data:",
+        JSON.stringify(error.response?.data, null, 2),
+      )
       console.log("")
       logger.warn("Failed to fetch account", {
         accountId,
@@ -819,7 +876,10 @@ export class ZohoDeskClient {
       console.log("Status:", error.response?.status)
       console.log("Error Code:", error.response?.data?.errorCode)
       console.log("Error Message:", error.response?.data?.message)
-      console.log("Full Response Data:", JSON.stringify(error.response?.data, null, 2))
+      console.log(
+        "Full Response Data:",
+        JSON.stringify(error.response?.data, null, 2),
+      )
       console.log("")
       logger.warn("Failed to fetch product", {
         productId,
@@ -842,10 +902,7 @@ export class ZohoDeskClient {
     try {
       logger.info("Fetching team by ID", { teamId })
 
-      const response = await this.makeRequest<any>(
-        "GET",
-        `/teams/${teamId}`,
-      )
+      const response = await this.makeRequest<any>("GET", `/teams/${teamId}`)
 
       return {
         id: response.id,
@@ -857,7 +914,10 @@ export class ZohoDeskClient {
       console.log("Status:", error.response?.status)
       console.log("Error Code:", error.response?.data?.errorCode)
       console.log("Error Message:", error.response?.data?.message)
-      console.log("Full Response Data:", JSON.stringify(error.response?.data, null, 2))
+      console.log(
+        "Full Response Data:",
+        JSON.stringify(error.response?.data, null, 2),
+      )
       console.log("")
       logger.warn("Failed to fetch team", {
         teamId,
@@ -871,13 +931,18 @@ export class ZohoDeskClient {
   }
 
   /**
+   * Get the current access token
+   * Returns null if no token is available yet
+   */
+  getAccessToken(): string | null {
+    return this.accessToken
+  }
+
+  /**
    * Create a Zoho client from access token (for OAuth flow)
    * This is used when we have an access token but not a refresh token yet
    */
-  static fromAccessToken(
-    accessToken: string,
-    orgId: string,
-  ): ZohoDeskClient {
+  static fromAccessToken(accessToken: string, orgId: string): ZohoDeskClient {
     const client = new ZohoDeskClient({
       orgId,
       clientId: "", // Not needed for access token flow

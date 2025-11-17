@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "node-fetch": "^3.3.2",
     "zustand": "^5.0.8"
   }
 }

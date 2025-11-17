@@ -17,7 +17,14 @@ import { handleMicrosoftOAuthIngestion } from "@/integrations/microsoft"
 import { ZohoDeskClient } from "@/integrations/zoho/client"
 import querystring from "querystring"
 
-const { JwtPayloadKey, JobExpiryHours, slackHost, ZohoClientId, ZohoClientSecret, ZohoOrgId } = config
+const {
+  JwtPayloadKey,
+  JobExpiryHours,
+  slackHost,
+  ZohoClientId,
+  ZohoClientSecret,
+  ZohoOrgId,
+} = config
 import { IsGoogleApp, IsMicrosoftApp } from "@/utils"
 import { getUserByEmail } from "@/db/user"
 import { globalAbortControllers } from "@/integrations/abortManager"
@@ -51,7 +58,9 @@ export const OAuthCallback = async (c: Context) => {
     }
     const { app, random } = JSON.parse(state)
     if (!app) {
-      throw new HTTPException(400, { message: "Invalid 'state': missing 'app'." })
+      throw new HTTPException(400, {
+        message: "Invalid 'state': missing 'app'.",
+      })
     }
     const stateInCookie = getCookie(c, `${app}-state`)
     if (random !== stateInCookie) {
@@ -80,7 +89,9 @@ export const OAuthCallback = async (c: Context) => {
     let clientSecret: string
 
     if (app === Apps.ZohoDesk) {
-      Logger.info("✅ ZOHO CALLBACK: Using global config for token exchange", { email })
+      Logger.info("✅ ZOHO CALLBACK: Using global config for token exchange", {
+        email,
+      })
       clientId = ZohoClientId
       clientSecret = ZohoClientSecret
       provider = { connectorId: 0 } // Will create new connector for user (0 = no existing connector)
@@ -151,7 +162,10 @@ export const OAuthCallback = async (c: Context) => {
       tokens.data.accessTokenExpiresAt = oauthTokens.accessTokenExpiresAt()
     } else if (app === Apps.ZohoDesk) {
       // Zoho OAuth flow
-      Logger.info("✅ ZOHO CALLBACK: Exchanging authorization code for tokens", { email })
+      Logger.info(
+        "✅ ZOHO CALLBACK: Exchanging authorization code for tokens",
+        { email },
+      )
 
       const response = await fetch("https://accounts.zoho.com/oauth/v2/token", {
         method: "POST",
@@ -189,7 +203,10 @@ export const OAuthCallback = async (c: Context) => {
 
       // Fetch user information including department
       Logger.info("✅ ZOHO CALLBACK: Fetching user department info", { email })
-      const client = ZohoDeskClient.fromAccessToken(tokenData.access_token, ZohoOrgId)
+      const client = ZohoDeskClient.fromAccessToken(
+        tokenData.access_token,
+        ZohoOrgId,
+      )
       const userInfo = await client.fetchUserInfo()
 
       Logger.info("✅ ZOHO CALLBACK: User info fetched", {
@@ -220,9 +237,11 @@ export const OAuthCallback = async (c: Context) => {
     // For Zoho Desk user OAuth, create a new connector; for others, update existing
     if (app === Apps.ZohoDesk && provider.connectorId === 0) {
       // Create new connector for Zoho Desk user
-      Logger.info("✅ ZOHO CALLBACK: Creating new connector for user", { email })
+      Logger.info("✅ ZOHO CALLBACK: Creating new connector for user", {
+        email,
+      })
 
-      const departmentIds = (tokens as any).departmentIds as string[] || []
+      const departmentIds = ((tokens as any).departmentIds as string[]) || []
       const departmentId = departmentIds.length > 0 ? departmentIds[0] : null
 
       Logger.info("✅ ZOHO CALLBACK: Department assignment", {
@@ -243,8 +262,8 @@ export const OAuthCallback = async (c: Context) => {
         {}, // initial state
         null, // no credentials needed for OAuth
         email, // subject
-        JSON.stringify(tokens), // OAuth credentials
-        departmentId, // department ID for permissions
+        JSON.stringify(tokens), // OAuth credentials (includes departmentIds)
+        null, // apiKey
         ConnectorStatus.Connected,
       )
 
@@ -264,20 +283,8 @@ export const OAuthCallback = async (c: Context) => {
 
       const updateData: any = {
         subject: email,
-        oauthCredentials: JSON.stringify(tokens),
+        oauthCredentials: JSON.stringify(tokens), // departmentIds will be stored in oauthCredentials
         status: ConnectorStatus.Authenticated,
-      }
-
-      if (app === Apps.ZohoDesk && (tokens as any).departmentIds) {
-        // Store first department ID (users typically have one department)
-        const departmentIds = (tokens as any).departmentIds as string[]
-        if (departmentIds.length > 0) {
-          updateData.departmentId = departmentIds[0]
-          Logger.info("Stored Zoho department ID in connector", {
-            connectorId,
-            departmentId: departmentIds[0],
-          })
-        }
       }
 
       connector = await updateConnector(db, connectorId, updateData)

@@ -27,11 +27,11 @@ import { connectors } from "./connectors"
 // - cancelled: User manually cancelled the ingestion
 export const ingestionStatusEnum = pgEnum("ingestion_status", [
   "pending",
-  "in_progress", 
+  "in_progress",
   "paused",
   "completed",
   "failed",
-  "cancelled"
+  "cancelled",
 ])
 
 // Main ingestions table that tracks all ingestion processes
@@ -41,43 +41,43 @@ export const ingestions = pgTable(
   {
     // Primary key for the ingestion record
     id: serial("id").notNull().primaryKey(),
-    
+
     // Foreign key to users table - identifies who started this ingestion
     userId: integer("user_id")
       .notNull()
       .references(() => users.id),
-    
+
     // Foreign key to connectors table - identifies which Slack workspace
     connectorId: integer("connector_id")
       .notNull()
       .references(() => connectors.id),
-    
+
     // Foreign key to workspaces table - identifies the workspace context
     workspaceId: integer("workspace_id")
       .notNull()
       .references(() => workspaces.id),
-    
+
     // Current status of the ingestion process (see enum above)
     status: ingestionStatusEnum("status").notNull().default("pending"),
-    
+
     // JSONB field storing all ingestion state and progress data
     // Contains WebSocket data, channel progress, resumability state, etc.
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
-    
+
     // Optional error message when ingestion fails
     errorMessage: text("error_message"),
-    
+
     // Timestamp when ingestion actually started processing
     startedAt: timestamp("started_at", { withTimezone: true }),
-    
+
     // Timestamp when ingestion finished (completed, failed, or cancelled)
     completedAt: timestamp("completed_at", { withTimezone: true }),
-    
+
     // Timestamp when ingestion record was created
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
-    
+
     // Timestamp when ingestion record was last updated
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -96,31 +96,35 @@ export const slackIngestionMetadataSchema = z.object({
     // Currently processing channel ID (for display)
     currentChannelId: z.string().optional(),
     // Progress information shown to user
-    progress: z.object({
-      totalChannels: z.number().optional(),        // Total channels to process
-      processedChannels: z.number().optional(),    // Channels completed so far
-      currentChannel: z.string().optional(),       // Name of current channel
-      totalMessages: z.number().optional(),        // Total messages found
-      processedMessages: z.number().optional(),    // Messages processed so far
-    }).optional(),
+    progress: z
+      .object({
+        totalChannels: z.number().optional(), // Total channels to process
+        processedChannels: z.number().optional(), // Channels completed so far
+        currentChannel: z.string().optional(), // Name of current channel
+        totalMessages: z.number().optional(), // Total messages found
+        processedMessages: z.number().optional(), // Messages processed so far
+      })
+      .optional(),
   }),
-  
+
   // Internal state data used for resuming interrupted ingestions
-  ingestionState: z.object({
-    // Current channel being processed (for resumability)
-    currentChannelId: z.string().optional(),
-    // Last message timestamp processed (for resumability)
-    lastMessageTs: z.string().optional(),
-    // When this state was last updated
-    lastUpdated: z.string(),
-    
-    // Original ingestion parameters (needed for resuming)
-    channelsToIngest: z.array(z.string()).optional(),  // List of channel IDs to process
-    startDate: z.string().optional(),                  // Date range start
-    endDate: z.string().optional(),                    // Date range end
-    includeBotMessage: z.boolean().optional(),         // Whether to include bot messages
-    currentChannelIndex: z.number().optional(),        // Index in channelsToIngest array
-  }).optional(),
+  ingestionState: z
+    .object({
+      // Current channel being processed (for resumability)
+      currentChannelId: z.string().optional(),
+      // Last message timestamp processed (for resumability)
+      lastMessageTs: z.string().optional(),
+      // When this state was last updated
+      lastUpdated: z.string(),
+
+      // Original ingestion parameters (needed for resuming)
+      channelsToIngest: z.array(z.string()).optional(), // List of channel IDs to process
+      startDate: z.string().optional(), // Date range start
+      endDate: z.string().optional(), // Date range end
+      includeBotMessage: z.boolean().optional(), // Whether to include bot messages
+      currentChannelIndex: z.number().optional(), // Index in channelsToIngest array
+    })
+    .optional(),
 })
 
 // Zod schema for Zoho Desk-specific metadata
@@ -128,27 +132,31 @@ export const zohoDeskIngestionMetadataSchema = z.object({
   // Data sent over WebSocket to frontend for real-time progress updates
   websocketData: z.object({
     connectorId: z.string(),
-    progress: z.object({
-      totalTickets: z.number().optional(),          // Total tickets to process
-      processedTickets: z.number().optional(),      // Tickets completed so far
-      ticketsWithAttachments: z.number().optional(), // Tickets with attachments
-      totalAttachments: z.number().optional(),      // Total attachments to process
-      processedAttachments: z.number().optional(),  // Attachments processed so far
-      errors: z.number().optional(),                 // Number of errors encountered
-    }).optional(),
+    progress: z
+      .object({
+        totalTickets: z.number().optional(), // Total tickets to process
+        processedTickets: z.number().optional(), // Tickets completed so far
+        ticketsWithAttachments: z.number().optional(), // Tickets with attachments
+        totalAttachments: z.number().optional(), // Total attachments to process
+        processedAttachments: z.number().optional(), // Attachments processed so far
+        errors: z.number().optional(), // Number of errors encountered
+      })
+      .optional(),
   }),
 
   // Internal state data for resuming interrupted ingestions
-  ingestionState: z.object({
-    // Last ticket pagination cursor (for resumability)
-    lastTicketIndex: z.number().optional(),        // Last 'from' parameter value
-    lastModifiedTime: z.string().optional(),       // For incremental sync
-    lastUpdated: z.string(),
+  ingestionState: z
+    .object({
+      // Last ticket pagination cursor (for resumability)
+      lastTicketIndex: z.number().optional(), // Last 'from' parameter value
+      lastModifiedTime: z.string().optional(), // For incremental sync
+      lastUpdated: z.string(),
 
-    // Original ingestion parameters
-    isInitialSync: z.boolean().optional(),         // True if first-time sync
-    startDate: z.string().optional(),              // Date range start (for initial sync)
-  }).optional(),
+      // Original ingestion parameters
+      isInitialSync: z.boolean().optional(), // True if first-time sync
+      startDate: z.string().optional(), // Date range start (for initial sync)
+    })
+    .optional(),
 })
 
 // Generic metadata schema that can support different integration types
@@ -181,5 +189,9 @@ export type IngestionStatus =
   | "completed"
   | "failed"
   | "cancelled"
-export type SlackIngestionMetadata = z.infer<typeof slackIngestionMetadataSchema>
-export type ZohoDeskIngestionMetadata = z.infer<typeof zohoDeskIngestionMetadataSchema>
+export type SlackIngestionMetadata = z.infer<
+  typeof slackIngestionMetadataSchema
+>
+export type ZohoDeskIngestionMetadata = z.infer<
+  typeof zohoDeskIngestionMetadataSchema
+>

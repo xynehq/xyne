@@ -8,6 +8,7 @@ import { connectors, type SelectConnector } from "@/db/schema"
 import { ZohoDeskClient } from "./client"
 import {
   transformZohoTicketToVespa,
+  enqueueSummaryJobs,
   type VespaZohoTicket,
   type VespaZohoTicketBase,
   type VespaAttachmentType,
@@ -39,9 +40,11 @@ const zohoTicketSchema = "zoho_ticket" as const
  */
 function isSpreadsheetFile(filename: string): boolean {
   const lowerFilename = filename.toLowerCase()
-  return lowerFilename.endsWith('.csv') ||
-         lowerFilename.endsWith('.xlsx') ||
-         lowerFilename.endsWith('.xls')
+  return (
+    lowerFilename.endsWith(".csv") ||
+    lowerFilename.endsWith(".xlsx") ||
+    lowerFilename.endsWith(".xls")
+  )
 }
 
 /**
@@ -54,19 +57,24 @@ async function fetchTicketWithRetry(
 ): Promise<any> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`   Attempt ${attempt}/${maxRetries} to fetch ticket from Vespa`)
+      console.log(
+        `   Attempt ${attempt}/${maxRetries} to fetch ticket from Vespa`,
+      )
       const ticket = await GetDocument(zohoTicketSchema as any, ticketId)
       if (ticket) {
         console.log(`   ✅ Ticket found on attempt ${attempt}`)
         return ticket
       }
     } catch (error: any) {
-      const is404 = error.message?.includes("404") || error.message?.includes("Not Found")
+      const is404 =
+        error.message?.includes("404") || error.message?.includes("Not Found")
 
       if (is404 && attempt < maxRetries) {
-        console.log(`   ⏳ Ticket not found yet (404), retrying in ${delayMs}ms...`)
+        console.log(
+          `   ⏳ Ticket not found yet (404), retrying in ${delayMs}ms...`,
+        )
         console.log(`      (Ticket worker may still be inserting it)`)
-        await new Promise(resolve => setTimeout(resolve, delayMs))
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
         continue
       }
 
@@ -75,13 +83,18 @@ async function fetchTicketWithRetry(
     }
   }
 
-  throw new Error(`Ticket not found in Vespa after ${maxRetries} attempts: ${ticketId}`)
+  throw new Error(
+    `Ticket not found in Vespa after ${maxRetries} attempts: ${ticketId}`,
+  )
 }
 
 /**
  * Parse spreadsheet file (CSV, XLSX, XLS) and extract text chunks
  */
-async function parseSpreadsheetFile(buffer: Buffer, filename: string): Promise<string> {
+async function parseSpreadsheetFile(
+  buffer: Buffer,
+  filename: string,
+): Promise<string> {
   try {
     console.log("\n📊 SPREADSHEET PARSER: Parsing spreadsheet file")
     console.log(`   Filename: ${filename}`)
@@ -132,13 +145,17 @@ async function parseSpreadsheetFile(buffer: Buffer, filename: string): Promise<s
     console.log("\n✅ SPREADSHEET PARSER: Parsing complete")
     console.log(`   Total Chunks: ${allChunks.length}`)
     console.log(`   Total Text Length: ${combinedText.length} characters`)
-    console.log(`   Text Preview: ${combinedText.substring(0, 200)}${combinedText.length > 200 ? "..." : ""}`)
+    console.log(
+      `   Text Preview: ${combinedText.substring(0, 200)}${combinedText.length > 200 ? "..." : ""}`,
+    )
     console.log("")
 
     return combinedText
   } catch (error) {
     console.log("\n❌ SPREADSHEET PARSER: Failed to parse spreadsheet")
-    console.log(`   Error: ${error instanceof Error ? error.message : String(error)}`)
+    console.log(
+      `   Error: ${error instanceof Error ? error.message : String(error)}`,
+    )
     console.log("")
 
     Logger.error("Failed to parse spreadsheet file", {
@@ -174,10 +191,22 @@ export interface AttachmentJob {
 /**
  * Process a single ticket: fetch details, transform, insert to Vespa, queue attachments
  */
-export async function processTicketJob(job: PgBoss.Job<TicketJob>): Promise<void> {
-  const { ticketId, connectorId, workspaceExternalId, ingestionId, lastModifiedTime } = job.data
+export async function processTicketJob(
+  job: PgBoss.Job<TicketJob>,
+): Promise<void> {
+  const {
+    ticketId,
+    connectorId,
+    workspaceExternalId,
+    ingestionId,
+    lastModifiedTime,
+  } = job.data
 
-  Logger.info("Processing ticket job", { ticketId, connectorId, lastModifiedTime })
+  Logger.info("Processing ticket job", {
+    ticketId,
+    connectorId,
+    lastModifiedTime,
+  })
 
   try {
     // 1. Get connector
@@ -190,13 +219,16 @@ export async function processTicketJob(job: PgBoss.Job<TicketJob>): Promise<void
       connectorId,
       hasCredentials: !!connector.credentials,
       credentialsType: typeof connector.credentials,
-      credentialsValue: typeof connector.credentials === 'string' ? connector.credentials.substring(0, 100) : connector.credentials,
+      credentialsValue:
+        typeof connector.credentials === "string"
+          ? connector.credentials.substring(0, 100)
+          : connector.credentials,
     })
 
     // 2. Parse credentials (it's a JSON string from database)
     let credentials: any
     try {
-      if (typeof connector.credentials === 'string') {
+      if (typeof connector.credentials === "string") {
         credentials = JSON.parse(connector.credentials)
         Logger.info("✅ Credentials parsed from JSON string")
       } else {
@@ -231,9 +263,9 @@ export async function processTicketJob(job: PgBoss.Job<TicketJob>): Promise<void
     const fullTicket = await client.fetchTicketById(ticketId)
 
     console.log("\n📥 RAW ZOHO API RESPONSE - TICKET")
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log(JSON.stringify(fullTicket, null, 2))
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log("")
 
     Logger.info("📥 Fetched full ticket from Zoho API", {
@@ -313,7 +345,11 @@ export async function processTicketJob(job: PgBoss.Job<TicketJob>): Promise<void
     */
 
     // 4. Check if ticket should be skipped (incremental sync filter)
-    if (lastModifiedTime && fullTicket.modifiedTime && fullTicket.modifiedTime <= lastModifiedTime) {
+    if (
+      lastModifiedTime &&
+      fullTicket.modifiedTime &&
+      fullTicket.modifiedTime <= lastModifiedTime
+    ) {
       console.log(`\n⏭️  SKIPPING OLD TICKET`)
       console.log(`   Ticket ID: ${ticketId}`)
       console.log(`   Ticket Number: ${fullTicket.ticketNumber}`)
@@ -335,52 +371,58 @@ export async function processTicketJob(job: PgBoss.Job<TicketJob>): Promise<void
     const threads = await client.fetchAllThreads(ticketId)
 
     console.log("\n📥 RAW ZOHO API RESPONSE - THREADS")
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log(JSON.stringify(threads, null, 2))
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log("")
 
     Logger.info("📥 Fetched threads from Zoho API", {
       ticketId,
       threadCount: threads.length,
-      sampleThread: threads.length > 0 ? {
-        direction: threads[0]?.direction,
-        channel: threads[0]?.channel,
-        hasAttachments: (threads[0]?.attachments?.length ?? 0) > 0,
-      } : null,
+      sampleThread:
+        threads.length > 0
+          ? {
+              direction: threads[0]?.direction,
+              channel: threads[0]?.channel,
+              hasAttachments: (threads[0]?.attachments?.length ?? 0) > 0,
+            }
+          : null,
     })
 
     // 5. Fetch comments
     const comments = await client.fetchAllComments(ticketId)
 
     console.log("\n📥 RAW ZOHO API RESPONSE - COMMENTS")
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log(JSON.stringify(comments, null, 2))
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log("")
 
     Logger.info("📥 Fetched comments from Zoho API", {
       ticketId,
       commentCount: comments.length,
-      sampleComment: comments.length > 0 ? {
-        hasContent: !!comments[0]?.content,
-        hasAttachments: (comments[0]?.attachments?.length ?? 0) > 0,
-      } : null,
+      sampleComment:
+        comments.length > 0
+          ? {
+              hasContent: !!comments[0]?.content,
+              hasAttachments: (comments[0]?.attachments?.length ?? 0) > 0,
+            }
+          : null,
     })
 
     // 6. Fetch ticket-level attachments
     const ticketAttachments = await client.fetchTicketAttachments(ticketId)
 
     console.log("\n📥 RAW ZOHO API RESPONSE - TICKET ATTACHMENTS")
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log(JSON.stringify(ticketAttachments, null, 2))
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log("")
 
     Logger.info("📥 Fetched ticket attachments from Zoho API", {
       ticketId,
       attachmentCount: ticketAttachments.length,
-      attachmentNames: ticketAttachments.map(a => a.name),
+      attachmentNames: ticketAttachments.map((a) => a.name),
     })
 
     // 7. Transform to Vespa format
@@ -409,17 +451,24 @@ export async function processTicketJob(job: PgBoss.Job<TicketJob>): Promise<void
     let existingTicket = null
     try {
       existingTicket = await GetDocument(zohoTicketSchema as any, ticketId)
-      Logger.info("✅ Ticket already exists in Vespa, will update", { ticketId })
+      Logger.info("✅ Ticket already exists in Vespa, will update", {
+        ticketId,
+      })
     } catch (error: any) {
       // 404 is expected for new tickets - it just means we'll do an INSERT
       if (error.message?.includes("404")) {
-        Logger.info("📝 New ticket (not in Vespa yet), will insert", { ticketId })
+        Logger.info("📝 New ticket (not in Vespa yet), will insert", {
+          ticketId,
+        })
       } else {
         // Unexpected error - log it but continue with insert
-        Logger.warn("⚠️ Error checking if ticket exists, will try insert anyway", {
-          ticketId,
-          error: error instanceof Error ? error.message : String(error),
-        })
+        Logger.warn(
+          "⚠️ Error checking if ticket exists, will try insert anyway",
+          {
+            ticketId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        )
       }
     }
 
@@ -466,7 +515,6 @@ export async function processTicketJob(job: PgBoss.Job<TicketJob>): Promise<void
           }
         })
       }
-
     }
 
     // 9. Collect attachment jobs and mark as "processing" BEFORE Vespa update
@@ -524,10 +572,19 @@ export async function processTicketJob(job: PgBoss.Job<TicketJob>): Promise<void
       permissions: vespaTicket.departmentId ? [vespaTicket.departmentId] : [],
     }
 
+    // Log departmentId being set in permissions array
+    Logger.info("🔐 Setting departmentId in permissions array for Vespa", {
+      ticketId,
+      ticketNumber: vespaTicket.ticketNumber,
+      departmentId: vespaTicket.departmentId,
+      permissionsArray: finalDocument.permissions,
+      hasPermissions: finalDocument.permissions.length > 0,
+    })
+
     console.log("\n📤 EXACT FIELDS BEING SENT TO VESPA")
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log(JSON.stringify(finalDocument, null, 2))
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log("")
 
     Logger.info("📤 Preparing to send document to Vespa", {
@@ -554,14 +611,76 @@ export async function processTicketJob(job: PgBoss.Job<TicketJob>): Promise<void
       console.log(`📝 UPDATING EXISTING TICKET IN VESPA: ${ticketId}\n`)
       Logger.info("📝 Updating existing ticket in Vespa", { ticketId })
       await UpdateDocument(zohoTicketSchema as any, ticketId, finalDocument)
-      console.log(`✅ SUCCESSFULLY UPDATED TICKET IN VESPA: ${finalDocument.ticketNumber}\n`)
+      console.log(
+        `✅ SUCCESSFULLY UPDATED TICKET IN VESPA: ${finalDocument.ticketNumber}\n`,
+      )
       Logger.info("✅ Successfully updated ticket in Vespa", { ticketId })
+
+      // Enqueue summary generation jobs for updated ticket
+      // Re-generate summaries when ticket is updated (new threads/comments may have been added)
+      try {
+        Logger.info("🔄 Enqueueing summary generation jobs for updated ticket", {
+          ticketId,
+          threadCount: vespaTicket.threads?.length || 0,
+          commentCount: vespaTicket.comments?.length || 0,
+        })
+
+        await enqueueSummaryJobs(
+          fullTicket,
+          vespaTicket.threads || [],
+          vespaTicket.comments || [],
+        )
+
+        Logger.info("✅ Successfully enqueued summary generation jobs", {
+          ticketId,
+          threadCount: vespaTicket.threads?.length || 0,
+          commentCount: vespaTicket.comments?.length || 0,
+        })
+      } catch (error) {
+        Logger.error("❌ Failed to enqueue summary generation jobs", {
+          ticketId,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        })
+        // Don't throw - ticket update should continue even if summary jobs fail
+      }
     } else {
       console.log(`📝 INSERTING NEW TICKET TO VESPA: ${ticketId}\n`)
       Logger.info("📝 Inserting new ticket to Vespa", { ticketId })
       await insert(finalDocument as any, zohoTicketSchema as any)
-      console.log(`✅ SUCCESSFULLY INSERTED NEW TICKET TO VESPA: ${finalDocument.ticketNumber}\n`)
+      console.log(
+        `✅ SUCCESSFULLY INSERTED NEW TICKET TO VESPA: ${finalDocument.ticketNumber}\n`,
+      )
       Logger.info("✅ Successfully inserted ticket to Vespa", { ticketId })
+    }
+
+    // Enqueue summary generation jobs for this ticket
+    // This happens after Vespa insert to ensure ticket exists before summaries are generated
+    try {
+      Logger.info("🔄 Enqueueing summary generation jobs", {
+        ticketId,
+        threadCount: vespaTicket.threads?.length || 0,
+        commentCount: vespaTicket.comments?.length || 0,
+      })
+
+      await enqueueSummaryJobs(
+        fullTicket,
+        vespaTicket.threads || [],
+        vespaTicket.comments || [],
+      )
+
+      Logger.info("✅ Successfully enqueued summary generation jobs", {
+        ticketId,
+        threadCount: vespaTicket.threads?.length || 0,
+        commentCount: vespaTicket.comments?.length || 0,
+      })
+    } catch (error) {
+      Logger.error("❌ Failed to enqueue summary generation jobs", {
+        ticketId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      })
+      // Don't throw - ticket ingestion should continue even if summary jobs fail
     }
 
     // Queue attachment jobs with singleton keys to prevent duplicates
@@ -594,7 +713,8 @@ export async function processTicketJob(job: PgBoss.Job<TicketJob>): Promise<void
     Logger.info("Successfully processed ticket", {
       ticketId,
       attachmentsQueued: attachmentsToQueue.length,
-      attachmentsAlreadyProcessed: attachmentJobs.length - attachmentsToQueue.length,
+      attachmentsAlreadyProcessed:
+        attachmentJobs.length - attachmentsToQueue.length,
     })
   } catch (error) {
     Logger.error("Error processing ticket", {
@@ -624,10 +744,10 @@ export async function processAttachmentJob(
   } = job.data
 
   console.log("\n🔵 ATTACHMENT WORKER: Starting attachment processing")
-  console.log("=" .repeat(80))
+  console.log("=".repeat(80))
   console.log("📌 JOB DATA:")
   console.log(JSON.stringify(job.data, null, 2))
-  console.log("=" .repeat(80))
+  console.log("=".repeat(80))
   console.log("")
 
   Logger.info("Processing attachment job", {
@@ -646,7 +766,7 @@ export async function processAttachmentJob(
     // 2. Parse credentials (it's a JSON string from database)
     let credentials: any
     try {
-      if (typeof connector.credentials === 'string') {
+      if (typeof connector.credentials === "string") {
         credentials = JSON.parse(connector.credentials)
         Logger.info("✅ Credentials parsed from JSON string", { attachmentId })
       } else {
@@ -681,7 +801,9 @@ export async function processAttachmentJob(
     console.log("\n✅ ATTACHMENT WORKER: Downloaded attachment from Zoho")
     console.log(`   Attachment ID: ${attachmentId}`)
     console.log(`   Attachment Name: ${attachmentName}`)
-    console.log(`   Buffer Size: ${buffer.length} bytes (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`)
+    console.log(
+      `   Buffer Size: ${buffer.length} bytes (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`,
+    )
     console.log("")
 
     Logger.info("✅ Downloaded attachment", {
@@ -695,11 +817,16 @@ export async function processAttachmentJob(
 
     // Check if file is a spreadsheet (CSV, XLSX, XLS)
     if (isSpreadsheetFile(attachmentName)) {
-      console.log("\n📊 ATTACHMENT WORKER: Detected spreadsheet file, parsing with XLSX")
+      console.log(
+        "\n📊 ATTACHMENT WORKER: Detected spreadsheet file, parsing with XLSX",
+      )
       console.log(`   Attachment: ${attachmentName}`)
       console.log("")
 
-      Logger.info("📊 Parsing spreadsheet file", { attachmentId, attachmentName })
+      Logger.info("📊 Parsing spreadsheet file", {
+        attachmentId,
+        attachmentName,
+      })
       ocrText = await parseSpreadsheetFile(buffer, attachmentName)
     } else {
       // Use OCR for images, PDFs, etc.
@@ -707,25 +834,54 @@ export async function processAttachmentJob(
       console.log(`   Attachment: ${attachmentName}`)
       console.log("")
 
-      Logger.info("🔍 Running OCR on attachment", { attachmentId, attachmentName })
-      const ocrResult = await chunkByOCRFromBuffer(buffer, attachmentName, attachmentId)
+      Logger.info("🔍 Running OCR on attachment", {
+        attachmentId,
+        attachmentName,
+      })
 
-      // Extract text from chunks
-      ocrText = ocrResult.chunks.join(" ")
+      try {
+        const ocrResult = await chunkByOCRFromBuffer(
+          buffer,
+          attachmentName,
+          attachmentId,
+        )
+
+        // Extract text from chunks
+        ocrText = ocrResult.chunks.join(" ")
+      } catch (ocrError) {
+        // Log OCR failure but continue processing
+        console.log("\n⚠️  ATTACHMENT WORKER: OCR processing failed")
+        console.log(`   Attachment: ${attachmentName}`)
+        console.log(`   Error: ${ocrError instanceof Error ? ocrError.message : String(ocrError)}`)
+        console.log("   Continuing with empty text content")
+        console.log("")
+
+        Logger.warn("OCR processing failed, continuing with empty text", {
+          attachmentId,
+          attachmentName,
+          error: ocrError instanceof Error ? ocrError.message : String(ocrError),
+        })
+
+        // Set empty text if OCR fails
+        ocrText = ""
+      }
     }
 
     console.log("\n✅ ATTACHMENT WORKER: Text extraction completed")
     console.log(`   Attachment ID: ${attachmentId}`)
     console.log(`   Attachment Name: ${attachmentName}`)
     console.log(`   Extracted Text Length: ${ocrText.length} characters`)
-    console.log(`   Text Preview: ${ocrText.substring(0, 200)}${ocrText.length > 200 ? "..." : ""}`)
+    console.log(
+      `   Text Preview: ${ocrText.substring(0, 200)}${ocrText.length > 200 ? "..." : ""}`,
+    )
     console.log("")
 
     Logger.info("✅ Text extraction completed", {
       attachmentId,
       attachmentName,
       textLength: ocrText.length,
-      textPreview: ocrText.substring(0, 200) + (ocrText.length > 200 ? "..." : ""),
+      textPreview:
+        ocrText.substring(0, 200) + (ocrText.length > 200 ? "..." : ""),
       isSpreadsheet: isSpreadsheetFile(attachmentName),
     })
 
@@ -755,9 +911,11 @@ export async function processAttachmentJob(
     if (location === "ticket") {
       currentAttachment = ticketFields.ticketAttachments?.[arrayIndex]
     } else if (location === "thread" && locationIndex !== undefined) {
-      currentAttachment = ticketFields.threads?.[locationIndex]?.attachmentDetails?.[arrayIndex]
+      currentAttachment =
+        ticketFields.threads?.[locationIndex]?.attachmentDetails?.[arrayIndex]
     } else if (location === "comment" && locationIndex !== undefined) {
-      currentAttachment = ticketFields.comments?.[locationIndex]?.attachmentDetails?.[arrayIndex]
+      currentAttachment =
+        ticketFields.comments?.[locationIndex]?.attachmentDetails?.[arrayIndex]
     }
 
     console.log("   Current Attachment Data:")
@@ -783,9 +941,11 @@ export async function processAttachmentJob(
     if (location === "ticket") {
       updatedAttachment = ticketFields.ticketAttachments?.[arrayIndex]
     } else if (location === "thread" && locationIndex !== undefined) {
-      updatedAttachment = ticketFields.threads?.[locationIndex]?.attachmentDetails?.[arrayIndex]
+      updatedAttachment =
+        ticketFields.threads?.[locationIndex]?.attachmentDetails?.[arrayIndex]
     } else if (location === "comment" && locationIndex !== undefined) {
-      updatedAttachment = ticketFields.comments?.[locationIndex]?.attachmentDetails?.[arrayIndex]
+      updatedAttachment =
+        ticketFields.comments?.[locationIndex]?.attachmentDetails?.[arrayIndex]
     }
 
     console.log("✅ ATTACHMENT WORKER: Attachment updated in memory")
@@ -800,9 +960,9 @@ export async function processAttachmentJob(
     console.log(`   Schema: ${zohoTicketSchema}`)
     console.log("")
     console.log("📋 FULL TICKET STRUCTURE BEING SENT TO VESPA:")
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log(JSON.stringify(ticketFields, null, 2))
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log("")
 
     await UpdateDocument(zohoTicketSchema as any, ticketId, ticketFields)
@@ -822,8 +982,10 @@ export async function processAttachmentJob(
     // 9. Update ingestion metadata - increment processed attachments
     await incrementProcessedAttachments(ingestionId)
 
-    console.log("✅ ATTACHMENT WORKER: Attachment processing completed successfully")
-    console.log("=" .repeat(80))
+    console.log(
+      "✅ ATTACHMENT WORKER: Attachment processing completed successfully",
+    )
+    console.log("=".repeat(80))
     console.log("")
 
     Logger.info("Successfully processed attachment", {
@@ -832,15 +994,17 @@ export async function processAttachmentJob(
     })
   } catch (error) {
     console.log("\n❌ ATTACHMENT WORKER: Error processing attachment")
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log(`   Ticket ID: ${ticketId}`)
     console.log(`   Attachment ID: ${attachmentId}`)
     console.log(`   Attachment Name: ${attachmentName}`)
-    console.log(`   Error: ${error instanceof Error ? error.message : String(error)}`)
+    console.log(
+      `   Error: ${error instanceof Error ? error.message : String(error)}`,
+    )
     if (error instanceof Error && error.stack) {
       console.log(`   Stack: ${error.stack}`)
     }
-    console.log("=" .repeat(80))
+    console.log("=".repeat(80))
     console.log("")
 
     Logger.error("Error processing attachment", {
@@ -850,7 +1014,9 @@ export async function processAttachmentJob(
     })
 
     // Mark attachment as failed in Vespa (with retry)
-    console.log("\n⚠️  ATTACHMENT WORKER: Attempting to mark attachment as failed in Vespa")
+    console.log(
+      "\n⚠️  ATTACHMENT WORKER: Attempting to mark attachment as failed in Vespa",
+    )
     console.log(`   Ticket ID: ${ticketId}`)
     console.log(`   Attachment ID: ${attachmentId}`)
     console.log("")
@@ -859,27 +1025,43 @@ export async function processAttachmentJob(
       const ticket = await fetchTicketWithRetry(ticketId, 3, 2000)
       if (ticket) {
         const ticketFields = ticket.fields as unknown as VespaZohoTicket
-        markAttachmentAsFailed(ticketFields, location, locationIndex, arrayIndex)
+        markAttachmentAsFailed(
+          ticketFields,
+          location,
+          locationIndex,
+          arrayIndex,
+        )
         await UpdateDocument(zohoTicketSchema as any, ticketId, ticketFields)
 
-        console.log("✅ ATTACHMENT WORKER: Marked attachment as failed in Vespa")
+        console.log(
+          "✅ ATTACHMENT WORKER: Marked attachment as failed in Vespa",
+        )
         console.log(`   Ticket ID: ${ticketId}`)
         console.log(`   Attachment ID: ${attachmentId}`)
         console.log("")
       } else {
-        console.log("⚠️  ATTACHMENT WORKER: Ticket not found in Vespa, cannot mark as failed")
+        console.log(
+          "⚠️  ATTACHMENT WORKER: Ticket not found in Vespa, cannot mark as failed",
+        )
         console.log("")
       }
     } catch (updateError) {
       console.log("\n❌ ATTACHMENT WORKER: Failed to mark attachment as failed")
-      console.log(`   Error: ${updateError instanceof Error ? updateError.message : String(updateError)}`)
-      console.log(`   (Ticket may not have been inserted yet - attachment will retry via job queue)`)
+      console.log(
+        `   Error: ${updateError instanceof Error ? updateError.message : String(updateError)}`,
+      )
+      console.log(
+        `   (Ticket may not have been inserted yet - attachment will retry via job queue)`,
+      )
       console.log("")
 
       Logger.error("Failed to mark attachment as failed", {
         ticketId,
         attachmentId,
-        error: updateError instanceof Error ? updateError.message : String(updateError),
+        error:
+          updateError instanceof Error
+            ? updateError.message
+            : String(updateError),
       })
     }
 
@@ -975,10 +1157,12 @@ function updateAttachmentInTicket(
       ticket.threads[locationIndex].attachmentDetails &&
       ticket.threads[locationIndex].attachmentDetails[arrayIndex]
     ) {
-      ticket.threads[locationIndex].attachmentDetails[arrayIndex].attachmentDetail =
-        ocrText
-      ticket.threads[locationIndex].attachmentDetails[arrayIndex].processingStatus =
-        "completed"
+      ticket.threads[locationIndex].attachmentDetails[
+        arrayIndex
+      ].attachmentDetail = ocrText
+      ticket.threads[locationIndex].attachmentDetails[
+        arrayIndex
+      ].processingStatus = "completed"
     }
   } else if (location === "comment") {
     if (
@@ -988,10 +1172,12 @@ function updateAttachmentInTicket(
       ticket.comments[locationIndex].attachmentDetails &&
       ticket.comments[locationIndex].attachmentDetails[arrayIndex]
     ) {
-      ticket.comments[locationIndex].attachmentDetails[arrayIndex].attachmentDetail =
-        ocrText
-      ticket.comments[locationIndex].attachmentDetails[arrayIndex].processingStatus =
-        "completed"
+      ticket.comments[locationIndex].attachmentDetails[
+        arrayIndex
+      ].attachmentDetail = ocrText
+      ticket.comments[locationIndex].attachmentDetails[
+        arrayIndex
+      ].processingStatus = "completed"
     }
   }
 }
@@ -1017,8 +1203,9 @@ function markAttachmentAsFailed(
       ticket.threads[locationIndex].attachmentDetails &&
       ticket.threads[locationIndex].attachmentDetails[arrayIndex]
     ) {
-      ticket.threads[locationIndex].attachmentDetails[arrayIndex].processingStatus =
-        "failed"
+      ticket.threads[locationIndex].attachmentDetails[
+        arrayIndex
+      ].processingStatus = "failed"
     }
   } else if (location === "comment") {
     if (
@@ -1028,8 +1215,9 @@ function markAttachmentAsFailed(
       ticket.comments[locationIndex].attachmentDetails &&
       ticket.comments[locationIndex].attachmentDetails[arrayIndex]
     ) {
-      ticket.comments[locationIndex].attachmentDetails[arrayIndex].processingStatus =
-        "failed"
+      ticket.comments[locationIndex].attachmentDetails[
+        arrayIndex
+      ].processingStatus = "failed"
     }
   }
 }
@@ -1044,7 +1232,9 @@ async function incrementProcessedTickets(
   const ingestion = await getIngestionById(db, ingestionId)
   if (!ingestion) return
 
-  const metadata = ingestion.metadata as { zohoDesk?: ZohoDeskIngestionMetadata }
+  const metadata = ingestion.metadata as {
+    zohoDesk?: ZohoDeskIngestionMetadata
+  }
   const zohoDeskMetadata = metadata?.zohoDesk
 
   if (!zohoDeskMetadata) return
@@ -1057,7 +1247,8 @@ async function incrementProcessedTickets(
         progress: {
           ...zohoDeskMetadata.websocketData.progress,
           processedTickets:
-            (zohoDeskMetadata.websocketData.progress?.processedTickets || 0) + 1,
+            (zohoDeskMetadata.websocketData.progress?.processedTickets || 0) +
+            1,
           totalAttachments:
             (zohoDeskMetadata.websocketData.progress?.totalAttachments || 0) +
             attachmentCount,
@@ -1076,11 +1267,15 @@ async function incrementProcessedTickets(
 /**
  * Increment processed attachments count and check if ingestion is complete
  */
-async function incrementProcessedAttachments(ingestionId: number): Promise<void> {
+async function incrementProcessedAttachments(
+  ingestionId: number,
+): Promise<void> {
   const ingestion = await getIngestionById(db, ingestionId)
   if (!ingestion) return
 
-  const metadata = ingestion.metadata as { zohoDesk?: ZohoDeskIngestionMetadata }
+  const metadata = ingestion.metadata as {
+    zohoDesk?: ZohoDeskIngestionMetadata
+  }
   const zohoDeskMetadata = metadata?.zohoDesk
 
   if (!zohoDeskMetadata) return
@@ -1181,7 +1376,9 @@ function findAttachmentInTicket(
 /**
  * Get connector with credentials
  */
-async function getConnector(connectorId: number): Promise<SelectConnector | null> {
+async function getConnector(
+  connectorId: number,
+): Promise<SelectConnector | null> {
   const results = await db
     .select()
     .from(connectors)
