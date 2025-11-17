@@ -126,6 +126,7 @@ export const getSlackTriggersInWorkflows = async (
   txn: TxnOrClient,
   userId: number,
   workspaceId: number,
+  channel: string
 ): Promise<{
   workflowId: string,
   workflowName: string,
@@ -134,7 +135,7 @@ export const getSlackTriggersInWorkflows = async (
   toolConfig: any,
   toolValue: any
 }[]> => {
-  const workflows = await txn
+  const workflowTriggers = await txn
     .select({
       workflowId: workflowTemplate.id,
       workflowName: workflowTemplate.name,
@@ -175,7 +176,13 @@ export const getSlackTriggersInWorkflows = async (
       workflowTool.value
     )
 
-    return workflows
+  workflowTriggers
+    .filter(wf => {
+      let channelIds = ((wf.toolConfig as any).channelIds as string[])
+      return channelIds.includes("all") || channelIds.includes(channel)
+    })
+
+  return workflowTriggers
 }
 
 export const updateWorkflowTool = async (

@@ -1507,7 +1507,7 @@ export const AppRoutes = app
     UpdateWorkflowToolApi,
   )
   .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
-  .post("/workflow/tools/slack/metadata", getSlackMetadataApi)
+  .get("/workflow/tools/slack/metadata", getSlackMetadataApi)
   .post("/workflow/tools/jira/test-connection", TestJiraConnectionApi)
   .post("/workflow/tools/jira/register-webhook", RegisterJiraWebhookApi)
   .post("/workflow/tools/jira/webhooks", GetJiraWebhooksApi)

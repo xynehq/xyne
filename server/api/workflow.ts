@@ -219,7 +219,7 @@ import {
   createWorkflowTool,
   createToolExecution,
 } from "@/db/workflowTool"
-import { listSlackChannels } from "@/integrations/slack/client"
+import { listSlackChannels, postSlackMessage } from "@/integrations/slack/client"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -3261,6 +3261,117 @@ Please analyze this webhook request and provide insights.`
           }
         }
 
+      case "slack_message":
+        try {
+          Logger.info(`📤 Executing Slack message tool for execution ${executionId}`)
+          
+          const config = tool.config || {}
+          const value = tool.value || {}
+          
+          // Get message content and channel from tool configuration
+          let message = config.message
+          let channelId = config.channel
+          
+          if (!channelId) {
+            return {
+              status: "error",
+              result: {
+                error: "No Slack channel specified in tool configuration",
+                config: config,
+                value: value
+              }
+            }
+          }
+          
+          // Replace placeholders in message with data from previous steps
+          const stepKeys = Object.keys(previousStepResults || {})
+          if (stepKeys.length > 0) {
+            // Get the most recent step result for dynamic content
+            const latestStepKey = stepKeys[stepKeys.length - 1]
+            const latestStepResult = previousStepResults[latestStepKey]
+            
+            if (latestStepResult?.result) {
+              // Replace common placeholders
+              message = message
+                .replace(/\{content\}/g, latestStepResult.result.content || latestStepResult.result.aiOutput || "")
+                .replace(/\{aiOutput\}/g, latestStepResult.result.aiOutput || "")
+                .replace(/\{output\}/g, latestStepResult.result.output || "")
+                .replace(/\{data\}/g, JSON.stringify(latestStepResult.result.data || {}, null, 2))
+                .replace(/\{timestamp\}/g, new Date().toISOString())
+                .replace(/\{stepName\}/g, latestStepKey)
+            }
+          }
+          
+          Logger.info({
+            channelId,
+            messageLength: message.length,
+            toolId: tool.id,
+            hasBlocks: !!(config.blocks || value.blocks)
+          }, "📤 Sending Slack message from workflow")
+          
+          // Send message using the helper function
+          const result = await postSlackMessage(channelId, message, {
+            blocks: config.blocks || value.blocks,
+            threadTs: config.threadTs || value.threadTs,
+            userName: config.userName || value.userName || "Workflow Bot"
+          })
+          
+          if (result.success) {
+            Logger.info({
+              channelId,
+              messageTs: result.messageTs
+            }, "✅ Slack message sent successfully from workflow")
+            
+            return {
+              status: "success",
+              result: {
+                channelId,
+                message,
+                messageTs: result.messageTs,
+                sent: true,
+                timestamp: new Date().toISOString(),
+                // Make the message content available to next steps
+                slackMessage: {
+                  channel: channelId,
+                  text: message,
+                  messageTs: result.messageTs,
+                  success: true
+                },
+                // Standard output fields for other tools
+                content: `Slack message sent to channel ${channelId}: ${message}`,
+                output: `Message sent successfully to Slack`,
+                aiOutput: `Slack message delivered: "${message}" to channel ${channelId}`
+              }
+            }
+          } else {
+            Logger.error({
+              error: result.error,
+              channelId
+            }, "❌ Failed to send Slack message from workflow")
+            
+            return {
+              status: "error",
+              result: {
+                error: result.error || "Failed to send Slack message",
+                channelId,
+                sent: false,
+                timestamp: new Date().toISOString()
+              }
+            }
+          }
+          
+        } catch (error) {
+          Logger.error(error, "❌ Slack message tool execution failed")
+          return {
+            status: "error",
+            result: {
+              error: "Slack message tool execution failed",
+              details: error instanceof Error ? error.message : String(error),
+              timestamp: new Date().toISOString()
+            }
+          }
+        }
+
       default:
         return {
           status: "error",
@@ -3345,8 +3456,6 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       c.get(JwtPayloadKey)
     )
 
-    
-    
     let jwtPayload
     try {
       jwtPayload = c.get(JwtPayloadKey)
@@ -3369,7 +3478,6 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     const userId = user.id
     
     const requestData = await c.req.json()
-    console.log(JSON.stringify(requestData, null, 2))
     
     // Create the main workflow template
     const template = await createWorkflowTemplate(
@@ -5823,19 +5931,25 @@ export const ServeWorkflowFileApi = async (c: Context) => {
   }
 }
 
-// Gets metadata like channels for slack nodes  
+// Gets metadata like channels for slack nodes with pagination support
 // Workflow-todo: currently defaults to xyne bot with
 // hardcoded creds
 export const getSlackMetadataApi = async (c: Context) => {
   try {
-    const channels = await listSlackChannels()
+    const cursor = c.req.query("cursor") || undefined
+    const limit = Number(c.req.query("limit")) || 200
+
+    const result = await listSlackChannels({ cursor, limit })
+    
     return c.json({
       success: true,
-      data: {
-        channels,
-      }
+      data: result
     })
   } catch (error) {
     Logger.error(error, "Failed to get slack metadata")
+    return c.json({
+      success: false,
+      error: "Failed to get slack metadata"
+    }, 500)
   }
 }

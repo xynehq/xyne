@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react"
-import { SlackIcon } from "./WorkflowIcons"
-import { workflowToolsAPI } from "./api/ApiHandlers"
-import { X } from "lucide-react"
+import { SlackIcon } from "../WorkflowIcons"
+import SlackChannelInput from "./SlackChannlesInput"
+
 
 export interface SlackTriggerConfig {
   triggerType: "app_mention" | "direct_message" 
@@ -53,9 +53,6 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
   const [errors, setErrors] = useState<string[]>([])
   const [isSaving, setIsSaving] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [channels, setChannels] = useState<Array<{ id: string; name: string }>>([])
-  const [channelsLoading, setChannelsLoading] = useState(false)
-  const [channelInput, setChannelInput] = useState("")
   const [showSuggestions, setShowSuggestions] = useState(false)
 
   useEffect(() => {
@@ -64,25 +61,7 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
     }
   }, [initialConfig])
 
-  // Fetch channels when component mounts or when channel dropdown is opened
-  useEffect(() => {
-    const fetchChannels = async () => {
-      try {
-        setChannelsLoading(true)
-        const metadata = await workflowToolsAPI.fetchSlackMetadata()
-        setChannels(metadata.channels)
-      } catch (error) {
-        console.error("Failed to fetch Slack channels:", error)
-        setErrors(["Failed to load channels. Please try again."])
-      } finally {
-        setChannelsLoading(false)
-      }
-    }
 
-    if (isVisible) {
-      fetchChannels()
-    }
-  }, [isVisible])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -130,61 +109,7 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
       errors: validationErrors,
     }
   }
-
-  const handleAddChannel = (channelName: string) => {
-    const currentChannels = config.channelIds || []
-
-    // Normalize channel name (remove # if present)
-    const normalizedChannel = channelName.startsWith('#') ? channelName.slice(1) : channelName
-
-    // Check if already added
-    if (currentChannels.includes(normalizedChannel)) {
-      return
-    }
-
-    // If adding "all", replace all existing channels with just "all"
-    if (normalizedChannel === "all") {
-      setConfig({
-        ...config,
-        channelIds: ["all"]
-      })
-    } else {
-      // Add individual channel
-      setConfig({
-        ...config,
-        channelIds: [...currentChannels, normalizedChannel]
-      })
-    }
-
-    setChannelInput("")
-    setShowSuggestions(false)
-    setErrors([])
-  }
-
-  const handleRemoveChannel = (channelId: string) => {
-    const currentChannels = config.channelIds || []
-    setConfig({
-      ...config,
-      channelIds: currentChannels.filter(id => id !== channelId)
-    })
-  }
-
-  const handleChannelInputChange = (value: string) => {
-    setChannelInput(value)
-    // Keep suggestions open as long as input is focused
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Prevent adding channels on Enter - users must select from dropdown
-    if (e.key === "Enter") {
-      e.preventDefault()
-    }
-  }
-
-  // Filter channels based on input
-  const filteredChannels = channels.filter(channel =>
-    channel.name.toLowerCase().includes(channelInput.toLowerCase().replace('#', ''))
-  )
+ 
 
   const handleSave = async () => {
     const validation = validateConfig()
@@ -344,82 +269,15 @@ export const SlackTriggerConfigUI: React.FC<SlackTriggerConfigUIProps> = ({
               Add Channels <span className="text-red-500">*</span>
             </label>
 
-            {/* Channel Input with Autocomplete */}
-            <div className="relative channel-input-container">
-              <input
-                type="text"
-                value={channelInput}
-                onChange={(e) => handleChannelInputChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onFocus={() => setShowSuggestions(true)}
-                placeholder="Type channel name or 'all'"
-                className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-900 dark:text-gray-300"
-              />
-
-              {/* Autocomplete Suggestions */}
-              {showSuggestions && !config.channelIds?.includes("all") && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {/* "All" Option */}
-                  <button
-                    onClick={() => handleAddChannel("all")}
-                    className="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                  >
-                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      all
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      Listen to all channels
-                    </div>
-                  </button>
-
-                  {/* Channel Suggestions */}
-                  {channelsLoading ? (
-                    <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                      Loading channels...
-                    </div>
-                  ) : filteredChannels.length === 0 ? (
-                    <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                      No matching channels
-                    </div>
-                  ) : (
-                    filteredChannels.slice(0, 10).map((channel) => (
-                      <button
-                        key={channel.id}
-                        onClick={() => handleAddChannel(channel.name)}
-                        className="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                      >
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                          #{channel.name}
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-
-
-            {/* Added Channels */}
-            {config.channelIds && config.channelIds.length > 0 && (
-              <div className="space-y-2 mt-4">
-                {config.channelIds.map((channelId) => (
-                  <div
-                    key={channelId}
-                    className="flex items-center justify-between p-1 bg-gray-50 dark:bg-gray-800 rounded-lg w-fit"
-                  >
-                    <div className="text-xs font-medium text-slate-90 dark:text-gray-300">
-                      {channelId}
-                    </div>
-                    <button
-                      onClick={() => handleRemoveChannel(channelId)}
-                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-                    >
-                      <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <SlackChannelInput
+              selectedChannels={config.channelIds || []}
+              onChannelsChange={(channelIds) => {
+                setConfig({ ...config, channelIds: channelIds })
+                setErrors([])
+              }}
+              allowAll={true}
+              placeholder="Type channel name or 'all'"
+            />
           </div>
         )}
 

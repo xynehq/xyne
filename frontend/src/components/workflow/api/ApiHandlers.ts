@@ -1063,13 +1063,25 @@ export const workflowToolsAPI = {
   },
 
   /**
-   * Fetch Slack metadata (channels)
+   * Fetch Slack metadata (channels) with pagination support
    */
-  async fetchSlackMetadata(): Promise<{
+  async fetchSlackMetadata(
+    cursor?: string,
+    limit = 50,
+  ): Promise<{
     channels: Array<{ id: string; name: string }>
+    hasMore: boolean
+    nextCursor?: string
   }> {
     try {
-      const response = await api.workflow.tools.slack.metadata.$post()
+      // Build query params
+      const query: any = {}
+      if (cursor) query.cursor = cursor
+      query.limit = limit.toString()
+
+      const response = await api.workflow.tools.slack.metadata.$get({
+        query,
+      })
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: "Network error" }))
@@ -1078,10 +1090,14 @@ export const workflowToolsAPI = {
 
       const result = await response.json()
 
-      // Transform the array of channel names to objects with id and name
-      const channels = result.data?.channels || []
-
-      return { channels }
+      // Extract pagination data from the new response format
+      const data = result.data || {}
+      
+      return {
+        channels: data.channels || [],
+        hasMore: data.hasMore || false,
+        nextCursor: data.nextCursor
+      }
     } catch (error) {
       console.error("❌ Failed to fetch Slack metadata:", error)
       throw error

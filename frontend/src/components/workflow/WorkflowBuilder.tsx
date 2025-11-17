@@ -170,8 +170,8 @@ import HttpRequestConfigUI, { HttpRequestConfig } from "./HttpRequestConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
 import WebhookConfigurationUI, { WebhookConfig } from "./WebhookConfigurationUI"
 import { JiraConfigurationUI, JiraConfig } from "./JiraConfigurationUI"
-import SlackTriggerConfigUI, { SlackTriggerConfig } from "./SlackTriggerConfigUI"
-import SlackMessageConfigUI, { SlackMessageConfig } from "./SlackMessageConfigUI"
+import SlackTriggerConfigUI, { SlackTriggerConfig } from "./slack/SlackTriggerConfigUI"
+import SlackMessageConfigUI, { SlackMessageConfig } from "./slack/SlackMessageConfigUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
@@ -3874,7 +3874,7 @@ const handleWebhookConfigSave = useCallback(
                   id: `slack_trigger_${newNodeId}`,
                   type: "slack_trigger",
                   config: slackTriggerConfig,
-                  value: slackTriggerConfig,
+                  value: {}
                 },
               ],
               isActive: false,
@@ -3910,7 +3910,7 @@ const handleWebhookConfigSave = useCallback(
                         id: existingToolId,
                         type: "slack_trigger",
                         config: slackTriggerConfig,
-                        value: slackTriggerConfig,
+                        value: {}
                       },
                     ],
                     hasNext: !edges.some(edge => edge.source === selectedSlackTriggerNodeId),
@@ -3969,9 +3969,8 @@ const handleWebhookConfigSave = useCallback(
           const slackMessageTool = {
             id: `tool-${newNodeId}`,
             type: "slack_message",
-            val: slackMessageConfig,
-            value: slackMessageConfig,
             config: slackMessageConfig,
+            value: {}
           }
 
           // Create new node positioned below the source node

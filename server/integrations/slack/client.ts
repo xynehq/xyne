@@ -44,7 +44,7 @@ import { checkAgentWithNoIntegrations } from "@/api/chat/agents"
 import { agentWithNoIntegrationsQuestion } from "@/ai/provider"
 import type { ConverseResponseWithCitations } from "@/api/chat/types"
 import { getSlackTriggersInWorkflows } from "@/db/workflowTool"
-import { webcrypto } from "crypto"
+import { executeWorkflowWithSlackTrigger } from "./workflowSlackUtils"
 
 const Logger = getLogger(Subsystem.Slack)
 
@@ -1433,7 +1433,8 @@ const handleWorkflowsCommand = async (
     const workflowTriggers = await getSlackTriggersInWorkflows(
       db,
       dbUser.id,
-      dbUser.workspaceId
+      dbUser.workspaceId,
+      channel
     )
 
     if (workflowTriggers.length === 0) {
@@ -1535,36 +1536,83 @@ const handleWorkflowExecutionCommand = async (
       return
     }
 
-    // DUMMY EXECUTION - Just log and send message
-    Logger.info({
-      workflowId: matchedTrigger.workflowId,
-      workflowName: matchedTrigger.workflowName,
-      userId: dbUser.id,
-      channelId: channel,
-      data,
-    }, "Workflow execution triggered (dummy)")
-
-    const message = `✅ *Workflow "${matchedTrigger.workflowName}" triggered!*\n\n` +
-      ` Workflow ID: \`${matchedTrigger.workflowId}\`\n` +
-      ` Input Data: \`${data || "(none)"}\`\n` +
-      ` User: <@${user}>\n\n`
+    // Show initial response
+    const initialMessage = `🚀 *Workflow triggered: "${matchedTrigger.workflowName}"...*\n\n` +
+      `📝 Input Data: \`${data || "(none)"}\`\n` +
+      `👤 User: <@${user}>\n\n`
 
     if (isDM) {
       await client.chat.postMessage({
         channel,
-        text: message,
+        text: initialMessage,
       })
     } else {
       await client.chat.postEphemeral({
         channel,
         user,
-        text: message,
+        text: initialMessage,
         thread_ts,
       })
     }
+
+    // Execute workflow with Slack trigger
+    const executionResult = await executeWorkflowWithSlackTrigger({
+      workflowTemplateId: matchedTrigger.workflowId,
+      triggerData: {
+        command: workflowCommand,
+        data: data,
+        slackUser: user,
+        slackChannel: channel,
+        slackChannelId: channel,
+        userId: dbUser.id,
+        userEmail: dbUser.email,
+        workspaceId: dbUser.workspaceId,
+        isDM: isDM,
+        timestamp: new Date().toISOString(),
+      },
+      userId: dbUser.id,
+      workspaceId: dbUser.workspaceId,
+    })
+
+    Logger.info({
+      executionId: executionResult.executionId,
+      workflowName: matchedTrigger.workflowName,
+      userId: dbUser.id,
+    }, "✅ Workflow execution completed successfully")
+
+    // Send success response
+    const successMessage = `✅ *Workflow "${matchedTrigger.workflowName}" completed successfully!*\n\n` +
+      `🆔 Execution ID: \`${executionResult.executionId}\`\n` +
+      `📝 Input Data: \`${data || "(none)"}\`\n` +
+      `👤 User: <@${user}>\n` +
+      `📊 Steps completed: ${executionResult.completedSteps}/${executionResult.totalSteps}\n\n` +
+      `✨ Workflow execution finished.`
+
+    if (isDM) {
+      await client.chat.postMessage({
+        channel,
+        text: successMessage,
+      })
+    } else {
+      await client.chat.postEphemeral({
+        channel,
+        user,
+        text: successMessage,
+        thread_ts,
+      })
+    }
+
   } catch (error) {
-    Logger.error(error, "Error handling workflow execution command")
-    const errorMsg = "❌ Failed to execute workflow. Please try again."
+    Logger.error({
+      error: error instanceof Error ? error.message : String(error),
+      workflowId: matchedTrigger?.workflowId,
+      workflowName: matchedTrigger?.workflowName,
+      userId: dbUser.id,
+    }, "❌ Error executing workflow from Slack command")
+
+    const errorMsg = `❌ Failed to execute workflow "${matchedTrigger?.workflowName || 'unknown'}".\n\n` +
+      `Error: ${error instanceof Error ? error.message : String(error)}\n\n` +
+      `Please try again or contact support.`
 
     if (isDM) {
       await client.chat.postMessage({
@@ -1620,7 +1668,8 @@ const handleSlackCommand = async (
     const workflowTriggers: SlackTriggerTool[] = await getSlackTriggersInWorkflows(
       db,
       dbUser.id,
-      dbUser.workspaceId
+      dbUser.workspaceId,
+      channel
     )
 
     const matchedTrigger = workflowTriggers.find((wf) => wf.workflowName.toLowerCase() === workflowName)
@@ -2375,15 +2424,33 @@ const processSlackDM = async (event: any) => {
   }
 }
 
-export const listSlackChannels = async (): Promise<{
-  id: string,
-  name: string, 
-}[]> => {
-  const response = await webClient!.conversations.list()
+export const listSlackChannels = async (
+  options: {
+    cursor?: string,
+    limit?: number
+  } = {}
+): Promise<{
+  channels: {
+    id: string,
+    name: string, 
+  }[],
+  hasMore: boolean,
+  nextCursor?: string
+}> => {
+  const { cursor, limit = 200 } = options
+  
+  const response = await webClient!.conversations.list({
+    cursor,
+    limit,
+    exclude_archived: true,
+    types: 'public_channel,private_channel'
+  })
+  
   if (!response.channels) {
-    Logger.error("channels not recieved from conversations")
+    Logger.error("channels not received from conversations")
     throw new Error("Channels absent in conversation response")
   }
+  
   const channels = response.channels
     .filter(ch => (ch.name && ch.id))
     .map(ch => ({
@@ -2391,7 +2458,11 @@ export const listSlackChannels = async (): Promise<{
       name: ch.name! 
     }))
 
-  return channels
+  return {
+    channels,
+    hasMore: !!response.response_metadata?.next_cursor,
+    nextCursor: response.response_metadata?.next_cursor
+  }
 }
 
 // Export Socket Mode status and control functions
@@ -2414,6 +2485,48 @@ export const startSocketMode = async () => {
   Logger.info("Socket Mode already connected or configuration missing")
   return false
 }
+
+/**
+ * Helper function to post Slack messages from other tools in workflows
+ */
+export async function postSlackMessage(channelId: string, message: string, options?: {
+  blocks?: any[]
+  threadTs?: string
+  userName?: string
+}): Promise<{ success: boolean; messageTs?: string; error?: string }> {
+  try {
+    if (!webClient) {
+      throw new Error("Slack client not available")
+    }
+
+    const response = await webClient.chat.postMessage({
+      channel: channelId,
+      text: message,
+      blocks: options?.blocks,
+      thread_ts: options?.threadTs,
+      username: options?.userName,
+    })
+
+    if (response.ok) {
+      return {
+        success: true,
+        messageTs: response.ts as string,
+      }
+    } else {
+      return {
+        success: false,
+        error: response.error || 'Unknown Slack API error'
+      }
+    }
+
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
+}
+
 
 // Export the client and utility functions
 export const getSlackClient = () => webClient

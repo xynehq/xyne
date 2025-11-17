@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from "react"
-import { SlackIcon } from "./WorkflowIcons"
-import { workflowToolsAPI } from "./api/ApiHandlers"
-import { X } from "lucide-react"
+import { SlackIcon } from "../WorkflowIcons"
+import SlackChannelInput from "./SlackChannlesInput"
 
 export interface SlackMessageConfig {
-  channelId: string
+  channelIds: string[]
   message: string
   title?: string
   description?: string
@@ -22,7 +21,7 @@ interface SlackMessageConfigUIProps {
 }
 
 const defaultConfig: SlackMessageConfig = {
-  channelId: "",
+  channelIds: [],
   message: "",
 }
 
@@ -40,10 +39,6 @@ export const SlackMessageConfigUI: React.FC<SlackMessageConfigUIProps> = ({
   )
   const [errors, setErrors] = useState<string[]>([])
   const [isSaving, setIsSaving] = useState(false)
-  const [channels, setChannels] = useState<Array<{ id: string; name: string }>>([])
-  const [channelsLoading, setChannelsLoading] = useState(false)
-  const [channelInput, setChannelInput] = useState("")
-  const [showSuggestions, setShowSuggestions] = useState(false)
 
   useEffect(() => {
     if (initialConfig) {
@@ -51,46 +46,11 @@ export const SlackMessageConfigUI: React.FC<SlackMessageConfigUIProps> = ({
     }
   }, [initialConfig])
 
-  // Fetch channels when component mounts
-  useEffect(() => {
-    const fetchChannels = async () => {
-      try {
-        setChannelsLoading(true)
-        const metadata = await workflowToolsAPI.fetchSlackMetadata()
-        setChannels(metadata.channels)
-      } catch (error) {
-        console.error("Failed to fetch Slack channels:", error)
-        setErrors(["Failed to load channels. Please try again."])
-      } finally {
-        setChannelsLoading(false)
-      }
-    }
-
-    if (isVisible) {
-      fetchChannels()
-    }
-  }, [isVisible])
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement
-      if (showSuggestions && !target.closest('.channel-input-container')) {
-        setShowSuggestions(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [showSuggestions])
-
   const validateConfig = (): { valid: boolean; errors: string[] } => {
     const validationErrors: string[] = []
 
-    if (!config.channelId) {
-      validationErrors.push("Channel selection is required")
+    if (!config.channelIds || config.channelIds.length === 0) {
+      validationErrors.push("At least one channel selection is required")
     }
 
     if (!config.message || config.message.trim() === "") {
@@ -114,44 +74,6 @@ export const SlackMessageConfigUI: React.FC<SlackMessageConfigUIProps> = ({
       errors: validationErrors,
     }
   }
-
-  const handleSelectChannel = (channelName: string) => {
-    // Normalize channel name (remove # if present)
-    const normalizedChannel = channelName.startsWith('#') ? channelName.slice(1) : channelName
-
-    setConfig({
-      ...config,
-      channelId: normalizedChannel
-    })
-
-    setChannelInput("")
-    setShowSuggestions(false)
-    setErrors([])
-  }
-
-  const handleChannelInputChange = (value: string) => {
-    setChannelInput(value)
-    
-    // If input is cleared, clear the selected channel
-    if (!value.trim()) {
-      setConfig({
-        ...config,
-        channelId: ""
-      })
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Prevent adding channels on Enter - users must select from dropdown
-    if (e.key === "Enter") {
-      e.preventDefault()
-    }
-  }
-
-  // Filter channels based on input
-  const filteredChannels = channels.filter(channel =>
-    channel.name.toLowerCase().includes(channelInput.toLowerCase().replace('#', ''))
-  )
 
   const handleSave = async () => {
     const validation = validateConfig()
@@ -226,68 +148,18 @@ export const SlackMessageConfigUI: React.FC<SlackMessageConfigUIProps> = ({
         {/* Channel Selection */}
         <div className="space-y-2">
           <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-2">
-            Select Channel <span className="text-red-500">*</span>
+            Select Channels <span className="text-red-500">*</span>
           </label>
 
-          {/* Selected Channel Display */}
-          {config.channelId && (
-            <div className="mb-2">
-              <div className="flex items-center justify-between p-1 bg-gray-50 dark:bg-gray-800 rounded-lg w-fit">
-                <div className="text-xs font-medium text-slate-900 dark:text-gray-300">
-                  {config.channelId}
-                </div>
-                <button
-                  onClick={() => setConfig({ ...config, channelId: "" })}
-                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-                >
-                  <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Channel Input with Autocomplete */}
-          {!config.channelId && (
-            <div className="relative channel-input-container">
-              <input
-                type="text"
-                value={channelInput}
-                onChange={(e) => handleChannelInputChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onFocus={() => setShowSuggestions(true)}
-                placeholder="Type channel name"
-                className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-gray-900 dark:text-gray-300"
-              />
-
-              {/* Autocomplete Suggestions */}
-              {showSuggestions && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {/* Channel Suggestions */}
-                  {channelsLoading ? (
-                    <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                      Loading channels...
-                    </div>
-                  ) : filteredChannels.length === 0 ? (
-                    <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                      No matching channels
-                    </div>
-                  ) : (
-                    filteredChannels.slice(0, 10).map((channel) => (
-                      <button
-                        key={channel.id}
-                        onClick={() => handleSelectChannel(channel.name)}
-                        className="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                      >
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                          #{channel.name}
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          <SlackChannelInput
+            selectedChannels={config.channelIds}
+            onChannelsChange={(channels) => {
+              setConfig({ ...config, channelIds: channels })
+              setErrors([])
+            }}
+            allowAll={false}
+            placeholder="Type channel name"
+          />
         </div>
 
         {/* Message Content */}
