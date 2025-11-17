@@ -5,7 +5,6 @@ import { z } from "zod"
 export class MergedNodeTool implements WorkflowTool {
   type = ToolType.MERGED_NODE
   category = ToolCategory.SYSTEM
-  
   defaultConfig = {
     inputCount: -1, // Variable input count for merging
     outputCount: 1,
@@ -16,21 +15,6 @@ export class MergedNodeTool implements WorkflowTool {
         limit: 5,
         optional: false
       },
-      mergeStrategy: {
-        type: "select",
-        default: "merge",
-        optional: false
-      },
-      waitForAll: {
-        type: "boolean",
-        default: true,
-        optional: true
-      },
-      timeout: {
-        type: "number",
-        default: 300000,
-        optional: true
-      }
     }
   }
 

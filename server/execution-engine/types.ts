@@ -71,7 +71,6 @@ export interface ExecutionPacket {
   template_id: string
   workflow_id: string
   step_id: string
-  tool_id: string
   input: Record<string, any> // JSON input data for tool execution
   previous_tool_id?: string // Optional previous tool ID
   previous_step_id?: string // Optional previous step ID
@@ -81,7 +80,7 @@ export interface ExecutionPacket {
 export interface StepExecutionResult {
   success: boolean
   stepId: string
-  toolId: string
+  toolId?: string
   toolResult: ToolExecutionResult
   nextAction: 'continue' | 'halt' | 'wait_for_input'
   next_execute_at?: string // ISO timestamp for scheduled execution

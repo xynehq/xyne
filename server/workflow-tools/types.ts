@@ -6,7 +6,6 @@ export interface WorkflowContext {
   templateId: string
   workflowId: string
   currentStepId: string
-  currentToolId: string
 }
 
 // Tool execution result
@@ -15,6 +14,7 @@ export interface ToolExecutionResult {
   output: Record<string, any>
   metadata?: Record<string, any>
   nextStepRoutes?: string[]
+  nextExecuteAfter?: number
 }
 
 export type defaultToolConfig = workflowToolType

@@ -7,7 +7,7 @@ import { eq, and, or, sql } from "drizzle-orm"
 import { queueNextSteps, executionBoss } from "./execution-engine-queue"
 import type { ExecutionPacket } from "./types"
 import { getTool, type WorkflowTool } from "@/workflow-tools/registry"
-import { TemplateState, ToolType } from "@/types/workflowTypes"
+import { TemplateState, ToolCategory, ToolType } from "@/types/workflowTypes"
 
 const Logger = getLogger(Subsystem.ExecutionEngine)
 
@@ -89,15 +89,14 @@ export const handleManualTrigger = async (c: Context) => {
       template_id: step.workflowStepTemplateId, // Using template ID from step
       workflow_id: workflowId,
       step_id: stepId,
-      tool_id: toolExec.workflowToolId,
-      input: toolExec.input || {}
+      input: toolExec.result || {}
     }
 
     // Create mock result for queueNextSteps
     const mockResult = {
       success: true,
       stepId: stepId,
-      toolId: toolExec.workflowToolId,
+      // toolId: toolExec.workflowToolId,
       toolResult: {
         status: ToolExecutionStatus.COMPLETED,
         output: toolExec.result || {}
@@ -132,22 +131,18 @@ export const handleTemplateStateChange = async (template: SelectWorkflowTemplate
   try {
     Logger.info(`🎯 handling state change in workflow template ${template.id}`)
 
-    // Find root nodes (steps with no previous IDs or empty previous IDs array)
-    // this will be changed to get the trigger nodes only
-    const rootSteps = await db
+    // Find trigger steps in the template
+    const triggerSteps = await db
       .select()
       .from(workflowStepTemplate)
       .where(
         and(
           eq(workflowStepTemplate.workflowTemplateId, template.id),
-          or(
-            sql`${workflowStepTemplate.prevStepIds} IS NULL`,
-            sql`array_length(${workflowStepTemplate.prevStepIds}, 1) IS NULL`
-          )
+          eq(workflowStepTemplate.toolCategory, ToolCategory.TRIGGER),
         )
       )
 
-    if (rootSteps.length === 0) {
+    if (triggerSteps.length === 0) {
       Logger.warn(`No root steps found for template ${template.id}`)
       return {
         success: false,
@@ -155,38 +150,24 @@ export const handleTemplateStateChange = async (template: SelectWorkflowTemplate
       }
     }
 
-    Logger.info(`Found ${rootSteps.length} root step(s) for template ${template.id}`)
+    Logger.info(`Found ${triggerSteps.length} root step(s) for template ${template.id}`)
 
     const stateChangeTriggerResults = []
 
-    // Process each root step to check for trigger tools
-    for (const rootStep of rootSteps) {
-      const rootToolIds = rootStep.toolIds || []
-      if (rootToolIds.length === 0) {
-        Logger.warn(`No tools found in root step ${rootStep.id}`)
-        continue
-      }
-        // Check each tool in this root step 
-        for (const toolId of rootToolIds) {
-          const [toolConfig] = await db
-            .select()
-            .from(workflowTool)
-            .where(eq(workflowTool.id, toolId))
-            .limit(1)
-
-          if (!toolConfig) {
-            Logger.warn(`Tool ${toolId} not found`)
+    // Process each trigger step to check for trigger tools
+    for (const triggerStep of triggerSteps) {
+          if (!triggerStep.toolConfig) {
+            Logger.warn(`Tool config of ${triggerStep.id} not found`)
             continue
           }
 
           // Get tool implementation
-          const toolImplementation = getTool(toolConfig.type as any)
-          switch (toolConfig.type) {
+          const toolImplementation = getTool(triggerStep.toolType as ToolType)
+          switch (triggerStep.toolType) {
             case ToolType.SCHEDULER_TRIGGER:
-              Logger.info(`📅 Processing scheduler trigger for tool ${toolId}`)
-              const result = await callStateImplementation(state, toolImplementation, toolConfig.config || {}, template)
+              Logger.info(`📅 Processing scheduler trigger for tool ${triggerStep.id}`)
+              const result = await callStateImplementation(state, toolImplementation, triggerStep.toolConfig || {}, template)
               stateChangeTriggerResults.push({
-                toolId,
                 toolType: ToolType.SCHEDULER_TRIGGER,
                 scheduled: true,
                 message: result.message
@@ -194,16 +175,15 @@ export const handleTemplateStateChange = async (template: SelectWorkflowTemplate
               break
 
             default:
-              Logger.info(`Tool type ${toolConfig.type} activation not implemented yet`)
+              Logger.info(`Tool type ${triggerStep.toolType} ${state} method not implemented yet`)
               stateChangeTriggerResults.push({
-                toolId,
-                toolType: toolConfig.type,
+                toolType: triggerStep.toolType,
                 scheduled: false,
-                error: 'Tool type activation not implemented'
+                error: `Tool type ${triggerStep.toolType} ${state} method not implemented`
               })
               break
           }
-        }
+        // }
       }
 
     Logger.info(`🎯 Template activation completed for ${template.id}`)
@@ -211,9 +191,9 @@ export const handleTemplateStateChange = async (template: SelectWorkflowTemplate
     return {
       success: true,
       templateId: template.id,
-      rootStepIds: rootSteps.map(step => step.id),
+      rootStepIds: triggerSteps.map(step => step.id),
       stateChangeTriggerResults,
-      message: `Processed ${stateChangeTriggerResults.length} trigger tool(s) across ${rootSteps.length} root step(s)`
+      message: `Processed ${stateChangeTriggerResults.length} trigger tool(s) across ${triggerSteps.length} root step(s)`
     }
 
   } catch (error) {

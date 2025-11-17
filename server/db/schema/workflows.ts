@@ -121,6 +121,10 @@ export const workflowStepTemplate = pgTable("workflow_step_template", {
     .default(sql`NOW()`),
   deprecated: boolean("deprecated").notNull().default(false),
   // Removed: deletedAt
+  toolCategory: toolCategoryEnum("tool_category").notNull().default(ToolCategory.ACTION),
+  toolType: toolTypeEnum("tool_type").notNull().default(ToolType.FORM),
+  // toolValue: jsonb("value"), // Can store string, number, or object based on tool type
+  toolConfig: jsonb("tool_config").default({}),
 })
 
 // 3. Workflow Tools Table (renamed from workflow_tools)
@@ -136,7 +140,6 @@ export const workflowTool = pgTable("workflow_tool", {
   type: toolTypeEnum("type").notNull(),
   value: jsonb("value"), // Can store string, number, or object based on tool type
   config: jsonb("config").default({}),
-  inputCount: integer("input_count").default(1), // Number of inputs required for this tool
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
@@ -200,18 +203,20 @@ export const workflowStepExecution = pgTable("workflow_step_execution", {
     .notNull()
     .default(sql`NOW()`),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  toolCategory: toolCategoryEnum("tool_category").notNull().default(ToolCategory.ACTION),
+  toolType: toolTypeEnum("tool_type").notNull().default(ToolType.FORM),
+  toolConfig: jsonb("tool_config").default({}),
   // Removed: deletedAt
 })
 
 // 6. Tool Executions Table (renamed from workflow_tool_executions)
 export const toolExecution = pgTable("tool_execution", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
-  workflowToolId: uuid("workflow_tool_id") // Renamed from toolId
-    .notNull()
-    .references(() => workflowTool.id),
+  workflowToolId: uuid("workflow_tool_id"), // Renamed from toolId
+    // .notNull()
+    // .references(() => workflowTool.id),
   workflowExecutionId: uuid("workflow_execution_id").notNull(), // Renamed from stepId
   status: toolExecutionStatusEnum("status").notNull().default(ToolExecutionStatus.PENDING),
-  input: jsonb("input"), // Input data for tool execution
   result: jsonb("result"), // Execution result/output
   // Removed: errorMessage column
   startedAt: timestamp("started_at", { withTimezone: true }),

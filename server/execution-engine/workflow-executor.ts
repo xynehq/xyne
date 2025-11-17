@@ -8,10 +8,10 @@ import {
   workflowStepExecution,
   WorkflowStatus,
 } from "@/db/schema/workflows"
-import { eq, and, sql } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
 import { sendExecutionPacket } from "./execution-engine-queue"
 import type { ExecutionPacket } from "./types"
-import { workflowTool, ToolCategory } from "@/db/schema/workflows"
+import { ToolCategory } from "@/db/schema/workflows"
 
 const Logger = getLogger(Subsystem.WorkflowApi)
 
@@ -77,7 +77,8 @@ export class WorkflowExecutor {
       .where(
         and(
           eq(workflowTemplate.id, templateId),
-          eq(workflowTemplate.workspaceId, workspaceId)
+          eq(workflowTemplate.workspaceId, workspaceId),
+          eq(workflowTemplate.deprecated, false)
         )
       )
 
@@ -112,12 +113,7 @@ export class WorkflowExecutor {
       .from(workflowStepTemplate)
       .where(and(eq(workflowStepTemplate.workflowTemplateId, templateId),eq(workflowStepTemplate.deprecated, false)))
 
-    const visited = new Set<string>()
     const stepExecutions = new Map<string, string>()
-    
-    const rootSteps = templateSteps.filter(step => 
-      !step.prevStepIds || step.prevStepIds.length === 0
-    )
 
     const templateStepMaps = new Map<string, any>()
     for(const templateStep of templateSteps) {
@@ -138,6 +134,9 @@ export class WorkflowExecutor {
           toolExecIds: [],
           createdAt: new Date(),
           metadata: {"stepExecutedCount":0,"inputToolIds":{},"outputToolIds":{}},
+          toolConfig: templateStep.toolConfig || {},
+          toolCategory: templateStep.toolCategory,
+          toolType: templateStep.toolType,
         })
         .returning()
         .then(([stepExec]) => {
@@ -249,12 +248,10 @@ export class WorkflowExecutor {
       }
 
       // Queue each tool in the root node
-      for (const toolId of rootNode.toolIds || []) {
         const packet: ExecutionPacket = {
           template_id: rootNode.workflowTemplateId,
           workflow_id: executionId,
           step_id: stepExec,
-          tool_id: toolId,
           input: {}, // Default empty input for trigger tools
         }
 
@@ -275,32 +272,9 @@ export class WorkflowExecutor {
           
           throw error
         }
-      }
     }
 
     Logger.info(`✓ All ${rootNodes.length} root nodes queued successfully`)
-  }
-
-  // Get execution status
-  async getExecutionStatus(executionId: string): Promise<any> {
-    const [execution] = await db
-      .select()
-      .from(workflowExecution)
-      .where(eq(workflowExecution.id, executionId))
-
-    if (!execution) {
-      throw new Error(`Execution ${executionId} not found`)
-    }
-
-    const stepExecutions = await db
-      .select()
-      .from(workflowStepExecution)
-      .where(eq(workflowStepExecution.workflowExecutionId, executionId))
-
-    return {
-      execution,
-      steps: stepExecutions,
-    }
   }
 
   // Find and validate that root nodes are trigger tools
@@ -309,7 +283,7 @@ export class WorkflowExecutor {
     const templateSteps = await db
       .select()
       .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+      .where(and(eq(workflowStepTemplate.workflowTemplateId, templateId), eq(workflowStepTemplate.deprecated, false)))
 
     // Find root nodes (steps with no incoming connections - empty or null prevStepIds)
     const rootSteps = templateSteps.filter(step => 
@@ -322,31 +296,10 @@ export class WorkflowExecutor {
 
     Logger.info(`Found ${rootSteps.length} root nodes in template ${templateId}`)
 
-    // Validate each root step has trigger tools
-    for (const rootStep of rootSteps) {
-      if (!rootStep.toolIds || rootStep.toolIds.length === 0) {
-        throw new Error(`Root step '${rootStep.name}' (${rootStep.id}) has no tools configured`)
-      }
-
-      // Check each tool in the root step
-      for (const toolId of rootStep.toolIds) {
-        const [tool] = await db
-          .select()
-          .from(workflowTool)
-          .where(eq(workflowTool.id, toolId))
-
-        if (!tool) {
-          throw new Error(`Tool ${toolId} not found for root step '${rootStep.name}'`)
-        }
-
-        if (tool.category !== ToolCategory.TRIGGER) {
-          throw new Error(
-            `Root step '${rootStep.name}' contains non-trigger tool '${tool.type}' (category: ${tool.category}). Root steps must only contain trigger tools.`
-          )
-        }
-
-        Logger.info(`✓ Root step '${rootStep.name}' has valid trigger tool: ${tool.type}`)
-      }
+    const nonTriggerRoots = rootSteps.filter(step => step.toolCategory !== ToolCategory.TRIGGER)
+    if (nonTriggerRoots.length > 0) {
+      const nonTriggerNames = nonTriggerRoots.map(step => step.id).join(", ")
+      throw new Error(`Root nodes [${nonTriggerNames}] are not trigger tools`)
     }
 
     Logger.info(`✓ All ${rootSteps.length} root nodes validated as triggers`)

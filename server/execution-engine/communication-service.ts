@@ -45,10 +45,6 @@ export class CommunicationService {
           response = await this.handleStopExecution(message.payload)
           break
         
-        case 'GET_STATUS':
-          response = await this.handleGetStatus(message.payload)
-          break
-        
         case 'MANUAL_TRIGGER':
           response = await this.handleManualTrigger(message.payload)
           break
@@ -114,7 +110,7 @@ export class CommunicationService {
       Logger.error(error, `Unexpected error starting execution for template ${request.templateId}`)
       return {
         success: false,
-        error: "Failed to start execution due to internal error"
+        error: errorMessage
       }
     }
   }
@@ -131,23 +127,6 @@ export class CommunicationService {
       return {
         success: false,
         error: error instanceof Error ? error.message : "Failed to stop execution"
-      }
-    }
-  }
-
-  // Handle get status request
-  private async handleGetStatus(request: { executionId: string }): Promise<ExecutionResponse> {
-    try {
-      const status = await workflowExecutor.getExecutionStatus(request.executionId)
-      
-      return {
-        success: true,
-        data: status
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Failed to get execution status"
       }
     }
   }

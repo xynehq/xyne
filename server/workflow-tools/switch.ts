@@ -43,16 +43,6 @@ export class SwitchTool implements WorkflowTool {
   }
 
 
-  configSchema = z.object({
-    mode: z.enum(["all", "one", "multiple"]).default("one"),
-    operators: z.array(z.string()).default(["==", "!=", ">", "<", ">=", "<=", "contains", "startsWith", "endsWith"]),
-    conditions: z.record(z.string(), z.object({
-      val1: z.string(), // Input key path like "input.fieldName"
-      val2: z.any(), // Value to compare against
-      operator: z.string()
-    }))
-  })
-
   async execute(
     input: Record<string, any>,
     config: Record<string, any>,
@@ -146,13 +136,13 @@ export class SwitchTool implements WorkflowTool {
               totalConditions: Object.keys(conditions).length,
               matchedConditions: evaluatedBranches.length,
               matchedBranches: evaluatedBranches
-            }
+            },
+            nextStepRoutes: Array.from({ length: config.outputCount || 1 }, (_, index) => `out${index + 1}`)
           }
 
         case "one":
         case "multiple":
           // Create nextStepRoutes with out1, out2, etc. structure
-          const nextStepRoutes:string[] = []
           const branchesToRoute = mode === "one" ? 
             (evaluatedBranches.length > 0 ? [evaluatedBranches[0]] : []) : 
             evaluatedBranches

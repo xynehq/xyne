@@ -176,6 +176,19 @@ class MessageQueue {
     return correlationId
   }
 
+  async schedule(request: ExecutionRequest, cron: string): Promise<string> {
+    return this.publishExecution(request, undefined, cron)
+  }
+
+  async unschedule(templateId: string): Promise<void> {
+    if (!this.checkInitialized()) {
+      throw new Error("Message queue not initialized")
+    }
+    
+    await this.boss.unschedule(this.INCOMING_QUEUE, templateId)
+    Logger.info(`Unscheduled executions for template ID: ${templateId}`)
+  }
+
   // Get PgBoss instance for worker setup (used by CommunicationService)
   getBoss(): PgBoss {
     if (!this.checkInitialized()) {

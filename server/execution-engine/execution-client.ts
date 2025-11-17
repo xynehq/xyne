@@ -64,24 +64,6 @@ export class ExecutionClient {
     }
   }
 
-  // Get execution status
-  async getExecutionStatus(executionId: string): Promise<any> {
-    try {
-      const correlationId = await this.publishMessage('GET_STATUS', { executionId })
-      const response = await messageQueue.waitForSpecificResponse(correlationId)
-      
-      if (!response.success) {
-        throw new Error(response.error || "Failed to get status")
-      }
-
-      return response.data
-
-    } catch (error) {
-      Logger.error(error, `Failed to get execution status for ${executionId}`)
-      throw error
-    }
-  }
-
   // Stop execution
   async stopExecution(executionId: string): Promise<void> {
     try {

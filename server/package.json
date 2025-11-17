@@ -37,8 +37,6 @@
     "dev:unsafe": "bun run --watch server.ts",
     "dev:sync": "bun run check-deps && bun run --watch sync-server.ts",
     "dev:sync-unsafe": "bun run --watch sync-server.ts",
-    "dev:execution": "bun run check-deps && bun run --watch execution-engine.ts",
-    "dev:execution-unsafe": "bun run --watch execution-engine.ts",
     "dev:execution-server": "bun run check-deps && bun run --watch execution-engine/server.ts",
     "dev:execution-server-unsafe": "bun run --watch execution-engine/server.ts",
     "build": "bun run check-deps && bunx --bun vite build",

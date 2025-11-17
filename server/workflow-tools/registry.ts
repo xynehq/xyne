@@ -1,5 +1,5 @@
 import { ToolType, ToolCategory } from "@/types/workflowTypes"
-import type { ToolRegistry } from "./types"
+import type { defaultToolConfig, ToolRegistry } from "./types"
 
 // Import all tool implementations
 import { EmailTool } from "./email"
@@ -59,6 +59,11 @@ export function getSupportedToolTypes(): ToolType[] {
 export function getToolCategory(toolType: ToolType): ToolCategory {
   const tool = getTool(toolType)
   return tool.category
+}
+
+export function getToolDefaultConfig(toolType: ToolType): defaultToolConfig {
+  const tool = getTool(toolType)
+  return tool.defaultConfig
 }
 
 // Helper function to get all tools with their categories

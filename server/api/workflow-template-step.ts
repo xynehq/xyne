@@ -16,8 +16,9 @@ import {
 import { eq, and } from "drizzle-orm"
 // import { getCategoryFromType } from "./workflow-template"
 import { workflowToolConfigSchema } from "./workflow-template"
-import {getToolCategory} from "@/workflow-tools/registry"
-import { TemplateState, ToolType } from "@/types/workflowTypes"
+import {getToolCategory, getToolDefaultConfig} from "@/workflow-tools/registry"
+import { ToolType } from "@/types/workflowTypes"
+import { checkAccessWithTemplateStepId, getWorkflowTemplateByIdWithPermissionCheck } from "@/db/workflow"
 
 const Logger = getLogger(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -94,7 +95,10 @@ export const AddTemplateStepApiHandler = async (c: Context) => {
     // Validate request data
     const validatedData = addTemplateStepSchema.parse(requestData)
     const { template_id, connection, name, description, type, position, tool } = validatedData
-    
+    const isTemplate = await getWorkflowTemplateByIdWithPermissionCheck(db, template_id, user.id, user.workspaceId)
+    if (!isTemplate) {
+      throw new HTTPException(404, { message: "Workflow template not found or access denied" })
+    }
     // Validate connection if provided
     if (connection) {
       if (tool.config.inputCount === 0) {
@@ -103,6 +107,18 @@ export const AddTemplateStepApiHandler = async (c: Context) => {
       
       if (connection.target_route > tool.config.inputCount) {
         throw new Error(`Cannot connect to input route ${connection.target_route}: target step only has ${tool.config.inputCount} input(s)`)
+      }
+    }
+
+    //validate tool config
+    const toolDefaultConfig = getToolDefaultConfig(tool.type as ToolType)
+    if(tool.config.inputCount<0 || tool.config.outputCount<0){
+      throw new Error("Invalid tool config: inputCount and outputCount must be non-negative")
+    }
+    for (const key in toolDefaultConfig.options) {
+      const option = toolDefaultConfig.options[key]
+      if (!option.optional && !tool.config[key]) {
+        throw new Error(`Missing required tool config option: ${key}`)
       }
     }
 
@@ -127,18 +143,26 @@ export const AddTemplateStepApiHandler = async (c: Context) => {
         throw new Error("Template is deprecated")
       }
 
-      // 2. Create tool for the new step
-      const [createdTool] = await tx
-        .insert(workflowTool)
-        .values({
-          category: getToolCategory(tool.type as ToolType),
-          type: tool.type,
-          workspaceId: user.workspaceId,
-          userId: user.id,
-          value: tool.value || {},
-          config: tool.config || {},
+      const modifiedToolConfig:Record<string,any> = { ...toolDefaultConfig}
+      
+      // Override default config with user-provided values
+      if (tool.config) {
+        // Override top-level config properties
+        if (tool.config.inputCount !== undefined) {
+          modifiedToolConfig.inputCount = tool.config.inputCount
+        }
+        if (tool.config.outputCount !== undefined) {
+          modifiedToolConfig.outputCount = tool.config.outputCount
+        }
+        delete modifiedToolConfig.options
+        
+        // Handle other top-level properties that might exist
+        Object.keys(tool.config).forEach(key => {
+          if (!['inputCount', 'outputCount'].includes(key)) {
+            (modifiedToolConfig as any)[key] = tool.config[key]
+          }
         })
-        .returning()
+      }
 
       // 3. Create the new step template
       const stepMetadata: Record<string, any> = {}
@@ -157,7 +181,10 @@ export const AddTemplateStepApiHandler = async (c: Context) => {
           metadata: stepMetadata,
           prevStepIds: [],
           nextStepIds: [],
-          toolIds: [createdTool.id],
+          toolIds: [],
+          toolCategory: getToolCategory(tool.type as ToolType),
+          toolType: tool.type,
+          toolConfig: modifiedToolConfig || {},
         })
         .returning()
 
@@ -221,8 +248,7 @@ export const AddTemplateStepApiHandler = async (c: Context) => {
 
       return {
         template,
-        createdStep,
-        createdTool
+        createdStep
       }
     })
 
@@ -236,14 +262,9 @@ export const AddTemplateStepApiHandler = async (c: Context) => {
           type: result.createdStep.type,
           prevStepIds: result.createdStep.prevStepIds,
           nextStepIds: result.createdStep.nextStepIds,
-          toolId: result.createdTool.id,
-        },
-        tool: {
-          id: result.createdTool.id,
-          category: result.createdTool.category,
-          type: result.createdTool.type,
-          value: result.createdTool.value,
-          config: result.createdTool.config,
+          toolCategory: result.createdStep.toolCategory,
+          toolType: result.createdStep.toolType,
+          toolConfig: result.createdStep.toolConfig,
         }
       },
       message: "Template step added successfully",
@@ -267,6 +288,13 @@ export const UpdateTemplateStepApiHandler = async (c: Context) => {
     // Validate request data
     const validatedData = updateTemplateStepSchema.parse(requestData)
     const { step_id, connection, name, description, type, position, tool } = validatedData
+
+    const hasAccess = checkAccessWithTemplateStepId(db, step_id, user.id, user.workspaceId)
+    if (!hasAccess) {
+      return c.json({
+        message: "Workflow template not found or access denied",
+      }, 404)
+    }
 
     // Execute all database operations in a single transaction
     const result = await db.transaction(async (tx) => {
@@ -328,24 +356,10 @@ export const UpdateTemplateStepApiHandler = async (c: Context) => {
       }
 
       // 3. Update tool if provided
-      let updatedTool = null
-      if (tool && existingStep.toolIds && existingStep.toolIds.length > 0) {
-        const toolId = existingStep.toolIds[0]
-        
-        const updateToolData: any = {}
-        if (tool.type) updateToolData.type = tool.type
-        if (tool.value !== undefined) updateToolData.value = tool.value
-        if (tool.config !== undefined) updateToolData.config = tool.config
-
-        if (Object.keys(updateToolData).length > 0) {
-          const [updatedToolResult] = await tx
-            .update(workflowTool)
-            .set(updateToolData)
-            .where(eq(workflowTool.id, toolId))
-            .returning()
-          
-          updatedTool = updatedToolResult
-        }
+      const updateToolData: any = {} // to be updated
+      if (tool) {
+        updateToolData.toolType = (tool.type !== undefined) ? tool.type : existingStep.toolType
+        updateToolData.toolConfig = (tool.config !== undefined) ? tool.config : existingStep.toolConfig
       }
 
       // 4. Prepare step metadata updates
@@ -439,6 +453,11 @@ export const UpdateTemplateStepApiHandler = async (c: Context) => {
       if (connection) {
         stepUpdateData.nextStepIds = existingStep.nextStepIds
       }
+      if (Object.keys(updateToolData).length > 0){
+        stepUpdateData.toolType = updateToolData.toolType
+        stepUpdateData.toolConfig = updateToolData.toolConfig
+      }
+
 
       const [updatedStep] = await tx
         .update(workflowStepTemplate)
@@ -447,8 +466,7 @@ export const UpdateTemplateStepApiHandler = async (c: Context) => {
         .returning()
 
       return {
-        updatedStep,
-        updatedTool
+        updatedStep
       }
     })
 
@@ -464,13 +482,11 @@ export const UpdateTemplateStepApiHandler = async (c: Context) => {
           nextStepIds: result.updatedStep.nextStepIds,
           metadata: result.updatedStep.metadata,
         },
-        tool: result.updatedTool ? {
-          id: result.updatedTool.id,
-          category: result.updatedTool.category,
-          type: result.updatedTool.type,
-          value: result.updatedTool.value,
-          config: result.updatedTool.config,
-        } : null
+        tool:{
+          category: result.updatedStep.toolCategory,
+          type: result.updatedStep.toolType,
+          config: result.updatedStep.toolConfig,
+        }
       },
       message: "Template step updated successfully",
     })
@@ -492,6 +508,13 @@ export const DeleteTemplateStepApiHandler = async (c: Context) => {
     // Validate request data
     const validatedData = deleteTemplateStepSchema.parse(requestData)
     const { step_id } = validatedData
+
+    const hasAccess = checkAccessWithTemplateStepId(db, step_id, user.id, user.workspaceId)
+    if (!hasAccess) {
+      return c.json({
+        message: "Workflow template not found or access denied",
+      }, 404)
+    }
 
     // Execute all database operations in a single transaction
     const result = await db.transaction(async (tx) => {
@@ -648,6 +671,11 @@ export const deleteLink = async (c: Context) => {
     // Validate request data
     const validatedData = deleteLinkSchema.parse(requestData)
     const { template_id, source, target } = validatedData
+
+    const isTemplate = await getWorkflowTemplateByIdWithPermissionCheck(db, template_id, user.id, user.workspaceId)
+    if (!isTemplate) {
+      throw new HTTPException(404, { message: "Workflow template not found or access denied" })
+    }
 
     // Execute all database operations in a single transaction
     const result = await db.transaction(async (tx) => {

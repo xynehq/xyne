@@ -32,21 +32,6 @@ export class SchedulerTriggerTool implements WorkflowTool {
       },
     }
   }
-  inputSchema = z.object({})
-  
-  outputSchema = z.object({
-    triggeredAt: z.string(),
-    scheduleType: z.string().optional(),
-    nextExecutionAt: z.string().optional(),
-    cronExpression: z.string().optional()
-  })
-  
-  configSchema = z.object({
-    trigger_after_seconds: z.number().positive().optional(),
-    trigger_at: z.string().optional(),
-    cron_expression: z.string().optional(),
-    timezone: z.string().default("UTC"),
-  })
 
   async execute(
     input: Record<string, any>,
@@ -57,40 +42,37 @@ export class SchedulerTriggerTool implements WorkflowTool {
       const currentTime = new Date()
       
       // Process scheduling configuration keys (if-else chain, first match wins)
-      const scheduleMetadata: Record<string, any> = {}
+      let nextExecuteAfter: number | undefined
       
       // Handle trigger_after_seconds - convert to timestamp
       if (config.trigger_after_seconds && typeof config.trigger_after_seconds === 'number') {
-        const triggerTime = new Date(currentTime.getTime() + config.trigger_after_seconds * 1000)
-        scheduleMetadata.trigger_after = triggerTime.toISOString()
+        nextExecuteAfter = config.trigger_after_seconds
       } 
       // Handle trigger_at - parse as timestamp  
       else if (config.trigger_at) {
         try {
           const triggerAtDate = new Date(config.trigger_at)
           if (!isNaN(triggerAtDate.getTime())) {
-            scheduleMetadata.trigger_after = triggerAtDate.toISOString()
+            nextExecuteAfter = Math.max(0, Math.floor((triggerAtDate.getTime() - currentTime.getTime()) / 1000))
           }
         } catch (error) {
           // Invalid trigger_at, continue to next option
         }
       }
-      // Handle cron_expression - parse standard cron format
+      // Handle cron_expression - calculate next execution time
       else if (config.cron_expression && typeof config.cron_expression === 'string') {
-        // For cron expressions, we don't need to calculate next execution time here
-        // The scheduling is handled by PgBoss when the template is activated
-        scheduleMetadata.cron_expression = config.cron_expression
-        scheduleMetadata.timezone = config.timezone || 'UTC'
-        scheduleMetadata.recurring = true
+        nextExecuteAfter = 0
       }
 
       return {
         status: ToolExecutionStatus.COMPLETED,
         output: {
           triggeredAt: currentTime.toISOString(),
-          count:30
+          scheduleType: config.cron_expression ? "cron" : config.trigger_at ? "timestamp" : "interval",
+          nextExecutionAt: nextExecuteAfter ? new Date(currentTime.getTime() + nextExecuteAfter * 1000).toISOString() : undefined,
+          cronExpression: config.cron_expression || undefined
         },
-        metadata: scheduleMetadata
+        nextExecuteAfter
       }
     } catch (error) {
       return {
@@ -119,7 +101,7 @@ export class SchedulerTriggerTool implements WorkflowTool {
 
       // // Check if cron expression exists
       if (config.cron_expression && typeof config.cron_expression === 'string') {
-        await messageQueue.publishExecution(executionPacket, undefined, config.cron_expression)
+        await messageQueue.schedule(executionPacket, config.cron_expression)
         console.log(`✅ Scheduled workflow ${template.id} with cron: ${config.cron_expression}`)
         return {"status":"success","message": `scheduled with cron ${config.cron_expression}`}
       }
@@ -138,10 +120,8 @@ export class SchedulerTriggerTool implements WorkflowTool {
 
     async handleInactiveTrigger(_config: Record<string, any>, template:SelectWorkflowTemplate): Promise<Record<string, string>> {
       try {
-        const boss = messageQueue.getBoss()
-        const queues = messageQueue.getQueueNames()
-        await boss.unschedule(queues.incoming,template.id)
-        return {"status":"success","message": `Unschedule workflow ${template.id} from ${queues.incoming}` }
+        await messageQueue.unschedule(template.id)
+        return {"status":"success","message": `Unschedule workflow ${template.id}` }
       } catch (error) {
         console.error(`❌ Failed to handle inactive trigger for workflow ${template.id}:`, error)
         throw error

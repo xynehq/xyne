@@ -1,12 +1,11 @@
 import { ToolType, ToolCategory, ToolExecutionStatus } from "@/types/workflowTypes"
-import type { WorkflowTool, ToolExecutionResult, WorkflowContext } from "./types"
+import type { WorkflowTool, ToolExecutionResult, WorkflowContext, defaultToolConfig } from "./types"
 import { z } from "zod"
 
 export class AiAgentTool implements WorkflowTool {
   type = ToolType.AI_AGENT
   category = ToolCategory.ACTION
-  
-  defaultConfig = {
+  defaultConfig:defaultToolConfig = {
     inputCount: 1,
     outputCount: 1,
     options: {

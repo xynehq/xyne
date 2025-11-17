@@ -16,6 +16,7 @@ import {
   toolExecution,
 } from "@/db/schema/workflows"
 import { eq, and } from "drizzle-orm"
+import { getWorkflowTemplateByIdWithPermissionCheck } from "@/db/workflow"
 
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.WorkflowApi)
@@ -31,6 +32,10 @@ export const ExecuteTemplateHandler = async (c: Context) => {
       throw new HTTPException(400, { message: "templateId is required in request body" })
     }
 
+    const isTemplate = await getWorkflowTemplateByIdWithPermissionCheck(db, templateId, user.id, user.workspaceId)
+    if (!isTemplate) {
+      throw new HTTPException(404, { message: "Workflow template not found or access denied" })
+    }
     // Start execution using the execution client - returns execution ID immediately
     const executionId = await executionClient.startExecution(templateId, user.id, user.workspaceId)
 
@@ -52,31 +57,6 @@ export const ExecuteTemplateHandler = async (c: Context) => {
   }
 }
 
-// Get execution status by ID
-export const GetExecutionStatusApi = async (c: Context) => {
-  try {
-    const user = await getUserFromJWT(db, c.get(JwtPayloadKey)) // Used for authentication, access control handled in execution engine
-    const executionId = c.req.param("executionId")
-
-    if (!executionId) {
-      throw new HTTPException(400, { message: "executionId is required" })
-    }
-
-    // Get status from execution client (user access validation done in execution engine)
-    const status = await executionClient.getExecutionStatus(executionId)
-
-    return c.json({
-      success: true,
-      data: status,
-      message: "Execution status retrieved successfully",
-    })
-  } catch (error) {
-    Logger.error(error, "Failed to get execution status")
-    throw new HTTPException(500, {
-      message: getErrorMessage(error),
-    })
-  }
-}
 
 // Stop execution by ID
 export const StopExecutionApi = async (c: Context) => {
@@ -217,6 +197,10 @@ export const GetWorkflowExecutionDetailsApi = async (c: Context) => {
         createdAt: workflowStepExecution.createdAt,
         updatedAt: workflowStepExecution.updatedAt,
         completedAt: workflowStepExecution.completedAt,
+        toolExecIds: workflowStepExecution.toolExecIds,
+        toolConfig: workflowStepExecution.toolConfig,
+        toolCategory: workflowStepExecution.toolCategory,
+        toolType: workflowStepExecution.toolType,
         // Template step fields
         templateStepId: workflowStepTemplate.id,
         templateStepName: workflowStepTemplate.name,
@@ -325,6 +309,10 @@ export const GetWorkflowExecutionDetailsApi = async (c: Context) => {
           createdAt: step.createdAt,
           updatedAt: step.updatedAt,
           completedAt: step.completedAt,
+          toolConfig: step.toolConfig,
+          toolCategory: step.toolCategory,
+          toolType: step.toolType,
+          // Template step info
           template: {
             id: step.templateStepId,
             name: step.templateStepName,

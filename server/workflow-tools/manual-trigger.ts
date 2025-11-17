@@ -1,52 +1,25 @@
 import { ToolType, ToolCategory, ToolExecutionStatus } from "@/types/workflowTypes"
 import type { WorkflowTool, ToolExecutionResult, WorkflowContext,defaultToolConfig } from "./types"
-import { z } from "zod"
+
 
 export class ManualTriggerTool implements WorkflowTool {
   type = ToolType.MANUAL_TRIGGER
   category = ToolCategory.TRIGGER
-  
   defaultConfig:defaultToolConfig = {
     inputCount: 0, // No input required for trigger
     outputCount: 1,
+    button:{
+      text:"start workflow"
+    },
     options: {
-      buttonText: {
-        type: "string",
-        default: "Start Workflow",
-        optional: true
-      },
       description: {
         type: "string",
         default: "",
         optional: true
       },
-      requireConfirmation: {
-        type: "boolean",
-        default: false,
-        optional: true
-      }
     }
   }
 
-  inputSchema = z.object({
-    triggeredBy: z.string().optional(),
-    metadata: z.record(z.string(), z.any()).optional()
-  })
-
-  outputSchema = z.object({
-    triggeredAt: z.string(),
-    triggeredBy: z.string().optional(),
-    triggerReason: z.string().optional(),
-    title: z.string().optional(),
-    description: z.string().optional(),
-    metadata: z.record(z.string(), z.any()).optional()
-  })
-
-  configSchema = z.object({
-    title: z.string().optional(),
-    description: z.string().optional(),
-    allowedUsers: z.array(z.string()).optional()
-  })
 
   async execute(
     input: Record<string, any>,

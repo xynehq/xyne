@@ -5,7 +5,6 @@ import { z } from "zod"
 export class SlackTool implements WorkflowTool {
   type = ToolType.SLACK
   category = ToolCategory.ACTION
-  
   defaultConfig = {
     inputCount: 1,
     outputCount: 1,
@@ -33,26 +32,6 @@ export class SlackTool implements WorkflowTool {
     }
   }
 
-  inputSchema = z.object({
-    message: z.string().optional(),
-    attachments: z.array(z.any()).optional(),
-    previousStepData: z.record(z.string(), z.any()).optional()
-  })
-
-  outputSchema = z.object({
-    messageId: z.string().optional(),
-    channel: z.string(),
-    message: z.string(),
-    sentAt: z.string(),
-    status: z.string()
-  })
-
-  configSchema = z.object({
-    channel: z.string().min(1, "Channel is required"),
-    username: z.string().optional(),
-    icon_emoji: z.string().optional(),
-    template: z.string().optional()
-  })
 
   async execute(
     input: Record<string, any>,
