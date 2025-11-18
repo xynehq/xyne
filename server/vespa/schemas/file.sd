@@ -146,6 +146,7 @@ schema file {
       query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
       query(recency_decay_rate) double
+      query(fileBoost) double
     }
 
     constants {
@@ -183,9 +184,12 @@ schema file {
         matches(title) + matches(chunks)
       }
     }
+     function is_file() {
+      expression: if(attribute(app) == "google-drive", 1, 0)
+    }
 
     function combined_nativeRank() {
-      expression: (nativeRank(title) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+      expression: ((nativeRank(title) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount))* if(is_file == 1, query(fileBoost), 1)
     }
 
     function chunk_scores() {
