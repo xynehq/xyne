@@ -1,3 +1,10 @@
+## [3.31.5](https://github.com/xynehq/xyne/compare/v3.31.4...v3.31.5) (2025-11-18)
+
+
+### Bug Fixes
+
+* Http Config update and UX upgrade ([#1216](https://github.com/xynehq/xyne/issues/1216)) ([5347c5c](https://github.com/xynehq/xyne/commit/5347c5c28196719575ef7a00d390befc55de760c))
+
 ## [3.31.4](https://github.com/xynehq/xyne/compare/v3.31.3...v3.31.4) (2025-11-15)
 
 
