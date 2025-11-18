@@ -1,3 +1,10 @@
+## [3.31.6](https://github.com/xynehq/xyne/compare/v3.31.5...v3.31.6) (2025-11-18)
+
+
+### Bug Fixes
+
+* XYNE-350 fixed agent reasoning feature ([#1219](https://github.com/xynehq/xyne/issues/1219)) ([c24a4d6](https://github.com/xynehq/xyne/commit/c24a4d69001207a1a5ce3703858fccc7261091eb))
+
 ## [3.31.5](https://github.com/xynehq/xyne/compare/v3.31.4...v3.31.5) (2025-11-18)
 
 
