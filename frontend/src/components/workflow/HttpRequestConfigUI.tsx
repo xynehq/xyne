@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -183,17 +183,34 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
 
     setIsSaving(true)
     try {
-      if (onSave) {
-        await onSave(httpConfig)
-      } else if (toolId) {
-        // Update existing tool
-        await workflowToolsAPI.updateHttpRequestConfig(toolId, httpConfig)
-      } else {
-        // Create new tool
-        await workflowToolsAPI.saveHttpRequestConfig(httpConfig)
+      // If we have a toolId and not in builder mode, update the tool via API
+      if (toolId && !builder) {
+        const updatedToolData = {
+          type: "http_request",
+          value: httpConfig,
+          config: {
+            ...toolData?.config,
+            url: httpConfig.url,
+            method: httpConfig.method,
+            headers: httpConfig.headers,
+            queryParams: httpConfig.queryParams,
+            body: httpConfig.body,
+            bodyType: httpConfig.bodyType,
+            authentication: httpConfig.authentication,
+            authConfig: httpConfig.authConfig,
+            timeout: httpConfig.timeout,
+            followRedirects: httpConfig.followRedirects,
+          },
+        }
+        await workflowToolsAPI.updateTool(toolId, updatedToolData)
+        console.log("HTTP request tool updated successfully")
       }
+      // Call the parent save handler
+      onSave?.(httpConfig)
     } catch (error) {
       console.error("Failed to save HTTP request configuration:", error)
+      // Still call the parent handler even if API call fails
+      onSave?.(httpConfig)
     } finally {
       setIsSaving(false)
     }
@@ -502,19 +519,11 @@ const HttpRequestConfigUI: React.FC<HttpRequestConfigUIProps> = ({
       {/* Footer */}
       <div className="px-6 py-4 border-t border-slate-200 dark:border-gray-700 flex gap-3">
         <Button
-          variant="outline"
-          onClick={onBack}
-          className="flex-1"
-          disabled={isSaving}
-        >
-          Cancel
-        </Button>
-        <Button
           onClick={handleSave}
           disabled={!isUrlValid || isSaving}
-          className="flex-1"
+          className="flex-1 bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-full"
         >
-          {isSaving ? "Saving..." : "Save"}
+          {isSaving ? "Saving..." : "Save Configuration"}
         </Button>
       </div>
     </div>
