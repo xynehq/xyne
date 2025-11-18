@@ -24,6 +24,7 @@ import { Route as AuthenticatedBuzzRouteImport } from './routes/_authenticated/b
 import { Route as AuthenticatedAgentRouteImport } from './routes/_authenticated/agent'
 import { Route as AuthenticatedIntegrationsIndexRouteImport } from './routes/_authenticated/integrations/index'
 import { Route as AuthenticatedBuzzIndexRouteImport } from './routes/_authenticated/buzz/index'
+import { Route as AuthenticatedIntegrationsZohoDeskRouteImport } from './routes/_authenticated/integrations/zoho-desk'
 import { Route as AuthenticatedIntegrationsSlackRouteImport } from './routes/_authenticated/integrations/slack'
 import { Route as AuthenticatedIntegrationsMicrosoftRouteImport } from './routes/_authenticated/integrations/microsoft'
 import { Route as AuthenticatedIntegrationsMcpRouteImport } from './routes/_authenticated/integrations/mcp'
@@ -39,6 +40,7 @@ import { Route as AuthenticatedAdminUserManagementRouteImport } from './routes/_
 import { Route as AuthenticatedAdminChatOverviewRouteImport } from './routes/_authenticated/admin/chat-overview'
 import { Route as AuthenticatedAdminIntegrationsIndexRouteImport } from './routes/_authenticated/admin/integrations/index'
 import { Route as AuthenticatedTraceChatIdMsgIdRouteImport } from './routes/_authenticated/trace.$chatId.$msgId'
+import { Route as AuthenticatedAdminIntegrationsZohoDeskRouteImport } from './routes/_authenticated/admin/integrations/zoho-desk'
 import { Route as AuthenticatedAdminIntegrationsSlackRouteImport } from './routes/_authenticated/admin/integrations/slack'
 import { Route as AuthenticatedAdminIntegrationsMicrosoftRouteImport } from './routes/_authenticated/admin/integrations/microsoft'
 import { Route as AuthenticatedAdminIntegrationsMcpRouteImport } from './routes/_authenticated/admin/integrations/mcp'
@@ -120,6 +122,12 @@ const AuthenticatedBuzzIndexRoute = AuthenticatedBuzzIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedBuzzRoute,
 } as any)
+const AuthenticatedIntegrationsZohoDeskRoute =
+  AuthenticatedIntegrationsZohoDeskRouteImport.update({
+    id: '/integrations/zoho-desk',
+    path: '/integrations/zoho-desk',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedIntegrationsSlackRoute =
   AuthenticatedIntegrationsSlackRouteImport.update({
     id: '/integrations/slack',
@@ -207,6 +215,12 @@ const AuthenticatedTraceChatIdMsgIdRoute =
     path: '/trace/$chatId/$msgId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminIntegrationsZohoDeskRoute =
+  AuthenticatedAdminIntegrationsZohoDeskRouteImport.update({
+    id: '/admin/integrations/zoho-desk',
+    path: '/admin/integrations/zoho-desk',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminIntegrationsSlackRoute =
   AuthenticatedAdminIntegrationsSlackRouteImport.update({
     id: '/admin/integrations/slack',
@@ -258,12 +272,14 @@ export interface FileRoutesByFullPath {
   '/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
   '/integrations/microsoft': typeof AuthenticatedIntegrationsMicrosoftRoute
   '/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
+  '/integrations/zoho-desk': typeof AuthenticatedIntegrationsZohoDeskRoute
   '/buzz/': typeof AuthenticatedBuzzIndexRoute
   '/integrations': typeof AuthenticatedIntegrationsIndexRoute
   '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
   '/admin/integrations/microsoft': typeof AuthenticatedAdminIntegrationsMicrosoftRoute
   '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/admin/integrations/zoho-desk': typeof AuthenticatedAdminIntegrationsZohoDeskRoute
   '/trace/$chatId/$msgId': typeof AuthenticatedTraceChatIdMsgIdRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
@@ -292,12 +308,14 @@ export interface FileRoutesByTo {
   '/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
   '/integrations/microsoft': typeof AuthenticatedIntegrationsMicrosoftRoute
   '/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
+  '/integrations/zoho-desk': typeof AuthenticatedIntegrationsZohoDeskRoute
   '/buzz': typeof AuthenticatedBuzzIndexRoute
   '/integrations': typeof AuthenticatedIntegrationsIndexRoute
   '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
   '/admin/integrations/microsoft': typeof AuthenticatedAdminIntegrationsMicrosoftRoute
   '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/admin/integrations/zoho-desk': typeof AuthenticatedAdminIntegrationsZohoDeskRoute
   '/trace/$chatId/$msgId': typeof AuthenticatedTraceChatIdMsgIdRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
@@ -329,12 +347,14 @@ export interface FileRoutesById {
   '/_authenticated/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
   '/_authenticated/integrations/microsoft': typeof AuthenticatedIntegrationsMicrosoftRoute
   '/_authenticated/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
+  '/_authenticated/integrations/zoho-desk': typeof AuthenticatedIntegrationsZohoDeskRoute
   '/_authenticated/buzz/': typeof AuthenticatedBuzzIndexRoute
   '/_authenticated/integrations/': typeof AuthenticatedIntegrationsIndexRoute
   '/_authenticated/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/_authenticated/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
   '/_authenticated/admin/integrations/microsoft': typeof AuthenticatedAdminIntegrationsMicrosoftRoute
   '/_authenticated/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
+  '/_authenticated/admin/integrations/zoho-desk': typeof AuthenticatedAdminIntegrationsZohoDeskRoute
   '/_authenticated/trace/$chatId/$msgId': typeof AuthenticatedTraceChatIdMsgIdRoute
   '/_authenticated/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
 }
@@ -366,12 +386,14 @@ export interface FileRouteTypes {
     | '/integrations/mcp'
     | '/integrations/microsoft'
     | '/integrations/slack'
+    | '/integrations/zoho-desk'
     | '/buzz/'
     | '/integrations'
     | '/admin/integrations/google'
     | '/admin/integrations/mcp'
     | '/admin/integrations/microsoft'
     | '/admin/integrations/slack'
+    | '/admin/integrations/zoho-desk'
     | '/trace/$chatId/$msgId'
     | '/admin/integrations'
   fileRoutesByTo: FileRoutesByTo
@@ -400,12 +422,14 @@ export interface FileRouteTypes {
     | '/integrations/mcp'
     | '/integrations/microsoft'
     | '/integrations/slack'
+    | '/integrations/zoho-desk'
     | '/buzz'
     | '/integrations'
     | '/admin/integrations/google'
     | '/admin/integrations/mcp'
     | '/admin/integrations/microsoft'
     | '/admin/integrations/slack'
+    | '/admin/integrations/zoho-desk'
     | '/trace/$chatId/$msgId'
     | '/admin/integrations'
   id:
@@ -436,12 +460,14 @@ export interface FileRouteTypes {
     | '/_authenticated/integrations/mcp'
     | '/_authenticated/integrations/microsoft'
     | '/_authenticated/integrations/slack'
+    | '/_authenticated/integrations/zoho-desk'
     | '/_authenticated/buzz/'
     | '/_authenticated/integrations/'
     | '/_authenticated/admin/integrations/google'
     | '/_authenticated/admin/integrations/mcp'
     | '/_authenticated/admin/integrations/microsoft'
     | '/_authenticated/admin/integrations/slack'
+    | '/_authenticated/admin/integrations/zoho-desk'
     | '/_authenticated/trace/$chatId/$msgId'
     | '/_authenticated/admin/integrations/'
   fileRoutesById: FileRoutesById
@@ -560,6 +586,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBuzzIndexRouteImport
       parentRoute: typeof AuthenticatedBuzzRoute
     }
+    '/_authenticated/integrations/zoho-desk': {
+      id: '/_authenticated/integrations/zoho-desk'
+      path: '/integrations/zoho-desk'
+      fullPath: '/integrations/zoho-desk'
+      preLoaderRoute: typeof AuthenticatedIntegrationsZohoDeskRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/integrations/slack': {
       id: '/_authenticated/integrations/slack'
       path: '/integrations/slack'
@@ -665,6 +698,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTraceChatIdMsgIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/integrations/zoho-desk': {
+      id: '/_authenticated/admin/integrations/zoho-desk'
+      path: '/admin/integrations/zoho-desk'
+      fullPath: '/admin/integrations/zoho-desk'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsZohoDeskRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/integrations/slack': {
       id: '/_authenticated/admin/integrations/slack'
       path: '/admin/integrations/slack'
@@ -743,11 +783,13 @@ interface AuthenticatedRouteChildren {
   AuthenticatedIntegrationsMcpRoute: typeof AuthenticatedIntegrationsMcpRoute
   AuthenticatedIntegrationsMicrosoftRoute: typeof AuthenticatedIntegrationsMicrosoftRoute
   AuthenticatedIntegrationsSlackRoute: typeof AuthenticatedIntegrationsSlackRoute
+  AuthenticatedIntegrationsZohoDeskRoute: typeof AuthenticatedIntegrationsZohoDeskRoute
   AuthenticatedIntegrationsIndexRoute: typeof AuthenticatedIntegrationsIndexRoute
   AuthenticatedAdminIntegrationsGoogleRoute: typeof AuthenticatedAdminIntegrationsGoogleRoute
   AuthenticatedAdminIntegrationsMcpRoute: typeof AuthenticatedAdminIntegrationsMcpRoute
   AuthenticatedAdminIntegrationsMicrosoftRoute: typeof AuthenticatedAdminIntegrationsMicrosoftRoute
   AuthenticatedAdminIntegrationsSlackRoute: typeof AuthenticatedAdminIntegrationsSlackRoute
+  AuthenticatedAdminIntegrationsZohoDeskRoute: typeof AuthenticatedAdminIntegrationsZohoDeskRoute
   AuthenticatedTraceChatIdMsgIdRoute: typeof AuthenticatedTraceChatIdMsgIdRoute
   AuthenticatedAdminIntegrationsIndexRoute: typeof AuthenticatedAdminIntegrationsIndexRoute
 }
@@ -772,6 +814,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedIntegrationsMicrosoftRoute:
     AuthenticatedIntegrationsMicrosoftRoute,
   AuthenticatedIntegrationsSlackRoute: AuthenticatedIntegrationsSlackRoute,
+  AuthenticatedIntegrationsZohoDeskRoute:
+    AuthenticatedIntegrationsZohoDeskRoute,
   AuthenticatedIntegrationsIndexRoute: AuthenticatedIntegrationsIndexRoute,
   AuthenticatedAdminIntegrationsGoogleRoute:
     AuthenticatedAdminIntegrationsGoogleRoute,
@@ -781,6 +825,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedAdminIntegrationsMicrosoftRoute,
   AuthenticatedAdminIntegrationsSlackRoute:
     AuthenticatedAdminIntegrationsSlackRoute,
+  AuthenticatedAdminIntegrationsZohoDeskRoute:
+    AuthenticatedAdminIntegrationsZohoDeskRoute,
   AuthenticatedTraceChatIdMsgIdRoute: AuthenticatedTraceChatIdMsgIdRoute,
   AuthenticatedAdminIntegrationsIndexRoute:
     AuthenticatedAdminIntegrationsIndexRoute,

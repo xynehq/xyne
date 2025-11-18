@@ -52,6 +52,7 @@ import {
   microsoftServiceSchema,
   UserRoleChangeSchema,
   chatIdParamSchema,
+  createZohoDeskConnectorSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -87,6 +88,7 @@ import {
   ListAllIngestedUsers,
   GetKbVespaContent,
   GetChatQueriesApi,
+  CreateZohoDeskConnector,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { initApiServerQueue } from "@/queue/api-server-queue"
@@ -1800,6 +1802,11 @@ export const AppRoutes = app
     zValidator("form", microsoftServiceSchema),
     AddServiceConnectionMicrosoft,
   )
+  .post(
+    "/connector/create",
+    zValidator("json", createZohoDeskConnectorSchema),
+    CreateZohoDeskConnector,
+  )
   .post("/slack/ingest_more_channel", (c) =>
     proxyToSyncServer(c, "/slack/ingest_more_channel"),
   )
@@ -1808,6 +1815,9 @@ export const AppRoutes = app
   )
   .post("/google/start_ingestion", (c) =>
     proxyToSyncServer(c, "/google/start_ingestion"),
+  )
+  .post("/zoho-desk/start_sync", (c) =>
+    proxyToSyncServer(c, "/zoho-desk/start_sync"),
   )
   .delete(
     "/oauth/connector/delete",
@@ -1972,6 +1982,7 @@ export const SyncServerWsApp = app.get(
 )
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
+app.get("/callback", AuthMiddleware, OAuthCallback) // Zoho OAuth callback (uses /callback instead of /oauth/callback)
 app.get(
   "/oauth/start",
   AuthMiddleware,
