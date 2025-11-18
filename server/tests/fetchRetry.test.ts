@@ -29,7 +29,8 @@ mock.module("../logger", () => ({
 
 describe("VespaClient", () => {
   let vespaClient: VespaClient
-  const endpoint = `http://${config.vespaBaseHost}:8080`
+  const queryendpoint = `http://${config.vespaBaseHost}:${config.vespaQueryPort}`
+  const feedEndpoint = `http://${config.vespaBaseHost}:${config.vespaFeedPort}`
   const mockPayload = {
     yql: "select * from sources * where true",
     query: "What is Vespa?",
@@ -49,7 +50,12 @@ describe("VespaClient", () => {
   }))
 
   beforeAll(() => {
-    vespaClient = new VespaClient(endpoint)
+    vespaClient = new VespaClient(undefined, {
+      vespaMaxRetryAttempts: 3,
+      vespaRetryDelay: 100,
+      queryEndpoint: queryendpoint,
+      feedEndpoint: feedEndpoint
+    })
   })
 
   afterAll(() => {
@@ -74,7 +80,7 @@ describe("VespaClient", () => {
     expect(result).toEqual(mockResponse)
     expect(global.fetch).toHaveBeenCalledTimes(1)
     expect(global.fetch).toHaveBeenCalledWith(
-      `http://${config.vespaBaseHost}:8080/search/`,
+      `${queryendpoint}/search/`,
       {
         method: "POST",
         headers: {
@@ -117,9 +123,7 @@ describe("VespaClient", () => {
     } catch (error: any) {
       expect(error.message).toInclude("Vespa search error")
       // Initial request + 3 retries
-      expect(global.fetch).toHaveBeenCalledTimes(
-        config.vespaMaxRetryAttempts + 1,
-      )
+      expect(global.fetch).toHaveBeenCalledTimes(4) // 1 initial + 3 retries
     }
   })
 

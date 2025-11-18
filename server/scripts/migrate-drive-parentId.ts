@@ -47,7 +47,8 @@ class FileVespaClient {
   private vespaEndpoint: string
 
   constructor() {
-    this.vespaEndpoint = config.vespaEndpoint
+    // Use document endpoint for document operations (port 8080)
+    this.vespaEndpoint = config.vespaEndpoint.feedEndpoint
   }
 
   private async fetchWithRetry(
