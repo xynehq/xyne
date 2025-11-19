@@ -18,7 +18,6 @@ import {
   baselineRAGOffJsonStream,
   agentWithNoIntegrationsQuestion,
   extractBestDocumentIndexes,
-  getProviderTypeByModel,
 } from "@/ai/provider"
 import { getConnectorById } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -33,7 +32,6 @@ import {
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 
 import {
-  AIProviders,
   Models,
   QueryType,
   type ConverseResponse,
@@ -154,8 +152,6 @@ import {
   ToolResponse,
   type ToolResult,
   type ToolCall,
-  makeLiteLLMProvider,
-  type ModelProvider,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -186,8 +182,6 @@ const {
   StartThinkingToken,
   EndThinkingToken,
   maxValidLinks,
-  LiteLLMApiKey,
-  LiteLLMBaseUrl,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
@@ -1325,11 +1319,12 @@ export const MessageWithToolsApi = async (c: Context) => {
             role: m.messageRole === MessageRole.User ? "user" : "assistant",
             content: m.message,
           }))
-        const isAgenticModel = actualModelId === defaultBestModelAgenticMode || actualModelId === defaultBestModel;
-        const agenticModelId: Models = isAgenticModel ? actualModelId as Models : defaultBestModelAgenticMode !== ""  as Models
-        ? (defaultBestModelAgenticMode as Models)
-        : defaultBestModel
-
+        const agenticModelId: Models = 
+            actualModelId === defaultBestModelAgenticMode || actualModelId === defaultBestModel
+            ? (actualModelId as Models)
+            : (defaultBestModelAgenticMode && defaultBestModelAgenticMode !== ("" as Models)
+                ? (defaultBestModelAgenticMode as Models)
+                : defaultBestModel)
         const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
           name: "xyne-agent",
           instructions: () => agentInstructions,
