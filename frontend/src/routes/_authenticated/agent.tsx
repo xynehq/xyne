@@ -4786,6 +4786,7 @@ function AgentComponent() {
                       ).filter(Boolean) as User[]
                       setSelectedUsers(newSelectedUsers)
                     }}
+                    selectedByOther={selectedOwners.map(user => user.email)}
                   />
                 )}
 
@@ -4795,12 +4796,13 @@ function AgentComponent() {
                   placeholder="Search users by name or email..."
                   users={users}
                   selectedEmails={selectedOwners.map(user => user.email)}
-                    onEmailsChange={(emails) => {
-                      const newSelectedOwners = emails.map(email => 
-                        users.find(user => user.email === email)
-                      ).filter(Boolean) as User[]
-                      setSelectedOwners(newSelectedOwners)
-                    }}
+                  onEmailsChange={(emails) => {
+                    const newSelectedOwners = emails.map(email => 
+                      users.find(user => user.email === email)
+                    ).filter(Boolean) as User[]
+                    setSelectedOwners(newSelectedOwners)
+                  }}
+                  selectedByOther={selectedUsers.map(user => user.email)}
                 />
                 <div className="flex justify-end w-full mt-8 mb-4">
                   <Button

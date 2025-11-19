@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { toast } from "@/hooks/use-toast"
 
 interface User {
   id: number
@@ -17,6 +18,7 @@ interface UserEmailInputProps {
   users: User[]
   selectedEmails: string[]
   onEmailsChange: (emails: string[]) => void
+  selectedByOther?: string[]
   className?: string
 }
 
@@ -26,6 +28,7 @@ export const UserEmailInput: React.FC<UserEmailInputProps> = ({
   users,
   selectedEmails,
   onEmailsChange,
+  selectedByOther,
   className = "",
 }) => {
   const [searchQuery, setSearchQuery] = useState("")
@@ -105,6 +108,14 @@ export const UserEmailInput: React.FC<UserEmailInputProps> = ({
   }
 
   const handleSelectUser = (user: User) => {
+    if(selectedByOther && selectedByOther.includes(user.email)) {
+      toast({
+        title: "User already assigned",
+        description: `${user.email} is already assigned to another role. Users cannot be both owners and regular users.`,
+        variant: "destructive",
+      })
+      return
+    }
     if (!selectedEmails.includes(user.email)) {
       onEmailsChange([...selectedEmails, user.email])
     }
