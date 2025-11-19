@@ -219,6 +219,7 @@ import {
   createWorkflowTool,
   createToolExecution,
 } from "@/db/workflowTool"
+import { listSlackChannels, postSlackMessage } from "@/integrations/slack/client"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -1188,13 +1189,15 @@ export const executeWorkflowChain = async (
     // Check if step is already completed (e.g., webhook step completed at creation)
     if (step.status === WorkflowStatus.COMPLETED) {
       Logger.info(`⏭️ Step already completed, loading results: ${step.name} (${step.id})`)
-      
-      // Get completed tool execution results for this step execution
-      const toolExecutions = await db
-        .select()
-        .from(toolExecution)
-        .where(eq(toolExecution.workflowExecutionId, step.id))
-      
+
+      // Get completed tool execution results for this step execution using toolExecIds
+      const toolExecutions = step.toolExecIds && step.toolExecIds.length > 0
+        ? await db
+            .select()
+            .from(toolExecution)
+            .where(inArray(toolExecution.id, step.toolExecIds as string[]))
+        : []
+
       Logger.info(`🔍 Looking for tool executions for step ${step.id}, found: ${toolExecutions.length}`)
       
       if (toolExecutions.length > 0) {
@@ -3260,6 +3263,155 @@ Please analyze this webhook request and provide insights.`
           }
         }
 
+      case "slack_message":
+        try {
+          Logger.info(`📤 Executing Slack message tool for execution ${executionId}`)
+          
+          const config = tool.config || {}
+          const value = tool.value || {}
+
+          // Get message content and channels from tool configuration
+          let message = config.message
+          const channelIds = config.channelIds || []
+
+          if (!channelIds || channelIds.length === 0) {
+            return {
+              status: "error",
+              result: {
+                error: "No Slack channels specified in tool configuration",
+                config: config,
+                value: value
+              }
+            }
+          }
+
+          // Replace placeholders in message with data from previous steps
+          const stepKeys = Object.keys(previousStepResults || {})
+          if (stepKeys.length > 0) {
+            // Get the most recent step result for dynamic content
+            const latestStepKey = stepKeys[stepKeys.length - 1]
+            const latestStepResult = previousStepResults[latestStepKey]
+
+            if (latestStepResult?.result) {
+              // Replace common placeholders
+              message = message
+                .replace(/\{content\}/g, latestStepResult.result.content || latestStepResult.result.aiOutput || "")
+                .replace(/\{aiOutput\}/g, latestStepResult.result.aiOutput || "")
+                .replace(/\{output\}/g, latestStepResult.result.output || "")
+                .replace(/\{data\}/g, JSON.stringify(latestStepResult.result.data || {}, null, 2))
+                .replace(/\{timestamp\}/g, new Date().toISOString())
+                .replace(/\{stepName\}/g, latestStepKey)
+            }
+          }
+
+          Logger.info({
+            channelIds,
+            channelCount: channelIds.length,
+            messageLength: message.length,
+            toolId: tool.id,
+            hasBlocks: !!(config.blocks || value.blocks)
+          }, "📤 Sending Slack message to multiple channels from workflow")
+
+          // Send message to all channels
+          const results = await Promise.all(
+            channelIds.map(async (channelId: string) => {
+              try {
+                const result = await postSlackMessage(channelId, message, {
+                  blocks: config.blocks || value.blocks,
+                  threadTs: config.threadTs || value.threadTs,
+                  userName: config.userName || value.userName || "Workflow Bot"
+                })
+
+                return {
+                  channelId,
+                  success: result.success,
+                  messageTs: result.messageTs,
+                  error: result.error
+                }
+              } catch (error) {
+                return {
+                  channelId,
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error)
+                }
+              }
+            })
+          )
+
+          // Check if all messages were sent successfully
+          const successfulSends = results.filter(r => r.success)
+          const failedSends = results.filter(r => !r.success)
+          const allSuccessful = failedSends.length === 0
+
+          if (allSuccessful) {
+            Logger.info({
+              channelIds,
+              sentCount: successfulSends.length,
+              results
+            }, "✅ Slack messages sent successfully to all channels from workflow")
+
+            return {
+              status: "success",
+              result: {
+                channelIds,
+                channelCount: channelIds.length,
+                message,
+                sentCount: successfulSends.length,
+                sent: true,
+                timestamp: new Date().toISOString(),
+                results: results,
+                // Make the message content available to next steps
+                slackMessage: {
+                  channels: channelIds,
+                  text: message,
+                  success: true,
+                  results: results
+                },
+                // Standard output fields for other tools
+                content: `Slack message sent to ${successfulSends.length} channel(s): ${message}`,
+                output: `Message sent successfully to ${successfulSends.length} Slack channel(s)`,
+                aiOutput: `Slack message delivered to ${successfulSends.length} channel(s): "${message}"`
+              }
+            }
+          } else {
+            Logger.error({
+              channelIds,
+              successCount: successfulSends.length,
+              failCount: failedSends.length,
+              failedChannels: failedSends
+            }, "⚠️ Some Slack messages failed to send from workflow")
+
+            return {
+              status: successfulSends.length > 0 ? "success" : "error",
+              result: {
+                error: `Failed to send to ${failedSends.length} channel(s)`,
+                channelIds,
+                channelCount: channelIds.length,
+                sentCount: successfulSends.length,
+                failedCount: failedSends.length,
+                sent: successfulSends.length > 0,
+                timestamp: new Date().toISOString(),
+                results: results,
+                failedChannels: failedSends.map(f => ({
+                  channelId: f.channelId,
+                  error: f.error
+                }))
+              }
+            }
+          }
+          
+        } catch (error) {
+          Logger.error(error, "❌ Slack message tool execution failed")
+          return {
+            status: "error",
+            result: {
+              error: "Slack message tool execution failed",
+              details: error instanceof Error ? error.message : String(error),
+              timestamp: new Date().toISOString()
+            }
+          }
+        }
+
       default:
         return {
           status: "error",
@@ -3344,30 +3496,29 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       c.get(JwtPayloadKey)
     )
 
-
     let jwtPayload
     try {
       jwtPayload = c.get(JwtPayloadKey)
     } catch (e) {
       Logger.info("No JWT payload found in context")
     }
-
+    
     const userEmail = jwtPayload?.sub
     if (!userEmail) {
       throw new HTTPException(400, { message: "Could not get the email of the user" })
     }
-
+    
     // Get workspace ID from JWT payload
     const workspaceId = jwtPayload?.workspaceId
     if (!workspaceId) {
       throw new HTTPException(400, { message: "No workspace ID in token" })
     }
-
+    
     // Get user ID for agent creation
     const userId = user.id
-
+    
     const requestData = await c.req.json()
-
+    
     // Create the main workflow template
     const template = await createWorkflowTemplate(
       db,
@@ -5817,5 +5968,28 @@ export const ServeWorkflowFileApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
+  }
+}
+
+// Gets metadata like channels for slack nodes with pagination support
+// Workflow-todo: currently defaults to xyne bot with
+// hardcoded creds
+export const getSlackMetadataApi = async (c: Context) => {
+  try {
+    const cursor = c.req.query("cursor") || undefined
+    const limit = Number(c.req.query("limit")) || 200
+
+    const result = await listSlackChannels({ cursor, limit })
+    
+    return c.json({
+      success: true,
+      data: result
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to get slack metadata")
+    return c.json({
+      success: false,
+      error: "Failed to get slack metadata"
+    }, 500)
   }
 }

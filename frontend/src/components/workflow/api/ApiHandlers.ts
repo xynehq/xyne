@@ -1061,6 +1061,48 @@ export const workflowToolsAPI = {
       throw error
     }
   },
+
+  /**
+   * Fetch Slack metadata (channels) with pagination support
+   */
+  async fetchSlackMetadata(
+    cursor?: string,
+    limit = 50,
+  ): Promise<{
+    channels: Array<{ id: string; name: string }>
+    hasMore: boolean
+    nextCursor?: string
+  }> {
+    try {
+      // Build query params
+      const query: any = {}
+      if (cursor) query.cursor = cursor
+      query.limit = limit.toString()
+
+      const response = await api.workflow.tools.slack.metadata.$get({
+        query,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+
+      // Extract pagination data from the new response format
+      const data = result.data || {}
+      
+      return {
+        channels: data.channels || [],
+        hasMore: data.hasMore || false,
+        nextCursor: data.nextCursor
+      }
+    } catch (error) {
+      console.error("❌ Failed to fetch Slack metadata:", error)
+      throw error
+    }
+  },
 }
 
 // Workflow Steps API for adding and editing steps

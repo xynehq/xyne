@@ -830,8 +830,6 @@ function WorkflowComponent() {
                       )
                     }
 
-                    console.log(filteredWorkflows)
-                    
                     if (filteredWorkflows.length > 0) {
                       // If 4 or fewer workflows, show fixed 4-column grid with placeholders
                       if (filteredWorkflows.length <= 4) {

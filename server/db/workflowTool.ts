@@ -1,4 +1,4 @@
-import { and, eq, desc, inArray } from "drizzle-orm"
+import { and, eq, desc, inArray, sql, or } from "drizzle-orm"
 import type { TxnOrClient } from "@/types"
 import {
   workflowTool,
@@ -7,8 +7,11 @@ import {
   type SelectToolExecution,
   type InsertWorkflowTool,
   type InsertToolExecution,
+  workflowTemplate,
+  workflowStepTemplate,
   selectWorkflowToolSchema,
   selectToolExecutionSchema,
+  userWorkflowPermissions,
 } from "@/db/schema"
 import { ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
 import { z } from "zod"
@@ -114,6 +117,76 @@ export const getWorkflowToolsByIds = async (
     .where(inArray(workflowTool.id, toolIds))
   
   return z.array(selectWorkflowToolSchema).parse(results)
+}
+
+/**
+ * Gets workflow templates based on the type of initial trigger
+ */
+export const getSlackTriggersInWorkflows = async (
+  txn: TxnOrClient,
+  userId: number,
+  workspaceId: number,
+  channel: string
+): Promise<{
+  workflowId: string,
+  workflowName: string,
+  workflowDescription: string | null,
+  toolId: string,
+  toolConfig: any,
+  toolValue: any
+}[]> => {
+  const workflowTriggers = await txn
+    .select({
+      workflowId: workflowTemplate.id,
+      workflowName: workflowTemplate.name,
+      workflowDescription: workflowTemplate.description,
+      toolId: workflowTool.id,
+      toolConfig: workflowTool.config,
+      toolValue: workflowTool.value,
+    })
+    .from(workflowTemplate)
+    .innerJoin(
+      workflowStepTemplate,
+      eq(workflowStepTemplate.workflowTemplateId, workflowTemplate.id)
+    )
+    .innerJoin(
+      workflowTool,
+      sql`${workflowTool.id} = ANY(${workflowStepTemplate.toolIds})`
+    )
+    .leftJoin(
+      userWorkflowPermissions,
+      eq(userWorkflowPermissions.workflowId, workflowTemplate.id)
+    )
+    .where(
+      and(
+        eq(workflowTool.type, ToolType.SLACK_TRIGGER),
+        eq(workflowTemplate.workspaceId, workspaceId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(userWorkflowPermissions.userId, userId)
+        ),
+      )
+    )
+    .groupBy(
+      workflowTemplate.id,
+      workflowTemplate.name,
+      workflowTemplate.description,
+      workflowTool.id,
+      workflowTool.config,
+      workflowTool.value
+    )
+
+  return workflowTriggers.filter(wf => {
+    const triggerType = (wf.toolConfig as any).triggerType
+    if (triggerType == "direct_message") {
+      return true
+    }
+    if (triggerType == "app_mention") {
+      const channelIds = ((wf.toolConfig as any).channelIds as string[]) || []
+      return channelIds.includes("all") || channelIds.includes(channel)
+    }
+    return false
+  })
 }
 
 export const updateWorkflowTool = async (
