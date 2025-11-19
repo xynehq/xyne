@@ -24,7 +24,6 @@ import { db } from "./client"
 import { getLoggerWithChild } from "@/logger"
 import { getUserByEmail } from "./user"
 
-
 export { getAgentsMadeByMe, getAgentsSharedToMe }
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Db)
@@ -207,11 +206,11 @@ export const updateAgentByExternalIdWithPermissionCheck = async (
     agentExternalId,
     workspaceId,
   )
-
+  const requiredUser = permission?.find((user) => user.userId == userId)
   if (
-    !permission ||
-    (permission.role !== UserAgentRole.Owner &&
-      permission.role !== UserAgentRole.Editor)
+    !requiredUser ||
+    (requiredUser.role !== UserAgentRole.Owner &&
+      requiredUser.role !== UserAgentRole.Editor)
   ) {
     return null // User doesn't have edit permission
   }
@@ -257,8 +256,8 @@ export const deleteAgentByExternalIdWithPermissionCheck = async (
     agentExternalId,
     workspaceId,
   )
-
-  if (!permission || permission.role !== UserAgentRole.Owner) {
+  const requiredUser = permission?.find((user) => user.userId == userId)
+  if (!requiredUser || requiredUser.role !== UserAgentRole.Owner) {
     return null // Only owners can delete agents
   }
 
@@ -500,7 +499,6 @@ export const cleanUpAgentDb = async (
     )
   }
 }
-
 
 export const getAllPublicAgents = async (
   trx: TxnOrClient,

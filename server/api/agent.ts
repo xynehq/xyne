@@ -17,6 +17,7 @@ import { fetchedDataSourceSchema } from "@/db/schema/agents"
 import {
   syncAgentUserPermissions,
   getAgentUsers,
+  checkUserAgentAccessByExternalId,
 } from "@/db/userAgentPermission"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -331,7 +332,18 @@ export const UpdateAgentApi = async (c: Context) => {
       userAndWorkspace.workspace.id,
       userAndWorkspace.user.id,
     )
-    if (!existingAgent || existingAgent.userId !== userAndWorkspace.user.id) {
+    const agentUserPermission = await checkUserAgentAccessByExternalId(
+      db,
+      userAndWorkspace.user.id,
+      agentExternalId,
+      userAndWorkspace.workspace.id,
+    )
+    if (
+      !existingAgent ||
+      !agentUserPermission?.find(
+        (user) => user.userId == userAndWorkspace.user.id,
+      )
+    ) {
       return c.json({ message: "Agent not found or access denied" }, 404)
     }
 
