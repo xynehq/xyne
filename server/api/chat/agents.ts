@@ -1792,8 +1792,8 @@ export const MessageWithToolsApi = async (c: Context) => {
             role: m.messageRole === MessageRole.User ? "user" : "assistant",
             content: m.message,
           }))
-        const isagenticModel = actualModelId === defaultBestModelAgenticMode || actualModelId === defaultBestModel;
-        const agenticModelId: Models = isagenticModel ? actualModelId as Models : defaultBestModelAgenticMode !== ""  as Models
+        const isAgenticModel = actualModelId === defaultBestModelAgenticMode || actualModelId === defaultBestModel;
+        const agenticModelId: Models = isAgenticModel ? actualModelId as Models : defaultBestModelAgenticMode !== ""  as Models
         ? (defaultBestModelAgenticMode as Models)
         : defaultBestModel
 
