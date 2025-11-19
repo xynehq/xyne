@@ -48,7 +48,12 @@ import {
   cleanContext,
   userContext,
 } from "@/ai/context"
-import { AnswerSSEvents, attachmentMetadataSchema, AuthType, ConnectorStatus } from "@/shared/types"
+import {
+  AnswerSSEvents,
+  attachmentMetadataSchema,
+  AuthType,
+  ConnectorStatus,
+} from "@/shared/types"
 import { agentPromptPayloadSchema } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -114,6 +119,16 @@ export const chatStopSchema = z.object({
   chatId: z.string().min(1),
 })
 
+export const chatClarificationSchema = z.object({
+  chatId: z.string().min(1),
+  clarificationId: z.string().min(1),
+  selectedOption: z.object({
+    selectedOptionId: z.string().min(1),
+    selectedOption: z.string().min(1),
+    customInput: z.string().optional(),
+  }),
+})
+
 export const chatTraceSchema = z.object({
   chatId: z.string().min(1),
   messageId: z.string().min(1),
@@ -172,6 +187,7 @@ export const agentChatMessageSchema = z.object({
   message: z.string(),
   chatId: z.string().optional(),
   path: z.string().optional(),
+  ownerEmail: z.string().optional(),
   modelId: z.string().min(1),
   isReasoningEnabled: z
     .string()
@@ -192,6 +208,7 @@ export const agentChatMessageSchema = z.object({
 
 export const messageSchema = z.object({
   message: z.string().min(1),
+  ownerEmail: z.string().optional(),
   path: z.string().optional(),
   chatId: z.string().optional(),
   selectedModelConfig: z.string().optional(), // JSON string containing model config
@@ -224,10 +241,13 @@ export const messageSchema = z.object({
       if (!val) return false
       return val.toLowerCase() === "true"
     }),
-  isFollowUp: z.string().optional().transform((val) => {
-    if (!val) return false
-    return val.toLowerCase() === "true"
-  }),
+  isFollowUp: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
 })
 
 export type MessageReqType = z.infer<typeof messageSchema>
@@ -254,7 +274,6 @@ export const generatePromptSchema = z.object({
       },
     ),
 })
-
 
 export const handleAttachmentDeleteSchema = z.object({
   attachment: attachmentMetadataSchema,
@@ -306,7 +325,7 @@ export const SearchApi = async (c: Context) => {
     debug,
     agentId,
     // @ts-ignore
-  } = c.req.valid("query")  
+  } = c.req.valid("query")
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const timestampRange = getTimestamp(lastUpdated)
@@ -585,10 +604,14 @@ export const AnswerApi = async (c: Context) => {
     costArr.push(cost)
   }
   const initialContext = cleanContext(
-    (await Promise.all(
-      results.root.children
-        .map(async (v) => await answerContextMap(v as VespaSearchResults, userMetadata))
-    )).join("\n"),
+    (
+      await Promise.all(
+        results.root.children.map(
+          async (v) =>
+            await answerContextMap(v as VespaSearchResults, userMetadata),
+        ),
+      )
+    ).join("\n"),
   )
 
   const tokenLimit = maxTokenBeforeMetadataCleanup
@@ -665,11 +688,16 @@ export const AnswerApi = async (c: Context) => {
   }
 
   const finalContext = cleanContext(
-    (await Promise.all(
-      results.root.children
-        .filter((v, i) => output?.contextualChunks.includes(i))
-        .map(async (v) => await answerContextMap(v as VespaSearchResults, userMetadata))
-    )).join("\n"),
+    (
+      await Promise.all(
+        results.root.children
+          .filter((v, i) => output?.contextualChunks.includes(i))
+          .map(
+            async (v) =>
+              await answerContextMap(v as VespaSearchResults, userMetadata),
+          ),
+      )
+    ).join("\n"),
   )
 
   return streamSSE(c, async (stream) => {

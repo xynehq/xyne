@@ -10,7 +10,8 @@ const Logger = getLogger(Subsystem.Utils).child({
   module: "useConnectionData",
 })
 
-const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
+// Use search endpoint for search operations (port 8081)
+const vespaEndpoint = config.vespaEndpoint.queryEndpoint
 
 /**
  * Fetches all mail documents using parallel batching approach,

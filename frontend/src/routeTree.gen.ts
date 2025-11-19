@@ -8,41 +8,7 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as CallRouteImport } from './routes/call'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
-import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as OauthSuccessRouteImport } from './routes/oauth/success'
-import { Route as AuthenticatedWorkflowRouteImport } from './routes/_authenticated/workflow'
-import { Route as AuthenticatedTuningRouteImport } from './routes/_authenticated/tuning'
-import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
-import { Route as AuthenticatedKnowledgeManagementRouteImport } from './routes/_authenticated/knowledgeManagement'
-import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
-import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
-import { Route as AuthenticatedBuzzRouteImport } from './routes/_authenticated/buzz'
-import { Route as AuthenticatedAgentRouteImport } from './routes/_authenticated/agent'
-import { Route as AuthenticatedIntegrationsIndexRouteImport } from './routes/_authenticated/integrations/index'
-import { Route as AuthenticatedBuzzIndexRouteImport } from './routes/_authenticated/buzz/index'
-import { Route as AuthenticatedIntegrationsSlackRouteImport } from './routes/_authenticated/integrations/slack'
-import { Route as AuthenticatedIntegrationsMicrosoftRouteImport } from './routes/_authenticated/integrations/microsoft'
-import { Route as AuthenticatedIntegrationsMcpRouteImport } from './routes/_authenticated/integrations/mcp'
-import { Route as AuthenticatedIntegrationsGoogleRouteImport } from './routes/_authenticated/integrations/google'
-import { Route as AuthenticatedIntegrationsApiKeyRouteImport } from './routes/_authenticated/integrations/apiKey'
-import { Route as AuthenticatedDataSourceDocIdRouteImport } from './routes/_authenticated/dataSource.$docId'
-import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat.$chatId'
-import { Route as AuthenticatedCallCallIdRouteImport } from './routes/_authenticated/call.$callId'
-import { Route as AuthenticatedBuzzHistoryRouteImport } from './routes/_authenticated/buzz/history'
-import { Route as AuthenticatedBuzzChatsRouteImport } from './routes/_authenticated/buzz/chats'
-import { Route as AuthenticatedBuzzChannelsRouteImport } from './routes/_authenticated/buzz/channels'
-import { Route as AuthenticatedAdminUserManagementRouteImport } from './routes/_authenticated/admin/userManagement'
-import { Route as AuthenticatedAdminChatOverviewRouteImport } from './routes/_authenticated/admin/chat-overview'
-import { Route as AuthenticatedAdminIntegrationsIndexRouteImport } from './routes/_authenticated/admin/integrations/index'
-import { Route as AuthenticatedTraceChatIdMsgIdRouteImport } from './routes/_authenticated/trace.$chatId.$msgId'
-import { Route as AuthenticatedAdminIntegrationsSlackRouteImport } from './routes/_authenticated/admin/integrations/slack'
-import { Route as AuthenticatedAdminIntegrationsMicrosoftRouteImport } from './routes/_authenticated/admin/integrations/microsoft'
-import { Route as AuthenticatedAdminIntegrationsMcpRouteImport } from './routes/_authenticated/admin/integrations/mcp'
-import { Route as AuthenticatedAdminIntegrationsGoogleRouteImport } from './routes/_authenticated/admin/integrations/google'
+// Import Routes
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as CallImport } from './routes/call'
@@ -70,6 +36,7 @@ import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/
 import { Route as AuthenticatedCallCallIdImport } from './routes/_authenticated/call.$callId'
 import { Route as AuthenticatedBuzzHistoryImport } from './routes/_authenticated/buzz/history'
 import { Route as AuthenticatedBuzzChatsImport } from './routes/_authenticated/buzz/chats'
+import { Route as AuthenticatedBuzzChannelsImport } from './routes/_authenticated/buzz/channels'
 import { Route as AuthenticatedAdminUserManagementImport } from './routes/_authenticated/admin/userManagement'
 import { Route as AuthenticatedAdminChatOverviewImport } from './routes/_authenticated/admin/chat-overview'
 import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
@@ -237,12 +204,13 @@ const AuthenticatedBuzzChatsRoute = AuthenticatedBuzzChatsImport.update({
   path: '/chats',
   getParentRoute: () => AuthenticatedBuzzRoute,
 } as any)
-const AuthenticatedBuzzChannelsRoute =
-  AuthenticatedBuzzChannelsRouteImport.update({
-    id: '/channels',
-    path: '/channels',
-    getParentRoute: () => AuthenticatedBuzzRoute,
-  } as any)
+
+const AuthenticatedBuzzChannelsRoute = AuthenticatedBuzzChannelsImport.update({
+  id: '/channels',
+  path: '/channels',
+  getParentRoute: () => AuthenticatedBuzzRoute,
+} as any)
+
 const AuthenticatedAdminUserManagementRoute =
   AuthenticatedAdminUserManagementImport.update({
     id: '/admin/userManagement',
@@ -408,6 +376,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminUserManagementImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/buzz/channels': {
+      id: '/_authenticated/buzz/channels'
+      path: '/channels'
+      fullPath: '/buzz/channels'
+      preLoaderRoute: typeof AuthenticatedBuzzChannelsImport
+      parentRoute: typeof AuthenticatedBuzzImport
+    }
     '/_authenticated/buzz/chats': {
       id: '/_authenticated/buzz/chats'
       path: '/chats'
@@ -540,12 +515,14 @@ declare module '@tanstack/react-router' {
 // Create and export the route tree
 
 interface AuthenticatedBuzzRouteChildren {
+  AuthenticatedBuzzChannelsRoute: typeof AuthenticatedBuzzChannelsRoute
   AuthenticatedBuzzChatsRoute: typeof AuthenticatedBuzzChatsRoute
   AuthenticatedBuzzHistoryRoute: typeof AuthenticatedBuzzHistoryRoute
   AuthenticatedBuzzIndexRoute: typeof AuthenticatedBuzzIndexRoute
 }
 
 const AuthenticatedBuzzRouteChildren: AuthenticatedBuzzRouteChildren = {
+  AuthenticatedBuzzChannelsRoute: AuthenticatedBuzzChannelsRoute,
   AuthenticatedBuzzChatsRoute: AuthenticatedBuzzChatsRoute,
   AuthenticatedBuzzHistoryRoute: AuthenticatedBuzzHistoryRoute,
   AuthenticatedBuzzIndexRoute: AuthenticatedBuzzIndexRoute,
@@ -858,343 +835,6 @@ export interface RootRouteChildren {
   OauthSuccessRoute: typeof OauthSuccessRoute
 }
 
-declare module '@tanstack/react-router' {
-  interface FileRoutesByPath {
-    '/call': {
-      id: '/call'
-      path: '/call'
-      fullPath: '/call'
-      preLoaderRoute: typeof CallRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated': {
-      id: '/_authenticated'
-      path: ''
-      fullPath: ''
-      preLoaderRoute: typeof AuthenticatedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/': {
-      id: '/_authenticated/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/oauth/success': {
-      id: '/oauth/success'
-      path: '/oauth/success'
-      fullPath: '/oauth/success'
-      preLoaderRoute: typeof OauthSuccessRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/workflow': {
-      id: '/_authenticated/workflow'
-      path: '/workflow'
-      fullPath: '/workflow'
-      preLoaderRoute: typeof AuthenticatedWorkflowRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/tuning': {
-      id: '/_authenticated/tuning'
-      path: '/tuning'
-      fullPath: '/tuning'
-      preLoaderRoute: typeof AuthenticatedTuningRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/search': {
-      id: '/_authenticated/search'
-      path: '/search'
-      fullPath: '/search'
-      preLoaderRoute: typeof AuthenticatedSearchRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/knowledgeManagement': {
-      id: '/_authenticated/knowledgeManagement'
-      path: '/knowledgeManagement'
-      fullPath: '/knowledgeManagement'
-      preLoaderRoute: typeof AuthenticatedKnowledgeManagementRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/dashboard': {
-      id: '/_authenticated/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/chat': {
-      id: '/_authenticated/chat'
-      path: '/chat'
-      fullPath: '/chat'
-      preLoaderRoute: typeof AuthenticatedChatRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/buzz': {
-      id: '/_authenticated/buzz'
-      path: '/buzz'
-      fullPath: '/buzz'
-      preLoaderRoute: typeof AuthenticatedBuzzRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/agent': {
-      id: '/_authenticated/agent'
-      path: '/agent'
-      fullPath: '/agent'
-      preLoaderRoute: typeof AuthenticatedAgentRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/integrations/': {
-      id: '/_authenticated/integrations/'
-      path: '/integrations'
-      fullPath: '/integrations'
-      preLoaderRoute: typeof AuthenticatedIntegrationsIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/buzz/': {
-      id: '/_authenticated/buzz/'
-      path: '/'
-      fullPath: '/buzz/'
-      preLoaderRoute: typeof AuthenticatedBuzzIndexRouteImport
-      parentRoute: typeof AuthenticatedBuzzRoute
-    }
-    '/_authenticated/integrations/slack': {
-      id: '/_authenticated/integrations/slack'
-      path: '/integrations/slack'
-      fullPath: '/integrations/slack'
-      preLoaderRoute: typeof AuthenticatedIntegrationsSlackRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/integrations/microsoft': {
-      id: '/_authenticated/integrations/microsoft'
-      path: '/integrations/microsoft'
-      fullPath: '/integrations/microsoft'
-      preLoaderRoute: typeof AuthenticatedIntegrationsMicrosoftRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/integrations/mcp': {
-      id: '/_authenticated/integrations/mcp'
-      path: '/integrations/mcp'
-      fullPath: '/integrations/mcp'
-      preLoaderRoute: typeof AuthenticatedIntegrationsMcpRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/integrations/google': {
-      id: '/_authenticated/integrations/google'
-      path: '/integrations/google'
-      fullPath: '/integrations/google'
-      preLoaderRoute: typeof AuthenticatedIntegrationsGoogleRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/integrations/apiKey': {
-      id: '/_authenticated/integrations/apiKey'
-      path: '/integrations/apiKey'
-      fullPath: '/integrations/apiKey'
-      preLoaderRoute: typeof AuthenticatedIntegrationsApiKeyRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/dataSource/$docId': {
-      id: '/_authenticated/dataSource/$docId'
-      path: '/dataSource/$docId'
-      fullPath: '/dataSource/$docId'
-      preLoaderRoute: typeof AuthenticatedDataSourceDocIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/chat/$chatId': {
-      id: '/_authenticated/chat/$chatId'
-      path: '/$chatId'
-      fullPath: '/chat/$chatId'
-      preLoaderRoute: typeof AuthenticatedChatChatIdRouteImport
-      parentRoute: typeof AuthenticatedChatRoute
-    }
-    '/_authenticated/call/$callId': {
-      id: '/_authenticated/call/$callId'
-      path: '/call/$callId'
-      fullPath: '/call/$callId'
-      preLoaderRoute: typeof AuthenticatedCallCallIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/buzz/history': {
-      id: '/_authenticated/buzz/history'
-      path: '/history'
-      fullPath: '/buzz/history'
-      preLoaderRoute: typeof AuthenticatedBuzzHistoryRouteImport
-      parentRoute: typeof AuthenticatedBuzzRoute
-    }
-    '/_authenticated/buzz/chats': {
-      id: '/_authenticated/buzz/chats'
-      path: '/chats'
-      fullPath: '/buzz/chats'
-      preLoaderRoute: typeof AuthenticatedBuzzChatsRouteImport
-      parentRoute: typeof AuthenticatedBuzzRoute
-    }
-    '/_authenticated/buzz/channels': {
-      id: '/_authenticated/buzz/channels'
-      path: '/channels'
-      fullPath: '/buzz/channels'
-      preLoaderRoute: typeof AuthenticatedBuzzChannelsRouteImport
-      parentRoute: typeof AuthenticatedBuzzRoute
-    }
-    '/_authenticated/admin/userManagement': {
-      id: '/_authenticated/admin/userManagement'
-      path: '/admin/userManagement'
-      fullPath: '/admin/userManagement'
-      preLoaderRoute: typeof AuthenticatedAdminUserManagementRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/chat-overview': {
-      id: '/_authenticated/admin/chat-overview'
-      path: '/admin/chat-overview'
-      fullPath: '/admin/chat-overview'
-      preLoaderRoute: typeof AuthenticatedAdminChatOverviewRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/integrations/': {
-      id: '/_authenticated/admin/integrations/'
-      path: '/admin/integrations'
-      fullPath: '/admin/integrations'
-      preLoaderRoute: typeof AuthenticatedAdminIntegrationsIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/trace/$chatId/$msgId': {
-      id: '/_authenticated/trace/$chatId/$msgId'
-      path: '/trace/$chatId/$msgId'
-      fullPath: '/trace/$chatId/$msgId'
-      preLoaderRoute: typeof AuthenticatedTraceChatIdMsgIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/integrations/slack': {
-      id: '/_authenticated/admin/integrations/slack'
-      path: '/admin/integrations/slack'
-      fullPath: '/admin/integrations/slack'
-      preLoaderRoute: typeof AuthenticatedAdminIntegrationsSlackRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/integrations/microsoft': {
-      id: '/_authenticated/admin/integrations/microsoft'
-      path: '/admin/integrations/microsoft'
-      fullPath: '/admin/integrations/microsoft'
-      preLoaderRoute: typeof AuthenticatedAdminIntegrationsMicrosoftRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/integrations/mcp': {
-      id: '/_authenticated/admin/integrations/mcp'
-      path: '/admin/integrations/mcp'
-      fullPath: '/admin/integrations/mcp'
-      preLoaderRoute: typeof AuthenticatedAdminIntegrationsMcpRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/integrations/google': {
-      id: '/_authenticated/admin/integrations/google'
-      path: '/admin/integrations/google'
-      fullPath: '/admin/integrations/google'
-      preLoaderRoute: typeof AuthenticatedAdminIntegrationsGoogleRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-  }
-}
-
-interface AuthenticatedBuzzRouteChildren {
-  AuthenticatedBuzzChannelsRoute: typeof AuthenticatedBuzzChannelsRoute
-  AuthenticatedBuzzChatsRoute: typeof AuthenticatedBuzzChatsRoute
-  AuthenticatedBuzzHistoryRoute: typeof AuthenticatedBuzzHistoryRoute
-  AuthenticatedBuzzIndexRoute: typeof AuthenticatedBuzzIndexRoute
-}
-
-const AuthenticatedBuzzRouteChildren: AuthenticatedBuzzRouteChildren = {
-  AuthenticatedBuzzChannelsRoute: AuthenticatedBuzzChannelsRoute,
-  AuthenticatedBuzzChatsRoute: AuthenticatedBuzzChatsRoute,
-  AuthenticatedBuzzHistoryRoute: AuthenticatedBuzzHistoryRoute,
-  AuthenticatedBuzzIndexRoute: AuthenticatedBuzzIndexRoute,
-}
-
-const AuthenticatedBuzzRouteWithChildren =
-  AuthenticatedBuzzRoute._addFileChildren(AuthenticatedBuzzRouteChildren)
-
-interface AuthenticatedChatRouteChildren {
-  AuthenticatedChatChatIdRoute: typeof AuthenticatedChatChatIdRoute
-}
-
-const AuthenticatedChatRouteChildren: AuthenticatedChatRouteChildren = {
-  AuthenticatedChatChatIdRoute: AuthenticatedChatChatIdRoute,
-}
-
-const AuthenticatedChatRouteWithChildren =
-  AuthenticatedChatRoute._addFileChildren(AuthenticatedChatRouteChildren)
-
-interface AuthenticatedRouteChildren {
-  AuthenticatedAgentRoute: typeof AuthenticatedAgentRoute
-  AuthenticatedBuzzRoute: typeof AuthenticatedBuzzRouteWithChildren
-  AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
-  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedKnowledgeManagementRoute: typeof AuthenticatedKnowledgeManagementRoute
-  AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
-  AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
-  AuthenticatedWorkflowRoute: typeof AuthenticatedWorkflowRoute
-  AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
-  AuthenticatedAdminChatOverviewRoute: typeof AuthenticatedAdminChatOverviewRoute
-  AuthenticatedAdminUserManagementRoute: typeof AuthenticatedAdminUserManagementRoute
-  AuthenticatedCallCallIdRoute: typeof AuthenticatedCallCallIdRoute
-  AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
-  AuthenticatedIntegrationsApiKeyRoute: typeof AuthenticatedIntegrationsApiKeyRoute
-  AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
-  AuthenticatedIntegrationsMcpRoute: typeof AuthenticatedIntegrationsMcpRoute
-  AuthenticatedIntegrationsMicrosoftRoute: typeof AuthenticatedIntegrationsMicrosoftRoute
-  AuthenticatedIntegrationsSlackRoute: typeof AuthenticatedIntegrationsSlackRoute
-  AuthenticatedIntegrationsIndexRoute: typeof AuthenticatedIntegrationsIndexRoute
-  AuthenticatedAdminIntegrationsGoogleRoute: typeof AuthenticatedAdminIntegrationsGoogleRoute
-  AuthenticatedAdminIntegrationsMcpRoute: typeof AuthenticatedAdminIntegrationsMcpRoute
-  AuthenticatedAdminIntegrationsMicrosoftRoute: typeof AuthenticatedAdminIntegrationsMicrosoftRoute
-  AuthenticatedAdminIntegrationsSlackRoute: typeof AuthenticatedAdminIntegrationsSlackRoute
-  AuthenticatedTraceChatIdMsgIdRoute: typeof AuthenticatedTraceChatIdMsgIdRoute
-  AuthenticatedAdminIntegrationsIndexRoute: typeof AuthenticatedAdminIntegrationsIndexRoute
-}
-
-const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
-  AuthenticatedAgentRoute: AuthenticatedAgentRoute,
-  AuthenticatedBuzzRoute: AuthenticatedBuzzRouteWithChildren,
-  AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
-  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedKnowledgeManagementRoute: AuthenticatedKnowledgeManagementRoute,
-  AuthenticatedSearchRoute: AuthenticatedSearchRoute,
-  AuthenticatedTuningRoute: AuthenticatedTuningRoute,
-  AuthenticatedWorkflowRoute: AuthenticatedWorkflowRoute,
-  AuthenticatedIndexRoute: AuthenticatedIndexRoute,
-  AuthenticatedAdminChatOverviewRoute: AuthenticatedAdminChatOverviewRoute,
-  AuthenticatedAdminUserManagementRoute: AuthenticatedAdminUserManagementRoute,
-  AuthenticatedCallCallIdRoute: AuthenticatedCallCallIdRoute,
-  AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
-  AuthenticatedIntegrationsApiKeyRoute: AuthenticatedIntegrationsApiKeyRoute,
-  AuthenticatedIntegrationsGoogleRoute: AuthenticatedIntegrationsGoogleRoute,
-  AuthenticatedIntegrationsMcpRoute: AuthenticatedIntegrationsMcpRoute,
-  AuthenticatedIntegrationsMicrosoftRoute:
-    AuthenticatedIntegrationsMicrosoftRoute,
-  AuthenticatedIntegrationsSlackRoute: AuthenticatedIntegrationsSlackRoute,
-  AuthenticatedIntegrationsIndexRoute: AuthenticatedIntegrationsIndexRoute,
-  AuthenticatedAdminIntegrationsGoogleRoute:
-    AuthenticatedAdminIntegrationsGoogleRoute,
-  AuthenticatedAdminIntegrationsMcpRoute:
-    AuthenticatedAdminIntegrationsMcpRoute,
-  AuthenticatedAdminIntegrationsMicrosoftRoute:
-    AuthenticatedAdminIntegrationsMicrosoftRoute,
-  AuthenticatedAdminIntegrationsSlackRoute:
-    AuthenticatedAdminIntegrationsSlackRoute,
-  AuthenticatedTraceChatIdMsgIdRoute: AuthenticatedTraceChatIdMsgIdRoute,
-  AuthenticatedAdminIntegrationsIndexRoute:
-    AuthenticatedAdminIntegrationsIndexRoute,
-}
-
-const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
-  AuthenticatedRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AuthRoute: AuthRoute,
@@ -1262,6 +902,7 @@ export const routeTree = rootRoute
       "filePath": "_authenticated/buzz.tsx",
       "parent": "/_authenticated",
       "children": [
+        "/_authenticated/buzz/channels",
         "/_authenticated/buzz/chats",
         "/_authenticated/buzz/history",
         "/_authenticated/buzz/"
@@ -1308,6 +949,10 @@ export const routeTree = rootRoute
     "/_authenticated/admin/userManagement": {
       "filePath": "_authenticated/admin/userManagement.tsx",
       "parent": "/_authenticated"
+    },
+    "/_authenticated/buzz/channels": {
+      "filePath": "_authenticated/buzz/channels.tsx",
+      "parent": "/_authenticated/buzz"
     },
     "/_authenticated/buzz/chats": {
       "filePath": "_authenticated/buzz/chats.tsx",

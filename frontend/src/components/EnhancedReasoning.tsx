@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
-import { ChevronRight, Loader2, FileText, Users, Brain } from "lucide-react"
+import { ChevronRight, Loader2, FileText, Users, Brain, Globe } from "lucide-react"
 import { cn, splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import { AgentReasoningStepType, Citation, XyneTools, Apps } from "shared/types"
 import MarkdownPreview from "@uiw/react-markdown-preview"
@@ -14,6 +14,7 @@ import XyneIcon from "@/assets/assistant-logo.svg?react"
 import SvgIcon from "@/assets/mcp.svg?react"
 import ExpandIcon from "@/assets/expand-text-input.svg?react"
 import { textToCitationIndex } from "@/utils/chatUtils.tsx"
+import { ClarificationRequest } from "@/hooks/useChatStream"
 
 // Simple hash function to generate stable IDs from content
 const generateStableId = (content: string, index: number): number => {
@@ -41,7 +42,6 @@ interface ReasoningStep {
   app?: string
   action?: string
   isIterationSummary?: boolean
-  iterationToolName?: string
 }
 
 interface EnhancedReasoningProps {
@@ -50,6 +50,13 @@ interface EnhancedReasoningProps {
   className?: string
   citations?: Citation[]
   citationMap?: Record<number, number>
+  clarificationRequest?: ClarificationRequest
+  waitingForClarification?: boolean
+  onClarificationSelect?: (
+    selectedOptionId: string,
+    selectedOptionLabel: string,
+    customInput?: string,
+  ) => void
 }
 
 // Process reasoning content to include citation links and format parameters
@@ -134,8 +141,8 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
   // Track steps per iteration for limiting display (same as backend)
   let currentIterationSteps = 0
   let currentIterationNumber = 0
-  let currentIterationToolName: string | undefined = undefined
-  const MAX_STEPS_PER_ITERATION = 3
+  let currentToolName: string | undefined = undefined
+  const MAX_STEPS_PER_ITERATION = 5
 
   lines.forEach((line, lineIndex) => {
     try {
@@ -149,9 +156,9 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
         if (existingStep) {
           // Update existing step with new data
           existingStep.stepSummary =
-            jsonData.quickSummary || existingStep.stepSummary
+            jsonData.step.stepSummary || existingStep.stepSummary
           existingStep.aiGeneratedSummary =
-            jsonData.aiSummary || existingStep.aiGeneratedSummary
+            jsonData.step.aiGeneratedSummary || existingStep.aiGeneratedSummary
           return
         }
 
@@ -164,14 +171,13 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
             generateStableId(jsonData.text, lineIndex),
           status: jsonData.step.status || "info",
           iterationNumber: jsonData.step.iteration,
-          stepSummary: jsonData.quickSummary,
-          aiGeneratedSummary: jsonData.aiSummary,
+          stepSummary: jsonData.step.stepSummary,
+          aiGeneratedSummary: jsonData.step.aiGeneratedSummary,
           stepId: stepId,
           substeps: [],
           toolName: jsonData.step.toolName,
           app: jsonData.step.app,
-          isIterationSummary: jsonData.isIterationSummary || false,
-          iterationToolName: currentIterationToolName,
+          isIterationSummary: jsonData.step.isIterationSummary || false,
         }
 
         // Handle iteration summaries - add them as top-level steps
@@ -181,13 +187,13 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
           return
         }
 
-        // Apply the same 3-steps-per-iteration logic as backend
+        // Apply the same 5-steps-per-iteration logic as backend
         if (step.type === AgentReasoningStepType.Iteration) {
           currentIteration = step
           currentIterationNumber =
             step.iterationNumber ?? currentIterationNumber + 1
           currentIterationSteps = 0 // Reset step counter for new iteration
-          currentIterationToolName = undefined // Reset tool name for new iteration
+          currentToolName = undefined // Reset tool name for new iteration
           // Add iteration step to show attempt headers
           steps.push(step)
           stepMap.set(stepId, step)
@@ -195,30 +201,32 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
           currentIteration &&
           step.type !== AgentReasoningStepType.Iteration
         ) {
+          // Check if this is a tool-related step (tool calls are the steps in JAF)
+          const isToolStep =
+            step.type === AgentReasoningStepType.ToolSelected ||
+            step.type === AgentReasoningStepType.ToolExecuting ||
+            step.type === AgentReasoningStepType.ToolResult
           // Track tool name from ToolExecuting steps for the entire iteration
           if (
-            step.type === AgentReasoningStepType.ToolExecuting &&
+            isToolStep &&
             step.toolName
           ) {
-            currentIterationToolName = step.toolName
+            currentToolName = step.toolName
             // Update the current iteration with the tool name
-            currentIteration.iterationToolName = currentIterationToolName
+            currentIteration.toolName = currentToolName
             // Update all existing substeps in this iteration with the tool name
             if (currentIteration.substeps) {
               currentIteration.substeps.forEach((substep) => {
                 if (!substep.app && !substep.toolName) {
-                  substep.iterationToolName = currentIterationToolName
+                  substep.toolName = currentToolName
                 }
               })
             }
           }
 
-          // Set the iteration tool name for this step
-          step.iterationToolName = currentIterationToolName
-
-          // Check if we've already added 3 steps for this iteration
+          // Check if we've already added 5 steps for this iteration
           if (currentIterationSteps >= MAX_STEPS_PER_ITERATION) {
-            // Skip this step to maintain 3-step limit per iteration
+            // Skip this step to maintain 5-step limit per iteration
             stepMap.set(stepId, step) // Still track it internally
             return
           }
@@ -246,14 +254,14 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
           type: AgentReasoningStepType.LogMessage,
           content:
             jsonData.text ||
-            jsonData.quickSummary ||
-            jsonData.aiSummary ||
+            jsonData.step.aiGeneratedSummary ||
+            jsonData.step.stepSummary ||
             "Additional processing completed",
           timestamp: jsonData.step.timestamp || Date.now(),
           status: "info",
           iterationNumber: jsonData.step.iteration,
-          stepSummary: jsonData.quickSummary || jsonData.aiSummary,
-          aiGeneratedSummary: jsonData.aiSummary || jsonData.quickSummary,
+          stepSummary: jsonData.step.stepSummary || jsonData.step.aiGeneratedSummary,
+          aiGeneratedSummary: jsonData.step.aiGeneratedSummary || jsonData.step.stepSummary,
           stepId: jsonData.step.stepId,
           substeps: [],
         }
@@ -300,7 +308,6 @@ const ReasoningStepComponent: React.FC<{
     stepType?: string,
     stepIndex?: number,
     toolName?: string,
-    iterationToolName?: string,
   ) => JSX.Element | null
   allSteps?: ReasoningStep[]
 }> = React.memo(
@@ -349,11 +356,11 @@ const ReasoningStepComponent: React.FC<{
       if (depth > 0) {
         // Step 1 (index 0): show actual message
         if (index === 0) {
-          return step.content
+          return step.aiGeneratedSummary || step.content
         }
         // Steps 2 and 3 (index 1 and 2): show summary only
         if (index >= 1 && (step.aiGeneratedSummary || step.stepSummary)) {
-          return step.aiGeneratedSummary || step.stepSummary
+          return step.aiGeneratedSummary || step.content
         }
         // Fallback to content if no summary available
         return step.content
@@ -375,8 +382,7 @@ const ReasoningStepComponent: React.FC<{
       !isIteration &&
       !isInitialMessage &&
       !isIterationSummary &&
-      step.content !== (step.aiGeneratedSummary || step.stepSummary) &&
-      (depth === 0 || index === 0) // Only step 1 in iterations or top-level steps
+      step.content !== (step.aiGeneratedSummary || step.stepSummary)
     const isWaitingForSummary =
       isStreaming &&
       isLastStep &&
@@ -402,6 +408,10 @@ const ReasoningStepComponent: React.FC<{
         (s) => s.type === AgentReasoningStepType.Iteration,
       ).length
       const showAttemptHeader = totalIterations > 1
+
+      if(!hasSubsteps) {
+        return
+      }
 
       return (
         <div className={cn("mt-4", index > 0 && "mt-8")}>
@@ -506,7 +516,6 @@ const ReasoningStepComponent: React.FC<{
       step.type,
       index,
       step.toolName,
-      step.iterationToolName,
     )
 
     return (
@@ -813,12 +822,16 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   className,
   citations = [],
   citationMap,
+  clarificationRequest,
+  waitingForClarification,
+  onClarificationSelect,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [steps, setSteps] = useState<ReasoningStep[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const hasAutoCollapsedRef = useRef(false)
+  const [customClarificationInput, setCustomClarificationInput] = useState("")
   const [progressState, setProgressState] = useState<{
     state: ProgressState
     text: string
@@ -865,6 +878,21 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
 
   const getIconFromToolName = useCallback((toolName: string) => {
     switch (toolName) {
+      // new tools
+      case XyneTools.searchGmail:
+        return <GmailIcon className="w-4 h-4" />
+      case XyneTools.searchDriveFiles:
+        return <DriveIcon className="w-4 h-4" />
+      case XyneTools.searchCalendarEvents:
+        return <GoogleCalendarIcon className="w-4 h-4" />
+      case XyneTools.searchGoogleContacts:
+        return <Users className="w-4 h-4" />
+      case XyneTools.searchGlobal:
+        return <Globe className="w-4 h-4" />
+      case XyneTools.requestUserClarification:
+        return <Brain className="w-4 h-4" />
+      
+      // old tools
       case XyneTools.GetUserInfo:
         return <XyneIcon className="w-4 h-4" />
 
@@ -890,7 +918,6 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
       stepType?: string,
       stepIndex?: number,
       toolName?: string,
-      iterationToolName?: string,
     ) => {
       // For planning steps (first step in iteration)
       if (stepType === AgentReasoningStepType.Planning || stepIndex === 0) {
@@ -902,9 +929,8 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
       if (appIcon) return appIcon
 
       // If no app, try to get icon from tool name (current step's tool or iteration's tool)
-      const currentToolName = toolName || iterationToolName
-      if (currentToolName) {
-        return getIconFromToolName(currentToolName)
+      if (toolName) {
+        return getIconFromToolName(toolName)
       }
 
       return null
@@ -961,17 +987,19 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
   }, [isStreaming])
 
   // Auto-collapse when streaming ends (only once)
+  // BUT: Don't auto-collapse when waiting for clarification
   useEffect(() => {
     if (
       !isStreaming &&
       steps.length > 0 &&
       !isCollapsed &&
-      !hasAutoCollapsedRef.current
+      !hasAutoCollapsedRef.current &&
+      !waitingForClarification
     ) {
       setIsCollapsed(true)
       hasAutoCollapsedRef.current = true // Mark that auto-collapse has happened
     }
-  }, [isStreaming, steps.length, isCollapsed])
+  }, [isStreaming, steps.length, isCollapsed, waitingForClarification])
 
   // Auto-scroll to bottom when new content arrives during streaming
   useEffect(() => {
@@ -996,7 +1024,7 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
     }
   }, [steps, isStreaming, isCollapsed, userHasScrolled])
 
-  if (!content.trim() && !isStreaming) {
+  if (!content.trim() && !isStreaming && !clarificationRequest) {
     return null
   }
 
@@ -1069,6 +1097,97 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
               ) : (
                 <div className="py-4 text-gray-500 dark:text-gray-400 text-sm">
                   No reasoning steps available
+                </div>
+              )}
+
+              {/* HITL: Show clarification UI when waiting for user input */}
+              {waitingForClarification && clarificationRequest && (
+                <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <svg
+                        className="w-5 h-5 text-blue-600 dark:text-blue-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">
+                        {clarificationRequest.question}
+                      </p>
+                      <div className="space-y-2">
+                        {clarificationRequest.options.map((option) => (
+                          <button
+                            key={option.id}
+                            onClick={() =>
+                              onClarificationSelect &&
+                              onClarificationSelect(option.id, option.label)
+                            }
+                            className="w-full text-left px-4 py-3 bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
+                          >
+                            <span className="text-sm text-gray-700 dark:text-gray-200">
+                              {option.label}
+                            </span>
+                          </button>
+                        ))}
+
+                        {/* Custom input section */}
+                        <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-700">
+                          <label className="block text-xs font-medium text-blue-800 dark:text-blue-200 mb-2">
+                            Or provide a custom response:
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={customClarificationInput}
+                              onChange={(e) =>
+                                setCustomClarificationInput(e.target.value)
+                              }
+                              onKeyDown={(e) => {
+                                if (
+                                  e.key === "Enter" &&
+                                  customClarificationInput.trim()
+                                ) {
+                                  onClarificationSelect?.(
+                                    "custom",
+                                    customClarificationInput.trim(),
+                                    customClarificationInput.trim(),
+                                  )
+                                  setCustomClarificationInput("")
+                                }
+                              }}
+                              placeholder="Enter your custom response..."
+                              className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+                            />
+                            <button
+                              onClick={() => {
+                                if (customClarificationInput.trim()) {
+                                  onClarificationSelect?.(
+                                    "custom",
+                                    customClarificationInput.trim(),
+                                    customClarificationInput.trim(),
+                                  )
+                                  setCustomClarificationInput("")
+                                }
+                              }}
+                              disabled={!customClarificationInput.trim()}
+                              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg transition-colors"
+                            >
+                              Submit
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

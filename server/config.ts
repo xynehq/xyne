@@ -2,7 +2,8 @@ import { isURLValid } from "@/validate"
 import { Models } from "@/ai/types"
 import { AuthType } from "./shared/types"
 let vespaBaseHost = "0.0.0.0"
-let vespaPort = process.env.VESPA_PORT || 8080
+let vespaFeedPort = parseInt(process.env.VESPA_FEED_PORT || "8080", 10)
+let vespaQueryPort = parseInt(process.env.VESPA_QUERY_PORT || "8081", 10)
 let postgresBaseHost = "0.0.0.0"
 let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
@@ -41,6 +42,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 let defaultFastModel: Models = "" as Models
 let defaultBestModel: Models = "" as Models
+let defaultBestModelAgenticMode: Models = "" as Models
 let AwsAccessKey = ""
 let AwsSecretKey = ""
 let OpenAIKey = ""
@@ -57,6 +59,9 @@ let VertexAIModel = ""
 let aiProviderBaseUrl = ""
 let isReasoning = false
 let sqlInferenceModel = ""
+let LiteLLMApiKey = ""
+let LiteLLMModel = ""
+let LiteLLMBaseUrl = ""
 
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
@@ -170,6 +175,18 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     : Models.Vertex_Claude_Sonnet_4 // Default best model
   sqlInferenceModel = Models.Vertex_Claude_Sonnet_4
 }
+if (process.env["LITELLM_API_KEY"] && process.env["LITELLM_MODEL"]) {
+  if (process.env["LITELLM_BASE_URL"]) {
+    if (!isURLValid(process.env["LITELLM_BASE_URL"])) {
+      console.warn(`Configuration Warning : Encountered invalid base url`)
+    } else {
+      LiteLLMBaseUrl = process.env["LITELLM_BASE_URL"]
+    }
+  }
+  LiteLLMApiKey = process.env["LITELLM_API_KEY"]
+  LiteLLMModel = process.env["LITELLM_MODEL"]
+  defaultBestModelAgenticMode = LiteLLMModel as Models
+}
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
 
@@ -207,7 +224,8 @@ export default {
   syncServerPort,
   syncServerHost,
   host,
-  vespaPort,
+  vespaFeedPort,
+  vespaQueryPort,
   // slack oauth does not work on http
   slackHost,
   AwsAccessKey,
@@ -224,6 +242,9 @@ export default {
   sqlInferenceModel,
   VertexProjectId,
   VertexRegion,
+  LiteLLMApiKey,
+  LiteLLMModel,
+  LiteLLMBaseUrl,
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
@@ -232,6 +253,7 @@ export default {
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute
   defaultBestModel,
+  defaultBestModelAgenticMode,
   defaultFastModel,
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec
@@ -259,7 +281,10 @@ export default {
   RefreshTokenTTL: 60 * 60 * 24 * 30, // Refresh token expires in 30 days
   MAX_IMAGE_SIZE_BYTES,
   MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
-  vespaEndpoint: `http://${vespaBaseHost}:8080`,
+  vespaEndpoint: {
+    feedEndpoint: `http://${vespaBaseHost}:${vespaFeedPort}`,
+    queryEndpoint: `http://${vespaBaseHost}:${vespaQueryPort}`,
+  },
   defaultRecencyDecayRate: 0.1, // Decay rate for recency scoring in Vespa searches
   CurrentAuthType,
   getDatabaseUrl,

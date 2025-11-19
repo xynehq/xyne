@@ -272,6 +272,9 @@ export const ChatPage = ({
     stopStream,
     retryMessage,
     displayPartial,
+    clarificationRequest,
+    waitingForClarification,
+    provideClarification,
   } = useChatStream(
     chatId,
     (title: string) => setChatTitle(title),
@@ -315,18 +318,22 @@ export const ChatPage = ({
 
   // Create a current streaming response for compatibility with existing UI,
   // merging the real stream IDs once available
-  const currentResp = isStreaming
-    ? {
-        resp: displayPartial ?? partial,
-        thinking,
-        deepResearchSteps,
-        sources,
-        imageCitations,
-        citationMap,
-        messageId: streamInfoMessageId,
-        chatId,
-      }
-    : null
+  // IMPORTANT: Keep currentResp when waiting for clarification, even if not actively streaming
+  const currentResp =
+    isStreaming || waitingForClarification
+      ? {
+          resp: displayPartial ?? partial,
+          thinking,
+          deepResearchSteps,
+          sources,
+          imageCitations,
+          citationMap,
+          messageId: streamInfoMessageId,
+          chatId,
+          clarificationRequest,
+          waitingForClarification,
+        }
+      : null
 
   const [showRagTrace, setShowRagTrace] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
@@ -1640,6 +1647,9 @@ export const ChatPage = ({
                 partial={partial}
                 bottomSpace={bottomSpace}
                 onFollowUpQuestionsLoaded={handleFollowUpQuestionsLoaded}
+                clarificationRequest={clarificationRequest}
+                waitingForClarification={waitingForClarification}
+                provideClarification={provideClarification}
               />
               {showRagTrace && chatId && selectedMessageId && (
                 <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
@@ -2097,6 +2107,8 @@ interface VirtualizedMessagesProps {
     deepResearchSteps?: any[]
     messageId?: string | null
     citationMap?: any
+    clarificationRequest?: any
+    waitingForClarification?: boolean
   } | null
   showSources: boolean
   currentMessageId: string | null
@@ -2128,6 +2140,14 @@ interface VirtualizedMessagesProps {
   partial: string
   bottomSpace: number
   onFollowUpQuestionsLoaded: () => void
+  clarificationRequest?: any
+  waitingForClarification?: boolean
+  provideClarification?: (
+    clarificationId: string,
+    selectedOptionId: string,
+    selectedOptionLabel: string,
+    customInput?: string,
+  ) => void
 }
 
 const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
@@ -2171,6 +2191,9 @@ const VirtualizedMessages = React.forwardRef<
       partial,
       bottomSpace,
       onFollowUpQuestionsLoaded,
+      clarificationRequest,
+      waitingForClarification,
+      provideClarification,
     },
     ref,
   ) => {
@@ -2192,6 +2215,8 @@ const VirtualizedMessages = React.forwardRef<
           citationMap: currentResp.citationMap,
           isStreaming: true,
           attachments: [],
+          clarificationRequest: currentResp.clarificationRequest,
+          waitingForClarification: currentResp.waitingForClarification,
         })
       }
       return items
@@ -2312,7 +2337,9 @@ const VirtualizedMessages = React.forwardRef<
                 !isSharedChat &&
                 message.externalId &&
                 index === messages.length - 1
-
+              const shouldWireClarification =
+                !!currentResp &&
+                message.externalId === (currentResp.messageId || "current-resp")
               return (
                 <div
                   key={virtualItem.key}
@@ -2391,6 +2418,15 @@ const VirtualizedMessages = React.forwardRef<
                       attachments={message.attachments || []}
                       onCitationClick={onCitationClick}
                       isCitationPreviewOpen={isCitationPreviewOpen}
+                      clarificationRequest={message.clarificationRequest}
+                      waitingForClarification={
+                        message.waitingForClarification || false
+                      }
+                      provideClarification={
+                        shouldWireClarification
+                          ? provideClarification
+                          : undefined
+                      }
                     />
 
                     {userMessageWithErr && (
@@ -2511,6 +2547,9 @@ export const ChatMessage = ({
   attachments = [],
   onCitationClick,
   isCitationPreviewOpen = false,
+  clarificationRequest,
+  waitingForClarification,
+  provideClarification,
 }: {
   message: string
   thinking: string
@@ -2536,6 +2575,14 @@ export const ChatMessage = ({
   attachments?: AttachmentMetadata[]
   onCitationClick?: (citation: Citation) => void
   isCitationPreviewOpen?: boolean
+  clarificationRequest?: any
+  waitingForClarification?: boolean
+  provideClarification?: (
+    clarificationId: string,
+    selectedOptionId: string,
+    selectedOptionLabel: string,
+    customInput?: string,
+  ) => void
 }) => {
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
@@ -2579,14 +2626,30 @@ export const ChatMessage = ({
                     />
                   </>
                 )}
-                {thinking && (
+                {(thinking || clarificationRequest) && (
                   <>
                     <EnhancedReasoning
-                      content={thinking}
+                      content={thinking || ""}
                       isStreaming={!responseDone}
                       className="mb-4"
                       citations={citations}
                       citationMap={citationMap}
+                      clarificationRequest={clarificationRequest}
+                      waitingForClarification={waitingForClarification}
+                      onClarificationSelect={(
+                        selectedOptionId: string,
+                        selectedOptionLabel: string,
+                        customInput?: string,
+                      ) => {
+                        if (clarificationRequest && provideClarification) {
+                          provideClarification(
+                            clarificationRequest.clarificationId,
+                            selectedOptionId,
+                            selectedOptionLabel,
+                            customInput,
+                          )
+                        }
+                      }}
                     />
                   </>
                 )}

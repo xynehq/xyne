@@ -1,3 +1,66 @@
+# [3.32.0](https://github.com/xynehq/xyne/compare/v3.31.6...v3.32.0) (2025-11-19)
+
+
+### Features
+
+* XYNE-331 added lite llm provider and glm model support ([#1202](https://github.com/xynehq/xyne/issues/1202)) ([b83bb5f](https://github.com/xynehq/xyne/commit/b83bb5f33d0926b75cf54a126d40a687c74b78cc))
+
+## [3.31.6](https://github.com/xynehq/xyne/compare/v3.31.5...v3.31.6) (2025-11-18)
+
+
+### Bug Fixes
+
+* XYNE-350 fixed agent reasoning feature ([#1219](https://github.com/xynehq/xyne/issues/1219)) ([c24a4d6](https://github.com/xynehq/xyne/commit/c24a4d69001207a1a5ce3703858fccc7261091eb))
+
+## [3.31.5](https://github.com/xynehq/xyne/compare/v3.31.4...v3.31.5) (2025-11-18)
+
+
+### Bug Fixes
+
+* Http Config update and UX upgrade ([#1216](https://github.com/xynehq/xyne/issues/1216)) ([5347c5c](https://github.com/xynehq/xyne/commit/5347c5c28196719575ef7a00d390befc55de760c))
+
+## [3.31.4](https://github.com/xynehq/xyne/compare/v3.31.3...v3.31.4) (2025-11-15)
+
+
+### Bug Fixes
+
+* **vespa config:** configured vespa with two containers ([#1220](https://github.com/xynehq/xyne/issues/1220)) ([9dbb4e2](https://github.com/xynehq/xyne/commit/9dbb4e2e29ff48bd8d94f7d6b8ed05bedf6bedbb))
+
+## [3.31.3](https://github.com/xynehq/xyne/compare/v3.31.2...v3.31.3) (2025-11-13)
+
+
+### Bug Fixes
+
+* **deps:** fix circular deps error ([#1218](https://github.com/xynehq/xyne/issues/1218)) ([a3880d5](https://github.com/xynehq/xyne/commit/a3880d5f90846613647dab299325c28c435eae2c))
+
+## [3.31.2](https://github.com/xynehq/xyne/compare/v3.31.1...v3.31.2) (2025-11-12)
+
+
+### Bug Fixes
+
+* **types:** Made the ownerEmail optional ([#1215](https://github.com/xynehq/xyne/issues/1215)) ([40c0c96](https://github.com/xynehq/xyne/commit/40c0c9657447c919ca805e31be0f5a9666319b4d))
+
+## [3.31.1](https://github.com/xynehq/xyne/compare/v3.31.0...v3.31.1) (2025-11-12)
+
+
+### Bug Fixes
+
+* **pathBasedRag:** Add ownerEmail check to access correct collection ([#1212](https://github.com/xynehq/xyne/issues/1212)) ([1f10488](https://github.com/xynehq/xyne/commit/1f10488c154b10f8d5600ce38ff8c68932733508))
+
+# [3.31.0](https://github.com/xynehq/xyne/compare/v3.30.13...v3.31.0) (2025-11-12)
+
+
+### Features
+
+* **agentic:** Added HITL support ([#1205](https://github.com/xynehq/xyne/issues/1205)) ([5633ae5](https://github.com/xynehq/xyne/commit/5633ae5097ceaf6174d0bc6f6bf2418464894a7d))
+
+## [3.30.13](https://github.com/xynehq/xyne/compare/v3.30.12...v3.30.13) (2025-11-11)
+
+
+### Bug Fixes
+
+* **mimeMap:** Add the mapping for md files ([#1207](https://github.com/xynehq/xyne/issues/1207)) ([32a9dc7](https://github.com/xynehq/xyne/commit/32a9dc7c433e48245847ad5aa7f9846747034c5c))
+
 ## [3.30.12](https://github.com/xynehq/xyne/compare/v3.30.11...v3.30.12) (2025-11-11)
 
 

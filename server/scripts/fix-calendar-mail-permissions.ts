@@ -24,7 +24,8 @@ async function queryCalendarEmails(offset = 0, limit = 100) {
     maxOffset: offset + 1000,
   }
 
-  const url = `${config.vespaEndpoint}/search/`
+  // Use search endpoint for search operations (port 8081)
+  const url = `${config.vespaEndpoint.queryEndpoint}/search/`
 
   const response = await fetch(url, {
     method: "POST",
