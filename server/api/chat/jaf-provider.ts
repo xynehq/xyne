@@ -60,31 +60,31 @@ type ImagePromptPart = {
 }
 
 const selectImagesForCall = (context: ImageAwareContext): string[] => {
-  console.info('[IMAGE addition][JAF Provider] selectImagesForCall called:', {
-    enabled: IMAGE_CONTEXT_CONFIG.enabled,
-    imageCount: context?.imageFileNames?.length || 0,
-    hasImageFileNames: !!context?.imageFileNames,
-    hasMetadata: context?.imageMetadata instanceof Map,
-    metadataSize: context?.imageMetadata instanceof Map ? context.imageMetadata.size : 0,
-    turnCount: context?.turnCount,
-    userEmail: context?.user?.email,
-    contextKeys: context ? Object.keys(context) : [],
-  })
+  // console.info('[IMAGE addition][JAF Provider] selectImagesForCall called:', {
+  //   enabled: IMAGE_CONTEXT_CONFIG.enabled,
+  //   imageCount: context?.imageFileNames?.length || 0,
+  //   hasImageFileNames: !!context?.imageFileNames,
+  //   hasMetadata: context?.imageMetadata instanceof Map,
+  //   metadataSize: context?.imageMetadata instanceof Map ? context.imageMetadata.size : 0,
+  //   turnCount: context?.turnCount,
+  //   userEmail: context?.user?.email,
+  //   contextKeys: context ? Object.keys(context) : [],
+  // })
 
   if (
     !IMAGE_CONTEXT_CONFIG.enabled ||
     !context?.imageFileNames?.length ||
     !(context.imageMetadata instanceof Map)
   ) {
-    console.info('[IMAGE addition][JAF Provider] Image selection skipped:', {
-      reason: !IMAGE_CONTEXT_CONFIG.enabled ? 'disabled' : 
-              !context?.imageFileNames?.length ? 'no_images' : 
-              !(context.imageMetadata instanceof Map) ? 'no_metadata' : 'unknown',
-      enabled: IMAGE_CONTEXT_CONFIG.enabled,
-      imageCount: context?.imageFileNames?.length || 0,
-      hasMetadata: context?.imageMetadata instanceof Map,
-      userEmail: context?.user?.email,
-    })
+    // console.info('[IMAGE addition][JAF Provider] Image selection skipped:', {
+    //   reason: !IMAGE_CONTEXT_CONFIG.enabled ? 'disabled' : 
+    //           !context?.imageFileNames?.length ? 'no_images' : 
+    //           !(context.imageMetadata instanceof Map) ? 'no_metadata' : 'unknown',
+    //   enabled: IMAGE_CONTEXT_CONFIG.enabled,
+    //   imageCount: context?.imageFileNames?.length || 0,
+    //   hasMetadata: context?.imageMetadata instanceof Map,
+    //   userEmail: context?.user?.email,
+    // })
     return []
   }
 
@@ -119,15 +119,15 @@ const selectImagesForCall = (context: ImageAwareContext): string[] => {
     ? combined.slice(0, IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
     : combined // Pass all images when maxImagesPerCall is 0 (no limit)
 
-  console.info('[IMAGE addition][JAF Provider] Image selection turn', currentTurn, {
-    totalPool: context.imageFileNames.length,
-    attachments: attachments.length,
-    recent: recentImages.length,
-    skipped: skipped.length,
-    selected: finalSelection.length,
-    recencyWindow: IMAGE_CONTEXT_CONFIG.recencyWindow,
-    userEmail: context.user?.email,
-  })
+  // console.info('[IMAGE addition][JAF Provider] Image selection turn', currentTurn, {
+  //   totalPool: context.imageFileNames.length,
+  //   attachments: attachments.length,
+  //   recent: recentImages.length,
+  //   skipped: skipped.length,
+  //   selected: finalSelection.length,
+  //   recencyWindow: IMAGE_CONTEXT_CONFIG.recencyWindow,
+  //   userEmail: context.user?.email,
+  // })
 
   return finalSelection
 }
@@ -232,12 +232,12 @@ const buildLanguageModelImageParts = async (
 
   const filtered = parts.filter((part): part is ImagePromptPart => Boolean(part))
   
-  console.info('[IMAGE addition][JAF Provider] Image loading complete:', {
-    requested: imageFileNames.length,
-    loaded: loadStats.success,
-    failed: loadStats.failed,
-    totalMB: (loadStats.totalBytes / (1024 * 1024)).toFixed(2),
-  })
+  // console.info('[IMAGE addition][JAF Provider] Image loading complete:', {
+  //   requested: imageFileNames.length,
+  //   loaded: loadStats.success,
+  //   failed: loadStats.failed,
+  //   totalMB: (loadStats.totalBytes / (1024 * 1024)).toFixed(2),
+  // })
   
   return filtered
 }
@@ -263,18 +263,18 @@ export const makeXyneJAFProvider = <Ctx>(
       )
 
       const imageAwareContext = state.context as ImageAwareContext
-      console.info('[IMAGE addition][JAF Provider] getCompletion called with context:', {
-        hasContext: !!state.context,
-        hasImageFileNames: !!(state.context as any)?.imageFileNames,
-        imageFileNamesLength: ((state.context as any)?.imageFileNames)?.length || 0,
-        hasImageMetadata: ((state.context as any)?.imageMetadata) instanceof Map,
-        imageMetadataSize: ((state.context as any)?.imageMetadata) instanceof Map ? ((state.context as any)?.imageMetadata).size : 0,
-        turnCount: (state.context as any)?.turnCount,
-        userEmail: ((state.context as any)?.user)?.email,
-        contextType: typeof state.context,
-        model,
-        agentName: agent.name,
-      })
+      // console.info('[IMAGE addition][JAF Provider] getCompletion called with context:', {
+      //   hasContext: !!state.context,
+      //   hasImageFileNames: !!(state.context as any)?.imageFileNames,
+      //   imageFileNamesLength: ((state.context as any)?.imageFileNames)?.length || 0,
+      //   hasImageMetadata: ((state.context as any)?.imageMetadata) instanceof Map,
+      //   imageMetadataSize: ((state.context as any)?.imageMetadata) instanceof Map ? ((state.context as any)?.imageMetadata).size : 0,
+      //   turnCount: (state.context as any)?.turnCount,
+      //   userEmail: ((state.context as any)?.user)?.email,
+      //   contextType: typeof state.context,
+      //   model,
+      //   agentName: agent.name,
+      // })
       const selectedImages = selectImagesForCall(imageAwareContext)
       
       if (selectedImages.length > 0) {
@@ -290,14 +290,14 @@ export const makeXyneJAFProvider = <Ctx>(
                 filePart,
               )
             }
-            console.info('[IMAGE addition][JAF Provider] Attached images to prompt:', {
-              turn: imageAwareContext.turnCount ?? 0,
-              messageIndex: lastUserIndex,
-              imagesAttached: imageParts.length,
-              contentPartsBefore: contentBefore,
-              contentPartsAfter: prompt[lastUserIndex].content.length,
-              userEmail: imageAwareContext.user?.email,
-            })
+            // console.info('[IMAGE addition][JAF Provider] Attached images to prompt:', {
+            //   turn: imageAwareContext.turnCount ?? 0,
+            //   messageIndex: lastUserIndex,
+            //   imagesAttached: imageParts.length,
+            //   contentPartsBefore: contentBefore,
+            //   contentPartsAfter: prompt[lastUserIndex].content.length,
+            //   userEmail: imageAwareContext.user?.email,
+            // })
           } else {
             console.warn('[JAF Provider] No valid image parts built despite', selectedImages.length, 'selected')
           }

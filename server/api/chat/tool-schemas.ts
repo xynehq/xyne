@@ -311,28 +311,7 @@ export const RunPublicAgentInputSchema = z.object({
 export type RunPublicAgentInput = z.infer<typeof RunPublicAgentInputSchema>
 
 // Review agent input
-export const ReviewAgentInputSchema = z.object({
-  focus: z
-    .enum(["quality", "completeness", "replan", "general"])
-    .optional()
-    .describe("Primary focus for this review invocation"),
-  examineTools: z
-    .array(z.string())
-    .optional()
-    .describe("Subset of tool names to inspect"),
-  includePlan: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe("Whether to include the current execution plan in analysis"),
-  maxFindings: z
-    .number()
-    .min(1)
-    .max(10)
-    .optional()
-    .default(5)
-    .describe("Maximum findings to enumerate"),
-})
+export const ReviewAgentInputSchema = z.object({})
 
 export type ReviewAgentInput = z.infer<typeof ReviewAgentInputSchema>
 
@@ -603,18 +582,6 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
           },
         },
       },
-    ],
-  },
-
-  review_agent: {
-    name: "review_agent",
-    description: "Evaluate gathered evidence, compare against expected results for recent tool calls, and recommend next actions.",
-    category: ToolCategory.Review,
-    inputSchema: ReviewAgentInputSchema,
-    outputSchema: ReviewAgentOutputSchema,
-    prerequisites: [
-      "Use after completing at least one tool call",
-      "Provide updated plan if you expect review to consider it",
     ],
   },
 

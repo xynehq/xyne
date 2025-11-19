@@ -25,6 +25,9 @@ import type {
   FinalSynthesisState,
   AgentRuntimeCallbacks,
   SubTask,
+  MCPVirtualAgentRuntime,
+  MCPToolDefinition,
+  ReviewState,
 } from "./agent-schemas"
 import { ToolExpectationSchema, ReviewResultSchema } from "./agent-schemas"
 import { getTracer } from "@/tracer"
@@ -66,7 +69,6 @@ import {
   validateToolInput,
   ListCustomAgentsOutputSchema,
   type ListCustomAgentsOutput,
-  ReviewAgentOutputSchema,
   type ToolOutput,
   type ResourceAccessSummary,
 } from "./tool-schemas"
@@ -74,6 +76,7 @@ import { searchToCitation, extractImageFileNames } from "./utils"
 import { GetDocumentsByDocIds } from "@/search/vespa"
 import {
   Apps,
+  KnowledgeBaseEntity,
   type VespaSearchResult,
   type VespaSearchResults,
 } from "@xyne/vespa-ts/types"
@@ -86,7 +89,7 @@ import { storeAttachmentMetadata } from "@/db/attachment"
 import { ChatType, type SelectChat, type SelectMessage } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getUserAccessibleAgents } from "@/db/userAgentPermission"
-import { ExecuteAgentForWorkflow } from "@/api/agent/workflowAgentUtils"
+import { executeAgentForWorkflowWithRag } from "@/api/agent/workflowAgentUtils"
 import { getDateForAI } from "@/utils/index"
 import googleTools from "./tools/google"
 import { searchGlobalTool, fallbackTool } from "./tools/global"
@@ -108,6 +111,22 @@ import { isCuid } from "@paralleldrive/cuid2"
 import { DEFAULT_TEST_AGENT_ID } from "@/shared/types"
 import { parseAgentAppIntegrations } from "./tools/utils"
 import { buildAgentPromptAddendum } from "./agentPromptCreation"
+import { getConnectorById } from "@/db/connector"
+import { getToolsByConnectorId } from "@/db/tool"
+import {
+  buildMCPJAFTools,
+  type FinalToolsList,
+} from "./jaf-adapter"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import {
+  SSEClientTransport,
+  type SSEClientTransportOptions,
+} from "@modelcontextprotocol/sdk/client/sse.js"
+import {
+  StreamableHTTPClientTransport,
+  type StreamableHTTPClientTransportOptions,
+} from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 
 const {
   defaultBestModel,
@@ -272,14 +291,14 @@ function registerImageReferences(
   }
   
   if (added > 0) {
-    console.info('[IMAGE addition][Image Registry] Registered images:', {
-      added,
-      skipped: skipped.length,
-      totalNow: context.imageFileNames.length,
-      turn: metadata.turnNumber,
-      source: metadata.sourceToolName,
-      isAttachment: metadata.isUserAttachment,
-    })
+    // console.info('[IMAGE addition][Image Registry] Registered images:', {
+    //   added,
+    //   skipped: skipped.length,
+    //   totalNow: context.imageFileNames.length,
+    //   turn: metadata.turnNumber,
+    //   source: metadata.sourceToolName,
+    //   isAttachment: metadata.isUserAttachment,
+    // })
   }
   
   return added
@@ -371,6 +390,114 @@ function selectActiveSubTaskId(plan: PlanState | null): string | null {
   return plan.subTasks[0]?.id ?? null
 }
 
+function normalizeSubTask(task: SubTask): SubTask {
+  task.toolsRequired = Array.isArray(task.toolsRequired)
+    ? task.toolsRequired
+    : []
+  task.completedTools = Array.isArray(task.completedTools)
+    ? task.completedTools
+    : []
+  if (
+    task.status !== "pending" &&
+    task.status !== "in_progress" &&
+    task.status !== "completed" &&
+    task.status !== "failed" &&
+    task.status !== "blocked"
+  ) {
+    task.status = "pending"
+  }
+  return task
+}
+
+function initializePlanState(plan: PlanState): string | null {
+  plan.subTasks.forEach((task) => normalizeSubTask(task))
+  let activeId = selectActiveSubTaskId(plan)
+  const visited = new Set<string>()
+  while (activeId && !visited.has(activeId)) {
+    visited.add(activeId)
+    const activeTask = plan.subTasks.find((task) => task.id === activeId)
+    if (!activeTask) break
+    if ((activeTask.toolsRequired?.length ?? 0) === 0) {
+      activeTask.status = "completed"
+      activeTask.completedAt = Date.now()
+      activeTask.result =
+        activeTask.result ||
+        "Completed automatically (no tools required for this step)."
+      activeTask.error = undefined
+      activeId = selectActiveSubTaskId(plan)
+      continue
+    }
+    if (
+      activeTask.status === "pending" ||
+      activeTask.status === "blocked"
+    ) {
+      activeTask.status = "in_progress"
+      activeTask.error = undefined
+    }
+    break
+  }
+  return activeId ?? null
+}
+
+function advancePlanAfterTool(
+  context: AgentRunContext,
+  toolName: string,
+  wasSuccessful: boolean,
+  detail?: string
+): void {
+  if (!context.plan || !context.currentSubTask) return
+  const task = context.plan.subTasks.find(
+    (entry) => entry.id === context.currentSubTask
+  )
+  if (!task) return
+  normalizeSubTask(task)
+
+  if (wasSuccessful) {
+    if (task.status === "pending" || task.status === "blocked") {
+      task.status = "in_progress"
+      task.error = undefined
+    }
+    if (
+      task.toolsRequired.length === 0 ||
+      task.toolsRequired.includes(toolName)
+    ) {
+      if (!task.completedTools.includes(toolName)) {
+        task.completedTools.push(toolName)
+      }
+      const uniqueRequired = new Set(task.toolsRequired)
+      const uniqueCompleted = new Set(task.completedTools)
+      const shouldComplete =
+        task.toolsRequired.length === 0 ||
+        uniqueCompleted.size >= uniqueRequired.size
+      if (shouldComplete) {
+        task.status = "completed"
+        task.completedAt = Date.now()
+        task.result =
+          detail ||
+          task.result ||
+          `Completed using ${Array.from(uniqueCompleted).join(", ")}`
+        const previousTaskId = task.id
+        const nextId = selectActiveSubTaskId(context.plan)
+        if (nextId && nextId !== previousTaskId) {
+          context.currentSubTask = nextId
+          const nextTask = context.plan.subTasks.find(
+            (entry) => entry.id === nextId
+          )
+          if (nextTask && nextTask.status === "pending") {
+            nextTask.status = "in_progress"
+            nextTask.error = undefined
+          }
+        } else if (!nextId) {
+          context.currentSubTask = null
+        }
+      }
+    }
+  } else if (task.status !== "completed") {
+    task.status = "blocked"
+    task.error = detail
+  }
+}
+
 function formatClarificationsForPrompt(
   clarifications: AgentRunContext["clarifications"]
 ): string {
@@ -407,11 +534,12 @@ function buildFinalSynthesisPayload(
 
   const systemPrompt = [
     "You are Xyne, an enterprise research assistant generating the FINAL response for the user.",
-    "Produce one comprehensive answer grounded entirely in the provided context fragments and images.",
-    "Every factual statement MUST cite a fragment using square brackets like [3]. Never invent citations or group multiple indices in one bracket.",
-    "Incorporate relevant insights from referenced images (provided separately) when they strengthen the answer.",
+    "Ground your answer in all available signals: the conversation so far (user + assistant/tool messages), the provided context fragments, and any images.",
+    "When you use information from context fragments, include citation markers like [n] (1-based). Treat delegated-agent fragments as one source alongside search/workspace fragments. Do not invent evidence.",
+    "Favor the most relevant, high-signal evidence, but you may include other fragments if they add value.",
+    "Incorporate insights from referenced images (provided separately) when they strengthen the answer.",
     "Do not mention internal tooling, planning steps, or this synthesis process.",
-    "Deliver the answer in well-structured paragraphs or bullet lists with clear section headers when appropriate.",
+    "Deliver a clear, concise response: lead with the conclusion, then succinct supporting evidence. Use headers or bullets when helpful. Avoid redundancy and filler.",
   ].join(" ")
 
   return { systemPrompt, userMessage }
@@ -524,6 +652,7 @@ function initializeAgentContext(
     availableAgents: [],
     usedAgents: [],
     enabledTools: new Set<string>(),
+    delegationEnabled: true,
     failedTools: new Map<string, ToolFailureInfo>(),
     retryCount: 0,
     maxRetries: 3,
@@ -531,6 +660,11 @@ function initializeAgentContext(
       lastReviewTurn: null,
       reviewFrequency: 5,
       lastReviewSummary: null,
+      lastReviewResult: null,
+      outstandingAnomalies: [],
+      clarificationQuestions: [],
+      cachedPlanSummary: undefined,
+      cachedContextSummary: undefined,
     },
     decisions: [],
     finalSynthesis,
@@ -550,11 +684,14 @@ async function performAutomaticReview(
     const reviewContext: AgentRunContext = {
       ...fullContext,
       toolCallHistory: input.toolCallHistory,
+      contextFragments: input.contextFragments,
+      plan: input.plan,
     }
     const review = await runReviewLLM(reviewContext, {
-      focus: "turn_end",
+      focus: input.focus,
       turnNumber: input.turnNumber,
       expectedResults: input.expectedResults,
+      delegationEnabled: fullContext.delegationEnabled,
     })
     return review
   } catch (error) {
@@ -568,7 +705,71 @@ async function performAutomaticReview(
       anomaliesDetected: false,
       anomalies: [],
       recommendation: "proceed",
+      ambiguityResolved: false,
+      clarificationQuestions: [],
     }
+  }
+}
+
+async function handleReviewOutcome(
+  context: AgentRunContext,
+  reviewResult: ReviewResult,
+  iteration: number,
+  focus: AutoReviewInput["focus"],
+  reasoningEmitter?: ReasoningEmitter
+): Promise<void> {
+  context.review.lastReviewSummary = reviewResult.notes
+  context.review.lastReviewResult = reviewResult
+  context.review.lastReviewTurn = iteration
+  context.ambiguityResolved = reviewResult.ambiguityResolved
+  context.review.outstandingAnomalies =
+    reviewResult.anomalies?.length ? reviewResult.anomalies : []
+  context.review.clarificationQuestions =
+    reviewResult.clarificationQuestions?.length
+      ? reviewResult.clarificationQuestions
+      : []
+
+  await streamReasoningStep(
+    reasoningEmitter,
+    `Review (${focus}) complete. Recommendation: ${reviewResult.recommendation}. Plan change needed: ${reviewResult.planChangeNeeded ? "yes" : "no"}.`,
+    {
+      iteration,
+      status: reviewResult.status,
+      detail: reviewResult.notes,
+      anomaliesDetected: reviewResult.anomaliesDetected,
+      review: reviewResult,
+      ambiguityResolved: reviewResult.ambiguityResolved,
+      anomalies: reviewResult.anomalies,
+      focus,
+    }
+  )
+
+  if (
+    reviewResult.anomaliesDetected ||
+    (reviewResult.anomalies?.length ?? 0) > 0
+  ) {
+    Logger.info({
+      turn: iteration,
+      anomalies: reviewResult.anomalies,
+      recommendation: reviewResult.recommendation,
+      planChangeNeeded: reviewResult.planChangeNeeded,
+      chatId: context.chat.externalId,
+      focus,
+    }, "[MessageAgents][Anomalies]")
+    await streamReasoningStep(
+      reasoningEmitter,
+      `Anomalies detected: ${
+        reviewResult.anomalies?.join("; ") || "unspecified"
+      }`,
+      {
+        iteration,
+        status: "needs_attention",
+        detail: reviewResult.anomalies?.join("; "),
+        ambiguityResolved: reviewResult.ambiguityResolved,
+        anomalies: reviewResult.anomalies,
+        focus,
+      }
+    )
   }
 }
 
@@ -850,12 +1051,26 @@ export async function afterToolExecutionHook(
   const context = state.context as AgentRunContext
 
   // 1. Create execution record
+  const effectiveTurnNumber =
+    typeof turnNumber === "number" ? turnNumber : context.turnCount ?? 0
+
+  if (typeof turnNumber !== "number" && context.turnCount > 0) {
+    Logger.info(
+      {
+        toolName,
+        providedTurnNumber: turnNumber,
+        fallbackTurnNumber: context.turnCount,
+      },
+      "Tool turnNumber not provided; falling back to current turnCount"
+    )
+  }
+
   const record: ToolExecutionRecord = {
     toolName,
     connectorId: result?.metadata?.connectorId || null,
     agentName: hookContext.agentName,
     arguments: args,
-    turnNumber: typeof turnNumber === "number" ? turnNumber : 0,
+    turnNumber: effectiveTurnNumber,
     expectedResults: expectedResult,
     startedAt: new Date(Date.now() - executionTime),
     durationMs: executionTime,
@@ -892,6 +1107,13 @@ export async function afterToolExecutionHook(
       lastAttempt: Date.now(),
     })
   }
+
+  advancePlanAfterTool(
+    context,
+    toolName,
+    status === "success",
+    record.resultSummary
+  )
 
   // 5. Extract and filter contexts
   const contexts = getMetadataValue<MinimalAgentFragment[]>(result, "contexts")
@@ -969,26 +1191,26 @@ export async function afterToolExecutionHook(
               .map((doc) => doc.content)
               .join("\n")
             
-            console.info('[IMAGE addition][Image Extraction] Processing tool result:', {
-              toolName,
-              turn: context.turnCount,
-              documentCount: selectedDocs.length,
-              contextLength: combinedContext.length,
-              currentImageCount: context.imageFileNames.length,
-            })
+            // console.info('[IMAGE addition][Image Extraction] Processing tool result:', {
+            //   toolName,
+            //   turn: context.turnCount,
+            //   documentCount: selectedDocs.length,
+            //   contextLength: combinedContext.length,
+            //   currentImageCount: context.imageFileNames.length,
+            // })
             
             const { imageFileNames: extractedImages } = extractImageFileNames(
               combinedContext,
               vespaLikeResults
             )
 
-            console.info('[IMAGE addition][Image Extraction] Extracted image references:', {
-              toolName,
-              turn: context.turnCount,
-              extractedCount: extractedImages.length,
-              extractedImages: extractedImages.slice(0, 5),
-              currentContextImages: context.imageFileNames.length,
-            })
+            // console.info('[IMAGE addition][Image Extraction] Extracted image references:', {
+            //   toolName,
+            //   turn: context.turnCount,
+            //   extractedCount: extractedImages.length,
+            //   extractedImages: extractedImages.slice(0, 5),
+            //   currentContextImages: context.imageFileNames.length,
+            // })
 
             if (extractedImages.length > 0) {
               const fragmentIndexMap = new Map<number, string>()
@@ -1013,14 +1235,14 @@ export async function afterToolExecutionHook(
                 }
               )
               
-              console.info('[IMAGE addition][Image Registry] After registration:', {
-                toolName,
-                turn: turnNumber,
-                addedImages,
-                totalImagesNow: context.imageFileNames.length,
-                totalMetadataNow: context.imageMetadata.size,
-                firstFewImages: context.imageFileNames.slice(0, 3),
-              })
+              // console.info('[IMAGE addition][Image Registry] After registration:', {
+              //   toolName,
+              //   turn: turnNumber,
+              //   addedImages,
+              //   totalImagesNow: context.imageFileNames.length,
+              //   totalMetadataNow: context.imageMetadata.size,
+              //   firstFewImages: context.imageFileNames.slice(0, 3),
+              // })
               if (addedImages > 0) {
                 loggerWithChild({ email: context.user.email }).info(
                   `Tracked ${addedImages} new image${
@@ -1118,9 +1340,19 @@ export async function afterToolExecutionHook(
     result.status === "success"
   ) {
     const agentId = getMetadataValue<string>(result, "agentId")
+      || (hookContext?.args as { agentId?: string })?.agentId
     const agentName =
       context.availableAgents.find((agent) => agent.agentId === agentId)
         ?.agentName || agentId || "unknown agent"
+    mergeAgentDelegationOutput({
+      context,
+      result,
+      gatheredFragmentsKeys,
+      agentId,
+      agentName,
+      turnNumber: turnNumber ?? context.turnCount,
+      sourceToolName: toolName,
+    })
     await streamReasoningStep(
       reasoningEmitter,
       `Received response from '${agentName}' agent.`,
@@ -1142,6 +1374,84 @@ export async function afterToolExecutionHook(
   }
 
   return null
+}
+
+
+function mergeAgentDelegationOutput(opts: {
+  context: AgentRunContext
+  result: any
+  gatheredFragmentsKeys: Set<string>
+  agentId?: string
+  agentName?: string
+  turnNumber?: number
+  sourceToolName: string
+}): void {
+  const { context, result, gatheredFragmentsKeys, agentId, agentName, turnNumber, sourceToolName } = opts
+  const metadata = (result?.data as any)?.metadata || (result as any)?.metadata || {}
+  const citations = metadata?.citations as Citation[] | undefined
+  const imageCitations = metadata?.imageCitations as ImageCitation[] | undefined
+  const agentFragments: MinimalAgentFragment[] = []
+  const textResult =
+    typeof (result?.data as any)?.result === "string"
+      ? (result.data as any).result
+      : typeof result?.result === "string"
+        ? result.result
+        : ""
+
+  if (Array.isArray(citations) && citations.length > 0) {
+    citations.forEach((citation, idx) => {
+      const fragmentId = `${agentId || "agent"}:${citation.docId || idx}:${turnNumber ?? 0}:${idx}`
+      if (gatheredFragmentsKeys.has(fragmentId)) return
+      agentFragments.push({
+        id: fragmentId,
+        content: textResult || citation.url || "Agent response",
+        source: citation,
+        confidence: 0.85,
+      })
+    })
+  }
+
+  // Add an attribution fragment for the delegated agent itself so downstream synthesis can cite the agent as a source.
+  if (agentId) {
+    const attributionFragmentId = `agent:${agentId}:turn:${turnNumber ?? context.turnCount ?? 0}`
+    if (!gatheredFragmentsKeys.has(attributionFragmentId)) {
+      agentFragments.push({
+        id: attributionFragmentId,
+        content: textResult || `Response provided by delegated agent ${agentName || agentId}`,
+        source: {
+          docId: `agent:${agentId}`,
+          title: `Delegated agent: ${agentName || agentId}`,
+          url: `/agents/${agentId}`,
+          app: Apps.KnowledgeBase,
+          entity: KnowledgeBaseEntity.File,
+        } as Citation,
+        confidence: 0.9,
+      })
+    }
+  }
+
+  // Prepend agent fragments (citations + attribution) so they are prioritized for synthesis.
+  if (agentFragments.length > 0) {
+    const existing = context.contextFragments.filter(
+      (frag) => !agentFragments.some((a) => a.id === frag.id)
+    )
+    agentFragments.forEach((frag) => gatheredFragmentsKeys.add(frag.id))
+    context.contextFragments = [...agentFragments, ...existing]
+  }
+
+  if (Array.isArray(imageCitations) && imageCitations.length > 0) {
+    const imageNames = imageCitations
+      .map((entry) => entry.imagePath)
+      .filter((name): name is string => Boolean(name))
+    if (imageNames.length > 0) {
+      registerImageReferences(context, imageNames, {
+        turnNumber: typeof turnNumber === "number" ? turnNumber : 0,
+        sourceFragmentId: `${agentId || "agent"}:delegation`,
+        sourceToolName,
+        isUserAttachment: false,
+      })
+    }
+  }
 }
 
 type PendingExpectation = ToolExpectationAssignment
@@ -1216,7 +1526,14 @@ function safeJsonParse(text: string): unknown {
 }
 
 function summarizePlan(plan: PlanState | null): string {
-  if (!plan) return "No plan available."
+  Logger.info({ plan }, "summarizePlan input")
+  if (!plan) {
+    Logger.info(
+      { summary: "No plan available." },
+      "summarizePlan output"
+    )
+    return "No plan available."
+  }
   const steps = plan.subTasks
     .map(
       (task, idx) =>
@@ -1227,17 +1544,27 @@ function summarizePlan(plan: PlanState | null): string {
         }`
     )
     .join("\n")
-  return `Goal: ${plan.goal}\n${steps}`
+  const summary = `Goal: ${plan.goal}\n${steps}`
+  Logger.info(
+    { summary, subTaskCount: plan.subTasks.length },
+    "summarizePlan output"
+  )
+  return summary
 }
 
 function summarizeExpectations(
   expectations?: ToolExpectationAssignment[]
 ): string {
+  Logger.info({ expectations }, "summarizeExpectations input")
   if (!expectations || expectations.length === 0) {
+    Logger.info(
+      { summary: "No explicit expected results provided." },
+      "summarizeExpectations output"
+    )
     return "No explicit expected results provided."
   }
 
-  return expectations
+  const summary = expectations
     .map((entry, idx) => {
       const expectation = entry.expectation
       const success = expectation.successCriteria.join("; ")
@@ -1250,18 +1577,32 @@ function summarizeExpectations(
       return `${idx + 1}. Tool: ${entry.toolName}\n   Goal: ${expectation.goal}\n   Success Criteria: ${success}${failures}${stop}`
     })
     .join("\n")
+  Logger.info(
+    { summary, expectationCount: expectations.length },
+    "summarizeExpectations output"
+  )
+  return summary
 }
 
 function summarizeToolHistory(
   records: ToolExecutionRecord[],
   limit = 8
 ): string {
+  Logger.info(
+    { limit, totalRecords: records.length },
+    "summarizeToolHistory input"
+  )
   if (!records.length) {
+    Logger.info(
+      { summary: "No tool executions yet." },
+      "summarizeToolHistory output"
+    )
     return "No tool executions yet."
   }
 
-  return records
-    .slice(-limit)
+  const slice =
+    records.length > limit ? records.slice(-limit) : records
+  const summaryEntries = slice
     .map((record, idx) => {
       const expectationSummary = record.expectedResults
         ? `Expected: ${record.expectedResults.goal}`
@@ -1270,15 +1611,34 @@ function summarizeToolHistory(
         record.arguments
       )}\n${expectationSummary}\nResult: ${record.resultSummary}`
     })
-    .join("\n\n")
+  const prefix =
+    records.length > limit
+      ? `Showing last ${limit} of ${records.length} tool calls.\n`
+      : ""
+  const summary = `${prefix}${summaryEntries.join("\n\n")}`
+  Logger.info(
+    { summary, includedRecords: Math.min(limit, records.length) },
+    "summarizeToolHistory output"
+  )
+  return summary
 }
 
 function summarizeFragments(
   fragments: MinimalAgentFragment[],
   limit = 5
 ): string {
-  if (!fragments.length) return "No context fragments gathered yet."
-  return fragments
+  Logger.info(
+    { fragmentsCount: fragments.length, limit },
+    "summarizeFragments input"
+  )
+  if (!fragments.length) {
+    Logger.info(
+      { summary: "No context fragments gathered yet." },
+      "summarizeFragments output"
+    )
+    return "No context fragments gathered yet."
+  }
+  const summary = fragments
     .slice(-limit)
     .map(
       (fragment, idx) =>
@@ -1287,6 +1647,11 @@ function summarizeFragments(
         }`
     )
     .join("\n")
+  Logger.info(
+    { summary, includedFragments: Math.min(limit, fragments.length) },
+    "summarizeFragments output"
+  )
+  return summary
 }
 
 function buildDefaultReviewPayload(notes?: string): ReviewResult {
@@ -1300,27 +1665,46 @@ function buildDefaultReviewPayload(notes?: string): ReviewResult {
     anomaliesDetected: false,
     anomalies: [],
     recommendation: "proceed",
+    ambiguityResolved: true,
+    clarificationQuestions: [],
   }
 }
 
 function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
+  // Logger.info({ value }, "normalizeStringArray input")
+  if (!Array.isArray(value)) {
+    // Logger.info({ normalized: [] }, "normalizeStringArray output")
+    return []
+  }
+  const normalized = value
     .filter((entry): entry is string => typeof entry === "string")
     .map((entry) => entry.trim())
     .filter(Boolean)
+  // Logger.info({ normalized }, "normalizeStringArray output")
+  return normalized
 }
 
 function normalizeToolFeedbackEntry(
   entry: unknown
 ): ReviewResult["toolFeedback"][number] | null {
-  if (!entry || typeof entry !== "object") return null
+  // Logger.info({ entry }, "normalizeToolFeedbackEntry input")
+  if (!entry || typeof entry !== "object") {
+    // Logger.info(
+    //   { normalized: null },
+    //   "normalizeToolFeedbackEntry output"
+    // )
+    return null
+  }
   const candidate = entry as Record<string, unknown>
   const toolName =
     typeof candidate.toolName === "string" ? candidate.toolName.trim() : ""
   const summary =
     typeof candidate.summary === "string" ? candidate.summary.trim() : ""
   if (!toolName || !summary) {
+    // Logger.info(
+    //   { normalized: null },
+    //   "normalizeToolFeedbackEntry output"
+    // )
     return null
   }
   const outcome =
@@ -1339,31 +1723,72 @@ function normalizeToolFeedbackEntry(
     candidate.followUp.trim().length > 0
       ? candidate.followUp.trim()
       : undefined
-  return {
+  const normalizedEntry = {
     toolName,
     outcome,
     summary,
     expectationGoal,
     followUp,
   }
+  // Logger.info(
+  //   { normalized: normalizedEntry },
+  //   "normalizeToolFeedbackEntry output"
+  // )
+  return normalizedEntry
 }
 
 function normalizeRecommendation(
   value: unknown
 ): ReviewResult["recommendation"] {
-  return value === "gather_more" ||
+  // Logger.info({ value }, "normalizeRecommendation input")
+  const recommendation: ReviewResult["recommendation"] =
+    value === "gather_more" ||
     value === "clarify_query" ||
     value === "replan"
-    ? value
-    : "proceed"
+      ? value
+      : "proceed"
+  // Logger.info(
+  //   { recommendation },
+  //   "normalizeRecommendation output"
+  // )
+  return recommendation
+}
+
+function coerceBoolean(value: unknown, defaultValue: boolean): boolean {
+  if (typeof value === "boolean") {
+    return value
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === "true") return true
+    if (normalized === "false") return false
+    if (normalized === "1") return true
+    if (normalized === "0") return false
+  }
+  if (typeof value === "number") {
+    if (Number.isNaN(value)) return defaultValue
+    return value !== 0
+  }
+  return defaultValue
 }
 
 function normalizeReviewResponse(payload: unknown): ReviewResult {
+  // Logger.info({ payload }, "normalizeReviewResponse input")
   if (typeof payload === "string") {
-    return buildDefaultReviewPayload(payload)
+    const normalizedFromString = buildDefaultReviewPayload(payload)
+    // Logger.info(
+    //   { normalized: normalizedFromString },
+    //   "normalizeReviewResponse output (string payload)"
+    // )
+    return normalizedFromString
   }
   if (!payload || typeof payload !== "object") {
-    return buildDefaultReviewPayload()
+    const defaultPayload = buildDefaultReviewPayload()
+    // Logger.info(
+    //   { normalized: defaultPayload },
+    //   "normalizeReviewResponse output (missing payload)"
+    // )
+    return defaultPayload
   }
 
   const raw = payload as Record<string, unknown>
@@ -1381,7 +1806,14 @@ function normalizeReviewResponse(payload: unknown): ReviewResult {
     : []
   const unmetExpectations = normalizeStringArray(raw.unmetExpectations)
   const anomalies = normalizeStringArray(raw.anomalies)
-  const planChangeNeeded = Boolean(raw.planChangeNeeded)
+  const planChangeNeeded = coerceBoolean(raw.planChangeNeeded, false)
+  const ambiguityResolved = coerceBoolean(
+    (raw as any).ambiguityResolved,
+    true
+  )
+  const clarificationQuestions = normalizeStringArray(
+    (raw as any).clarificationQuestions
+  )
 
   const normalized: ReviewResult = {
     ...base,
@@ -1390,9 +1822,13 @@ function normalizeReviewResponse(payload: unknown): ReviewResult {
     unmetExpectations,
     planChangeNeeded,
     planChangeReason: base.planChangeReason,
-    anomaliesDetected: Boolean(raw.anomaliesDetected) || anomalies.length > 0,
+    anomaliesDetected:
+      coerceBoolean(raw.anomaliesDetected, anomalies.length > 0) ||
+      anomalies.length > 0,
     anomalies,
     recommendation: normalizeRecommendation(raw.recommendation),
+    ambiguityResolved,
+    clarificationQuestions,
   }
 
   if (planChangeNeeded) {
@@ -1409,6 +1845,10 @@ function normalizeReviewResponse(payload: unknown): ReviewResult {
     normalized.notes = raw.notes.trim()
   }
 
+  // Logger.info(
+  //   { normalized },
+  //   "normalizeReviewResponse output"
+  // )
   return normalized
 }
 
@@ -1419,10 +1859,26 @@ async function runReviewLLM(
     turnNumber?: number
     maxFindings?: number
     expectedResults?: ToolExpectationAssignment[]
+    delegationEnabled?: boolean
   }
 ): Promise<ReviewResult> {
+  Logger.info(
+    {
+      focus: options?.focus,
+      turnNumber: options?.turnNumber,
+      maxFindings: options?.maxFindings,
+      expectedResultCount: options?.expectedResults?.length ?? 0,
+      delegationEnabled: options?.delegationEnabled,
+    },
+    "runReviewLLM invoked"
+  )
   const modelId =
     (defaultFastModel as Models) || (defaultBestModel as Models)
+  const delegationNote =
+    options?.delegationEnabled === false
+      ? "- Delegation tools (list_custom_agents/run_public_agent) were disabled for this run; do not flag their absence."
+      : "- If delegation tools are available, ensure list_custom_agents precedes run_public_agent when delegation is appropriate."
+
   const params: ModelParams = {
     modelId,
     json: true,
@@ -1432,7 +1888,10 @@ async function runReviewLLM(
     systemPrompt: `You are a senior reviewer ensuring each agentic turn honors the agreed plan and tool expectations.
 - Inspect every tool call from this turn, compare the outputs with the expected results, and decide whether each tool met or missed expectations.
 - Evaluate the current plan to see if it still fits the evidence gathered from the tool calls; suggest plan changes when necessary.
-- Detect anomalies (unexpected behaviors, contradictory data, missing outputs) and call them out explicitly.
+- Detect anomalies (unexpected behaviors, contradictory data, missing outputs, or unresolved ambiguities) and call them out explicitly. If intent remains unclear, set ambiguityResolved=false and include the ambiguity notes inside the anomalies array.
+${delegationNote}
+- Set recommendation to "gather_more" when required evidence or data is missing, "clarify_query" when ambiguity remains unresolved, and "replan" only when the current plan is no longer viable.
+- Always set ambiguityResolved=false whenever outstanding clarifications exist or anomalies highlight missing/contradictory information; otherwise leave it true.
 Respond strictly in JSON matching this schema: ${JSON.stringify({
       status: "ok",
       notes: "Summary of overall findings",
@@ -1446,51 +1905,96 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
         },
       ],
       unmetExpectations: ["List of expectation goals still open"],
-      planChangeNeeded: false,
+      planChangeNeeded: "false / true",
       planChangeReason: "Why plan needs updating if true",
-      anomaliesDetected: false,
-      anomalies: ["Description of anomalies"],
+      anomaliesDetected: "false / true ",
+      anomalies: ["Description of anomalies or ambiguities"],
       recommendation: "proceed",
+      ambiguityResolved: "true / false"
     })}
 - Only emit keys defined in the schema; do not add prose outside the JSON object.`,
   }
+  Logger.info(
+    { modelId, params },
+    "runReviewLLM prepared LLM params"
+  )
+  Logger.info(
+    { systemPrompt: params.systemPrompt },
+    "runReviewLLM system prompt"
+  )
 
-  const payload = [
-    `Focus: ${options?.focus ?? "general"}`,
-    options?.turnNumber ? `Turn: ${options.turnNumber}` : "",
-    `Expected Results:\n${summarizeExpectations(options?.expectedResults)}`,
-    `Plan:\n${summarizePlan(context.plan)}`,
-    `Recent Tool Calls:\n${summarizeToolHistory(
-      context.toolCallHistory,
-      options?.maxFindings ?? 8
-    )}`,
-    `Context Fragments:\n${summarizeFragments(context.contextFragments)}`,
-  ]
-    .filter(Boolean)
-    .join("\n\n")
+  const planHash = JSON.stringify(context.plan ?? null)
+  let planSummary = context.review.cachedPlanSummary?.hash === planHash
+    ? context.review.cachedPlanSummary.summary
+    : summarizePlan(context.plan)
+  if (context.review) {
+    context.review.cachedPlanSummary = {
+      hash: planHash,
+      summary: planSummary,
+    }
+  }
 
-  const messages: Message[] = [
+  const fragmentsHash = JSON.stringify(
+    context.contextFragments.map((fragment) => fragment.id)
+  )
+  let fragmentsSummary =
+    context.review.cachedContextSummary?.hash === fragmentsHash
+      ? context.review.cachedContextSummary.summary
+      : summarizeFragments(context.contextFragments)
+  if (context.review) {
+    context.review.cachedContextSummary = {
+      hash: fragmentsHash,
+      summary: fragmentsSummary,
+    }
+  }
+
+  const messageSections = [
     {
-      role: ConversationRole.USER,
-      content: [
-        {
-          text: payload,
-        },
-      ],
+      label: "Focus",
+      text: `${options?.focus ?? "general"}${
+        options?.turnNumber ? `\nTurn: ${options.turnNumber}` : ""
+      }`,
     },
-  ]
+    {
+      label: "Expected Results",
+      text: summarizeExpectations(options?.expectedResults),
+    },
+    { label: "Plan", text: planSummary },
+    {
+      label: "Recent Tool Calls",
+      text: summarizeToolHistory(
+        context.toolCallHistory,
+        options?.maxFindings ?? 8
+      ),
+    },
+    { label: "Context Fragments", text: fragmentsSummary },
+  ].filter((section) => section.text && section.text.trim().length > 0)
+
+  Logger.info({ sections: messageSections }, "runReviewLLM payload sections")
+
+  const messages: Message[] = messageSections.map((section) => ({
+    role: ConversationRole.USER,
+    content: [{ text: `${section.label}:\n${section.text}` }],
+  }))
+  Logger.info({ messages }, "runReviewLLM messages")
 
   const { text } = await getProviderByModel(modelId).converse(
     messages,
     params
   )
+  Logger.info({ text }, "runReviewLLM raw LLM response")
 
   if (!text) {
     throw new Error("LLM returned empty review response")
   }
 
   const parsed = jsonParseLLMOutput(text)
+  Logger.info({ parsed }, "runReviewLLM parsed LLM response")
   const normalized = normalizeReviewResponse(parsed)
+  // Logger.info(
+  //   { normalized },
+  //   "runReviewLLM normalized response"
+  // )
   const validation = ReviewResultSchema.safeParse(normalized)
   if (!validation.success) {
     Logger.error(
@@ -1499,6 +2003,10 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     )
     throw new Error("Review result does not match schema")
   }
+  // Logger.info(
+  //   { reviewResult: validation.data },
+  //   "runReviewLLM returning validated review result"
+  // )
   return validation.data
 }
 
@@ -1596,6 +2104,13 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
       parameters: TOOL_SCHEMAS.toDoWrite.inputSchema,
     },
     async execute(args, context) {
+      Logger.info(
+        {
+          email: context.user.email,
+          args,
+        },
+        "[toDoWrite] Execution started"
+      )
       const validation = validateToolInput<PlanState>("toDoWrite", args)
       if (!validation.success) {
         return ToolResponse.error(
@@ -1609,8 +2124,18 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
         subTasks: validation.data.subTasks,
       }
 
+      const activeSubTaskId = initializePlanState(plan)
       context.plan = plan
-      context.currentSubTask = selectActiveSubTaskId(plan)
+      context.currentSubTask = activeSubTaskId
+      Logger.info(
+        {
+          email: context.user.email,
+          goal: plan.goal,
+          subTaskCount: plan.subTasks.length,
+          activeSubTaskId,
+        },
+        "[toDoWrite] Plan created"
+      )
 
       return ToolResponse.success({
         result: `Plan updated with ${plan.subTasks.length} sub-task${plan.subTasks.length === 1 ? "" : "s"}.`,
@@ -1620,13 +2145,28 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
   }
 }
 
+
+function buildDelegatedAgentQuery(baseQuery: string, context: AgentRunContext): string {
+  const parts = [baseQuery.trim()]
+  if (context.currentSubTask) {
+    parts.push(`Active sub-task: ${context.currentSubTask}`)
+  }
+  if (context.plan?.goal) {
+    parts.push(`Overall goal: ${context.plan.goal}`)
+  }
+  if (context.message?.text) {
+    parts.push(`Original user question: ${context.message.text}`)
+  }
+  return parts.filter(Boolean).join("\n\n")
+}
+
 function buildCustomAgentTools(): Array<Tool<unknown, AgentRunContext>> {
   return [
     createListCustomAgentsTool(),
     createRunPublicAgentTool(),
-    createReviewTool(),
   ]
 }
+
 
 function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
   return {
@@ -1657,13 +2197,25 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
         userId: context.user.numericId,
         requiredCapabilities: validation.data.requiredCapabilities,
         maxAgents: validation.data.maxAgents,
+        mcpAgents: context.mcpAgents,
       })
-      console.log("[list_custom_agents] input params:", validation.data)
-      console.log("[list_custom_agents] selection result:", result)
+      Logger.info(
+        { params: validation.data, email: context.user.email },
+        "[list_custom_agents] input params"
+      )
+      Logger.info(
+        { selection: result, email: context.user.email },
+        "[list_custom_agents] selection result"
+      )
 
       const normalizedAgents = Array.isArray(result.agents) ? result.agents : []
       context.availableAgents = normalizedAgents
-      return ToolResponse.success(result.result, {
+      const payload = {
+        summary: result.result,
+        agents: normalizedAgents.length ? normalizedAgents : null,
+        totalEvaluated: result.totalEvaluated,
+      }
+      return ToolResponse.success(JSON.stringify(payload, null, 2), {
         metadata: result,
       })
     },
@@ -1695,9 +2247,33 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
       if (!context.ambiguityResolved) {
         return ToolResponse.error(
           "AMBIGUITY_NOT_RESOLVED",
-          "Resolve ambiguity before running a custom agent."
+          `Resolve ambiguity before running a custom agent. Unresolved: ${
+            context.clarifications.length
+              ? context.clarifications
+                  .map((c) => c.question)
+                  .join("; ")
+              : "not specified"
+          }`
         )
       }
+
+      if (!context.availableAgents.length) {
+        return ToolResponse.error(
+          "NO_AGENTS_AVAILABLE",
+          "No agents available. Run list_custom_agents this turn and select an agentId from its results."
+        )
+      }
+
+      Logger.info(
+        {
+          requestedAgentId: validation.data.agentId,
+          availableAgents: context.availableAgents.map((a) => ({
+            agentId: a.agentId,
+            agentName: a.agentName,
+          })),
+        },
+        "[run_public_agent] Agent selection details"
+      )
 
       const agentCapability = context.availableAgents.find(
         (agent) => agent.agentId === validation.data.agentId
@@ -1705,21 +2281,38 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
       if (!agentCapability) {
         return ToolResponse.error(
           "UNKNOWN_AGENT",
-          "Call list_custom_agents before executing a custom agent."
+          `Agent '${validation.data.agentId}' not found in availableAgents. Call list_custom_agents and use one of: ${context.availableAgents
+            .map((a) => `${a.agentName} (${a.agentId})`)
+            .join("; ")}`
         )
       }
 
       const toolOutput = await executeCustomAgent({
         agentId: validation.data.agentId,
-        query: validation.data.query,
+        query: buildDelegatedAgentQuery(validation.data.query, context),
         contextSnippet: validation.data.context,
         maxTokens: validation.data.maxTokens,
         userEmail: context.user.email,
         workspaceExternalId: context.user.workspaceId,
+        mcpAgents: context.mcpAgents,
+        parentTurn: context.turnCount ?? 0,
       })
-      console.log("[run_public_agent] input params:", validation.data)
-      console.log("[run_public_agent] tool output:", toolOutput)
+      Logger.info(
+        { params: validation.data, email: context.user.email },
+        "[run_public_agent] input params"
+      )
+      Logger.info(
+        { toolOutput, email: context.user.email },
+        "[run_public_agent] tool output"
+      )
       context.usedAgents.push(agentCapability.agentId)
+
+      if (toolOutput.error) {
+        return ToolResponse.error(
+          "EXECUTION_FAILED",
+          toolOutput.error
+        )
+      }
 
       return ToolResponse.success(toolOutput.result, {
         metadata: {
@@ -1727,63 +2320,6 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
           agentId: validation.data.agentId,
         },
         data: toolOutput,
-      })
-    },
-  }
-}
-
-function createReviewTool(): Tool<unknown, AgentRunContext> {
-  return {
-    schema: {
-      name: "review_agent",
-      description: TOOL_SCHEMAS.review_agent.description,
-      parameters: TOOL_SCHEMAS.review_agent.inputSchema,
-    },
-    async execute(args, context) {
-      const validation = validateToolInput<{
-        focus?: string
-        includePlan?: boolean
-        maxFindings?: number
-      }>("review_agent", args)
-
-      if (!validation.success) {
-        return ToolResponse.error(
-          "INVALID_INPUT",
-          validation.error.message
-        )
-      }
-
-      const review = await runReviewLLM(context, {
-        focus: validation.data.focus,
-        maxFindings: validation.data.maxFindings,
-      })
-
-      context.review.lastReviewSummary = review.notes
-
-      const reviewOutput = {
-        result: review.notes,
-        recommendation: review.recommendation,
-        metExpectations: review.unmetExpectations.length === 0,
-        unmetExpectations: review.unmetExpectations,
-        planChangeNeeded: review.planChangeNeeded,
-        planChangeReason: review.planChangeReason,
-        toolFeedback: review.toolFeedback,
-        anomaliesDetected: review.anomaliesDetected,
-        anomalies: review.anomalies,
-      }
-
-      const outputValidation =
-        ReviewAgentOutputSchema.safeParse(reviewOutput)
-      if (!outputValidation.success) {
-          Logger.warn(
-            { error: outputValidation.error.format() },
-            "Review tool output failed schema validation"
-          )
-      }
-
-      return ToolResponse.success(review.notes, {
-        metadata: reviewOutput,
-        data: review,
       })
     },
   }
@@ -1915,6 +2451,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
   }
 }
 
+
 /**
  * Build dynamic agent instructions including plan state and tool descriptions
  */
@@ -1939,22 +2476,89 @@ function buildAttachmentDirective(context: AgentRunContext): string {
 `.trim()
 }
 
+function buildReviewDirective(reviewState: ReviewState): string {
+  const lastReview = reviewState.lastReviewResult
+  if (!lastReview) return ""
+
+  const lines: string[] = []
+  lines.push(`Turn: ${reviewState.lastReviewTurn ?? "unknown"}`)
+  lines.push(`Status: ${lastReview.status}`)
+  lines.push(`Recommendation: ${lastReview.recommendation}`)
+  lines.push(
+    `Plan change needed: ${lastReview.planChangeNeeded ? "yes" : "no"}${
+      lastReview.planChangeReason ? ` (${lastReview.planChangeReason})` : ""
+    }`
+  )
+  lines.push(`Ambiguity resolved: ${lastReview.ambiguityResolved ? "yes" : "no"}`)
+  lines.push(`Notes: ${lastReview.notes}`)
+
+  if (lastReview.anomalies?.length) {
+    lines.push(`Anomalies: ${lastReview.anomalies.join("; ")}`)
+  } else if (reviewState.outstandingAnomalies?.length) {
+    lines.push(
+      `Anomalies: ${reviewState.outstandingAnomalies.join("; ")}`
+    )
+  } else {
+    lines.push("Anomalies: none reported")
+  }
+
+  if (reviewState.clarificationQuestions?.length) {
+    lines.push(
+      `Clarification questions to answer: ${reviewState.clarificationQuestions.join("; ")}`
+    )
+  }
+
+  const toolFeedbackSection =
+    lastReview.toolFeedback && lastReview.toolFeedback.length > 0
+      ? lastReview.toolFeedback
+          .map(
+            (feedback, index) =>
+              `${index + 1}. ${feedback.toolName} - ${feedback.outcome}${
+                feedback.summary ? ` (${feedback.summary})` : ""
+              }`
+          )
+          .join("\n")
+      : "None."
+
+  const unmetExpectationsSection =
+    lastReview.unmetExpectations && lastReview.unmetExpectations.length > 0
+      ? lastReview.unmetExpectations.map((exp, index) => `${index + 1}. ${exp}`).join("\n")
+      : "None."
+
+  const reviewJson = JSON.stringify(lastReview, null, 2)
+
+  return `
+<last_review_summary>
+${lines.join("\n")}
+
+Tool feedback:
+${toolFeedbackSection}
+
+Unmet expectations:
+${unmetExpectationsSection}
+
+Full review payload:
+${reviewJson}
+</last_review_summary>`.trim()
+}
+
 function buildAgentInstructions(
   context: AgentRunContext,
   enabledToolNames: string[],
   dateForAI: string,
-  agentPrompt?: string
+  agentPrompt?: string,
+  delegationEnabled = true
 ): string {
-  // Use schema-based tool descriptions for better LLM understanding
   const toolDescriptions = enabledToolNames.length > 0
     ? generateToolDescriptions(enabledToolNames)
     : "No tools available yet. "
-  
+
   const contextSection = buildContextSection(context.contextFragments)
   const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
   const attachmentDirective = buildAttachmentDirective(context)
+  const reviewDirective = buildReviewDirective(context.review)
   const promptAddendum = buildAgentPromptAddendum()
-  
+
   let planSection = "\n<plan>\n"
   if (context.plan) {
     planSection += `Goal: ${context.plan.goal}\n\n`
@@ -1973,6 +2577,10 @@ function buildAgentInstructions(
   } else {
     planSection += "No plan exists yet. Use toDoWrite to create one.\n</plan>\n"
   }
+
+  const delegationGuidance = delegationEnabled
+    ? `- Before calling ANY search, calendar, Gmail, Drive, or other research tools, you MUST invoke \`list_custom_agents\` once per run. Treat the workflow as: plan -> list agents -> (maybe) run_public_agent -> other tools. If the selector returns \`null\`, explicitly log that no agent was suitable, then proceed with core tools.\n- Before calling \`run_public_agent\`, invoke \`list_custom_agents\`, compare every candidate, and respect a \`null\` result as "no delegate—continue with built-in tools."\n- Use \`run_custom_agent\` (the execution surface for selected specialists) immediately after choosing an agent from \`list_custom_agents\`; pass the specific agentId plus a rewritten query tailored to that agent.\n- When \`list_custom_agents\` returns high-confidence candidates, pause to assess the current sub-task and explicitly decide whether running one now accelerates the goal; document the rationale either way.\n- Only delegate when a specific agent's documented capabilities make it unquestionably suitable; otherwise keep iterating yourself.`
+    : "- Delegation to other agents is disabled for this run. Do not call list_custom_agents or run_public_agent; rely on the available tools directly."
 
   return `
 You are Xyne, an enterprise search assistant with agentic capabilities.
@@ -1995,30 +2603,30 @@ ${contextSection}
 ${agentSection}
 
 ${attachmentDirective ? `${attachmentDirective}\n` : ""}
+${reviewDirective ? `${reviewDirective}\n` : ""}
 
 ${promptAddendum}
 
 # PLANNING
 - ALWAYS start by creating a plan using toDoWrite
+- Before changing the plan, READ <last_review_summary> (if present) and incorporate its guidance immediately
+- Adjust the existing plan per the latest review recommendations; only run toDoWrite again if the review explicitly calls for a brand-new plan
+- Do NOT call toDoWrite more than once in a single turn unless the review summary mandates it; otherwise refine the existing plan directly
 - Break the goal into clear, sequential tasks (one sub-goal per task)
 - Each task represents one sub-goal that must be completed before moving to the next
 - Within a task, identify all tools needed to achieve that sub-goal
 - Update plan as you learn more
-
+- VERY IMPORTANT **Never call only toDoWrite tool in a turn , make tool calls releavnt for current / next subTask - goal to proceeed further . toDoWrite is independent tool , we can call other tools along with it.**
 # EXECUTION STRATEGY
 - Execute ONE TASK AT A TIME in sequential order
 - Complete each task fully before moving to the next
-- Within a single task, you may call multiple tools if they all contribute to that task's sub-goal
+- Within a single task, you may call multiple tools if they all contribute to that sub-goal
 - Do NOT mix tools from different sub-goals in the same task
 
 # TOOL CALLS & EXPECTATIONS
 - Use the model's native function/tool-call interface. Provide clean JSON arguments.
 - Do NOT wrap tool calls in custom XML—JAF already handles execution.
-- Before calling ANY search, calendar, Gmail, Drive, or other research tools, you MUST invoke \`list_custom_agents\` once per run. Treat the workflow as: plan -> list agents -> (maybe) run_public_agent -> other tools. If the selector returns \`null\`, explicitly log that no agent was suitable, then proceed with core tools.
-- Before calling \`run_public_agent\`, invoke \`list_custom_agents\`, compare every candidate, and respect a \`null\` result as "no delegate—continue with built-in tools."
-- Use \`run_custom_agent\` (the execution surface for selected specialists) immediately after choosing an agent from \`list_custom_agents\`; pass the specific agentId plus a rewritten query tailored to that agent.
-- When \`list_custom_agents\` returns high-confidence candidates, pause to assess the current sub-task and explicitly decide whether running one now accelerates the goal; document the rationale either way.
-- Only delegate when a specific agent's documented capabilities make it unquestionably suitable; otherwise keep iterating yourself.
+${delegationGuidance}
 - After you decide which tools to call, emit a standalone expected-results block summarizing what each tool should achieve:
 <expected_results>
 [
@@ -2049,7 +2657,7 @@ ${promptAddendum}
 - Place citations right after the relevant statement
 - NEVER group multiple indices in one bracket like [1, 2] or [1, 2, 3]
 - Example: "The project deadline was moved to March [3] and the team agreed [5]"
-`.trim()
+`
 }
 
 /**
@@ -2076,7 +2684,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
       message,
       chatId,
       agentId: rawAgentId,
-    }: { message: string; chatId?: string; agentId?: string } = body
+      toolsList,
+    }: {
+      message: string
+      chatId?: string
+      agentId?: string
+      toolsList?: Array<{ connectorId: string; tools: string[] }>
+    } = body
     
     if (!message) {
       throw new HTTPException(400, { message: "Message is required" })
@@ -2085,6 +2699,21 @@ export async function MessageAgents(c: Context): Promise<Response> {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     rootSpan.setAttribute("chatId", chatId || "new")
+
+    if (typeof toolsList === "string") {
+      try {
+        toolsList = JSON.parse(toolsList) as Array<{
+          connectorId: string
+          tools: string[]
+        }>
+      } catch (error) {
+        loggerWithChild({ email }).warn(
+          { err: error },
+          "Unable to parse toolsList payload; skipping MCP connectors.",
+        )
+        toolsList = []
+      }
+    }
 
     let normalizedAgentId =
       typeof rawAgentId === "string" ? rawAgentId.trim() : undefined
@@ -2228,8 +2857,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
       allowedAgentApps = deriveAllowedAgentApps(agentPromptForLLM)
       rootSpan.setAttribute("agentId", resolvedAgentId)
     }
-    
+
+    const hasExplicitAgent = Boolean(resolvedAgentId && agentPromptForLLM)
+    const delegationEnabled = !hasExplicitAgent
+
     return streamSSE(c, async (stream) => {
+      const mcpClients: Array<{ close?: () => Promise<void> }> = []
       try {
         let thinkingLog = ""
         const emitReasoningStep: ReasoningEmitter = async (payload) => {
@@ -2255,22 +2888,23 @@ export async function MessageAgents(c: Context): Promise<Response> {
             agentPrompt: agentPromptForLLM,
           }
         )
+        agentContext.delegationEnabled = delegationEnabled
 
         if (IMAGE_CONTEXT_CONFIG.enabled && imageAttachmentFileIds.length > 0) {
-          console.info('[IMAGE addition][Image Init] Processing user attachments:', {
-            imageAttachmentCount: imageAttachmentFileIds.length,
-            fileIds: imageAttachmentFileIds.slice(0, 5),
-            userEmail: email,
-          })
+          // console.info('[IMAGE addition][Image Init] Processing user attachments:', {
+          //   imageAttachmentCount: imageAttachmentFileIds.length,
+          //   fileIds: imageAttachmentFileIds.slice(0, 5),
+          //   userEmail: email,
+          // })
           
           const attachmentImageNames = imageAttachmentFileIds.map(
             (fileId, index) => `${index}_${fileId}_${0}`
           )
           
-          console.info('[IMAGE addition][Image Init] Generated image names:', {
-            count: attachmentImageNames.length,
-            samples: attachmentImageNames.slice(0, 3),
-          })
+          // console.info('[IMAGE addition][Image Init] Generated image names:', {
+          //   count: attachmentImageNames.length,
+          //   samples: attachmentImageNames.slice(0, 3),
+          // })
           
           const added = registerImageReferences(agentContext, attachmentImageNames, {
             turnNumber: 0,
@@ -2285,6 +2919,157 @@ export async function MessageAgents(c: Context): Promise<Response> {
           }
         }
 
+        // Build MCP connector tool map (mirrors MessageWithToolsApi semantics)
+        const finalToolsMap: FinalToolsList = {}
+        type FinalToolsEntry = FinalToolsList[string]
+        type AdapterTool = FinalToolsEntry["tools"][number]
+        const connectorMetaById = new Map<string, { name?: string; description?: string }>()
+
+        if (toolsList && Array.isArray(toolsList) && toolsList.length > 0) {
+          for (const item of toolsList) {
+            const { connectorId, tools: toolExternalIds } = item
+            const requestedToolIds = Array.isArray(toolExternalIds)
+              ? toolExternalIds
+              : []
+            const parsedConnectorId = Number.parseInt(connectorId, 10)
+            if (Number.isNaN(parsedConnectorId)) {
+              loggerWithChild({ email }).warn(
+                { connectorId },
+                "[MessageAgents][MCP] Skipping connector with invalid id",
+              )
+              continue
+            }
+
+            let connector
+            try {
+              connector = await getConnectorById(db, parsedConnectorId, user.id)
+            } catch (error) {
+              loggerWithChild({ email }).error(
+                error,
+                `[MessageAgents][MCP] Connector not found or access denied for connectorId: ${connectorId}`,
+              )
+              continue
+            }
+
+            const client = new Client({
+              name: `connector-${connectorId}`,
+              version: (connector.config as { version?: string })?.version ?? "1.0",
+            })
+
+            try {
+              const loadedConfig = connector.config as {
+                url?: string
+                headers?: Record<string, string>
+                command?: string
+                args?: string[]
+                mode?: "sse" | "streamable-http"
+                version?: string
+              }
+              const loadedUrl = loadedConfig.url
+              const loadedHeaders = loadedConfig.headers ?? {}
+              const loadedMode = loadedConfig.mode || "sse"
+
+              if (loadedUrl) {
+                loggerWithChild({ email }).info(
+                  `Connecting to MCP client at ${loadedUrl} with mode: ${loadedMode}`,
+                )
+
+                if (loadedMode === "streamable-http") {
+                  const transportOptions: StreamableHTTPClientTransportOptions = {
+                    requestInit: { headers: loadedHeaders },
+                  }
+                  await client.connect(
+                    new StreamableHTTPClientTransport(new URL(loadedUrl), transportOptions),
+                  )
+                } else {
+                  const transportOptions: SSEClientTransportOptions = {
+                    requestInit: { headers: loadedHeaders },
+                  }
+                  await client.connect(
+                    new SSEClientTransport(new URL(loadedUrl), transportOptions),
+                  )
+                }
+              } else if (loadedConfig.command) {
+                loggerWithChild({ email }).info(
+                  `Connecting to MCP Stdio client with command: ${loadedConfig.command}`,
+                )
+                await client.connect(
+                  new StdioClientTransport({
+                    command: loadedConfig.command,
+                    args: loadedConfig.args || [],
+                  }),
+                )
+              } else {
+                throw new Error(
+                  "Invalid MCP connector configuration: missing url or command.",
+                )
+              }
+            } catch (error) {
+              loggerWithChild({ email }).error(
+                error,
+                `Failed to connect to MCP client for connector ${connectorId}`,
+              )
+              continue
+            }
+
+            mcpClients.push(client)
+            let tools = []
+            try {
+              tools = await getToolsByConnectorId(db, workspace.id, connector.id)
+            } catch (error) {
+              loggerWithChild({ email }).error(
+                error,
+                `[MessageAgents][MCP] Failed to fetch tools for connector ${connectorId}`,
+              )
+              continue
+            }
+            const filteredTools = tools.filter((tool) => {
+              const isIncluded = requestedToolIds.includes(tool.externalId!)
+              if (!isIncluded) {
+                loggerWithChild({ email }).info(
+                  `[MessageAgents][MCP] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
+                )
+              }
+              return isIncluded
+            })
+
+            const formattedTools: FinalToolsEntry["tools"] = filteredTools.map(
+              (tool): AdapterTool => ({
+                toolName: tool.toolName,
+                toolSchema: tool.toolSchema,
+                description: tool.description ?? undefined,
+              }),
+            )
+
+            if (formattedTools.length === 0) {
+              continue
+            }
+
+            const wrappedClient: FinalToolsEntry["client"] = {
+              callTool: async ({ name, arguments: toolArguments }) => {
+                if (typeof toolArguments === "object" && toolArguments !== null) {
+                  return client.callTool({
+                    name,
+                    arguments: toolArguments,
+                  })
+                }
+                return client.callTool({ name })
+              },
+              close: () => client.close(),
+            }
+
+            const safeConnectorId = String(connector.id)
+            finalToolsMap[safeConnectorId] = {
+              tools: formattedTools,
+              client: wrappedClient,
+            }
+            connectorMetaById.set(safeConnectorId, {
+              name: connector.name,
+              description: (connector as Record<string, unknown>)?.description as string | undefined,
+            })
+          }
+        }
+
         const baseInternalTools = buildInternalToolAdapters()
         const internalTools = filterToolsByAvailability(baseInternalTools, {
           connectorState,
@@ -2292,19 +3077,72 @@ export async function MessageAgents(c: Context): Promise<Response> {
           email,
           agentId: resolvedAgentId,
         })
-        const customTools = buildCustomAgentTools()
+        const customTools = delegationEnabled ? buildCustomAgentTools() : []
+
+        // Decide which connectors become MCP agents vs direct tools (budgeted)
+        const MAX_TOOLS_BUDGET = 30
+        const connectorToolEntries = Object.entries(finalToolsMap).map(
+          ([connectorId, entry]) => ({
+            connectorId,
+            toolCount: entry.tools.length,
+          }),
+        )
+        let totalToolBudget =
+          internalTools.length +
+          connectorToolEntries.reduce((sum, entry) => sum + entry.toolCount, 0)
+        const agentConnectorIds = new Set<string>()
+        if (totalToolBudget > MAX_TOOLS_BUDGET) {
+          const sortedConnectors = [...connectorToolEntries].sort(
+            (a, b) => b.toolCount - a.toolCount,
+          )
+          for (const entry of sortedConnectors) {
+            agentConnectorIds.add(entry.connectorId)
+            totalToolBudget -= entry.toolCount
+            if (totalToolBudget <= MAX_TOOLS_BUDGET) break
+          }
+        }
+
+        const directMcpToolsMap: FinalToolsList = {}
+        const mcpAgentCandidates: MCPVirtualAgentRuntime[] = []
+
+        for (const [connectorId, entry] of Object.entries(finalToolsMap)) {
+          if (agentConnectorIds.has(connectorId)) {
+            mcpAgentCandidates.push({
+              agentId: `mcp:${connectorId}`,
+              connectorId,
+              connectorName: connectorMetaById.get(connectorId)?.name,
+              description: connectorMetaById.get(connectorId)?.description,
+              tools: entry.tools as MCPToolDefinition[],
+              client: entry.client,
+            })
+          } else {
+            directMcpToolsMap[connectorId] = entry
+          }
+        }
+
+        const directMcpTools = buildMCPJAFTools(directMcpToolsMap)
         const allTools: Tool<unknown, AgentRunContext>[] = [
           ...internalTools,
+          ...directMcpTools,
           ...customTools,
         ]
         agentContext.enabledTools = new Set(
           allTools.map((tool) => tool.schema.name)
         )
-        console.info("[MessageAgents] Tools exposed to LLM after filtering:", {
+        agentContext.mcpAgents = mcpAgentCandidates
+        loggerWithChild({ email }).info({
+          totalToolBudget,
+          internalTools: internalTools.length,
+          directMcpTools: directMcpTools.length,
+          mcpAgents: mcpAgentCandidates.map((a) => a.agentId),
+        }, "[MessageAgents][MCP] Tool budget applied")
+        Logger.info({
           enabledTools: Array.from(agentContext.enabledTools),
+          mcpAgentConnectors: Array.from(agentConnectorIds),
+          directMcpTools: directMcpTools.length,
           email,
           chatId: agentContext.chat.externalId,
-        })
+        }, "[MessageAgents] Tools exposed to LLM after filtering")
 
         // Track gathered fragments
         const gatheredFragmentsKeys = new Set<string>()
@@ -2348,16 +3186,18 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
         // Build dynamic instructions
         const instructions = () => {
-          console.info('[IMAGE addition][Instructions] Building agent instructions:', {
-            currentImageCount: agentContext.imageFileNames.length,
-            currentMetadataSize: agentContext.imageMetadata.size,
-            hasImageConfig: IMAGE_CONTEXT_CONFIG.enabled,
-            userEmail: email,
-          })
+          // console.info('[IMAGE addition][Instructions] Building agent instructions:', {
+          //   currentImageCount: agentContext.imageFileNames.length,
+          //   currentMetadataSize: agentContext.imageMetadata.size,
+          //   hasImageConfig: IMAGE_CONTEXT_CONFIG.enabled,
+          //   userEmail: email,
+          // })
           return buildAgentInstructions(
             agentContext,
             allTools.map((tool) => tool.schema.name),
-            dateForAI
+            dateForAI,
+            agentPromptForLLM,
+            delegationEnabled
           )
         }
 
@@ -2404,15 +3244,85 @@ export async function MessageAgents(c: Context): Promise<Response> {
         ]
 
         const pendingExpectations: PendingExpectation[] = []
+        const expectationBuffer: PendingExpectation[] = []
         const expectationHistory = new Map<number, PendingExpectation[]>()
         const expectedResultsByCallId = new Map<string, ToolExpectation>()
         const toolCallTurnMap = new Map<string, number>()
+        const syntheticToolCallIds = new WeakMap<ToolCall, string>()
+        let syntheticToolCallSeq = 0
+        const consecutiveToolErrors = new Map<string, number>()
+
+        const recordExpectationsForTurn = (
+          turn: number,
+          expectations: PendingExpectation[]
+        ) => {
+          if (!expectations.length) {
+            return
+          }
+          const existing = expectationHistory.get(turn) || []
+          existing.push(...expectations)
+          expectationHistory.set(turn, existing)
+        }
+
+        const flushExpectationBufferToTurn = (turn: number) => {
+          if (!expectationBuffer.length) return
+          const buffered = expectationBuffer.splice(0, expectationBuffer.length)
+          recordExpectationsForTurn(turn, buffered)
+        }
+
+        const ensureToolCallId = (
+          toolCall: ToolCall,
+          turn: number,
+          index: number
+        ): string => {
+          if (
+            toolCall.id !== undefined &&
+            toolCall.id !== null
+          ) {
+            const normalized = String(toolCall.id)
+            syntheticToolCallIds.set(toolCall, normalized)
+            return normalized
+          }
+          const existing = syntheticToolCallIds.get(toolCall)
+          if (existing) return existing
+          const generated = `synthetic-${turn}-${syntheticToolCallSeq++}-${index}`
+          syntheticToolCallIds.set(toolCall, generated)
+          return generated
+        }
+
+        const runAndBroadcastReview = async (
+          reviewInput: AutoReviewInput,
+          iteration: number
+        ): Promise<ReviewResult> => {
+          if (
+            (!reviewInput.expectedResults ||
+              reviewInput.expectedResults.length === 0) &&
+            reviewInput.focus !== "run_end"
+          ) {
+            Logger.warn(
+              { turn: iteration, focus: reviewInput.focus },
+              "[MessageAgents] No expected results recorded for review input."
+            )
+          }
+          const reviewResult = await performAutomaticReview(
+            reviewInput,
+            agentContext
+          )
+          await handleReviewOutcome(
+            agentContext,
+            reviewResult,
+            iteration,
+            reviewInput.focus,
+            emitReasoningStep
+          )
+          return reviewResult
+        }
 
         // Configure run with hooks
         const runCfg: JAFRunConfig<AgentRunContext> = {
           agentRegistry,
           modelProvider,
-          maxTurns: 10,
+          maxTurns: 100,
           modelOverride: defaultBestModel,
           
           // After tool execution hook
@@ -2421,15 +3331,28 @@ export async function MessageAgents(c: Context): Promise<Response> {
             result: any,
             hookContext: any
           ) => {
-            const callId = hookContext?.toolCall?.id as string | undefined
+            const callIdRaw = hookContext?.toolCall?.id
+            const normalizedCallId =
+              hookContext?.toolCall
+                ? syntheticToolCallIds.get(hookContext.toolCall) ??
+                  (callIdRaw === undefined || callIdRaw === null
+                    ? undefined
+                    : String(callIdRaw))
+                : undefined
             let expectationForCall: ToolExpectation | undefined
-            if (callId && expectedResultsByCallId.has(callId)) {
-              expectationForCall = expectedResultsByCallId.get(callId)
-              expectedResultsByCallId.delete(callId)
+            if (
+              normalizedCallId &&
+              expectedResultsByCallId.has(normalizedCallId)
+            ) {
+              expectationForCall =
+                expectedResultsByCallId.get(normalizedCallId)
+              expectedResultsByCallId.delete(normalizedCallId)
             }
-            const turnForCall = callId ? toolCallTurnMap.get(callId) : undefined
-            if (callId) {
-              toolCallTurnMap.delete(callId)
+            const turnForCall = normalizedCallId
+              ? toolCallTurnMap.get(normalizedCallId)
+              : undefined
+            if (normalizedCallId) {
+              toolCallTurnMap.delete(normalizedCallId)
             }
             const content = await afterToolExecutionHook(
               toolName,
@@ -2519,6 +3442,16 @@ export async function MessageAgents(c: Context): Promise<Response> {
           )
         }
 
+        Logger.info(
+          {
+            runId,
+            chatId: agentContext.chat.externalId,
+            modelOverride: defaultBestModel,
+            email,
+          },
+          "[MessageAgents] Starting assistant call"
+        )
+
         for await (const evt of runStream<AgentRunContext, string>(
           runState,
           runCfg,
@@ -2530,6 +3463,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             case "turn_start":
               runState.context.turnCount = evt.data.turn
               currentTurn = evt.data.turn
+              flushExpectationBufferToTurn(currentTurn)
               await streamReasoningStep(
                 emitReasoningStep,
                 `Turn ${currentTurn} started`,
@@ -2538,15 +3472,31 @@ export async function MessageAgents(c: Context): Promise<Response> {
               break
 
             case "tool_requests":
-              for (const toolCall of evt.data.toolCalls) {
-                toolCallTurnMap.set(toolCall.id, currentTurn)
+              Logger.info(
+                {
+                  turn: currentTurn,
+                  plannedTools: evt.data.toolCalls.map((toolCall) => ({
+                    name: toolCall.name,
+                    args: toolCall.args,
+                  })),
+                  chatId: agentContext.chat.externalId,
+                },
+                "[MessageAgents] Tool plan for turn"
+              )
+              for (const [idx, toolCall] of evt.data.toolCalls.entries()) {
+                const normalizedCallId = ensureToolCallId(
+                  toolCall,
+                  currentTurn,
+                  idx
+                )
+                toolCallTurnMap.set(normalizedCallId, currentTurn)
                 const assignedExpectation = consumePendingExpectation(
                   pendingExpectations,
                   toolCall.name
                 )
                 if (assignedExpectation) {
                   expectedResultsByCallId.set(
-                    toolCall.id,
+                    normalizedCallId,
                     assignedExpectation.expectation
                   )
                 }
@@ -2590,19 +3540,74 @@ export async function MessageAgents(c: Context): Promise<Response> {
               break
 
             case "tool_call_start":
+              Logger.info({
+                toolName: evt.data.toolName,
+                args: evt.data.args,
+                runId,
+                chatId: agentContext.chat.externalId,
+                turn: currentTurn,
+              }, "[MessageAgents][Tool Start]")
               await streamReasoningStep(
                 emitReasoningStep,
                 `Executing ${evt.data.toolName}...`,
-                { toolName: evt.data.toolName }
+                {
+                  toolName: evt.data.toolName,
+                  detail: JSON.stringify(evt.data.args ?? {}),
+                }
               )
               break
 
             case "tool_call_end":
+              Logger.info({
+                toolName: evt.data.toolName,
+                args: evt.data.args,
+                result: evt.data.result,
+                error: evt.data.error,
+                executionTime: evt.data.executionTime,
+                status: evt.data.error ? "error" : "success",
+                runId,
+                chatId: agentContext.chat.externalId,
+                turn: currentTurn,
+              }, "[MessageAgents][Tool End]")
               await streamReasoningStep(
                 emitReasoningStep,
                 `Tool ${evt.data.toolName} completed`,
-                { toolName: evt.data.toolName, status: evt.data.status }
+                {
+                  toolName: evt.data.toolName,
+                  status: evt.data.error ? "error" : evt.data.status,
+                  detail: evt.data.error
+                    ? `Error: ${evt.data.error}`
+                    : `Result: ${typeof evt.data.result === "string"
+                        ? evt.data.result.slice(0, 800)
+                        : JSON.stringify(evt.data.result).slice(0, 800)}`,
+                }
               )
+              if (evt.data.error) {
+                const newCount =
+                  (consecutiveToolErrors.get(evt.data.toolName) ?? 0) + 1
+                consecutiveToolErrors.set(evt.data.toolName, newCount)
+                if (newCount >= 2) {
+                  const recentHistory = agentContext.toolCallHistory
+                    .filter((record) => record.toolName === evt.data.toolName)
+                    .slice(-newCount)
+                  if (recentHistory.length > 0) {
+                    await runAndBroadcastReview(
+                      {
+                        focus: "tool_error",
+                        turnNumber: currentTurn,
+                        contextFragments: agentContext.contextFragments,
+                        toolCallHistory: recentHistory,
+                        plan: agentContext.plan,
+                        expectedResults:
+                          expectationHistory.get(currentTurn) || [],
+                      },
+                      currentTurn
+                    )
+                  }
+                }
+              } else {
+                consecutiveToolErrors.delete(evt.data.toolName)
+              }
               break
 
             case "turn_end":
@@ -2634,34 +3639,37 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   { iteration: evt.data.turn }
                 )
               }
-              
-              const reviewResult = await performAutomaticReview(
+
+              let reviewToolHistory = currentTurnToolHistory
+              if (
+                reviewToolHistory.length === 0 &&
+                agentContext.toolCallHistory.length > 0
+              ) {
+                Logger.warn(
+                  {
+                    turn: evt.data.turn,
+                    toolHistoryCount: agentContext.toolCallHistory.length,
+                  },
+                  "[MessageAgents] No per-turn tool records; defaulting to last tool call."
+                )
+                reviewToolHistory = [
+                  agentContext.toolCallHistory[
+                    agentContext.toolCallHistory.length - 1
+                  ],
+                ]
+              }
+
+              await runAndBroadcastReview(
                 {
+                  focus: "turn_end",
                   turnNumber: evt.data.turn,
                   contextFragments: agentContext.contextFragments,
-                  toolCallHistory: currentTurnToolHistory,
+                  toolCallHistory: reviewToolHistory,
                   plan: agentContext.plan,
                   expectedResults:
                     expectationHistory.get(evt.data.turn) || [],
                 },
-                agentContext
-              )
-              
-              // Update context with review results
-              agentContext.review.lastReviewSummary = reviewResult.notes
-              agentContext.review.lastReviewTurn = evt.data.turn
-              
-              // Stream review results to client
-              await streamReasoningStep(
-                emitReasoningStep,
-                `Review complete. Recommendation: ${reviewResult.recommendation}. Plan change needed: ${reviewResult.planChangeNeeded ? "yes" : "no"}.`,
-                {
-                  iteration: evt.data.turn,
-                  status: reviewResult.status,
-                  detail: reviewResult.notes,
-                  anomaliesDetected: reviewResult.anomaliesDetected,
-                  review: reviewResult,
-                }
+                evt.data.turn
               )
 
               const attachmentState = getAttachmentPhaseMetadata(agentContext)
@@ -2675,6 +3683,18 @@ export async function MessageAgents(c: Context): Promise<Response> {
               break
 
             case "assistant_message":
+              Logger.info(
+                {
+                  turn: currentTurn,
+                  hasToolCalls:
+                    Array.isArray(evt.data.message?.tool_calls) &&
+                    (evt.data.message.tool_calls?.length ?? 0) > 0,
+                  contentPreview: getTextContent(evt.data.message.content)
+                    ?.slice(0, 200) || "",
+                  chatId: agentContext.chat.externalId,
+                },
+                "[MessageAgents] Assistant output received"
+              )
               const content = getTextContent(evt.data.message.content) || ""
               const hasToolCalls =
                 Array.isArray(evt.data.message?.tool_calls) &&
@@ -2715,9 +3735,14 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     )
                   }
                   pendingExpectations.push(...extractedExpectations)
-                  const accumulated = expectationHistory.get(currentTurn) || []
-                  accumulated.push(...extractedExpectations)
-                  expectationHistory.set(currentTurn, accumulated)
+                  if (currentTurn > 0) {
+                    recordExpectationsForTurn(
+                      currentTurn,
+                      extractedExpectations
+                    )
+                  } else {
+                    expectationBuffer.push(...extractedExpectations)
+                  }
                 }
                 await streamAnswerText(content)
               }
@@ -2740,6 +3765,20 @@ export async function MessageAgents(c: Context): Promise<Response> {
             case "run_end":
               const outcome = evt.data.outcome
               if (outcome?.status === "completed") {
+                await runAndBroadcastReview(
+                  {
+                    focus: "run_end",
+                    turnNumber: agentContext.turnCount || currentTurn,
+                    contextFragments: agentContext.contextFragments,
+                    toolCallHistory: agentContext.toolCallHistory,
+                    plan: agentContext.plan,
+                    expectedResults:
+                      expectationHistory.get(
+                        agentContext.turnCount || currentTurn
+                      ) || [],
+                  },
+                  agentContext.turnCount || currentTurn
+                )
                 // Store the response in database to prevent vanishing
                 // TODO: Implement full DB integration similar to MessageWithToolsApi
                 // For now, store basic message data
@@ -2828,6 +3867,17 @@ export async function MessageAgents(c: Context): Promise<Response> {
           data: "",
         })
         rootSpan.end()
+      } finally {
+        for (const client of mcpClients) {
+          try {
+            await client.close?.()
+          } catch (error) {
+            loggerWithChild({ email }).error(
+              error,
+              "Failed to close MCP client",
+            )
+          }
+        }
       }
     })
   } catch (error) {
@@ -2845,6 +3895,7 @@ type ListAgentsParams = {
   userId?: number
   requiredCapabilities?: string[]
   maxAgents?: number
+  mcpAgents?: MCPVirtualAgentRuntime[]
 }
 
 export async function listCustomAgentsSuitable(
@@ -2853,6 +3904,7 @@ export async function listCustomAgentsSuitable(
   const maxAgents = Math.min(Math.max(params.maxAgents ?? 5, 1), 10)
   let workspaceDbId = params.workspaceNumericId
   let userDbId = params.userId
+  const mcpAgentsFromContext = params.mcpAgents ?? []
 
   if (!workspaceDbId || !userDbId) {
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -2872,7 +3924,7 @@ export async function listCustomAgentsSuitable(
     0
   )
 
-  if (!accessibleAgents.length) {
+  if (!accessibleAgents.length && mcpAgentsFromContext.length === 0) {
     return {
       result: "No custom agents available for this workspace.",
       agents: [],
@@ -2911,6 +3963,21 @@ export async function listCustomAgentsSuitable(
       return buildAgentBrief(agent, resourceAccess)
     }),
   )
+  const mcpBriefs: AgentBrief[] = mcpAgentsFromContext.map((agent) => ({
+    agentId: agent.agentId,
+    agentName: agent.connectorName || `Connector ${agent.connectorId}`,
+    description:
+      agent.description ||
+      `MCP agent wrapping ${agent.tools.length} tool${agent.tools.length === 1 ? "" : "s"}.`,
+    capabilities: agent.tools.map((t) => t.toolName),
+    domains: ["mcp"],
+    estimatedCost: "medium",
+    averageLatency: 4500,
+    isPublic: true,
+    resourceAccess: [],
+  }))
+  const combinedBriefs = [...briefs, ...mcpBriefs]
+  const totalEvaluated = accessibleAgents.length + mcpBriefs.length
 
   const systemPrompt = [
     "You are routing queries to the best custom agent.",
@@ -2928,7 +3995,7 @@ export async function listCustomAgentsSuitable(
       ? `Required capabilities: ${params.requiredCapabilities.join(", ")}`
       : "Required capabilities: none specified",
     "Agents:",
-    formatAgentBriefsForPrompt(briefs),
+    formatAgentBriefsForPrompt(combinedBriefs),
   ].join("\n\n")
 
   const modelId =
@@ -2972,26 +4039,35 @@ export async function listCustomAgentsSuitable(
       return {
         result: validation.data.result,
         agents: enrichedAgents,
-        totalEvaluated: accessibleAgents.length,
+        totalEvaluated,
       }
     }
 
-    Logger.warn(
+    loggerWithChild({ email: params.userEmail }).warn(
       { issue: validation.error.format() },
       "LLM agent selection output invalid, falling back to heuristic scoring"
     )
   } catch (error) {
-    Logger.error(
+    loggerWithChild({ email: params.userEmail }).error(
       { err: error },
       "LLM agent selection failed, falling back to heuristic scoring"
     )
   }
 
+  loggerWithChild({ email: params.userEmail }).info(
+    { 
+      query: params.query,
+      totalAgents: combinedBriefs.length,
+      maxAgents,
+    },
+    "Using heuristic agent selection mechanism (LLM-based selection not available or failed)"
+  )
+
   return buildHeuristicAgentSelection(
-    briefs,
+    combinedBriefs,
     params.query,
     maxAgents,
-    accessibleAgents.length
+    totalEvaluated
   )
 }
 
@@ -3003,14 +4079,30 @@ export async function executeCustomAgent(
     workspaceExternalId: string
     contextSnippet?: string
     maxTokens?: number
+    parentTurn?: number
+    mcpAgents?: MCPVirtualAgentRuntime[]
   }
 ): Promise<ToolOutput> {
+  const turnInfo =
+    typeof params.parentTurn === "number"
+      ? `\n\nTurn info: Parent turn number is ${params.parentTurn}. Continue numbering from here.`
+      : ""
+
   const combinedQuery = params.contextSnippet
-    ? `${params.query}\n\nAdditional context:\n${params.contextSnippet}`
-    : params.query
+    ? `${params.query}\n\nAdditional context:\n${params.contextSnippet}${turnInfo}`
+    : `${params.query}${turnInfo}`
+
+  if (params.agentId.startsWith("mcp:")) {
+    return executeMcpAgent(params.agentId, combinedQuery, {
+      mcpAgents: params.mcpAgents,
+      maxTokens: params.maxTokens,
+      parentTurn: params.parentTurn,
+      userEmail: params.userEmail,
+    })
+  }
 
   try {
-    const result = await ExecuteAgentForWorkflow({
+    const result = await executeAgentForWorkflowWithRag({
       agentId: params.agentId,
       userQuery: combinedQuery,
       workspaceId: params.workspaceExternalId,
@@ -3018,6 +4110,7 @@ export async function executeCustomAgent(
       isStreamable: false,
       temperature: 0.2,
       max_new_tokens: params.maxTokens,
+      parentTurn: params.parentTurn,
       attachmentFileIds: [],
       nonImageAttachmentFileIds: [],
     })
@@ -3040,6 +4133,7 @@ export async function executeCustomAgent(
         imageCitations: result.imageCitations,
         cost: result.cost,
         tokensUsed: result.tokensUsed,
+        parentTurn: params.parentTurn,
       },
     }
   } catch (error) {
@@ -3052,7 +4146,272 @@ export async function executeCustomAgent(
       error: getErrorMessage(error),
       metadata: {
         agentId: params.agentId,
+        parentTurn: params.parentTurn,
       },
+    }
+  }
+}
+
+type ExecuteMcpAgentOptions = {
+  mcpAgents?: MCPVirtualAgentRuntime[]
+  maxTokens?: number
+  parentTurn?: number
+  userEmail: string
+}
+
+async function executeMcpAgent(
+  agentId: string,
+  query: string,
+  options: ExecuteMcpAgentOptions
+): Promise<ToolOutput> {
+  const connectorId = agentId.replace(/^mcp:/, "")
+  const mcpAgent = options.mcpAgents?.find(
+    (agent) => agent.agentId === agentId || agent.connectorId === connectorId
+  )
+  if (!mcpAgent) {
+    return {
+      result: "MCP agent not available for this request",
+      error: "UNKNOWN_MCP_AGENT",
+      metadata: { agentId },
+    }
+  }
+  if (!mcpAgent.client) {
+    return {
+      result: "MCP agent client is not initialized",
+      error: "MCP_CLIENT_UNAVAILABLE",
+      metadata: { agentId },
+    }
+  }
+
+  const modelId = (defaultFastModel as Models) || (defaultBestModel as Models)
+  const toolList = mcpAgent.tools
+    .map(
+      (tool, idx) =>
+        `${idx + 1}. ${tool.toolName} - ${tool.description ?? "No description provided"}`
+    )
+    .join("\n")
+
+  const systemPrompt = [
+    "You are orchestrating MCP tools to satisfy the user query.",
+    "Return strict JSON: {tools:[{toolName, arguments, rationale}, ...]}.",
+    "Include at least one tool; order by execution priority; keep arguments concise and schema-aligned.",
+    "If absolutely unable to structure an array, fall back to a single object, but prefer the array shape.",
+  ].join(" ")
+
+  const payload = [
+    `User query:\n${query}`,
+    `Available MCP tools (${mcpAgent.tools.length}):\n${toolList}`,
+    options.parentTurn !== undefined
+      ? `Parent turn number: ${options.parentTurn}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+
+  let selectedToolName = mcpAgent.tools[0]?.toolName
+  let selectedArgs: Record<string, unknown> = {}
+  let selectionRationale = "Heuristic default selection."
+  let selectedToolsArray:
+    | Array<{ toolName: string; arguments?: Record<string, unknown>; rationale?: string }>
+    | null = null
+
+  try {
+    const provider = getProviderByModel(modelId)
+    const messages: Message[] = [
+      {
+        role: ConversationRole.USER,
+        content: [{ text: payload }],
+      },
+    ]
+    const modelParams: ModelParams = {
+      modelId,
+      json: true,
+      stream: false,
+      temperature: 0,
+      maxTokens: Math.min(options.maxTokens ?? 800, 1200),
+      systemPrompt,
+    }
+    const toolSchema = {
+      name: "select_mcp_tools",
+      description: "Select and parametrize MCP tools to satisfy the query",
+      parameters: {
+        type: "object",
+        properties: {
+          tools: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                toolName: { type: "string" },
+                arguments: { type: "object" },
+                rationale: { type: "string" },
+              },
+              required: ["toolName", "arguments"],
+            },
+          },
+        },
+        required: ["tools"],
+      },
+    }
+
+    const selectionResponse = await provider.converse(messages, {
+      ...modelParams,
+      tools: [toolSchema],
+      tool_choice: "select_mcp_tools",
+    })
+
+    const calls =
+      selectionResponse.toolCalls && Array.isArray(selectionResponse.toolCalls)
+        ? selectionResponse.toolCalls.map((tc: any) => ({
+            toolName:
+              tc.name ??
+              tc.function?.name ??
+              (typeof tc.toolName === "string" ? tc.toolName : undefined),
+            arguments: (() => {
+              const rawArgs =
+                tc.arguments ??
+                tc.function?.arguments ??
+                (typeof tc.args === "string" ? tc.args : "{}")
+              if (typeof rawArgs === "object" && rawArgs !== null) {
+                return rawArgs as Record<string, unknown>
+              }
+              if (typeof rawArgs === "string") {
+                try {
+                  return JSON.parse(rawArgs)
+                } catch {
+                  return {}
+                }
+              }
+              return {}
+            })(),
+            rationale:
+              tc.rationale ??
+              (typeof tc.reason === "string" ? tc.reason : undefined),
+          }))
+        : null
+
+    if (calls && calls.length > 0) {
+      selectedToolsArray = calls
+      selectedToolName = calls[0].toolName
+      selectedArgs = calls[0].arguments ?? {}
+      selectionRationale =
+        calls[0].rationale ?? "LLM selected tool without rationale."
+    }
+  } catch (error) {
+    Logger.warn(
+      { err: error, agentId },
+      "[MCP Agent] Tool selection failed; falling back to heuristic",
+    )
+  }
+
+  const chosenTool = mcpAgent.tools.find(
+    (tool) => tool.toolName === selectedToolName,
+  )
+  if (!chosenTool) {
+    return {
+      result: `Chosen tool '${selectedToolName}' is not available for this MCP agent.`,
+      error: "MCP_TOOL_NOT_FOUND",
+      metadata: { agentId, connectorId },
+    }
+  }
+
+  try {
+    const executions: Array<{
+      toolName: string
+      arguments: Record<string, unknown>
+      result: unknown
+      rationale?: string
+    }> = []
+
+    const availableTools = new Map<string, MCPToolDefinition>()
+    mcpAgent.tools.forEach((t) => availableTools.set(t.toolName, t))
+
+    const executionListRaw =
+      selectedToolsArray && selectedToolsArray.length > 0
+        ? selectedToolsArray
+        : [
+            {
+              toolName: selectedToolName,
+              arguments: selectedArgs,
+              rationale: selectionRationale,
+            },
+          ]
+
+    const executionList = executionListRaw
+      .filter((entry) => availableTools.has(entry.toolName))
+      .map((entry) => ({
+        toolName: entry.toolName,
+        arguments: entry.arguments || {},
+        rationale: entry.rationale,
+      }))
+      .slice(0, 3) // safety cap to avoid long chains
+
+    if (executionList.length === 0) {
+      executionList.push({
+        toolName: selectedToolName,
+        arguments: selectedArgs,
+        rationale: selectionRationale,
+      })
+    }
+
+    for (const entry of executionList) {
+      const raw = await mcpAgent.client.callTool({
+        name: entry.toolName,
+        arguments: entry.arguments,
+      })
+      executions.push({
+        toolName: entry.toolName,
+        arguments: entry.arguments || {},
+        result: raw,
+        rationale: entry.rationale,
+      })
+    }
+
+    const formattedPieces: string[] = []
+    for (const exec of executions) {
+      let piece = `Tool ${exec.toolName} executed successfully.`
+      try {
+        const resp = exec.result as {
+          content?: Array<{ text?: string }>
+          data?: { contexts?: unknown }
+          metadata?: { contexts?: unknown }
+          contexts?: unknown
+        }
+        const content = resp?.content?.[0]?.text
+        if (typeof content === "string" && content.trim()) {
+          piece = content
+        }
+      } catch {
+        // ignore parsing errors
+      }
+      formattedPieces.push(piece)
+    }
+
+    const formattedContent =
+      formattedPieces.length === 1
+        ? formattedPieces[0]
+        : formattedPieces.join("\n\n")
+
+    return {
+      result: formattedContent,
+      metadata: {
+        agentId,
+        connectorId,
+        toolName: executions[0]?.toolName ?? selectedToolName,
+        rationale: executions[0]?.rationale ?? selectionRationale,
+        requestedTools: executions.map((exec) => ({
+          toolName: exec.toolName,
+          arguments: exec.arguments,
+          rationale: exec.rationale,
+        })),
+        parentTurn: options.parentTurn,
+      },
+    }
+  } catch (error) {
+    return {
+      result: `MCP tool '${selectedToolName}' failed`,
+      error: getErrorMessage(error),
+      metadata: { agentId, connectorId, toolName: selectedToolName },
     }
   }
 }

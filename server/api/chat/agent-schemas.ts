@@ -23,6 +23,7 @@ export interface SubTask {
   result?: string
   completedAt?: number
   error?: string
+  completedTools?: string[]
 }
 
 /**
@@ -70,6 +71,17 @@ export interface ReviewState {
   lastReviewTurn: number | null
   reviewFrequency: number // Review every N turns
   lastReviewSummary: string | null
+  outstandingAnomalies: string[]
+  clarificationQuestions: string[]
+  lastReviewResult: ReviewResult | null
+  cachedPlanSummary?: {
+    hash: string
+    summary: string
+  }
+  cachedContextSummary?: {
+    hash: string
+    summary: string
+  }
 }
 
 export interface AgentImageMetadata {
@@ -82,6 +94,24 @@ export interface AgentImageMetadata {
 export interface AgentRuntimeCallbacks {
   streamAnswerText?: (text: string) => Promise<void>
   emitReasoning?: (payload: Record<string, unknown>) => Promise<void>
+}
+
+export type MCPToolDefinition = {
+  toolName: string
+  toolSchema?: string | null
+  description?: string
+}
+
+export type MCPVirtualAgentRuntime = {
+  agentId: string
+  connectorId: string
+  connectorName?: string
+  description?: string
+  tools: MCPToolDefinition[]
+  client?: {
+    callTool: (args: { name: string; arguments: unknown }) => Promise<unknown>
+    close?: () => Promise<void>
+  }
 }
 
 export interface FinalSynthesisState {
@@ -146,6 +176,8 @@ export interface AgentRunContext {
   availableAgents: AgentCapability[]
   usedAgents: string[]
   enabledTools: Set<string>
+  delegationEnabled: boolean
+  mcpAgents?: MCPVirtualAgentRuntime[]
 
   // Error & retry tracking
   failedTools: Map<string, ToolFailureInfo>
@@ -214,6 +246,8 @@ export interface ReviewResult {
   anomaliesDetected: boolean
   anomalies: string[]
   recommendation: "proceed" | "gather_more" | "clarify_query" | "replan"
+  ambiguityResolved: boolean
+  clarificationQuestions?: string[]
 }
 
 /**
@@ -225,6 +259,7 @@ export interface AutoReviewInput {
   toolCallHistory: ToolExecutionRecord[]
   plan: PlanState | null
   expectedResults?: ToolExpectationAssignment[]
+  focus: "turn_end" | "tool_error" | "run_end"
 }
 
 export interface ToolExpectationAssignment {
@@ -283,6 +318,7 @@ export const SubTaskSchema = z.object({
   result: z.string().optional(),
   completedAt: z.number().optional(),
   error: z.string().optional(),
+  completedTools: z.array(z.string()).optional(),
 })
 
 export const PlanStateSchema = z.object({
@@ -332,4 +368,6 @@ export const ReviewResultSchema = z.object({
   anomaliesDetected: z.boolean(),
   anomalies: z.array(z.string()),
   recommendation: z.enum(["proceed", "gather_more", "clarify_query", "replan"]),
+  ambiguityResolved: z.boolean(),
+  clarificationQuestions: z.array(z.string()).optional(),
 })
