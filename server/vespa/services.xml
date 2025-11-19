@@ -1,5 +1,7 @@
 <services version="1.0">  
-    <container id="my_container" version="1.0">  
+    <!-- Feed / Document Processing Container Cluster -->
+    <!-- Handles all /document/v1 traffic and document embedding/indexing -->
+    <container id="feed" version="1.0">  
         <!-- https://docs.vespa.ai/en/onnx.html#using-optimum-to-export-models-to-onnx-format -->  
         <component id="hf-embedder" type="hugging-face-embedder">  
             <transformer-model path="models/model.onnx" />  
@@ -7,20 +9,82 @@
             <onnx-gpu-device>0</onnx-gpu-device>  
         </component>  
   
-        <!-- Container-level threadpool configuration - reduce to lower CPU load -->  
+        <!-- Container-level threadpool configuration - protects GPU from too many HTTP requests -->
         <config name="container.handler.threadpool">  
             <maxthreads>8</maxthreads>  
         </config>  
   
-        <search />  
+        <!-- All /document/v1 traffic and doc-processing lives here -->
         <document-api />  
+        
+        <!-- Just enable document-processing; don't put <threadpool> here -->
+        <document-processing />
+        
+        <!-- Explicit HTTP port configuration for feed container -->
+        <http>
+            <server port="8080" id="default" />
+        </http>
           
         <nodes>
-            <jvm allocated-memory='15%'/>  
-            <node hostalias='node1'/>  
+            <!-- 25% of JVM for feed container -->
+            <!-- Running both containers on same host uses 50% total (25% + 25%), leaving 50% headroom -->
+            <jvm allocated-memory="25%"/>  
+            <node hostalias="node1"/>  
+            <!-- If you have a separate physical node for feed, change to: <node hostalias="node2"/> -->
+        </nodes>  
+    </container>
+
+    <!-- Query / Search Container Cluster -->
+    <!-- Handles all search queries and query embeddings -->
+    <container id="query" version="1.0">  
+        <!-- https://docs.vespa.ai/en/onnx.html#using-optimum-to-export-models-to-onnx-format -->  
+        <component id="hf-embedder" type="hugging-face-embedder">  
+            <transformer-model path="models/model.onnx" />  
+            <tokenizer-model path="models/tokenizer.json" />  
+            <onnx-gpu-device>0</onnx-gpu-device>  
+        </component>  
+  
+        <!-- Search with controlled threadpool to manage GPU concurrency at query time -->
+        <search>
+            <threadpool>
+                <!-- Smallish, to control GPU concurrency at query time -->
+                <threads>2</threads>   <!-- per vCPU -->
+                <queue>25</queue>
+            </threadpool>
+        </search>
+
+        <!-- Default thread pool -->
+        <config name="container.handler.threadpool">
+            <!-- Set corePoolSize==maxthreads for fixed size pool (recommended) -->
+            <!-- Note: absolute pool size -->
+            <corePoolSize>8</corePoolSize>
+            <maxthreads>8</maxthreads>
+        </config>
+        
+        <!-- Explicit HTTP port configuration for query container -->
+        <!-- Must be different from feed container port -->
+        <http>
+            <server port="8081" id="default" />
+        </http>
+          
+        <nodes>
+            <!-- 25% of JVM for query container -->
+            <!-- Running both containers on same host uses 50% total (25% + 25%), leaving 50% headroom -->
+            <jvm allocated-memory="25%"/>  
+            <node hostalias="node1"/>  
+            <!-- If you have a separate physical node for query, change to: <node hostalias="node2"/> -->
         </nodes>  
     </container>  
   
+    <!-- Cluster controller for content cluster -->
+    <!-- Only the content cluster needs a cluster controller -->
+    <admin version="2.0">
+        <adminserver hostalias="node1" />
+        <cluster-controllers>
+            <cluster-controller hostalias="node1" />
+        </cluster-controllers>
+    </admin>
+
     <content id="my_content" version="1.0">  
         <engine>  
             <proton>  
@@ -34,7 +98,11 @@
                             <search>32</search>  
                             <persearch>1</persearch>  
                             <summary>8</summary>  
-                        </requestthreads>  
+                        </requestthreads> 
+                        <feeding>
+                            <concurrency>0.25</concurrency>
+                            <niceness>0.5</niceness>
+                        </feeding> 
                         <flushstrategy>  
                             <native>  
                                 <total>  
@@ -68,6 +136,10 @@
             <document type="datasource" mode="index" global="true" />  
             <document type="datasource_file" mode="index" />  
             <document type="kb_items" mode="index"/>  
+            
+            <!-- Route all document indexing/processing through the feed container cluster -->
+            <!-- This ensures document embeddings are done by the feed container's GPU -->
+            <document-processing cluster="feed" />
         </documents>  
   
         <nodes>  

@@ -1,3 +1,31 @@
+## [3.31.6](https://github.com/xynehq/xyne/compare/v3.31.5...v3.31.6) (2025-11-18)
+
+
+### Bug Fixes
+
+* XYNE-350 fixed agent reasoning feature ([#1219](https://github.com/xynehq/xyne/issues/1219)) ([c24a4d6](https://github.com/xynehq/xyne/commit/c24a4d69001207a1a5ce3703858fccc7261091eb))
+
+## [3.31.5](https://github.com/xynehq/xyne/compare/v3.31.4...v3.31.5) (2025-11-18)
+
+
+### Bug Fixes
+
+* Http Config update and UX upgrade ([#1216](https://github.com/xynehq/xyne/issues/1216)) ([5347c5c](https://github.com/xynehq/xyne/commit/5347c5c28196719575ef7a00d390befc55de760c))
+
+## [3.31.4](https://github.com/xynehq/xyne/compare/v3.31.3...v3.31.4) (2025-11-15)
+
+
+### Bug Fixes
+
+* **vespa config:** configured vespa with two containers ([#1220](https://github.com/xynehq/xyne/issues/1220)) ([9dbb4e2](https://github.com/xynehq/xyne/commit/9dbb4e2e29ff48bd8d94f7d6b8ed05bedf6bedbb))
+
+## [3.31.3](https://github.com/xynehq/xyne/compare/v3.31.2...v3.31.3) (2025-11-13)
+
+
+### Bug Fixes
+
+* **deps:** fix circular deps error ([#1218](https://github.com/xynehq/xyne/issues/1218)) ([a3880d5](https://github.com/xynehq/xyne/commit/a3880d5f90846613647dab299325c28c435eae2c))
+
 ## [3.31.2](https://github.com/xynehq/xyne/compare/v3.31.1...v3.31.2) (2025-11-12)
 
 

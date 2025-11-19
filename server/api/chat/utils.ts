@@ -38,6 +38,7 @@ import {
   MailAttachmentEntity,
   WebSearchEntity,
   type MailParticipant,
+  AttachmentEntity,
 } from "@xyne/vespa-ts/types"
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
@@ -49,10 +50,14 @@ import {
   type AgentReasoningStep,
   type AttachmentMetadata,
 } from "@/shared/types"
-import type { Citation } from "@/api/chat/types"
+import type {
+  Citation,
+  ImageCitation,
+  MinimalAgentFragment,
+} from "@/api/chat/types"
 import { getFolderItems, SearchEmailThreads } from "@/search/vespa"
 import { getLoggerWithChild, getLogger } from "@/logger"
-import type { Span } from "@/tracer"
+import { getTracer, type Span } from "@/tracer"
 import { Subsystem } from "@/types"
 import type { SelectMessage } from "@/db/schema"
 import { MessageRole } from "@/types"
@@ -68,6 +73,7 @@ import { db } from "@/db/client"
 import { collections, collectionItems } from "@/db/schema"
 import { and, eq, isNull } from "drizzle-orm"
 import { get } from "http"
+import { updateMessageByExternalId } from "@/db/chat"
 
 // Follow-up context types and utilities
 export type WorkingSet = {
@@ -1329,4 +1335,199 @@ export const isValidEntity = (entity: string): boolean => {
           .includes(normalizedEntity)
     : // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
       false
+}
+
+export const addErrMessageToMessage = async (
+  lastMessage: SelectMessage,
+  errorMessage: string,
+) => {
+  if (lastMessage.messageRole === MessageRole.User) {
+    await updateMessageByExternalId(db, lastMessage?.externalId, {
+      errorMessage,
+    })
+  }
+}
+
+export const checkAndYieldCitationsForAgent = async function* (
+  textInput: string,
+  yieldedCitations: Set<number>,
+  results: MinimalAgentFragment[],
+  yieldedImageCitations?: Map<number, Set<number>>,
+  email: string = "",
+): AsyncGenerator<
+  {
+    citation?: { index: number; item: Citation }
+    imageCitation?: ImageCitation
+  },
+  void,
+  unknown
+> {
+  const tracer = getTracer("chat")
+  const span = tracer.startSpan("checkAndYieldCitationsForAgent")
+  const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+  try {
+    span.setAttribute("text_input_length", textInput.length)
+    span.setAttribute("results_count", results.length)
+    span.setAttribute("yielded_citations_size", yieldedCitations.size)
+    span.setAttribute("has_image_citations", !!yieldedImageCitations)
+    span.setAttribute("user_email", email)
+
+    const text = splitGroupedCitationsWithSpaces(textInput)
+    let match
+    let imgMatch
+    let citationsProcessed = 0
+    let imageCitationsProcessed = 0
+    let citationsYielded = 0
+    let imageCitationsYielded = 0
+
+    while (
+      (match = textToCitationIndex.exec(text)) !== null ||
+      (imgMatch = textToImageCitationIndex.exec(text)) !== null
+    ) {
+      if (match) {
+        citationsProcessed++
+        const citationIndex = parseInt(match[1], 10)
+        if (!yieldedCitations.has(citationIndex)) {
+          const item = results[citationIndex - 1]
+
+          if (!item?.source?.docId || !item.source?.url) {
+            loggerWithChild({ email: email }).info(
+              "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
+            )
+            continue
+          }
+
+          // we dont want citations for attachments in the chat
+          if (
+            Object.values(AttachmentEntity).includes(
+              item.source.entity as AttachmentEntity,
+            )
+          ) {
+            continue
+          }
+
+          yield {
+            citation: {
+              index: citationIndex,
+              item: item.source,
+            },
+          }
+          yieldedCitations.add(citationIndex)
+          citationsYielded++
+        }
+      } else if (imgMatch && yieldedImageCitations) {
+        imageCitationsProcessed++
+        const parts = imgMatch[1].split("_")
+        if (parts.length >= 2) {
+          const docIndex = parseInt(parts[0], 10)
+          const imageIndex = parseInt(parts[1], 10)
+          if (
+            !yieldedImageCitations.has(docIndex) ||
+            !yieldedImageCitations.get(docIndex)?.has(imageIndex)
+          ) {
+            const item = results[docIndex]
+            if (item) {
+              const imageProcessingSpan = span.startSpan(
+                "process_image_citation",
+              )
+              try {
+                imageProcessingSpan.setAttribute("citation_key", imgMatch[1])
+                imageProcessingSpan.setAttribute("doc_index", docIndex)
+                imageProcessingSpan.setAttribute("image_index", imageIndex)
+
+                const imageData = await getCitationToImage(
+                  imgMatch[1],
+                  {
+                    id: item.id,
+                    relevance: item.confidence,
+                    fields: {
+                      docId: item.source.docId,
+                    } as any,
+                  } as VespaSearchResult,
+                  email,
+                )
+                if (imageData) {
+                  if (!imageData.imagePath || !imageData.imageBuffer) {
+                    loggerWithChild({ email: email }).error(
+                      "Invalid imageData structure returned",
+                      { citationKey: imgMatch[1], imageData },
+                    )
+                    imageProcessingSpan.setAttribute(
+                      "processing_success",
+                      false,
+                    )
+                    imageProcessingSpan.setAttribute(
+                      "error_reason",
+                      "invalid_image_data",
+                    )
+                    imageProcessingSpan.end()
+                    continue
+                  }
+                  yield {
+                    imageCitation: {
+                      citationKey: imgMatch[1],
+                      imagePath: imageData.imagePath,
+                      imageData: imageData.imageBuffer.toString("base64"),
+                      ...(imageData.extension
+                        ? { mimeType: mimeTypeMap[imageData.extension] }
+                        : {}),
+                      item: item.source,
+                    },
+                  }
+                  imageCitationsYielded++
+                  imageProcessingSpan.setAttribute("processing_success", true)
+                  imageProcessingSpan.setAttribute(
+                    "image_size",
+                    imageData.imageBuffer.length,
+                  )
+                  imageProcessingSpan.setAttribute(
+                    "image_extension",
+                    imageData.extension || "unknown",
+                  )
+                }
+                imageProcessingSpan.end()
+              } catch (error) {
+                imageProcessingSpan.addEvent("image_processing_error", {
+                  message: getErrorMessage(error),
+                  stack: (error as Error).stack || "",
+                })
+                imageProcessingSpan.setAttribute("processing_success", false)
+                imageProcessingSpan.end()
+
+                loggerWithChild({ email: email }).error(
+                  error,
+                  "Error processing image citation",
+                  { citationKey: imgMatch[1], error: getErrorMessage(error) },
+                )
+              }
+              if (!yieldedImageCitations.has(docIndex)) {
+                yieldedImageCitations.set(docIndex, new Set<number>())
+              }
+              yieldedImageCitations.get(docIndex)?.add(imageIndex)
+            } else {
+              loggerWithChild({ email: email }).warn(
+                "Found a citation index but could not find it in the search result ",
+                imageIndex,
+                results.length,
+              )
+              continue
+            }
+          }
+        }
+      }
+    }
+
+    span.setAttribute("citations_processed", citationsProcessed)
+    span.setAttribute("image_citations_processed", imageCitationsProcessed)
+    span.setAttribute("citations_yielded", citationsYielded)
+    span.setAttribute("image_citations_yielded", imageCitationsYielded)
+    span.end()
+  } catch (error) {
+    span.addEvent("error", {
+      message: getErrorMessage(error),
+      stack: (error as Error).stack || "",
+    })
+    span.end()
+    throw error
+  }
 }

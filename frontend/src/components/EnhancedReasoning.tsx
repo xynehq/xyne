@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
-import { ChevronRight, Loader2, FileText, Users, Brain } from "lucide-react"
+import { ChevronRight, Loader2, FileText, Users, Brain, Globe } from "lucide-react"
 import { cn, splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import { AgentReasoningStepType, Citation, XyneTools, Apps } from "shared/types"
 import MarkdownPreview from "@uiw/react-markdown-preview"
@@ -42,7 +42,6 @@ interface ReasoningStep {
   app?: string
   action?: string
   isIterationSummary?: boolean
-  iterationToolName?: string
 }
 
 interface EnhancedReasoningProps {
@@ -142,8 +141,8 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
   // Track steps per iteration for limiting display (same as backend)
   let currentIterationSteps = 0
   let currentIterationNumber = 0
-  let currentIterationToolName: string | undefined = undefined
-  const MAX_STEPS_PER_ITERATION = 3
+  let currentToolName: string | undefined = undefined
+  const MAX_STEPS_PER_ITERATION = 5
 
   lines.forEach((line, lineIndex) => {
     try {
@@ -157,9 +156,9 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
         if (existingStep) {
           // Update existing step with new data
           existingStep.stepSummary =
-            jsonData.quickSummary || existingStep.stepSummary
+            jsonData.step.stepSummary || existingStep.stepSummary
           existingStep.aiGeneratedSummary =
-            jsonData.aiSummary || existingStep.aiGeneratedSummary
+            jsonData.step.aiGeneratedSummary || existingStep.aiGeneratedSummary
           return
         }
 
@@ -172,14 +171,13 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
             generateStableId(jsonData.text, lineIndex),
           status: jsonData.step.status || "info",
           iterationNumber: jsonData.step.iteration,
-          stepSummary: jsonData.quickSummary,
-          aiGeneratedSummary: jsonData.aiSummary,
+          stepSummary: jsonData.step.stepSummary,
+          aiGeneratedSummary: jsonData.step.aiGeneratedSummary,
           stepId: stepId,
           substeps: [],
           toolName: jsonData.step.toolName,
           app: jsonData.step.app,
-          isIterationSummary: jsonData.isIterationSummary || false,
-          iterationToolName: currentIterationToolName,
+          isIterationSummary: jsonData.step.isIterationSummary || false,
         }
 
         // Handle iteration summaries - add them as top-level steps
@@ -189,13 +187,13 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
           return
         }
 
-        // Apply the same 3-steps-per-iteration logic as backend
+        // Apply the same 5-steps-per-iteration logic as backend
         if (step.type === AgentReasoningStepType.Iteration) {
           currentIteration = step
           currentIterationNumber =
             step.iterationNumber ?? currentIterationNumber + 1
           currentIterationSteps = 0 // Reset step counter for new iteration
-          currentIterationToolName = undefined // Reset tool name for new iteration
+          currentToolName = undefined // Reset tool name for new iteration
           // Add iteration step to show attempt headers
           steps.push(step)
           stepMap.set(stepId, step)
@@ -203,30 +201,32 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
           currentIteration &&
           step.type !== AgentReasoningStepType.Iteration
         ) {
+          // Check if this is a tool-related step (tool calls are the steps in JAF)
+          const isToolStep =
+            step.type === AgentReasoningStepType.ToolSelected ||
+            step.type === AgentReasoningStepType.ToolExecuting ||
+            step.type === AgentReasoningStepType.ToolResult
           // Track tool name from ToolExecuting steps for the entire iteration
           if (
-            step.type === AgentReasoningStepType.ToolExecuting &&
+            isToolStep &&
             step.toolName
           ) {
-            currentIterationToolName = step.toolName
+            currentToolName = step.toolName
             // Update the current iteration with the tool name
-            currentIteration.iterationToolName = currentIterationToolName
+            currentIteration.toolName = currentToolName
             // Update all existing substeps in this iteration with the tool name
             if (currentIteration.substeps) {
               currentIteration.substeps.forEach((substep) => {
                 if (!substep.app && !substep.toolName) {
-                  substep.iterationToolName = currentIterationToolName
+                  substep.toolName = currentToolName
                 }
               })
             }
           }
 
-          // Set the iteration tool name for this step
-          step.iterationToolName = currentIterationToolName
-
-          // Check if we've already added 3 steps for this iteration
+          // Check if we've already added 5 steps for this iteration
           if (currentIterationSteps >= MAX_STEPS_PER_ITERATION) {
-            // Skip this step to maintain 3-step limit per iteration
+            // Skip this step to maintain 5-step limit per iteration
             stepMap.set(stepId, step) // Still track it internally
             return
           }
@@ -254,14 +254,14 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
           type: AgentReasoningStepType.LogMessage,
           content:
             jsonData.text ||
-            jsonData.quickSummary ||
-            jsonData.aiSummary ||
+            jsonData.step.aiGeneratedSummary ||
+            jsonData.step.stepSummary ||
             "Additional processing completed",
           timestamp: jsonData.step.timestamp || Date.now(),
           status: "info",
           iterationNumber: jsonData.step.iteration,
-          stepSummary: jsonData.quickSummary || jsonData.aiSummary,
-          aiGeneratedSummary: jsonData.aiSummary || jsonData.quickSummary,
+          stepSummary: jsonData.step.stepSummary || jsonData.step.aiGeneratedSummary,
+          aiGeneratedSummary: jsonData.step.aiGeneratedSummary || jsonData.step.stepSummary,
           stepId: jsonData.step.stepId,
           substeps: [],
         }
@@ -308,7 +308,6 @@ const ReasoningStepComponent: React.FC<{
     stepType?: string,
     stepIndex?: number,
     toolName?: string,
-    iterationToolName?: string,
   ) => JSX.Element | null
   allSteps?: ReasoningStep[]
 }> = React.memo(
@@ -357,11 +356,11 @@ const ReasoningStepComponent: React.FC<{
       if (depth > 0) {
         // Step 1 (index 0): show actual message
         if (index === 0) {
-          return step.content
+          return step.aiGeneratedSummary || step.content
         }
         // Steps 2 and 3 (index 1 and 2): show summary only
         if (index >= 1 && (step.aiGeneratedSummary || step.stepSummary)) {
-          return step.aiGeneratedSummary || step.stepSummary
+          return step.aiGeneratedSummary || step.content
         }
         // Fallback to content if no summary available
         return step.content
@@ -383,8 +382,7 @@ const ReasoningStepComponent: React.FC<{
       !isIteration &&
       !isInitialMessage &&
       !isIterationSummary &&
-      step.content !== (step.aiGeneratedSummary || step.stepSummary) &&
-      (depth === 0 || index === 0) // Only step 1 in iterations or top-level steps
+      step.content !== (step.aiGeneratedSummary || step.stepSummary)
     const isWaitingForSummary =
       isStreaming &&
       isLastStep &&
@@ -410,6 +408,10 @@ const ReasoningStepComponent: React.FC<{
         (s) => s.type === AgentReasoningStepType.Iteration,
       ).length
       const showAttemptHeader = totalIterations > 1
+
+      if(!hasSubsteps) {
+        return
+      }
 
       return (
         <div className={cn("mt-4", index > 0 && "mt-8")}>
@@ -514,7 +516,6 @@ const ReasoningStepComponent: React.FC<{
       step.type,
       index,
       step.toolName,
-      step.iterationToolName,
     )
 
     return (
@@ -877,6 +878,21 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
 
   const getIconFromToolName = useCallback((toolName: string) => {
     switch (toolName) {
+      // new tools
+      case XyneTools.searchGmail:
+        return <GmailIcon className="w-4 h-4" />
+      case XyneTools.searchDriveFiles:
+        return <DriveIcon className="w-4 h-4" />
+      case XyneTools.searchCalendarEvents:
+        return <GoogleCalendarIcon className="w-4 h-4" />
+      case XyneTools.searchGoogleContacts:
+        return <Users className="w-4 h-4" />
+      case XyneTools.searchGlobal:
+        return <Globe className="w-4 h-4" />
+      case XyneTools.requestUserClarification:
+        return <Brain className="w-4 h-4" />
+      
+      // old tools
       case XyneTools.GetUserInfo:
         return <XyneIcon className="w-4 h-4" />
 
@@ -902,7 +918,6 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
       stepType?: string,
       stepIndex?: number,
       toolName?: string,
-      iterationToolName?: string,
     ) => {
       // For planning steps (first step in iteration)
       if (stepType === AgentReasoningStepType.Planning || stepIndex === 0) {
@@ -914,9 +929,8 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
       if (appIcon) return appIcon
 
       // If no app, try to get icon from tool name (current step's tool or iteration's tool)
-      const currentToolName = toolName || iterationToolName
-      if (currentToolName) {
-        return getIconFromToolName(currentToolName)
+      if (toolName) {
+        return getIconFromToolName(toolName)
       }
 
       return null

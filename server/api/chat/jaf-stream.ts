@@ -6,34 +6,35 @@ import {
 
 import { db } from "@/db/client"
 import { insertMessage, getChatMessagesWithAuth } from "@/db/message"
-import { getToolsByConnectorId } from "@/db/tool"
-import { type SelectChat, type SelectMessage } from "@/db/schema"
-import { getLogger, getLoggerWithChild } from "@/logger"
+import { type SelectChat } from "@/db/schema"
+import { getLogger } from "@/logger"
 import {
   AgentReasoningStepType,
   ApiKeyScopes,
   ChatSSEvents,
+  type AgentReasoningStep,
 } from "@/shared/types"
-import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
-import { getErrorMessage, splitGroupedCitationsWithSpaces } from "@/utils"
+import { MessageRole, Subsystem } from "@/types"
+import { getErrorMessage } from "@/utils"
 
 import { SSEStreamingApi, streamSSE } from "hono/streaming" // Import SSEStreamingApi
-import { getTracer, type Tracer } from "@/tracer"
+import { type Span, type Tracer } from "@/tracer"
 
 import { insertChatTrace } from "@/db/chatTrace"
-
 import { activeStreams } from "./stream"
 import {
   type Citation,
   type ImageCitation,
   type MinimalAgentFragment,
 } from "./types"
-import { processMessage } from "./utils"
+import {
+  addErrMessageToMessage,
+  checkAndYieldCitationsForAgent,
+  processMessage,
+} from "./utils"
 import config from "@/config"
 import {
   runStream,
-  generateRunId,
-  generateTraceId,
   getTextContent,
   type Agent as JAFAgent,
   type Message as JAFMessage,
@@ -47,28 +48,13 @@ import {
   type ToolCall,
   InterruptionStatus,
 } from "@xynehq/jaf"
-// Replace LiteLLM provider with Xyne-backed JAF provider
-import { makeXyneJAFProvider } from "./jaf-provider"
 import {
   buildMCPJAFTools,
   type FinalToolsList as JAFinalToolsList,
   type JAFAdapterCtx,
-  buildToolsOverview,
-  buildContextSection,
 } from "@/api/chat/jaf-adapter"
-import { getRecordBypath } from "@/db/knowledgeBase"
-import { getDateForAI } from "@/utils/index"
-import { validateVespaIdInAgentIntegrations } from "@/search/utils"
-import { getAuth, safeGet } from "../agent"
-import { applyFollowUpContext } from "@/utils/parseAttachment"
-import { expandSheetIds } from "@/search/utils"
-import { googleTools, searchGlobalTool } from "@/api/chat/tools/index"
 import { fallbackTool } from "./tools/global"
-import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
-import {
-  addErrMessageToMessage,
-  checkAndYieldCitationsForAgent,
-} from "./agents"
+import { AgentSteps } from "./agentSteps"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -103,10 +89,13 @@ type ChatContext = {
   streamKey: string
   message: string
   modelId: string | null
+  jafStreamingSpan: Span
+  turnSpan: Span | undefined
+  agentSteps: AgentSteps
+  toolContextsMap: Record<string, number>
 }
 
 const Logger = getLogger(Subsystem.Chat)
-const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 export const JafStreamer = async (
   runState: JAFRunState<JAFAdapterCtx>,
   runConfig: JAFRunConfig<JAFAdapterCtx>,
@@ -137,11 +126,11 @@ export const JafStreamer = async (
     streamKey,
     message,
     modelId,
+    jafStreamingSpan,
+    turnSpan,
+    agentSteps,
+    toolContextsMap,
   } = options
-  const rootSpan = tracer.startSpan("MessageWithToolsApi")
-  const streamSpan = rootSpan.startSpan("stream_response")
-  const jafProcessingSpan = streamSpan.startSpan("jaf_processing")
-  const jafStreamingSpan = jafProcessingSpan.startSpan("jaf_streaming")
 
   let currentTurn = 0
   let totalToolCalls = 0
@@ -169,132 +158,90 @@ export const JafStreamer = async (
     switch (evt.type) {
       case "turn_start": {
         currentTurn = evt.data.turn
-        const turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
+        turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
         turnSpan.setAttribute("turn_number", currentTurn)
         turnSpan.setAttribute("agent_name", evt.data.agentName)
-        const data = JSON.stringify({
-          text: `Iteration ${evt.data.turn} started (agent: ${evt.data.agentName})`,
-          step: {
+        await agentSteps.logAndStreamReasoning(
+          {
             type: AgentReasoningStepType.Iteration,
             iteration: evt.data.turn,
             status: "in_progress",
-            stepSummary: `Planning search iteration ${evt.data.turn}`,
           },
-        })
-        thinking += `${data}\n`
-        await stream.writeSSE({
-          event: ChatSSEvents.Reasoning,
-          data: data,
-        })
-        turnSpan.end()
+          message,
+        )
         break
       }
       case "tool_requests": {
-        const toolRequestsSpan = jafStreamingSpan.startSpan("tool_requests")
+        const toolRequestsSpan = turnSpan?.startSpan("tool_requests")
         totalToolCalls += evt.data.toolCalls.length
-        toolRequestsSpan.setAttribute(
-          "tool_calls_count",
-          evt.data.toolCalls.length,
-        )
-        toolRequestsSpan.setAttribute("total_tool_calls", totalToolCalls)
+        toolRequestsSpan?.setAttribute("tool_calls_count", evt.data.toolCalls.length)
+        toolRequestsSpan?.setAttribute("total_tool_calls", totalToolCalls)
 
         for (const r of evt.data.toolCalls) {
-          const toolSelectionSpan = toolRequestsSpan.startSpan("tool_selection")
-          toolSelectionSpan.setAttribute("tool_name", r.name)
-          toolSelectionSpan.setAttribute(
+          const toolSelectionSpan = toolRequestsSpan?.startSpan("tool_selection")
+          toolSelectionSpan?.setAttribute("tool_name", r.name)
+          toolSelectionSpan?.setAttribute(
             "args_count",
             Object.keys(r.args || {}).length,
           )
-
-          let data = JSON.stringify({
-            text: `Tool selected: ${r.name}`,
-            step: {
+          toolSelectionSpan?.setAttribute("args", JSON.stringify(r.args))
+          await agentSteps.logAndStreamReasoning(
+            {
               type: AgentReasoningStepType.ToolSelected,
               toolName: r.name,
               status: "in_progress",
-              stepSummary: `Executing ${r.name} tool`,
             },
-          })
-          thinking += `${data}\n`
-          await stream.writeSSE({
-            event: ChatSSEvents.Reasoning,
-            data: data,
-          })
-          data = JSON.stringify({
-            text: `Parameters: ${JSON.stringify(r.args)}`,
-            step: {
+            message,
+          )
+  
+          await agentSteps.logAndStreamReasoning(
+            {
               type: AgentReasoningStepType.ToolParameters,
               parameters: r.args,
               status: "in_progress",
-              stepSummary: "Reviewing tool parameters",
             },
-          })
-          thinking += `${data}\n`
-          await stream.writeSSE({
-            event: ChatSSEvents.Reasoning,
-            data: data,
-          })
-          toolSelectionSpan.end()
+            message,
+          )
+          toolSelectionSpan?.end()
         }
-        toolRequestsSpan.end()
+        toolRequestsSpan?.end()
         break
       }
       case "tool_call_start": {
-        const toolStartSpan = jafStreamingSpan.startSpan("tool_call_start")
-        toolStartSpan.setAttribute("tool_name", evt.data.toolName)
-        const data = JSON.stringify({
-          text: `Executing ${evt.data.toolName}...`,
-          step: {
+        const toolStartSpan = turnSpan?.startSpan("tool_call_start")
+        toolStartSpan?.setAttribute("tool_name", evt.data.toolName)
+        await agentSteps.logAndStreamReasoning(
+          {
             type: AgentReasoningStepType.ToolExecuting,
             toolName: evt.data.toolName,
             status: "in_progress",
-            stepSummary: `Executing ${evt.data.toolName} tool`,
           },
-        })
-        thinking += `${data}\n`
-        await stream.writeSSE({
-          event: ChatSSEvents.Reasoning,
-          data: data,
-        })
-        toolStartSpan.end()
+          message,
+        )
+        toolStartSpan?.end()
         break
       }
       case "tool_call_end": {
-        const toolEndSpan = jafStreamingSpan.startSpan("tool_call_end")
-        type ToolCallEndEventData = Extract<
-          JAFTraceEvent,
-          { type: "tool_call_end" }
-        >["data"]
-        const contexts = (evt.data as ToolCallEndEventData)?.toolResult
-          ?.metadata?.contexts
-        const contextsCount = Array.isArray(contexts) ? contexts.length : 0
-
-        toolEndSpan.setAttribute("tool_name", evt.data.toolName)
-        toolEndSpan.setAttribute("status", evt.data.status || "completed")
-        toolEndSpan.setAttribute("contexts_found", contextsCount)
-        toolEndSpan.setAttribute("total_fragments", gatheredFragments.length)
-
-        const data = JSON.stringify({
-          text: `Tool result: ${evt.data.toolName}`,
-          step: {
+        const toolStatus = typeof evt.data.status === "string" 
+          ? (evt.data.status === "completed" || evt.data.status === "failed" || evt.data.status === "in_progress" 
+              ? evt.data.status 
+              : "completed")
+          : "completed"
+        const contextsLength = toolContextsMap[`${currentTurn}_${evt.data.toolName}`] || 0
+        await agentSteps.logAndStreamReasoning(
+          {
             type: AgentReasoningStepType.ToolResult,
             toolName: evt.data.toolName,
-            status: evt.data.status || "completed",
-            resultSummary: "Tool execution completed",
-            itemsFound: contextsCount,
-            stepSummary: `Found ${contextsCount} results`,
+            resultSummary: `Tool execution completed${contextsLength > 0 ? ` - Found ${contextsLength} result${contextsLength !== 1 ? 's' : ''}` : ''}`,
+            itemsFound: contextsLength,
+            status: toolStatus,
           },
-        })
-        thinking += `${data}\n`
-        await stream.writeSSE({
-          event: ChatSSEvents.Reasoning,
-          data: data,
-        })
-        toolEndSpan.end()
+          message,
+        )
         break
       }
       case "assistant_message": {
-        const messageSpan = jafStreamingSpan.startSpan("assistant_message")
+        const messageSpan = turnSpan?.startSpan("assistant_message")
         const content = getTextContent(evt.data.message.content) || ""
         const hasToolCalls =
           Array.isArray(evt.data.message?.tool_calls) &&
@@ -307,19 +254,14 @@ export const JafStreamer = async (
         if (hasToolCalls) {
           // Treat assistant content that accompanies tool calls as planning/reasoning,
           // not as final answer text. Emit as a reasoning step and do not send 'u' updates.
-          const data = JSON.stringify({
-            text: content,
-            step: {
+          await agentSteps.logAndStreamReasoning(
+            {
               type: AgentReasoningStepType.LogMessage,
+              message: content,
               status: "in_progress",
-              stepSummary: "Model planned tool usage",
             },
-          })
-          thinking += `${data}\n`
-          await stream.writeSSE({
-            event: ChatSSEvents.Reasoning,
-            data: data,
-          })
+            message,
+          )
           break
         }
 
@@ -362,11 +304,11 @@ export const JafStreamer = async (
             }
           }
         }
-        messageSpan.setAttribute("content_length", content.length)
-        messageSpan.setAttribute("answer_length", answer.length)
-        messageSpan.setAttribute("citations_count", citations.length)
-        messageSpan.setAttribute("image_citations_count", imageCitations.length)
-        messageSpan.end()
+        messageSpan?.setAttribute("content_length", content.length)
+        messageSpan?.setAttribute("answer_length", answer.length)
+        messageSpan?.setAttribute("citations_count", citations.length)
+        messageSpan?.setAttribute("image_citations_count", imageCitations.length)
+        messageSpan?.end()
         break
       }
       case "token_usage": {
@@ -431,7 +373,6 @@ export const JafStreamer = async (
         )
         clarificationSpan.setAttribute("question", evt.data.question)
         clarificationSpan.setAttribute("options_count", evt.data.options.length)
-        console.log("Clarification requested:", JSON.stringify(evt.data))
         await stream.writeSSE({
           event: ChatSSEvents.ClarificationRequested,
           data: JSON.stringify({
@@ -457,17 +398,6 @@ export const JafStreamer = async (
           evt.data.selectedId,
         )
 
-        const reasoningData = JSON.stringify({
-          text: `User selected: ${evt.data.selectedId}`,
-          step: {
-            type: AgentReasoningStepType.LogMessage,
-            status: "completed",
-            message: `User provided clarification: ${evt.data.selectedId}`,
-            stepSummary: "User clarification received",
-          },
-        })
-        thinking += `${reasoningData}\n`
-
         await stream.writeSSE({
           event: ChatSSEvents.ClarificationProvided,
           data: JSON.stringify({
@@ -476,34 +406,16 @@ export const JafStreamer = async (
           }),
         })
 
-        await stream.writeSSE({
-          event: ChatSSEvents.Reasoning,
-          data: reasoningData,
-        })
-        clarificationProvidedSpan.end()
-        break
-      }
-      case "turn_end": {
-        const turnEndSpan = jafStreamingSpan.startSpan("turn_end")
-        turnEndSpan.setAttribute("turn_number", evt.data.turn)
-        // Emit an iteration summary (fallback version)
-        const data = JSON.stringify({
-          text: `Completed iteration ${evt.data.turn}.`,
-          step: {
+        await agentSteps.logAndStreamReasoning(
+          {
             type: AgentReasoningStepType.LogMessage,
+            message: `User provided clarification: ${evt.data.selectedId}`,
+            stepSummary: "User clarification received",
             status: "completed",
-            message: `Completed iteration ${evt.data.turn}.`,
-            iteration: evt.data.turn,
-            stepSummary: `Completed iteration ${evt.data.turn}.`,
-            isIterationSummary: true,
           },
-        })
-        thinking += `${data}\n`
-        await stream.writeSSE({
-          event: ChatSSEvents.Reasoning,
-          data: data,
-        })
-        turnEndSpan.end()
+          message,
+        )
+        clarificationProvidedSpan?.end()
         break
       }
       case "final_output": {
@@ -576,7 +488,7 @@ export const JafStreamer = async (
             sources: citations,
             imageCitations: imageCitations,
             message: processMessage(answer, citationMap),
-            thinking: thinking,
+            thinking: agentSteps.thinking.value,
             modelId: defaultBestModel,
             cost: totalCost.toString(),
             tokensUsed: totalTokens,
@@ -702,7 +614,7 @@ export const JafStreamer = async (
                       stepSummary: "User clarification received",
                     },
                   })
-                  thinking += `${reasoningData}\n`
+                  agentSteps.thinking.value += `${reasoningData}\n`
                   await stream.writeSSE({
                     event: ChatSSEvents.Reasoning,
                     data: reasoningData,
@@ -855,7 +767,7 @@ export const JafStreamer = async (
                       stepSummary: "Activating fallback search",
                     },
                   })
-                  thinking += `${data}\n`
+                  agentSteps.thinking.value += `${data}\n`
                   await stream.writeSSE({
                     event: ChatSSEvents.Reasoning,
                     data: data,
@@ -904,7 +816,7 @@ export const JafStreamer = async (
                       stepSummary: "Executing fallback tool",
                     },
                   })
-                  thinking += `${data}\n`
+                  agentSteps.thinking.value += `${data}\n`
                   await stream.writeSSE({
                     event: ChatSSEvents.Reasoning,
                     data: data,
@@ -928,7 +840,7 @@ export const JafStreamer = async (
                       stepSummary: `Generated fallback response`,
                     },
                   })
-                  thinking += `${data}\n`
+                  agentSteps.thinking.value += `${data}\n`
                   await stream.writeSSE({
                     event: ChatSSEvents.Reasoning,
                     data: data,
@@ -1024,7 +936,7 @@ export const JafStreamer = async (
                       stepSummary: "Fallback search failed",
                     },
                   })
-                  thinking += `${data}\n`
+                  agentSteps.thinking.value += `${data}\n`
                   await stream.writeSSE({
                     event: ChatSSEvents.Reasoning,
                     data: data,

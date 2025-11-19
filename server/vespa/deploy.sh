@@ -58,8 +58,37 @@ fi
 
 
 echo "Deploying vespa... $VESPA_CLI_PATH"
-${VESPA_CLI_PATH:-vespa} deploy --wait 960
+if ! ${VESPA_CLI_PATH:-vespa} deploy --wait 960; then
+    echo "Deployment failed or timed out. Checking container status..."
+    echo "Checking feed container ${VESPA_FEED_PORT:-8080}..."
+    curl -f --max-time 5 http://localhost:${VESPA_FEED_PORT:-8080}/status.html 2>/dev/null && echo "✓ Feed container is up" || echo "✗ Feed container is down"
+    echo "Checking query container ${VESPA_QUERY_PORT:-8081}..."
+    curl -f --max-time 5 http://localhost:${VESPA_QUERY_PORT:-8081}/status.html 2>/dev/null && echo "✓ Query container is up" || echo "✗ Query container is down"
+    echo "Checking Vespa logs for errors..."
+    docker logs vespa --tail 50 2>&1 | grep -E -i "error\|warn\|fail" | tail -20 || echo "No recent errors in logs"
+    exit 1
+fi
+
 echo "Restarting vespa...."
 docker restart vespa
-# vespa destroy
-${VESPA_CLI_PATH:-vespa} status --wait 75
+echo "Waiting for Vespa to restart (30 seconds)..."
+sleep 30
+
+echo "Checking Vespa status..."
+if ! ${VESPA_CLI_PATH:-vespa} status --wait 75; then
+    echo "Warning: Status check failed or incomplete. Verifying containers..."
+    echo "Checking feed container ${VESPA_FEED_PORT:-8080}..."
+    if curl -f --max-time 5 http://localhost:${VESPA_FEED_PORT:-8080}/status.html 2>/dev/null; then
+        echo "✓ Feed container is up and responding"
+    else
+        echo "✗ Feed container is not responding"
+        exit 1
+    fi
+    echo "Checking query container ${VESPA_QUERY_PORT:-8081}..."
+    if curl -f --max-time 5 http://localhost:${VESPA_QUERY_PORT:-8081}/status.html 2>/dev/null; then
+        echo "✓ Query container is up and responding"
+    else
+        echo "✗ Query container is not responding"
+        exit 1
+    fi
+fi

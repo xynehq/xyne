@@ -368,7 +368,7 @@ export default function WebhookConfigurationUI({
       const escapedBody = config.requestBody.replace(/'/g, "'\"'\"'")
       curlCommand += ` \\\n--data '${escapedBody}'`
     } else if (method === "GET") {
-      curlCommand += ` \\\n--data '{}'`
+      curlCommand
     }
 
     return curlCommand
