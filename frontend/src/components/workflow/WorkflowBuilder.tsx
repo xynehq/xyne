@@ -3669,6 +3669,7 @@ case "http_request":
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
       setShowAgentsSidebar(false)              // ✅ ADD THIS
+      setQAAgentSelectionMode(false)           // ✅ Reset QA selection mode to prevent stale state
       setShowExistingAgentConfigUI(false)
       setShowWebhookConfigUI(false)
       setShowHttpRequestConfigUI(false)
@@ -4004,6 +4005,7 @@ case "http_request":
     } else if (actionId === "select_agents") {
       // When Select Agents is selected, show the agents sidebar for regular agent selection
       if (selectedNodeForNext) {
+        setQAAgentSelectionMode(false)
         setShowAgentsSidebar(true)
         // Do NOT set QAAgentSelectionMode - this creates regular agent nodes, not Q&A nodes
         // Close the WhatHappensNextUI since we're opening a different sidebar
@@ -5593,6 +5595,7 @@ const handleWebhookConfigSave = useCallback(
               isVisible={showAgentsSidebar}
               onClose={() => {
                 setShowAgentsSidebar(false)
+                setQAAgentSelectionMode(false)
                 setNodes((prevNodes) =>
                   prevNodes.map(node => ({ ...node, selected: false }))
                 )

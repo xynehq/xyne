@@ -343,7 +343,7 @@ export function WorkflowExecutionModal({
         // Check if any step is awaiting user selection for Q&A regardless of overall status
         const qaStepAwaitingSelection = statusData.stepExecutions?.find((step: any) => {
           const toolExecs = statusData.toolExecutions?.filter((t: any) => 
-            step.toolExecIds?.includes(t.id) && t.toolType === 'qna_agent'
+            step.toolExecIds?.includes(t.id)
           ) || []
           return toolExecs.some((tool: any) => tool.result?.awaitingUserSelection)
         })
@@ -352,7 +352,6 @@ export function WorkflowExecutionModal({
           // Find the Q&A tool execution with awaiting selection
           const qaToolExec = statusData.toolExecutions?.find((t: any) => 
             qaStepAwaitingSelection.toolExecIds?.includes(t.id) && 
-            t.toolType === 'qna_agent' && 
             t.result?.awaitingUserSelection
           )
           
@@ -377,8 +376,8 @@ export function WorkflowExecutionModal({
             console.log("🚀 Dispatching openQAExecution event", event.detail)
             window.dispatchEvent(event)
             
-            // Close the execution modal
-            onClose()
+            // Close the execution modal with state reset
+            handleClose()
             return
           }
         }

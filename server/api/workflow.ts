@@ -1461,10 +1461,15 @@ export const executeWorkflowChain = async (
       Logger.info(`⏭️ Step already completed, loading results: ${step.name} (${step.id})`)
       
       // Get completed tool execution results for this step execution
-      const toolExecutions = await db
+      const allToolExecutions = await db
         .select()
         .from(toolExecution)
-        .where(eq(toolExecution.workflowExecutionId, step.id))
+        .where(eq(toolExecution.workflowExecutionId, executionId))
+      
+      // Filter to only tool executions for this step
+      const toolExecutions = allToolExecutions.filter(tool => 
+        step.toolExecIds && step.toolExecIds.includes(tool.id)
+      )
       
       Logger.info(`🔍 Looking for tool executions for step ${step.id}, found: ${toolExecutions.length}`)
       
@@ -6991,10 +6996,9 @@ const processQAQuestionsInBackground = async (
         })
         .where(eq(toolExecution.id, qaToolExecution.id))
 
-      // Also find and update the corresponding workflow step execution
+      // Also find and update the corresponding workflow step execution using tool association
       const qaStepExecution = stepExecutions.find(se => 
-        se.name?.toLowerCase().includes('q&a') || 
-        se.name?.toLowerCase().includes('qa')
+        se.toolExecIds && se.toolExecIds.includes(qaToolExecution.id)
       )
       
       if (qaStepExecution && qaStepExecution.status !== 'completed') {
@@ -7111,10 +7115,11 @@ const processQAQuestionsInBackground = async (
     
     // Mark Q&A step as failed
     try {
-      const qaStepExecution = stepExecutions.find(se => 
-        se.name?.toLowerCase().includes('q&a') || 
-        se.name?.toLowerCase().includes('qa')
-      )
+      // Find QA tool execution first to locate associated step
+      const failedQAToolExecution = toolExecutions.find(te => te.toolType === 'qna_agent' && te.status !== 'completed')
+      const qaStepExecution = failedQAToolExecution 
+        ? stepExecutions.find(se => se.toolExecIds && se.toolExecIds.includes(failedQAToolExecution.id))
+        : null
       
       if (qaStepExecution) {
         await db
@@ -7129,20 +7134,19 @@ const processQAQuestionsInBackground = async (
       }
 
       // Also mark tool execution as failed
-      const qaToolExecution = toolExecutions.find(te => te.toolType === 'qna_agent' && te.status !== 'completed')
-      if (qaToolExecution) {
+      if (failedQAToolExecution) {
         await db
           .update(toolExecution)
           .set({
             status: 'failed',
             result: {
-              ...((qaToolExecution.result as any) || {}),
+              ...((failedQAToolExecution.result as any) || {}),
               error: error instanceof Error ? error.message : String(error),
               failedAt: new Date().toISOString()
             },
             completedAt: new Date()
           })
-          .where(eq(toolExecution.id, qaToolExecution.id))
+          .where(eq(toolExecution.id, failedQAToolExecution.id))
       }
     } catch (markFailedError) {
       Logger.error(markFailedError, "Failed to mark Q&A step as failed")
@@ -7195,6 +7199,14 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
       }, 404)
     }
 
+    // Check if user has permission to access this execution
+    if (execution.userId !== user.id) {
+      return c.json({
+        success: false,
+        error: "Unauthorized"
+      }, 403)
+    }
+
     // Get step executions and tool executions
     const stepExecutions = await db
       .select()
@@ -7218,13 +7230,11 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
       .leftJoin(workflowTool, eq(toolExecution.workflowToolId, workflowTool.id))
       .where(eq(toolExecution.workflowExecutionId, executionId))
 
-    // Find Q&A step execution to check current status
-    const qaStepExecution = stepExecutions.find(se => 
-      se.name?.toLowerCase().includes('q&a') || 
-      se.name?.toLowerCase().includes('qa')
-    )
-
+    // Find Q&A step execution using tool association
     const qaToolExecution = toolExecutions.find(te => te.toolType === 'qna_agent')
+    const qaStepExecution = qaToolExecution 
+      ? stepExecutions.find(se => se.toolExecIds && se.toolExecIds.includes(qaToolExecution.id))
+      : null
 
     if (!qaStepExecution) {
       return c.json({
