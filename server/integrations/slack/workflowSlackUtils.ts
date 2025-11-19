@@ -1,9 +1,10 @@
 import { db } from "@/db/client"
-import { 
-  workflowTemplate, 
-  workflowExecution, 
-  workflowStepExecution, 
+import {
+  workflowTemplate,
+  workflowExecution,
+  workflowStepExecution,
   workflowStepTemplate,
+  toolExecution,
 } from "@/db/schema/workflows"
 import { eq, and } from "drizzle-orm"
 import { getLogger } from "@/logger"
@@ -135,27 +136,50 @@ export async function executeWorkflowWithSlackTrigger(context: SlackTriggerExecu
     const allToolIds = steps.flatMap((step) => step.toolIds as string[] || [])
     const allTools = allToolIds.length > 0 ? await getWorkflowToolsByIds(db, allToolIds) : []
 
-    // Execute the workflow chain using the existing function from workflow.ts
+    // Mark the Slack trigger step as completed immediately
+    // (the trigger has already happened, no need to "execute" it)
+    const rootStepTemplate = steps.find(
+      (step) => step.id === template.rootWorkflowStepTemplateId,
+    )
+    const triggerToolId = rootStepTemplate?.toolIds?.[0] as string | undefined
+
+    if (triggerToolId) {
+      // Create tool execution record for the trigger
+      const triggerResult = {
+        triggerData: context.triggerData,
+        slackUser: context.triggerData.slackUser,
+        slackChannel: context.triggerData.slackChannel,
+        command: context.triggerData.command,
+        data: context.triggerData.data,
+        timestamp: context.triggerData.timestamp,
+        message: `Slack trigger activated: ${context.triggerData.command}`,
+      }
+
+      await db.insert(toolExecution).values({
+        workflowToolId: triggerToolId,
+        workflowExecutionId: rootStepExecution.id, // This is the step execution ID
+        status: 'completed',
+        result: triggerResult,
+        startedAt: new Date(),
+        completedAt: new Date(),
+      })
+
+      // Update step execution status to completed
+      await db
+        .update(workflowStepExecution)
+        .set({
+          status: WorkflowStatus.COMPLETED,
+          completedAt: new Date(),
+        })
+        .where(eq(workflowStepExecution.id, rootStepExecution.id))
+    }
+
+    // Execute the workflow chain - it will see the trigger is completed and execute next steps
     const executionResults = await executeWorkflowChain(
       execution.id,
       rootStepExecution.id,
       allTools,
-      {
-        [rootStepExecution.name || "Slack Trigger"]: {
-          stepId: rootStepExecution.id,
-          result: {
-            triggerData: context.triggerData,
-            slackUser: context.triggerData.slackUser,
-            slackChannel: context.triggerData.slackChannel,
-            command: context.triggerData.command,
-            data: context.triggerData.data,
-            timestamp: context.triggerData.timestamp,
-            message: `Slack trigger activated: ${context.triggerData.command}`,
-          },
-          status: 'success',
-          toolType: 'slack_trigger'
-        }
-      }
+      {}, // Empty previous results - the trigger results are in the database
     )
 
     // Get final status

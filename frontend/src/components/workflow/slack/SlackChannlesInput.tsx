@@ -88,20 +88,19 @@ export const SlackChannelInput: React.FC<SlackChannelInputProps> = ({
 
   const handleChannelSelect = (channel: SlackChannel | "all") => {
     // Multi-select mode only
-    const channelName = channel === "all" ? "all" : channel.name
-    const normalizedChannel = channelName.startsWith('#') ? channelName.slice(1) : channelName
-    
+    const channelId = channel === "all" ? "all" : channel.id
+
     // Check if already added
-    if (selectedChannels.includes(normalizedChannel)) {
+    if (selectedChannels.includes(channelId)) {
       return
     }
 
     // If adding "all", replace all existing channels with just "all"
-    if (normalizedChannel === "all") {
+    if (channelId === "all") {
       onChannelsChange(["all"])
     } else {
-      // Add individual channel
-      onChannelsChange([...selectedChannels, normalizedChannel])
+      // Add individual channel ID
+      onChannelsChange([...selectedChannels, channelId])
     }
 
     setChannelInput("")
@@ -217,22 +216,29 @@ export const SlackChannelInput: React.FC<SlackChannelInputProps> = ({
       {/* Selected Channels List */}
       {selectedChannels.length > 0 && (
         <div className="space-y-2 mt-4">
-          {selectedChannels.map((channelId) => (
-            <div
-              key={channelId}
-              className="flex items-center justify-between p-1 bg-gray-50 dark:bg-gray-800 rounded-lg w-fit"
-            >
-              <div className="text-xs font-medium text-slate-900 dark:text-gray-300">
-                {channelId === "all" ? channelId : `#${channelId}`}
-              </div>
-              <button
-                onClick={() => handleRemoveChannel(channelId)}
-                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+          {selectedChannels.map((channelId) => {
+            // Find the channel name from the ID
+            const channelName = channelId === "all"
+              ? "all"
+              : channels.find(ch => ch.id === channelId)?.name || channelId
+
+            return (
+              <div
+                key={channelId}
+                className="flex items-center justify-between p-1 bg-gray-50 dark:bg-gray-800 rounded-lg w-fit"
               >
-                <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-              </button>
-            </div>
-          ))}
+                <div className="text-xs font-medium text-slate-900 dark:text-gray-300">
+                  {channelId === "all" ? "all" : `#${channelName}`}
+                </div>
+                <button
+                  onClick={() => handleRemoveChannel(channelId)}
+                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                >
+                  <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

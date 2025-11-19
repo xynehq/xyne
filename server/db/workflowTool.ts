@@ -151,7 +151,7 @@ export const getSlackTriggersInWorkflows = async (
     )
     .innerJoin(
       workflowTool,
-      inArray(workflowTool.id, workflowStepTemplate.toolIds)
+      sql`${workflowTool.id} = ANY(${workflowStepTemplate.toolIds})`
     )
     .leftJoin(
       userWorkflowPermissions,
@@ -176,13 +176,10 @@ export const getSlackTriggersInWorkflows = async (
       workflowTool.value
     )
 
-  workflowTriggers
-    .filter(wf => {
-      let channelIds = ((wf.toolConfig as any).channelIds as string[])
-      return channelIds.includes("all") || channelIds.includes(channel)
-    })
-
-  return workflowTriggers
+  return workflowTriggers.filter(wf => {
+    const channelIds = ((wf.toolConfig as any).channelIds as string[]) || []
+    return channelIds.includes("all") || channelIds.includes(channel)
+  })
 }
 
 export const updateWorkflowTool = async (

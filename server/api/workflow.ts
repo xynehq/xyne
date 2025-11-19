@@ -3267,29 +3267,29 @@ Please analyze this webhook request and provide insights.`
           
           const config = tool.config || {}
           const value = tool.value || {}
-          
-          // Get message content and channel from tool configuration
+
+          // Get message content and channels from tool configuration
           let message = config.message
-          let channelId = config.channel
-          
-          if (!channelId) {
+          const channelIds = config.channelIds || []
+
+          if (!channelIds || channelIds.length === 0) {
             return {
               status: "error",
               result: {
-                error: "No Slack channel specified in tool configuration",
+                error: "No Slack channels specified in tool configuration",
                 config: config,
                 value: value
               }
             }
           }
-          
+
           // Replace placeholders in message with data from previous steps
           const stepKeys = Object.keys(previousStepResults || {})
           if (stepKeys.length > 0) {
             // Get the most recent step result for dynamic content
             const latestStepKey = stepKeys[stepKeys.length - 1]
             const latestStepResult = previousStepResults[latestStepKey]
-            
+
             if (latestStepResult?.result) {
               // Replace common placeholders
               message = message
@@ -3301,61 +3301,99 @@ Please analyze this webhook request and provide insights.`
                 .replace(/\{stepName\}/g, latestStepKey)
             }
           }
-          
+
           Logger.info({
-            channelId,
+            channelIds,
+            channelCount: channelIds.length,
             messageLength: message.length,
             toolId: tool.id,
             hasBlocks: !!(config.blocks || value.blocks)
-          }, "📤 Sending Slack message from workflow")
-          
-          // Send message using the helper function
-          const result = await postSlackMessage(channelId, message, {
-            blocks: config.blocks || value.blocks,
-            threadTs: config.threadTs || value.threadTs,
-            userName: config.userName || value.userName || "Workflow Bot"
-          })
-          
-          if (result.success) {
+          }, "📤 Sending Slack message to multiple channels from workflow")
+
+          // Send message to all channels
+          const results = await Promise.all(
+            channelIds.map(async (channelId: string) => {
+              try {
+                const result = await postSlackMessage(channelId, message, {
+                  blocks: config.blocks || value.blocks,
+                  threadTs: config.threadTs || value.threadTs,
+                  userName: config.userName || value.userName || "Workflow Bot"
+                })
+
+                return {
+                  channelId,
+                  success: result.success,
+                  messageTs: result.messageTs,
+                  error: result.error
+                }
+              } catch (error) {
+                return {
+                  channelId,
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error)
+                }
+              }
+            })
+          )
+
+          // Check if all messages were sent successfully
+          const successfulSends = results.filter(r => r.success)
+          const failedSends = results.filter(r => !r.success)
+          const allSuccessful = failedSends.length === 0
+
+          if (allSuccessful) {
             Logger.info({
-              channelId,
-              messageTs: result.messageTs
-            }, "✅ Slack message sent successfully from workflow")
-            
+              channelIds,
+              sentCount: successfulSends.length,
+              results
+            }, "✅ Slack messages sent successfully to all channels from workflow")
+
             return {
               status: "success",
               result: {
-                channelId,
+                channelIds,
+                channelCount: channelIds.length,
                 message,
-                messageTs: result.messageTs,
+                sentCount: successfulSends.length,
                 sent: true,
                 timestamp: new Date().toISOString(),
+                results: results,
                 // Make the message content available to next steps
                 slackMessage: {
-                  channel: channelId,
+                  channels: channelIds,
                   text: message,
-                  messageTs: result.messageTs,
-                  success: true
+                  success: true,
+                  results: results
                 },
                 // Standard output fields for other tools
-                content: `Slack message sent to channel ${channelId}: ${message}`,
-                output: `Message sent successfully to Slack`,
-                aiOutput: `Slack message delivered: "${message}" to channel ${channelId}`
+                content: `Slack message sent to ${successfulSends.length} channel(s): ${message}`,
+                output: `Message sent successfully to ${successfulSends.length} Slack channel(s)`,
+                aiOutput: `Slack message delivered to ${successfulSends.length} channel(s): "${message}"`
               }
             }
           } else {
             Logger.error({
-              error: result.error,
-              channelId
-            }, "❌ Failed to send Slack message from workflow")
-            
+              channelIds,
+              successCount: successfulSends.length,
+              failCount: failedSends.length,
+              failedChannels: failedSends
+            }, "⚠️ Some Slack messages failed to send from workflow")
+
             return {
-              status: "error",
+              status: successfulSends.length > 0 ? "success" : "error",
               result: {
-                error: result.error || "Failed to send Slack message",
-                channelId,
-                sent: false,
-                timestamp: new Date().toISOString()
+                error: `Failed to send to ${failedSends.length} channel(s)`,
+                channelIds,
+                channelCount: channelIds.length,
+                sentCount: successfulSends.length,
+                failedCount: failedSends.length,
+                sent: successfulSends.length > 0,
+                timestamp: new Date().toISOString(),
+                results: results,
+                failedChannels: failedSends.map(f => ({
+                  channelId: f.channelId,
+                  error: f.error
+                }))
               }
             }
           }
