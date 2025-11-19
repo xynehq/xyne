@@ -1823,7 +1823,7 @@ function AgentComponent() {
               data.userEmails.includes(user.email),
             )
             const existingOwners = users.filter((user) =>
-              data.OwnerEmails.includes(user.email),
+              data.ownerEmails.includes(user.email),
             )
 
             setSelectedUsers(existingUsers)

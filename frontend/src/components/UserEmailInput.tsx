@@ -40,11 +40,13 @@ export const UserEmailInput: React.FC<UserEmailInputProps> = ({
       setFilteredUsers([])
       setShowSearchResults(false)
     } else {
+      const lowercasedQuery = searchQuery.toLowerCase()
+      const selectedEmailsSet = new Set(selectedEmails)
       const filtered = users.filter(
         (user) =>
-          !selectedEmails.includes(user.email) &&
-          (user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            user.email.toLowerCase().includes(searchQuery.toLowerCase())),
+          !selectedEmailsSet.has(user.email) &&
+          (user.name.toLowerCase().includes(lowercasedQuery) ||
+            user.email.toLowerCase().includes(lowercasedQuery)),
       )
       setFilteredUsers(filtered)
       setShowSearchResults(true)
