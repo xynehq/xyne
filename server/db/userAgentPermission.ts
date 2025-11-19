@@ -425,6 +425,7 @@ export const syncAgentUserPermissions = async (
   trx: TxnOrClient,
   agentId: number,
   userEmails: string[],
+  ownerEmails: string[],
   workspaceId: number,
 ): Promise<void> => {
   // Get current permissions for this agent
@@ -449,7 +450,9 @@ export const syncAgentUserPermissions = async (
       and(eq(users.workspaceId, workspaceId), inArray(users.email, userEmails)),
     )
 
-  const currentUserEmails = currentPermissions.map((p) => p.userEmail)
+  const currentUserEmails = currentPermissions
+    .filter((p) => p.role == UserAgentRole.Shared)
+    .map((p) => p.userEmail)
   const newUserEmails = userEmails.filter(
     (email) => !currentUserEmails.includes(email),
   )
@@ -483,6 +486,63 @@ export const syncAgentUserPermissions = async (
         and(
           eq(users.workspaceId, workspaceId),
           inArray(users.email, removedUserEmails),
+        ),
+      )
+
+    for (const user of usersToRemove) {
+      await revokeUserAgentPermission(trx, user.userId, agentId)
+    }
+  }
+  //syncing of the owner
+
+  // Get owners by email in the workspace
+  const ownersInWorkspace = await trx
+    .select({
+      id: users.id,
+      email: users.email,
+    })
+    .from(users)
+    .where(
+      and(
+        eq(users.workspaceId, workspaceId),
+        inArray(users.email, ownerEmails),
+      ),
+    )
+
+  const currentOwnerEmails = currentPermissions
+    .filter((p) => p.role == UserAgentRole.Owner)
+    .map((p) => p.userEmail)
+  // this has to be added
+  const newOwnerEmails = ownerEmails.filter(
+    (email) => !currentOwnerEmails.includes(email),
+  )
+  // this email record has to be deleted
+  const removedOwnerEmails = currentOwnerEmails.filter(
+    (email) => !ownerEmails.includes(email),
+  )
+
+  for (const email of newOwnerEmails) {
+    const user = ownersInWorkspace.find((u) => u.email === email)
+    if (user) {
+      await grantUserAgentPermission(trx, {
+        userId: user.id,
+        agentId,
+        role: UserAgentRole.Owner,
+      })
+    }
+  }
+
+  // Remove permissions for users no longer in the list (except Owner)
+  if (removedOwnerEmails.length > 0) {
+    const usersToRemove = await trx
+      .select({
+        userId: users.id,
+      })
+      .from(users)
+      .where(
+        and(
+          eq(users.workspaceId, workspaceId),
+          inArray(users.email, removedOwnerEmails),
         ),
       )
 

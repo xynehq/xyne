@@ -83,6 +83,7 @@ export const createAgentSchema = z.object({
   isRagOn: z.boolean().optional().default(true),
   uploadedFileNames: z.array(z.string()).optional().default([]),
   userEmails: z.array(z.string().email()).optional().default([]),
+  ownerEmails: z.array(z.string().email()).optional().default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
 })
 export type CreateAgentPayload = z.infer<typeof createAgentSchema>
@@ -93,6 +94,7 @@ export const updateAgentSchema = createAgentSchema.partial().extend({
   // but you could add specific checks if needed.
   // For example, if name could not be unset: name: z.string().min(1).optional()
   userEmails: z.array(z.string().email()).optional(),
+  ownerEmails: z.array(z.string().email()).optional(),
 })
 export type UpdateAgentPayload = z.infer<typeof updateAgentSchema>
 
@@ -217,6 +219,7 @@ export const CreateAgentApi = async (c: Context) => {
       isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
       docIds: validatedBody.docIds,
+      ownerEmails: validatedBody.ownerEmails,
       via_apiKey,
     }
 
@@ -239,6 +242,7 @@ export const CreateAgentApi = async (c: Context) => {
           tx,
           agent.id,
           validatedBody.userEmails,
+          validatedBody.ownerEmails,
           userAndWorkspace.workspace.id,
         )
       }
@@ -332,6 +336,7 @@ export const UpdateAgentApi = async (c: Context) => {
           tx,
           agent.id,
           [], // Empty array clears all non-owner permissions
+          validatedBody.ownerEmails || [],
           userAndWorkspace.workspace.id,
         )
       } else if (
@@ -343,6 +348,7 @@ export const UpdateAgentApi = async (c: Context) => {
           tx,
           agent.id,
           validatedBody.userEmails,
+          validatedBody.ownerEmails || [],
           userAndWorkspace.workspace.id,
         )
       } else if (validatedBody.userEmails !== undefined) {
@@ -352,6 +358,7 @@ export const UpdateAgentApi = async (c: Context) => {
             tx,
             agent.id,
             validatedBody.userEmails,
+            validatedBody.ownerEmails || [],
             userAndWorkspace.workspace.id,
           )
         }
@@ -538,8 +545,8 @@ export const GetWorkspaceUsersApi = async (c: Context) => {
       .where(
         and(
           eq(users.workspaceId, userAndWorkspace.workspace.id),
-          isNull(users.deletedAt)
-        )
+          isNull(users.deletedAt),
+        ),
       )
 
     return c.json(workspaceUsers)
@@ -595,8 +602,11 @@ export const GetAgentPermissionsApi = async (c: Context) => {
     const userEmails = permissions
       .filter((p) => p.role !== UserAgentRole.Owner)
       .map((p) => p.user.email)
+    const ownerEmails = permissions
+      .filter((p) => p.role === UserAgentRole.Owner)
+      .map((p) => p.user.email)
 
-    return c.json({ userEmails })
+    return c.json({ userEmails, ownerEmails })
   } catch (error) {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: email }).error(
