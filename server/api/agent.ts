@@ -208,6 +208,26 @@ export const CreateAgentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "User or workspace not found" })
     }
 
+    // check for intersection of userEmails and ownerEmails
+    // owners can't be added in users
+    if (validatedBody.userEmails && validatedBody.ownerEmails) {
+      const userEmailsSet = new Set(validatedBody.userEmails)
+      const ownerEmailsSet = new Set(validatedBody.ownerEmails)
+      const intersection = validatedBody.userEmails.filter((email) =>
+        ownerEmailsSet.has(email),
+      )
+
+      if (intersection.length > 0) {
+        return c.json(
+          {
+            message: "Users cannot be both owners and regular users",
+            conflictingEmails: intersection,
+          },
+          400,
+        )
+      }
+    }
+
     const agentData = {
       name: validatedBody.name,
       description: validatedBody.description,
@@ -313,6 +333,26 @@ export const UpdateAgentApi = async (c: Context) => {
     )
     if (!existingAgent || existingAgent.userId !== userAndWorkspace.user.id) {
       return c.json({ message: "Agent not found or access denied" }, 404)
+    }
+
+    // Check for intersection of userEmails and ownerEmails
+    // owners can't be added in users
+    if (validatedBody.userEmails && validatedBody.ownerEmails) {
+      const userEmailsSet = new Set(validatedBody.userEmails)
+      const ownerEmailsSet = new Set(validatedBody.ownerEmails)
+      const intersection = validatedBody.userEmails.filter((email) =>
+        ownerEmailsSet.has(email),
+      )
+
+      if (intersection.length > 0) {
+        return c.json(
+          {
+            message: "Users cannot be both owners and regular users",
+            conflictingEmails: intersection,
+          },
+          400,
+        )
+      }
     }
 
     // Update agent and sync user permissions in a transaction
