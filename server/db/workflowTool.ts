@@ -177,8 +177,15 @@ export const getSlackTriggersInWorkflows = async (
     )
 
   return workflowTriggers.filter(wf => {
-    const channelIds = ((wf.toolConfig as any).channelIds as string[]) || []
-    return channelIds.includes("all") || channelIds.includes(channel)
+    const triggerType = (wf.toolConfig as any).triggerType
+    if (triggerType == "direct_message") {
+      return true
+    }
+    if (triggerType == "app_mention") {
+      const channelIds = ((wf.toolConfig as any).channelIds as string[]) || []
+      return channelIds.includes("all") || channelIds.includes(channel)
+    }
+    return false
   })
 }
 

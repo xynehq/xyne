@@ -4766,6 +4766,20 @@ const handleWebhookConfigSave = useCallback(
             )
             setSelectedNodes([])
           }}
+          initialConfig={
+            selectedSlackMessageNodeId
+              ? (() => {
+                  const node = nodes.find(n => n.id === selectedSlackMessageNodeId)
+                  const tool = (node?.data?.tools as Tool[] | undefined)?.[0]
+                  return (tool?.config as SlackMessageConfig | undefined) ||
+                         (tool?.val as SlackMessageConfig | undefined) ||
+                         ((node?.data?.step as any)?.config as SlackMessageConfig | undefined)
+                })()
+              : undefined
+          }
+          toolId={selectedSlackMessageNodeId ? getToolIdFromStepId(selectedSlackMessageNodeId) : undefined}
+          showBackButton={selectedSlackMessageNodeId === "pending"}
+          builder={builder}
         />
 
       {/* Execution Result Modal */}

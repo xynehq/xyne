@@ -1189,13 +1189,15 @@ export const executeWorkflowChain = async (
     // Check if step is already completed (e.g., webhook step completed at creation)
     if (step.status === WorkflowStatus.COMPLETED) {
       Logger.info(`⏭️ Step already completed, loading results: ${step.name} (${step.id})`)
-      
-      // Get completed tool execution results for this step execution
-      const toolExecutions = await db
-        .select()
-        .from(toolExecution)
-        .where(eq(toolExecution.workflowExecutionId, step.id))
-      
+
+      // Get completed tool execution results for this step execution using toolExecIds
+      const toolExecutions = step.toolExecIds && step.toolExecIds.length > 0
+        ? await db
+            .select()
+            .from(toolExecution)
+            .where(inArray(toolExecution.id, step.toolExecIds as string[]))
+        : []
+
       Logger.info(`🔍 Looking for tool executions for step ${step.id}, found: ${toolExecutions.length}`)
       
       if (toolExecutions.length > 0) {

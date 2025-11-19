@@ -146,6 +146,7 @@ export async function executeWorkflowWithSlackTrigger(context: SlackTriggerExecu
     if (triggerToolId) {
       // Create tool execution record for the trigger
       const triggerResult = {
+        stepExecutionId: rootStepExecution.id, // Store step execution ID in result
         triggerData: context.triggerData,
         slackUser: context.triggerData.slackUser,
         slackChannel: context.triggerData.slackChannel,
@@ -155,21 +156,23 @@ export async function executeWorkflowWithSlackTrigger(context: SlackTriggerExecu
         message: `Slack trigger activated: ${context.triggerData.command}`,
       }
 
-      await db.insert(toolExecution).values({
+      // Insert tool execution and get the created ID
+      const [createdToolExecution] = await db.insert(toolExecution).values({
         workflowToolId: triggerToolId,
-        workflowExecutionId: rootStepExecution.id, // This is the step execution ID
+        workflowExecutionId: execution.id, // Correct: workflow execution ID (not step ID)
         status: 'completed',
         result: triggerResult,
         startedAt: new Date(),
         completedAt: new Date(),
-      })
+      }).returning()
 
-      // Update step execution status to completed
+      // Update step execution with tool execution ID and mark as completed
       await db
         .update(workflowStepExecution)
         .set({
           status: WorkflowStatus.COMPLETED,
           completedAt: new Date(),
+          toolExecIds: [createdToolExecution.id], // Add tool execution ID to step's toolExecIds
         })
         .where(eq(workflowStepExecution.id, rootStepExecution.id))
     }
