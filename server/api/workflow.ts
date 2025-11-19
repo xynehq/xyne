@@ -7186,25 +7186,19 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
       }, 404)
     }
 
-    // Get the execution and step results
-    const [execution] = await db
-      .select()
-      .from(workflowExecution)
-      .where(eq(workflowExecution.id, executionId))
+    // Get the execution with proper permission checks
+    const execution = await getWorkflowExecutionByIdWithChecks(
+      db,
+      executionId,
+      user.workspaceId,
+      user.id
+    )
 
     if (!execution) {
       return c.json({
         success: false,
         error: "Workflow execution not found"
       }, 404)
-    }
-
-    // Check if user has permission to access this execution
-    if (execution.userId !== user.id) {
-      return c.json({
-        success: false,
-        error: "Unauthorized"
-      }, 403)
     }
 
     // Get step executions and tool executions
