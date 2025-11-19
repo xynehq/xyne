@@ -2253,6 +2253,15 @@ function AgentComponent() {
       }
     }
 
+    const ownerEmails = selectedOwners.map((owner) => owner.email)
+    if(ownerEmails.length === 0){
+      toast.error({
+        title: "Error",
+        description: "At least one owner must be selected.",
+      })
+      return
+    }
+
     const agentPayload = {
       name: agentName,
       description: agentDescription,
@@ -2264,12 +2273,8 @@ function AgentComponent() {
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
       // Include owner emails
-      ownerEmails: selectedOwners.map((user) => user.email),
-    }
-
-
-    console.log("Agent payload to be sent:", agentPayload)
-    
+      ownerEmails: ownerEmails,
+    } 
 
     try {
       let response
