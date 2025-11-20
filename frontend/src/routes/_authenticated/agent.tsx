@@ -759,30 +759,31 @@ function AgentComponent() {
     const newPath =
       navigationPath.length === 1 && navigationPath[0].type === "cl-root"
         ? [
-          {
-            id: "cl-root",
-            name: "Collection",
-            type: "cl-root" as const,
-          },
-          {
-            id: clId,
-            name: clName,
-            type: "cl" as const,
-          },
-        ]
+            {
+              id: "cl-root",
+              name: "Collection",
+              type: "cl-root" as const,
+            },
+            {
+              id: clId,
+              name: clName,
+              type: "cl" as const,
+            },
+          ]
         : [
-          {
-            id: clId,
-            name: clName,
-            type: "cl" as const,
-          },
-        ]
+            {
+              id: clId,
+              name: clName,
+              type: "cl" as const,
+            },
+          ]
 
     setNavigationPath(newPath)
     setIsLoadingItems(true)
     try {
       const response = await api.cl[":clId"].items.$get({
         param: { clId: clId },
+        query: { agentId: editingAgent?.externalId },
       })
       if (response.ok) {
         const data = await response.json()
@@ -1103,7 +1104,7 @@ function AgentComponent() {
           // Fetch both data sources and collections in parallel
           const [dsResponse, clResponse] = await Promise.all([
             api.datasources.$get(),
-            api.cl.$get(),
+            api.cl.$get({ query: { agentId: editingAgent?.externalId } }),
           ])
 
           if (dsResponse.ok) {
@@ -1344,7 +1345,6 @@ function AgentComponent() {
     resetForm()
     setViewMode("create")
   }
-
 
   const handleViewAgent = (agent: SelectPublicAgent) => {
     setViewingAgent(agent)
@@ -2103,7 +2103,7 @@ function AgentComponent() {
             // Ignore any additional timeline filters in the same filter string
           }
         }
-        
+
         // Add parsed fields to filter object
         if (fromEmails.length > 0) filter.from = fromEmails
         if (toEmails.length > 0) filter.to = toEmails
@@ -2111,21 +2111,21 @@ function AgentComponent() {
         if (bccEmails.length > 0) filter.bcc = bccEmails
         if (senderIds.length > 0) filter.senderId = senderIds
         if (channelIds.length > 0) filter.channelId = channelIds
-        
+
         // Add single timeRange if found
         if (timeRange) {
           filter.timeRange = timeRange
         }
-        
+
         // Add filter if it has at least one field (including timeRange-only filters)
         if (Object.keys(filter).length > 1) {
           filters.push(filter)
         }
       }
-      
+
       return filters.length > 0 ? filters : undefined
     }
-    
+
     // Build the new simplified appIntegrations structure
     const appIntegrationsObject: Record<
       string,
@@ -2267,9 +2267,7 @@ function AgentComponent() {
       ownerEmails: selectedOwners.map((user) => user.email),
     }
 
-
     console.log("Agent payload to be sent:", agentPayload)
-    
 
     try {
       let response
@@ -2507,7 +2505,7 @@ function AgentComponent() {
       const googleDriveIntegration = allAvailableIntegrations.find(
         (int) => int.id === "googledrive",
       )
-      
+
       if (googleDriveIntegration) {
         if (selectedItemsInGoogleDrive.size === 0) {
           // No specific items selected, show just Google Drive
@@ -2586,7 +2584,7 @@ function AgentComponent() {
                 integrationIdToNameMap[itemId]?.name || item.name
               const itemType = integrationIdToNameMap[itemId]?.type || item.type
               const itemIcon = getItemIcon(itemType)
-              
+
               children.push({
                 id: `${clId}_${itemId}`,
                 name: displayName,
@@ -3820,8 +3818,9 @@ function AgentComponent() {
                                             .$get({
                                               param: { clId: clId },
                                               query: parentId
-                                                ? { parentId }
-                                                : {},
+                                                ? { parentId, agentId: editingAgent?.externalId }
+                                                : { agentId: editingAgent?.externalId },
+                                                
                                             })
                                             .then((response: Response) => {
                                               if (response.ok) {
@@ -3965,8 +3964,9 @@ function AgentComponent() {
                                                         .$get({
                                                           param: { clId: clId },
                                                           query: parentId
-                                                            ? { parentId }
-                                                            : {},
+                                                ? { parentId, agentId: editingAgent?.externalId }
+                                                : { agentId: editingAgent?.externalId },
+                                                
                                                         })
                                                         .then(
                                                           (
@@ -4760,6 +4760,7 @@ function AgentComponent() {
                                               toggleIntegrationSelection
                                             }
                                             navigateToCl={navigateToCl}
+                                            agentId={editingAgent?.externalId}
                                           />
                                         )
                                       }
