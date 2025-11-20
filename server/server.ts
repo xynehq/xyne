@@ -147,6 +147,12 @@ import {
   getCallHistorySchema,
 } from "@/api/calls"
 import {
+  TranscribeAudioApi,
+  GetJobStatusApi,
+  transcribeAudioSchema,
+  getJobStatusSchema,
+} from "@/api/asr"
+import {
   SendMessageApi,
   GetConversationApi,
   MarkMessagesAsReadApi,
@@ -347,6 +353,8 @@ import {
   handleAttachmentServe,
   handleThumbnailServe,
   handleAttachmentDeleteApi,
+  handleSimpleFileUpload,
+  serveASRFile,
 } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import {
@@ -1334,6 +1342,8 @@ export const AppRoutes = app
   )
   .post("files/upload", handleFileUpload)
   .post("/files/upload-attachment", handleAttachmentUpload)
+  .post("/files/upload-simple", handleSimpleFileUpload)
+  .get("/files/asr/:filename", serveASRFile)
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post(
@@ -1573,6 +1583,17 @@ export const AppRoutes = app
     "/calls/history",
     zValidator("query", getCallHistorySchema),
     GetCallHistoryApi,
+  )
+  // ASR (Automatic Speech Recognition) routes
+  .post(
+    "/asr/transcribe",
+    zValidator("json", transcribeAudioSchema),
+    TranscribeAudioApi,
+  )
+  .get(
+    "/asr/job-status",
+    zValidator("query", getJobStatusSchema),
+    GetJobStatusApi,
   )
   // Direct message routes
   .post("/messages/send", zValidator("json", sendMessageSchema), SendMessageApi)

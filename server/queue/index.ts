@@ -5,6 +5,7 @@ import {
 } from "@/integrations/google"
 import { handleToolSync } from "./toolSync"
 import { handleAttachmentCleanup } from "./attachmentCleanup"
+import { handleASRJob } from "./asrProcessor"
 import { Subsystem, type SaaSJob } from "@/types" // ConnectorType removed
 import { ConnectorType, SlackEntity } from "@/shared/types" // ConnectorType added
 import PgBoss from "pg-boss"
@@ -55,6 +56,7 @@ export const SyncSlackPerUserQueue = `sync-${Apps.Slack}-${AuthType.OAuth}-per-u
 export const SyncSlackSchedulerQueue = `sync-${Apps.Slack}-${AuthType.OAuth}-scheduler`
 export const SyncToolsQueue = `sync-tools`
 export const CleanupAttachmentsQueue = `cleanup-attachments`
+export const ASRQueue = `asr-processing`
 
 const TwiceWeekly = `0 0 * * 0,3`
 const Every10Minutes = `*/10 * * * *`
@@ -81,6 +83,7 @@ export const init = async () => {
   await boss.createQueue(SyncSlackSchedulerQueue)
   await boss.createQueue(SyncToolsQueue)
   await boss.createQueue(CleanupAttachmentsQueue)
+  await boss.createQueue(ASRQueue) // Process ASR jobs sequentially
   await initWorkers()
 }
 
@@ -744,6 +747,18 @@ const initWorkers = async () => {
         },
         1,
       )
+    }
+  })
+
+  // ASR Queue Worker - Process ASR jobs sequentially
+  await boss.work(ASRQueue, async ([job]) => {
+    Logger.info(`Processing ASR job ${job.id}`)
+    try {
+      await handleASRJob(boss, job as any)
+      Logger.info(`ASR job ${job.id} completed successfully`)
+    } catch (error) {
+      Logger.error({ error }, `ASR job ${job.id} failed`)
+      throw error
     }
   })
 }

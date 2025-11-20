@@ -14,6 +14,7 @@ import {
   BookOpen,
   Workflow,
   Users,
+  Mic,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
@@ -40,12 +41,12 @@ import { useUnreadCount } from "@/contexts/UnreadCountContext"
 export const Sidebar = ({
   className = "",
   photoLink = "",
-  role = "",
+  role,
   isAgentMode = false,
 }: {
   className?: string
   photoLink?: string
-  role?: string
+  role?: UserRole
   isAgentMode?: boolean
 }) => {
   const location = useLocation()
@@ -95,6 +96,7 @@ export const Sidebar = ({
 
       const isInteractiveElement = target.closest(SELECTORS.INTERACTIVE_ELEMENT)
       if (isInteractiveElement) return
+
       const isSidebarClick = target.closest(`.${CLASS_NAMES.SIDEBAR_CONTAINER}`)
       const isHistoryModalClick = target.closest(
         `.${CLASS_NAMES.HISTORY_MODAL_CONTAINER}`,
@@ -104,6 +106,7 @@ export const Sidebar = ({
       const isReferenceBox = target.closest(`.${CLASS_NAMES.REFERENCE_BOX}`)
       const isAtMentionArea = target.closest(SELECTORS.AT_MENTION_AREA)
       const isBookmarkButton = target.closest(`.${CLASS_NAMES.BOOKMARK_BUTTON}`)
+
       if (
         !isSidebarClick &&
         !isHistoryModalClick &&
@@ -111,18 +114,15 @@ export const Sidebar = ({
         !isSearchArea &&
         !isReferenceBox &&
         !isAtMentionArea &&
-        !isBookmarkButton &&
-        showHistory
+        !isBookmarkButton
       ) {
-        if (showHistory) setShowHistory(false)
+        setShowHistory(false)
       }
     }
 
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [showHistory])
-
-  // toggleDarkMode is now toggleTheme from context (no separate function needed here)
+  }, [])
 
   return (
     <TooltipProvider>
@@ -144,7 +144,8 @@ export const Sidebar = ({
             <img
               className="w-8 h-8 rounded-full mb-4"
               src={`/api/v1/proxy/${encodeURIComponent(photoLink)}`}
-              alt="Profile"
+              alt="User profile picture"
+              loading="lazy"
             />
           )}
         </div>
@@ -167,7 +168,15 @@ export const Sidebar = ({
           </Link>
 
           <div
+            role="button"
+            tabIndex={0}
             onClick={() => setShowHistory((history) => !history)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                setShowHistory((history) => !history)
+              }
+            }}
             className={cn(
               "flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]",
               showHistory && "bg-[#D8DFE680] dark:bg-gray-700",
@@ -233,7 +242,26 @@ export const Sidebar = ({
             </Tooltip>
           </Link>
 
-          {/* TODO: Add appropriate Link destination and Tooltip info for the Bot icon */}
+          <Link
+            to="/transcription"
+            className={cn(
+              "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+              location.pathname.includes("/transcription") &&
+                "bg-[#D8DFE680] dark:bg-gray-700",
+            )}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Mic
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Transcription" />
+            </Tooltip>
+          </Link>
+
           {isAgentMode && (
             <Link
               to="/agent"
@@ -251,14 +279,17 @@ export const Sidebar = ({
                     className="dark:stroke-[#F1F3F4]"
                   />
                 </TooltipTrigger>
-                <Tip side="right" info="agent" />{" "}
-                {/* Placeholder: Update this tooltip info */}
+                <Tip side="right" info="Agent Mode" />
               </Tooltip>
             </Link>
           )}
 
           <Link
-            to={`${role === UserRole.SuperAdmin || role === UserRole.Admin ? "/admin/integrations" : "/integrations"}`}
+            to={`${
+              role === UserRole.SuperAdmin || role === UserRole.Admin
+                ? "/admin/integrations"
+                : "/integrations"
+            }`}
             className={cn(
               "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
               (location.pathname.includes("/admin/integrations") ||
@@ -280,11 +311,11 @@ export const Sidebar = ({
 
           <Link
             to="/knowledgeManagement"
-            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
-              location.pathname.includes("/knowledgeManagement")
-                ? "bg-[#D8DFE680] dark:bg-gray-700"
-                : ""
-            }`}
+            className={cn(
+              "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+              location.pathname.includes("/knowledgeManagement") &&
+                "bg-[#D8DFE680] dark:bg-gray-700",
+            )}
           >
             <Tooltip>
               <TooltipTrigger asChild>
@@ -297,6 +328,7 @@ export const Sidebar = ({
               <Tip side="right" info="Collections" />
             </Tooltip>
           </Link>
+
           {/* User Management - Admin only */}
           {role === UserRole.SuperAdmin && (
             <Link
@@ -319,6 +351,7 @@ export const Sidebar = ({
               </Tooltip>
             </Link>
           )}
+
           <Link
             to="/dashboard"
             className={cn(
@@ -339,9 +372,18 @@ export const Sidebar = ({
             </Tooltip>
           </Link>
         </div>
+
         <div className="mt-auto mb-4 flex flex-col items-center">
           <div
+            role="button"
+            tabIndex={0}
             onClick={toggleTheme}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                toggleTheme()
+              }
+            }}
             className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mb-4"
           >
             <Tooltip>
@@ -358,6 +400,7 @@ export const Sidebar = ({
               />
             </Tooltip>
           </div>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <img src={Logo} alt="Logo" />
