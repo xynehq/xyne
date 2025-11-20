@@ -23,7 +23,7 @@ import {
 import { db } from "./client"
 import { getLoggerWithChild } from "@/logger"
 import { getUserByEmail } from "./user"
-
+import { getCollectionById, getCollectionItemById } from "./knowledgeBase"
 
 export { getAgentsMadeByMe, getAgentsSharedToMe }
 
@@ -207,11 +207,11 @@ export const updateAgentByExternalIdWithPermissionCheck = async (
     agentExternalId,
     workspaceId,
   )
-
+  const requiredUser = permission?.find((user) => user.userId == userId)
   if (
-    !permission ||
-    (permission.role !== UserAgentRole.Owner &&
-      permission.role !== UserAgentRole.Editor)
+    !requiredUser ||
+    (requiredUser.role !== UserAgentRole.Owner &&
+      requiredUser.role !== UserAgentRole.Editor)
   ) {
     return null // User doesn't have edit permission
   }
@@ -257,8 +257,8 @@ export const deleteAgentByExternalIdWithPermissionCheck = async (
     agentExternalId,
     workspaceId,
   )
-
-  if (!permission || permission.role !== UserAgentRole.Owner) {
+  const requiredUser = permission?.find((user) => user.userId == userId)
+  if (!requiredUser || requiredUser.role !== UserAgentRole.Owner) {
     return null // Only owners can delete agents
   }
 
@@ -501,7 +501,6 @@ export const cleanUpAgentDb = async (
   }
 }
 
-
 export const getAllPublicAgents = async (
   trx: TxnOrClient,
   workspaceId: number,
@@ -517,4 +516,87 @@ export const getAllPublicAgents = async (
       ),
     )
   return z.array(selectPublicAgentSchema).parse(publicAgents)
+}
+
+/**
+ * Extract collections from an agent's app integrations
+ */
+export const getAgentCollections = async (
+  trx: TxnOrClient,
+  agentExternalId: string,
+  userId: number,
+  userWorkspaceId: number,
+): Promise<any[]> => {
+  // Get the agent with permission check
+  const agent = await getAgentByExternalIdWithPermissionCheck(
+    trx,
+    agentExternalId,
+    userWorkspaceId,
+    userId,
+  )
+
+  if (!agent) {
+    throw new Error("Agent cannot be accessed or does not exist")
+  }
+
+  // Parse app integrations
+  const appIntegrations = agent.appIntegrations as Record<string, any>
+  const collectionIds: string[] = []
+
+  // Handle knowledge base integrations
+  if (
+    appIntegrations &&
+    typeof appIntegrations === "object" &&
+    appIntegrations.knowledge_base
+  ) {
+    const clConfig = appIntegrations.knowledge_base
+    const itemIds = clConfig.itemIds || []
+
+    if (itemIds.length > 0) {
+      // Extract collection IDs from prefixed format
+      const directCollectionIds: string[] = []
+      const itemCollectionIds: string[] = []
+
+      for (const itemId of itemIds) {
+        if (itemId.startsWith("cl-")) {
+          // This is a direct collection ID
+          directCollectionIds.push(itemId.replace("cl-", ""))
+        } else if (itemId.startsWith("clfd-") || itemId.startsWith("clf-")) {
+          // This is a folder or file ID - we need to get its collection ID
+          const actualItemId = itemId.replace(/^(clfd-|clf-)/, "")
+          try {
+            const item = await getCollectionItemById(trx, actualItemId)
+            if (item && item.collectionId) {
+              itemCollectionIds.push(item.collectionId)
+            }
+          } catch (error) {
+            loggerWithChild().warn(
+              `Failed to fetch KB item ${actualItemId} for collection ID extraction: ${error}`,
+            )
+          }
+        }
+      }
+
+      // Combine and deduplicate collection IDs
+      const allCollectionIds = [...directCollectionIds, ...itemCollectionIds]
+      collectionIds.push(...new Set(allCollectionIds))
+    }
+  }
+
+  // Fetch the actual collection data for each collection ID
+  const collections = []
+  for (const collectionId of collectionIds) {
+    try {
+      const collection = await getCollectionById(trx, collectionId)
+      if (collection) {
+        collections.push(collection)
+      }
+    } catch (error) {
+      loggerWithChild().warn(
+        `Failed to fetch collection ${collectionId}: ${error}`,
+      )
+    }
+  }
+
+  return collections
 }
