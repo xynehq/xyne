@@ -38,9 +38,12 @@ export function WorkflowExecutionModal({
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   // Use provided allowedFileTypes with validation and default fallback
-  const fileTypes = (allowedFileTypes && allowedFileTypes.length > 0) 
-    ? allowedFileTypes.filter(type => type && type.trim() !== '') 
-    : ["txt", "pdf", "docx", "doc", "xlsx", "xls"]
+  const filteredFileTypes = (allowedFileTypes && allowedFileTypes.length > 0) 
+                ? allowedFileTypes.filter(type => type && type.trim() !== '') 
+                : []
+  const fileTypes = filteredFileTypes.length > 0 
+                    ? filteredFileTypes 
+                    : ["txt", "pdf", "docx", "doc", "xlsx", "xls"]
   const acceptAttribute = fileTypes.map(type => `.${type}`).join(',')
   const supportedFormatsText = fileTypes.join(', ')
 

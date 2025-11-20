@@ -1224,7 +1224,7 @@ async function checkPrerequisiteStepsCompleted(
 
 // Helper function to upload Q&A results Excel file to Vespa (similar to handleAttachmentUpload)
 const uploadQAResultsToVespa = async (
-  excelBuffer: ArrayBuffer,
+  excelBuffer: Buffer,
   originalFileName: string,
   userEmail: string,
   executionId: string
@@ -1238,7 +1238,7 @@ const uploadQAResultsToVespa = async (
 
     // Process the Excel file using FileProcessorService (same as form attachments)
     const processingResults = await FileProcessorService.processFile(
-      Buffer.from(excelBuffer),
+      excelBuffer,
       mimeType,
       fileName,
       fileId,
@@ -6942,7 +6942,7 @@ const processQAQuestionsInBackground = async (
     // Upload to Vespa instead of saving to disk (following form tool pattern)
     const qaResultsFileName = `qa-results-${executionId}.xlsx`
     const attachmentMetadata = await uploadQAResultsToVespa(
-      resultBuffer.buffer,
+      resultBuffer,
       qaResultsFileName, 
       executionContext.userEmail,
       executionId
@@ -7177,15 +7177,6 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
       agentId
     })
 
-    // Get execution context
-    const executionContext = await getExecutionContext(executionId)
-    if (!executionContext) {
-      return c.json({
-        success: false,
-        error: "Execution context not found"
-      }, 404)
-    }
-
     // Get the execution with proper permission checks
     const execution = await getWorkflowExecutionByIdWithChecks(
       db,
@@ -7198,6 +7189,15 @@ export const ProcessQAQuestionsApi = async (c: Context) => {
       return c.json({
         success: false,
         error: "Workflow execution not found"
+      }, 404)
+    }
+
+    // Get execution context after confirming execution exists
+    const executionContext = await getExecutionContext(executionId)
+    if (!executionContext) {
+      return c.json({
+        success: false,
+        error: "Execution context not found"
       }, 404)
     }
 
