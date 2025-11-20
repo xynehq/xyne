@@ -856,7 +856,7 @@ export const ListCollectionItemsApi = async (c: Context) => {
         (agentCollection) => agentCollection.id === collectionId
       )
       
-      if (!collectionBelongsToAgent) {
+      if (!collectionBelongsToAgent && collection.ownerId !== user.id) {
         throw new HTTPException(403, {
           message: "Collection does not belong to the specified agent",
         })
