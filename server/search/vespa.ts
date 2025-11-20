@@ -79,8 +79,15 @@ export const searchVespa = async (
     )
   }
   const processedCollectionSelections = await extractCollectionVespaIds(options)
+
+  // Log departmentId forwarding for debugging
+  if (options.departmentId) {
+    Logger.info(`[searchVespa] 📤 Forwarding departmentId to vespa-ts: ${options.departmentId}`, { email })
+  }
+
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
+    departmentId: options.departmentId, // Forward Zoho Desk departmentId for permission filtering
     recencyDecayRate:
       options.recencyDecayRate || config.defaultRecencyDecayRate,
     isSlackConnected,
@@ -117,6 +124,7 @@ export const searchVespaAgent = async (
     AgentApps,
     {
       ...options,
+      departmentId: options.departmentId, // Forward Zoho Desk departmentId for permission filtering
       driveIds,
       processedCollectionSelections,
       appFilters: options.appFilters, // Explicitly pass appFilters
@@ -168,6 +176,7 @@ export const getItems = async (
 
 export const getFolderItems = vespa.getFolderItems.bind(vespa)
 export const searchSlackMessages = vespa.searchSlackMessages.bind(vespa)
+//export const getThreadItems = vespa.getThreadItems.bind(vespa)
 export const SearchVespaThreads = vespa.SearchVespaThreads.bind(vespa)
 
 // DataSource operations
@@ -183,6 +192,7 @@ export const checkIfDataSourceFileExistsByNameAndId =
 
 // Slack operations
 export const fetchSlackEntity = vespa.fetchSlackEntity.bind(vespa)
+//export const getSlackUserDetails = vespa.getSlackUserDetails.bind(vespa)
 
 // Utility operations
 export const getTimestamp = vespa.getTimestamp.bind(vespa)
@@ -206,4 +216,5 @@ export const ifDocumentsExistInSchema =
   vespa.ifDocumentsExistInSchema.bind(vespa)
 export const ifDocumentsExistInChatContainer =
   vespa.ifDocumentsExistInChatContainer.bind(vespa)
+
 export default vespa

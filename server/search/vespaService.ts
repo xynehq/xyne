@@ -18,6 +18,9 @@ import {
   type VespaSchema,
 } from "@xyne/vespa-ts/types"
 
+// Zoho Desk schema constant
+const zohoTicketSchema = "zoho_ticket" as const
+
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa-service" })
 
 const vespaConfig = createDefaultConfig({
@@ -41,6 +44,7 @@ const AllSources = [
   // chatUserSchema, // we mostly should not be searching for chat users
   chatMessageSchema,
   chatContainerSchema,
+  zohoTicketSchema,
 ] as VespaSchema[]
 
 const dependencies: VespaDependencies = {

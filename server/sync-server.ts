@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { init as initQueue } from "@/queue"
 import config from "@/config"
 import { getLogger, LogMiddleware } from "@/logger"
-import { startGoogleIngestionSchema, Subsystem } from "@/types"
+import { startGoogleIngestionSchema, startZohoDeskSyncSchema, Subsystem } from "@/types"
 import { InitialisationError } from "@/errors"
 import metricRegister from "@/metrics/sharedRegistry"
 import { isSlackEnabled, startSocketMode } from "@/integrations/slack/client"
@@ -16,6 +16,7 @@ import {
   HandlePerUserGoogleWorkSpaceSync,
   StartGoogleIngestionApi,
   syncByMailSchema,
+  StartZohoDeskSyncApi,
 } from "@/api/admin"
 import {
   GetIngestionStatusApi,
@@ -115,6 +116,14 @@ app.post(
   zValidator("json", startGoogleIngestionSchema),
   StartGoogleIngestionApi,
 )
+
+// Zoho Desk APIs
+app.post(
+  "/zoho-desk/start_sync",
+  zValidator("json", startZohoDeskSyncSchema),
+  StartZohoDeskSyncApi,
+)
+
 // Sync APIs
 app.post(
   "/syncSlackByMail",
@@ -265,7 +274,7 @@ export const initSyncServer = async () => {
 
   // Note: Slack channel ingestion uses database polling, other integrations use WebSocket
 
-  Logger.info("Sync Server initialization completed")
+  Logger.info("✅ Sync Server initialization completed")
 }
 
 // Initialize the sync server

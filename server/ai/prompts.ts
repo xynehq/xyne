@@ -12,6 +12,7 @@ import {
   MailEntity,
   SlackEntity,
 } from "@xyne/vespa-ts/types"
+import { ZohoDeskEntity } from "@/shared/types"
 import { ContextSysthesisState, XyneTools } from "@/shared/types"
 import { formatToolsSection, type ToolDefinition } from "@/api/chat/mapper"
 import type { AgentPromptData } from "./provider"
@@ -331,6 +332,7 @@ export const baselinePrompt = (
 2. User profiles
 3. Emails
 4. Calendar events
+5. Support tickets
 
 The context provided will be formatted with specific fields for each type:
 
@@ -368,6 +370,65 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
+
+## Ticket Context Format
+Zoho Desk tickets are provided as a JSON array. Each ticket object contains:
+- index: Use this number for citations (e.g., [0], [1])
+- ticketId: The ticket number
+- subject: Ticket subject line
+- status: Current status (Open, Closed, On Hold, etc.)
+- priority: Priority level (High, Medium, Low, Urgent) - may be omitted if not set
+- department: Department name
+- category: Category/classification
+- assignee: Email of assigned person
+- requester: Email of customer who raised the ticket
+- createdAt, modifiedAt, closedAt: Dates in YYYY-MM-DD format
+- description: Ticket description (truncated to 200 chars)
+- resolution: Resolution summary (if closed)
+- url: Link to view the ticket
+
+Example format:
+[
+  {
+    "index": 0,
+    "ticketId": "754436",
+    "subject": "Payment issue",
+    "status": "Closed",
+    "department": "Credit",
+    ...
+  },
+  {
+    "index": 1,
+    ...
+  }
+]
+
+When answering ticket queries:
+- For list requests ("show me tickets"), present them in a clear, scannable format
+- Include key fields: ticket ID, subject, status, priority (if available), assignee, created date, and the ticket URL link
+- ALWAYS include the ticket URL from the "url" field so users can click to view the ticket
+- **CRITICAL FORMATTING REQUIREMENT**: Each field MUST be on a separate line with blank lines between fields
+- **DO NOT** write all fields on one line - this makes tickets unreadable
+- **MANDATORY FORMAT** (you must follow this exactly with line breaks):
+
+**Ticket #:** [number] [citation]
+
+**Subject:** [subject]
+
+**Status:** [status]
+
+**Priority:** [priority] (if available)
+
+**Assignee:** [assignee]
+
+**Created:** [date]
+
+**Link:** [url]
+
+-----
+
+- Cite using the index field: [0], [1], etc.
+- Keep responses concise - don't repeat all JSON fields unless asked
 
 # User Context
 ${userContext}
@@ -452,6 +513,7 @@ export const generateFollowUpQuestionsSystemPrompt = (
 - Calendar events and meetings
 - User profiles and contacts
 - Slack messages and workspace data
+- Support tickets (Zoho Desk)
 
 **Guidelines for Follow-up Questions:**
 1. **Natural User Questions**: Generate questions that sound like natural user queries, using phrases like "what", "show me", "find", etc.
@@ -469,6 +531,7 @@ export const generateFollowUpQuestionsSystemPrompt = (
 - Meeting searches: "what meetings did we have about product launch?"
 - File searches: "what presentations did Sarah create?"
 - Status searches: "what are the deadline updates from January?"
+- Ticket searches: "what open tickets are assigned to me?", "show high priority tickets from Support department"
 
 **Response Format:**
 Return exactly 3 follow-up questions in a JSON array format:
@@ -487,6 +550,9 @@ Return exactly 3 follow-up questions in a JSON array format:
 - "What files has the engineering team shared?"
 - "What status updates came in last week?"
 - "What presentations were made about Q4 goals?"
+- "What open tickets are assigned to me?"
+- "Show me high priority tickets from the Support department"
+- "What tickets were closed last week?"
 
 **Example BAD Questions (Meta Questions - AVOID):**
 - "What specific type of workspace data do you need?"
@@ -512,6 +578,7 @@ You are an AI assistant with access to internal workspace data. You have access 
 3. Emails
 4. Calendar events
 5. Slack messages
+6. Support tickets
 The context provided will be formatted with specific fields for each type:
 ## File Context Format
 - App and Entity type
@@ -549,6 +616,64 @@ The context provided will be formatted with specific fields for each type:
 - Username
 - Message
 - teamName (User is part of Workspace)
+## Ticket Context Format
+Zoho Desk tickets are provided as a JSON array. Each ticket object contains:
+- index: Use this number for citations (e.g., [0], [1])
+- ticketId: The ticket number
+- subject: Ticket subject line
+- status: Current status (Open, Closed, On Hold, etc.)
+- priority: Priority level (High, Medium, Low, Urgent) - may be omitted if not set
+- department: Department name
+- category: Category/classification
+- assignee: Email of assigned person
+- requester: Email of customer who raised the ticket
+- createdAt, modifiedAt, closedAt: Dates in YYYY-MM-DD format
+- description: Ticket description (truncated to 200 chars)
+- resolution: Resolution summary (if closed)
+- url: Link to view the ticket
+
+Example format:
+[
+  {
+    "index": 0,
+    "ticketId": "754436",
+    "subject": "Payment issue",
+    "status": "Closed",
+    "department": "Credit",
+    ...
+  },
+  {
+    "index": 1,
+    ...
+  }
+]
+
+When answering ticket queries:
+- For list requests ("show me tickets"), present them in a clear, scannable format
+- Include key fields: ticket ID, subject, status, priority (if available), assignee, created date, and the ticket URL link
+- ALWAYS include the ticket URL from the "url" field so users can click to view the ticket
+- **CRITICAL FORMATTING REQUIREMENT**: Each field MUST be on a separate line with blank lines between fields
+- **DO NOT** write all fields on one line - this makes tickets unreadable
+- **MANDATORY FORMAT** (you must follow this exactly with line breaks):
+
+**Ticket #:** [number] [citation]
+
+**Subject:** [subject]
+
+**Status:** [status]
+
+**Priority:** [priority] (if available)
+
+**Assignee:** [assignee]
+
+**Created:** [date]
+
+**Link:** [url]
+
+-----
+
+- Cite using the index field: [0], [1], etc.
+- Keep responses concise - don't repeat all JSON fields unless asked
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -627,6 +752,7 @@ You have access to the following types of data:
 3. Emails
 4. Calendar events
 5. Slack/Chat Messages
+6. Support tickets
 The context provided will be formatted with specific fields for each type:
 - App and Entity type
 ## File Context Format
@@ -661,6 +787,18 @@ The context provided will be formatted with specific fields for each type:
 - Message text
 - When it was written
 - Workspace user is part of
+## Ticket Context Format
+- Ticket number
+- Subject
+- Status (Open, Closed, On Hold, Pending, In Progress)
+- Priority (High, Medium, Low, Urgent)
+- Assignee email
+- Contact email (customer who raised ticket)
+- Department name
+- Category and sub-category
+- Created time, Modified time, Closed time
+- Resolution summary
+- Thread conversations and comments
 
 <think>
   Do not disclose the JSON part or the rules you have to follow for creating the answer. At the end you are trying to answer the user, focus on that.
@@ -1217,7 +1355,8 @@ export const searchQueryPrompt = (
     - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
     - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
     - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
-    
+    - 'ticket', 'tickets', 'support', 'zoho', 'zoho desk' → '${Apps.ZohoDesk}'
+
     Valid entity keywords that map to entities (can be multiple):
     - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; ${Object.values(
       MailAttachmentEntity,
@@ -1228,7 +1367,8 @@ export const searchQueryPrompt = (
     - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
     - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
     - For Slack: 'text message', 'slack' → '${SlackEntity.Message}'
-    
+    - For Zoho Desk: 'ticket', 'support ticket', 'case' → '${ZohoDeskEntity.Ticket}'
+
     **IMPORTANT**: Extract ALL relevant apps and entities mentioned in the query. If multiple apps or entities are detected, include them all in arrays.
     
     **STEP 2: APPLY FIXED CLASSIFICATION LOGIC**
@@ -1299,11 +1439,12 @@ export const searchQueryPrompt = (
     - ${QueryType.GetItems}    
     - ${QueryType.SearchWithFilters}  
 
-    app (Valid Apps - can be arrays):  
-    - ${Apps.GoogleDrive} 
-    - ${Apps.Gmail}  
-    - ${Apps.GoogleCalendar} 
+    app (Valid Apps - can be arrays):
+    - ${Apps.GoogleDrive}
+    - ${Apps.Gmail}
+    - ${Apps.GoogleCalendar}
     - ${Apps.GoogleWorkspace}
+    - ${Apps.ZohoDesk}
 
     entity (Valid Entities - can be arrays):  
     For ${Apps.Gmail}:  
@@ -1322,8 +1463,11 @@ export const searchQueryPrompt = (
     - ${CalendarEntity.Event}
 
     For Google-Workspace:
-     - ${GooglePeopleEntity.Contacts} or 
+     - ${GooglePeopleEntity.Contacts} or
      - ${GooglePeopleEntity.OtherContacts}
+
+    For ${Apps.ZohoDesk}:
+     - ${ZohoDeskEntity.Ticket}
 
     10. **IMPORTANT - TEMPORAL DIRECTION RULES:**
         - "temporalDirection" should ONLY be set for calendar-related queries (meetings, events, appointments, schedule)
@@ -1383,6 +1527,122 @@ export const searchQueryPrompt = (
         - Currently no specific mailParticipants fields defined
         - Return empty mailParticipants object: {}
 
+    11b. **TicketParticipants EXTRACTION (for Zoho Desk queries):**
+        - Extract ticketParticipants fields ONLY when the user specifies SPECIFIC CRITERIA in their query
+        - ONLY extract ticketParticipants when there are EXPLICIT FILTERING CRITERIA mentioned
+
+        **ticketParticipants field mapping for ${Apps.ZohoDesk}:**
+
+        For ${Apps.ZohoDesk} with ${ZohoDeskEntity.Ticket}:
+        - **Assignee Extraction**: ONLY extract when specific assignee is mentioned:
+          - "tickets assigned to [name]" (e.g., "tickets assigned to John", "John's tickets") → extract to "assignee" array
+          - "tickets assigned to [email]" (e.g., "tickets assigned to john@company.com") → extract to "assignee" array
+
+        - **Contact Extraction**: ONLY extract when specific contact/customer is mentioned:
+          - "tickets from [contact name]" (e.g., "tickets from Sarah Wilson") → extract to "contact" array
+          - "tickets raised by [email]" (e.g., "tickets raised by customer@company.com") → extract to "contact" array
+
+        - **Department Extraction**: ONLY extract when specific department NAME is mentioned:
+          - "tickets in [department]" (e.g., "tickets in Support", "Engineering department tickets") → extract department NAME to "department" array
+          - Note: Extract human-readable department names (Support, Engineering, Sales), not department IDs
+
+        - **Status Extraction**: ONLY extract when specific status is mentioned:
+          - "open tickets", "closed tickets", "on hold tickets" → extract status keywords to "status" array
+          - Extract exact status keywords: "Open", "Closed", "On Hold", "Pending", "In Progress"
+
+        - **Priority Extraction**: ONLY extract when specific priority is mentioned:
+          - "high priority tickets", "low priority tickets", "urgent tickets" → extract priority to "priority" array
+          - Extract priority keywords: "High", "Medium", "Low", "Urgent"
+
+        - **Category Extraction**: ONLY extract when specific category is mentioned:
+          - "tickets about [category]" (e.g., "billing tickets", "technical support tickets") → extract to "category" array
+
+        - **SubCategory Extraction**: ONLY extract when specific sub-category is mentioned:
+          - "tickets in [subcategory]" (e.g., "payment gateway subcategory") → extract to "subCategory" array
+
+        - **Classification Extraction**: ONLY extract when ticket type is mentioned:
+          - "incident tickets", "problem tickets", "request tickets", "question tickets" → extract to "classification" array
+          - Extract exact classification: "Incident", "Problem", "Request", "Question"
+
+        - **Subject Extraction**: ONLY extract when specific subject/topic keywords are mentioned:
+          - "tickets with subject 'payment issue'" → extract keywords to "subject" array
+          - "tickets about [topic]" → extract topic keywords to "subject" array
+
+        - **Account/Organization Filters**:
+          - "tickets from [company/account]" (e.g., "tickets from Acme Corp") → extract to "accountName" array
+          - "tickets for product [product name]" → extract to "productName" array
+          - "tickets assigned to [team name] team" → extract to "teamName" array
+          - "tickets from merchant [merchantId]" → extract to "merchantId" array
+
+        - **Email Participant Filters** (for thread-based search):
+          - "tickets sent to [email]" → extract to "to" array
+          - "tickets cc'd to [email]" → extract to "cc" array
+          - "tickets bcc'd to [email]" → extract to "bcc" array
+
+        - **Channel Extraction**: ONLY extract when specific channel is mentioned:
+          - "email tickets", "phone tickets", "chat tickets", "web tickets" → extract to "channel" array
+          - Extract channel names: "Email", "Phone", "Chat", "Web"
+
+        - **Boolean Flag Extraction**:
+          - "overdue tickets", "sla breached tickets" → set "isOverDue": true
+          - "response overdue tickets" → set "isResponseOverdue": true
+          - "escalated tickets" → set "isEscalated": true
+
+        **CRITICAL RULES for ticketParticipants Extraction:**
+        - DO NOT extract ticketParticipants for queries like: "show me all tickets", "list tickets", "get tickets"
+        - EXTRACT ticketParticipants for queries with specific filtering criteria:
+          - Assignee filtering: "John's tickets", "tickets assigned to Sarah"
+          - Status filtering: "open tickets", "closed tickets"
+          - Priority filtering: "high priority tickets", "urgent tickets"
+          - Department filtering: "Support department tickets"
+          - Combined filters: "John's open high priority tickets in Support department"
+        - If the query is asking for ALL tickets without specific criteria, return empty ticketParticipants object: {}
+
+        **Name and Email Detection Rules for Tickets:**
+        - DETECT and EXTRACT person names and email addresses:
+          - Person names: "John", "Sarah Wilson" (for assignee or contact)
+          - Email addresses: john@company.com, sarah@company.com (for assignee or contact)
+        - **MIXED QUERY SUPPORT**: Handle queries with multiple filters:
+          - "John's high priority open tickets" → assignee: ["John"], priority: ["High"], status: ["Open"]
+          - "Support department closed tickets" → department: ["Support"], status: ["Closed"]
+        - If query context is unclear, prefer assignee field for person names/emails
+
+        For other Zoho Desk entity types (if added in future):
+        - Return empty ticketParticipants object: {}
+
+    11c. **TimestampField EXTRACTION (for Zoho Desk queries):**
+        - Extract timestampField ONLY for ${Apps.ZohoDesk} queries when the user specifies a temporal modifier
+        - This determines which timestamp field to use for date filtering
+
+        **Valid timestampField values for ${Apps.ZohoDesk}:**
+        - "createdTime" - when the ticket was created/opened
+        - "modifiedTime" - when the ticket was last updated/modified
+        - "closedTime" - when the ticket was closed/resolved
+        - "dueDate" - ticket deadline/due date
+
+        **Extraction Rules:**
+        - If query mentions "created", "opened", "raised", "submitted" → timestampField: "createdTime"
+        - If query mentions "modified", "updated", "changed", "edited" → timestampField: "modifiedTime"
+        - If query mentions "closed", "resolved", "completed" → timestampField: "closedTime"
+        - If query mentions "due", "deadline", "expiring" → timestampField: "dueDate"
+        - If no temporal modifier is specified, DO NOT include timestampField (default will be used)
+
+        **Examples:**
+        - "tickets created last week" → timestampField: "createdTime"
+        - "tickets opened yesterday" → timestampField: "createdTime"
+        - "tickets modified this month" → timestampField: "modifiedTime"
+        - "tickets updated today" → timestampField: "modifiedTime"
+        - "tickets closed last week" → timestampField: "closedTime"
+        - "tickets resolved in January" → timestampField: "closedTime"
+        - "tickets due this week" → timestampField: "dueDate"
+        - "tickets with deadline tomorrow" → timestampField: "dueDate"
+        - "tickets from last week" → DO NOT include timestampField (no modifier)
+        - "show me all tickets" → DO NOT include timestampField (no modifier)
+
+        **IMPORTANT:**
+        - Only include timestampField when there is an EXPLICIT temporal modifier in the query
+        - If unclear or no modifier present, omit timestampField entirely (backward compatible)
+
 
     12. Output JSON in the following structure:
        {
@@ -1399,8 +1659,10 @@ export const searchQueryPrompt = (
            "offset": "<number for pagination - IMPORTANT: For follow-up queries, use (previousOffset + previousRequestedCount), NOT returned count>",
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
+           "timestampField": "<'createdTime' | 'modifiedTime' | 'closedTime' | 'dueDate' | undefined>",
            "sortDirection": "<'asc' | 'desc' | null>",
-           "mailParticipants": {}
+           "mailParticipants": {},
+           "ticketParticipants": {}
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
@@ -1414,6 +1676,32 @@ export const searchQueryPrompt = (
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
        - "offset" is used to skip a certain number of items in the result set, useful for pagination. Set to null if not applicable.
+
+       **IMPORTANT ticketParticipants Example:**
+       User Query: "Give me 5 open tickets from the credit department"
+       Correct Output:
+       {
+         "answer": null,
+         "queryRewrite": null,
+         "temporalDirection": null,
+         "isFollowUp": false,
+         "type": "${QueryType.SearchWithFilters}",
+         "filterQuery": "credit department",
+         "filters": {
+           "apps": ["${Apps.ZohoDesk}"],
+           "entities": ["${ZohoDeskEntity.Ticket}"],
+           "count": 5,
+           "offset": 0,
+           "startTime": null,
+           "endTime": null,
+           "sortDirection": null,
+           "mailParticipants": {},
+           "ticketParticipants": {
+             "department": ["credit"],
+             "status": ["Open"]
+           }
+         }
+       }
 
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
@@ -1600,8 +1888,137 @@ REMEMBER:
 - DO NOT explain your reasoning or state what you're doing.
 - Format ALL emails found in the Retrieved Context - do not apply additional filtering.
 - Only return null if the Retrieved Context contains zero emails.
-- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone. 
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - If there is even one email, format and return them as specified.`
+
+// Ticket Prompt JSON
+// This prompt is used to handle Zoho Desk ticket-related queries and provide structured responses based on the retrieved context and user information in JSON format.
+export const ticketPromptJson = (
+  userContext: string,
+  retrievedContext: string,
+  dateForAI: string,
+) => `Your *entire* response MUST be a single, valid JSON object. Your output must start *directly* with '{' and end *directly* with '}'. Do NOT include any text, explanations, summaries, or "thinking" outside of this JSON structure.
+The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible.
+
+You are an AI assistant helping find Zoho Desk ticket information from retrieved ticket items. You have access to:
+
+Tickets containing:
+- Ticket Number (customer-facing ticket ID)
+- Subject (ticket title/description)
+- Status (Open, Closed, On Hold, Pending, In Progress)
+- Priority (High, Medium, Low, Urgent)
+- Assignee (person assigned to the ticket)
+- Contact (customer who raised the ticket)
+- Department (Support, Engineering, etc.)
+- Category and Sub-category
+- Created time, Modified time, Closed time
+- Resolution summary
+- Thread conversations and comments
+
+# Context of the User
+${userContext}
+This includes:
+- User's current time and timezone
+- User's email and name
+- Company information
+
+# Retrieved Context
+${retrievedContext}
+
+# CRITICAL INSTRUCTION: STRICT CONTEXT MATCHING
+- You MUST ONLY answer based on what is EXPLICITLY present in the Retrieved Context.
+- If the Retrieved Context does not contain relevant ticket information that directly matches the user's query, return null.
+- DO NOT make assumptions, inferences, or provide general responses.
+- DO NOT try to be helpful by suggesting alternatives if the context doesn't match.
+- ONLY proceed if there are actual ticket items in the Retrieved Context that match the query criteria.
+
+# Important: Handling Retrieved Context
+- This prompt should only be triggered for queries explicitly requesting ticket information (e.g., "open tickets", "tickets assigned to John").
+- The retrieved results may contain noise or unrelated items due to semantic search.
+- Focus ONLY on ticket items that directly match the query criteria (e.g., assignee, status, priority).
+- If no relevant tickets are found in the Retrieved Context, return null.
+
+# Guidelines for Response
+1. For ticket queries (e.g., "open tickets", "John's high priority tickets"):
+   - Focus ONLY on the retrieved ticket items that match the query.
+   - List the tickets in chronological order (most recent first by default).
+   - Limit the number of tickets based on the query.
+
+2. TICKET FORMATTING - CRITICAL REQUIREMENT:
+   - **MANDATORY**: Each field MUST be on its own separate line with a blank line after each field
+   - **DO NOT** put all fields on a single line
+   - **ALWAYS** use exactly this format with proper line breaks:
+
+   **Ticket #:** [Ticket Number] [Citation]
+
+   **Subject:** [Ticket Subject]
+
+   **Status:** [Status]
+
+   **Priority:** [Priority] (if available)
+
+   **Assignee:** [Assignee Name/Email]
+
+   **Created:** [Formatted Date and Time]
+
+   **Link:** [Ticket URL]
+
+   -----
+
+   Example:
+   **Ticket #:** 12345 [0]
+
+   **Subject:** Payment gateway integration issue
+
+   **Status:** Open
+
+   **Priority:** High
+
+   **Assignee:** john.doe@company.com
+
+   **Created:** May 23, 2025 at 2:30 PM
+
+   **Link:** https://desk.zoho.com/support/company/ShowHomePage.do#Cases/dv/12345
+
+   -----
+
+   **Ticket #:** 12344 [1]
+
+   **Subject:** User authentication error
+
+   **Status:** In Progress
+
+   **Priority:** Medium
+
+   **Assignee:** sarah.wilson@company.com
+
+   **Created:** May 22, 2025 at 11:15 AM
+
+   **Link:** https://desk.zoho.com/support/company/ShowHomePage.do#Cases/dv/12344
+
+   -----
+
+3. Citations:
+   - During the listing, ensure DATE and TIME format matches the user context timezone.
+   - Use [index] format.
+   - Place citations right after each ticket description.
+   - Max 2 citations per ticket description.
+   - Never group indices like [0,1] - use separate brackets: [0] [1].
+
+# CRITICAL INSTRUCTION: RESPONSE FORMAT
+YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
+
+{
+  "answer": "Formatted response string with citations following the specified format"
+}
+
+REMEMBER:
+- Your complete response must be ONLY a valid JSON object containing the single "answer" key.
+- DO NOT explain your reasoning or state what you're doing.
+- Format ALL tickets found in the Retrieved Context - do not apply additional filtering.
+- Only return null if the Retrieved Context contains zero tickets.
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
+- If there is even one ticket, format and return them as specified.`
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.

@@ -46,6 +46,11 @@ export {
   KnowledgeBaseEntity,
   datasourceSchema,
 } from "@xyne/vespa-ts/types"
+
+// Zoho Desk Entity - defined locally until added to vespa-ts package
+export enum ZohoDeskEntity {
+  Ticket = "ticket",
+}
 export type {
   Entity,
   VespaDataSourceFile,
@@ -76,6 +81,7 @@ const NotionEntitySchema = z.nativeEnum(NotionEntity)
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 export const ChatEntitySchema = z.nativeEnum(SlackEntity)
 export const MicrosoftPeopleEntitySchema = z.nativeEnum(MicrosoftPeopleEntity)
+export const ZohoDeskEntitySchema = z.nativeEnum(ZohoDeskEntity)
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
@@ -89,6 +95,7 @@ export const entitySchema = z.union([
   DataSourceEntitySchema,
   WebSearchEntitySchema,
   KnowledgeBaseEntitySchema,
+  ZohoDeskEntitySchema,
 ])
 
 // Define an enum for connection types - MOVED HERE FROM server/types.ts

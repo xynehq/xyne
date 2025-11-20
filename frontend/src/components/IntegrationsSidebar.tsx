@@ -72,6 +72,22 @@ export const IntegrationsSidebar = ({
               </span>
             </li>
             <li
+              className={`group flex justify-between items-center ${location.pathname.includes("/integrations/zoho-desk") ? "bg-[#EBEFF2] dark:bg-slate-700" : ""} hover:bg-[#EBEFF2] dark:hover:bg-slate-700 rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px] cursor-pointer`}
+              onClick={() => {
+                router.navigate({
+                  to:
+                    role === UserRole.SuperAdmin || role === UserRole.Admin
+                      ? "/admin/integrations/zoho-desk"
+                      : "/integrations/zoho-desk",
+                })
+              }}
+            >
+              <span className="text-[14px] font-semibold text-blue-600 dark:text-blue-400 ml-[8px]">Z</span>
+              <span className="text-[14px] dark:text-gray-200 pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
+                Zoho Desk
+              </span>
+            </li>
+            <li
               className={`group flex justify-between items-center ${location.pathname.includes("/integrations/mcp") ? "bg-[#EBEFF2] dark:bg-slate-700" : ""} hover:bg-[#EBEFF2] dark:hover:bg-slate-700 rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px] cursor-pointer`}
               onClick={() => {
                 router.navigate({
