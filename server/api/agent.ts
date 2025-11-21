@@ -480,7 +480,12 @@ export const DeleteAgentApi = async (c: Context) => {
       userAndWorkspace.workspace.id,
     )
 
-    if (!existingAgent ||  !agentUserPermission?.find((user)=> user.userId == userAndWorkspace.user.id)) {
+    if (
+      !existingAgent ||
+      !agentUserPermission?.find(
+        (user) => user.userId == userAndWorkspace.user.id,
+      )
+    ) {
       return c.json({ message: "Agent not found or access denied" }, 404)
     }
 
