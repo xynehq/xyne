@@ -801,6 +801,7 @@ export const agentPromptPayloadSchema = z.preprocess(
         )
         .optional(),
       userEmails: z.array(z.string()).optional(),
+      ownerEmails: z.array(z.string()).optional(),
       allowWebSearch: z.boolean().optional(),
     })
     .optional(),

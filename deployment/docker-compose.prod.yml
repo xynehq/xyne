@@ -108,7 +108,7 @@ services:
       - VESPA_METRICS_JVMARGS=-Xms256m -Xmx512m -XX:+UseG1GC
 
   xyne-db:
-    image: postgres:15-alpine
+    image: postgres:latest
     container_name: xyne-db
     environment:
       POSTGRES_USER: xyne

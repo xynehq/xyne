@@ -34,10 +34,14 @@ export const collections = pgTable(
     totalItems: integer("total_items").default(0).notNull(),
     lastUpdatedByEmail: varchar("last_updated_by_email", { length: 255 }),
     lastUpdatedById: integer("last_updated_by_id").references(() => users.id),
-    uploadStatus: varchar("upload_status", { length: 20 }).default(UploadStatus.PENDING).notNull().$type<UploadStatus>(),
+    uploadStatus: varchar("upload_status", { length: 20 })
+      .default(UploadStatus.PENDING)
+      .notNull()
+      .$type<UploadStatus>(),
     statusMessage: text("status_message"), // Stores processing status and error messages
     retryCount: integer("retry_count").default(0).notNull(), // Track processing retry attempts
     metadata: jsonb("metadata").default({}).notNull(),
+    permissions: jsonb("permissions").default(sql`'[]'::jsonb`),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
