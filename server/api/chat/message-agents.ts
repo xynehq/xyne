@@ -137,6 +137,10 @@ const {
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
+const MIN_TURN_NUMBER = 1
+const ensureTurnNumber = (value?: number | null): number =>
+  typeof value === "number" && value >= MIN_TURN_NUMBER ? value : MIN_TURN_NUMBER
+
 type ReasoningPayload = {
   text: string
   step?: {
@@ -532,15 +536,43 @@ function buildFinalSynthesisPayload(
 
   const userMessage = parts.join("\n\n")
 
-  const systemPrompt = [
-    "You are Xyne, an enterprise research assistant generating the FINAL response for the user.",
-    "Ground your answer in all available signals: the conversation so far (user + assistant/tool messages), the provided context fragments, and any images.",
-    "When you use information from context fragments, include citation markers like [n] (1-based). Treat delegated-agent fragments as one source alongside search/workspace fragments. Do not invent evidence.",
-    "Favor the most relevant, high-signal evidence, but you may include other fragments if they add value.",
-    "Incorporate insights from referenced images (provided separately) when they strengthen the answer.",
-    "Do not mention internal tooling, planning steps, or this synthesis process.",
-    "Deliver a clear, concise response: lead with the conclusion, then succinct supporting evidence. Use headers or bullets when helpful. Avoid redundancy and filler.",
-  ].join(" ")
+  const systemPrompt = `
+### Mission
+- Deliver the user's final answer using the conversation, plan snapshot, clarifications, workspace context, context fragments, and supplied images; never plan or call tools.
+
+### Evidence Intake
+- Prioritize the highest-signal fragments, but pull any supporting fragment that improves accuracy.
+- Treat delegated-agent outputs as citeable fragments; reference them like any other context entry.
+- Describe evidence gaps plainly before concluding; never guess.
+- Extract actionable details from provided images and cite them via their fragment indices.
+
+### Response Construction
+- Lead with the conclusion, then stack proof underneath.
+- Organize output into tight sections (e.g., **Summary**, **Proof**, **Next Steps** when relevant); omit empty sections.
+- Never mention internal tooling, planning logs, or this synthesis process.
+
+### Constraint Handling
+- When the user asks for an action the system cannot execute (e.g., sending an email), deliver the closest actionable substitute (draft, checklist, explicit next steps) inside the answer.
+- Pair the substitute with a concise explanation of the limitation and the manual action the user must take.
+
+### Citation Discipline
+- Cite each factual sentence immediately with \`[n]\` (1-based); one fragment per bracket—never combine numbers.
+- Cite only when the fragment explicitly supports the statement; leave interpretations or gap notes uncited.
+- When evidence is missing, state the gap plus the data required to close it.
+
+### Tone & Delivery
+- Answer with confident, declarative, verb-first sentences that use concrete nouns.
+- Highlight key deliverables using **bold** labels or short lists; keep wording razor-concise.
+- Ask one targeted follow-up question only if missing info blocks action.
+
+### Tool Spotlighting
+- Reference critical tool outputs explicitly, e.g., "**Slack Search:** Ops escalated the RCA at 09:42 [2]."
+- Explain why each highlighted tool mattered so reviewers see coverage breadth.
+- When multiple tools contribute, show the sequence, e.g., "**Vespa Search:** context -> **Sheet Lookup:** metrics."
+
+### Finish
+- Close with a single sentence confirming completion or the next action you recommend.
+`.trim()
 
   return { systemPrompt, userMessage }
 }
@@ -642,7 +674,7 @@ function initializeAgentContext(
     seenDocuments: new Set<string>(),
     imageFileNames: [],
     imageMetadata: new Map<string, AgentImageMetadata>(),
-    turnCount: 0,
+    turnCount: MIN_TURN_NUMBER,
     totalLatency: 0,
     totalCost: 0,
     tokenUsage: {
@@ -669,6 +701,7 @@ function initializeAgentContext(
     decisions: [],
     finalSynthesis,
     runtime: undefined,
+    maxOutputTokens: undefined,
   }
 }
 
@@ -678,7 +711,8 @@ function initializeAgentContext(
  */
 async function performAutomaticReview(
   input: AutoReviewInput,
-  fullContext: AgentRunContext
+  fullContext: AgentRunContext,
+  conversationMessages?: Message[]
 ): Promise<ReviewResult> {
   try {
     const reviewContext: AgentRunContext = {
@@ -692,6 +726,7 @@ async function performAutomaticReview(
       turnNumber: input.turnNumber,
       expectedResults: input.expectedResults,
       delegationEnabled: fullContext.delegationEnabled,
+      messages: conversationMessages,
     })
     return review
   } catch (error) {
@@ -1051,10 +1086,13 @@ export async function afterToolExecutionHook(
   const context = state.context as AgentRunContext
 
   // 1. Create execution record
-  const effectiveTurnNumber =
-    typeof turnNumber === "number" ? turnNumber : context.turnCount ?? 0
+  const providedTurn =
+    typeof turnNumber === "number" ? turnNumber : undefined
+  const effectiveTurnNumber = ensureTurnNumber(
+    providedTurn ?? context.turnCount
+  )
 
-  if (typeof turnNumber !== "number" && context.turnCount > 0) {
+  if (providedTurn === undefined && context.turnCount >= MIN_TURN_NUMBER) {
     Logger.info(
       {
         toolName,
@@ -1217,8 +1255,7 @@ export async function afterToolExecutionHook(
               selectedDocs.forEach((doc, idx) => {
                 fragmentIndexMap.set(idx, doc.id)
               })
-              const turnNumber =
-                typeof context.turnCount === "number" ? context.turnCount : 0
+              const turnNumber = ensureTurnNumber(context.turnCount)
               const addedImages = registerImageReferences(
                 context,
                 extractedImages,
@@ -1400,7 +1437,8 @@ function mergeAgentDelegationOutput(opts: {
 
   if (Array.isArray(citations) && citations.length > 0) {
     citations.forEach((citation, idx) => {
-      const fragmentId = `${agentId || "agent"}:${citation.docId || idx}:${turnNumber ?? 0}:${idx}`
+      const fragmentTurn = ensureTurnNumber(turnNumber ?? context.turnCount)
+      const fragmentId = `${agentId || "agent"}:${citation.docId || idx}:${fragmentTurn}:${idx}`
       if (gatheredFragmentsKeys.has(fragmentId)) return
       agentFragments.push({
         id: fragmentId,
@@ -1413,7 +1451,9 @@ function mergeAgentDelegationOutput(opts: {
 
   // Add an attribution fragment for the delegated agent itself so downstream synthesis can cite the agent as a source.
   if (agentId) {
-    const attributionFragmentId = `agent:${agentId}:turn:${turnNumber ?? context.turnCount ?? 0}`
+    const attributionFragmentId = `agent:${agentId}:turn:${ensureTurnNumber(
+      turnNumber ?? context.turnCount
+    )}`
     if (!gatheredFragmentsKeys.has(attributionFragmentId)) {
       agentFragments.push({
         id: attributionFragmentId,
@@ -1860,6 +1900,7 @@ async function runReviewLLM(
     maxFindings?: number
     expectedResults?: ToolExpectationAssignment[]
     delegationEnabled?: boolean
+    messages?: Message[]
   }
 ): Promise<ReviewResult> {
   Logger.info(
@@ -1869,8 +1910,9 @@ async function runReviewLLM(
       maxFindings: options?.maxFindings,
       expectedResultCount: options?.expectedResults?.length ?? 0,
       delegationEnabled: options?.delegationEnabled,
+      expectedResults: options?.expectedResults,
     },
-    "runReviewLLM invoked"
+    "[DEBUG] runReviewLLM invoked - FULL expectedResults"
   )
   const modelId =
     (defaultFastModel as Models) || (defaultBestModel as Models)
@@ -1972,11 +2014,33 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
 
   Logger.info({ sections: messageSections }, "runReviewLLM payload sections")
 
-  const messages: Message[] = messageSections.map((section) => ({
-    role: ConversationRole.USER,
-    content: [{ text: `${section.label}:\n${section.text}` }],
-  }))
-  Logger.info({ messages }, "runReviewLLM messages")
+  const reviewContextText = messageSections
+    .map((section) => `${section.label}:\n${section.text}`)
+    .join("\n\n")
+
+  let messages: Message[]
+  if (options?.messages && options.messages.length > 0) {
+    messages = [...options.messages]
+    if (reviewContextText.trim().length > 0) {
+      messages.push({
+        role: ConversationRole.USER,
+        content: [{ text: reviewContextText }],
+      })
+    }
+  } else {
+    messages = messageSections.map((section) => ({
+      role: ConversationRole.USER,
+      content: [{ text: `${section.label}:\n${section.text}` }],
+    }))
+  }
+
+  Logger.info(
+    {
+      messagesCount: messages.length,
+      usedConversationHistory: Boolean(options?.messages?.length),
+    },
+    "runReviewLLM messages configured"
+  )
 
   const { text } = await getProviderByModel(modelId).converse(
     messages,
@@ -2295,7 +2359,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         userEmail: context.user.email,
         workspaceExternalId: context.user.workspaceId,
         mcpAgents: context.mcpAgents,
-        parentTurn: context.turnCount ?? 0,
+        parentTurn: ensureTurnNumber(context.turnCount),
       })
       Logger.info(
         { params: validation.data, email: context.user.email },
@@ -2382,7 +2446,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         systemPrompt,
         stream: true,
         temperature: 0.2,
-        max_new_tokens: 1500,
+        max_new_tokens: context.maxOutputTokens ?? 1500,
         imageFileNames: selected,
       }
 
@@ -2392,6 +2456,21 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           content: [{ text: userMessage }],
         },
       ]
+
+      Logger.info({
+        email: context.user.email,
+        chatId: context.chat.externalId,
+        modelId,
+        systemPrompt,
+        messagesCount: messages.length,
+        imagesProvided: selected.length,
+      }, "[MessageAgents][FinalSynthesis] LLM call parameters")
+
+      Logger.info({
+        email: context.user.email,
+        chatId: context.chat.externalId,
+        messages,
+      }, "[MessageAgents][FinalSynthesis] FULL MESSAGES ARRAY")
 
       const provider = getProviderByModel(modelId)
       let streamedCharacters = 0
@@ -2553,7 +2632,6 @@ function buildAgentInstructions(
     ? generateToolDescriptions(enabledToolNames)
     : "No tools available yet. "
 
-  const contextSection = buildContextSection(context.contextFragments)
   const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
   const attachmentDirective = buildAttachmentDirective(context)
   const reviewDirective = buildReviewDirective(context.review)
@@ -2582,7 +2660,7 @@ function buildAgentInstructions(
     ? `- Before calling ANY search, calendar, Gmail, Drive, or other research tools, you MUST invoke \`list_custom_agents\` once per run. Treat the workflow as: plan -> list agents -> (maybe) run_public_agent -> other tools. If the selector returns \`null\`, explicitly log that no agent was suitable, then proceed with core tools.\n- Before calling \`run_public_agent\`, invoke \`list_custom_agents\`, compare every candidate, and respect a \`null\` result as "no delegate—continue with built-in tools."\n- Use \`run_custom_agent\` (the execution surface for selected specialists) immediately after choosing an agent from \`list_custom_agents\`; pass the specific agentId plus a rewritten query tailored to that agent.\n- When \`list_custom_agents\` returns high-confidence candidates, pause to assess the current sub-task and explicitly decide whether running one now accelerates the goal; document the rationale either way.\n- Only delegate when a specific agent's documented capabilities make it unquestionably suitable; otherwise keep iterating yourself.`
     : "- Delegation to other agents is disabled for this run. Do not call list_custom_agents or run_public_agent; rely on the available tools directly."
 
-  return `
+  const finalInstructions = `
 You are Xyne, an enterprise search assistant with agentic capabilities.
 
 The current date is: ${dateForAI}
@@ -2592,23 +2670,23 @@ User: ${context.user.email}
 Workspace: ${context.user.workspaceId}
 </context>
 
-${planSection}
-
 <available_tools>
 ${toolDescriptions}
 </available_tools>
 
-${contextSection}
-
 ${agentSection}
 
-${attachmentDirective ? `${attachmentDirective}\n` : ""}
 ${reviewDirective ? `${reviewDirective}\n` : ""}
+
+${planSection}
+
+${attachmentDirective ? `${attachmentDirective}\n` : ""}
 
 ${promptAddendum}
 
 # PLANNING
 - ALWAYS start by creating a plan using toDoWrite
+- The review feedback overrides older assumptions—treat instructions inside <last_review_summary> as mandatory constraints
 - Before changing the plan, READ <last_review_summary> (if present) and incorporate its guidance immediately
 - Adjust the existing plan per the latest review recommendations; only run toDoWrite again if the review explicitly calls for a brand-new plan
 - Do NOT call toDoWrite more than once in a single turn unless the review summary mandates it; otherwise refine the existing plan directly
@@ -2641,23 +2719,33 @@ ${delegationGuidance}
 </expected_results>
 - Include one entry per tool invocation you intend to make. These expectations feed automatic review, so keep them specific and measurable.
 
-# QUALITY
-- Always cite sources using [n] notation that refer to the Context Fragments list
-- Craft specific queries for tools
-- Adjust strategy based on results
-- Don't retry failing tools more than 3 times
+# CONSTRAINT HANDLING
+- When the user requests an action the available tools cannot execute, produce the closest actionable substitute (draft, checklist, instructions) so progress continues.
+- State the exact limitation and what manual follow-up the user must perform to finish.
 
 # FINAL SYNTHESIS
-- When you have gathered everything needed, CALL \`synthesize_final_answer\` (no arguments). This tool composes and streams the actual response to the user.
-- Never output the final answer directly—always go through the tool.
-- After the tool completes, reply with a short acknowledgment like "Done." without calling more tools.
-
-# IMPORTANT Citation Format:
-- Use square brackets with the context index number: [1], [2], etc.
-- Place citations right after the relevant statement
-- NEVER group multiple indices in one bracket like [1, 2] or [1, 2, 3]
-- Example: "The project deadline was moved to March [3] and the team agreed [5]"
+- When research is complete and evidence is locked, CALL \`synthesize_final_answer\` (no arguments). This tool composes and streams the response.
+- Never output the final answer directly—always go through the tool and then acknowledge completion.
 `
+
+  // Logger.info({
+  //   email: context.user.email,
+  //   chatId: context.chat.externalId,
+  //   turnCount: context.turnCount,
+  //   instructionsLength: finalInstructions.length,
+  //   enabledToolsCount: enabledToolNames.length,
+  //   contextFragmentsCount: context.contextFragments.length,
+  //   hasPlan: !!context.plan,
+  //   delegationEnabled,
+  // }, "[MessageAgents] Final agent instructions built")
+
+  // Logger.info({
+  //   email: context.user.email,
+  //   chatId: context.chat.externalId,
+  //   instructions: finalInstructions,
+  // }, "[MessageAgents] FULL AGENT INSTRUCTIONS")
+
+  return finalInstructions
 }
 
 /**
@@ -3290,6 +3378,84 @@ export async function MessageAgents(c: Context): Promise<Response> {
           return generated
         }
 
+        const buildTurnReviewInput = (
+          turn: number
+        ): { reviewInput: AutoReviewInput; fallbackUsed: boolean } => {
+          let toolHistory = agentContext.toolCallHistory.filter(
+            (record) => record.turnNumber === turn
+          )
+          let fallbackUsed = false
+
+          if (
+            toolHistory.length === 0 &&
+            agentContext.toolCallHistory.length > 0
+          ) {
+            fallbackUsed = true
+            toolHistory = [
+              agentContext.toolCallHistory[
+                agentContext.toolCallHistory.length - 1
+              ],
+            ]
+          }
+
+          return {
+            reviewInput: {
+              focus: "turn_end",
+              turnNumber: turn,
+              contextFragments: agentContext.contextFragments,
+              toolCallHistory: toolHistory,
+              plan: agentContext.plan,
+              expectedResults: expectationHistory.get(turn) || [],
+            },
+            fallbackUsed,
+          }
+        }
+
+        const runTurnEndReviewAndCleanup = async (
+          turn: number
+        ): Promise<void> => {
+          Logger.info({
+            turn,
+            expectationHistoryKeys: Array.from(expectationHistory.keys()),
+            expectationsForThisTurn: expectationHistory.get(turn),
+            chatId: agentContext.chat.externalId,
+          }, "[DEBUG] Expectation history state at turn_end")
+
+          try {
+            const { reviewInput, fallbackUsed } = buildTurnReviewInput(turn)
+            if (
+              fallbackUsed &&
+              agentContext.toolCallHistory.length > 0
+            ) {
+              Logger.warn(
+                {
+                  turn,
+                  fallbackUsed,
+                  toolHistoryCount: agentContext.toolCallHistory.length,
+                  chatId: agentContext.chat.externalId,
+                },
+                "[MessageAgents] No per-turn tool records; defaulting to last tool call."
+              )
+            }
+            await runAndBroadcastReview(reviewInput, turn)
+          } catch (error) {
+            Logger.error({
+              turn,
+              chatId: agentContext.chat.externalId,
+              error: getErrorMessage(error),
+            }, "[MessageAgents] Turn-end review failed")
+          } finally {
+            const attachmentState = getAttachmentPhaseMetadata(agentContext)
+            if (attachmentState.initialAttachmentPhase) {
+              agentContext.chat.metadata = {
+                ...agentContext.chat.metadata,
+                initialAttachmentPhase: false,
+              }
+            }
+            pendingExpectations.length = 0
+          }
+        }
+
         const runAndBroadcastReview = async (
           reviewInput: AutoReviewInput,
           iteration: number
@@ -3304,18 +3470,36 @@ export async function MessageAgents(c: Context): Promise<Response> {
               "[MessageAgents] No expected results recorded for review input."
             )
           }
-          const reviewResult = await performAutomaticReview(
-            reviewInput,
-            agentContext
-          )
-          await handleReviewOutcome(
-            agentContext,
-            reviewResult,
-            iteration,
-            reviewInput.focus,
-            emitReasoningStep
-          )
-          return reviewResult
+
+          let reviewResult: ReviewResult | null = null
+          const pendingPromise = (async () => {
+            const computedReview = await performAutomaticReview(
+              reviewInput,
+              agentContext,
+              messagesWithNoErrResponse
+            )
+            reviewResult = computedReview
+            await handleReviewOutcome(
+              agentContext,
+              computedReview,
+              iteration,
+              reviewInput.focus,
+              emitReasoningStep
+            )
+          })()
+
+          agentContext.review.pendingReview = pendingPromise
+          try {
+            await pendingPromise
+            if (!reviewResult) {
+              throw new Error("Review did not produce a result")
+            }
+            return reviewResult
+          } finally {
+            if (agentContext.review.pendingReview === pendingPromise) {
+              agentContext.review.pendingReview = undefined
+            }
+          }
         }
 
         // Configure run with hooks
@@ -3324,7 +3508,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
           modelProvider,
           maxTurns: 100,
           modelOverride: defaultBestModel,
-          
+          onTurnEnd: async ({ turn }) => {
+            await runTurnEndReviewAndCleanup(turn)
+          },
           // After tool execution hook
           onAfterToolExecution: async (
             toolName: string,
@@ -3433,13 +3619,15 @@ export async function MessageAgents(c: Context): Promise<Response> {
           emitReasoning: emitReasoningStep,
         }
         const traceEventHandler = async (event: TraceEvent) => {
-          if (event.type !== "before_tool_execution") return undefined
-          return beforeToolExecutionHook(
-            event.data.toolName,
-            event.data.args,
-            agentContext,
-            emitReasoningStep
-          )
+          if (event.type === "before_tool_execution") {
+            return beforeToolExecutionHook(
+              event.data.toolName,
+              event.data.args,
+              agentContext,
+              emitReasoningStep
+            )
+          }
+          return undefined
         }
 
         Logger.info(
@@ -3639,47 +3827,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   { iteration: evt.data.turn }
                 )
               }
-
-              let reviewToolHistory = currentTurnToolHistory
-              if (
-                reviewToolHistory.length === 0 &&
-                agentContext.toolCallHistory.length > 0
-              ) {
-                Logger.warn(
-                  {
-                    turn: evt.data.turn,
-                    toolHistoryCount: agentContext.toolCallHistory.length,
-                  },
-                  "[MessageAgents] No per-turn tool records; defaulting to last tool call."
-                )
-                reviewToolHistory = [
-                  agentContext.toolCallHistory[
-                    agentContext.toolCallHistory.length - 1
-                  ],
-                ]
-              }
-
-              await runAndBroadcastReview(
-                {
-                  focus: "turn_end",
-                  turnNumber: evt.data.turn,
-                  contextFragments: agentContext.contextFragments,
-                  toolCallHistory: reviewToolHistory,
-                  plan: agentContext.plan,
-                  expectedResults:
-                    expectationHistory.get(evt.data.turn) || [],
-                },
-                evt.data.turn
-              )
-
-              const attachmentState = getAttachmentPhaseMetadata(agentContext)
-              if (attachmentState.initialAttachmentPhase) {
-                agentContext.chat.metadata = {
-                  ...agentContext.chat.metadata,
-                  initialAttachmentPhase: false,
-                }
-              }
-              pendingExpectations.length = 0
               break
 
             case "assistant_message":
@@ -3696,6 +3843,50 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 "[MessageAgents] Assistant output received"
               )
               const content = getTextContent(evt.data.message.content) || ""
+              
+              if (content) {
+                const extractedExpectations = extractExpectedResults(content)
+                Logger.info({
+                  turn: currentTurn,
+                  extractedCount: extractedExpectations.length,
+                  extractedExpectations,
+                  chatId: agentContext.chat.externalId,
+                }, "[DEBUG] Extracted expectations from assistant message")
+                if (extractedExpectations.length > 0) {
+                  await streamReasoningStep(
+                    emitReasoningStep,
+                    "Setting expectations for tool calls...",
+                    { iteration: currentTurn }
+                  )
+                  for (const expectation of extractedExpectations) {
+                    await streamReasoningStep(
+                      emitReasoningStep,
+                      `Expectation for '${expectation.toolName}': ${expectation.expectation.goal}`,
+                      { toolName: expectation.toolName }
+                    )
+                  }
+                  pendingExpectations.push(...extractedExpectations)
+                  if (currentTurn > 0) {
+                    Logger.info({
+                      turn: currentTurn,
+                      expectationsCount: extractedExpectations.length,
+                      chatId: agentContext.chat.externalId,
+                    }, "[DEBUG] Recording expectations for current turn")
+                    recordExpectationsForTurn(
+                      currentTurn,
+                      extractedExpectations
+                    )
+                  } else {
+                    Logger.info({
+                      turn: currentTurn,
+                      expectationsCount: extractedExpectations.length,
+                      chatId: agentContext.chat.externalId,
+                    }, "[DEBUG] Buffering expectations for future turn")
+                    expectationBuffer.push(...extractedExpectations)
+                  }
+                }
+              }
+
               const hasToolCalls =
                 Array.isArray(evt.data.message?.tool_calls) &&
                 (evt.data.message.tool_calls?.length ?? 0) > 0
@@ -3720,30 +3911,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
               }
 
               if (content) {
-                const extractedExpectations = extractExpectedResults(content)
-                if (extractedExpectations.length > 0) {
-                  await streamReasoningStep(
-                    emitReasoningStep,
-                    "Setting expectations for tool calls...",
-                    { iteration: currentTurn }
-                  )
-                  for (const expectation of extractedExpectations) {
-                    await streamReasoningStep(
-                      emitReasoningStep,
-                      `Expectation for '${expectation.toolName}': ${expectation.expectation.goal}`,
-                      { toolName: expectation.toolName }
-                    )
-                  }
-                  pendingExpectations.push(...extractedExpectations)
-                  if (currentTurn > 0) {
-                    recordExpectationsForTurn(
-                      currentTurn,
-                      extractedExpectations
-                    )
-                  } else {
-                    expectationBuffer.push(...extractedExpectations)
-                  }
-                }
                 await streamAnswerText(content)
               }
               break
@@ -3765,19 +3932,20 @@ export async function MessageAgents(c: Context): Promise<Response> {
             case "run_end":
               const outcome = evt.data.outcome
               if (outcome?.status === "completed") {
+                const finalTurnNumber = ensureTurnNumber(
+                  agentContext.turnCount ?? currentTurn
+                )
                 await runAndBroadcastReview(
                   {
                     focus: "run_end",
-                    turnNumber: agentContext.turnCount || currentTurn,
+                    turnNumber: finalTurnNumber,
                     contextFragments: agentContext.contextFragments,
                     toolCallHistory: agentContext.toolCallHistory,
                     plan: agentContext.plan,
                     expectedResults:
-                      expectationHistory.get(
-                        agentContext.turnCount || currentTurn
-                      ) || [],
+                      expectationHistory.get(finalTurnNumber) || [],
                   },
-                  agentContext.turnCount || currentTurn
+                  finalTurnNumber
                 )
                 // Store the response in database to prevent vanishing
                 // TODO: Implement full DB integration similar to MessageWithToolsApi
@@ -4101,6 +4269,18 @@ export async function executeCustomAgent(
     })
   }
 
+  if (config.delegation_agentic) {
+    return runDelegatedAgentWithMessageAgents({
+      agentId: params.agentId,
+      query: combinedQuery,
+      userEmail: params.userEmail,
+      workspaceExternalId: params.workspaceExternalId,
+      maxTokens: params.maxTokens,
+      parentTurn: params.parentTurn,
+      mcpAgents: params.mcpAgents,
+    })
+  }
+
   try {
     const result = await executeAgentForWorkflowWithRag({
       agentId: params.agentId,
@@ -4141,6 +4321,704 @@ export async function executeCustomAgent(
       { err: error },
       "executeCustomAgent encountered an error"
     )
+    return {
+      result: "Agent execution threw an exception",
+      error: getErrorMessage(error),
+      metadata: {
+        agentId: params.agentId,
+        parentTurn: params.parentTurn,
+      },
+    }
+  }
+}
+
+const DELEGATED_RUN_MAX_TURNS = 25
+
+type DelegatedAgentRunParams = {
+  agentId: string
+  query: string
+  userEmail: string
+  workspaceExternalId: string
+  maxTokens?: number
+  parentTurn?: number
+  mcpAgents?: MCPVirtualAgentRuntime[]
+}
+
+async function runDelegatedAgentWithMessageAgents(
+  params: DelegatedAgentRunParams
+): Promise<ToolOutput> {
+  const logger = loggerWithChild({ email: params.userEmail })
+  try {
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      params.workspaceExternalId,
+      params.userEmail
+    )
+    const { user, workspace } = userAndWorkspace
+    const agentRecord = await getAgentByExternalIdWithPermissionCheck(
+      db,
+      params.agentId,
+      workspace.id,
+      user.id
+    )
+
+    if (!agentRecord) {
+      return {
+        result: "Agent execution failed",
+        error: `Access denied: You don't have permission to use agent ${params.agentId}`,
+        metadata: { agentId: params.agentId, parentTurn: params.parentTurn },
+      }
+    }
+
+    const agentPromptForLLM = JSON.stringify(agentRecord)
+    const userCtxString = userContext(userAndWorkspace)
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const attachmentsForContext: Array<{ fileId: string; isImage: boolean }> = []
+
+    let connectorState = createEmptyConnectorState()
+    try {
+      connectorState = await getUserConnectorState(db, params.userEmail)
+    } catch (error) {
+      logger.warn(
+        error,
+        "[DelegatedAgenticRun] Failed to load connector state; assuming no connectors"
+      )
+    }
+
+    const chatExternalId = `delegate-${generateRunId()}`
+    const agentContext = initializeAgentContext(
+      params.userEmail,
+      params.workspaceExternalId,
+      user.id,
+      chatExternalId,
+      params.query,
+      attachmentsForContext,
+      {
+        userContext: userCtxString,
+        agentPrompt: agentPromptForLLM,
+        workspaceNumericId: workspace.id,
+      }
+    )
+    agentContext.delegationEnabled = false
+    agentContext.ambiguityResolved = true
+    agentContext.maxOutputTokens = params.maxTokens
+    agentContext.mcpAgents = params.mcpAgents ?? []
+
+    const allowedAgentApps = deriveAllowedAgentApps(agentPromptForLLM)
+    const baseInternalTools = buildInternalToolAdapters()
+    const internalTools = filterToolsByAvailability(baseInternalTools, {
+      connectorState,
+      allowedAgentApps,
+      email: params.userEmail,
+      agentId: params.agentId,
+    })
+
+    const directMcpToolsMap: FinalToolsList = {}
+    if (params.mcpAgents?.length) {
+      for (const agent of params.mcpAgents) {
+        if (!agent.client || agent.tools.length === 0) continue
+        const connectorKey = String(agent.connectorId || agent.agentId)
+        directMcpToolsMap[connectorKey] = {
+          tools: agent.tools.map((tool) => ({
+            toolName: tool.toolName,
+            toolSchema: tool.toolSchema,
+            description: tool.description,
+          })),
+          client: agent.client,
+        }
+      }
+    }
+    const directMcpTools = buildMCPJAFTools(directMcpToolsMap)
+
+    const allTools: Tool<unknown, AgentRunContext>[] = [
+      ...internalTools,
+      ...directMcpTools,
+    ]
+    agentContext.enabledTools = new Set(
+      allTools.map((tool) => tool.schema.name)
+    )
+
+    const gatheredFragmentsKeys = new Set<string>()
+
+    const instructions = () =>
+      buildAgentInstructions(
+        agentContext,
+        allTools.map((tool) => tool.schema.name),
+        dateForAI,
+        agentPromptForLLM,
+        false
+      )
+
+    const jafAgent: JAFAgent<AgentRunContext, string> = {
+      name: "xyne-delegate",
+      instructions,
+      tools: allTools,
+      modelConfig: { name: defaultBestModel },
+    }
+
+    const modelProvider = makeXyneJAFProvider<AgentRunContext>()
+    const agentRegistry = new Map<string, JAFAgent<AgentRunContext, string>>([
+      [jafAgent.name, jafAgent],
+    ])
+
+    const runId = generateRunId()
+    const traceId = generateTraceId()
+    const message = params.query
+
+    const initialMessages: JAFMessage[] = [
+      {
+        role: "user",
+        content: message,
+      },
+    ]
+
+    const runState: JAFRunState<AgentRunContext> = {
+      runId,
+      traceId,
+      messages: initialMessages,
+      currentAgentName: jafAgent.name,
+      context: agentContext,
+      turnCount: 0,
+    }
+
+    const messagesWithNoErrResponse: Message[] = [
+      {
+        role: ConversationRole.USER,
+        content: [{ text: message }],
+      },
+    ]
+
+    const pendingExpectations: PendingExpectation[] = []
+    const expectationBuffer: PendingExpectation[] = []
+    const expectationHistory = new Map<number, PendingExpectation[]>()
+    const expectedResultsByCallId = new Map<string, ToolExpectation>()
+    const toolCallTurnMap = new Map<string, number>()
+    const syntheticToolCallIds = new WeakMap<ToolCall, string>()
+    let syntheticToolCallSeq = 0
+    const consecutiveToolErrors = new Map<string, number>()
+
+    const recordExpectationsForTurn = (
+      turn: number,
+      expectations: PendingExpectation[]
+    ) => {
+      if (!expectations.length) return
+      const existing = expectationHistory.get(turn) || []
+      existing.push(...expectations)
+      expectationHistory.set(turn, existing)
+    }
+
+    const flushExpectationBufferToTurn = (turn: number) => {
+      if (!expectationBuffer.length) return
+      const buffered = expectationBuffer.splice(0, expectationBuffer.length)
+      recordExpectationsForTurn(turn, buffered)
+    }
+
+    const ensureToolCallId = (
+      toolCall: ToolCall,
+      turn: number,
+      index: number
+    ): string => {
+      if (toolCall.id !== undefined && toolCall.id !== null) {
+        const normalized = String(toolCall.id)
+        syntheticToolCallIds.set(toolCall, normalized)
+        return normalized
+      }
+      const existing = syntheticToolCallIds.get(toolCall)
+      if (existing) return existing
+      const generated = `synthetic-${turn}-${syntheticToolCallSeq++}-${index}`
+      syntheticToolCallIds.set(toolCall, generated)
+      return generated
+    }
+
+    const buildTurnReviewInput = (
+      turn: number
+    ): { reviewInput: AutoReviewInput; fallbackUsed: boolean } => {
+      let toolHistory = agentContext.toolCallHistory.filter(
+        (record) => record.turnNumber === turn
+      )
+      let fallbackUsed = false
+
+      if (
+        toolHistory.length === 0 &&
+        agentContext.toolCallHistory.length > 0
+      ) {
+        fallbackUsed = true
+        toolHistory = [
+          agentContext.toolCallHistory[
+            agentContext.toolCallHistory.length - 1
+          ],
+        ]
+      }
+
+      return {
+        reviewInput: {
+          focus: "turn_end",
+          turnNumber: turn,
+          contextFragments: agentContext.contextFragments,
+          toolCallHistory: toolHistory,
+          plan: agentContext.plan,
+          expectedResults: expectationHistory.get(turn) || [],
+        },
+        fallbackUsed,
+      }
+    }
+
+    const runTurnEndReviewAndCleanup = async (
+      turn: number
+    ): Promise<void> => {
+      Logger.info({
+        turn,
+        expectationHistoryKeys: Array.from(expectationHistory.keys()),
+        expectationsForThisTurn: expectationHistory.get(turn),
+        chatId: agentContext.chat.externalId,
+      }, "[DelegatedAgenticRun][DEBUG] Expectation history state at turn_end")
+
+      try {
+        const { reviewInput, fallbackUsed } = buildTurnReviewInput(turn)
+        if (
+          fallbackUsed &&
+          agentContext.toolCallHistory.length > 0
+        ) {
+          Logger.warn(
+            {
+              turn,
+              fallbackUsed,
+              toolHistoryCount: agentContext.toolCallHistory.length,
+              chatId: agentContext.chat.externalId,
+            },
+            "[DelegatedAgenticRun] No per-turn tool records; defaulting to last tool call."
+          )
+        }
+        await runAndBroadcastReview(reviewInput, turn)
+      } catch (error) {
+        Logger.error({
+          turn,
+          chatId: agentContext.chat.externalId,
+          error: getErrorMessage(error),
+        }, "[DelegatedAgenticRun] Turn-end review failed")
+      } finally {
+        const attachmentState = getAttachmentPhaseMetadata(agentContext)
+        if (attachmentState.initialAttachmentPhase) {
+          agentContext.chat.metadata = {
+            ...agentContext.chat.metadata,
+            initialAttachmentPhase: false,
+          }
+        }
+        pendingExpectations.length = 0
+      }
+    }
+
+    const emitReasoningStep: ReasoningEmitter = async (_payload) => {
+      return
+    }
+
+    const runAndBroadcastReview = async (
+      reviewInput: AutoReviewInput,
+      iteration: number
+    ): Promise<ReviewResult> => {
+      if (
+        (!reviewInput.expectedResults ||
+          reviewInput.expectedResults.length === 0) &&
+        reviewInput.focus !== "run_end"
+      ) {
+        Logger.warn(
+          { turn: iteration, focus: reviewInput.focus },
+          "[DelegatedAgenticRun] No expected results recorded for review input."
+        )
+      }
+      const reviewResult = await performAutomaticReview(
+        reviewInput,
+        agentContext
+      )
+      await handleReviewOutcome(
+        agentContext,
+        reviewResult,
+        iteration,
+        reviewInput.focus,
+        emitReasoningStep
+      )
+      return reviewResult
+    }
+
+    const runCfg: JAFRunConfig<AgentRunContext> = {
+      agentRegistry,
+      modelProvider,
+      maxTurns: Math.min(DELEGATED_RUN_MAX_TURNS, 100),
+      modelOverride: defaultBestModel,
+      onTurnEnd: async ({ turn }) => {
+        await runTurnEndReviewAndCleanup(turn)
+      },
+      onAfterToolExecution: async (
+        toolName: string,
+        result: any,
+        hookContext: any
+      ) => {
+        const callIdRaw = hookContext?.toolCall?.id
+        const normalizedCallId =
+          hookContext?.toolCall
+            ? syntheticToolCallIds.get(hookContext.toolCall) ??
+              (callIdRaw === undefined || callIdRaw === null
+                ? undefined
+                : String(callIdRaw))
+            : undefined
+        let expectationForCall: ToolExpectation | undefined
+        if (
+          normalizedCallId &&
+          expectedResultsByCallId.has(normalizedCallId)
+        ) {
+          expectationForCall = expectedResultsByCallId.get(normalizedCallId)
+          expectedResultsByCallId.delete(normalizedCallId)
+        }
+        const turnForCall = normalizedCallId
+          ? toolCallTurnMap.get(normalizedCallId)
+          : undefined
+        if (normalizedCallId) {
+          toolCallTurnMap.delete(normalizedCallId)
+        }
+        return afterToolExecutionHook(
+          toolName,
+          result,
+          hookContext,
+          message,
+          messagesWithNoErrResponse,
+          gatheredFragmentsKeys,
+          expectationForCall,
+          emitReasoningStep,
+          turnForCall
+        )
+      },
+    }
+
+    const traceEventHandler = async (event: TraceEvent) => {
+      if (event.type !== "before_tool_execution") return undefined
+      return beforeToolExecutionHook(
+        event.data.toolName,
+        event.data.args,
+        agentContext,
+        emitReasoningStep
+      )
+    }
+
+    let answer = ""
+    const streamAnswerText = async (text: string) => {
+      if (!text) return
+      answer += text
+    }
+    agentContext.runtime = {
+      streamAnswerText,
+      emitReasoning: emitReasoningStep,
+    }
+
+    let currentTurn = 0
+    let runCompleted = false
+    let runFailedMessage: string | null = null
+
+    try {
+      for await (const evt of runStream<AgentRunContext, string>(
+        runState,
+        runCfg,
+        traceEventHandler
+      )) {
+        switch (evt.type) {
+          case "turn_start":
+            runState.context.turnCount = evt.data.turn
+            currentTurn = evt.data.turn
+            flushExpectationBufferToTurn(currentTurn)
+            await streamReasoningStep(
+              emitReasoningStep,
+              `Turn ${currentTurn} started`,
+              { iteration: currentTurn }
+            )
+            break
+
+          case "tool_requests":
+            for (const [idx, toolCall] of evt.data.toolCalls.entries()) {
+              const normalizedCallId = ensureToolCallId(
+                toolCall,
+                currentTurn,
+                idx
+              )
+              toolCallTurnMap.set(normalizedCallId, currentTurn)
+              const assignedExpectation = consumePendingExpectation(
+                pendingExpectations,
+                toolCall.name
+              )
+              if (assignedExpectation) {
+                expectedResultsByCallId.set(
+                  normalizedCallId,
+                  assignedExpectation.expectation
+                )
+              }
+              await streamReasoningStep(
+                emitReasoningStep,
+                `Tool selected: ${toolCall.name}`,
+                { toolName: toolCall.name }
+              )
+            }
+            break
+
+          case "tool_call_start":
+            await streamReasoningStep(
+              emitReasoningStep,
+              `Executing ${evt.data.toolName}...`,
+              {
+                toolName: evt.data.toolName,
+                detail: JSON.stringify(evt.data.args ?? {}),
+              }
+            )
+            break
+
+          case "tool_call_end":
+            await streamReasoningStep(
+              emitReasoningStep,
+              `Tool ${evt.data.toolName} completed`,
+              {
+                toolName: evt.data.toolName,
+                status: evt.data.error ? "error" : evt.data.status,
+                detail: evt.data.error
+                  ? `Error: ${evt.data.error}`
+                  : `Result: ${typeof evt.data.result === "string"
+                      ? evt.data.result.slice(0, 800)
+                      : JSON.stringify(evt.data.result).slice(0, 800)}`,
+              }
+            )
+            if (evt.data.error) {
+              const newCount =
+                (consecutiveToolErrors.get(evt.data.toolName) ?? 0) + 1
+              consecutiveToolErrors.set(evt.data.toolName, newCount)
+              if (newCount >= 2) {
+                const recentHistory = agentContext.toolCallHistory
+                  .filter((record) => record.toolName === evt.data.toolName)
+                  .slice(-newCount)
+                if (recentHistory.length > 0) {
+                  await runAndBroadcastReview(
+                    {
+                      focus: "tool_error",
+                      turnNumber: currentTurn,
+                      contextFragments: agentContext.contextFragments,
+                      toolCallHistory: recentHistory,
+                      plan: agentContext.plan,
+                      expectedResults:
+                        expectationHistory.get(currentTurn) || [],
+                    },
+                    currentTurn
+                  )
+                }
+              }
+            } else {
+              consecutiveToolErrors.delete(evt.data.toolName)
+            }
+            break
+
+          case "turn_end":
+            await streamReasoningStep(
+              emitReasoningStep,
+              "Turn complete. Reviewing progress and results...",
+              { iteration: evt.data.turn }
+            )
+
+            const currentTurnToolHistory =
+              agentContext.toolCallHistory.filter(
+                (record) => record.turnNumber === evt.data.turn
+              )
+
+            if (currentTurnToolHistory.length > 0) {
+              await streamReasoningStep(
+                emitReasoningStep,
+                buildTurnToolReasoningSummary(
+                  evt.data.turn,
+                  currentTurnToolHistory
+                ),
+                { iteration: evt.data.turn }
+              )
+            } else {
+              await streamReasoningStep(
+                emitReasoningStep,
+                `No tools were executed in turn ${evt.data.turn}.`,
+                { iteration: evt.data.turn }
+              )
+            }
+
+            break
+
+          case "assistant_message":
+            const content = getTextContent(evt.data.message.content) || ""
+            if (content) {
+              const extractedExpectations = extractExpectedResults(content)
+              if (extractedExpectations.length > 0) {
+                await streamReasoningStep(
+                  emitReasoningStep,
+                  "Setting expectations for tool calls...",
+                  { iteration: currentTurn }
+                )
+                for (const expectation of extractedExpectations) {
+                  await streamReasoningStep(
+                    emitReasoningStep,
+                    `Expectation for '${expectation.toolName}': ${expectation.expectation.goal}`,
+                    { toolName: expectation.toolName }
+                  )
+                }
+                pendingExpectations.push(...extractedExpectations)
+                if (currentTurn > 0) {
+                  recordExpectationsForTurn(
+                    currentTurn,
+                    extractedExpectations
+                  )
+                } else {
+                  expectationBuffer.push(...extractedExpectations)
+                }
+              }
+            }
+
+            const hasToolCalls =
+              Array.isArray(evt.data.message?.tool_calls) &&
+              (evt.data.message.tool_calls?.length ?? 0) > 0
+
+            if (hasToolCalls) {
+              await streamReasoningStep(
+                emitReasoningStep,
+                content || "Model planned tool usage."
+              )
+              break
+            }
+
+            if (agentContext.finalSynthesis.suppressAssistantStreaming) {
+              if (content?.trim()) {
+                agentContext.finalSynthesis.ackReceived = true
+                await streamReasoningStep(
+                  emitReasoningStep,
+                  "Final synthesis acknowledged. Closing out the run."
+                )
+              }
+              break
+            }
+
+            if (content) {
+              await agentContext.runtime?.streamAnswerText?.(content)
+            }
+            break
+
+          case "final_output":
+            const output = evt.data.output
+            if (
+              !agentContext.finalSynthesis.suppressAssistantStreaming &&
+              typeof output === "string" &&
+              output.length > 0
+            ) {
+              const remaining = output.slice(answer.length)
+              if (remaining) {
+                await agentContext.runtime?.streamAnswerText?.(remaining)
+              }
+            }
+            break
+
+          case "run_end":
+            const outcome = evt.data.outcome
+            if (outcome?.status === "completed") {
+              const finalTurnNumber = ensureTurnNumber(
+                agentContext.turnCount ?? currentTurn
+              )
+              await runAndBroadcastReview(
+                {
+                  focus: "run_end",
+                  turnNumber: finalTurnNumber,
+                  contextFragments: agentContext.contextFragments,
+                  toolCallHistory: agentContext.toolCallHistory,
+                  plan: agentContext.plan,
+                  expectedResults:
+                    expectationHistory.get(finalTurnNumber) || [],
+                },
+                finalTurnNumber
+              )
+              runCompleted = true
+              break
+            }
+            if (outcome?.status === "error") {
+              const err = outcome.error
+              runFailedMessage =
+                err?._tag === "MaxTurnsExceeded"
+                  ? `Max turns exceeded: ${err.turns}`
+                  : "Execution error"
+              break
+            }
+            break
+        }
+
+        if (runCompleted || runFailedMessage) {
+          break
+        }
+      }
+    } catch (error) {
+      logger.error(error, "[DelegatedAgenticRun] Stream processing failed")
+      return {
+        result: "Agent execution failed",
+        error: getErrorMessage(error),
+        metadata: { agentId: params.agentId, parentTurn: params.parentTurn },
+      }
+    }
+
+    if (runFailedMessage) {
+      return {
+        result: "Agent execution failed",
+        error: runFailedMessage,
+        metadata: { agentId: params.agentId, parentTurn: params.parentTurn },
+      }
+    }
+
+    if (!runCompleted) {
+      return {
+        result: "Agent execution did not complete",
+        error: "RUN_INCOMPLETE",
+        metadata: { agentId: params.agentId, parentTurn: params.parentTurn },
+      }
+    }
+
+    const citations: Citation[] = []
+    const imageCitations: ImageCitation[] = []
+    const yieldedCitations = new Set<number>()
+    const yieldedImageCitations = new Map<number, Set<number>>()
+
+    const answerForCitations =
+      answer.trim().length > 0
+        ? answer
+        : agentContext.finalSynthesis.streamedText || ""
+
+    if (answerForCitations) {
+      for await (const event of checkAndYieldCitationsForAgent(
+        answerForCitations,
+        yieldedCitations,
+        agentContext.contextFragments,
+        yieldedImageCitations,
+        params.userEmail
+      )) {
+        if (event.citation) {
+          citations.push(event.citation.item)
+        }
+        if (event.imageCitation) {
+          imageCitations.push(event.imageCitation)
+        }
+      }
+    }
+
+    const finalAnswer =
+      answerForCitations || "Agent did not return any text."
+
+    return {
+      result: finalAnswer,
+      contexts: agentContext.contextFragments,
+      metadata: {
+        agentId: params.agentId,
+        citations,
+        imageCitations,
+        cost: agentContext.totalCost,
+        tokensUsed:
+          agentContext.tokenUsage.input + agentContext.tokenUsage.output,
+        parentTurn: params.parentTurn,
+      },
+    }
+  } catch (error) {
+    logger.error(error, "[DelegatedAgenticRun] Failed to execute agent")
     return {
       result: "Agent execution threw an exception",
       error: getErrorMessage(error),

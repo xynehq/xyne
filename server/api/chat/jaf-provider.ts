@@ -8,6 +8,8 @@ import type {
 } from "@xynehq/jaf"
 import { getTextContent } from "@xynehq/jaf"
 import { Models } from "@/ai/types"
+import { getLogger, getLoggerWithChild } from "@/logger"
+import { Subsystem } from "@/types"
 import type {
   JSONSchema7,
   JSONValue,
@@ -42,6 +44,12 @@ const MIME_TYPE_MAP: Record<string, string> = {
   ".webp": "image/webp",
 }
 
+const Logger = getLogger(Subsystem.Chat)
+const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+const MIN_TURN_NUMBER = 1
+const normalizeTurnNumber = (turn?: number | null): number =>
+  typeof turn === "number" && turn >= MIN_TURN_NUMBER ? turn : MIN_TURN_NUMBER
+
 export type MakeXyneJAFProviderOptions = {
   baseURL?: string
   apiKey?: string
@@ -52,6 +60,9 @@ type ImageAwareContext = {
   imageMetadata?: Map<string, AgentImageMetadata>
   turnCount?: number
   user?: { email?: string }
+  review?: {
+    pendingReview?: Promise<void>
+  }
 }
 
 type ImagePromptPart = {
@@ -88,7 +99,7 @@ const selectImagesForCall = (context: ImageAwareContext): string[] => {
     return []
   }
 
-  const currentTurn = context.turnCount ?? 0
+  const currentTurn = normalizeTurnNumber(context.turnCount)
   const attachments: string[] = []
   const recentImages: string[] = []
   const skipped: Array<{ name: string; age: number; reason: string }> = []
@@ -257,12 +268,28 @@ export const makeXyneJAFProvider = <Ctx>(
       const actualModelId = modelConfig?.actualName ?? model
       const languageModel = provider.languageModel(actualModelId)
 
+      const imageAwareContext = state.context as ImageAwareContext
+      const pendingReview = imageAwareContext?.review?.pendingReview
+      if (pendingReview) {
+        try {
+          await pendingReview
+        } catch (error) {
+          Logger.warn(
+            {
+              email: imageAwareContext?.user?.email,
+              turn: normalizeTurnNumber(imageAwareContext?.turnCount),
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "[JAF Provider] Pending review promise rejected; continuing LLM call"
+          )
+        }
+      }
+
       const prompt = buildPromptFromMessages(
         state.messages,
         agent.instructions(state),
       )
 
-      const imageAwareContext = state.context as ImageAwareContext
       // console.info('[IMAGE addition][JAF Provider] getCompletion called with context:', {
       //   hasContext: !!state.context,
       //   hasImageFileNames: !!(state.context as any)?.imageFileNames,
@@ -291,7 +318,7 @@ export const makeXyneJAFProvider = <Ctx>(
               )
             }
             // console.info('[IMAGE addition][JAF Provider] Attached images to prompt:', {
-            //   turn: imageAwareContext.turnCount ?? 0,
+            //   turn: imageAwareContext.turnCount ?? MIN_TURN_NUMBER,
             //   messageIndex: lastUserIndex,
             //   imagesAttached: imageParts.length,
             //   contentPartsBefore: contentBefore,
@@ -335,6 +362,30 @@ export const makeXyneJAFProvider = <Ctx>(
           schema: zodSchemaToJsonSchema(agent.outputCodec) as JSONSchema7,
         }
       }
+
+      // Log the complete prompt and call options being sent to the LLM
+      const userEmail = imageAwareContext?.user?.email || 'unknown'
+      const turnNumber = normalizeTurnNumber(imageAwareContext?.turnCount)
+      
+      Logger.info({
+        email: userEmail,
+        turn: turnNumber,
+        model: actualModelId,
+        agentName: agent.name,
+        messagesCount: callOptions.prompt.length,
+        toolsCount: tools.length,
+        maxOutputTokens: callOptions.maxOutputTokens,
+        temperature: callOptions.temperature,
+        hasResponseFormat: !!callOptions.responseFormat,
+        toolChoice: callOptions.toolChoice,
+      }, "[JAF Provider] LLM call parameters")
+
+      Logger.info({
+        email: userEmail,
+        turn: turnNumber,
+        model: actualModelId,
+        prompt: callOptions.prompt,
+      }, "[JAF Provider] FULL PROMPT/MESSAGES ARRAY SENT TO LLM")
 
       const result = await languageModel.doGenerate(callOptions)
 

@@ -2,8 +2,6 @@ export type AgentPromptSections = {
   toolCoordination: string
   publicAgentDiscipline: string
   agentQueryCrafting: string
-  responseTone: string
-  toolHighlighting: string
   generalExecution: string
   chainOfThought: string
 }
@@ -32,18 +30,6 @@ export const agentPromptSections: AgentPromptSections = {
 - Record every rewritten query in the reasoning log so reviewers can trace why that agent was triggered.
 - Example: "runPublicAgent(agentId: \"sales-notes\", query: \"Detail Delta Airlines Q3 forecast confidence after verifying Delta == DAL GTM account\")."
 `.trim(),
-  responseTone: `
-### Response Tone
-- Answer with confident, declarative sentences; lead with the conclusion, then cite evidence.
-- Highlight key deliverables using **bold** labels or short lists; keep wording razor-concise.
-- Ask one targeted follow-up question only when the user information gap blocks progress.
-`.trim(),
-  toolHighlighting: `
-### Tool Spotlighting
-- Reference critical tool outputs explicitly, e.g., "**Slack Search:** Ops escalated the RCA at 09:42 [2]."
-- Mention why each highlighted tool mattered so future reviewers see coverage breadth.
-- When multiple tools contribute, keep the sequence clear: "**Vespa Search:** context -> **Sheet Lookup:** metrics."
-`.trim(),
   generalExecution: `
 ### Execution Discipline
 - Show proactive drive: after each subtask plan, immediately schedule and run the necessary tools.
@@ -66,8 +52,6 @@ export function buildAgentPromptAddendum(): string {
     agentPromptSections.toolCoordination,
     agentPromptSections.publicAgentDiscipline,
     agentPromptSections.agentQueryCrafting,
-    agentPromptSections.responseTone,
-    agentPromptSections.toolHighlighting,
     agentPromptSections.generalExecution,
     agentPromptSections.chainOfThought,
   ].join("\n\n")

@@ -74,6 +74,7 @@ export interface ReviewState {
   outstandingAnomalies: string[]
   clarificationQuestions: string[]
   lastReviewResult: ReviewResult | null
+  pendingReview?: Promise<void>
   cachedPlanSummary?: {
     hash: string
     summary: string
@@ -193,6 +194,7 @@ export interface AgentRunContext {
   // Final synthesis tracking
   finalSynthesis: FinalSynthesisState
   runtime?: AgentRuntimeCallbacks
+  maxOutputTokens?: number
 }
 
 // ============================================================================

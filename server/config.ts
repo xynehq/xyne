@@ -82,6 +82,7 @@ let ragOffFeature = true
 let useLegacyServiceAccountSync =
   process.env.USE_LEGACY_SERVICE_ACCOUNT_SYNC === "true"
 let useLegacySlackSync = process.env.USE_LEGACY_SLACK_SYNC === "true"
+let delegationAgentic = "true"
 let CurrentAuthType: AuthType =
   (process.env.AUTH_TYPE as AuthType) || AuthType.OAuth
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
@@ -282,4 +283,5 @@ export default {
   langfuseBaseUrl,
   langfuseEnabled,
   IMAGE_CONTEXT_CONFIG,
+  delegation_agentic: delegationAgentic,
 }
