@@ -21,13 +21,13 @@ import type {
   ToolFailureInfo,
   ToolExpectation,
   ToolExpectationAssignment,
-  AgentImageMetadata,
   FinalSynthesisState,
   AgentRuntimeCallbacks,
   SubTask,
   MCPVirtualAgentRuntime,
   MCPToolDefinition,
   ReviewState,
+  ToolReviewFinding,
 } from "./agent-schemas"
 import { ToolExpectationSchema, ReviewResultSchema } from "./agent-schemas"
 import { getTracer } from "@/tracer"
@@ -41,6 +41,7 @@ import {
   generateTraceId,
   getTextContent,
   ToolResponse,
+  ToolErrorCodes,
   type Agent as JAFAgent,
   type Message as JAFMessage,
   type RunConfig as JAFRunConfig,
@@ -54,7 +55,12 @@ import { makeXyneJAFProvider } from "./jaf-provider"
 import { buildContextSection } from "./jaf-adapter"
 import { getErrorMessage } from "@/utils"
 import { ChatSSEvents, AgentReasoningStepType } from "@/shared/types"
-import type { MinimalAgentFragment, Citation, ImageCitation } from "./types"
+import type {
+  MinimalAgentFragment,
+  Citation,
+  ImageCitation,
+  FragmentImageReference,
+} from "./types"
 import {
   extractBestDocumentIndexes,
   getProviderByModel,
@@ -73,6 +79,11 @@ import {
   type ResourceAccessSummary,
 } from "./tool-schemas"
 import { searchToCitation, extractImageFileNames } from "./utils"
+import {
+  collectFragmentsFromMessages,
+  collectImagesFromFragments,
+  convertTranscriptToBedrockMessages,
+} from "./transcript-utils"
 import { GetDocumentsByDocIds } from "@/search/vespa"
 import {
   Apps,
@@ -81,12 +92,20 @@ import {
   type VespaSearchResults,
 } from "@xyne/vespa-ts/types"
 import { expandSheetIds } from "@/search/utils"
+import type { ZodTypeAny } from "zod"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { db } from "@/db/client"
 import { insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
 import { insertMessage } from "@/db/message"
 import { storeAttachmentMetadata } from "@/db/attachment"
-import { ChatType, type SelectChat, type SelectMessage } from "@/db/schema"
+import {
+  ChatType,
+  type InsertChat,
+  type InsertMessage,
+  type InternalUserWorkspace,
+  type SelectChat,
+  type SelectMessage,
+} from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getUserAccessibleAgents } from "@/db/userAgentPermission"
 import { executeAgentForWorkflowWithRag } from "@/api/agent/workflowAgentUtils"
@@ -140,6 +159,42 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 const MIN_TURN_NUMBER = 1
 const ensureTurnNumber = (value?: number | null): number =>
   typeof value === "number" && value >= MIN_TURN_NUMBER ? value : MIN_TURN_NUMBER
+
+const mutableAgentContext = (
+  context: Readonly<AgentRunContext>
+): AgentRunContext => context as AgentRunContext
+
+const toToolParameters = (
+  schema: ZodTypeAny
+): Tool<unknown, AgentRunContext>["schema"]["parameters"] =>
+  schema as unknown as Tool<unknown, AgentRunContext>["schema"]["parameters"]
+
+function fragmentsToToolContexts(
+  fragments: MinimalAgentFragment[] | undefined
+): ToolOutput["contexts"] {
+  if (!fragments?.length) {
+    return undefined
+  }
+  return fragments.map((fragment) => ({
+    id: fragment.id,
+    content: fragment.content,
+    source: {
+      docId: fragment.source.docId,
+      title: fragment.source.title ?? "Untitled",
+      url: fragment.source.url ?? "",
+      app: fragment.source.app,
+      entity:
+        typeof fragment.source.entity === "string"
+          ? fragment.source.entity
+          : fragment.source.entity
+            ? JSON.stringify(fragment.source.entity)
+            : undefined,
+    },
+    confidence: fragment.confidence,
+  }))
+}
+
+type ToolCallReference = ToolCall | { id?: string | number | null }
 
 type ReasoningPayload = {
   text: string
@@ -258,54 +313,91 @@ function buildTurnToolReasoningSummary(
   return `Tools executed in turn ${turnNumber}:\n${lines.join("\n")}`
 }
 
-function registerImageReferences(
-  context: AgentRunContext,
-  imageNames: string[],
-  metadata: {
-    turnNumber: number
-    sourceFragmentId?: string | ((imageName: string) => string)
-    sourceToolName: string
-    isUserAttachment: boolean
+function getTranscriptMessages(context: AgentRunContext): readonly JAFMessage[] {
+  try {
+    return context.transcript?.getMessages?.() ?? []
+  } catch {
+    return []
   }
-): number {
+}
+
+function getTranscriptFragments(context: AgentRunContext): MinimalAgentFragment[] {
+  const messages = getTranscriptMessages(context)
+  return collectFragmentsFromMessages(messages)
+}
+
+function getTranscriptImages(context: AgentRunContext): FragmentImageReference[] {
+  const fragments = getTranscriptFragments(context)
+  return collectImagesFromFragments(fragments)
+}
+
+type FragmentImageOptions = {
+  turnNumber: number
+  sourceToolName: string
+  isUserAttachment: boolean
+}
+
+function attachImagesToFragments(
+  fragments: MinimalAgentFragment[],
+  imageNames: string[],
+  options: FragmentImageOptions
+): MinimalAgentFragment[] {
   if (!Array.isArray(imageNames) || imageNames.length === 0) {
-    return 0
+    return fragments
   }
 
-  let added = 0
-  const skipped: string[] = []
-  
+  const fragmentIndexMap = new Map<number, string>()
+  fragments.forEach((fragment, idx) => fragmentIndexMap.set(idx, fragment.id))
+
+  const referencesByFragment = new Map<string, FragmentImageReference[]>()
   for (const imageName of imageNames) {
-    if (!imageName || context.imageMetadata.has(imageName)) {
-      skipped.push(imageName || 'empty')
-      continue
-    }
-    const fragmentId =
-      typeof metadata.sourceFragmentId === "function"
-        ? metadata.sourceFragmentId(imageName)
-        : metadata.sourceFragmentId ?? ""
-    context.imageFileNames.push(imageName)
-    context.imageMetadata.set(imageName, {
-      addedAtTurn: metadata.turnNumber,
+    if (!imageName) continue
+    const fragmentId = getFragmentIdFromImageName(
+      imageName,
+      fragmentIndexMap,
+      fragments[0]?.id || ""
+    )
+    if (!fragmentId) continue
+    const ref: FragmentImageReference = {
+      fileName: imageName,
+      addedAtTurn: options.turnNumber,
       sourceFragmentId: fragmentId,
-      sourceToolName: metadata.sourceToolName,
-      isUserAttachment: metadata.isUserAttachment,
-    })
-    added++
+      sourceToolName: options.sourceToolName,
+      isUserAttachment: options.isUserAttachment,
+    }
+    const existing = referencesByFragment.get(fragmentId)
+    if (existing) {
+      existing.push(ref)
+    } else {
+      referencesByFragment.set(fragmentId, [ref])
+    }
   }
-  
-  if (added > 0) {
-    // console.info('[IMAGE addition][Image Registry] Registered images:', {
-    //   added,
-    //   skipped: skipped.length,
-    //   totalNow: context.imageFileNames.length,
-    //   turn: metadata.turnNumber,
-    //   source: metadata.sourceToolName,
-    //   isAttachment: metadata.isUserAttachment,
-    // })
+
+  if (referencesByFragment.size === 0) {
+    return fragments
   }
-  
-  return added
+
+  return fragments.map((fragment) => {
+    const refs = referencesByFragment.get(fragment.id)
+    if (!refs || refs.length === 0) {
+      return fragment
+    }
+
+    const existing = fragment.images ?? []
+    const seen = new Set(existing.map((img) => img.fileName))
+    const merged = [...existing]
+    for (const ref of refs) {
+      if (!seen.has(ref.fileName)) {
+        merged.push(ref)
+        seen.add(ref.fileName)
+      }
+    }
+
+    return {
+      ...fragment,
+      images: merged,
+    }
+  })
 }
 
 function getFragmentIdFromImageName(
@@ -455,23 +547,22 @@ function advancePlanAfterTool(
   )
   if (!task) return
   normalizeSubTask(task)
+  const completedTools = (task.completedTools ??= [])
+  const requiredTools = (task.toolsRequired ??= [])
 
   if (wasSuccessful) {
     if (task.status === "pending" || task.status === "blocked") {
       task.status = "in_progress"
       task.error = undefined
     }
-    if (
-      task.toolsRequired.length === 0 ||
-      task.toolsRequired.includes(toolName)
-    ) {
-      if (!task.completedTools.includes(toolName)) {
-        task.completedTools.push(toolName)
+    if (requiredTools.length === 0 || requiredTools.includes(toolName)) {
+      if (!completedTools.includes(toolName)) {
+        completedTools.push(toolName)
       }
-      const uniqueRequired = new Set(task.toolsRequired)
-      const uniqueCompleted = new Set(task.completedTools)
+      const uniqueRequired = new Set(requiredTools)
+      const uniqueCompleted = new Set(completedTools)
       const shouldComplete =
-        task.toolsRequired.length === 0 ||
+        requiredTools.length === 0 ||
         uniqueCompleted.size >= uniqueRequired.size
       if (shouldComplete) {
         task.status = "completed"
@@ -517,9 +608,10 @@ function formatClarificationsForPrompt(
 
 function buildFinalSynthesisPayload(
   context: AgentRunContext,
-  fragmentsLimit = Math.max(12, context.contextFragments.length || 1)
+  fragmentsLimit = Math.max(12, getTranscriptFragments(context).length || 1)
 ): { systemPrompt: string; userMessage: string } {
-  const fragmentsSection = buildContextSection(context.contextFragments, fragmentsLimit)
+  const fragments = getTranscriptFragments(context)
+  const fragmentsSection = buildContextSection(fragments, fragmentsLimit)
   const planSection = formatPlanForPrompt(context.plan)
   const clarificationSection = formatClarificationsForPrompt(context.clarifications)
   const workspaceSection = context.userContext?.trim()
@@ -585,40 +677,106 @@ function selectImagesForFinalSynthesis(
   dropped: string[]
   userAttachmentCount: number
 } {
-  const total = context.imageFileNames.length
+  const images = getTranscriptImages(context)
+  const total = images.length
   if (!IMAGE_CONTEXT_CONFIG.enabled || total === 0) {
     return { selected: [], total, dropped: [], userAttachmentCount: 0 }
   }
 
-  const attachmentNames: string[] = []
-  const otherNames: string[] = []
+  const attachments = images.filter((img) => img.isUserAttachment)
+  const nonAttachments = images
+    .filter((img) => !img.isUserAttachment)
+    .sort((a, b) => {
+      const ageA = context.turnCount - a.addedAtTurn
+      const ageB = context.turnCount - b.addedAtTurn
+      return ageA - ageB
+    })
 
-  for (const imageName of context.imageFileNames) {
-    const metadata = context.imageMetadata.get(imageName)
-    if (metadata?.isUserAttachment) {
-      attachmentNames.push(imageName)
-    } else {
-      otherNames.push(imageName)
-    }
+  const prioritized = [...attachments, ...nonAttachments]
+  const uniqueNames: string[] = []
+  const seen = new Set<string>()
+  for (const image of prioritized) {
+    if (seen.has(image.fileName)) continue
+    seen.add(image.fileName)
+    uniqueNames.push(image.fileName)
   }
 
-  const prioritized = [...attachmentNames, ...otherNames]
-  let selected = prioritized
+  let selected = uniqueNames
   let dropped: string[] = []
 
   if (
     IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0 &&
-    prioritized.length > IMAGE_CONTEXT_CONFIG.maxImagesPerCall
+    uniqueNames.length > IMAGE_CONTEXT_CONFIG.maxImagesPerCall
   ) {
-    selected = prioritized.slice(0, IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
-    dropped = prioritized.slice(IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
+    selected = uniqueNames.slice(0, IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
+    dropped = uniqueNames.slice(IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
   }
 
   return {
     selected,
     total,
     dropped,
-    userAttachmentCount: attachmentNames.length,
+    userAttachmentCount: attachments.length,
+  }
+}
+
+function buildFragmentResultSummary(
+  fragments: MinimalAgentFragment[]
+): string {
+  if (fragments.length === 0) {
+    return "Retrieved 0 fragments."
+  }
+  const preview = fragments
+    .map((fragment) =>
+      fragment.content
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120)
+    )
+    .filter((text) => text.length > 0)
+    .slice(0, 2)
+
+  const recap = preview.length ? ` "${preview.join(" … ")}"` : ""
+  return `Retrieved ${fragments.length} fragment${
+    fragments.length === 1 ? "" : "s"
+  }:${recap}`
+}
+
+function buildStructuredToolResult(
+  baseResult: any,
+  fragments: MinimalAgentFragment[],
+  summary: string
+): ToolResult {
+  const metadata =
+    typeof baseResult === "object" && baseResult?.metadata
+      ? { ...baseResult.metadata }
+      : undefined
+
+  const enrichedMetadata = {
+    ...(metadata || {}),
+    fragmentsCount: fragments.length,
+  }
+
+  return ToolResponse.success(
+    { summary, fragments },
+    enrichedMetadata
+  )
+}
+
+function buildAttachmentToolMessage(
+  fragments: MinimalAgentFragment[],
+  summary: string
+): JAFMessage {
+  const resultPayload = ToolResponse.success({ summary, fragments })
+  const envelope = {
+    status: "executed",
+    result: JSON.stringify(resultPayload),
+    tool_name: "user_attachment_context",
+    message: "Attachment context prepared.",
+  }
+  return {
+    role: "tool",
+    content: JSON.stringify(envelope),
   }
 }
 
@@ -670,10 +828,7 @@ function initializeAgentContext(
     clarifications: [],
     ambiguityResolved: false,
     toolCallHistory: [],
-    contextFragments: [],
     seenDocuments: new Set<string>(),
-    imageFileNames: [],
-    imageMetadata: new Map<string, AgentImageMetadata>(),
     turnCount: MIN_TURN_NUMBER,
     totalLatency: 0,
     totalCost: 0,
@@ -718,7 +873,6 @@ async function performAutomaticReview(
     const reviewContext: AgentRunContext = {
       ...fullContext,
       toolCallHistory: input.toolCallHistory,
-      contextFragments: input.contextFragments,
       plan: input.plan,
     }
     const review = await runReviewLLM(reviewContext, {
@@ -839,34 +993,41 @@ type ChatBootstrapResult = {
 async function ensureChatAndPersistUserMessage(
   params: ChatBootstrapParams
 ): Promise<ChatBootstrapResult> {
+  const workspaceId = Number(params.workspace.id)
+  const workspaceExternalId = String(params.workspace.externalId)
+  const userId = Number(params.user.id)
+  const userEmail = String(params.user.email)
+  const incomingChatId = params.chatId ? String(params.chatId) : undefined
   return await db.transaction(async (tx) => {
-    if (!params.chatId) {
-      const chat = await insertChat(tx, {
-        workspaceId: params.workspace.id,
-        workspaceExternalId: params.workspace.externalId,
-        userId: params.user.id,
-        email: params.user.email,
+    if (!incomingChatId) {
+      const chatInsert = {
+        workspaceId,
+        workspaceExternalId,
+        userId,
+        email: userEmail,
         title: "Untitled",
         attachments: [],
         agentId: params.agentId ?? undefined,
         chatType: ChatType.Default,
-      })
+      } as unknown as Omit<InsertChat, "externalId">
+      const chat = await insertChat(tx, chatInsert)
 
-      const userMessage = await insertMessage(tx, {
+      const messageInsert = {
         chatId: chat.id,
-        userId: params.user.id,
-        workspaceExternalId: params.workspace.externalId,
+        userId,
+        workspaceExternalId,
         chatExternalId: chat.externalId,
         messageRole: MessageRole.User,
-        email: params.user.email,
+        email: userEmail,
         sources: [],
         message: params.message,
         modelId: (params.modelId as Models) || defaultBestModel,
         fileIds: params.fileIds,
-      })
+      } as unknown as Omit<InsertMessage, "externalId">
+      const userMessage = await insertMessage(tx, messageInsert)
 
       if (params.attachmentMetadata.length > 0) {
-        await storeAttachmentSafely(tx, params.email, userMessage.externalId, params.attachmentMetadata)
+        await storeAttachmentSafely(tx, userEmail, String(userMessage.externalId), params.attachmentMetadata)
       }
 
       return { chat, userMessage }
@@ -874,26 +1035,27 @@ async function ensureChatAndPersistUserMessage(
 
     const chat = await updateChatByExternalIdWithAuth(
       tx,
-      params.chatId,
-      params.email,
+      String(incomingChatId),
+      String(params.email),
       {}
     )
 
-    const userMessage = await insertMessage(tx, {
+    const messageInsert = {
       chatId: chat.id,
-      userId: params.user.id,
-      workspaceExternalId: params.workspace.externalId,
+      userId,
+      workspaceExternalId,
       chatExternalId: chat.externalId,
       messageRole: MessageRole.User,
-      email: params.user.email,
+      email: userEmail,
       sources: [],
       message: params.message,
       modelId: (params.modelId as Models) || defaultBestModel,
       fileIds: params.fileIds,
-    })
+    } as unknown as Omit<InsertMessage, "externalId">
+    const userMessage = await insertMessage(tx, messageInsert)
 
     if (params.attachmentMetadata.length > 0) {
-      await storeAttachmentSafely(tx, params.email, userMessage.externalId, params.attachmentMetadata)
+      await storeAttachmentSafely(tx, userEmail, String(userMessage.externalId), params.attachmentMetadata)
     }
 
     return { chat, userMessage }
@@ -1077,11 +1239,11 @@ export async function afterToolExecutionHook(
   },
   userMessage: string,
   messagesWithNoErrResponse: Message[],
-  gatheredFragmentskeys: Set<string>,
+  gatheredFragmentsKeys: Set<string>,
   expectedResult: ToolExpectation | undefined,
   reasoningEmitter?: ReasoningEmitter,
   turnNumber?: number
-): Promise<string | null> {
+): Promise<string | ToolResult | null> {
   const { state, executionTime, status, args } = hookContext
   const context = state.context as AgentRunContext
 
@@ -1114,7 +1276,6 @@ export async function afterToolExecutionHook(
     durationMs: executionTime,
     estimatedCostUsd: result?.metadata?.estimatedCostUsd || 0,
     resultSummary: JSON.stringify(result?.data || {}).slice(0, 200),
-    fragmentsAdded: result?.metadata?.fragmentsAdded || [],
     status: status === "success" ? "success" : "error",
     error:
       status !== "success"
@@ -1127,6 +1288,25 @@ export async function afterToolExecutionHook(
 
   // 2. Add to history
   context.toolCallHistory.push(record)
+
+  const aggregatedFragments: MinimalAgentFragment[] = []
+  const aggregatedFragmentIds = new Set<string>()
+  const addFragments = (fragments: MinimalAgentFragment[]) => {
+    for (const fragment of fragments) {
+      if (aggregatedFragmentIds.has(fragment.id)) continue
+      aggregatedFragments.push(fragment)
+      aggregatedFragmentIds.add(fragment.id)
+      gatheredFragmentsKeys.add(fragment.id)
+    }
+  }
+  const toolFragments: MinimalAgentFragment[] = []
+  const addToolFragments = (fragments: MinimalAgentFragment[]) => {
+    const deduped = fragments.filter(
+      (fragment) => !toolFragments.some((existing) => existing.id === fragment.id)
+    )
+    addFragments(deduped)
+    toolFragments.push(...deduped)
+  }
 
   // 3. Update metrics
   context.totalLatency += executionTime
@@ -1157,7 +1337,7 @@ export async function afterToolExecutionHook(
   const contexts = getMetadataValue<MinimalAgentFragment[]>(result, "contexts")
   if (Array.isArray(contexts) && contexts.length > 0) {
     const filteredContexts = contexts.filter(
-      (c: MinimalAgentFragment) => !gatheredFragmentskeys.has(c.id)
+      (c: MinimalAgentFragment) => !gatheredFragmentsKeys.has(c.id)
     )
 
     if (filteredContexts.length > 0) {
@@ -1199,16 +1379,12 @@ export async function afterToolExecutionHook(
             if (idx >= 1 && idx <= filteredContexts.length) {
               const doc: MinimalAgentFragment = filteredContexts[idx - 1]
               const key = doc.id
-              if (!gatheredFragmentskeys.has(key)) {
-                context.contextFragments.push(doc)
-                gatheredFragmentskeys.add(key)
+              if (!gatheredFragmentsKeys.has(key)) {
+                gatheredFragmentsKeys.add(key)
               }
               selectedDocs.push(doc)
             }
           })
-
-          // Update record with actual fragments added
-          record.fragmentsAdded = selectedDocs.map((d) => d.id)
 
           await streamReasoningStep(
             reasoningEmitter,
@@ -1217,6 +1393,8 @@ export async function afterToolExecutionHook(
             } for analysis.`,
             { toolName, detail: selectedDocs.map((doc) => doc.source.title || doc.id).join(", ") }
           )
+
+          let fragmentsForResult = selectedDocs
 
           if (IMAGE_CONTEXT_CONFIG.enabled && selectedDocs.length > 0) {
             const vespaLikeResults = selectedDocs.map((doc, idx) => ({
@@ -1228,80 +1406,28 @@ export async function afterToolExecutionHook(
             const combinedContext = selectedDocs
               .map((doc) => doc.content)
               .join("\n")
-            
-            // console.info('[IMAGE addition][Image Extraction] Processing tool result:', {
-            //   toolName,
-            //   turn: context.turnCount,
-            //   documentCount: selectedDocs.length,
-            //   contextLength: combinedContext.length,
-            //   currentImageCount: context.imageFileNames.length,
-            // })
-            
+
             const { imageFileNames: extractedImages } = extractImageFileNames(
               combinedContext,
               vespaLikeResults
             )
 
-            // console.info('[IMAGE addition][Image Extraction] Extracted image references:', {
-            //   toolName,
-            //   turn: context.turnCount,
-            //   extractedCount: extractedImages.length,
-            //   extractedImages: extractedImages.slice(0, 5),
-            //   currentContextImages: context.imageFileNames.length,
-            // })
-
             if (extractedImages.length > 0) {
-              const fragmentIndexMap = new Map<number, string>()
-              selectedDocs.forEach((doc, idx) => {
-                fragmentIndexMap.set(idx, doc.id)
+              const turnForImages = ensureTurnNumber(context.turnCount)
+              fragmentsForResult = attachImagesToFragments(selectedDocs, extractedImages, {
+                turnNumber: turnForImages,
+                sourceToolName: toolName,
+                isUserAttachment: false,
               })
-              const turnNumber = ensureTurnNumber(context.turnCount)
-              const addedImages = registerImageReferences(
-                context,
-                extractedImages,
-                {
-                  turnNumber,
-                  sourceFragmentId: (imageName: string) =>
-                    getFragmentIdFromImageName(
-                      imageName,
-                      fragmentIndexMap,
-                      selectedDocs[0]?.id || ""
-                    ),
-                  sourceToolName: toolName,
-                  isUserAttachment: false,
-                }
+              loggerWithChild({ email: context.user.email }).info(
+                `Tracked ${extractedImages.length} image reference${
+                  extractedImages.length === 1 ? "" : "s"
+                } from ${toolName} on turn ${turnForImages}`
               )
-              
-              // console.info('[IMAGE addition][Image Registry] After registration:', {
-              //   toolName,
-              //   turn: turnNumber,
-              //   addedImages,
-              //   totalImagesNow: context.imageFileNames.length,
-              //   totalMetadataNow: context.imageMetadata.size,
-              //   firstFewImages: context.imageFileNames.slice(0, 3),
-              // })
-              if (addedImages > 0) {
-                loggerWithChild({ email: context.user.email }).info(
-                  `Tracked ${addedImages} new image${
-                    addedImages === 1 ? "" : "s"
-                  } from ${toolName} on turn ${turnNumber}`
-                )
-              }
             }
           }
 
-          // Emit SSE event (ToolMetric event to be added to ChatSSEvents later)
-          // if (emitSSE) {
-          //   await emitSSE(ChatSSEvents.ToolMetric, {
-          //     toolName,
-          //     durationMs: executionTime,
-          //     cost: record.estimatedCostUsd,
-          //     status,
-          //     fragmentsAdded: record.fragmentsAdded.length,
-          //   })
-          // }
-
-          return selectedDocs.map((doc) => doc.content).join("\n")
+          addToolFragments(fragmentsForResult)
         }
       } catch (error) {
         await streamReasoningStep(
@@ -1309,15 +1435,7 @@ export async function afterToolExecutionHook(
           "Context ranking failed, retaining all retrieved documents.",
           { toolName }
         )
-        // Fallback: add all contexts if extraction fails
-        filteredContexts.forEach((doc: MinimalAgentFragment) => {
-          const key = doc.id
-          if (!gatheredFragmentskeys.has(key)) {
-            context.contextFragments.push(doc)
-            gatheredFragmentskeys.add(key)
-          }
-        })
-        record.fragmentsAdded = filteredContexts.map((d: MinimalAgentFragment) => d.id)
+        addToolFragments(filteredContexts)
       }
     }
   }
@@ -1329,7 +1447,6 @@ export async function afterToolExecutionHook(
   //     durationMs: executionTime,
   //     cost: record.estimatedCostUsd,
   //     status,
-  //     fragmentsAdded: record.fragmentsAdded.length,
   //   })
   // }
 
@@ -1381,8 +1498,7 @@ export async function afterToolExecutionHook(
     const agentName =
       context.availableAgents.find((agent) => agent.agentId === agentId)
         ?.agentName || agentId || "unknown agent"
-    mergeAgentDelegationOutput({
-      context,
+    const delegationFragments = buildDelegatedAgentFragments({
       result,
       gatheredFragmentsKeys,
       agentId,
@@ -1390,6 +1506,9 @@ export async function afterToolExecutionHook(
       turnNumber: turnNumber ?? context.turnCount,
       sourceToolName: toolName,
     })
+    if (delegationFragments.length > 0) {
+      addToolFragments(delegationFragments)
+    }
     await streamReasoningStep(
       reasoningEmitter,
       `Received response from '${agentName}' agent.`,
@@ -1410,20 +1529,25 @@ export async function afterToolExecutionHook(
     )
   }
 
+  if (toolFragments.length > 0) {
+    const summary = buildFragmentResultSummary(toolFragments)
+    record.resultSummary = summary
+    return buildStructuredToolResult(result, toolFragments, summary)
+  }
+
   return null
 }
 
 
-function mergeAgentDelegationOutput(opts: {
-  context: AgentRunContext
+function buildDelegatedAgentFragments(opts: {
   result: any
   gatheredFragmentsKeys: Set<string>
   agentId?: string
   agentName?: string
   turnNumber?: number
   sourceToolName: string
-}): void {
-  const { context, result, gatheredFragmentsKeys, agentId, agentName, turnNumber, sourceToolName } = opts
+}): MinimalAgentFragment[] {
+  const { result, gatheredFragmentsKeys, agentId, agentName, turnNumber, sourceToolName } = opts
   const metadata = (result?.data as any)?.metadata || (result as any)?.metadata || {}
   const citations = metadata?.citations as Citation[] | undefined
   const imageCitations = metadata?.imageCitations as ImageCitation[] | undefined
@@ -1437,7 +1561,7 @@ function mergeAgentDelegationOutput(opts: {
 
   if (Array.isArray(citations) && citations.length > 0) {
     citations.forEach((citation, idx) => {
-      const fragmentTurn = ensureTurnNumber(turnNumber ?? context.turnCount)
+      const fragmentTurn = ensureTurnNumber(turnNumber ?? MIN_TURN_NUMBER)
       const fragmentId = `${agentId || "agent"}:${citation.docId || idx}:${fragmentTurn}:${idx}`
       if (gatheredFragmentsKeys.has(fragmentId)) return
       agentFragments.push({
@@ -1449,10 +1573,9 @@ function mergeAgentDelegationOutput(opts: {
     })
   }
 
-  // Add an attribution fragment for the delegated agent itself so downstream synthesis can cite the agent as a source.
   if (agentId) {
     const attributionFragmentId = `agent:${agentId}:turn:${ensureTurnNumber(
-      turnNumber ?? context.turnCount
+      turnNumber ?? MIN_TURN_NUMBER
     )}`
     if (!gatheredFragmentsKeys.has(attributionFragmentId)) {
       agentFragments.push({
@@ -1470,28 +1593,36 @@ function mergeAgentDelegationOutput(opts: {
     }
   }
 
-  // Prepend agent fragments (citations + attribution) so they are prioritized for synthesis.
-  if (agentFragments.length > 0) {
-    const existing = context.contextFragments.filter(
-      (frag) => !agentFragments.some((a) => a.id === frag.id)
-    )
-    agentFragments.forEach((frag) => gatheredFragmentsKeys.add(frag.id))
-    context.contextFragments = [...agentFragments, ...existing]
+  if (agentFragments.length === 0) {
+    return []
   }
 
   if (Array.isArray(imageCitations) && imageCitations.length > 0) {
-    const imageNames = imageCitations
-      .map((entry) => entry.imagePath)
-      .filter((name): name is string => Boolean(name))
-    if (imageNames.length > 0) {
-      registerImageReferences(context, imageNames, {
-        turnNumber: typeof turnNumber === "number" ? turnNumber : 0,
-        sourceFragmentId: `${agentId || "agent"}:delegation`,
+    const fragmentByDoc = new Map(
+      agentFragments
+        .filter((fragment) => fragment.source?.docId)
+        .map((fragment) => [fragment.source.docId!, fragment])
+    )
+
+    for (const imageCitation of imageCitations) {
+      if (!imageCitation?.imagePath) continue
+      const targetFragment =
+        (imageCitation.item?.docId
+          ? fragmentByDoc.get(imageCitation.item.docId)
+          : agentFragments[0]) || agentFragments[0]
+      if (!targetFragment) continue
+      const ref: FragmentImageReference = {
+        fileName: imageCitation.imagePath,
+        addedAtTurn: ensureTurnNumber(turnNumber ?? MIN_TURN_NUMBER),
+        sourceFragmentId: targetFragment.id,
         sourceToolName,
         isUserAttachment: false,
-      })
+      }
+      targetFragment.images = [...(targetFragment.images ?? []), ref]
     }
   }
+
+  return agentFragments
 }
 
 type PendingExpectation = ToolExpectationAssignment
@@ -1763,7 +1894,7 @@ function normalizeToolFeedbackEntry(
     candidate.followUp.trim().length > 0
       ? candidate.followUp.trim()
       : undefined
-  const normalizedEntry = {
+  const normalizedEntry: ToolReviewFinding = {
     toolName,
     outcome,
     summary,
@@ -1911,8 +2042,10 @@ async function runReviewLLM(
       expectedResultCount: options?.expectedResults?.length ?? 0,
       delegationEnabled: options?.delegationEnabled,
       expectedResults: options?.expectedResults,
+      email: context.user.email,
+      chatId: context.chat.externalId,
     },
-    "[DEBUG] runReviewLLM invoked - FULL expectedResults"
+    "[MessageAgents][runReviewLLM] invoked - FULL expectedResults"
   )
   const modelId =
     (defaultFastModel as Models) || (defaultBestModel as Models)
@@ -1921,12 +2054,23 @@ async function runReviewLLM(
       ? "- Delegation tools (list_custom_agents/run_public_agent) were disabled for this run; do not flag their absence."
       : "- If delegation tools are available, ensure list_custom_agents precedes run_public_agent when delegation is appropriate."
 
+  Logger.info(
+    {
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      focus: options?.focus,
+      turnNumber: options?.turnNumber,
+      modelId,
+    },
+    "[MessageAgents][runReviewLLM] Preparing review LLM call"
+  )
+
   const params: ModelParams = {
     modelId,
     json: true,
     stream: false,
     temperature: 0,
-    maxTokens: 800,
+    max_new_tokens: 800,
     systemPrompt: `You are a senior reviewer ensuring each agentic turn honors the agreed plan and tool expectations.
 - Inspect every tool call from this turn, compare the outputs with the expected results, and decide whether each tool met or missed expectations.
 - Evaluate the current plan to see if it still fits the evidence gathered from the tool calls; suggest plan changes when necessary.
@@ -1957,12 +2101,25 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
 - Only emit keys defined in the schema; do not add prose outside the JSON object.`,
   }
   Logger.info(
-    { modelId, params },
-    "runReviewLLM prepared LLM params"
+    { 
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      modelId, 
+      params,
+      temperature: params.temperature,
+      maxTokens: params.max_new_tokens,
+      json: params.json,
+      stream: params.stream,
+    },
+    "[MessageAgents][runReviewLLM] LLM params prepared"
   )
   Logger.info(
-    { systemPrompt: params.systemPrompt },
-    "runReviewLLM system prompt"
+    { 
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      systemPrompt: params.systemPrompt,
+    },
+    "[MessageAgents][runReviewLLM] System prompt"
   )
 
   const planHash = JSON.stringify(context.plan ?? null)
@@ -1976,13 +2133,14 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     }
   }
 
+  const transcriptFragments = getTranscriptFragments(context)
   const fragmentsHash = JSON.stringify(
-    context.contextFragments.map((fragment) => fragment.id)
+    transcriptFragments.map((fragment) => fragment.id)
   )
   let fragmentsSummary =
     context.review.cachedContextSummary?.hash === fragmentsHash
       ? context.review.cachedContextSummary.summary
-      : summarizeFragments(context.contextFragments)
+      : summarizeFragments(transcriptFragments)
   if (context.review) {
     context.review.cachedContextSummary = {
       hash: fragmentsHash,
@@ -2036,41 +2194,77 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
 
   Logger.info(
     {
+      email: context.user.email,
+      chatId: context.chat.externalId,
       messagesCount: messages.length,
       usedConversationHistory: Boolean(options?.messages?.length),
     },
-    "runReviewLLM messages configured"
+    "[MessageAgents][runReviewLLM] Messages configured"
+  )
+
+  Logger.info(
+    {
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      messages,
+    },
+    "[MessageAgents][runReviewLLM] FULL MESSAGES ARRAY FOR REVIEW LLM"
   )
 
   const { text } = await getProviderByModel(modelId).converse(
     messages,
     params
   )
-  Logger.info({ text }, "runReviewLLM raw LLM response")
+  
+  Logger.info({ 
+    email: context.user.email,
+    chatId: context.chat.externalId,
+    text,
+  }, "[MessageAgents][runReviewLLM] Raw LLM response")
 
   if (!text) {
     throw new Error("LLM returned empty review response")
   }
 
   const parsed = jsonParseLLMOutput(text)
-  Logger.info({ parsed }, "runReviewLLM parsed LLM response")
+  Logger.info({ 
+    email: context.user.email,
+    chatId: context.chat.externalId,
+    parsed,
+  }, "[MessageAgents][runReviewLLM] Parsed LLM response")
+  
   const normalized = normalizeReviewResponse(parsed)
-  // Logger.info(
-  //   { normalized },
-  //   "runReviewLLM normalized response"
-  // )
+  Logger.info(
+    { 
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      normalized,
+    },
+    "[MessageAgents][runReviewLLM] Normalized response"
+  )
+  
   const validation = ReviewResultSchema.safeParse(normalized)
   if (!validation.success) {
     Logger.error(
-      { error: validation.error.format(), raw: parsed },
-      "Review result does not match schema"
+      { 
+        email: context.user.email,
+        chatId: context.chat.externalId,
+        error: validation.error.format(), 
+        raw: parsed,
+      },
+      "[MessageAgents][runReviewLLM] Review result does not match schema"
     )
     throw new Error("Review result does not match schema")
   }
-  // Logger.info(
-  //   { reviewResult: validation.data },
-  //   "runReviewLLM returning validated review result"
-  // )
+  
+  Logger.info(
+    { 
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      reviewResult: validation.data,
+    },
+    "[MessageAgents][runReviewLLM] Returning validated review result"
+  )
   return validation.data
 }
 
@@ -2165,9 +2359,10 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
     schema: {
       name: "toDoWrite",
       description: TOOL_SCHEMAS.toDoWrite.description,
-      parameters: TOOL_SCHEMAS.toDoWrite.inputSchema,
+      parameters: toToolParameters(TOOL_SCHEMAS.toDoWrite.inputSchema),
     },
     async execute(args, context) {
+      const mutableContext = mutableAgentContext(context)
       Logger.info(
         {
           email: context.user.email,
@@ -2189,8 +2384,8 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
       }
 
       const activeSubTaskId = initializePlanState(plan)
-      context.plan = plan
-      context.currentSubTask = activeSubTaskId
+      mutableContext.plan = plan
+      mutableContext.currentSubTask = activeSubTaskId
       Logger.info(
         {
           email: context.user.email,
@@ -2237,9 +2432,10 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
     schema: {
       name: "list_custom_agents",
       description: TOOL_SCHEMAS.list_custom_agents.description,
-      parameters: TOOL_SCHEMAS.list_custom_agents.inputSchema,
+      parameters: toToolParameters(TOOL_SCHEMAS.list_custom_agents.inputSchema),
     },
     async execute(args, context) {
+      const mutableContext = mutableAgentContext(context)
       const validation = validateToolInput<{
         query: string
         requiredCapabilities?: string[]
@@ -2273,7 +2469,7 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
       )
 
       const normalizedAgents = Array.isArray(result.agents) ? result.agents : []
-      context.availableAgents = normalizedAgents
+      mutableContext.availableAgents = normalizedAgents
       const payload = {
         summary: result.result,
         agents: normalizedAgents.length ? normalizedAgents : null,
@@ -2291,7 +2487,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
     schema: {
       name: "run_public_agent",
       description: TOOL_SCHEMAS.run_public_agent.description,
-      parameters: TOOL_SCHEMAS.run_public_agent.inputSchema,
+      parameters: toToolParameters(TOOL_SCHEMAS.run_public_agent.inputSchema),
     },
     async execute(args, context) {
       const validation = validateToolInput<{
@@ -2310,7 +2506,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
 
       if (!context.ambiguityResolved) {
         return ToolResponse.error(
-          "AMBIGUITY_NOT_RESOLVED",
+          ToolErrorCodes.INVALID_INPUT,
           `Resolve ambiguity before running a custom agent. Unresolved: ${
             context.clarifications.length
               ? context.clarifications
@@ -2323,7 +2519,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
 
       if (!context.availableAgents.length) {
         return ToolResponse.error(
-          "NO_AGENTS_AVAILABLE",
+          ToolErrorCodes.RESOURCE_UNAVAILABLE,
           "No agents available. Run list_custom_agents this turn and select an agentId from its results."
         )
       }
@@ -2344,7 +2540,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
       )
       if (!agentCapability) {
         return ToolResponse.error(
-          "UNKNOWN_AGENT",
+          ToolErrorCodes.NOT_FOUND,
           `Agent '${validation.data.agentId}' not found in availableAgents. Call list_custom_agents and use one of: ${context.availableAgents
             .map((a) => `${a.agentName} (${a.agentId})`)
             .join("; ")}`
@@ -2394,17 +2590,21 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
     schema: {
       name: "synthesize_final_answer",
       description: TOOL_SCHEMAS.synthesize_final_answer.description,
-      parameters: TOOL_SCHEMAS.synthesize_final_answer.inputSchema,
+      parameters: toToolParameters(TOOL_SCHEMAS.synthesize_final_answer.inputSchema),
     },
     async execute(_args, context) {
-      if (context.finalSynthesis.requested && context.finalSynthesis.completed) {
+      const mutableContext = mutableAgentContext(context)
+      if (
+        mutableContext.finalSynthesis.requested &&
+        mutableContext.finalSynthesis.completed
+      ) {
         return ToolResponse.error(
           "EXECUTION_FAILED",
           "Final synthesis already completed for this run."
         )
       }
 
-      const streamAnswer = context.runtime?.streamAnswerText
+      const streamAnswer = mutableContext.runtime?.streamAnswerText
       if (!streamAnswer) {
         return ToolResponse.error(
           "EXECUTION_FAILED",
@@ -2416,14 +2616,14 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         selectImagesForFinalSynthesis(context)
 
       const { systemPrompt, userMessage } = buildFinalSynthesisPayload(context)
-      const fragmentsCount = context.contextFragments.length
+      const fragmentsCount = getTranscriptFragments(context).length
 
-      context.finalSynthesis.requested = true
-      context.finalSynthesis.suppressAssistantStreaming = true
-      context.finalSynthesis.completed = false
-      context.finalSynthesis.streamedText = ""
+      mutableContext.finalSynthesis.requested = true
+      mutableContext.finalSynthesis.suppressAssistantStreaming = true
+      mutableContext.finalSynthesis.completed = false
+      mutableContext.finalSynthesis.streamedText = ""
 
-      await context.runtime?.emitReasoning?.({
+      await mutableContext.runtime?.emitReasoning?.({
         text: `Initiating final synthesis with ${fragmentsCount} context fragments and ${selected.length}/${total} images (${userAttachmentCount} user attachments).`,
         step: { type: AgentReasoningStepType.LogMessage },
       })
@@ -2734,7 +2934,6 @@ ${delegationGuidance}
   //   turnCount: context.turnCount,
   //   instructionsLength: finalInstructions.length,
   //   enabledToolsCount: enabledToolNames.length,
-  //   contextFragmentsCount: context.contextFragments.length,
   //   hasPlan: !!context.plan,
   //   delegationEnabled,
   // }, "[MessageAgents] Final agent instructions built")
@@ -2833,12 +3032,23 @@ export async function MessageAgents(c: Context): Promise<Response> {
       new Set(attachmentMetadata.filter((meta) => meta.isImage).map((meta) => meta.fileId))
     )
 
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+    const userAndWorkspace: InternalUserWorkspace = await getUserAndWorkspaceByEmail(
       db,
       workspaceId,
       email
     )
-    const { user, workspace } = userAndWorkspace
+    const rawUser = userAndWorkspace.user
+    const rawWorkspace = userAndWorkspace.workspace
+    const user = {
+      id: Number(rawUser.id),
+      email: String(rawUser.email),
+      timeZone:
+        typeof rawUser.timeZone === "string" ? rawUser.timeZone : "UTC",
+    }
+    const workspace = {
+      id: Number(rawWorkspace.id),
+      externalId: String(rawWorkspace.externalId),
+    }
     let connectorState = createEmptyConnectorState()
     try {
       connectorState = await getUserConnectorState(db, email)
@@ -2865,12 +3075,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
           message: "Access denied: You do not have permission to use this agent",
         })
       }
-      resolvedAgentId = agentRecord.externalId
+      resolvedAgentId = String(agentRecord.externalId)
       agentPromptForLLM = JSON.stringify(agentRecord)
       allowedAgentApps = deriveAllowedAgentApps(agentPromptForLLM)
       rootSpan.setAttribute("agentId", resolvedAgentId)
     }
-    const userTimezone = user?.timeZone || "UTC"
+    const userTimezone: string = user.timeZone || "UTC"
     const dateForAI = getDateForAI({ userTimeZone: userTimezone })
     const userMetadata: UserMetadataType = {
       userTimezone,
@@ -2898,7 +3108,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
         agentId: resolvedAgentId ?? undefined,
       })
       chatRecord = bootstrap.chat
-      const chatAgentId = chatRecord.agentId ?? undefined
+      const chatAgentId = chatRecord.agentId
+        ? String(chatRecord.agentId)
+        : undefined
       if (resolvedAgentId && chatAgentId && chatAgentId !== resolvedAgentId) {
         throw new HTTPException(400, {
           message:
@@ -2922,7 +3134,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         message: "Failed to initialize chat for request",
       })
     }
-    rootSpan.setAttribute("chatId", chatRecord.externalId)
+    rootSpan.setAttribute("chatId", String(chatRecord.externalId))
 
     if (
       resolvedAgentId &&
@@ -2965,9 +3177,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
         // Initialize context with actual data
         const agentContext = initializeAgentContext(
           email,
-          workspaceId,
+          String(workspaceId),
           user.id,
-          chatRecord.externalId,
+          String(chatRecord.externalId),
           message,
           attachmentsForContext,
           {
@@ -2977,35 +3189,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
           }
         )
         agentContext.delegationEnabled = delegationEnabled
-
-        if (IMAGE_CONTEXT_CONFIG.enabled && imageAttachmentFileIds.length > 0) {
-          // console.info('[IMAGE addition][Image Init] Processing user attachments:', {
-          //   imageAttachmentCount: imageAttachmentFileIds.length,
-          //   fileIds: imageAttachmentFileIds.slice(0, 5),
-          //   userEmail: email,
-          // })
-          
-          const attachmentImageNames = imageAttachmentFileIds.map(
-            (fileId, index) => `${index}_${fileId}_${0}`
-          )
-          
-          // console.info('[IMAGE addition][Image Init] Generated image names:', {
-          //   count: attachmentImageNames.length,
-          //   samples: attachmentImageNames.slice(0, 3),
-          // })
-          
-          const added = registerImageReferences(agentContext, attachmentImageNames, {
-            turnNumber: 0,
-            sourceFragmentId: "user_attachment",
-            sourceToolName: "user_input",
-            isUserAttachment: true,
-          })
-          if (added > 0) {
-            loggerWithChild({ email }).info(
-              `Registered ${added} image attachment${added === 1 ? "" : "s"} for MessageAgents context`
-            )
-          }
-        }
 
         // Build MCP connector tool map (mirrors MessageWithToolsApi semantics)
         const finalToolsMap: FinalToolsList = {}
@@ -3043,6 +3226,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               name: `connector-${connectorId}`,
               version: (connector.config as { version?: string })?.version ?? "1.0",
             })
+            const connectorNumericId = Number(connector.id)
 
             try {
               const loadedConfig = connector.config as {
@@ -3103,7 +3287,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             mcpClients.push(client)
             let tools = []
             try {
-              tools = await getToolsByConnectorId(db, workspace.id, connector.id)
+              tools = await getToolsByConnectorId(db, workspace.id, connectorNumericId)
             } catch (error) {
               loggerWithChild({ email }).error(
                 error,
@@ -3112,22 +3296,37 @@ export async function MessageAgents(c: Context): Promise<Response> {
               continue
             }
             const filteredTools = tools.filter((tool) => {
-              const isIncluded = requestedToolIds.includes(tool.externalId!)
+              const toolExternalId =
+                typeof tool.externalId === "string" ? tool.externalId : undefined
+              const isIncluded =
+                !!toolExternalId && requestedToolIds.includes(toolExternalId)
               if (!isIncluded) {
                 loggerWithChild({ email }).info(
-                  `[MessageAgents][MCP] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
+                  `[MessageAgents][MCP] Tool ${toolExternalId}:${tool.toolName} not in requested toolExternalIds.`,
                 )
               }
               return isIncluded
             })
 
-            const formattedTools: FinalToolsEntry["tools"] = filteredTools.map(
-              (tool): AdapterTool => ({
-                toolName: tool.toolName,
-                toolSchema: tool.toolSchema,
-                description: tool.description ?? undefined,
-              }),
-            )
+            const formattedTools: FinalToolsEntry["tools"] = filteredTools
+              .map((tool): AdapterTool | null => {
+                const toolNameValue =
+                  typeof tool.toolName === "string" ? tool.toolName : ""
+                const toolName = toolNameValue.trim()
+                if (!toolName) return null
+                return {
+                  toolName,
+                  toolSchema:
+                    typeof tool.toolSchema === "string"
+                      ? tool.toolSchema
+                      : undefined,
+                  description:
+                    typeof tool.description === "string"
+                      ? tool.description
+                      : undefined,
+                }
+              })
+              .filter((entry): entry is AdapterTool => Boolean(entry))
 
             if (formattedTools.length === 0) {
               continue
@@ -3135,13 +3334,16 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
             const wrappedClient: FinalToolsEntry["client"] = {
               callTool: async ({ name, arguments: toolArguments }) => {
-                if (typeof toolArguments === "object" && toolArguments !== null) {
-                  return client.callTool({
-                    name,
-                    arguments: toolArguments,
-                  })
-                }
-                return client.callTool({ name })
+                const normalizedArgs =
+                  toolArguments &&
+                  typeof toolArguments === "object" &&
+                  !Array.isArray(toolArguments)
+                    ? (toolArguments as Record<string, unknown>)
+                    : {}
+                return client.callTool({
+                  name,
+                  arguments: normalizedArgs,
+                })
               },
               close: () => client.close(),
             }
@@ -3151,9 +3353,16 @@ export async function MessageAgents(c: Context): Promise<Response> {
               tools: formattedTools,
               client: wrappedClient,
             }
+            const connectorRecord = connector as Record<string, unknown>
             connectorMetaById.set(safeConnectorId, {
-              name: connector.name,
-              description: (connector as Record<string, unknown>)?.description as string | undefined,
+              name:
+                typeof connector.name === "string"
+                  ? connector.name
+                  : `Connector ${safeConnectorId}`,
+              description:
+                typeof connectorRecord.description === "string"
+                  ? (connectorRecord.description as string)
+                  : undefined,
             })
           }
         }
@@ -3235,6 +3444,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
         // Track gathered fragments
         const gatheredFragmentsKeys = new Set<string>()
 
+        const initialSyntheticMessages: JAFMessage[] = []
+
         let initialAttachmentContext: {
           fragments: MinimalAgentFragment[]
           summary: string
@@ -3259,12 +3470,53 @@ export async function MessageAgents(c: Context): Promise<Response> {
             )
           }
         }
+        if (imageAttachmentFileIds.length > 0) {
+          const imageFragments = imageAttachmentFileIds.map((fileId, index) => {
+            const fragmentId = `user_attachment_image:${fileId}:${index}`
+            return {
+              id: fragmentId,
+              content: `User provided image attachment ${index + 1}.`,
+              source: {
+                docId: fileId,
+                title: `Attachment image ${index + 1}`,
+                url: "",
+                app: Apps.KnowledgeBase,
+                entity: KnowledgeBaseEntity.File,
+              } as Citation,
+              confidence: 0.9,
+              images: [
+                {
+                  fileName: `${index}_${fileId}_0`,
+                  addedAtTurn: 0,
+                  sourceFragmentId: fragmentId,
+                  sourceToolName: "user_input",
+                  isUserAttachment: true,
+                },
+              ],
+            } as MinimalAgentFragment
+          })
+          const summary = `User provided ${imageFragments.length} image attachment${imageFragments.length === 1 ? "" : "s"}.`
+          if (initialAttachmentContext) {
+            initialAttachmentContext.fragments.push(...imageFragments)
+            initialAttachmentContext.summary = `${initialAttachmentContext.summary}\n${summary}`
+          } else {
+            initialAttachmentContext = {
+              fragments: imageFragments,
+              summary,
+            }
+          }
+        }
         if (initialAttachmentContext) {
           initialAttachmentContext.fragments.forEach((fragment) => {
-            agentContext.contextFragments.push(fragment)
             agentContext.seenDocuments.add(fragment.id)
             gatheredFragmentsKeys.add(fragment.id)
           })
+          initialSyntheticMessages.push(
+            buildAttachmentToolMessage(
+              initialAttachmentContext.fragments,
+              initialAttachmentContext.summary
+            )
+          )
           agentContext.chat.metadata = {
             ...agentContext.chat.metadata,
             initialAttachmentPhase: true,
@@ -3274,12 +3526,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
         // Build dynamic instructions
         const instructions = () => {
-          // console.info('[IMAGE addition][Instructions] Building agent instructions:', {
-          //   currentImageCount: agentContext.imageFileNames.length,
-          //   currentMetadataSize: agentContext.imageMetadata.size,
-          //   hasImageConfig: IMAGE_CONTEXT_CONFIG.enabled,
-          //   userEmail: email,
-          // })
           return buildAgentInstructions(
             agentContext,
             allTools.map((tool) => tool.schema.name),
@@ -3313,6 +3559,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             role: "user",
             content: message, // Use actual user message
           },
+          ...initialSyntheticMessages,
         ]
 
         const runState: JAFRunState<AgentRunContext> = {
@@ -3322,6 +3569,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
           currentAgentName: jafAgent.name,
           context: agentContext,
           turnCount: 0,
+        }
+        agentContext.transcript = {
+          getMessages: () => runState.messages,
         }
 
         const messagesWithNoErrResponse: Message[] = [
@@ -3336,7 +3586,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const expectationHistory = new Map<number, PendingExpectation[]>()
         const expectedResultsByCallId = new Map<string, ToolExpectation>()
         const toolCallTurnMap = new Map<string, number>()
-        const syntheticToolCallIds = new WeakMap<ToolCall, string>()
+        const syntheticToolCallIds = new WeakMap<object, string>()
         let syntheticToolCallSeq = 0
         const consecutiveToolErrors = new Map<string, number>()
 
@@ -3359,22 +3609,20 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
 
         const ensureToolCallId = (
-          toolCall: ToolCall,
+          toolCall: ToolCallReference,
           turn: number,
           index: number
         ): string => {
-          if (
-            toolCall.id !== undefined &&
-            toolCall.id !== null
-          ) {
+          const mapKey = toolCall as object
+          if (toolCall.id !== undefined && toolCall.id !== null) {
             const normalized = String(toolCall.id)
-            syntheticToolCallIds.set(toolCall, normalized)
+            syntheticToolCallIds.set(mapKey, normalized)
             return normalized
           }
-          const existing = syntheticToolCallIds.get(toolCall)
+          const existing = syntheticToolCallIds.get(mapKey)
           if (existing) return existing
           const generated = `synthetic-${turn}-${syntheticToolCallSeq++}-${index}`
-          syntheticToolCallIds.set(toolCall, generated)
+          syntheticToolCallIds.set(mapKey, generated)
           return generated
         }
 
@@ -3402,7 +3650,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
             reviewInput: {
               focus: "turn_end",
               turnNumber: turn,
-              contextFragments: agentContext.contextFragments,
               toolCallHistory: toolHistory,
               plan: agentContext.plan,
               expectedResults: expectationHistory.get(turn) || [],
@@ -3473,10 +3720,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
           let reviewResult: ReviewResult | null = null
           const pendingPromise = (async () => {
+            const conversationHistory = convertTranscriptToBedrockMessages(
+              runState.messages
+            )
             const computedReview = await performAutomaticReview(
               reviewInput,
               agentContext,
-              messagesWithNoErrResponse
+              conversationHistory
             )
             reviewResult = computedReview
             await handleReviewOutcome(
@@ -3585,10 +3835,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
               data: chunk,
             })
 
+            const fragmentsForCitations = getTranscriptFragments(agentContext)
             for await (const citationEvent of checkAndYieldCitationsForAgent(
               answer,
               yieldedCitations,
-              agentContext.contextFragments,
+              fragmentsForCitations,
               yieldedImageCitations,
               email,
             )) {
@@ -3616,7 +3867,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
         agentContext.runtime = {
           streamAnswerText,
-          emitReasoning: emitReasoningStep,
+          emitReasoning: async (payload) =>
+            emitReasoningStep(payload as ReasoningPayload),
         }
         const traceEventHandler = async (event: TraceEvent) => {
           if (event.type === "before_tool_execution") {
@@ -3649,7 +3901,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
           switch (evt.type) {
             case "turn_start":
-              runState.context.turnCount = evt.data.turn
+              agentContext.turnCount = evt.data.turn
               currentTurn = evt.data.turn
               flushExpectationBufferToTurn(currentTurn)
               await streamReasoningStep(
@@ -3748,7 +4000,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
             case "tool_call_end":
               Logger.info({
                 toolName: evt.data.toolName,
-                args: evt.data.args,
                 result: evt.data.result,
                 error: evt.data.error,
                 executionTime: evt.data.executionTime,
@@ -3783,7 +4034,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
                       {
                         focus: "tool_error",
                         turnNumber: currentTurn,
-                        contextFragments: agentContext.contextFragments,
                         toolCallHistory: recentHistory,
                         plan: agentContext.plan,
                         expectedResults:
@@ -3939,7 +4189,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   {
                     focus: "run_end",
                     turnNumber: finalTurnNumber,
-                    contextFragments: agentContext.contextFragments,
                     toolCallHistory: agentContext.toolCallHistory,
                     plan: agentContext.plan,
                     expectedResults:
@@ -3958,13 +4207,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentContext.tokenUsage.input + agentContext.tokenUsage.output
 
                 try {
-                  const msg = await insertMessage(db, {
+                  const assistantInsert = {
                     chatId: chatRecord.id,
                     userId: user.id,
-                    workspaceExternalId: workspace.externalId,
-                    chatExternalId: chatRecord.externalId,
+                    workspaceExternalId: String(workspace.externalId),
+                    chatExternalId: String(chatRecord.externalId),
                     messageRole: MessageRole.Assistant,
-                    email: user.email,
+                    email: String(user.email),
                     sources: citations,
                     imageCitations,
                     message: processMessage(answer, citationMap),
@@ -3972,8 +4221,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     modelId: defaultBestModel,
                     cost: totalCost.toString(),
                     tokensUsed: totalTokens,
-                  })
-                  assistantMessageId = msg.externalId
+                  } as unknown as Omit<InsertMessage, "externalId">
+                  const msg = await insertMessage(db, assistantInsert)
+                  assistantMessageId = String(msg.externalId)
                 } catch (error) {
                   loggerWithChild({ email }).error(
                     error,
@@ -4003,10 +4253,28 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 })
               } else if (outcome?.status === "error") {
                 const err = outcome.error
-                const errMsg = err?._tag === "MaxTurnsExceeded"
-                  ? `Max turns exceeded: ${err.turns}`
-                  : "Execution error"
-                
+                const errDetail =
+                  err && typeof err === "object" && "detail" in err
+                    ? (err as { detail?: string }).detail
+                    : undefined
+                const errMsg =
+                  err?._tag === "MaxTurnsExceeded"
+                    ? `Max turns exceeded: ${err.turns}`
+                    : errDetail ||
+                      (err && typeof (err as any).reason === "string"
+                        ? (err as any).reason
+                        : getErrorMessage(err) || "Execution error")
+
+                loggerWithChild({ email }).error(
+                  {
+                    chatId: agentContext.chat.externalId,
+                    runId,
+                    errorTag: err?._tag,
+                    detail: errMsg,
+                  },
+                  "[MessageAgents] Agent run ended with error",
+                )
+
                 await stream.writeSSE({
                   event: ChatSSEvents.Error,
                   data: JSON.stringify({ error: err?._tag, message: errMsg }),
@@ -4075,13 +4343,13 @@ export async function listCustomAgentsSuitable(
   const mcpAgentsFromContext = params.mcpAgents ?? []
 
   if (!workspaceDbId || !userDbId) {
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+    const userAndWorkspace: InternalUserWorkspace = await getUserAndWorkspaceByEmail(
       db,
       params.workspaceExternalId,
       params.userEmail
     )
-    workspaceDbId = userAndWorkspace.workspace.id
-    userDbId = userAndWorkspace.user.id
+    workspaceDbId = Number(userAndWorkspace.workspace.id)
+    userDbId = Number(userAndWorkspace.user.id)
   }
 
   const accessibleAgents = await getUserAccessibleAgents(
@@ -4127,7 +4395,7 @@ export async function listCustomAgentsSuitable(
           { agentId: agent.externalId },
         )
       }
-      resourceAccessByAgent.set(agent.externalId, resourceAccess)
+      resourceAccessByAgent.set(String(agent.externalId), resourceAccess)
       return buildAgentBrief(agent, resourceAccess)
     }),
   )
@@ -4173,7 +4441,7 @@ export async function listCustomAgentsSuitable(
     json: true,
     stream: false,
     temperature: 0,
-    maxTokens: 800,
+    max_new_tokens: 800,
     systemPrompt,
   }
 
@@ -4354,7 +4622,18 @@ async function runDelegatedAgentWithMessageAgents(
       params.workspaceExternalId,
       params.userEmail
     )
-    const { user, workspace } = userAndWorkspace
+    const rawUser = userAndWorkspace.user
+    const rawWorkspace = userAndWorkspace.workspace
+    const user = {
+      id: Number(rawUser.id),
+      email: String(rawUser.email),
+      timeZone:
+        typeof rawUser.timeZone === "string" ? rawUser.timeZone : "Asia/Kolkata",
+    }
+    const workspace = {
+      id: Number(rawWorkspace.id),
+      externalId: String(rawWorkspace.externalId),
+    }
     const agentRecord = await getAgentByExternalIdWithPermissionCheck(
       db,
       params.agentId,
@@ -4372,7 +4651,7 @@ async function runDelegatedAgentWithMessageAgents(
 
     const agentPromptForLLM = JSON.stringify(agentRecord)
     const userCtxString = userContext(userAndWorkspace)
-    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const userTimezone = user.timeZone || "Asia/Kolkata"
     const dateForAI = getDateForAI({ userTimeZone: userTimezone })
     const attachmentsForContext: Array<{ fileId: string; isImage: boolean }> = []
 
@@ -4481,6 +4760,9 @@ async function runDelegatedAgentWithMessageAgents(
       context: agentContext,
       turnCount: 0,
     }
+    agentContext.transcript = {
+      getMessages: () => runState.messages,
+    }
 
     const messagesWithNoErrResponse: Message[] = [
       {
@@ -4494,7 +4776,7 @@ async function runDelegatedAgentWithMessageAgents(
     const expectationHistory = new Map<number, PendingExpectation[]>()
     const expectedResultsByCallId = new Map<string, ToolExpectation>()
     const toolCallTurnMap = new Map<string, number>()
-    const syntheticToolCallIds = new WeakMap<ToolCall, string>()
+    const syntheticToolCallIds = new WeakMap<object, string>()
     let syntheticToolCallSeq = 0
     const consecutiveToolErrors = new Map<string, number>()
 
@@ -4515,19 +4797,20 @@ async function runDelegatedAgentWithMessageAgents(
     }
 
     const ensureToolCallId = (
-      toolCall: ToolCall,
+      toolCall: ToolCallReference,
       turn: number,
       index: number
     ): string => {
+      const mapKey = toolCall as object
       if (toolCall.id !== undefined && toolCall.id !== null) {
         const normalized = String(toolCall.id)
-        syntheticToolCallIds.set(toolCall, normalized)
+        syntheticToolCallIds.set(mapKey, normalized)
         return normalized
       }
-      const existing = syntheticToolCallIds.get(toolCall)
+      const existing = syntheticToolCallIds.get(mapKey)
       if (existing) return existing
       const generated = `synthetic-${turn}-${syntheticToolCallSeq++}-${index}`
-      syntheticToolCallIds.set(toolCall, generated)
+      syntheticToolCallIds.set(mapKey, generated)
       return generated
     }
 
@@ -4555,7 +4838,6 @@ async function runDelegatedAgentWithMessageAgents(
         reviewInput: {
           focus: "turn_end",
           turnNumber: turn,
-          contextFragments: agentContext.contextFragments,
           toolCallHistory: toolHistory,
           plan: agentContext.plan,
           expectedResults: expectationHistory.get(turn) || [],
@@ -4627,9 +4909,13 @@ async function runDelegatedAgentWithMessageAgents(
           "[DelegatedAgenticRun] No expected results recorded for review input."
         )
       }
+      const conversationHistory = convertTranscriptToBedrockMessages(
+        runState.messages
+      )
       const reviewResult = await performAutomaticReview(
         reviewInput,
-        agentContext
+        agentContext,
+        conversationHistory
       )
       await handleReviewOutcome(
         agentContext,
@@ -4707,7 +4993,8 @@ async function runDelegatedAgentWithMessageAgents(
     }
     agentContext.runtime = {
       streamAnswerText,
-      emitReasoning: emitReasoningStep,
+      emitReasoning: async (payload) =>
+        emitReasoningStep(payload as ReasoningPayload),
     }
 
     let currentTurn = 0
@@ -4722,7 +5009,7 @@ async function runDelegatedAgentWithMessageAgents(
       )) {
         switch (evt.type) {
           case "turn_start":
-            runState.context.turnCount = evt.data.turn
+            agentContext.turnCount = evt.data.turn
             currentTurn = evt.data.turn
             flushExpectationBufferToTurn(currentTurn)
             await streamReasoningStep(
@@ -4787,21 +5074,20 @@ async function runDelegatedAgentWithMessageAgents(
               const newCount =
                 (consecutiveToolErrors.get(evt.data.toolName) ?? 0) + 1
               consecutiveToolErrors.set(evt.data.toolName, newCount)
-              if (newCount >= 2) {
-                const recentHistory = agentContext.toolCallHistory
-                  .filter((record) => record.toolName === evt.data.toolName)
-                  .slice(-newCount)
-                if (recentHistory.length > 0) {
-                  await runAndBroadcastReview(
-                    {
-                      focus: "tool_error",
-                      turnNumber: currentTurn,
-                      contextFragments: agentContext.contextFragments,
-                      toolCallHistory: recentHistory,
-                      plan: agentContext.plan,
-                      expectedResults:
-                        expectationHistory.get(currentTurn) || [],
-                    },
+                if (newCount >= 2) {
+                  const recentHistory = agentContext.toolCallHistory
+                    .filter((record) => record.toolName === evt.data.toolName)
+                    .slice(-newCount)
+                  if (recentHistory.length > 0) {
+                    await runAndBroadcastReview(
+                      {
+                        focus: "tool_error",
+                        turnNumber: currentTurn,
+                        toolCallHistory: recentHistory,
+                        plan: agentContext.plan,
+                        expectedResults:
+                          expectationHistory.get(currentTurn) || [],
+                      },
                     currentTurn
                   )
                 }
@@ -4923,7 +5209,6 @@ async function runDelegatedAgentWithMessageAgents(
                 {
                   focus: "run_end",
                   turnNumber: finalTurnNumber,
-                  contextFragments: agentContext.contextFragments,
                   toolCallHistory: agentContext.toolCallHistory,
                   plan: agentContext.plan,
                   expectedResults:
@@ -4985,10 +5270,11 @@ async function runDelegatedAgentWithMessageAgents(
         : agentContext.finalSynthesis.streamedText || ""
 
     if (answerForCitations) {
+      const fragmentsForCitations = getTranscriptFragments(agentContext)
       for await (const event of checkAndYieldCitationsForAgent(
         answerForCitations,
         yieldedCitations,
-        agentContext.contextFragments,
+        fragmentsForCitations,
         yieldedImageCitations,
         params.userEmail
       )) {
@@ -5006,7 +5292,7 @@ async function runDelegatedAgentWithMessageAgents(
 
     return {
       result: finalAnswer,
-      contexts: agentContext.contextFragments,
+      contexts: fragmentsToToolContexts(getTranscriptFragments(agentContext)),
       metadata: {
         agentId: params.agentId,
         citations,
@@ -5106,7 +5392,7 @@ async function executeMcpAgent(
       json: true,
       stream: false,
       temperature: 0,
-      maxTokens: Math.min(options.maxTokens ?? 800, 1200),
+      max_new_tokens: Math.min(options.maxTokens ?? 800, 1200),
       systemPrompt,
     }
     const toolSchema = {
@@ -5135,12 +5421,15 @@ async function executeMcpAgent(
     const selectionResponse = await provider.converse(messages, {
       ...modelParams,
       tools: [toolSchema],
-      tool_choice: "select_mcp_tools",
+      tool_choice: "select_mcp_tools" as unknown as ModelParams["tool_choice"],
     })
 
-    const calls =
-      selectionResponse.toolCalls && Array.isArray(selectionResponse.toolCalls)
-        ? selectionResponse.toolCalls.map((tc: any) => ({
+    const responseToolCalls =
+      selectionResponse.tool_calls ??
+      (selectionResponse as { toolCalls?: typeof selectionResponse.tool_calls })
+        ?.toolCalls
+    const calls = Array.isArray(responseToolCalls)
+        ? responseToolCalls.map((tc: any) => ({
             toolName:
               tc.name ??
               tc.function?.name ??

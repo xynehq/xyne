@@ -6,7 +6,15 @@
  */
 
 import { z } from "zod"
+import type { Message as JAFMessage } from "@xynehq/jaf"
 import type { MinimalAgentFragment } from "./types"
+
+export interface AgentImageMetadata {
+  addedAtTurn: number
+  sourceFragmentId: string
+  sourceToolName: string
+  isUserAttachment: boolean
+}
 
 // ============================================================================
 // CORE CONTEXT SCHEMAS
@@ -85,13 +93,6 @@ export interface ReviewState {
   }
 }
 
-export interface AgentImageMetadata {
-  addedAtTurn: number
-  sourceFragmentId: string
-  sourceToolName: string
-  isUserAttachment: boolean
-}
-
 export interface AgentRuntimeCallbacks {
   streamAnswerText?: (text: string) => Promise<void>
   emitReasoning?: (payload: Record<string, unknown>) => Promise<void>
@@ -157,12 +158,13 @@ export interface AgentRunContext {
 
   // Execution history
   toolCallHistory: ToolExecutionRecord[]
-  contextFragments: MinimalAgentFragment[]
+  contextFragments?: MinimalAgentFragment[]
   seenDocuments: Set<string> // Prevent re-fetching
-
-  // Image context tracking
-  imageFileNames: string[]
-  imageMetadata: Map<string, AgentImageMetadata>
+  imageFileNames?: string[]
+  imageMetadata?: Map<string, AgentImageMetadata>
+  transcript?: {
+    getMessages: () => readonly JAFMessage[]
+  }
   turnCount: number
 
   // Performance metrics
@@ -215,7 +217,6 @@ export interface ToolExecutionRecord {
   durationMs: number
   estimatedCostUsd: number
   resultSummary: string
-  fragmentsAdded: string[] // Fragment IDs
   status: "success" | "error" | "skipped"
   error?: {
     code: string
@@ -257,7 +258,6 @@ export interface ReviewResult {
  */
 export interface AutoReviewInput {
   turnNumber: number
-  contextFragments: MinimalAgentFragment[]
   toolCallHistory: ToolExecutionRecord[]
   plan: PlanState | null
   expectedResults?: ToolExpectationAssignment[]
