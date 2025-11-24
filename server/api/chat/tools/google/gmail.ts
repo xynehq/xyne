@@ -52,7 +52,8 @@ export const searchGmailTool: Tool<GmailSearchToolParams, Ctx> = {
     parameters: toToolSchemaParameters(gmailSearchToolSchema),
   },
   async execute(params: WithExcludedIds<GmailSearchToolParams>, context: Ctx) {
-    const { email, agentPrompt } = context
+    const email = context.user.email
+    const agentPrompt = context.agentPrompt
 
     try {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
@@ -123,7 +124,7 @@ export const searchGmailTool: Tool<GmailSearchToolParams, Ctx> = {
         )
       }
 
-      const response = await formatSearchToolResponse(searchResults, {
+      const fragments = await formatSearchToolResponse(searchResults, {
         query: params.query,
         app: GoogleApps.Gmail,
         labels: params.labels,
@@ -133,10 +134,7 @@ export const searchGmailTool: Tool<GmailSearchToolParams, Ctx> = {
         searchType: "Gmail message",
       })
 
-      return ToolResponse.success(response.result, {
-        toolName: "searchGmail",
-        contexts: response.contexts,
-      })
+      return ToolResponse.success(fragments)
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(

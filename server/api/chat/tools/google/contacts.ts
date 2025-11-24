@@ -34,7 +34,7 @@ export const searchGoogleContactsTool: Tool<ContactsSearchToolParams, Ctx> = {
     params: ContactsSearchToolParams & { excludedIds?: string[] },
     context: Ctx,
   ) {
-    const { email } = context
+    const email = context.user.email
 
     try {
       if (!email) {
@@ -63,7 +63,7 @@ export const searchGoogleContactsTool: Tool<ContactsSearchToolParams, Ctx> = {
         offset,
       })
 
-      const response = await formatSearchToolResponse(searchResults, {
+      const fragments = await formatSearchToolResponse(searchResults, {
         query: params.query,
         app: GoogleApps.Contacts,
         offset: params.offset,
@@ -71,10 +71,7 @@ export const searchGoogleContactsTool: Tool<ContactsSearchToolParams, Ctx> = {
         searchType: "Contact",
       })
 
-      return ToolResponse.success(response.result, {
-        toolName: "searchGoogleContacts",
-        contexts: response.contexts,
-      })
+      return ToolResponse.success(fragments)
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(

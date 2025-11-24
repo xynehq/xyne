@@ -3,30 +3,23 @@ import type { Tool } from "@xynehq/jaf"
 import { ToolErrorCodes, ToolResponse } from "@xynehq/jaf"
 import {
   Apps,
-  DataSourceEntity,
-  dataSourceFileSchema,
-  fileSchema,
   SearchModes,
   type Entity,
   type EventStatusType,
   type MailParticipant,
-  type VespaDataSourceFile,
   type VespaQueryConfig,
   type VespaSchema,
   type VespaSearchResponse,
-  type VespaSearchResults,
 } from "@xyne/vespa-ts"
 import { getErrorMessage } from "@/utils"
-import { searchVespaAgent, searchVespa, getItems } from "@/search/vespa"
+import { searchVespaAgent, searchVespa } from "@/search/vespa"
 import {
   formatSearchToolResponse,
   parseAgentAppIntegrations,
-  userMetadata,
 } from "../utils"
 import {
   expandEmailThreadsInResults,
   getChannelIdsFromAgentPrompt,
-  searchToCitation,
 } from "@/api/chat/utils"
 import type { Ctx, WithExcludedIds } from "../types"
 import { baseToolParams, createQuerySchema } from "../schemas"
@@ -34,7 +27,6 @@ import { generateFallback } from "@/ai/provider"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import type { MinimalAgentFragment } from "../../types"
-import { answerContextMap } from "@/ai/context"
 import config from "@/config"
 
 const searchGlobalToolSchema = z.object({
@@ -77,7 +69,8 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
     parameters: toToolSchemaParameters(searchGlobalToolSchema),
   },
   async execute(params: WithExcludedIds<SearchGlobalToolParams>, context: Ctx) {
-    const { email, agentPrompt, userMessage } = context
+    const email = context.user.email
+    const agentPrompt = context.agentPrompt
 
     try {
       if (!email) {
@@ -110,7 +103,7 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         ? Math.min(params.limit, config.maxUserRequestCount) + (offset ?? 0)
         : undefined
 
-      const response = await executeVespaSearch({
+      const fragments = await executeVespaSearch({
         email,
         query: queryToUse,
         limit,
@@ -124,10 +117,7 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         selectedItems: selectedItems,
       })
 
-      return ToolResponse.success(response.result, {
-        toolName: "searchGlobal",
-        contexts: response.contexts,
-      })
+      return ToolResponse.success(fragments)
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(
@@ -148,7 +138,7 @@ export const fallbackTool: Tool<FallbackToolParams, Ctx> = {
   },
   async execute(params: FallbackToolParams, context: Ctx) {
     const Logger = getLogger(Subsystem.Chat)
-    const { userCtx } = context
+    const userCtx = context.userContext
     try {
       // Generate detailed reasoning about why the search failed
       const fallbackResponse = await generateFallback(
@@ -180,13 +170,9 @@ export const fallbackTool: Tool<FallbackToolParams, Ctx> = {
         `Fallback tool generated detailed reasoning about search failure`,
       )
 
-      return ToolResponse.success(
-        `Fallback analysis completed. Generated detailed reasoning about why the search was unsuccessful.`,
-        {
-          toolName: "fall_back",
-          fallbackReasoning: fallbackResponse.reasoning, // Pass only the reasoning
-        },
-      )
+      return ToolResponse.success({
+        reasoning: fallbackResponse.reasoning,
+      })
     } catch (error) {
       const errMsg = getErrorMessage(error)
       Logger.error(error, `Fallback tool error: ${errMsg}`)
@@ -227,12 +213,7 @@ interface UnifiedSearchOptions {
   collectionFileIds?: string[]
 }
 
-async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
-  result: string
-  contexts: MinimalAgentFragment[]
-  summary?: string
-  error?: string
-}> {
+async function executeVespaSearch(options: UnifiedSearchOptions): Promise<MinimalAgentFragment[]> {
   const {
     email,
     query,
@@ -257,6 +238,10 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     eventAttendees,
   } = options
 
+  if (!query || query.trim() === "") {
+    throw new Error("No query provided for search.")
+  }
+
   let searchResults: VespaSearchResponse | null = null
   const commonSearchOptions: Partial<VespaQueryConfig> = {
     limit,
@@ -278,71 +263,60 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     ? new Date(timestampRange.to).getTime()
     : undefined
 
-  if (query && query.trim() !== "") {
-    if (agentAppEnums && agentAppEnums.length > 0) {
-      const appsToCheck = Array.isArray(app) ? app : app ? [app] : []
-      const invalidApps = appsToCheck.filter((a) => !agentAppEnums.includes(a))
-      if (invalidApps.length > 0) {
-        const errorMsg = `${invalidApps.join(", ")} ${invalidApps.length > 1 ? "are" : "is"} not allowed app${invalidApps.length > 1 ? "s" : ""} for this agent. Cannot search.`
-        return { result: errorMsg, contexts: [] }
-      }
-      searchResults = await searchVespaAgent(
-        query,
-        email,
-        app ?? null,
-        entity ?? null,
-        agentAppEnums,
-        {
-          ...commonSearchOptions,
-          timestampRange:
-            fromTimestamp && toTimestamp
-              ? { from: fromTimestamp, to: toTimestamp }
-              : undefined,
-          dataSourceIds: options.dataSourceIds ?? undefined,
-          channelIds,
-          collectionSelections:
-            collectionIds?.length ||
-            collectionFolderIds?.length ||
-            collectionFileIds?.length
-              ? [
-                  {
-                    collectionIds: collectionIds?.length
-                      ? collectionIds
-                      : undefined,
-                    collectionFolderIds: collectionFolderIds?.length
-                      ? collectionFolderIds
-                      : undefined,
-                    collectionFileIds: collectionFileIds?.length
-                      ? collectionFileIds
-                      : undefined,
-                  },
-                ]
-              : undefined,
-          selectedItem: selectedItems,
-        },
-      )
-    } else {
-      searchResults = await searchVespa(
-        query,
-        email,
-        app ?? null,
-        entity ?? null,
-        {
-          ...commonSearchOptions,
-          timestampRange:
-            fromTimestamp && toTimestamp
-              ? { from: fromTimestamp, to: toTimestamp }
-              : undefined,
-        },
-      )
+  if (agentAppEnums && agentAppEnums.length > 0) {
+    const appsToCheck = Array.isArray(app) ? app : app ? [app] : []
+    const invalidApps = appsToCheck.filter((a) => !agentAppEnums.includes(a))
+    if (invalidApps.length > 0) {
+      const errorMsg = `${invalidApps.join(", ")} ${invalidApps.length > 1 ? "are" : "is"} not allowed app${invalidApps.length > 1 ? "s" : ""} for this agent. Cannot search.`
+      throw new Error(errorMsg)
     }
+    searchResults = await searchVespaAgent(
+      query,
+      email,
+      app ?? null,
+      entity ?? null,
+      agentAppEnums,
+      {
+        ...commonSearchOptions,
+        timestampRange:
+          fromTimestamp && toTimestamp
+            ? { from: fromTimestamp, to: toTimestamp }
+            : undefined,
+        dataSourceIds: options.dataSourceIds ?? undefined,
+        channelIds,
+        collectionSelections:
+          collectionIds?.length ||
+          collectionFolderIds?.length ||
+          collectionFileIds?.length
+            ? [
+                {
+                  collectionIds: collectionIds?.length ? collectionIds : undefined,
+                  collectionFolderIds: collectionFolderIds?.length
+                    ? collectionFolderIds
+                    : undefined,
+                  collectionFileIds: collectionFileIds?.length
+                    ? collectionFileIds
+                    : undefined,
+                },
+              ]
+            : undefined,
+        selectedItem: selectedItems,
+      },
+    )
   } else {
-    const errorMsg = "No query or schema provided for search."
-    return {
-      result: errorMsg,
-      error: "Invalid search parameters",
-      contexts: [],
-    }
+    searchResults = await searchVespa(
+      query,
+      email,
+      app ?? null,
+      entity ?? null,
+      {
+        ...commonSearchOptions,
+        timestampRange:
+          fromTimestamp && toTimestamp
+            ? { from: fromTimestamp, to: toTimestamp }
+            : undefined,
+      },
+    )
   }
 
   // Expand email threads if results contain emails
@@ -353,51 +327,17 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     )
   }
 
-  const children = (searchResults?.root?.children || []).filter(
-    (item): item is VespaSearchResults =>
-      !!(item.fields && "sddocname" in item.fields),
-  )
+  const fragments = await formatSearchToolResponse(searchResults, {
+    query,
+    app: Array.isArray(app) ? app.join(", ") : app ?? undefined,
+    timeRange:
+      fromTimestamp && toTimestamp
+        ? { startTime: fromTimestamp, endTime: toTimestamp }
+        : undefined,
+    offset,
+    limit,
+    searchType: "Global search result",
+  })
 
-  if (children.length === 0) {
-    return { result: "No results found.", contexts: [] }
-  }
-
-  const fragments: MinimalAgentFragment[] = await Promise.all(
-    children.map(async (r) => {
-      const citation = searchToCitation(r)
-      return {
-        id: citation.docId,
-        content: await answerContextMap(
-          r,
-          userMetadata,
-          config.maxDefaultSummary,
-        ),
-        source: citation,
-        confidence: r.relevance || 0.7,
-      }
-    }),
-  )
-
-  let summaryText = `Found ${fragments.length} results`
-  if (query) summaryText += ` matching '${query}'`
-  if (app) {
-    const appText = Array.isArray(app) ? app.join(", ") : app
-    summaryText += ` in \`${appText}\``
-  }
-  if (timestampRange?.from && timestampRange?.to) {
-    summaryText += ` from ${new Date(timestampRange.from).toLocaleDateString()} to ${new Date(timestampRange.to).toLocaleDateString()}`
-  }
-  if (offset > 0)
-    summaryText += ` (showing items ${offset + 1} to ${offset + fragments.length})`
-
-  const topItemsList = fragments
-    .slice(0, 3)
-    .map((f) => `- "${f.source.title || "Untitled"}"`)
-    .join("\n")
-  summaryText += `.\nTop items:\n${topItemsList}`
-
-  return {
-    result: fragments.map((v) => v.content).join("\n"),
-    contexts: fragments,
-  }
+  return fragments
 }

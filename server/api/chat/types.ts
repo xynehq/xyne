@@ -92,12 +92,21 @@ export type ConverseResponseWithCitations = ConverseResponse & {
   imageCitation?: ImageCitation
 }
 
+export interface FragmentImageReference {
+  fileName: string
+  addedAtTurn: number
+  sourceFragmentId: string
+  sourceToolName: string
+  isUserAttachment: boolean
+}
+
 export interface MinimalAgentFragment {
   id: string // Unique ID for the fragment
   content: string
   source: Citation
   confidence: number
   imageFileNames?: string[]
+  images?: FragmentImageReference[]
 }
 
 export const messageFeedbackSchema = z.object({

@@ -87,11 +87,18 @@ let ragOffFeature = true
 let useLegacyServiceAccountSync =
   process.env.USE_LEGACY_SERVICE_ACCOUNT_SYNC === "true"
 let useLegacySlackSync = process.env.USE_LEGACY_SLACK_SYNC === "true"
+let delegationAgentic = "true"
 let CurrentAuthType: AuthType =
   (process.env.AUTH_TYPE as AuthType) || AuthType.OAuth
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 const MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES = 3 * 1024 // 3KB - generous limit for service account JSON files
 const AccessTokenCookie = "access-token"
+export const IMAGE_CONTEXT_CONFIG = {
+  enabled: true, // Enable image context tracking by default
+  recencyWindow: 2, // Keep images from last 2 turns
+  maxImagesPerCall: 100, // 0 = no limit, pass all recent images
+  alwaysIncludeAttachments: true,
+}
 
 // LangFuse configuration
 let langfusePublicKey = process.env["LANGFUSE_PUBLIC_KEY"]?.trim() || ""
@@ -300,4 +307,6 @@ export default {
   langfuseSecretKey,
   langfuseBaseUrl,
   langfuseEnabled,
+  IMAGE_CONTEXT_CONFIG,
+  delegation_agentic: delegationAgentic,
 }

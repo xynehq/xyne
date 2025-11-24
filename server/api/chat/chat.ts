@@ -161,6 +161,7 @@ import {
 } from "./types"
 import { activeStreams } from "./stream"
 import { AgentMessageApi, MessageWithToolsApi } from "@/api/chat/agents"
+import { MessageAgents } from "@/api/chat/message-agents"
 import {
   extractFileIdsFromMessage,
   isMessageWithContext,
@@ -5004,6 +5005,16 @@ export const MessageApi = async (c: Context) => {
       agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID)
         ? agentId
         : undefined // Use undefined if not a valid CUID
+    
+    // Check for message-agents mode (new JAF-based agentic flow)
+    let isMessageAgentsMode = c.req.query("isMessageAgentsMode") === "true"
+    Logger.info(`isMessageAgentsMode: ${isMessageAgentsMode}`)
+    // isMessageAgentsMode = true
+    if (isMessageAgentsMode) {
+      Logger.info(`Routing to MessageAgents (new JAF-based flow)`)
+      return MessageAgents(c)
+    }
+    
     if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)

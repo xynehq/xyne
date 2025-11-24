@@ -613,6 +613,7 @@ export type loggerChildSchema = {
   responseCode?: string
   responseStatus?: string
   operationType?: OperationType
+  agentId?: string
 }
 export const UserRoleChangeSchema = z.object({
   userId: z.string(),

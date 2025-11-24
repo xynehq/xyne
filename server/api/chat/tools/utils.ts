@@ -38,22 +38,14 @@ export async function formatSearchToolResponse(
     limit?: number
     searchType?: string
   },
-): Promise<{
-  result: string
-  summary: string
-  contexts: MinimalAgentFragment[]
-}> {
+): Promise<MinimalAgentFragment[]> {
   const children = (searchResults?.root?.children || []).filter(
     (item): item is VespaSearchResults =>
       !!(item.fields && "sddocname" in item.fields),
   )
 
   if (children.length === 0) {
-    return {
-      result: `No ${searchContext.searchType || "results"} found.`,
-      summary: `No ${searchContext.searchType || "results"} found.`,
-      contexts: [],
-    }
+    return []
   }
 
   const fragments: MinimalAgentFragment[] = await Promise.all(
@@ -72,39 +64,7 @@ export async function formatSearchToolResponse(
     }),
   )
 
-  let summaryText = `Found ${fragments.length} ${searchContext.searchType || "result"}${fragments.length !== 1 ? "s" : ""}`
-
-  if (searchContext.query) {
-    summaryText += ` matching '${searchContext.query}'`
-  }
-
-  if (searchContext.app) {
-    summaryText += ` in ${searchContext.app}`
-  }
-
-  if (searchContext.labels && searchContext.labels.length > 0) {
-    summaryText += ` with labels: ${searchContext.labels.join(", ")}`
-  }
-
-  if (searchContext.timeRange) {
-    summaryText += ` from ${new Date(searchContext.timeRange.startTime).toLocaleDateString()} to ${new Date(searchContext.timeRange.endTime).toLocaleDateString()}`
-  }
-
-  if (searchContext.offset && searchContext.offset > 0) {
-    summaryText += ` (showing items ${searchContext.offset + 1} to ${searchContext.offset + fragments.length})`
-  }
-
-  const topItemsList = fragments
-    .slice(0, 3)
-    .map((f) => `- "${f.source.title || "Untitled"}"`)
-    .join("\n")
-  summaryText += `.\nTop results:\n${topItemsList}`
-
-  return {
-    result: fragments.map((v) => v.content).join("\n"),
-    contexts: fragments,
-    summary: summaryText,
-  }
+  return fragments
 }
 
 export function parseAgentAppIntegrations(agentPrompt?: string): {

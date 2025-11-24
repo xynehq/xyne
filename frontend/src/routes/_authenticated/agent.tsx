@@ -2728,6 +2728,13 @@ function AgentComponent() {
   const handleSend = async (
     messageToSend: string,
     metadata?: AttachmentMetadata[],
+    selectedSources?: string[],
+    agentId?: string | null,
+    toolsList?: any[],
+    selectedModel?: string,
+    isFollowup?: boolean,
+    selectedKbItems?: string[],
+    isMessageAgentsMode?: boolean,
   ) => {
     if (!messageToSend || isStreaming) return
 
@@ -2896,6 +2903,11 @@ function AgentComponent() {
       }
     }
     url.searchParams.append("message", encodeURIComponent(messageToSend))
+
+    // Add isMessageAgentsMode parameter if true
+    if (isMessageAgentsMode) {
+      url.searchParams.append("isMessageAgentsMode", "true")
+    }
 
     // Add agent ID to the request if using an agent
     if (chatConfigAgent?.externalId) {
