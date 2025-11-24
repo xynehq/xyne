@@ -1,3 +1,10 @@
+# [3.32.0](https://github.com/xynehq/xyne/compare/v3.31.6...v3.32.0) (2025-11-19)
+
+
+### Features
+
+* XYNE-331 added lite llm provider and glm model support ([#1202](https://github.com/xynehq/xyne/issues/1202)) ([b83bb5f](https://github.com/xynehq/xyne/commit/b83bb5f33d0926b75cf54a126d40a687c74b78cc))
+
 ## [3.31.6](https://github.com/xynehq/xyne/compare/v3.31.5...v3.31.6) (2025-11-18)
 
 

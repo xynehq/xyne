@@ -332,8 +332,16 @@ export const modelDetailsMap: Record<
         pricePerThousandOutputTokens:0.01
       }
     }
-  }
-
+  },
+  [getActualModelName(Models.GLM_4_5)]:{
+    name:"glm-45-fp8",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.00011,
+      }
+    }
+  },
 }
 
 export const ModelToProviderMap: Record<Models, AIProviders> = {
@@ -399,6 +407,7 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.Vertex_Gemini_1_5_Flash_8b_Exp_0827]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_1_5_Pro_002]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_1_5_Pro_Exp_0827]: AIProviders.VertexAI,
+  [Models.GLM_4_5]: AIProviders.LiteLLM,
 }
 
 export const isDeepResearchModel = (modelId: Models): boolean => {

@@ -37,7 +37,7 @@ export interface FormConfig {
 
 // Only allow specific file types as requested
 const VALID_FILE_TYPES = [
-  "txt", "pdf", "docx", "doc"
+  "txt", "pdf", "docx", "doc", "xlsx", "xls"
 ]
 
 
@@ -70,7 +70,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         name: field.name || field.label || field.id || "Field",
         placeholder: field.placeholder || "",
         type: "file", // Force all fields to be file type
-        fileTypes: field.filetypes || field.fileTypes || ["txt", "pdf", "docx", "doc"],
+        fileTypes: field.filetypes || field.fileTypes || ["txt", "pdf", "docx", "doc", "xlsx", "xls"],
         required: field.required !== undefined ? field.required : true,
         maxSize: field.maxSize || "",
       }))
@@ -135,7 +135,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
       fields: prev.fields.map(field => ({
         ...field,
         fileTypes: (!field.fileTypes || field.fileTypes.length === 0) 
-          ? ["txt", "pdf", "docx", "doc"] 
+          ? ["txt", "pdf", "docx", "doc", "xlsx", "xls"] 
           : field.fileTypes,
         required: true
       }))
@@ -454,20 +454,50 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                             Allowed File Types
                           </Label>
                           
-                          {/* Display current file types as read-only pills */}
-                          <div className="min-h-[40px] w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md flex flex-wrap items-center gap-1">
-                            {field.fileTypes?.map((fileType, index) => (
-                              <div
-                                key={index}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-300"
-                              >
-                                <span>.{fileType}</span>
-                              </div>
-                            ))}
+                          {/* Interactive file types with checkboxes */}
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-3 gap-2">
+                              {VALID_FILE_TYPES.map((fileType) => (
+                                <label 
+                                  key={fileType}
+                                  className="flex items-center space-x-2 cursor-pointer"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={field.fileTypes?.includes(fileType) || false}
+                                    onChange={(e) => {
+                                      const currentTypes = field.fileTypes || []
+                                      const newTypes = e.target.checked
+                                        ? [...currentTypes, fileType]
+                                        : currentTypes.filter(t => t !== fileType)
+                                      updateField(field.id, { fileTypes: newTypes })
+                                    }}
+                                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                                  />
+                                  <span className="text-sm text-slate-700 dark:text-gray-300">
+                                    .{fileType}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
                           </div>
                           
+                          {/* Display selected file types as pills */}
+                          {field.fileTypes && field.fileTypes.length > 0 && (
+                            <div className="min-h-[40px] w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md flex flex-wrap items-center gap-1">
+                              {field.fileTypes.map((fileType, index) => (
+                                <div
+                                  key={index}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-200 text-green-800 dark:bg-green-800 dark:text-green-200"
+                                >
+                                  <span>.{fileType}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          
                           <p className="text-xs text-slate-500 dark:text-gray-400">
-                            Supported file types: {VALID_FILE_TYPES.join(", ")}
+                            Select the file types you want to allow for upload
                           </p>
                         </div>
                       </div>

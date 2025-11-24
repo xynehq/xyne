@@ -176,6 +176,7 @@ import { JafStreamer } from "./jaf-stream"
 const {
   JwtPayloadKey,
   defaultBestModel,
+  defaultBestModelAgenticMode,
   defaultFastModel,
   maxDefaultSummary,
   isReasoning,
@@ -349,7 +350,10 @@ async function performSynthesis(
         ),
       },
     )
-    synthesisSpan.setAttribute("model_id", defaultBestModel)
+    synthesisSpan.setAttribute(
+      "model_id",
+      (modelId as Models) || defaultBestModel,
+    )
     synthesisSpan.setAttribute(
       "response_length",
       synthesisResponse.text?.length || 0,
@@ -1342,12 +1346,19 @@ export const MessageWithToolsApi = async (c: Context) => {
             role: m.messageRole === MessageRole.User ? "user" : "assistant",
             content: m.message,
           }))
-
+        const agenticModelId: Models =
+          actualModelId === defaultBestModelAgenticMode ||
+          actualModelId === defaultBestModel
+            ? (actualModelId as Models)
+            : defaultBestModelAgenticMode &&
+                defaultBestModelAgenticMode !== ("" as Models)
+              ? (defaultBestModelAgenticMode as Models)
+              : defaultBestModel
         const jafAgent: JAFAgent<JAFCtx, string> = {
           name: "xyne-agent",
           instructions: () => agentInstructions,
           tools: allJAFTools,
-          modelConfig: { name: defaultBestModel },
+          modelConfig: { name: agenticModelId },
         }
 
         const modelProvider = makeXyneJAFProvider<JAFCtx>()
@@ -1374,7 +1385,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentRegistry,
           modelProvider,
           maxTurns: 10,
-          modelOverride: defaultBestModel,
+          modelOverride: agenticModelId,
           allowClarificationRequests: true,
           clarificationDescription: hitlClarificationDescription,
           clarificationStorage,
@@ -1432,7 +1443,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   message,
                   contextStrings,
                   {
-                    modelId: config.defaultBestModel,
+                    modelId: agenticModelId,
                     json: false,
                     stream: false,
                   },
