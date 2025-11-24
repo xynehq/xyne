@@ -121,7 +121,7 @@ export type {
   SelectPublicChat,
   PublicWorkspace,
   SelectPublicAgent,
-  UserMetadata
+  UserMetadata,
   // @ts-ignore
 } from "@/db/schema"
 
@@ -705,22 +705,8 @@ export enum XyneTools {
   searchCalendarEvents = "searchCalendarEvents",
   searchGoogleContacts = "searchGoogleContacts",
   searchGlobal = "searchGlobal",
+  // jaf clarification tool
   requestUserClarification = "request_user_clarification",
-
-  // old tools
-  GetUserInfo = "get_user_info",
-  MetadataRetrieval = "metadata_retrieval",
-  Search = "search",
-  FilteredSearch = "filtered_search",
-  TimeSearch = "time_search",
-
-  // Conversational tool
-  Conversational = "conversational",
-
-  // slack tools
-  getSlackRelatedMessages = "get_slack_related_messages",
-  getSlackThreads = "get_slack_threads",
-  getUserSlackProfile = "get_user_slack_profile",
 }
 
 export enum IngestionType {

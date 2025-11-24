@@ -47,11 +47,12 @@ import {
   type ToolResult,
   type ToolCall,
   InterruptionStatus,
+  provideClarification,
 } from "@xynehq/jaf"
 import {
   buildMCPJAFTools,
   type FinalToolsList as JAFinalToolsList,
-  type JAFAdapterCtx,
+  type JAFCtx,
 } from "@/api/chat/jaf-adapter"
 import { fallbackTool } from "./tools/global"
 import { AgentSteps } from "./agentSteps"
@@ -97,9 +98,9 @@ type ChatContext = {
 
 const Logger = getLogger(Subsystem.Chat)
 export const JafStreamer = async (
-  runState: JAFRunState<JAFAdapterCtx>,
-  runConfig: JAFRunConfig<JAFAdapterCtx>,
-  baseCtx: JAFAdapterCtx,
+  runState: JAFRunState<JAFCtx>,
+  runConfig: JAFRunConfig<JAFCtx>,
+  baseCtx: JAFCtx,
   stream: SSEStreamingApi,
   options: ChatContext,
 ): Promise<void> => {
@@ -134,7 +135,7 @@ export const JafStreamer = async (
 
   let currentTurn = 0
   let totalToolCalls = 0
-  for await (const evt of runStream<JAFAdapterCtx, string>(
+  for await (const evt of runStream<JAFCtx, string>(
     runState,
     runConfig,
     async (event: TraceEvent) => {
@@ -174,11 +175,15 @@ export const JafStreamer = async (
       case "tool_requests": {
         const toolRequestsSpan = turnSpan?.startSpan("tool_requests")
         totalToolCalls += evt.data.toolCalls.length
-        toolRequestsSpan?.setAttribute("tool_calls_count", evt.data.toolCalls.length)
+        toolRequestsSpan?.setAttribute(
+          "tool_calls_count",
+          evt.data.toolCalls.length,
+        )
         toolRequestsSpan?.setAttribute("total_tool_calls", totalToolCalls)
 
         for (const r of evt.data.toolCalls) {
-          const toolSelectionSpan = toolRequestsSpan?.startSpan("tool_selection")
+          const toolSelectionSpan =
+            toolRequestsSpan?.startSpan("tool_selection")
           toolSelectionSpan?.setAttribute("tool_name", r.name)
           toolSelectionSpan?.setAttribute(
             "args_count",
@@ -193,7 +198,7 @@ export const JafStreamer = async (
             },
             message,
           )
-  
+
           await agentSteps.logAndStreamReasoning(
             {
               type: AgentReasoningStepType.ToolParameters,
@@ -222,17 +227,21 @@ export const JafStreamer = async (
         break
       }
       case "tool_call_end": {
-        const toolStatus = typeof evt.data.status === "string" 
-          ? (evt.data.status === "completed" || evt.data.status === "failed" || evt.data.status === "in_progress" 
-              ? evt.data.status 
-              : "completed")
-          : "completed"
-        const contextsLength = toolContextsMap[`${currentTurn}_${evt.data.toolName}`] || 0
+        const toolStatus =
+          typeof evt.data.status === "string"
+            ? evt.data.status === "completed" ||
+              evt.data.status === "failed" ||
+              evt.data.status === "in_progress"
+              ? evt.data.status
+              : "completed"
+            : "completed"
+        const contextsLength =
+          toolContextsMap[`${currentTurn}_${evt.data.toolName}`] || 0
         await agentSteps.logAndStreamReasoning(
           {
             type: AgentReasoningStepType.ToolResult,
             toolName: evt.data.toolName,
-            resultSummary: `Tool execution completed${contextsLength > 0 ? ` - Found ${contextsLength} result${contextsLength !== 1 ? 's' : ''}` : ''}`,
+            resultSummary: `Tool execution completed${contextsLength > 0 ? ` - Found ${contextsLength} result${contextsLength !== 1 ? "s" : ""}` : ""}`,
             itemsFound: contextsLength,
             status: toolStatus,
           },
@@ -307,7 +316,10 @@ export const JafStreamer = async (
         messageSpan?.setAttribute("content_length", content.length)
         messageSpan?.setAttribute("answer_length", answer.length)
         messageSpan?.setAttribute("citations_count", citations.length)
-        messageSpan?.setAttribute("image_citations_count", imageCitations.length)
+        messageSpan?.setAttribute(
+          "image_citations_count",
+          imageCitations.length,
+        )
         messageSpan?.end()
         break
       }
@@ -395,21 +407,21 @@ export const JafStreamer = async (
         )
         clarificationProvidedSpan.setAttribute(
           "selected_id",
-          evt.data.selectedId,
+          evt.data.selectedOption,
         )
 
         await stream.writeSSE({
           event: ChatSSEvents.ClarificationProvided,
           data: JSON.stringify({
             clarificationId: evt.data.clarificationId,
-            selectedId: evt.data.selectedId,
+            selectedOption: evt.data.selectedOption,
           }),
         })
 
         await agentSteps.logAndStreamReasoning(
           {
             type: AgentReasoningStepType.LogMessage,
-            message: `User provided clarification: ${evt.data.selectedId}`,
+            message: `User provided clarification: ${evt.data.selectedOption}`,
             stepSummary: "User clarification received",
             status: "completed",
           },
@@ -596,7 +608,7 @@ export const JafStreamer = async (
                     event: ChatSSEvents.ClarificationProvided,
                     data: JSON.stringify({
                       clarificationId,
-                      selectedId: selectedOption.selectedOptionId,
+                      selectedOption: selectedOption.selectedOption,
                     }),
                   })
 
@@ -621,64 +633,18 @@ export const JafStreamer = async (
                   })
 
                   // Resume JAF with the clarification
-                  // First, we need to add the awaiting_clarification message to the state
-                  // JAF expects this message to exist so it can update it with the user's selection
+                  const selectedIdValue =
+                    selectedOption.customInput || selectedOption.selectedOption
 
-                  // Find the last assistant message with tool_calls
-                  const lastAssistantMessage = [...finalState.messages]
-                    .reverse()
-                    .find(
-                      (msg) =>
-                        msg.role === "assistant" &&
-                        msg.tool_calls &&
-                        msg.tool_calls.length > 0,
-                    )
+                  const resumedRunState = await provideClarification(
+                    finalState,
+                    clarificationInterruption,
+                    selectedIdValue,
+                    undefined, // additionalContext
+                    runConfig,
+                  )
 
-                  // Find the tool_call_id for the request_user_clarification tool
-                  const clarificationToolCall =
-                    lastAssistantMessage?.tool_calls?.find(
-                      (tc: any) =>
-                        tc.function.name === "request_user_clarification",
-                    )
-
-                  if (!clarificationToolCall) {
-                    throw new Error(
-                      "Could not find request_user_clarification tool call in interrupted state",
-                    )
-                  }
-
-                  // Create the awaiting_clarification message that JAF expects
-                  const awaitingClarificationMessage = {
-                    role: "tool" as const,
-                    content: JSON.stringify({
-                      status: InterruptionStatus.AwaitingClarification,
-                      clarification_id: clarificationId,
-                      message: "Waiting for user to provide clarification",
-                    }),
-                    tool_call_id: clarificationToolCall.id,
-                  }
-
-                  const resumedRunState: JAFRunState<JAFAdapterCtx> = {
-                    ...finalState,
-                    // Add the awaiting_clarification message to the history
-                    messages: [
-                      ...finalState.messages,
-                      awaitingClarificationMessage,
-                    ],
-                    // Add the user's selection to the clarifications map
-                    // If custom input is provided, use that; otherwise use the selected option ID
-                    clarifications: new Map([
-                      ...(finalState.clarifications || []),
-                      [
-                        clarificationId,
-                        selectedOption.customInput ||
-                          selectedOption.selectedOptionId,
-                      ],
-                    ]),
-                  }
-
-                  // Continue with a new runStream using the resumed state
-                  // Process the resumed JAF stream with the same event handling logic
+                  // Resume with the updated state - JAF handles all message updates
                   return JafStreamer(
                     resumedRunState,
                     runConfig,

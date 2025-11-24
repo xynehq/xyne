@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
-import { ChevronRight, Loader2, FileText, Users, Brain, Globe } from "lucide-react"
+import {
+  ChevronRight,
+  Loader2,
+  FileText,
+  Users,
+  Brain,
+  Globe,
+} from "lucide-react"
 import { cn, splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import { AgentReasoningStepType, Citation, XyneTools, Apps } from "shared/types"
 import MarkdownPreview from "@uiw/react-markdown-preview"
@@ -9,7 +16,6 @@ import SlackIcon from "@/assets/slack.svg?react"
 import GmailIcon from "@/assets/gmail.svg?react"
 import GithubIcon from "@/assets/github.svg?react"
 import GoogleCalendarIcon from "@/assets/googleCalendar.svg?react"
-import SearchIcon from "@/assets/search.svg?react"
 import XyneIcon from "@/assets/assistant-logo.svg?react"
 import SvgIcon from "@/assets/mcp.svg?react"
 import ExpandIcon from "@/assets/expand-text-input.svg?react"
@@ -207,10 +213,7 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
             step.type === AgentReasoningStepType.ToolExecuting ||
             step.type === AgentReasoningStepType.ToolResult
           // Track tool name from ToolExecuting steps for the entire iteration
-          if (
-            isToolStep &&
-            step.toolName
-          ) {
+          if (isToolStep && step.toolName) {
             currentToolName = step.toolName
             // Update the current iteration with the tool name
             currentIteration.toolName = currentToolName
@@ -260,8 +263,10 @@ const parseReasoningContent = (content: string): ReasoningStep[] => {
           timestamp: jsonData.step.timestamp || Date.now(),
           status: "info",
           iterationNumber: jsonData.step.iteration,
-          stepSummary: jsonData.step.stepSummary || jsonData.step.aiGeneratedSummary,
-          aiGeneratedSummary: jsonData.step.aiGeneratedSummary || jsonData.step.stepSummary,
+          stepSummary:
+            jsonData.step.stepSummary || jsonData.step.aiGeneratedSummary,
+          aiGeneratedSummary:
+            jsonData.step.aiGeneratedSummary || jsonData.step.stepSummary,
           stepId: jsonData.step.stepId,
           substeps: [],
         }
@@ -409,7 +414,7 @@ const ReasoningStepComponent: React.FC<{
       ).length
       const showAttemptHeader = totalIterations > 1
 
-      if(!hasSubsteps) {
+      if (!hasSubsteps) {
         return
       }
 
@@ -511,12 +516,7 @@ const ReasoningStepComponent: React.FC<{
     const appForIcon = parentApp || step.app
 
     // Get the icon for this step
-    const stepIcon = getAppIcon(
-      appForIcon,
-      step.type,
-      index,
-      step.toolName,
-    )
+    const stepIcon = getAppIcon(appForIcon, step.type, index, step.toolName)
 
     return (
       <div
@@ -891,21 +891,6 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
         return <Globe className="w-4 h-4" />
       case XyneTools.requestUserClarification:
         return <Brain className="w-4 h-4" />
-      
-      // old tools
-      case XyneTools.GetUserInfo:
-        return <XyneIcon className="w-4 h-4" />
-
-      case XyneTools.Search:
-      case XyneTools.FilteredSearch:
-      case XyneTools.TimeSearch:
-        return <SearchIcon className="w-4 h-4" />
-
-      case XyneTools.getSlackRelatedMessages:
-      case XyneTools.getSlackThreads:
-      case XyneTools.getUserSlackProfile:
-        return <SlackIcon className="w-4 h-4" />
-
       default:
         // Default for unknown tools
         return <XyneIcon className="w-4 h-4" />
@@ -1124,17 +1109,17 @@ export const EnhancedReasoning: React.FC<EnhancedReasoningProps> = ({
                         {clarificationRequest.question}
                       </p>
                       <div className="space-y-2">
-                        {clarificationRequest.options.map((option) => (
+                        {clarificationRequest.options.map((option, idx) => (
                           <button
-                            key={option.id}
+                            key={idx}
                             onClick={() =>
                               onClarificationSelect &&
-                              onClarificationSelect(option.id, option.label)
+                              onClarificationSelect(`${idx}`, option)
                             }
                             className="w-full text-left px-4 py-3 bg-white dark:bg-slate-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
                           >
                             <span className="text-sm text-gray-700 dark:text-gray-200">
-                              {option.label}
+                              {option}
                             </span>
                           </button>
                         ))}
