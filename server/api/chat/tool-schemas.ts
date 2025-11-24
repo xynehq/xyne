@@ -11,7 +11,7 @@
 import { z } from "zod"
 import { Apps } from "@xyne/vespa-ts/types"
 import { ToolReviewFindingSchema } from "./agent-schemas"
-import type { Apps, Entity, MailParticipant } from "@xyne/vespa-ts/types"
+import type { Entity, MailParticipant } from "@xyne/vespa-ts/types"
 
 // ============================================================================
 // UNIVERSAL TOOL SCHEMA STRUCTURE
@@ -91,7 +91,10 @@ export const ToolOutputSchema = z.object({
     confidence: z.number().min(0).max(1),
   })).optional().describe("Retrieved context fragments"),
   error: z.string().optional().describe("Error message if execution failed"),
-  metadata: z.record(z.any()).optional().describe("Additional metadata about execution"),
+  metadata: z
+    .record(z.string(), z.any())
+    .optional()
+    .describe("Additional metadata about execution"),
 })
 
 export type ToolOutput = z.infer<typeof ToolOutputSchema>
@@ -124,7 +127,6 @@ export type ToDoWriteInput = z.infer<typeof ToDoWriteInputSchema>
 
 // toDoWrite output schema
 export const ToDoWriteOutputSchema = z.object({
-  result: z.string().describe("Confirmation message"),
   plan: z.object({
     goal: z.string(),
     subTasks: z.array(SubTaskSchema),
@@ -277,7 +279,6 @@ const ResourceAccessSummarySchema = z.object({
 })
 
 export const ListCustomAgentsOutputSchema = z.object({
-  result: z.string(),
   agents: z
     .array(z.object({
       agentId: z.string(),
@@ -358,9 +359,7 @@ export const FallbackToolInputSchema = z.object({
 export type FallbackToolInput = z.infer<typeof FallbackToolInputSchema>
 
 export const FallbackToolOutputSchema = z.object({
-  result: z.string(),
-  fallbackReasoning: z.string().describe("Detailed reasoning about why search failed"),
-  error: z.string().optional(),
+  reasoning: z.string().describe("Detailed reasoning about why search failed"),
 })
 
 export type FallbackToolOutput = z.infer<typeof FallbackToolOutputSchema>
@@ -493,7 +492,6 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
           maxAgents: 2,
         },
         output: {
-          result: "Two renewal specialists match the request.",
           agents: [
             {
               agentId: "agent_renewal_nav",

@@ -1,11 +1,12 @@
 import { z, type ZodType } from "zod"
 import type { Tool } from "@xynehq/jaf"
 import { ToolResponse } from "@xynehq/jaf"
-import type { MinimalAgentFragment } from "./types"
+import type { MinimalAgentFragment, Citation } from "./types"
 import type { AgentRunContext } from "./agent-schemas"
 import { answerContextMapFromFragments } from "@/ai/context"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import { Apps } from "@xyne/vespa-ts/types"
 
 const Logger = getLogger(Subsystem.Chat).child({ module: "jaf-adapter" })
 
@@ -55,6 +56,10 @@ export type FinalToolsList = Record<
   {
     tools: Array<MCPToolItem>
     client: MCPToolClient
+    metadata?: {
+      name?: string
+      description?: string
+    }
   }
 >
 
@@ -126,6 +131,27 @@ export function buildMCPJAFTools(
                 { err: error, toolName },
                 "Could not parse MCP tool response",
               )
+            }
+
+            if (newFragments.length === 0 && formattedContent) {
+              const syntheticSource: Citation = {
+                docId: connectorId,
+                title: info.metadata?.name || `Connector ${connectorId}`,
+                url: "",
+                app: Apps.MCP,
+                entity: {
+                  type: "mcp",
+                  connectorId,
+                  name: info.metadata?.name || connectorId,
+                } as unknown as Citation["entity"],
+              }
+              const syntheticId = `${connectorId}:${toolName}:${Date.now()}`
+              newFragments.push({
+                id: syntheticId,
+                content: formattedContent,
+                source: syntheticSource,
+                confidence: 0.7,
+              })
             }
 
             return ToolResponse.success(formattedContent, {

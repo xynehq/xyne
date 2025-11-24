@@ -108,7 +108,7 @@ export const searchCalendarEventsTool: Tool<CalendarSearchToolParams, Ctx> = {
         docIds: undefined,
       })
 
-      const response = await formatSearchToolResponse(searchResults, {
+      const fragments = await formatSearchToolResponse(searchResults, {
         query: params.query,
         app: GoogleApps.Calendar,
         timeRange: timeRange,
@@ -117,10 +117,7 @@ export const searchCalendarEventsTool: Tool<CalendarSearchToolParams, Ctx> = {
         searchType: "Calendar event",
       })
 
-      return ToolResponse.success(response.result, {
-        toolName: "searchCalendarEvents",
-        contexts: response.contexts,
-      })
+      return ToolResponse.success(fragments)
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(

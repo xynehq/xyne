@@ -26,8 +26,8 @@ import type {
   SubTask,
   MCPVirtualAgentRuntime,
   MCPToolDefinition,
-  ReviewState,
-  ToolReviewFinding,
+  CurrentTurnArtifacts,
+  ToolExecutionRecordWithResult,
 } from "./agent-schemas"
 import { ToolExpectationSchema, ReviewResultSchema } from "./agent-schemas"
 import { getTracer } from "@/tracer"
@@ -79,11 +79,6 @@ import {
   type ResourceAccessSummary,
 } from "./tool-schemas"
 import { searchToCitation, extractImageFileNames } from "./utils"
-import {
-  collectFragmentsFromMessages,
-  collectImagesFromFragments,
-  convertTranscriptToBedrockMessages,
-} from "./transcript-utils"
 import { GetDocumentsByDocIds } from "@/search/vespa"
 import {
   Apps,
@@ -164,6 +159,13 @@ const mutableAgentContext = (
   context: Readonly<AgentRunContext>
 ): AgentRunContext => context as AgentRunContext
 
+const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
+  fragments: [],
+  expectations: [],
+  toolOutputs: [],
+  images: [],
+})
+
 const toToolParameters = (
   schema: ZodTypeAny
 ): Tool<unknown, AgentRunContext>["schema"]["parameters"] =>
@@ -210,6 +212,8 @@ type ReasoningPayload = {
   aiSummary?: string
   [key: string]: unknown
 }
+
+const REVIEW_SUMMARY_TAG = "auto_review_summary"
 
 type ReasoningEmitter = (payload: ReasoningPayload) => Promise<void>
 
@@ -269,6 +273,169 @@ function truncateValue(value: string, maxLength = 160): string {
   return `${value.slice(0, maxLength - 1)}…`
 }
 
+const RECENT_IMAGE_WINDOW = 2
+
+function mergeFragmentLists(
+  target: MinimalAgentFragment[],
+  incoming: MinimalAgentFragment[]
+): MinimalAgentFragment[] {
+  if (!incoming.length) {
+    return target
+  }
+  const merged = [...target]
+  const indexById = new Map<string, number>()
+  merged.forEach((fragment, idx) => indexById.set(fragment.id, idx))
+  for (const fragment of incoming) {
+    if (!fragment?.id) continue
+    const existingIndex = indexById.get(fragment.id)
+    if (existingIndex !== undefined) {
+      merged[existingIndex] = fragment
+    } else {
+      indexById.set(fragment.id, merged.length)
+      merged.push(fragment)
+    }
+  }
+  return merged
+}
+
+function mergeImageReferences(
+  target: FragmentImageReference[],
+  incoming: FragmentImageReference[]
+): FragmentImageReference[] {
+  if (!incoming.length) {
+    return target
+  }
+  const merged = [...target]
+  const indexByFile = new Map<string, number>()
+  merged.forEach((image, idx) => indexByFile.set(image.fileName, idx))
+  for (const image of incoming) {
+    if (!image?.fileName) continue
+    const existingIndex = indexByFile.get(image.fileName)
+    if (existingIndex !== undefined) {
+      merged[existingIndex] = image
+    } else {
+      indexByFile.set(image.fileName, merged.length)
+      merged.push(image)
+    }
+  }
+  return merged
+}
+
+function extractImagesFromFragments(
+  fragments: MinimalAgentFragment[]
+): FragmentImageReference[] {
+  const references: FragmentImageReference[] = []
+  for (const fragment of fragments) {
+    if (!Array.isArray(fragment.images) || fragment.images.length === 0) continue
+    for (const image of fragment.images) {
+      if (image?.fileName) {
+        references.push(image)
+      }
+    }
+  }
+  return references
+}
+
+function recordFragmentsForContext(
+  context: AgentRunContext,
+  fragments: MinimalAgentFragment[],
+  turnNumber: number
+): void {
+  if (!fragments.length) return
+  fragments.forEach((fragment) => context.seenDocuments.add(fragment.id))
+  context.currentTurnArtifacts.fragments = mergeFragmentLists(
+    context.currentTurnArtifacts.fragments,
+    fragments
+  )
+  context.allFragments = mergeFragmentLists(context.allFragments, fragments)
+  const existingForTurn = context.turnFragments.get(turnNumber) ?? []
+  context.turnFragments.set(
+    turnNumber,
+    mergeFragmentLists(existingForTurn, fragments)
+  )
+  const fragmentImages = extractImagesFromFragments(fragments)
+  if (fragmentImages.length > 0) {
+    context.currentTurnArtifacts.images = mergeImageReferences(
+      context.currentTurnArtifacts.images,
+      fragmentImages
+    )
+    loggerWithChild({ email: context.user.email }).info(
+      {
+        chatId: context.chat.externalId,
+        turnNumber,
+        fragmentCount: fragments.length,
+        imageNames: fragmentImages.map((img) => img.fileName),
+      },
+      "[MessageAgents] Recorded new fragment images"
+    )
+  }
+}
+
+function resetCurrentTurnArtifacts(context: AgentRunContext): void {
+  context.currentTurnArtifacts = createEmptyTurnArtifacts()
+}
+
+function finalizeTurnImages(
+  context: AgentRunContext,
+  turnNumber: number
+): void {
+  const imagesForTurn = context.currentTurnArtifacts.images
+  context.imagesByTurn.set(turnNumber, [...imagesForTurn])
+  context.allImages = mergeImageReferences(
+    context.allImages,
+    imagesForTurn
+  )
+  const recentTurns = Array.from(context.imagesByTurn.keys())
+    .sort((a, b) => a - b)
+    .slice(-RECENT_IMAGE_WINDOW)
+  const flattened: FragmentImageReference[] = []
+  for (const recentTurn of recentTurns) {
+    const refs = context.imagesByTurn.get(recentTurn)
+    if (refs?.length) {
+      flattened.push(...refs)
+    }
+  }
+  context.recentImages = mergeImageReferences([], flattened)
+  context.currentTurnArtifacts.images = []
+  loggerWithChild({ email: context.user.email }).info(
+    {
+      chatId: context.chat.externalId,
+      turnNumber,
+      committedImages: imagesForTurn.map((img) => img.fileName),
+      recentWindow: recentTurns,
+      recentImages: context.recentImages.map((img) => img.fileName),
+      allImagesCount: context.allImages.length,
+    },
+    "[MessageAgents] Updated turn image buffers"
+  )
+}
+
+function summarizeToolResultPayload(result: any): string {
+  if (!result) {
+    return "No result returned."
+  }
+  const summaryCandidates: Array<unknown> = [
+    result?.data?.summary,
+    result?.data?.result,
+    result?.data?.message,
+    result?.result,
+    result?.message,
+  ]
+  for (const candidate of summaryCandidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return truncateValue(candidate.trim(), 200)
+    }
+  }
+  if (typeof result?.data === "string") {
+    return truncateValue(result.data, 200)
+  }
+  try {
+    return truncateValue(JSON.stringify(result?.data ?? result), 200)
+  } catch {
+    return "Result unavailable."
+  }
+}
+
 function formatToolArgumentsForReasoning(
   args: Record<string, unknown>
 ): string {
@@ -313,22 +480,12 @@ function buildTurnToolReasoningSummary(
   return `Tools executed in turn ${turnNumber}:\n${lines.join("\n")}`
 }
 
-function getTranscriptMessages(context: AgentRunContext): readonly JAFMessage[] {
-  try {
-    return context.transcript?.getMessages?.() ?? []
-  } catch {
-    return []
+function getMutableTranscriptMessages(context: AgentRunContext): JAFMessage[] | null {
+  const messages = context.transcript?.getMessages?.()
+  if (!Array.isArray(messages)) {
+    return null
   }
-}
-
-function getTranscriptFragments(context: AgentRunContext): MinimalAgentFragment[] {
-  const messages = getTranscriptMessages(context)
-  return collectFragmentsFromMessages(messages)
-}
-
-function getTranscriptImages(context: AgentRunContext): FragmentImageReference[] {
-  const fragments = getTranscriptFragments(context)
-  return collectImagesFromFragments(fragments)
+  return messages as JAFMessage[]
 }
 
 type FragmentImageOptions = {
@@ -431,6 +588,9 @@ function getMetadataValue<T = unknown>(
   result: any,
   key: string
 ): T | undefined {
+  if (result?.data && typeof result.data === "object" && key in result.data) {
+    return (result.data as Record<string, unknown>)[key] as T
+  }
   for (const layer of getMetadataLayers(result)) {
     if (key in layer) {
       return layer[key] as T
@@ -608,9 +768,9 @@ function formatClarificationsForPrompt(
 
 function buildFinalSynthesisPayload(
   context: AgentRunContext,
-  fragmentsLimit = Math.max(12, getTranscriptFragments(context).length || 1)
+  fragmentsLimit = Math.max(12, context.allFragments.length || 1)
 ): { systemPrompt: string; userMessage: string } {
-  const fragments = getTranscriptFragments(context)
+  const fragments = context.allFragments
   const fragmentsSection = buildContextSection(fragments, fragmentsLimit)
   const planSection = formatPlanForPrompt(context.plan)
   const clarificationSection = formatClarificationsForPrompt(context.clarifications)
@@ -677,7 +837,7 @@ function selectImagesForFinalSynthesis(
   dropped: string[]
   userAttachmentCount: number
 } {
-  const images = getTranscriptImages(context)
+  const images = context.allImages
   const total = images.length
   if (!IMAGE_CONTEXT_CONFIG.enabled || total === 0) {
     return { selected: [], total, dropped: [], userAttachmentCount: 0 }
@@ -720,49 +880,6 @@ function selectImagesForFinalSynthesis(
   }
 }
 
-function buildFragmentResultSummary(
-  fragments: MinimalAgentFragment[]
-): string {
-  if (fragments.length === 0) {
-    return "Retrieved 0 fragments."
-  }
-  const preview = fragments
-    .map((fragment) =>
-      fragment.content
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 120)
-    )
-    .filter((text) => text.length > 0)
-    .slice(0, 2)
-
-  const recap = preview.length ? ` "${preview.join(" … ")}"` : ""
-  return `Retrieved ${fragments.length} fragment${
-    fragments.length === 1 ? "" : "s"
-  }:${recap}`
-}
-
-function buildStructuredToolResult(
-  baseResult: any,
-  fragments: MinimalAgentFragment[],
-  summary: string
-): ToolResult {
-  const metadata =
-    typeof baseResult === "object" && baseResult?.metadata
-      ? { ...baseResult.metadata }
-      : undefined
-
-  const enrichedMetadata = {
-    ...(metadata || {}),
-    fragmentsCount: fragments.length,
-  }
-
-  return ToolResponse.success(
-    { summary, fragments },
-    enrichedMetadata
-  )
-}
-
 function buildAttachmentToolMessage(
   fragments: MinimalAgentFragment[],
   summary: string
@@ -803,6 +920,7 @@ function initializeAgentContext(
     streamedText: "",
     ackReceived: false,
   }
+  const currentTurnArtifacts = createEmptyTurnArtifacts()
 
   return {
     user: {
@@ -829,6 +947,12 @@ function initializeAgentContext(
     ambiguityResolved: false,
     toolCallHistory: [],
     seenDocuments: new Set<string>(),
+    allFragments: [],
+    turnFragments: new Map<number, MinimalAgentFragment[]>(),
+    allImages: [],
+    imagesByTurn: new Map<number, FragmentImageReference[]>(),
+    recentImages: [],
+    currentTurnArtifacts,
     turnCount: MIN_TURN_NUMBER,
     totalLatency: 0,
     totalCost: 0,
@@ -866,26 +990,25 @@ function initializeAgentContext(
  */
 async function performAutomaticReview(
   input: AutoReviewInput,
-  fullContext: AgentRunContext,
-  conversationMessages?: Message[]
+  fullContext: AgentRunContext
 ): Promise<ReviewResult> {
+  const reviewContext: AgentRunContext = {
+    ...fullContext,
+    toolCallHistory: input.toolCallHistory,
+    plan: input.plan,
+  }
+
+  let reviewResult: ReviewResult
   try {
-    const reviewContext: AgentRunContext = {
-      ...fullContext,
-      toolCallHistory: input.toolCallHistory,
-      plan: input.plan,
-    }
-    const review = await runReviewLLM(reviewContext, {
+    reviewResult = await runReviewLLM(reviewContext, {
       focus: input.focus,
       turnNumber: input.turnNumber,
       expectedResults: input.expectedResults,
       delegationEnabled: fullContext.delegationEnabled,
-      messages: conversationMessages,
     })
-    return review
   } catch (error) {
     Logger.error(error, "Automatic review failed, falling back to default response")
-    return {
+    reviewResult = {
       status: "needs_attention",
       notes: `Automatic review fallback for turn ${input.turnNumber}: ${getErrorMessage(error)}`,
       toolFeedback: [],
@@ -898,6 +1021,9 @@ async function performAutomaticReview(
       clarificationQuestions: [],
     }
   }
+
+  appendReviewResultToTranscript(reviewContext, reviewResult, input.turnNumber)
+  return reviewResult
 }
 
 async function handleReviewOutcome(
@@ -1247,6 +1373,19 @@ export async function afterToolExecutionHook(
   const { state, executionTime, status, args } = hookContext
   const context = state.context as AgentRunContext
 
+  // LOG: Hook entry point
+  loggerWithChild({ email: context.user.email }).info(
+    {
+      toolName,
+      turnNumber: turnNumber ?? context.turnCount,
+      status,
+      executionTime,
+      hasResult: !!result,
+      resultType: result ? typeof result : "null",
+    },
+    "[afterToolExecutionHook] ENTRY - Tool execution completed"
+  )
+
   // 1. Create execution record
   const providedTurn =
     typeof turnNumber === "number" ? turnNumber : undefined
@@ -1275,7 +1414,6 @@ export async function afterToolExecutionHook(
     startedAt: new Date(Date.now() - executionTime),
     durationMs: executionTime,
     estimatedCostUsd: result?.metadata?.estimatedCostUsd || 0,
-    resultSummary: JSON.stringify(result?.data || {}).slice(0, 200),
     status: status === "success" ? "success" : "error",
     error:
       status !== "success"
@@ -1289,23 +1427,25 @@ export async function afterToolExecutionHook(
   // 2. Add to history
   context.toolCallHistory.push(record)
 
-  const aggregatedFragments: MinimalAgentFragment[] = []
-  const aggregatedFragmentIds = new Set<string>()
-  const addFragments = (fragments: MinimalAgentFragment[]) => {
-    for (const fragment of fragments) {
-      if (aggregatedFragmentIds.has(fragment.id)) continue
-      aggregatedFragments.push(fragment)
-      aggregatedFragmentIds.add(fragment.id)
-      gatheredFragmentsKeys.add(fragment.id)
-    }
-  }
   const toolFragments: MinimalAgentFragment[] = []
   const addToolFragments = (fragments: MinimalAgentFragment[]) => {
-    const deduped = fragments.filter(
-      (fragment) => !toolFragments.some((existing) => existing.id === fragment.id)
-    )
-    addFragments(deduped)
+    if (!Array.isArray(fragments) || fragments.length === 0) {
+      return
+    }
+    const deduped: MinimalAgentFragment[] = []
+    for (const fragment of fragments) {
+      if (!fragment?.id) continue
+      if (gatheredFragmentsKeys.has(fragment.id)) {
+        continue
+      }
+      gatheredFragmentsKeys.add(fragment.id)
+      deduped.push(fragment)
+    }
+    if (!deduped.length) {
+      return
+    }
     toolFragments.push(...deduped)
+    recordFragmentsForContext(context, deduped, effectiveTurnNumber)
   }
 
   // 3. Update metrics
@@ -1329,15 +1469,51 @@ export async function afterToolExecutionHook(
   advancePlanAfterTool(
     context,
     toolName,
-    status === "success",
-    record.resultSummary
+    status === "success"
   )
 
   // 5. Extract and filter contexts
-  const contexts = getMetadataValue<MinimalAgentFragment[]>(result, "contexts")
+  const resultData = result?.data
+  let contexts: MinimalAgentFragment[] = []
+  if (Array.isArray(resultData)) {
+    contexts = resultData as unknown as MinimalAgentFragment[]
+  } else if (resultData && typeof resultData === "object") {
+    const fragmentsCandidate = (resultData as { fragments?: unknown }).fragments
+    if (Array.isArray(fragmentsCandidate)) {
+      contexts = fragmentsCandidate as MinimalAgentFragment[]
+    }
+  }
+  if (!Array.isArray(contexts) || contexts.length === 0) {
+    const legacyContexts = getMetadataValue<MinimalAgentFragment[]>(result, "contexts")
+    if (Array.isArray(legacyContexts)) {
+      contexts = legacyContexts
+    }
+  }
+
+  // LOG: Context extraction results
+  loggerWithChild({ email: context.user.email }).info(
+    {
+      toolName,
+      totalContextsExtracted: contexts.length,
+      gatheredFragmentsKeysSize: gatheredFragmentsKeys.size,
+    },
+    "[afterToolExecutionHook] Context extraction completed"
+  )
+
   if (Array.isArray(contexts) && contexts.length > 0) {
     const filteredContexts = contexts.filter(
       (c: MinimalAgentFragment) => !gatheredFragmentsKeys.has(c.id)
+    )
+
+    // LOG: Filtering results
+    loggerWithChild({ email: context.user.email }).info(
+      {
+        toolName,
+        totalContexts: contexts.length,
+        filteredContextsCount: filteredContexts.length,
+        duplicatesFiltered: contexts.length - filteredContexts.length,
+      },
+      "[afterToolExecutionHook] Filtered out duplicate contexts"
     )
 
     if (filteredContexts.length > 0) {
@@ -1359,7 +1535,29 @@ export async function afterToolExecutionHook(
         }
       )
 
+      // LOG: Prepared context strings for ranking
+      loggerWithChild({ email: context.user.email }).info(
+        {
+          toolName,
+          contextStringsCount: contextStrings.length,
+          userMessage: userMessage.slice(0, 200),
+          contextStringsSample: contextStrings.slice(0, 2).map(s => s.slice(0, 150)),
+        },
+        "[afterToolExecutionHook] Prepared context strings for select_best_documents"
+      )
+
       try {
+        // LOG: Calling extractBestDocumentIndexes
+        loggerWithChild({ email: context.user.email }).info(
+          {
+            toolName,
+            userMessage,
+            contextStringsCount: contextStrings.length,
+            modelId: config.defaultBestModel,
+          },
+          "[afterToolExecutionHook][select_best_documents] CALLING extractBestDocumentIndexes"
+        )
+
         // Use extractBestDocumentIndexes to filter to best documents
         const bestDocIndexes = await extractBestDocumentIndexes(
           userMessage,
@@ -1372,19 +1570,38 @@ export async function afterToolExecutionHook(
           messagesWithNoErrResponse
         )
 
+        // LOG: extractBestDocumentIndexes response
+        loggerWithChild({ email: context.user.email }).info(
+          {
+            toolName,
+            bestDocIndexes,
+            bestDocIndexesCount: bestDocIndexes.length,
+            bestDocIndexesType: typeof bestDocIndexes,
+            isArray: Array.isArray(bestDocIndexes),
+          },
+          "[afterToolExecutionHook][select_best_documents] RESPONSE from extractBestDocumentIndexes"
+        )
+
         if (bestDocIndexes.length > 0) {
           const selectedDocs: MinimalAgentFragment[] = []
 
           bestDocIndexes.forEach((idx) => {
             if (idx >= 1 && idx <= filteredContexts.length) {
               const doc: MinimalAgentFragment = filteredContexts[idx - 1]
-              const key = doc.id
-              if (!gatheredFragmentsKeys.has(key)) {
-                gatheredFragmentsKeys.add(key)
-              }
               selectedDocs.push(doc)
             }
           })
+
+          // LOG: Document selection results
+          loggerWithChild({ email: context.user.email }).info(
+            {
+              toolName,
+              selectedDocsCount: selectedDocs.length,
+              selectedDocIds: selectedDocs.map(d => d.id),
+              selectedDocTitles: selectedDocs.map(d => d.source.title || "untitled"),
+            },
+            "[afterToolExecutionHook][select_best_documents] Selected documents after filtering"
+          )
 
           await streamReasoningStep(
             reasoningEmitter,
@@ -1414,13 +1631,33 @@ export async function afterToolExecutionHook(
 
             if (extractedImages.length > 0) {
               const turnForImages = ensureTurnNumber(context.turnCount)
+              
+              // LOG: Before attaching images
+              loggerWithChild({ email: context.user.email }).info(
+                {
+                  toolName,
+                  extractedImagesCount: extractedImages.length,
+                  extractedImages,
+                  turnForImages,
+                  selectedDocsCount: selectedDocs.length,
+                },
+                "[afterToolExecutionHook] Extracted images from fragments - preparing to attach"
+              )
+
               fragmentsForResult = attachImagesToFragments(selectedDocs, extractedImages, {
                 turnNumber: turnForImages,
                 sourceToolName: toolName,
                 isUserAttachment: false,
               })
+
+              // LOG: After attaching images
               loggerWithChild({ email: context.user.email }).info(
-                `Tracked ${extractedImages.length} image reference${
+                {
+                  toolName,
+                  attachedImagesCount: extractedImages.length,
+                  fragmentsWithImages: fragmentsForResult.filter(f => f.images && f.images.length > 0).length,
+                },
+                `[afterToolExecutionHook] Tracked ${extractedImages.length} image reference${
                   extractedImages.length === 1 ? "" : "s"
                 } from ${toolName} on turn ${turnForImages}`
               )
@@ -1428,8 +1665,26 @@ export async function afterToolExecutionHook(
           }
 
           addToolFragments(fragmentsForResult)
+        } else {
+          loggerWithChild({ email: context.user.email }).info(
+            {
+              toolName,
+              filteredContextsCount: filteredContexts.length,
+            },
+            "[afterToolExecutionHook] Document ranking returned no results; retaining all filtered contexts"
+          )
+          addToolFragments(filteredContexts)
         }
       } catch (error) {
+        // LOG: Error in document ranking
+        loggerWithChild({ email: context.user.email }).error(
+          {
+            toolName,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+          "[afterToolExecutionHook][select_best_documents] ERROR in document ranking"
+        )
         await streamReasoningStep(
           reasoningEmitter,
           "Context ranking failed, retaining all retrieved documents.",
@@ -1473,10 +1728,7 @@ export async function afterToolExecutionHook(
     typeof result === "object" &&
     result.status === "success"
   ) {
-    const agents = getMetadataValue<ListCustomAgentsOutput["agents"]>(
-      result,
-      "agents"
-    )
+    const agents = (result?.data as { agents?: ListCustomAgentsOutput["agents"] })?.agents
     const agentCount = Array.isArray(agents) ? agents.length : 0
     await streamReasoningStep(
       reasoningEmitter,
@@ -1493,8 +1745,9 @@ export async function afterToolExecutionHook(
     typeof result === "object" &&
     result.status === "success"
   ) {
-    const agentId = getMetadataValue<string>(result, "agentId")
-      || (hookContext?.args as { agentId?: string })?.agentId
+    const agentId =
+      (result?.data as { agentId?: string })?.agentId ||
+      (hookContext?.args as { agentId?: string })?.agentId
     const agentName =
       context.availableAgents.find((agent) => agent.agentId === agentId)
         ?.agentName || agentId || "unknown agent"
@@ -1520,26 +1773,45 @@ export async function afterToolExecutionHook(
     toolName === "fall_back" &&
     result &&
     typeof result === "object" &&
-    result.status === "success"
+    result.status === "success" &&
+    (result.data as { reasoning?: string } | undefined)?.reasoning
   ) {
     await streamReasoningStep(
       reasoningEmitter,
-      "Fallback analysis completed. Captured reasoning on why earlier attempts failed.",
+      "Fallback analysis completed.",
       { toolName }
     )
   }
 
+  context.currentTurnArtifacts.toolOutputs.push({
+    toolName,
+    arguments: args,
+    status: record.status,
+    resultSummary: summarizeToolResultPayload(result),
+    fragments: toolFragments,
+  })
+
+  // LOG: Hook exit point
+  loggerWithChild({ email: context.user.email }).info(
+    {
+      toolName,
+      turnNumber: effectiveTurnNumber,
+      toolFragmentsCount: toolFragments.length,
+      totalCost: context.totalCost,
+      totalLatency: context.totalLatency,
+    },
+    "[afterToolExecutionHook] EXIT - Tool processing completed"
+  )
+
   if (toolFragments.length > 0) {
-    const summary = buildFragmentResultSummary(toolFragments)
-    record.resultSummary = summary
-    return buildStructuredToolResult(result, toolFragments, summary)
+    return ToolResponse.success(toolFragments)
   }
 
   return null
 }
 
 
-function buildDelegatedAgentFragments(opts: {
+export function buildDelegatedAgentFragments(opts: {
   result: any
   gatheredFragmentsKeys: Set<string>
   agentId?: string
@@ -1548,46 +1820,71 @@ function buildDelegatedAgentFragments(opts: {
   sourceToolName: string
 }): MinimalAgentFragment[] {
   const { result, gatheredFragmentsKeys, agentId, agentName, turnNumber, sourceToolName } = opts
-  const metadata = (result?.data as any)?.metadata || (result as any)?.metadata || {}
-  const citations = metadata?.citations as Citation[] | undefined
-  const imageCitations = metadata?.imageCitations as ImageCitation[] | undefined
+  const resultData = (result?.data as Record<string, unknown>) || {}
+  const citations = resultData.citations as Citation[] | undefined
+  const imageCitations = resultData.imageCitations as ImageCitation[] | undefined
   const agentFragments: MinimalAgentFragment[] = []
+  const fragmentTurn = ensureTurnNumber(turnNumber ?? MIN_TURN_NUMBER)
+  const normalizedAgentName = agentName || agentId || sourceToolName || "delegated_agent"
+  const normalizedAgentId = agentId || `agent:${sourceToolName}`
+  const baseSource: Citation = {
+    docId: normalizedAgentId,
+    title: normalizedAgentName,
+    url: "",
+    app: Apps.Xyne,
+    entity: {
+      type: "agent",
+      name: normalizedAgentName,
+    } as unknown as Citation["entity"],
+  }
   const textResult =
-    typeof (result?.data as any)?.result === "string"
-      ? (result.data as any).result
-      : typeof result?.result === "string"
-        ? result.result
-        : ""
+    typeof resultData.result === "string"
+      ? (resultData.result as string)
+      : typeof (resultData as { agentResult?: string })?.agentResult === "string"
+        ? ((resultData as { agentResult?: string }).agentResult as string)
+        : typeof result?.result === "string"
+          ? result.result
+          : ""
 
   if (Array.isArray(citations) && citations.length > 0) {
     citations.forEach((citation, idx) => {
-      const fragmentTurn = ensureTurnNumber(turnNumber ?? MIN_TURN_NUMBER)
-      const fragmentId = `${agentId || "agent"}:${citation.docId || idx}:${fragmentTurn}:${idx}`
+      const fragmentId = `${normalizedAgentId}:${citation.docId || idx}:${fragmentTurn}:${idx}`
       if (gatheredFragmentsKeys.has(fragmentId)) return
+      const citationExtras = citation as Partial<{
+        excerpt: string
+        summary: string
+      }>
       agentFragments.push({
         id: fragmentId,
-        content: textResult || citation.url || "Agent response",
-        source: citation,
+        content:
+          citationExtras.excerpt ||
+          citationExtras.summary ||
+          textResult ||
+          citation?.url ||
+          `Delegated agent ${normalizedAgentName} response`,
+        source: {
+          ...baseSource,
+          ...citation,
+          docId: citation.docId || baseSource.docId,
+          title: citation.title || baseSource.title,
+          url: citation.url || baseSource.url,
+          app: citation.app || baseSource.app,
+          entity: citation.entity || baseSource.entity,
+        },
         confidence: 0.85,
       })
     })
   }
 
-  if (agentId) {
-    const attributionFragmentId = `agent:${agentId}:turn:${ensureTurnNumber(
-      turnNumber ?? MIN_TURN_NUMBER
-    )}`
+  if (agentFragments.length === 0) {
+    const attributionFragmentId = `${normalizedAgentId}:turn:${fragmentTurn}`
     if (!gatheredFragmentsKeys.has(attributionFragmentId)) {
       agentFragments.push({
         id: attributionFragmentId,
-        content: textResult || `Response provided by delegated agent ${agentName || agentId}`,
-        source: {
-          docId: `agent:${agentId}`,
-          title: `Delegated agent: ${agentName || agentId}`,
-          url: `/agents/${agentId}`,
-          app: Apps.KnowledgeBase,
-          entity: KnowledgeBaseEntity.File,
-        } as Citation,
+        content:
+          textResult ||
+          `Response provided by delegated agent ${normalizedAgentName}`,
+        source: baseSource,
         confidence: 0.9,
       })
     }
@@ -1613,7 +1910,7 @@ function buildDelegatedAgentFragments(opts: {
       if (!targetFragment) continue
       const ref: FragmentImageReference = {
         fileName: imageCitation.imagePath,
-        addedAtTurn: ensureTurnNumber(turnNumber ?? MIN_TURN_NUMBER),
+        addedAtTurn: fragmentTurn,
         sourceFragmentId: targetFragment.id,
         sourceToolName,
         isUserAttachment: false,
@@ -1723,106 +2020,109 @@ function summarizePlan(plan: PlanState | null): string {
   return summary
 }
 
-function summarizeExpectations(
+function formatExpectationsForReview(
   expectations?: ToolExpectationAssignment[]
 ): string {
-  Logger.info({ expectations }, "summarizeExpectations input")
+  Logger.info({ expectations }, "formatExpectationsForReview input")
   if (!expectations || expectations.length === 0) {
     Logger.info(
-      { summary: "No explicit expected results provided." },
-      "summarizeExpectations output"
+      { serialized: "[]" },
+      "formatExpectationsForReview output"
     )
-    return "No explicit expected results provided."
+    return "[]"
   }
-
-  const summary = expectations
-    .map((entry, idx) => {
-      const expectation = entry.expectation
-      const success = expectation.successCriteria.join("; ")
-      const failures = expectation.failureSignals?.length
-        ? `\n   Failure Signals: ${expectation.failureSignals.join("; ")}`
-        : ""
-      const stop = expectation.stopCondition
-        ? `\n   Stop Condition: ${expectation.stopCondition}`
-        : ""
-      return `${idx + 1}. Tool: ${entry.toolName}\n   Goal: ${expectation.goal}\n   Success Criteria: ${success}${failures}${stop}`
-    })
-    .join("\n")
+  const serialized = JSON.stringify(expectations, null, 2)
   Logger.info(
-    { summary, expectationCount: expectations.length },
-    "summarizeExpectations output"
+    {
+      expectationCount: expectations.length,
+      serializedLength: serialized.length,
+    },
+    "formatExpectationsForReview output"
   )
-  return summary
+  return serialized
 }
 
-function summarizeToolHistory(
-  records: ToolExecutionRecord[],
-  limit = 8
+function formatToolOutputsForReview(
+  outputs: ToolExecutionRecordWithResult[]
 ): string {
-  Logger.info(
-    { limit, totalRecords: records.length },
-    "summarizeToolHistory input"
-  )
-  if (!records.length) {
-    Logger.info(
-      { summary: "No tool executions yet." },
-      "summarizeToolHistory output"
-    )
-    return "No tool executions yet."
+  if (!outputs || outputs.length === 0) {
+    return "No tools executed this turn."
   }
-
-  const slice =
-    records.length > limit ? records.slice(-limit) : records
-  const summaryEntries = slice
-    .map((record, idx) => {
-      const expectationSummary = record.expectedResults
-        ? `Expected: ${record.expectedResults.goal}`
-        : "Expected: not provided"
-      return `${idx + 1}. ${record.toolName} (${record.status})\nArgs: ${JSON.stringify(
-        record.arguments
-      )}\n${expectationSummary}\nResult: ${record.resultSummary}`
+  return outputs
+    .map((output, idx) => {
+      const argsSummary = formatToolArgumentsForReasoning(output.arguments || {})
+      const fragmentSummary = output.fragments?.length
+        ? `${output.fragments.length} fragment${output.fragments.length === 1 ? "" : "s"}`
+        : "0 fragments"
+      return `${idx + 1}. ${output.toolName} [${output.status}]\n   Args: ${argsSummary}\n   Result: ${output.resultSummary ?? "No result summary available."}\n   Fragments: ${fragmentSummary}`
     })
-  const prefix =
-    records.length > limit
-      ? `Showing last ${limit} of ${records.length} tool calls.\n`
-      : ""
-  const summary = `${prefix}${summaryEntries.join("\n\n")}`
-  Logger.info(
-    { summary, includedRecords: Math.min(limit, records.length) },
-    "summarizeToolHistory output"
-  )
-  return summary
+    .join("\n\n")
 }
 
-function summarizeFragments(
-  fragments: MinimalAgentFragment[],
-  limit = 5
+function formatReviewResultForTranscript(
+  reviewResult: ReviewResult,
+  turnNumber?: number
 ): string {
-  Logger.info(
-    { fragmentsCount: fragments.length, limit },
-    "summarizeFragments input"
-  )
-  if (!fragments.length) {
-    Logger.info(
-      { summary: "No context fragments gathered yet." },
-      "summarizeFragments output"
-    )
-    return "No context fragments gathered yet."
+  const lines: string[] = [
+    `<${REVIEW_SUMMARY_TAG}>`,
+    `Turn: ${typeof turnNumber === "number" ? turnNumber : "unknown"}`,
+    `Status: ${reviewResult.status}`,
+    `Recommendation: ${reviewResult.recommendation}`,
+    `Plan change needed: ${reviewResult.planChangeNeeded ? "yes" : "no"}${
+      reviewResult.planChangeReason ? ` (${reviewResult.planChangeReason})` : ""
+    }`,
+    `Ambiguity resolved: ${reviewResult.ambiguityResolved ? "yes" : "no"}`,
+    `Notes: ${reviewResult.notes}`,
+  ]
+
+  if (reviewResult.anomalies?.length) {
+    lines.push(`Anomalies: ${reviewResult.anomalies.join("; ")}`)
   }
-  const summary = fragments
-    .slice(-limit)
-    .map(
-      (fragment, idx) =>
-        `${idx + 1}. ${fragment.source.title || fragment.id} -> ${
-          fragment.content?.slice(0, 200) || ""
-        }`
+  if (reviewResult.clarificationQuestions?.length) {
+    lines.push(
+      `Clarification questions: ${reviewResult.clarificationQuestions.join("; ")}`
     )
-    .join("\n")
-  Logger.info(
-    { summary, includedFragments: Math.min(limit, fragments.length) },
-    "summarizeFragments output"
+  }
+
+  lines.push(
+    `Full review payload:\n${JSON.stringify(reviewResult, null, 2)}`
   )
-  return summary
+  lines.push(`</${REVIEW_SUMMARY_TAG}>`)
+  return lines.join("\n")
+}
+
+function appendReviewResultToTranscript(
+  context: AgentRunContext,
+  reviewResult: ReviewResult,
+  turnNumber?: number
+): void {
+  const transcript = getMutableTranscriptMessages(context)
+  if (!transcript) {
+    Logger.warn(
+      {
+        email: context.user.email,
+        chatId: context.chat.externalId,
+      },
+      "[MessageAgents] Unable to append review summary to transcript: transcript unavailable"
+    )
+    return
+  }
+
+  const reviewMessage = {
+    role: MessageRole.System,
+    content: formatReviewResultForTranscript(reviewResult, turnNumber),
+  } as unknown as JAFMessage
+
+  transcript.push(reviewMessage)
+  Logger.info(
+    {
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      messagesCount: transcript.length,
+      turnNumber,
+    },
+    "[MessageAgents] Appended latest auto review summary to runContext transcript"
+  )
 }
 
 function buildDefaultReviewPayload(notes?: string): ReviewResult {
@@ -1841,186 +2141,63 @@ function buildDefaultReviewPayload(notes?: string): ReviewResult {
   }
 }
 
-function normalizeStringArray(value: unknown): string[] {
-  // Logger.info({ value }, "normalizeStringArray input")
-  if (!Array.isArray(value)) {
-    // Logger.info({ normalized: [] }, "normalizeStringArray output")
-    return []
-  }
-  const normalized = value
-    .filter((entry): entry is string => typeof entry === "string")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-  // Logger.info({ normalized }, "normalizeStringArray output")
-  return normalized
-}
-
-function normalizeToolFeedbackEntry(
-  entry: unknown
-): ReviewResult["toolFeedback"][number] | null {
-  // Logger.info({ entry }, "normalizeToolFeedbackEntry input")
-  if (!entry || typeof entry !== "object") {
-    // Logger.info(
-    //   { normalized: null },
-    //   "normalizeToolFeedbackEntry output"
-    // )
-    return null
-  }
-  const candidate = entry as Record<string, unknown>
-  const toolName =
-    typeof candidate.toolName === "string" ? candidate.toolName.trim() : ""
-  const summary =
-    typeof candidate.summary === "string" ? candidate.summary.trim() : ""
-  if (!toolName || !summary) {
-    // Logger.info(
-    //   { normalized: null },
-    //   "normalizeToolFeedbackEntry output"
-    // )
-    return null
-  }
-  const outcome =
-    candidate.outcome === "met" ||
-    candidate.outcome === "missed" ||
-    candidate.outcome === "error"
-      ? candidate.outcome
-      : "missed"
-  const expectationGoal =
-    typeof candidate.expectationGoal === "string" &&
-    candidate.expectationGoal.trim().length > 0
-      ? candidate.expectationGoal.trim()
-      : undefined
-  const followUp =
-    typeof candidate.followUp === "string" &&
-    candidate.followUp.trim().length > 0
-      ? candidate.followUp.trim()
-      : undefined
-  const normalizedEntry: ToolReviewFinding = {
-    toolName,
-    outcome,
-    summary,
-    expectationGoal,
-    followUp,
-  }
-  // Logger.info(
-  //   { normalized: normalizedEntry },
-  //   "normalizeToolFeedbackEntry output"
-  // )
-  return normalizedEntry
-}
-
-function normalizeRecommendation(
-  value: unknown
-): ReviewResult["recommendation"] {
-  // Logger.info({ value }, "normalizeRecommendation input")
-  const recommendation: ReviewResult["recommendation"] =
-    value === "gather_more" ||
-    value === "clarify_query" ||
-    value === "replan"
-      ? value
-      : "proceed"
-  // Logger.info(
-  //   { recommendation },
-  //   "normalizeRecommendation output"
-  // )
-  return recommendation
-}
-
-function coerceBoolean(value: unknown, defaultValue: boolean): boolean {
-  if (typeof value === "boolean") {
-    return value
-  }
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase()
-    if (normalized === "true") return true
-    if (normalized === "false") return false
-    if (normalized === "1") return true
-    if (normalized === "0") return false
-  }
-  if (typeof value === "number") {
-    if (Number.isNaN(value)) return defaultValue
-    return value !== 0
-  }
-  return defaultValue
-}
-
-function normalizeReviewResponse(payload: unknown): ReviewResult {
-  // Logger.info({ payload }, "normalizeReviewResponse input")
-  if (typeof payload === "string") {
-    const normalizedFromString = buildDefaultReviewPayload(payload)
-    // Logger.info(
-    //   { normalized: normalizedFromString },
-    //   "normalizeReviewResponse output (string payload)"
-    // )
-    return normalizedFromString
-  }
-  if (!payload || typeof payload !== "object") {
-    const defaultPayload = buildDefaultReviewPayload()
-    // Logger.info(
-    //   { normalized: defaultPayload },
-    //   "normalizeReviewResponse output (missing payload)"
-    // )
-    return defaultPayload
-  }
-
-  const raw = payload as Record<string, unknown>
-  const base = buildDefaultReviewPayload(
-    typeof raw.notes === "string" ? raw.notes : undefined
+export function buildReviewPromptFromContext(
+  context: AgentRunContext,
+  options?: {
+    focus?: string
+    turnNumber?: number
+  },
+  fallbackExpectations?: ToolExpectationAssignment[]
+): { prompt: string; imageFileNames: string[] } {
+  const turnExpectations =
+    context.currentTurnArtifacts.expectations.length > 0
+      ? context.currentTurnArtifacts.expectations
+      : fallbackExpectations ?? []
+  const planSection = formatPlanForPrompt(context.plan)
+  const clarificationsSection = formatClarificationsForPrompt(
+    context.clarifications
   )
-
-  const toolFeedback = Array.isArray(raw.toolFeedback)
-    ? raw.toolFeedback
-        .map((entry) => normalizeToolFeedbackEntry(entry))
-        .filter(
-          (entry): entry is ReviewResult["toolFeedback"][number] =>
-            entry !== null
-        )
-    : []
-  const unmetExpectations = normalizeStringArray(raw.unmetExpectations)
-  const anomalies = normalizeStringArray(raw.anomalies)
-  const planChangeNeeded = coerceBoolean(raw.planChangeNeeded, false)
-  const ambiguityResolved = coerceBoolean(
-    (raw as any).ambiguityResolved,
-    true
+  const workspaceSection = context.userContext?.trim()
+    ? `Workspace Context:\n${context.userContext.trim()}`
+    : ""
+  const toolOutputsSection = formatToolOutputsForReview(
+    context.currentTurnArtifacts.toolOutputs
   )
-  const clarificationQuestions = normalizeStringArray(
-    (raw as any).clarificationQuestions
+  const expectationsSection = formatExpectationsForReview(turnExpectations)
+  const fragmentsSection = buildContextSection(
+    context.allFragments,
+    Math.max(12, context.allFragments.length || 1)
   )
+  const currentImages = context.currentTurnArtifacts.images.map(
+    (image) => image.fileName
+  )
+  const additionalImages = Math.max(
+    context.allImages.length - currentImages.length,
+    0
+  )
+  const imageSection = `Current turn attachments: ${currentImages.length}\nAdditional images available from prior turns: ${additionalImages}`
+  const reviewFocus = `Review Focus: ${options?.focus ?? "turn_end"} (Turn ${
+    options?.turnNumber ?? context.turnCount
+  })`
 
-  const normalized: ReviewResult = {
-    ...base,
-    status: raw.status === "needs_attention" ? "needs_attention" : "ok",
-    toolFeedback,
-    unmetExpectations,
-    planChangeNeeded,
-    planChangeReason: base.planChangeReason,
-    anomaliesDetected:
-      coerceBoolean(raw.anomaliesDetected, anomalies.length > 0) ||
-      anomalies.length > 0,
-    anomalies,
-    recommendation: normalizeRecommendation(raw.recommendation),
-    ambiguityResolved,
-    clarificationQuestions,
+  const userPromptSections = [
+    `User Question:\n${context.message.text}`,
+    planSection ? `Execution Plan Snapshot:\n${planSection}` : "",
+    clarificationsSection
+      ? `Clarifications:\n${clarificationsSection}`
+      : "",
+    workspaceSection,
+    `Current Turn Tool Outputs:\n${toolOutputsSection}`,
+    `Expectations:\n${expectationsSection}`,
+    fragmentsSection || "Context Fragments:\nNone captured yet.",
+    `Images:\n${imageSection}`,
+    reviewFocus,
+  ].filter(Boolean)
+
+  return {
+    prompt: userPromptSections.join("\n\n"),
+    imageFileNames: currentImages,
   }
-
-  if (planChangeNeeded) {
-    const reason =
-      typeof raw.planChangeReason === "string"
-        ? raw.planChangeReason.trim()
-        : ""
-    normalized.planChangeReason = reason || undefined
-  } else {
-    normalized.planChangeReason = undefined
-  }
-
-  if (typeof raw.notes === "string" && raw.notes.trim().length > 0) {
-    normalized.notes = raw.notes.trim()
-  }
-
-  // Logger.info(
-  //   { normalized },
-  //   "normalizeReviewResponse output"
-  // )
-  return normalized
 }
 
 async function runReviewLLM(
@@ -2031,7 +2208,6 @@ async function runReviewLLM(
     maxFindings?: number
     expectedResults?: ToolExpectationAssignment[]
     delegationEnabled?: boolean
-    messages?: Message[]
   }
 ): Promise<ReviewResult> {
   Logger.info(
@@ -2053,6 +2229,31 @@ async function runReviewLLM(
     options?.delegationEnabled === false
       ? "- Delegation tools (list_custom_agents/run_public_agent) were disabled for this run; do not flag their absence."
       : "- If delegation tools are available, ensure list_custom_agents precedes run_public_agent when delegation is appropriate."
+
+  const {
+    prompt: userPrompt,
+    imageFileNames: currentImages,
+  } = buildReviewPromptFromContext(
+    context,
+    options,
+    options?.expectedResults
+  )
+  Logger.info(
+    {
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      focus: options?.focus,
+      turnNumber: options?.turnNumber,
+      reviewImages: currentImages,
+      additionalImages: Math.max(
+        context.allImages.length - currentImages.length,
+        0
+      ),
+      fragmentsCount: context.allFragments.length,
+      toolOutputsCount: context.currentTurnArtifacts.toolOutputs.length,
+    },
+    "[MessageAgents][runReviewLLM] Context summary for review model"
+  )
 
   Logger.info(
     {
@@ -2091,14 +2292,18 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
         },
       ],
       unmetExpectations: ["List of expectation goals still open"],
-      planChangeNeeded: "false / true",
+      planChangeNeeded: false,
       planChangeReason: "Why plan needs updating if true",
-      anomaliesDetected: "false / true ",
+      anomaliesDetected: false,
       anomalies: ["Description of anomalies or ambiguities"],
       recommendation: "proceed",
-      ambiguityResolved: "true / false"
+      ambiguityResolved: true
     })}
+- Use native JSON booleans (true/false) for every yes/no field.
 - Only emit keys defined in the schema; do not add prose outside the JSON object.`,
+  }
+  if (currentImages.length > 0) {
+    params.imageFileNames = currentImages
   }
   Logger.info(
     { 
@@ -2114,6 +2319,15 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     "[MessageAgents][runReviewLLM] LLM params prepared"
   )
   Logger.info(
+    {
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      userPrompt,
+    },
+    "[MessageAgents][runReviewLLM] Review user prompt"
+  )
+
+  Logger.info(
     { 
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -2122,94 +2336,12 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     "[MessageAgents][runReviewLLM] System prompt"
   )
 
-  const planHash = JSON.stringify(context.plan ?? null)
-  let planSummary = context.review.cachedPlanSummary?.hash === planHash
-    ? context.review.cachedPlanSummary.summary
-    : summarizePlan(context.plan)
-  if (context.review) {
-    context.review.cachedPlanSummary = {
-      hash: planHash,
-      summary: planSummary,
-    }
-  }
-
-  const transcriptFragments = getTranscriptFragments(context)
-  const fragmentsHash = JSON.stringify(
-    transcriptFragments.map((fragment) => fragment.id)
-  )
-  let fragmentsSummary =
-    context.review.cachedContextSummary?.hash === fragmentsHash
-      ? context.review.cachedContextSummary.summary
-      : summarizeFragments(transcriptFragments)
-  if (context.review) {
-    context.review.cachedContextSummary = {
-      hash: fragmentsHash,
-      summary: fragmentsSummary,
-    }
-  }
-
-  const messageSections = [
+  const messages: Message[] = [
     {
-      label: "Focus",
-      text: `${options?.focus ?? "general"}${
-        options?.turnNumber ? `\nTurn: ${options.turnNumber}` : ""
-      }`,
-    },
-    {
-      label: "Expected Results",
-      text: summarizeExpectations(options?.expectedResults),
-    },
-    { label: "Plan", text: planSummary },
-    {
-      label: "Recent Tool Calls",
-      text: summarizeToolHistory(
-        context.toolCallHistory,
-        options?.maxFindings ?? 8
-      ),
-    },
-    { label: "Context Fragments", text: fragmentsSummary },
-  ].filter((section) => section.text && section.text.trim().length > 0)
-
-  Logger.info({ sections: messageSections }, "runReviewLLM payload sections")
-
-  const reviewContextText = messageSections
-    .map((section) => `${section.label}:\n${section.text}`)
-    .join("\n\n")
-
-  let messages: Message[]
-  if (options?.messages && options.messages.length > 0) {
-    messages = [...options.messages]
-    if (reviewContextText.trim().length > 0) {
-      messages.push({
-        role: ConversationRole.USER,
-        content: [{ text: reviewContextText }],
-      })
-    }
-  } else {
-    messages = messageSections.map((section) => ({
       role: ConversationRole.USER,
-      content: [{ text: `${section.label}:\n${section.text}` }],
-    }))
-  }
-
-  Logger.info(
-    {
-      email: context.user.email,
-      chatId: context.chat.externalId,
-      messagesCount: messages.length,
-      usedConversationHistory: Boolean(options?.messages?.length),
+      content: [{ text: userPrompt }],
     },
-    "[MessageAgents][runReviewLLM] Messages configured"
-  )
-
-  Logger.info(
-    {
-      email: context.user.email,
-      chatId: context.chat.externalId,
-      messages,
-    },
-    "[MessageAgents][runReviewLLM] FULL MESSAGES ARRAY FOR REVIEW LLM"
-  )
+  ]
 
   const { text } = await getProviderByModel(modelId).converse(
     messages,
@@ -2232,18 +2364,22 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     chatId: context.chat.externalId,
     parsed,
   }, "[MessageAgents][runReviewLLM] Parsed LLM response")
-  
-  const normalized = normalizeReviewResponse(parsed)
-  Logger.info(
-    { 
-      email: context.user.email,
-      chatId: context.chat.externalId,
-      normalized,
-    },
-    "[MessageAgents][runReviewLLM] Normalized response"
-  )
-  
-  const validation = ReviewResultSchema.safeParse(normalized)
+
+  if (!parsed || typeof parsed !== "object") {
+    Logger.error(
+      {
+        email: context.user.email,
+        chatId: context.chat.externalId,
+        raw: parsed,
+      },
+      "[MessageAgents][runReviewLLM] Invalid review payload"
+    )
+    return buildDefaultReviewPayload(
+      `Review model returned invalid payload for turn ${options?.turnNumber ?? "unknown"}`
+    )
+  }
+
+  const validation = ReviewResultSchema.safeParse(parsed)
   if (!validation.success) {
     Logger.error(
       { 
@@ -2254,16 +2390,29 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
       },
       "[MessageAgents][runReviewLLM] Review result does not match schema"
     )
-    throw new Error("Review result does not match schema")
+    return buildDefaultReviewPayload(
+      `Review model response failed validation for turn ${options?.turnNumber ?? "unknown"}`
+    )
   }
-  
+
   Logger.info(
     { 
       email: context.user.email,
       chatId: context.chat.externalId,
       reviewResult: validation.data,
     },
-    "[MessageAgents][runReviewLLM] Returning validated review result"
+    "[MessageAgents][runReviewLLM] Returning review result"
+  )
+  Logger.info(
+    {
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      status: validation.data.status,
+      recommendation: validation.data.recommendation,
+      imageFileCount: currentImages.length,
+      toolOutputsEvaluated: context.currentTurnArtifacts.toolOutputs.length,
+    },
+    "[MessageAgents][runReviewLLM] Review LLM call completed"
   )
   return validation.data
 }
@@ -2396,10 +2545,7 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
         "[toDoWrite] Plan created"
       )
 
-      return ToolResponse.success({
-        result: `Plan updated with ${plan.subTasks.length} sub-task${plan.subTasks.length === 1 ? "" : "s"}.`,
-        plan,
-      })
+      return ToolResponse.success({ plan })
     },
   }
 }
@@ -2470,13 +2616,9 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
 
       const normalizedAgents = Array.isArray(result.agents) ? result.agents : []
       mutableContext.availableAgents = normalizedAgents
-      const payload = {
-        summary: result.result,
+      return ToolResponse.success({
         agents: normalizedAgents.length ? normalizedAgents : null,
         totalEvaluated: result.totalEvaluated,
-      }
-      return ToolResponse.success(JSON.stringify(payload, null, 2), {
-        metadata: result,
       })
     },
   }
@@ -2574,12 +2716,34 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         )
       }
 
-      return ToolResponse.success(toolOutput.result, {
-        metadata: {
-          ...toolOutput.metadata,
-          agentId: validation.data.agentId,
-        },
-        data: toolOutput,
+      const metadata = toolOutput.metadata || {}
+      const metadataFragments = Array.isArray((metadata as any).fragments)
+        ? ((metadata as any).fragments as MinimalAgentFragment[])
+        : []
+      const fragments =
+        metadataFragments.length > 0
+          ? metadataFragments
+          : Array.isArray(toolOutput.contexts)
+            ? toolOutput.contexts.map((item) => ({
+                id: item.id,
+                content: item.content,
+                source: {
+                  docId: item.source.docId,
+                  title: item.source.title,
+                  url: item.source.url,
+                  app: item.source.app as Apps,
+                  entity: item.source.entity as Citation["entity"],
+                },
+                confidence: item.confidence ?? 0.7,
+              }))
+            : []
+
+      return ToolResponse.success({
+        result: toolOutput.result,
+        fragments,
+        agentId: validation.data.agentId,
+        citations: (metadata as any).citations || [],
+        imageCitations: (metadata as any).imageCitations || [],
       })
     },
   }
@@ -2614,9 +2778,27 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
 
       const { selected, total, dropped, userAttachmentCount } =
         selectImagesForFinalSynthesis(context)
+      loggerWithChild({ email: context.user.email }).info(
+        {
+          chatId: context.chat.externalId,
+          selectedImages: selected,
+          totalImages: total,
+          droppedImages: dropped,
+          userAttachmentCount,
+        },
+        "[MessageAgents][FinalSynthesis] Image payload"
+      )
 
       const { systemPrompt, userMessage } = buildFinalSynthesisPayload(context)
-      const fragmentsCount = getTranscriptFragments(context).length
+      const fragmentsCount = context.allFragments.length
+      loggerWithChild({ email: context.user.email }).info(
+        {
+          chatId: context.chat.externalId,
+          finalSynthesisSystemPrompt: systemPrompt,
+          finalSynthesisUserMessage: userMessage,
+        },
+        "[MessageAgents][FinalSynthesis] Full context payload"
+      )
 
       mutableContext.finalSynthesis.requested = true
       mutableContext.finalSynthesis.suppressAssistantStreaming = true
@@ -2650,12 +2832,25 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         imageFileNames: selected,
       }
 
+      const finalUserPrompt = `${userMessage}\n\nSynthesize the final answer using the evidence above.`
       const messages: Message[] = [
         {
           role: ConversationRole.USER,
-          content: [{ text: userMessage }],
+          content: [{ text: finalUserPrompt }],
         },
       ]
+      Logger.info(
+        {
+          email: context.user.email,
+          chatId: context.chat.externalId,
+          fragmentsCount: context.allFragments.length,
+          planPresent: !!context.plan,
+          clarificationsCount: context.clarifications.length,
+          toolOutputsThisTurn: context.currentTurnArtifacts.toolOutputs.length,
+          imageNames: selected,
+        },
+        "[MessageAgents][FinalSynthesis] Context summary for synthesis call"
+      )
 
       Logger.info({
         email: context.user.email,
@@ -2665,12 +2860,6 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         messagesCount: messages.length,
         imagesProvided: selected.length,
       }, "[MessageAgents][FinalSynthesis] LLM call parameters")
-
-      Logger.info({
-        email: context.user.email,
-        chatId: context.chat.externalId,
-        messages,
-      }, "[MessageAgents][FinalSynthesis] FULL MESSAGES ARRAY")
 
       const provider = getProviderByModel(modelId)
       let streamedCharacters = 0
@@ -2691,6 +2880,15 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         }
 
         context.finalSynthesis.completed = true
+        loggerWithChild({ email: context.user.email }).info(
+          {
+            chatId: context.chat.externalId,
+            streamedCharacters,
+            estimatedCostUsd,
+            imagesProvided: selected,
+          },
+          "[MessageAgents][FinalSynthesis] LLM call completed"
+        )
 
         await context.runtime?.emitReasoning?.({
           text: "Final synthesis completed and streamed to the user.",
@@ -2755,72 +2953,6 @@ function buildAttachmentDirective(context: AgentRunContext): string {
 `.trim()
 }
 
-function buildReviewDirective(reviewState: ReviewState): string {
-  const lastReview = reviewState.lastReviewResult
-  if (!lastReview) return ""
-
-  const lines: string[] = []
-  lines.push(`Turn: ${reviewState.lastReviewTurn ?? "unknown"}`)
-  lines.push(`Status: ${lastReview.status}`)
-  lines.push(`Recommendation: ${lastReview.recommendation}`)
-  lines.push(
-    `Plan change needed: ${lastReview.planChangeNeeded ? "yes" : "no"}${
-      lastReview.planChangeReason ? ` (${lastReview.planChangeReason})` : ""
-    }`
-  )
-  lines.push(`Ambiguity resolved: ${lastReview.ambiguityResolved ? "yes" : "no"}`)
-  lines.push(`Notes: ${lastReview.notes}`)
-
-  if (lastReview.anomalies?.length) {
-    lines.push(`Anomalies: ${lastReview.anomalies.join("; ")}`)
-  } else if (reviewState.outstandingAnomalies?.length) {
-    lines.push(
-      `Anomalies: ${reviewState.outstandingAnomalies.join("; ")}`
-    )
-  } else {
-    lines.push("Anomalies: none reported")
-  }
-
-  if (reviewState.clarificationQuestions?.length) {
-    lines.push(
-      `Clarification questions to answer: ${reviewState.clarificationQuestions.join("; ")}`
-    )
-  }
-
-  const toolFeedbackSection =
-    lastReview.toolFeedback && lastReview.toolFeedback.length > 0
-      ? lastReview.toolFeedback
-          .map(
-            (feedback, index) =>
-              `${index + 1}. ${feedback.toolName} - ${feedback.outcome}${
-                feedback.summary ? ` (${feedback.summary})` : ""
-              }`
-          )
-          .join("\n")
-      : "None."
-
-  const unmetExpectationsSection =
-    lastReview.unmetExpectations && lastReview.unmetExpectations.length > 0
-      ? lastReview.unmetExpectations.map((exp, index) => `${index + 1}. ${exp}`).join("\n")
-      : "None."
-
-  const reviewJson = JSON.stringify(lastReview, null, 2)
-
-  return `
-<last_review_summary>
-${lines.join("\n")}
-
-Tool feedback:
-${toolFeedbackSection}
-
-Unmet expectations:
-${unmetExpectationsSection}
-
-Full review payload:
-${reviewJson}
-</last_review_summary>`.trim()
-}
-
 function buildAgentInstructions(
   context: AgentRunContext,
   enabledToolNames: string[],
@@ -2834,8 +2966,10 @@ function buildAgentInstructions(
 
   const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
   const attachmentDirective = buildAttachmentDirective(context)
-  const reviewDirective = buildReviewDirective(context.review)
   const promptAddendum = buildAgentPromptAddendum()
+  const reviewSummaryBlock = context.review.lastReviewSummary
+    ? `<last_review_summary>\n${context.review.lastReviewSummary}\n</last_review_summary>\n`
+    : ""
 
   let planSection = "\n<plan>\n"
   if (context.plan) {
@@ -2860,73 +2994,90 @@ function buildAgentInstructions(
     ? `- Before calling ANY search, calendar, Gmail, Drive, or other research tools, you MUST invoke \`list_custom_agents\` once per run. Treat the workflow as: plan -> list agents -> (maybe) run_public_agent -> other tools. If the selector returns \`null\`, explicitly log that no agent was suitable, then proceed with core tools.\n- Before calling \`run_public_agent\`, invoke \`list_custom_agents\`, compare every candidate, and respect a \`null\` result as "no delegate—continue with built-in tools."\n- Use \`run_custom_agent\` (the execution surface for selected specialists) immediately after choosing an agent from \`list_custom_agents\`; pass the specific agentId plus a rewritten query tailored to that agent.\n- When \`list_custom_agents\` returns high-confidence candidates, pause to assess the current sub-task and explicitly decide whether running one now accelerates the goal; document the rationale either way.\n- Only delegate when a specific agent's documented capabilities make it unquestionably suitable; otherwise keep iterating yourself.`
     : "- Delegation to other agents is disabled for this run. Do not call list_custom_agents or run_public_agent; rely on the available tools directly."
 
-  const finalInstructions = `
-You are Xyne, an enterprise search assistant with agentic capabilities.
+  const instructionLines: string[] = [
+    "You are Xyne, an enterprise search assistant with agentic capabilities.",
+    "",
+    `The current date is: ${dateForAI}`,
+    "",
+    "<context>",
+    `User: ${context.user.email}`,
+    `Workspace: ${context.user.workspaceId}`,
+    "</context>",
+    "",
+    "<available_tools>",
+    toolDescriptions,
+    "</available_tools>",
+    "",
+  ]
 
-The current date is: ${dateForAI}
-
-<context>
-User: ${context.user.email}
-Workspace: ${context.user.workspaceId}
-</context>
-
-<available_tools>
-${toolDescriptions}
-</available_tools>
-
-${agentSection}
-
-${reviewDirective ? `${reviewDirective}\n` : ""}
-
-${planSection}
-
-${attachmentDirective ? `${attachmentDirective}\n` : ""}
-
-${promptAddendum}
-
-# PLANNING
-- ALWAYS start by creating a plan using toDoWrite
-- The review feedback overrides older assumptions—treat instructions inside <last_review_summary> as mandatory constraints
-- Before changing the plan, READ <last_review_summary> (if present) and incorporate its guidance immediately
-- Adjust the existing plan per the latest review recommendations; only run toDoWrite again if the review explicitly calls for a brand-new plan
-- Do NOT call toDoWrite more than once in a single turn unless the review summary mandates it; otherwise refine the existing plan directly
-- Break the goal into clear, sequential tasks (one sub-goal per task)
-- Each task represents one sub-goal that must be completed before moving to the next
-- Within a task, identify all tools needed to achieve that sub-goal
-- Update plan as you learn more
-- VERY IMPORTANT **Never call only toDoWrite tool in a turn , make tool calls releavnt for current / next subTask - goal to proceeed further . toDoWrite is independent tool , we can call other tools along with it.**
-# EXECUTION STRATEGY
-- Execute ONE TASK AT A TIME in sequential order
-- Complete each task fully before moving to the next
-- Within a single task, you may call multiple tools if they all contribute to that sub-goal
-- Do NOT mix tools from different sub-goals in the same task
-
-# TOOL CALLS & EXPECTATIONS
-- Use the model's native function/tool-call interface. Provide clean JSON arguments.
-- Do NOT wrap tool calls in custom XML—JAF already handles execution.
-${delegationGuidance}
-- After you decide which tools to call, emit a standalone expected-results block summarizing what each tool should achieve:
-<expected_results>
-[
-  {
-    "toolName": "searchGlobal",
-    "goal": "Find Q4 ARR mentions",
-    "successCriteria": ["ARR keyword present", "Dated Q4"],
-    "failureSignals": ["No ARR context"],
-    "stopCondition": "After 2 unsuccessful searches"
+  if (agentSection.trim()) {
+    instructionLines.push(agentSection.trim(), "")
   }
-]
-</expected_results>
-- Include one entry per tool invocation you intend to make. These expectations feed automatic review, so keep them specific and measurable.
 
-# CONSTRAINT HANDLING
-- When the user requests an action the available tools cannot execute, produce the closest actionable substitute (draft, checklist, instructions) so progress continues.
-- State the exact limitation and what manual follow-up the user must perform to finish.
+  instructionLines.push(planSection.trim(), "")
 
-# FINAL SYNTHESIS
-- When research is complete and evidence is locked, CALL \`synthesize_final_answer\` (no arguments). This tool composes and streams the response.
-- Never output the final answer directly—always go through the tool and then acknowledge completion.
-`
+  if (attachmentDirective) {
+    instructionLines.push(attachmentDirective, "")
+  }
+
+  instructionLines.push(promptAddendum.trim())
+
+  if (reviewSummaryBlock) {
+    instructionLines.push("", reviewSummaryBlock.trim(), "")
+  }
+
+  instructionLines.push(
+    "# REVIEW FEEDBACK",
+    "- Inspect the <last_review_summary> block above; treat every instruction, anomaly, and clarification inside it as mandatory.",
+    "- Example: if the review notes “Tool X lacked evidence,” reopen that sub-task, add a step to fetch the missing evidence, and mark status accordingly before launching tools.",
+    "- Log every required fix directly in the plan so auditors can see alignment with the review.",
+    "- When the review lists anomalies or ambiguity, capture each as a corrective sub-task (e.g., “Validate source for claim [2]”) and close it before moving forward.",
+    "- Answer outstanding clarification questions immediately; if the user must respond, surface the exact question back to them.",
+    "",
+    "# PLANNING",
+    "- Always call toDoWrite at the start of a turn to update the plan with review findings, new context, and clarifications.",
+    "- Maintain one sub-task per concrete goal; list only the tools truly needed for that sub-task.",
+    "- After every tool run, immediately update the active sub-task’s status, result, and any newly required tasks so the plan mirrors reality.",
+    "- If review feedback demands a brand-new approach, rebuild the plan; otherwise refine the existing tasks.",
+    "- Never finish a turn after only calling toDoWrite—run at least one execution tool that advances the active task.",
+    "- If no plan change is needed, explicitly mark the tasks “in_progress” or “completed” so the reviewer sees momentum.",
+    "",
+    "# EXECUTION STRATEGY",
+    "- Work tasks sequentially; complete the current task before starting the next.",
+    "- Call tools with precise parameters tied to the sub-task goal; reuse stored fragments instead of re-fetching data.",
+    "- When delegation is enabled and justified, run list_custom_agents before run_public_agent; document why the selected agent accelerates the plan.",
+    "- Prefer list_custom_agents → run_public_agent before core tools when delegation is enabled and justified by the plan.",
+    "- If anomalies or notes in the latest review call out missing evidence, misalignments, or unresolved questions, fix those items before progressing and explain the remediation in the plan.",
+    "",
+    "# TOOL CALLS & EXPECTATIONS",
+    "- Use the model's native function/tool-call interface. Provide clean JSON arguments.",
+    "- Do NOT wrap tool calls in custom XML—JAF already handles execution.",
+    delegationGuidance,
+    "- After you decide which tools to call, emit a standalone expected-results block summarizing what each tool should achieve:",
+    "<expected_results>",
+    "[",
+    '  {',
+    '    "toolName": "searchGlobal",',
+    '    "goal": "Find Q4 ARR mentions",',
+    '    "successCriteria": ["ARR keyword present", "Dated Q4"],',
+    '    "failureSignals": ["No ARR context"],',
+    '    "stopCondition": "After 2 unsuccessful searches"',
+    "  }",
+    "]",
+    "</expected_results>",
+    "- Include one entry per tool invocation you intend to make. These expectations feed automatic review, so keep them specific and measurable.",
+    "",
+    "# CONSTRAINT HANDLING",
+    "- When the user requests an action the available tools cannot execute, produce the closest actionable substitute (draft, checklist, instructions) so progress continues.",
+    "- State the exact limitation and what manual follow-up the user must perform to finish.",
+    "",
+    "# FINAL SYNTHESIS",
+    "- When research is complete and evidence is locked, CALL `synthesize_final_answer` (no arguments). This tool composes and streams the response.",
+    "- Never output the final answer directly—always go through the tool and then acknowledge completion."
+  )
+
+  const finalInstructions = instructionLines.join("\n")
+
 
   // Logger.info({
   //   email: context.user.email,
@@ -3352,6 +3503,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             finalToolsMap[safeConnectorId] = {
               tools: formattedTools,
               client: wrappedClient,
+              metadata: connectorMetaById.get(safeConnectorId),
             }
             const connectorRecord = connector as Record<string, unknown>
             connectorMetaById.set(safeConnectorId, {
@@ -3508,9 +3660,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
         if (initialAttachmentContext) {
           initialAttachmentContext.fragments.forEach((fragment) => {
-            agentContext.seenDocuments.add(fragment.id)
             gatheredFragmentsKeys.add(fragment.id)
           })
+          recordFragmentsForContext(
+            agentContext,
+            initialAttachmentContext.fragments,
+            MIN_TURN_NUMBER
+          )
           initialSyntheticMessages.push(
             buildAttachmentToolMessage(
               initialAttachmentContext.fragments,
@@ -3700,6 +3856,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
               }
             }
             pendingExpectations.length = 0
+            finalizeTurnImages(agentContext, turn)
+            resetCurrentTurnArtifacts(agentContext)
           }
         }
 
@@ -3720,13 +3878,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
           let reviewResult: ReviewResult | null = null
           const pendingPromise = (async () => {
-            const conversationHistory = convertTranscriptToBedrockMessages(
-              runState.messages
-            )
             const computedReview = await performAutomaticReview(
               reviewInput,
-              agentContext,
-              conversationHistory
+              agentContext
             )
             reviewResult = computedReview
             await handleReviewOutcome(
@@ -3835,7 +3989,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               data: chunk,
             })
 
-            const fragmentsForCitations = getTranscriptFragments(agentContext)
+            const fragmentsForCitations = agentContext.allFragments
             for await (const citationEvent of checkAndYieldCitationsForAgent(
               answer,
               yieldedCitations,
@@ -4116,6 +4270,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     )
                   }
                   pendingExpectations.push(...extractedExpectations)
+                  agentContext.currentTurnArtifacts.expectations.push(
+                    ...extractedExpectations
+                  )
                   if (currentTurn > 0) {
                     Logger.info({
                       turn: currentTurn,
@@ -4362,7 +4519,6 @@ export async function listCustomAgentsSuitable(
 
   if (!accessibleAgents.length && mcpAgentsFromContext.length === 0) {
     return {
-      result: "No custom agents available for this workspace.",
       agents: [],
       totalEvaluated: 0,
     }
@@ -4417,10 +4573,10 @@ export async function listCustomAgentsSuitable(
 
   const systemPrompt = [
     "You are routing queries to the best custom agent.",
-    "Return JSON with keys result, agents (array|null), totalEvaluated.",
+    "Return JSON with keys agents (array|null) and totalEvaluated.",
     "Each agent entry must include: agentId, agentName, description, capabilities[], domains[], suitabilityScore (0-1), confidence (0-1), estimatedCost ('low'|'medium'|'high'), averageLatency (ms).",
     `Select up to ${maxAgents} agents.`,
-    "If no agent is unquestionably suitable, set agents to null and explain why in result.",
+    "If no agent is unquestionably suitable, set agents to null.",
     "Only include an agent when you can cite concrete capability matches; otherwise leave it out.",
     "You may return multiple agents when several are clearly relevant—rank the strongest ones first."
   ].join(" ")
@@ -4473,7 +4629,6 @@ export async function listCustomAgentsSuitable(
           }))
         : null
       return {
-        result: validation.data.result,
         agents: enrichedAgents,
         totalEvaluated,
       }
@@ -4888,6 +5043,8 @@ async function runDelegatedAgentWithMessageAgents(
           }
         }
         pendingExpectations.length = 0
+        finalizeTurnImages(agentContext, turn)
+        resetCurrentTurnArtifacts(agentContext)
       }
     }
 
@@ -4909,13 +5066,9 @@ async function runDelegatedAgentWithMessageAgents(
           "[DelegatedAgenticRun] No expected results recorded for review input."
         )
       }
-      const conversationHistory = convertTranscriptToBedrockMessages(
-        runState.messages
-      )
       const reviewResult = await performAutomaticReview(
         reviewInput,
-        agentContext,
-        conversationHistory
+        agentContext
       )
       await handleReviewOutcome(
         agentContext,
@@ -5270,7 +5423,7 @@ async function runDelegatedAgentWithMessageAgents(
         : agentContext.finalSynthesis.streamedText || ""
 
     if (answerForCitations) {
-      const fragmentsForCitations = getTranscriptFragments(agentContext)
+      const fragmentsForCitations = agentContext.allFragments
       for await (const event of checkAndYieldCitationsForAgent(
         answerForCitations,
         yieldedCitations,
@@ -5292,7 +5445,7 @@ async function runDelegatedAgentWithMessageAgents(
 
     return {
       result: finalAnswer,
-      contexts: fragmentsToToolContexts(getTranscriptFragments(agentContext)),
+      contexts: fragmentsToToolContexts(agentContext.allFragments),
       metadata: {
         agentId: params.agentId,
         citations,
@@ -5713,9 +5866,6 @@ function buildHeuristicAgentSelection(
     }))
 
   return {
-    result: selected.length
-      ? "Heuristic agent ranking"
-      : "No high-confidence agents found heuristically",
     agents: selected.length ? selected : null,
     totalEvaluated,
   }

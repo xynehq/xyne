@@ -168,16 +168,7 @@ export const getSlackRelatedMessagesTool: Tool<
       )
 
       if (!items.length) {
-        return ToolResponse.success("No messages found", {
-          toolName: "getSlackRelatedMessages",
-          contexts: [],
-          diagnostics: {
-            appliedTimeRange: scopedTimeRange || null,
-            usedDefaultTimeRange: shouldApplyFallbackRange,
-            channelName: params.channelName,
-            user: params.user,
-          },
-        })
+        return ToolResponse.success([])
       }
 
       // Check for thread messages and fetch them automatically
@@ -197,7 +188,6 @@ export const getSlackRelatedMessagesTool: Tool<
       }
 
       let allItems = items
-      let threadMessagesCount = 0
 
       // Fetch thread messages if any thread roots were found
       if (threadIdsToFetch.length > 0) {
@@ -210,7 +200,6 @@ export const getSlackRelatedMessagesTool: Tool<
 
           if (threadItems.length > 0) {
             allItems = [...items, ...threadItems]
-            threadMessagesCount = threadItems.length
           }
         } catch (error) {
           Logger.warn(
@@ -219,7 +208,6 @@ export const getSlackRelatedMessagesTool: Tool<
         }
       }
 
-      // Process results into fragments
       const fragments: MinimalAgentFragment[] = await Promise.all(
         allItems.map(
           async (item: VespaSearchResults): Promise<MinimalAgentFragment> => {
@@ -238,50 +226,10 @@ export const getSlackRelatedMessagesTool: Tool<
         ),
       )
 
-      // Build response message
-      let responseText = `Found ${fragments.length} Slack message${fragments.length !== 1 ? "s" : ""}`
-
-      if (threadMessagesCount > 0) {
-        responseText += ` (including ${threadMessagesCount} thread message${threadMessagesCount !== 1 ? "s" : ""})`
-      }
-
-      // Add pagination info
-      if (searchOptions.offset > 0) {
-        responseText += ` (items ${searchOptions.offset + 1}-${searchOptions.offset + fragments.length})`
-      }
-
-      // Show top results preview
-      if (fragments.length > 0) {
-        const topItemsList = fragments
-          .slice(0, 3)
-          .map((f, index) => {
-            const title = f.source.title || "Untitled"
-            const preview = f.content.substring(0, 60).replace(/\n/g, " ")
-            return `${index + 1}. "${title}" - ${preview}${f.content.length > 60 ? "..." : ""}`
-          })
-          .join("\n")
-        responseText += `\n\nTop results:\n${topItemsList}`
-      }
-
-      // Add pagination guidance if there might be more results
-      if (items.length === searchOptions.limit) {
-        responseText += `\n\n💡 Showing ${searchOptions.limit} main results. Use offset parameter to see more.`
-      }
-
       Logger.info(
         `[getSlackRelatedMessages] retrieved ${fragments.length} messages for user ${email}`,
       )
-      return ToolResponse.success(fragments.map((v) => v.content).join("\n"), {
-        toolName: "getSlackRelatedMessages",
-        contexts: fragments,
-        diagnostics: {
-          appliedTimeRange: scopedTimeRange || null,
-          usedDefaultTimeRange: shouldApplyFallbackRange,
-          channelName: params.channelName,
-          user: params.user,
-          mentions: params.mentions,
-        },
-      })
+      return ToolResponse.success(fragments)
     } catch (error) {
       const errMsg = getErrorMessage(error)
       Logger.error(error, `Slack messages retrieval error: ${errMsg}`)

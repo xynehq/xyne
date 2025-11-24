@@ -30,7 +30,8 @@ import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
 import path from "path"
 import fs from "fs"
 import { regex, findImageByName } from "@/ai/provider/base"
-import type { AgentImageMetadata } from "./agent-schemas"
+import type { AgentRunContext } from "./agent-schemas"
+import { getRecentImagesFromContext } from "./runContextUtils"
 const { IMAGE_CONTEXT_CONFIG } = config
 const IMAGE_BASE_DIR = path.resolve(
   process.env.IMAGE_DIR || "downloads/xyne_images_db",
@@ -55,93 +56,11 @@ export type MakeXyneJAFProviderOptions = {
   apiKey?: string
 }
 
-type ImageAwareContext = {
-  imageFileNames?: string[]
-  imageMetadata?: Map<string, AgentImageMetadata>
-  turnCount?: number
-  user?: { email?: string }
-  review?: {
-    pendingReview?: Promise<void>
-  }
-}
-
 type ImagePromptPart = {
   label: string
   filePart: LanguageModelV2FilePart
 }
 
-const selectImagesForCall = (context: ImageAwareContext): string[] => {
-  // console.info('[IMAGE addition][JAF Provider] selectImagesForCall called:', {
-  //   enabled: IMAGE_CONTEXT_CONFIG.enabled,
-  //   imageCount: context?.imageFileNames?.length || 0,
-  //   hasImageFileNames: !!context?.imageFileNames,
-  //   hasMetadata: context?.imageMetadata instanceof Map,
-  //   metadataSize: context?.imageMetadata instanceof Map ? context.imageMetadata.size : 0,
-  //   turnCount: context?.turnCount,
-  //   userEmail: context?.user?.email,
-  //   contextKeys: context ? Object.keys(context) : [],
-  // })
-
-  if (
-    !IMAGE_CONTEXT_CONFIG.enabled ||
-    !context?.imageFileNames?.length ||
-    !(context.imageMetadata instanceof Map)
-  ) {
-    // console.info('[IMAGE addition][JAF Provider] Image selection skipped:', {
-    //   reason: !IMAGE_CONTEXT_CONFIG.enabled ? 'disabled' : 
-    //           !context?.imageFileNames?.length ? 'no_images' : 
-    //           !(context.imageMetadata instanceof Map) ? 'no_metadata' : 'unknown',
-    //   enabled: IMAGE_CONTEXT_CONFIG.enabled,
-    //   imageCount: context?.imageFileNames?.length || 0,
-    //   hasMetadata: context?.imageMetadata instanceof Map,
-    //   userEmail: context?.user?.email,
-    // })
-    return []
-  }
-
-  const currentTurn = normalizeTurnNumber(context.turnCount)
-  const attachments: string[] = []
-  const recentImages: string[] = []
-  const skipped: Array<{ name: string; age: number; reason: string }> = []
-
-  for (const imageName of context.imageFileNames) {
-    const metadata = context.imageMetadata.get(imageName)
-    if (!metadata) {
-      skipped.push({ name: imageName, age: -1, reason: 'no_metadata' })
-      continue
-    }
-
-    if (metadata.isUserAttachment && IMAGE_CONTEXT_CONFIG.alwaysIncludeAttachments) {
-      attachments.push(imageName)
-      continue
-    }
-
-    const age = currentTurn - metadata.addedAtTurn
-    if (age <= IMAGE_CONTEXT_CONFIG.recencyWindow) {
-      recentImages.push(imageName)
-    } else {
-      skipped.push({ name: imageName, age, reason: 'too_old' })
-    }
-  }
-
-  const combined = [...attachments, ...recentImages]
-  const finalSelection = IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0 &&
-    combined.length > IMAGE_CONTEXT_CONFIG.maxImagesPerCall
-    ? combined.slice(0, IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
-    : combined // Pass all images when maxImagesPerCall is 0 (no limit)
-
-  // console.info('[IMAGE addition][JAF Provider] Image selection turn', currentTurn, {
-  //   totalPool: context.imageFileNames.length,
-  //   attachments: attachments.length,
-  //   recent: recentImages.length,
-  //   skipped: skipped.length,
-  //   selected: finalSelection.length,
-  //   recencyWindow: IMAGE_CONTEXT_CONFIG.recencyWindow,
-  //   userEmail: context.user?.email,
-  // })
-
-  return finalSelection
-}
 
 const findLastUserMessageIndex = (
   messages: LanguageModelV2Message[],
@@ -176,7 +95,7 @@ const buildLanguageModelImageParts = async (
   const loadStats = { success: 0, failed: 0, totalBytes: 0 }
   
   const parts = await Promise.all(
-    imageFileNames.map(async (imageName) => {
+    imageFileNames.map(async (imageName): Promise<ImagePromptPart | null> => {
       const parsed = parseImageFileName(imageName)
       if (!parsed) {
         loadStats.failed++
@@ -241,7 +160,9 @@ const buildLanguageModelImageParts = async (
     }),
   )
 
-  const filtered = parts.filter((part): part is ImagePromptPart => Boolean(part))
+  const filtered = parts.filter(
+    (part): part is ImagePromptPart => part !== null
+  )
   
   // console.info('[IMAGE addition][JAF Provider] Image loading complete:', {
   //   requested: imageFileNames.length,
@@ -268,16 +189,16 @@ export const makeXyneJAFProvider = <Ctx>(
       const actualModelId = modelConfig?.actualName ?? model
       const languageModel = provider.languageModel(actualModelId)
 
-      const imageAwareContext = state.context as ImageAwareContext
-      const pendingReview = imageAwareContext?.review?.pendingReview
+      const runContext = state.context as unknown as AgentRunContext
+      const pendingReview = runContext?.review?.pendingReview
       if (pendingReview) {
         try {
           await pendingReview
         } catch (error) {
           Logger.warn(
             {
-              email: imageAwareContext?.user?.email,
-              turn: normalizeTurnNumber(imageAwareContext?.turnCount),
+              email: runContext?.user?.email,
+              turn: normalizeTurnNumber(runContext?.turnCount),
               error: error instanceof Error ? error.message : String(error),
             },
             "[JAF Provider] Pending review promise rejected; continuing LLM call"
@@ -302,7 +223,19 @@ export const makeXyneJAFProvider = <Ctx>(
       //   model,
       //   agentName: agent.name,
       // })
-      const selectedImages = selectImagesForCall(imageAwareContext)
+      const selectedImages = getRecentImagesFromContext(runContext)
+      Logger.info(
+        {
+          email: runContext?.user?.email,
+          turn: normalizeTurnNumber(runContext?.turnCount),
+          currentTurnImages: runContext?.currentTurnArtifacts?.images?.map(
+            (img) => img.fileName
+          ),
+          recentWindowImages: runContext?.recentImages?.map((img) => img.fileName),
+          selectedImages,
+        },
+        "[JAF Provider] Prepared image attachments for agent call"
+      )
       
       if (selectedImages.length > 0) {
         const lastUserIndex = findLastUserMessageIndex(prompt)
@@ -310,21 +243,28 @@ export const makeXyneJAFProvider = <Ctx>(
         if (lastUserIndex !== -1) {
           const imageParts = await buildLanguageModelImageParts(selectedImages)
           if (imageParts.length > 0) {
-            const contentBefore = prompt[lastUserIndex].content.length
-            for (const { label, filePart } of imageParts) {
-              prompt[lastUserIndex].content.push(
-                { type: "text", text: label },
-                filePart,
+            const userMessage = prompt[lastUserIndex]
+            if (userMessage?.role === "user") {
+              const userContent = userMessage.content
+              const contentBefore = userContent.length
+              for (const { label, filePart } of imageParts) {
+                userContent.push({ type: "text", text: label } as LanguageModelV2TextPart)
+                userContent.push(filePart)
+              }
+              // console.info('[IMAGE addition][JAF Provider] Attached images to prompt:', {
+              //   turn: runContext.turnCount ?? MIN_TURN_NUMBER,
+              //   messageIndex: lastUserIndex,
+              //   imagesAttached: imageParts.length,
+              //   contentPartsBefore: contentBefore,
+              //   contentPartsAfter: userContent.length,
+              //   userEmail: runContext.user?.email,
+              // })
+            } else {
+              console.warn(
+                "[JAF Provider] Expected last user index to point to a user message but found",
+                userMessage?.role ?? "unknown",
               )
             }
-            // console.info('[IMAGE addition][JAF Provider] Attached images to prompt:', {
-            //   turn: imageAwareContext.turnCount ?? MIN_TURN_NUMBER,
-            //   messageIndex: lastUserIndex,
-            //   imagesAttached: imageParts.length,
-            //   contentPartsBefore: contentBefore,
-            //   contentPartsAfter: prompt[lastUserIndex].content.length,
-            //   userEmail: imageAwareContext.user?.email,
-            // })
           } else {
             console.warn('[JAF Provider] No valid image parts built despite', selectedImages.length, 'selected')
           }
@@ -364,8 +304,8 @@ export const makeXyneJAFProvider = <Ctx>(
       }
 
       // Log the complete prompt and call options being sent to the LLM
-      const userEmail = imageAwareContext?.user?.email || 'unknown'
-      const turnNumber = normalizeTurnNumber(imageAwareContext?.turnCount)
+      const userEmail = runContext?.user?.email || "unknown"
+      const turnNumber = normalizeTurnNumber(runContext?.turnCount)
       
       Logger.info({
         email: userEmail,
@@ -380,14 +320,40 @@ export const makeXyneJAFProvider = <Ctx>(
         toolChoice: callOptions.toolChoice,
       }, "[JAF Provider] LLM call parameters")
 
+      // Sanitize prompt to avoid logging large file data buffers
+      const sanitizedPrompt = sanitizePromptForLogging(callOptions.prompt)
+      
       Logger.info({
         email: userEmail,
         turn: turnNumber,
         model: actualModelId,
-        prompt: callOptions.prompt,
+        prompt: sanitizedPrompt,
       }, "[JAF Provider] FULL PROMPT/MESSAGES ARRAY SENT TO LLM")
 
       const result = await languageModel.doGenerate(callOptions)
+
+      const contentSummary = (result.content || []).map((part, index) => {
+        if (part.type === "text") {
+          return {
+            index,
+            type: part.type,
+            preview: part.text.slice(0, 160),
+          }
+        }
+        return { index, type: part.type }
+      })
+
+      Logger.info(
+        {
+          email: userEmail,
+          turn: turnNumber,
+          model: actualModelId,
+          finishReason: result.finishReason,
+          usage: result.usage,
+          contentSummary,
+        },
+        "[JAF Provider] Raw LLM response"
+      )
 
       const message = convertResultToJAFMessage(result.content)
 
@@ -657,4 +623,42 @@ const safeParseJson = (value: string): unknown => {
   } catch {
     return value
   }
+}
+
+/**
+ * Sanitizes prompt messages by removing large file data buffers for logging
+ * Replaces file data with metadata about the file instead of the full buffer
+ */
+const sanitizePromptForLogging = (
+  messages: LanguageModelV2Message[],
+): any[] => {
+  return messages.map((message) => {
+    if (!message.content || !Array.isArray(message.content)) {
+      return message
+    }
+
+    const sanitizedContent = message.content.map((part: any) => {
+      if (part.type === "file") {
+        const filePart = part as LanguageModelV2FilePart
+        const dataSize = Buffer.isBuffer(filePart.data) 
+          ? filePart.data.length 
+          : filePart.data instanceof Uint8Array
+          ? filePart.data.length
+          : 0
+        
+        return {
+          type: "file",
+          filename: filePart.filename,
+          mediaType: filePart.mediaType,
+          data: `<Buffer [${dataSize} bytes]>`,
+        }
+      }
+      return part
+    })
+
+    return {
+      ...message,
+      content: sanitizedContent,
+    }
+  })
 }

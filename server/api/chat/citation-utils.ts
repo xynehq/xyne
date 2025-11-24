@@ -64,7 +64,13 @@ export const checkAndYieldCitationsForAgent = async function* (
         const citationIndex = parseInt(match[1], 10)
         if (!yieldedCitations.has(citationIndex)) {
           const fragment = fragments[citationIndex - 1]
-          if (!fragment?.source?.docId || !fragment.source?.url) {
+          if (!fragment?.source) {
+            Logger.info(
+              "[checkAndYieldCitationsForAgent] Fragment source missing entirely, skipping",
+            )
+            continue
+          }
+          if (!fragment.source.docId && !fragment.source.url) {
             Logger.info(
               "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
             )

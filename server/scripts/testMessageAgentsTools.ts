@@ -34,8 +34,15 @@ async function simulateToolLifecycle() {
   await afterToolExecutionHook(
     "searchGlobal",
     {
-      metadata: { contexts: [] },
-      data: { result: "Found 3 ARR updates." },
+      status: "success",
+      data: [
+        {
+          id: "doc1",
+          content: "Found 3 ARR updates.",
+          source: { docId: "doc1" } as any,
+          confidence: 0.9,
+        },
+      ],
     },
     {
       toolCall: { id: "mock_call_1", name: "searchGlobal" } as any,
@@ -60,7 +67,7 @@ async function simulateToolLifecycle() {
     context.toolCallHistory.map((record: ToolExecutionRecord) => ({
       toolName: record.toolName,
       expectedResults: record.expectedResults,
-      resultSummary: record.resultSummary,
+      status: record.status,
     }))
   )
 }
@@ -88,8 +95,19 @@ function createMockContext(): AgentRunContext {
     clarifications: [],
     ambiguityResolved: true,
     toolCallHistory: [],
-    contextFragments: [],
     seenDocuments: new Set<string>(),
+    allFragments: [],
+    turnFragments: new Map(),
+    allImages: [],
+    imagesByTurn: new Map(),
+    recentImages: [],
+    currentTurnArtifacts: {
+      fragments: [],
+      expectations: [],
+      toolOutputs: [],
+      images: [],
+    },
+    turnCount: 1,
     totalLatency: 0,
     totalCost: 0,
     tokenUsage: {
@@ -99,6 +117,7 @@ function createMockContext(): AgentRunContext {
     availableAgents: [],
     usedAgents: [],
     enabledTools: new Set<string>(),
+    delegationEnabled: true,
     failedTools: new Map(),
     retryCount: 0,
     maxRetries: 3,
@@ -106,8 +125,18 @@ function createMockContext(): AgentRunContext {
       lastReviewTurn: null,
       reviewFrequency: 5,
       lastReviewSummary: null,
+      lastReviewResult: null,
+      outstandingAnomalies: [],
+      clarificationQuestions: [],
     },
     decisions: [],
+    finalSynthesis: {
+      requested: false,
+      completed: false,
+      suppressAssistantStreaming: false,
+      streamedText: "",
+      ackReceived: false,
+    },
   }
 }
 

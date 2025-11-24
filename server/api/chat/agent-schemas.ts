@@ -7,13 +7,24 @@
 
 import { z } from "zod"
 import type { Message as JAFMessage } from "@xynehq/jaf"
-import type { MinimalAgentFragment } from "./types"
+import type {
+  FragmentImageReference,
+  MinimalAgentFragment,
+} from "./types"
 
-export interface AgentImageMetadata {
-  addedAtTurn: number
-  sourceFragmentId: string
-  sourceToolName: string
-  isUserAttachment: boolean
+export interface ToolExecutionRecordWithResult {
+  toolName: string
+  arguments: Record<string, unknown>
+  status: "success" | "error"
+  resultSummary?: string
+  fragments?: MinimalAgentFragment[]
+}
+
+export interface CurrentTurnArtifacts {
+  fragments: MinimalAgentFragment[]
+  expectations: ToolExpectationAssignment[]
+  toolOutputs: ToolExecutionRecordWithResult[]
+  images: FragmentImageReference[]
 }
 
 // ============================================================================
@@ -158,10 +169,13 @@ export interface AgentRunContext {
 
   // Execution history
   toolCallHistory: ToolExecutionRecord[]
-  contextFragments?: MinimalAgentFragment[]
   seenDocuments: Set<string> // Prevent re-fetching
-  imageFileNames?: string[]
-  imageMetadata?: Map<string, AgentImageMetadata>
+  allFragments: MinimalAgentFragment[]
+  turnFragments: Map<number, MinimalAgentFragment[]>
+  allImages: FragmentImageReference[]
+  imagesByTurn: Map<number, FragmentImageReference[]>
+  recentImages: FragmentImageReference[]
+  currentTurnArtifacts: CurrentTurnArtifacts
   transcript?: {
     getMessages: () => readonly JAFMessage[]
   }
@@ -216,8 +230,7 @@ export interface ToolExecutionRecord {
   startedAt: Date
   durationMs: number
   estimatedCostUsd: number
-  resultSummary: string
-  status: "success" | "error" | "skipped"
+  status: "success" | "error"
   error?: {
     code: string
     message: string
