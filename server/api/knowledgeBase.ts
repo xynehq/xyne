@@ -418,7 +418,7 @@ export const ListCollectionsApi = async (c: Context) => {
         collections.map(async (collection) => {
           try {
             // Check access: owner can always access, others only if Collection is public
-            if (collection.ownerId !== user.id && collection.isPrivate) {
+            if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
               return {
                 ...collection,
                 items: [], // Return empty items array for inaccessible collections
@@ -494,7 +494,7 @@ export const GetCollectionApi = async (c: Context) => {
     }
 
     // Check access: owner can always access, others only if Collection is public
-    if (collection.ownerId !== user.id && collection.isPrivate) {
+    if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Collection",
       })
@@ -611,7 +611,7 @@ export const UpdateCollectionApi = async (c: Context) => {
     }
 
     // Check ownership
-    if (collection.ownerId !== user.id) {
+    if (collection.ownerId !== user.id && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Collection",
       })
@@ -680,7 +680,7 @@ export const DeleteCollectionApi = async (c: Context) => {
     }
 
     // Check ownership
-    if (collection.ownerId !== user.id) {
+    if (collection.ownerId !== user.id && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Collection",
       })
@@ -865,7 +865,8 @@ export const ListCollectionItemsApi = async (c: Context) => {
       // Skip the normal ownership/privacy check since the collection belongs to the agent
     } else {
       // Normal access check: owner can always access, others only if Collection is public
-      if (collection.ownerId !== user.id && collection.isPrivate) {
+
+      if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
         throw new HTTPException(403, {
           message: "You don't have access to this Collection",
         })
@@ -1672,7 +1673,7 @@ export const DeleteItemApi = async (c: Context) => {
     }
 
     // Check ownership
-    if (collection.ownerId !== user.id) {
+    if (collection.ownerId !== user.id && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Knowledge Base",
       })
@@ -1859,7 +1860,7 @@ export const GetFilePreviewApi = async (c: Context) => {
     }
 
     // Check access: owner can always access, others only if Collection is public
-    if (collection.ownerId !== user.id && collection.isPrivate) {
+    if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Collection",
       })
@@ -2131,7 +2132,7 @@ export const DownloadFileApi = async (c: Context) => {
     }
 
     // Check access: owner can always access, others only if Collection is public
-    if (collection.ownerId !== user.id && collection.isPrivate) {
+    if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Collection",
       })
