@@ -42,7 +42,6 @@ export interface SubTask {
   result?: string
   completedAt?: number
   error?: string
-  completedTools?: string[]
 }
 
 /**

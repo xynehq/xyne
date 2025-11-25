@@ -655,9 +655,6 @@ function normalizeSubTask(task: SubTask): SubTask {
   task.toolsRequired = Array.isArray(task.toolsRequired)
     ? task.toolsRequired
     : []
-  task.completedTools = Array.isArray(task.completedTools)
-    ? task.completedTools
-    : []
   if (
     task.status !== "pending" &&
     task.status !== "in_progress" &&
@@ -712,7 +709,6 @@ function advancePlanAfterTool(
   )
   if (!task) return
   normalizeSubTask(task)
-  const completedTools = (task.completedTools ??= [])
   const requiredTools = (task.toolsRequired ??= [])
 
   if (wasSuccessful) {
@@ -721,35 +717,23 @@ function advancePlanAfterTool(
       task.error = undefined
     }
     if (requiredTools.length === 0 || requiredTools.includes(toolName)) {
-      if (!completedTools.includes(toolName)) {
-        completedTools.push(toolName)
-      }
-      const uniqueRequired = new Set(requiredTools)
-      const uniqueCompleted = new Set(completedTools)
-      const shouldComplete =
-        requiredTools.length === 0 ||
-        uniqueCompleted.size >= uniqueRequired.size
-      if (shouldComplete) {
-        task.status = "completed"
-        task.completedAt = Date.now()
-        task.result =
-          detail ||
-          task.result ||
-          `Completed using ${Array.from(uniqueCompleted).join(", ")}`
-        const previousTaskId = task.id
-        const nextId = selectActiveSubTaskId(context.plan)
-        if (nextId && nextId !== previousTaskId) {
-          context.currentSubTask = nextId
-          const nextTask = context.plan.subTasks.find(
-            (entry) => entry.id === nextId
-          )
-          if (nextTask && nextTask.status === "pending") {
-            nextTask.status = "in_progress"
-            nextTask.error = undefined
-          }
-        } else if (!nextId) {
-          context.currentSubTask = null
+      task.status = "completed"
+      task.completedAt = Date.now()
+      task.result =
+        detail || task.result || `Completed using ${toolName}`
+      const previousTaskId = task.id
+      const nextId = selectActiveSubTaskId(context.plan)
+      if (nextId && nextId !== previousTaskId) {
+        context.currentSubTask = nextId
+        const nextTask = context.plan.subTasks.find(
+          (entry) => entry.id === nextId
+        )
+        if (nextTask && nextTask.status === "pending") {
+          nextTask.status = "in_progress"
+          nextTask.error = undefined
         }
+      } else if (!nextId) {
+        context.currentSubTask = null
       }
     }
   } else if (task.status !== "completed") {

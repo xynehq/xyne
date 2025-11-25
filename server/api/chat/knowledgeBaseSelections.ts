@@ -112,10 +112,7 @@ async function buildAllAccessibleSelections(params: {
   })
 
   if (publicAgents?.length) {
-    const publicIds = extractKnowledgeIdsFromPublicAgents(
-      publicAgents,
-      pathExtractedInfo,
-    )
+    const publicIds = extractKnowledgeIdsFromPublicAgents(publicAgents)
     publicIds.forEach((id) => allIds.add(id))
   }
 
@@ -229,7 +226,6 @@ function convertPrefixedIdsToSelections(
 
 function extractKnowledgeIdsFromPublicAgents(
   publicAgents: SelectPublicAgent[],
-  pathExtractedInfo?: PathExtractedInfo,
 ): string[] {
   const ids = new Set<string>()
 
@@ -239,7 +235,8 @@ function extractKnowledgeIdsFromPublicAgents(
       const { selectedItems } = parseAppSelections(
         publicAgent.appIntegrations,
       )
-      const kbIds = resolveKnowledgeItemIds(pathExtractedInfo, selectedItems)
+      // Public agents should honor their explicit Knowledge Base selections even when a path override exists.
+      const kbIds = resolveKnowledgeItemIds(undefined, selectedItems)
       kbIds.forEach((id) => ids.add(id))
     }
   }

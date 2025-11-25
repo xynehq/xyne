@@ -159,6 +159,7 @@ async function formatSearchToolResponse(
     limit?: number
     searchType?: string
   },
+  userMetadata: UserMetadataType,
 ): Promise<ToolExecutionOutput> {
   const children = (searchResults?.root?.children || []).filter(
     (item): item is VespaSearchResults =>
@@ -1968,6 +1969,8 @@ export const searchGmail: AgentTool = {
         return toolError("Missing email", { result: errorMsg })
       }
 
+      const userMetadata = createUserMetadata()
+
       let timeRange: { startTime: number; endTime: number } | undefined
       if (params.timeRange) {
         timeRange = {
@@ -2005,15 +2008,19 @@ export const searchGmail: AgentTool = {
         )
       }
 
-      return await formatSearchToolResponse(searchResults, {
-        query: params.query,
-        app: GoogleApps.Gmail,
-        labels: params.labels,
-        timeRange: timeRange,
-        offset: params.offset,
-        limit: params.limit,
-        searchType: "Gmail message",
-      })
+      return await formatSearchToolResponse(
+        searchResults,
+        {
+          query: params.query,
+          app: GoogleApps.Gmail,
+          labels: params.labels,
+          timeRange: timeRange,
+          offset: params.offset,
+          limit: params.limit,
+          searchType: "Gmail message",
+        },
+        userMetadata,
+      )
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)
@@ -2053,6 +2060,7 @@ export const searchDriveFiles: AgentTool = {
       }
       const { agentAppEnums, selectedItems } =
         parseAgentAppIntegrations(agentPrompt)
+      const userMetadata = createUserMetadata()
 
       // Check if Google Drive is allowed for this agent
       if (agentAppEnums && agentAppEnums.length > 0) {
@@ -2098,14 +2106,18 @@ export const searchDriveFiles: AgentTool = {
         docIds: driveSourceIds,
       })
 
-      return await formatSearchToolResponse(searchResults, {
-        query: params.query,
-        app: GoogleApps.Drive,
-        timeRange: timeRange,
-        offset: params.offset,
-        limit: params.limit,
-        searchType: "Drive file",
-      })
+      return await formatSearchToolResponse(
+        searchResults,
+        {
+          query: params.query,
+          app: GoogleApps.Drive,
+          timeRange: timeRange,
+          offset: params.offset,
+          limit: params.limit,
+          searchType: "Drive file",
+        },
+        userMetadata,
+      )
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)
@@ -2145,6 +2157,7 @@ export const searchCalendarEvents: AgentTool = {
       }
 
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
+      const userMetadata = createUserMetadata()
 
       // Check if Google Calendar is allowed for this agent
       if (agentAppEnums && agentAppEnums.length > 0) {
@@ -2182,14 +2195,18 @@ export const searchCalendarEvents: AgentTool = {
         docIds: undefined,
       })
 
-      return await formatSearchToolResponse(searchResults, {
-        query: params.query,
-        app: GoogleApps.Calendar,
-        timeRange: timeRange,
-        offset: params.offset,
-        limit: params.limit,
-        searchType: "Calendar event",
-      })
+      return await formatSearchToolResponse(
+        searchResults,
+        {
+          query: params.query,
+          app: GoogleApps.Calendar,
+          timeRange: timeRange,
+          offset: params.offset,
+          limit: params.limit,
+          searchType: "Calendar event",
+        },
+        userMetadata,
+      )
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)
@@ -2226,6 +2243,8 @@ export const searchGoogleContacts: AgentTool = {
         return toolError("Missing email", { result: errorMsg })
       }
 
+      const userMetadata = createUserMetadata()
+
       const offset = params.offset || 0
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Contacts,
@@ -2237,13 +2256,17 @@ export const searchGoogleContacts: AgentTool = {
         offset,
       })
 
-      return await formatSearchToolResponse(searchResults, {
-        query: params.query,
-        app: GoogleApps.Contacts,
-        offset: params.offset,
-        limit: params.limit,
-        searchType: "Contact",
-      })
+      return await formatSearchToolResponse(
+        searchResults,
+        {
+          query: params.query,
+          app: GoogleApps.Contacts,
+          offset: params.offset,
+          limit: params.limit,
+          searchType: "Contact",
+        },
+        userMetadata,
+      )
     } catch (error) {
       const errMsg = getErrorMessage(error)
       execSpan?.setAttribute("error", errMsg)
