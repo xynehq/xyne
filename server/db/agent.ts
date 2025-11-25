@@ -700,6 +700,7 @@ export const getAgentCollectionIds = async (
 }
 
 /**
+
  * Extract collections from an agent's app integrations
  */
 export const getAgentCollections = async (

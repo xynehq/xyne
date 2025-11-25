@@ -7,16 +7,9 @@ import { workflowExecutionsAPI } from "./api/ApiHandlers"
 import { api } from "../../api"
 import { WorkflowExecutionModalProps } from "./Types"
 
-const SUPPORTED_FILE_TYPES = {
-  // Text files
-  "text/plain": "text",
-  // Documents
-  "application/pdf": "PDF",
-  "application/msword": "Word",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
-}
 
 const MAX_FILE_SIZE = 40 * 1024 * 1024 // 40MB
+
 
 export function WorkflowExecutionModal({
   isOpen,
@@ -24,6 +17,7 @@ export function WorkflowExecutionModal({
   workflowName,
   workflowDescription,
   templateId,
+  allowedFileTypes = ["txt", "pdf", "docx", "doc", "xlsx", "xls"],
   onViewExecution,
 }: WorkflowExecutionModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -33,6 +27,7 @@ export function WorkflowExecutionModal({
   const [isProcessing, setIsProcessing] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
   const [isFailed, setIsFailed] = useState(false)
+  const [isInputRequired, setIsInputRequired] = useState(false)
   const [processingMessage, setProcessingMessage] = useState<string>(
     "Processing the File",
   )
@@ -41,6 +36,16 @@ export function WorkflowExecutionModal({
   const [maxRetries] = useState(3)
   const [executionId, setExecutionId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Use provided allowedFileTypes with validation and default fallback
+  const filteredFileTypes = (allowedFileTypes && allowedFileTypes.length > 0) 
+                ? allowedFileTypes.filter(type => type && type.trim() !== '') 
+                : []
+  const fileTypes = filteredFileTypes.length > 0 
+                    ? filteredFileTypes 
+                    : ["txt", "pdf", "docx", "doc", "xlsx", "xls"]
+  const acceptAttribute = fileTypes.map(type => `.${type}`).join(',')
+  const supportedFormatsText = fileTypes.join(', ')
 
   // Cleanup polling on component unmount
   useEffect(() => {
@@ -59,6 +64,7 @@ export function WorkflowExecutionModal({
     setIsProcessing(false)
     setIsCompleted(false)
     setIsFailed(false)
+    setIsInputRequired(false)
     setProcessingMessage("")
     setExecutionId(null)
     if (pollingIntervalRef.current) {
@@ -136,9 +142,10 @@ export function WorkflowExecutionModal({
       return `File size exceeds 40MB limit. Current size: ${(file.size / 1024 / 1024).toFixed(1)}MB`
     }
 
-    // Check file type
-    if (!SUPPORTED_FILE_TYPES[file.type as keyof typeof SUPPORTED_FILE_TYPES]) {
-      return `Unsupported file type: ${file.type}. Supported formats include text, PDF, and Word files.`
+    // Check file type using dynamic allowed types
+    const fileExtension = file.name.split('.').pop()?.toLowerCase()
+    if (!fileExtension || !fileTypes.includes(fileExtension)) {
+      return `Unsupported file type. Please select a file with one of these formats: ${supportedFormatsText}`
     }
 
     return null
@@ -336,7 +343,53 @@ export function WorkflowExecutionModal({
         // Reset retry count on successful request
         currentRetryCount = 0        
 
-        if (statusData.status === "completed") {
+        // Check if any step is awaiting user selection for Q&A regardless of overall status
+        const qaStepAwaitingSelection = statusData.stepExecutions?.find((step: any) => {
+          const toolExecs = statusData.toolExecutions?.filter((t: any) => 
+            step.toolExecIds?.includes(t.id)
+          ) || []
+          return toolExecs.some((tool: any) => tool.result?.awaitingUserSelection)
+        })
+        
+        if (qaStepAwaitingSelection) {
+          // Find the Q&A tool execution with awaiting selection
+          const qaToolExec = statusData.toolExecutions?.find((t: any) => 
+            qaStepAwaitingSelection.toolExecIds?.includes(t.id) && 
+            t.result?.awaitingUserSelection
+          )
+          
+          if (qaToolExec) {
+            console.log("🎯 Q&A tool execution found with awaitingUserSelection - triggering modal", qaToolExec)
+            stopPolling()
+            setIsProcessing(false)
+            
+            // Trigger Q&A execution modal
+            const event = new CustomEvent("openQAExecution", {
+              detail: {
+                nodeId: qaStepAwaitingSelection.id,
+                stepData: {
+                  ...qaStepAwaitingSelection,
+                  result: qaToolExec.result,
+                  executionId: executionId
+                },
+                toolData: qaToolExec,
+                workflowData: { execution: statusData }
+              }
+            })
+            console.log("🚀 Dispatching openQAExecution event", event.detail)
+            window.dispatchEvent(event)
+            
+            // Close the execution modal with state reset
+            handleClose()
+            return
+          }
+        }
+        
+        if (statusData.status === "input_required") {
+          stopPolling()
+          setIsProcessing(false)
+          setIsInputRequired(true)
+        } else if (statusData.status === "completed") {
           stopPolling()
           setIsProcessing(false)
           setIsCompleted(true)
@@ -500,6 +553,55 @@ export function WorkflowExecutionModal({
               </div>
             </div>
           </>
+        ) : isInputRequired ? (
+          // Input Required Page
+          <>
+            {/* Header */}
+            <div className="p-8 pb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                {workflowName}
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
+            </div>
+
+            {/* Input Required Content */}
+            <div className="px-8 pb-8">
+              <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl px-6 py-16 text-center bg-gray-50 dark:bg-gray-800 w-full min-h-[280px] flex flex-col items-center justify-center">
+                {/* Input Required Icon */}
+                <AlertCircle className="w-16 h-16 text-blue-500 mb-6" />
+
+                {/* Input Required Message */}
+                <p className="text-gray-900 dark:text-gray-100 text-lg font-medium mb-2">
+                  Input Required
+                </p>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
+                  Workflow is paused waiting for manual step completion
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 mt-6">
+                <Button
+                  onClick={() => {
+                    if (executionId && onViewExecution) {
+                      onViewExecution(executionId)
+                      handleClose()
+                    }
+                  }}
+                  disabled={!executionId}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  View Workflow
+                </Button>
+                <Button
+                  onClick={handleClose}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-2 rounded-full font-medium"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </>
         ) : isProcessing ? (
           // Processing Page
           <>
@@ -594,7 +696,7 @@ export function WorkflowExecutionModal({
 
                     {/* Supported formats */}
                     <p className="text-gray-500 dark:text-gray-500 text-sm text-center leading-relaxed">
-                      Supported formats include text, PDF, and Word files
+                      Supported formats: {supportedFormatsText}
                       <br />
                       (max 40MB per file).
                     </p>
@@ -607,7 +709,7 @@ export function WorkflowExecutionModal({
                 type="file"
                 onChange={handleFileSelect}
                 className="hidden"
-                accept=".txt,.pdf,.doc,.docx"
+                accept={acceptAttribute}
               />
 
               {/* Error Display */}

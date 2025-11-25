@@ -1,5 +1,8 @@
 import React, { useCallback, useState, useEffect } from "react"
 import { Bot, Mail, Settings, X, FileTextIcon , FileText} from "lucide-react"
+import { getPreviousStepOutput } from "@/utils/workflowUtils"
+import { QAExecutionModal } from "./QAExecutionModal"
+import { api } from "../../api"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -1034,35 +1037,8 @@ const ExecutionSidebar = ({
 
   const { step, tools } = executionNode
 
-  // Find previous step's output for input
-  const getPreviousStepOutput = () => {
-    if (!step.prevStepIds || step.prevStepIds.length === 0 || !workflowData)
-      return null
-
-    // Get the first previous step (assuming single previous step for simplicity)
-    const prevStepTemplateId = step.prevStepIds[0]
-
-    // Find previous step execution by matching workflowStepTemplateId
-    const prevStep = workflowData.stepExecutions?.find(
-      (s: any) => s.workflowStepTemplateId === prevStepTemplateId,
-    )
-
-    if (!prevStep) return null
-
-    // Get previous step's tool outputs
-    const prevStepTools =
-      workflowData.toolExecutions?.filter((toolExec: any) =>
-        prevStep.toolExecIds?.includes(toolExec.id),
-      ) || []
-
-    if (prevStepTools.length === 0) return null
-
-    // Return the results from all previous step tools
-    const results = prevStepTools
-      .map((tool: any) => tool.result)
-      .filter(Boolean)
-    return results
-  }
+  // Get previous step's output for input using shared utility
+  const previousStepOutput = getPreviousStepOutput(step, workflowData)
 
   return (
     <div
@@ -1231,11 +1207,10 @@ const ExecutionSidebar = ({
               }
 
               // If step has previous steps, show previous step's output as input
-              const previousOutput = getPreviousStepOutput()
-              if (previousOutput && previousOutput.length > 0) {
+              if (previousStepOutput && previousStepOutput.length > 0) {
                 return (
                   <div className="space-y-2">
-                    {previousOutput.map((output: any, index: number) => (
+                    {previousStepOutput.map((output: any, index: number) => (
                       <div key={index} className="text-xs">
                         <div className="text-gray-900">
                           {(() => {
@@ -1567,6 +1542,7 @@ interface WorkflowBuilderProps {
   onBackToWorkflows?: () => void
   selectedTemplate?: ExecutionWorkflowData | null
   isLoadingTemplate?: boolean
+  onWorkflowUpdate?: (updatedWorkflow: ExecutionWorkflowData) => void
 }
 
 // Internal component that uses ReactFlow hooks
@@ -1575,15 +1551,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   onBackToWorkflows,
   selectedTemplate,
   isLoadingTemplate,
+  onWorkflowUpdate,
 }) => {
   const [, setZoomLevel] = useState(100)
   const [showResultModal, setShowResultModal] = useState(false)
   const [selectedResult, setSelectedResult] = useState<any>(null)
   const [showExecutionSidebar, setShowExecutionSidebar] = useState(false)
   const [selectedExecutionNode, setSelectedExecutionNode] = useState<any>(null)
-  // Cleanup polling on component unmount
-  const [pollingInterval] = useState<NodeJS.Timeout | null>(null)
-
+  // Q&A execution modal state
+  const [showQAExecutionModal, setShowQAExecutionModal] = useState(false)
+  const [selectedQAExecutionNode, setSelectedQAExecutionNode] = useState<any>(null)
+  
   // Empty initial state
   const initialNodes: Node[] = []
   const initialEdges: Edge[] = []
@@ -1838,9 +1816,35 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       // Check if this is an execution workflow node
       const isExecution = (step as any).isExecution
 
-
-      // Close execution sidebar first
+      // Close existing sidebars/modals first
       setShowExecutionSidebar(false)
+      setShowQAExecutionModal(false)
+
+      // Check for Q&A execution modal for Q&A agents
+      if (isExecution && tools.length > 0 && tools[0].type === 'qna_agent') {
+        const qaToolExec = tools[0]
+        const stepStatus = step.status
+        
+        console.log("📨 Q&A node clicked - checking step status", { stepStatus, step, tools })
+        
+        // Check step status to determine if modal should open
+        if (stepStatus === 'draft') {
+          // Draft status - don't open modal, show message
+          console.log("⚠️ Q&A step is in draft status - modal disabled")
+          // TODO: Could show a toast message here: "Q&A step is not ready for processing"
+          return
+        } else if (stepStatus === 'active' || stepStatus === 'processing' || stepStatus === 'completed' || stepStatus === 'failed') {
+          // Open modal for active, processing, completed, or failed status
+          console.log("✅ Opening Q&A execution modal for status:", stepStatus)
+          setSelectedQAExecutionNode({ 
+            nodeId: node.id, 
+            stepData: step, 
+            toolData: qaToolExec 
+          })
+          setShowQAExecutionModal(true)
+          return
+        }
+      }
 
       // Show execution sidebar for execution workflows
       if (isExecution) {
@@ -1913,14 +1917,79 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
 
 
-  // Cleanup polling on component unmount
-  useEffect(() => {
-    return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
-      }
+  // Unified Polling Logic
+  const shouldContinuePolling = useCallback((workflowData: ExecutionWorkflowData) => {
+    if (!workflowData?.stepExecutions) return false
+    
+    // Check if workflow is completed or failed
+    if (workflowData.status === 'completed' || workflowData.status === 'failed') {
+      console.log("🛑 Stopping polling - workflow completed/failed:", workflowData.status)
+      return false
     }
-  }, [pollingInterval])
+    
+    const steps = workflowData.stepExecutions
+    
+    // Find current active step
+    const activeStep = steps.find((step: any) => step.status === 'active')
+    
+    // Check if any step is in processing status
+    const hasProcessingStep = steps.some((step: any) => step.status === 'processing')
+    
+    // Continue polling if:
+    // 1. Any step is in processing
+    // 2. Active step is automated
+    if (hasProcessingStep) {
+      console.log("🔄 Continuing polling - step in processing")
+      return true
+    }
+    if (activeStep && activeStep.type === 'automated') {
+      console.log("🔄 Continuing polling - active step is automated")
+      return true
+    }
+    
+    // Stop polling for manual steps (unless in processing)
+    console.log("🛑 Stopping polling - active step is manual and no processing steps")
+    return false
+  }, [])
+  
+  // Simple recursive polling function
+  const fetchAndPoll = useCallback(async (workflowId: string) => {
+    try {
+      console.log("📡 Fetching and polling workflow:", workflowId)
+      
+      // Trigger workflow execution progress
+      const response = await api.workflow.executions[workflowId].$get()
+      if (!response.ok) {
+        console.log("❌ Fetch failed, stopping polling")
+        return
+      }
+      
+      const result = await response.json()
+      console.log("📊 Received workflow data:", result.success)
+      
+      if (result.success && result.data) {
+        console.log("📈 Updating workflow data - old selectedTemplate.id:", selectedTemplate?.id)
+        console.log("📈 Updating workflow data - new data.id:", result.data?.id)
+        console.log("📈 Calling onWorkflowUpdate with:", {success: result.success, dataId: result.data.id, status: result.data.status})
+        
+        // Update parent component via callback - this should trigger UI re-render
+        onWorkflowUpdate?.(result)
+        
+        console.log("📈 onWorkflowUpdate called - parent should re-render UI")
+        
+        // Check if should continue polling
+        if (shouldContinuePolling(result.data)) {
+          console.log("⏰ Scheduling next poll in 5 seconds")
+          setTimeout(() => fetchAndPoll(workflowId), 5000)
+        } else {
+          console.log("🏁 Polling complete - workflow finished")
+        }
+      }
+    } catch (error) {
+      console.error('❌ Polling error:', error)
+    }
+  }, [shouldContinuePolling, onWorkflowUpdate])
+  
 
 
 
@@ -2032,6 +2101,27 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         isVisible={showResultModal}
         result={selectedResult}
         onClose={handleResultModalClose}
+      />
+
+      {/* Q&A Execution Modal */}
+      <QAExecutionModal
+        isOpen={showQAExecutionModal}
+        onClose={() => {
+          console.log("🔴 Q&A execution modal closing")
+          setShowQAExecutionModal(false)
+          setSelectedQAExecutionNode(null)
+        }}
+        stepId={selectedQAExecutionNode?.stepData.id}
+
+        toolId={selectedQAExecutionNode?.toolData.id}
+ 
+        workflowData={selectedTemplate}
+        onProgress={() => {
+          if (selectedTemplate?.id) {
+            console.log("🚀 QA triggered - starting fetchAndPoll for:", selectedTemplate.id)
+            fetchAndPoll(selectedTemplate.id)
+          }
+        }}
       />
     </div>
   )

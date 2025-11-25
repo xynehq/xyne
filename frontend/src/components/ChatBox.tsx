@@ -3756,6 +3756,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                               provider = "OpenAI"
                             } else if (model.labelName.includes("Gemini")) {
                               provider = "Gemini"
+                            } else if (model.labelName.includes("GLM")) {
+                              provider = "GLM"
                             }
 
                             if (!acc[provider]) acc[provider] = []
@@ -3791,6 +3793,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           "OpenAI",
                           "Gemini",
                           "Other",
+                          "GLM",
                         ] as const
                         const providerOrder = selectedModelProvider
                           ? [

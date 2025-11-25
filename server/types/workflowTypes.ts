@@ -1,6 +1,7 @@
 export enum WorkflowStatus {
   DRAFT = "draft",
   ACTIVE = "active",
+  PROCESSING = "processing",
   PAUSED = "paused",
   COMPLETED = "completed",
   FAILED = "failed",
@@ -20,6 +21,7 @@ export enum ToolType {
   FORM = "form",
   EMAIL = "email",
   AI_AGENT = "ai_agent",
+  QNA_AGENT = "qna_agent",
   WEBHOOK = "webhook",
   HTTP_REQUEST = "http_request",
   JIRA = "jira",

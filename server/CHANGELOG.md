@@ -1,3 +1,17 @@
+# [3.33.0](https://github.com/xynehq/xyne/compare/v3.32.0...v3.33.0) (2025-11-25)
+
+
+### Features
+
+* added multiple owner selection for agent creation ([#1224](https://github.com/xynehq/xyne/issues/1224)) ([55bc008](https://github.com/xynehq/xyne/commit/55bc0083b4c45640d7a63f0dc3c354dbeef9569e))
+
+# [3.32.0](https://github.com/xynehq/xyne/compare/v3.31.6...v3.32.0) (2025-11-19)
+
+
+### Features
+
+* XYNE-331 added lite llm provider and glm model support ([#1202](https://github.com/xynehq/xyne/issues/1202)) ([b83bb5f](https://github.com/xynehq/xyne/commit/b83bb5f33d0926b75cf54a126d40a687c74b78cc))
+
 ## [3.31.6](https://github.com/xynehq/xyne/compare/v3.31.5...v3.31.6) (2025-11-18)
 
 

@@ -865,6 +865,7 @@ export const ListCollectionItemsApi = async (c: Context) => {
       // Skip the normal ownership/privacy check since the collection belongs to the agent
     } else {
       // Normal access check: owner can always access, others only if Collection is public
+
       if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
         throw new HTTPException(403, {
           message: "You don't have access to this Collection",

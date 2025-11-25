@@ -17,6 +17,12 @@ const listWorkflowExecutionsQuerySchema = z.object({
 })
 import { executeAgentForWorkflowWithRag, hasUnauthorizedAgent } from "./agent/workflowAgentUtils"
 import { db } from "@/db/client"
+import { sharedVespaService as vespa } from "../search/vespaService"
+import { FileProcessorService, type SheetProcessingResult } from "@/services/fileProcessor"
+import { Apps, KbItemsSchema, fileSchema } from "@xyne/vespa-ts/types"
+import { attachmentFileTypeMap } from "@/shared/types"
+import { getFileType } from "@/shared/fileUtils"
+import { getBaseMimeType } from "@/integrations/dataSource/config"
 import {
   workflowStepTemplate,
   workflowExecution,
@@ -193,6 +199,8 @@ import {
   type AttachmentUploadResponse,
   type WorkflowFileUpload,
 } from "@/api/workflowFileHandler"
+import { mkdir } from "node:fs/promises"
+
 
 import { 
   createWorkflowTemplate, 
@@ -619,6 +627,17 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .update(workflowExecution)
       .set({ rootWorkflowStepExeId: rootStepExecution.id })
       .where(eq(workflowExecution.id, execution.id))
+    
+    // // Mark root step as ACTIVE when workflow starts
+    // await db
+    //   .update(workflowStepExecution)
+    //   .set({ 
+    //     status: WorkflowStatus.ACTIVE,
+    //     updatedAt: new Date()
+    //   })
+    //   .where(eq(workflowStepExecution.id, rootStepExecution.id))
+    
+    // Logger.info(`🚀 Marked root step as ACTIVE: ${rootStepExecution.name} (${rootStepExecution.id})`)
 
     // Process file uploads and create tool execution
     let toolExecutionRecord = null
@@ -654,7 +673,22 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                 }
 
                 try {
-                  // Create FormData for handleAttachmentUpload
+                  // First, upload to workflow files directory for Q&A agent access
+                  const workflowFileUpload = await handleWorkflowFileUpload(
+                    file,
+                    execution.id,
+                    rootStepExecution.id,
+                    fileValidation,
+                  )
+                  
+                  // Update file data with workflow upload paths
+                  finalProcessedData = {
+                    ...finalProcessedData,
+                    ...workflowFileUpload,
+                    uploadedBy: "api", // Keep API marker but include workflow paths
+                  }
+                  
+                  // Also create FormData for handleAttachmentUpload (for Vespa storage)
                   const attachmentFormData = new FormData()
                   attachmentFormData.append('attachment', file)
 
@@ -1072,7 +1106,7 @@ const executeAutomatedWorkflowSteps = async (
         (s) => s.workflowStepTemplateId === nextStepTemplateId,
       )
 
-      if (nextStep && nextStep.type === StepType.AUTOMATED) {
+      if (nextStep ) {
         Logger.info(
           `Executing automated step: ${nextStep.name} (${nextStep.id})`,
         )
@@ -1154,6 +1188,243 @@ const executeAutomatedWorkflowSteps = async (
 }
 
 // Execute workflow chain - automatically execute steps in sequence
+/**
+ * Check if all prerequisite steps for a given step are completed
+ */
+async function checkPrerequisiteStepsCompleted(
+  stepExecution: any,
+  allStepExecutions: any[]
+): Promise<boolean> {
+  // If there are no previous step IDs, there are no prerequisites
+  if (!stepExecution.prevStepIds || !Array.isArray(stepExecution.prevStepIds) || stepExecution.prevStepIds.length === 0) {
+    return true
+  }
+
+  // Check each prerequisite step
+  for (const prevStepTemplateId of stepExecution.prevStepIds) {
+    const prereqStep = allStepExecutions.find(
+      (s) => s.workflowStepTemplateId === prevStepTemplateId
+    )
+
+    if (!prereqStep) {
+      Logger.warn(`⚠️ Prerequisite step template ${prevStepTemplateId} not found for step ${stepExecution.name}`)
+      return false
+    }
+
+    // Check if prerequisite step is completed
+    if (prereqStep.status !== WorkflowStatus.COMPLETED) {
+      Logger.info(`⏸️ Prerequisite step '${prereqStep.name}' (status: ${prereqStep.status}) not completed for step '${stepExecution.name}'`)
+      return false
+    }
+  }
+
+  Logger.info(`✅ All ${stepExecution.prevStepIds.length} prerequisite step(s) completed for step '${stepExecution.name}'`)
+  return true
+}
+
+// Helper function to upload Q&A results Excel file to Vespa (similar to handleAttachmentUpload)
+const uploadQAResultsToVespa = async (
+  excelBuffer: Buffer,
+  originalFileName: string,
+  userEmail: string,
+  executionId: string
+): Promise<AttachmentMetadata> => {
+  try {
+    const fileId = `attf_${crypto.randomUUID()}`
+    const fileName = originalFileName
+    const mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    
+    Logger.info(`📤 Uploading Q&A results to Vespa: ${fileName} (${fileId})`)
+
+    // Process the Excel file using FileProcessorService (same as form attachments)
+    const processingResults = await FileProcessorService.processFile(
+      excelBuffer,
+      mimeType,
+      fileName,
+      fileId,
+      undefined,
+      true,
+      false,
+    )
+
+    let vespaId = fileId
+    if (processingResults.length > 0 && 'sheetName' in processingResults[0]) {
+      // Use the actual docId from the first sheet result instead of calculating it
+      vespaId = (processingResults[0] as SheetProcessingResult).docId
+    }
+
+    // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
+    for (const [resultIndex, processingResult] of processingResults.entries()) {
+      let docId = fileId
+      let fileNameForDoc = fileName
+
+      // For sheet processing results, append sheet information
+      if ('sheetName' in processingResult) {
+        const sheetResult = processingResult as SheetProcessingResult
+        fileNameForDoc = processingResults.length > 1 
+          ? `${fileName} / ${sheetResult.sheetName}`
+          : fileName
+        docId = sheetResult.docId
+      }
+
+      Logger.info(`📊 Processing Q&A Excel sheet: ${fileNameForDoc} with ${processingResult.chunks.length} chunks`)
+
+      const { chunks, chunks_pos, image_chunks, image_chunks_pos } = processingResult
+
+      const vespaDoc = {
+        title: fileName,
+        url: "",
+        app: Apps.Attachment,
+        docId: docId,
+        parentId: null,
+        owner: userEmail,
+        photoLink: "",
+        ownerEmail: userEmail,
+        entity: attachmentFileTypeMap[getFileType({ type: mimeType, name: fileName })],
+        chunks: chunks,
+        chunks_pos: chunks_pos,
+        image_chunks: image_chunks,
+        image_chunks_pos: image_chunks_pos,
+        chunks_map: processingResult.chunks_map,
+        image_chunks_map: processingResult.image_chunks_map,
+        permissions: [userEmail],
+        mimeType: getBaseMimeType(mimeType || "text/plain"),
+        metadata: JSON.stringify({
+          originalFileName: fileName,
+          uploadedBy: userEmail,
+          chunksCount: chunks.length,
+          imageChunksCount: image_chunks.length,
+          processingMethod: getBaseMimeType(mimeType || "text/plain"),
+          lastModified: Date.now(),
+          workflowExecutionId: executionId,
+          isQAResult: true,
+          base64Content: Buffer.from(excelBuffer).toString('base64'), // Store Base64 content in metadata for email attachments
+          ...(('sheetName' in processingResult) && {
+            sheetName: (processingResult as SheetProcessingResult).sheetName,
+            sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
+            totalSheets: (processingResult as SheetProcessingResult).totalSheets,
+          }),
+        }),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+
+      await vespa.insert(vespaDoc, fileSchema)
+    }
+
+    // Create attachment metadata (compatible with form tool format)
+    const metadata: AttachmentMetadata = {
+      fileId: vespaId,
+      fileName: fileName,
+      fileType: mimeType,
+      fileSize: excelBuffer.byteLength,
+      isImage: false,
+      thumbnailPath: "",
+      createdAt: new Date(),
+      url: `/api/v1/attachments/${vespaId}`,
+    }
+
+    Logger.info(`✅ Q&A results uploaded to Vespa: ${fileName} (ID: ${vespaId})`)
+    return metadata
+
+  } catch (error) {
+    Logger.error(`❌ Failed to upload Q&A results to Vespa:`, error)
+    throw error
+  }
+}
+
+// Helper function to build previous step results for background workflow continuation
+const buildPreviousStepResults = async (executionId: string, currentStepId: string) => {
+  const previousResults: any = {}
+
+  try {
+    // Get all completed step executions for this workflow
+    const stepExecutions = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+    // Get all tool executions for this workflow
+    const toolExecutions = await db
+      .select({
+        id: toolExecution.id,
+        workflowToolId: toolExecution.workflowToolId,
+        workflowExecutionId: toolExecution.workflowExecutionId,
+        status: toolExecution.status,
+        result: toolExecution.result,
+        startedAt: toolExecution.startedAt,
+        completedAt: toolExecution.completedAt,
+        createdAt: toolExecution.createdAt,
+        updatedAt: toolExecution.updatedAt,
+        toolType: workflowTool.type,
+      })
+      .from(toolExecution)
+      .leftJoin(workflowTool, eq(toolExecution.workflowToolId, workflowTool.id))
+      .where(eq(toolExecution.workflowExecutionId, executionId))
+
+    Logger.info(`📊 Building previous results - found ${stepExecutions.length} steps and ${toolExecutions.length} tool executions`)
+
+    // Process each completed step execution
+    for (const stepExecution of stepExecutions) {
+      // Skip the current step and only include completed steps
+      if (stepExecution.id === currentStepId || stepExecution.status !== WorkflowStatus.COMPLETED) {
+        continue
+      }
+
+      // Find the Q&A tool execution that has the file metadata
+      const qaToolExecution = toolExecutions.find(te => 
+        te.status === 'completed' && 
+        te.toolType === 'qna_agent' &&
+        te.result &&
+        typeof te.result === 'object' &&
+        (te.result as any).attachmentMetadata
+      )
+
+      if (qaToolExecution) {
+        const stepKey = stepExecution.name || stepExecution.id
+        previousResults[stepKey] = {
+          stepId: stepExecution.id,
+          stepName: stepExecution.name,
+          toolType: 'qna_agent',
+          result: qaToolExecution.result,
+          status: stepExecution.status,
+          completedAt: stepExecution.completedAt
+        }
+        Logger.info(`📋 Added Q&A step result for: ${stepKey}`)
+      }
+
+      // Also check for form tool executions
+      const formToolExecution = toolExecutions.find(te => 
+        te.status === 'completed' && 
+        te.toolType === 'form' &&
+        te.result
+      )
+
+      if (formToolExecution) {
+        const stepKey = stepExecution.name || stepExecution.id
+        if (!previousResults[stepKey]) {
+          previousResults[stepKey] = {
+            stepId: stepExecution.id,
+            stepName: stepExecution.name,
+            toolType: 'form',
+            result: formToolExecution.result,
+            status: stepExecution.status,
+            completedAt: stepExecution.completedAt
+          }
+          Logger.info(`📋 Added Form step result for: ${stepKey}`)
+        }
+      }
+    }
+
+    Logger.info(`✅ Built ${Object.keys(previousResults).length} previous step results`)
+    return previousResults
+
+  } catch (error) {
+    Logger.error(`Failed to build previous step results:`, error)
+    return {}
+  }
+}
+
 export const executeWorkflowChain = async (
   executionId: string,
   currentStepId: string,
@@ -1190,10 +1461,15 @@ export const executeWorkflowChain = async (
       Logger.info(`⏭️ Step already completed, loading results: ${step.name} (${step.id})`)
       
       // Get completed tool execution results for this step execution
-      const toolExecutions = await db
+      const allToolExecutions = await db
         .select()
         .from(toolExecution)
-        .where(eq(toolExecution.workflowExecutionId, step.id))
+        .where(eq(toolExecution.workflowExecutionId, executionId))
+      
+      // Filter to only tool executions for this step
+      const toolExecutions = allToolExecutions.filter(tool => 
+        step.toolExecIds && step.toolExecIds.includes(tool.id)
+      )
       
       Logger.info(`🔍 Looking for tool executions for step ${step.id}, found: ${toolExecutions.length}`)
       
@@ -1244,18 +1520,50 @@ export const executeWorkflowChain = async (
               const isWebhookTriggered = execution?.metadata && 
                 (execution.metadata as any).triggerType === 'webhook'
               
-              const shouldExecute = nextStep.type === StepType.AUTOMATED || isWebhookTriggered
+              // Check if all prerequisite steps are completed before executing
+              const arePrerequisitesCompleted = await checkPrerequisiteStepsCompleted(nextStep, nextSteps)
               
-              if (shouldExecute) {
-                Logger.info(`⏭️ Executing next step from completed step: ${nextStep.name} (${nextStep.id})`)
+              if (!arePrerequisitesCompleted) {
+                Logger.info(`⏸️ Skipping step: ${nextStep.name} - Prerequisites not completed`)
+                continue
+              }
+              
+              // Determine if we should execute based on step type and status
+              if (nextStep.type === StepType.AUTOMATED) {
+                // Automated steps: execute immediately if not already completed
+                if (nextStep.status !== WorkflowStatus.COMPLETED) {
+                  Logger.info(`⏭️ Executing automated step from completed step: ${nextStep.name} (${nextStep.id})`)
+                  await executeWorkflowChain(
+                    executionId,
+                    nextStep.id,
+                    tools,
+                    updatedResults,
+                  )
+                } else {
+                  Logger.info(`⏩ Automated step already completed: ${nextStep.name}`)
+                }
+              } else if (nextStep.type === StepType.MANUAL) {
+                // Manual steps: only continue if already completed by user
+                if (nextStep.status === WorkflowStatus.COMPLETED) {
+                  Logger.info(`⏭️ Manual step already completed, continuing: ${nextStep.name} (${nextStep.id})`)
+                  await executeWorkflowChain(
+                    executionId,
+                    nextStep.id,
+                    tools,
+                    updatedResults,
+                  )
+                } else {
+                  Logger.info(`⏸️ Waiting for manual step completion: ${nextStep.name} (status: ${nextStep.status})`)
+                }
+              } else if (isWebhookTriggered) {
+                // Webhook-triggered: execute regardless of type
+                Logger.info(`🪝 Webhook-triggered step: ${nextStep.name} (${nextStep.id})`)
                 await executeWorkflowChain(
                   executionId,
                   nextStep.id,
                   tools,
                   updatedResults,
                 )
-              } else {
-                Logger.info(`⏸️ Skipping manual step: ${nextStep.name} (${nextStep.type})`)
               }
             } else {
               Logger.warn(`⚠️ Next step not found for template ID: ${nextStepId}`)
@@ -1353,10 +1661,44 @@ Please analyze this webhook request and provide insights.`,
                 const isWebhookTriggered = execution?.metadata && 
                   (execution.metadata as any).triggerType === 'webhook'
                 
-                const shouldExecute = nextStep.type === StepType.AUTOMATED || isWebhookTriggered
+                // Check if all prerequisite steps are completed before executing
+                const arePrerequisitesCompleted = await checkPrerequisiteStepsCompleted(nextStep, nextSteps)
                 
-                if (shouldExecute) {
-                  Logger.info(`⏭️ Executing next step with dummy data: ${nextStep.name} (${nextStep.id})`)
+                if (!arePrerequisitesCompleted) {
+                  Logger.info(`⏸️ Skipping step: ${nextStep.name} - Prerequisites not completed`)
+                  continue
+                }
+                
+                // Determine if we should execute based on step type and status
+                if (nextStep.type === StepType.AUTOMATED) {
+                  // Automated steps: execute immediately if not already completed
+                  if (nextStep.status !== WorkflowStatus.COMPLETED) {
+                    Logger.info(`⏭️ Executing automated step with dummy data: ${nextStep.name} (${nextStep.id})`)
+                    await executeWorkflowChain(
+                      executionId,
+                      nextStep.id,
+                      tools,
+                      updatedResults,
+                    )
+                  } else {
+                    Logger.info(`⏩ Automated step already completed: ${nextStep.name}`)
+                  }
+                } else if (nextStep.type === StepType.MANUAL) {
+                  // Manual steps: only continue if already completed by user
+                  if (nextStep.status === WorkflowStatus.COMPLETED) {
+                    Logger.info(`⏭️ Manual step already completed, continuing with dummy data: ${nextStep.name} (${nextStep.id})`)
+                    await executeWorkflowChain(
+                      executionId,
+                      nextStep.id,
+                      tools,
+                      updatedResults,
+                    )
+                  } else {
+                    Logger.info(`⏸️ Waiting for manual step completion: ${nextStep.name} (status: ${nextStep.status})`)
+                  }
+                } else if (isWebhookTriggered) {
+                  // Webhook-triggered: execute regardless of type
+                  Logger.info(`🪝 Webhook-triggered step with dummy data: ${nextStep.name} (${nextStep.id})`)
                   await executeWorkflowChain(
                     executionId,
                     nextStep.id,
@@ -1378,11 +1720,11 @@ Please analyze this webhook request and provide insights.`,
     const isWebhookTriggered = execution?.metadata && 
       (execution.metadata as any).triggerType === 'webhook'
 
-    // If step is manual and not webhook-triggered, wait for user input
-    if (step.type === StepType.MANUAL && !isWebhookTriggered) {
-      Logger.info(`⏸️ Manual step encountered, waiting for user input: ${step.name}`)
-      return previousResults
-    }
+    // // If step is manual and not webhook-triggered, wait for user input
+    // if (step.type === StepType.MANUAL && !isWebhookTriggered) {
+    //   Logger.info(`⏸️ Manual step encountered, waiting for user input: ${step.name}`)
+    //   return previousResults
+    // }
 
     // Get the tool for this step from the step template (not execution)
     const stepTemplate = await getWorkflowStepTemplateById(
@@ -1477,16 +1819,34 @@ Please analyze this webhook request and provide insights.`,
 
     // Create tool execution record with error handling for unicode issues
     let toolExecutionRecord
+    
+    // Check if tool result indicates awaiting user selection
+    const isAwaitingUserSelection = toolResult.result && 
+      typeof toolResult.result === 'object' && 
+      (toolResult.result as any).awaitingUserSelection === true
+    
+    if (isAwaitingUserSelection) {
+      Logger.info(`⏸️ Tool execution awaiting user selection for step: ${step.name}`)
+    }
+    
+    const toolStatus = isAwaitingUserSelection 
+      ? ToolExecutionStatus.PENDING  // Keep as pending to await user input
+      : ToolExecutionStatus.COMPLETED
+    
+    const completedAt = isAwaitingUserSelection 
+      ? null  // Don't set completion time if awaiting user input
+      : new Date()
+    
     try {
       const [execution] = await db
         .insert(toolExecution)
         .values({
           workflowToolId: tool.id,
           workflowExecutionId: executionId,
-          status: ToolExecutionStatus.COMPLETED,
+          status: toolStatus,
           result: toolResult.result,
           startedAt: new Date(),
-          completedAt: new Date(),
+          completedAt: completedAt,
         })
         .returning()
       toolExecutionRecord = execution
@@ -1506,14 +1866,14 @@ Please analyze this webhook request and provide insights.`,
           .values({
             workflowToolId: tool.id,
             workflowExecutionId: executionId,
-            status: ToolExecutionStatus.COMPLETED,
+            status: toolStatus,
             result: {
               ...sanitizedResult,
               _note: "Result was sanitized due to unicode characters",
               _original_status: toolResult.status,
             },
             startedAt: new Date(),
-            completedAt: new Date(),
+            completedAt: completedAt,
           })
           .returning()
         toolExecutionRecord = execution
@@ -1527,7 +1887,7 @@ Please analyze this webhook request and provide insights.`,
           .values({
             workflowToolId: tool.id,
             workflowExecutionId: executionId,
-            status: ToolExecutionStatus.COMPLETED,
+            status: toolStatus,
             result: {
               status: "executed_with_db_error",
               message:
@@ -1535,25 +1895,37 @@ Please analyze this webhook request and provide insights.`,
               error: "Database storage failed",
             },
             startedAt: new Date(),
-            completedAt: new Date(),
+            completedAt: completedAt,
           })
           .returning()
         toolExecutionRecord = execution
       }
     }
 
-    // Update step as completed and add tool execution ID
+    // Update step status based on whether tool is awaiting user selection
+    const stepStatus = isAwaitingUserSelection 
+      ? WorkflowStatus.ACTIVE  // Keep step active if awaiting user input
+      : WorkflowStatus.COMPLETED
+    
+    const stepCompletedAt = isAwaitingUserSelection 
+      ? null  // Don't set completion time if awaiting user input
+      : new Date()
+    
     await db
       .update(workflowStepExecution)
       .set({
-        status: WorkflowStatus.COMPLETED,
-        completedBy: "system",
-        completedAt: new Date(),
+        status: stepStatus,
+        completedBy: isAwaitingUserSelection ? null : "system",
+        completedAt: stepCompletedAt,
         toolExecIds: [toolExecutionRecord.id],
       })
       .where(eq(workflowStepExecution.id, currentStepId))
 
-    Logger.info(`✅ Step marked as COMPLETED: ${step.name} (${step.id}) - Tool: ${tool.type}`)
+    if (isAwaitingUserSelection) {
+      Logger.info(`⏸️ Step marked as ACTIVE (awaiting user selection): ${step.name} (${step.id}) - Tool: ${tool.type}`)
+    } else {
+      Logger.info(`✅ Step marked as COMPLETED: ${step.name} (${step.id}) - Tool: ${tool.type}`)
+    }
 
     // Store results for next step
     const stepResults: any = {
@@ -1620,15 +1992,38 @@ Please analyze this webhook request and provide insights.`,
         const nextStep = allStepExecutions.find(
           (s) => s.workflowStepTemplateId === nextStepId,
         )
+        Logger.info(`➡️ Processing next step ${i + 1}/${step.nextStepIds.length}: Template ID ${nextStepId}`)
 
         if (nextStep) {
-          // Execute all steps if webhook-triggered, or only automated steps otherwise
-          const shouldExecute = nextStep.type === StepType.AUTOMATED || isWebhookTriggered
+          // Check if all prerequisite steps are completed before executing
+          const arePrerequisitesCompleted = await checkPrerequisiteStepsCompleted(nextStep, allStepExecutions)
           
-          if (shouldExecute) {
-            Logger.info(`⏭️ Executing next step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.id}) - Type: ${nextStep.type}, Webhook: ${isWebhookTriggered}`)
+          if (!arePrerequisitesCompleted) {
+            Logger.info(`⏸️ Skipping step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Prerequisites not completed`)
+            continue
+          }
+          
+          // Always mark next step as ACTIVE (regardless of manual/automated)
+          if (nextStep.status === WorkflowStatus.DRAFT) {
+            await db
+              .update(workflowStepExecution)
+              .set({
+                status: WorkflowStatus.ACTIVE,
+                updatedAt: new Date(),
+              })
+              .where(eq(workflowStepExecution.id, nextStep.id))
             
-            // Recursively execute next step and wait for completion
+            // Update local object to reflect the change
+            nextStep.status = WorkflowStatus.ACTIVE
+            
+            Logger.info(`🔄 Marked step as ACTIVE: ${nextStep.name} (${nextStep.id})`)
+          }
+          
+          // Handle step execution based on type and completion status
+          if (nextStep.status === WorkflowStatus.COMPLETED) {
+            // Step already completed - continue workflow chain regardless of type
+            Logger.info(`⏩ Step ${i + 1}/${step.nextStepIds.length} already completed, continuing: ${nextStep.name}`)
+            
             try {
               await executeWorkflowChain(
                 executionId,
@@ -1636,14 +2031,32 @@ Please analyze this webhook request and provide insights.`,
                 tools,
                 updatedResults,
               )
-              
-              Logger.info(`✅ Completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
+              Logger.info(`✅ Continued from completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
             } catch (stepError) {
-              Logger.error(`❌ Failed to execute step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
-              // Continue with other steps even if one fails
+              Logger.error(`❌ Failed to continue from completed step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
             }
-          } else {
-            Logger.info(`⏸️ Skipping manual step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.type})`)
+          } else if (nextStep.type === StepType.AUTOMATED || isWebhookTriggered) {
+            // Automated steps or webhook-triggered: execute immediately
+            const stepTypeLabel = isWebhookTriggered ? 'webhook-triggered' : 'automated'
+            Logger.info(`⏭️ Executing ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} (${nextStep.id})`)
+            
+            try {
+              await executeWorkflowChain(
+                executionId,
+                nextStep.id,
+                tools,
+                updatedResults,
+              )
+              Logger.info(`✅ Completed ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name}`)
+            } catch (stepError) {
+              Logger.error(`❌ Failed to execute ${stepTypeLabel} step ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - Error: ${stepError}`)
+            }
+          } else if (nextStep.type === StepType.MANUAL) {
+            // Manual steps: mark as ACTIVE and return (wait for user action)
+            Logger.info(`⏸️ Manual step marked as ACTIVE ${i + 1}/${step.nextStepIds.length}: ${nextStep.name} - waiting for user completion`)
+            
+            // Return here to stop execution chain until manual step is completed
+            return
           }
         } else {
           Logger.warn(`⚠️ Next step ${i + 1}/${step.nextStepIds.length} not found for template ID: ${nextStepId}`)
@@ -1781,9 +2194,27 @@ export const GetWorkflowExecutionStatusApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Workflow execution not found" })
     }
 
+    let finalStatus = execution.status
+
+    // Check for active manual steps if workflow is active
+    if (execution.status === "active") {
+      const stepExecutions = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+      
+      const activeManualSteps = stepExecutions.filter(step => 
+        step.type === "manual" && step.status === "active"
+      )
+      
+      if (activeManualSteps.length > 0) {
+        finalStatus = "input_required"
+      }
+    }
+
     return c.json({
       success: true,
-      status: execution.status,
+      status: finalStatus,
     })
   } catch (error) {
     Logger.error(error, "Failed to get workflow execution status")
@@ -2374,7 +2805,11 @@ const executeWorkflowTool = async (
         try {
           let emailBody = ""
 
-          if (contentPath) {
+          // Check for static body content first (new feature)
+          if (emailConfig.bodySource === 'static' && emailConfig.bodyContent) {
+            emailBody = emailConfig.bodyContent
+            Logger.info('📧 Email using static body content')
+          } else if (contentPath) {
             // Extract content using configurable path
             emailBody = extractContentFromPath(previousStepResults, contentPath)
 
@@ -2466,6 +2901,238 @@ ${JSON.stringify(httpResult.data, null, 2)}`
 </html>`
           }
 
+          // Fetch files from workflow directory using same pattern as AI agent and Q&A agent
+          const attachments: Array<{
+            filename: string
+            path: string
+            contentType?: string
+          }> = []
+
+          // Get execution context for workspace/user info
+          const executionContext = await getExecutionContext(executionId)
+          
+          // Process all previous steps to extract content and attachments (same as AI agent)
+          const stepKeys = Object.keys(previousStepResults)
+          Logger.info(`📧 Email processing ${stepKeys.length} previous steps for attachments`)
+
+          if (stepKeys.length > 0) {
+            for (let i = stepKeys.length - 1; i >= 0; i--) {
+              const stepKey = stepKeys[i]
+              const stepData = previousStepResults[stepKey]
+
+              Logger.info(`📊 Processing step ${i + 1}/${stepKeys.length}: ${stepKey}`, {
+                toolType: stepData?.toolType,
+                hasResult: !!stepData?.result,
+                resultKeys: stepData?.result ? Object.keys(stepData.result) : []
+              })
+
+              // Method 1: Form data attachments (same as AI agent)
+              if (stepData?.result?.formData || stepData?.formSubmission?.formData || stepData?.toolExecution?.result?.formData) {
+                const formData = stepData.result?.formData ||
+                               stepData.formSubmission?.formData ||
+                               stepData.toolExecution?.result?.formData || {}
+
+                Logger.info(`📎 Found form data in ${stepKey}, extracting attachment IDs`)
+                const extractedIds = extractAttachmentIds(formData)
+                
+                // Convert attachment IDs to file paths for email attachments
+                const allAttachmentIds = [...extractedIds.imageAttachmentIds, ...extractedIds.documentAttachmentIds]
+                
+                for (const attachmentId of allAttachmentIds) {
+                  try {
+                    // Get attachment metadata from Vespa instead of file system
+                    const vespaResults = await vespa.searchVespaInFiles(`id:${attachmentId}`, executionContext?.userEmail || "", [attachmentId], {})
+                    
+                    if (vespaResults?.root?.children && vespaResults.root.children.length > 0) {
+                      const fileData = vespaResults.root.children[0] as any
+                      const filePath = fileData.url || fileData.path
+                      
+                    if (filePath) {
+                      const fs = await import('fs')
+                      if (fs.existsSync(filePath)) {
+                        attachments.push({
+                          filename: fileData.title || fileData.name || `attachment-${attachmentId}`,
+                          path: filePath,
+                          contentType: fileData.mime_type || 'application/octet-stream'
+                        })
+                        Logger.info(`📎 Adding form attachment: ${fileData.title} from ${filePath}`)
+                      }
+                    }
+                    }
+                  } catch (err) {
+                    Logger.warn(`Could not process attachment ${attachmentId}:`, err)
+                  }
+                }
+              }
+
+              // Method 2: Direct attachment arrays (same as AI agent)
+              if (stepData?.result?.attachments) {
+                const stepAttachments = Array.isArray(stepData.result.attachments)
+                  ? stepData.result.attachments
+                  : [stepData.result.attachments]
+
+                for (const attachment of stepAttachments) {
+                  if (attachment?.attachmentId) {
+                    try {
+                      // Get attachment metadata from Vespa instead of file system
+                      const vespaResults = await vespa.searchVespaInFiles(`id:${attachment.attachmentId}`, executionContext?.userEmail || "", [attachment.attachmentId], {})
+                      
+                      if (vespaResults?.root?.children && vespaResults.root.children.length > 0) {
+                        const fileData = vespaResults.root.children[0] as any
+                        const filePath = fileData.url || fileData.path
+                        
+                      if (filePath) {
+                        const fs = await import('fs')
+                        if (fs.existsSync(filePath)) {
+                          attachments.push({
+                            filename: fileData.title || fileData.name || `attachment-${attachment.attachmentId}`,
+                            path: filePath,
+                            contentType: fileData.mime_type || 'application/octet-stream'
+                          })
+                          Logger.info(`📎 Adding direct attachment: ${fileData.title} from ${filePath}`)
+                        }
+                      }
+                      }
+                    } catch (err) {
+                      Logger.warn(`Could not process direct attachment ${attachment.attachmentId}:`, err)
+                    }
+                  }
+                }
+              }
+
+              // Method 3: Q&A tool results with Vespa attachment metadata
+              Logger.info(`🔍 Email checking step for Q&A attachments:`, {
+                stepKey: stepKey,
+                hasResult: !!stepData?.result,
+                hasAttachmentMetadata: !!stepData?.result?.attachmentMetadata,
+                hasAttachmentId: !!stepData?.result?.attachmentId,
+                toolType: stepData?.toolType,
+                attachmentId: stepData?.result?.attachmentId
+              })
+              
+              if (stepData?.result?.attachmentMetadata && stepData?.result?.attachmentId) {
+                Logger.info(`🎯 Found Q&A attachment metadata for email!`, {
+                  attachmentId: stepData.result.attachmentId,
+                  fileName: stepData.result.attachmentMetadata.fileName
+                })
+                
+                const attachmentMetadata = stepData.result.attachmentMetadata
+                const attachmentId = stepData.result.attachmentId
+                
+                try {
+                  // Retrieve file from Vespa using attachment service  
+                  const { sharedVespaService: vespa } = await import('../search/vespaService')
+                  
+                  Logger.info(`🔍 Retrieving Q&A attachment from Vespa:`, { 
+                    attachmentId,
+                    schemaName: fileSchema,
+                    documentId: `${fileSchema}:${attachmentId}`
+                  })
+                  const vespaDoc = await vespa.getDocumentOrNull(fileSchema, attachmentId)
+                  Logger.info(`📄 Vespa document result:`, { 
+                    found: !!vespaDoc, 
+                    hasFields: !!vespaDoc?.fields,
+                    hasContent: !!(vespaDoc?.fields as any)?.content,
+                    contentType: typeof (vespaDoc?.fields as any)?.content,
+                    contentLength: (vespaDoc?.fields as any)?.content ? (vespaDoc?.fields as any).content.length : 0,
+                    documentId: attachmentId,
+                    schemaUsed: fileSchema,
+                    fieldKeys: vespaDoc?.fields ? Object.keys(vespaDoc.fields) : []
+                  })
+                  
+                  if (vespaDoc && vespaDoc.fields) {
+                    // For Q&A results, the Base64 content is stored in metadata.base64Content
+                    let base64Content = (vespaDoc.fields as any).content // Try content field first (for regular attachments)
+                    
+                    // If no content field, check metadata for Q&A results
+                    if (!base64Content && (vespaDoc.fields as any).metadata) {
+                      try {
+                        const metadata = JSON.parse((vespaDoc.fields as any).metadata)
+                        base64Content = metadata.base64Content
+                        Logger.info(`📄 Using Base64 content from metadata for Q&A results`)
+                      } catch (error) {
+                        Logger.error(`❌ Failed to parse metadata JSON:`, error)
+                      }
+                    }
+                    
+                    Logger.info(`📄 Vespa content info:`, { 
+                      contentLength: base64Content ? base64Content.length : 0,
+                      contentType: typeof base64Content,
+                      contentSource: (vespaDoc.fields as any).content ? 'content field' : 'metadata field'
+                    })
+                    if (base64Content) {
+                      const tmpFilePath = `/tmp/email_attachment_${attachmentId}_${Date.now()}.xlsx`
+                      const buffer = Buffer.from(base64Content, 'base64')
+                      await Bun.write(tmpFilePath, buffer)
+                      
+                      // Check for duplicates
+                      const isDuplicate = attachments.some(att => att.path === tmpFilePath)
+                      if (!isDuplicate) {
+                        attachments.push({
+                          filename: attachmentMetadata.filename || `qa-results-${executionId}.xlsx`,
+                          path: tmpFilePath,
+                          contentType: attachmentMetadata.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                        })
+                        Logger.info(`📎 Successfully adding Q&A Vespa attachment to email: ${attachmentMetadata.filename} (${attachmentId})`)
+                      }
+                    }
+                  }
+                } catch (error) {
+                  Logger.error(`❌ Failed to retrieve Q&A attachment from Vespa:`, error)
+                }
+              }
+
+              // Method 4: Files array (existing logic for backward compatibility)
+              if (stepData?.result?.files && Array.isArray(stepData.result.files)) {
+                for (const file of stepData.result.files) {
+                  if (file && typeof file === 'object' && file.fileName) {
+                    // Use the same file fetching pattern as Q&A and AI agent
+                    let filePath = file.filePath || file.path || file.absolutePath
+                    if (!filePath && file.workflowExecutionId && file.workflowStepId) {
+                      // Search for the actual uploaded file in the workflow directory
+                      const fs = await import('fs')
+                      const path = await import('path')
+                      const baseDir = "/tmp/workflow_uploads"
+                      const stepDir = path.join(baseDir, file.workflowExecutionId, file.workflowStepId)
+                      
+                      try {
+                        if (fs.existsSync(stepDir)) {
+                          const files = fs.readdirSync(stepDir)
+                          // Find file that ends with the original filename
+                          const matchingFile = files.find(f => f.endsWith(`_${file.fileName}`))
+                          if (matchingFile) {
+                            filePath = path.join(stepDir, matchingFile)
+                            Logger.info(`📎 Found legacy file attachment at: ${filePath}`)
+                          }
+                        }
+                      } catch (err) {
+                        Logger.warn(`Could not search for file in ${stepDir}:`, err)
+                      }
+                    }
+                    
+                    if (filePath && await import('fs').then(fs => fs.existsSync(filePath))) {
+                      // Check for duplicates
+                      const isDuplicate = attachments.some(att => att.path === filePath)
+                      if (!isDuplicate) {
+                        attachments.push({
+                          filename: file.fileName,
+                          path: filePath,
+                          contentType: file.mimetype || file.contentType
+                        })
+                        Logger.info(`📎 Adding legacy attachment: ${file.fileName} from ${filePath}`)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          Logger.info(`📧 Email will include ${attachments.length} attachments`)
+          if (attachments.length > 0) {
+            Logger.info(`📎 Attachments: ${attachments.map(a => a.filename).join(', ')}`)
+          }
+
           // Validate email configuration
           if (!toEmail || (Array.isArray(toEmail) && toEmail.length === 0)) {
             return {
@@ -2493,6 +3160,7 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                 subject,
                 body: emailBody,
                 contentType: contentType === "html" ? "html" : "text",
+                attachments: attachments,
               })
               emailResults.push({ recipient, sent: emailSent })
             } catch (emailError) {
@@ -2522,10 +3190,15 @@ ${JSON.stringify(httpResult.data, null, 2)}`
                 subject,
                 content_type: contentType,
                 body_length: emailBody.length,
+                attachments_count: attachments.length,
+                attachments: attachments.map(att => ({
+                  filename: att.filename,
+                  contentType: att.contentType
+                })),
               },
               message: allSent
-                ? `Email sent successfully to all ${successCount} recipients`
-                : `Email sent to ${successCount} of ${recipients.length} recipients`,
+                ? `Email sent successfully to all ${successCount} recipients${attachments.length > 0 ? ` with ${attachments.length} attachments` : ''}`
+                : `Email sent to ${successCount} of ${recipients.length} recipients${attachments.length > 0 ? ` with ${attachments.length} attachments` : ''}`,
             },
           }
         } catch (error) {
@@ -2913,6 +3586,147 @@ ${JSON.stringify(stepData.result, null, 2)}`
               error: "Agent execution failed",
               message: error instanceof Error ? error.message : String(error),
               inputType: aiConfig.inputType,
+            }
+          }
+        }
+
+      case "qna_agent":
+        // Q&A agents extract Excel metadata first, then wait for user selection
+        const qaConfig = tool.config || {}
+        const qaValue = tool.value || {}
+        const qaAgentId = qaConfig.agentId
+
+        if (!qaAgentId) {
+          Logger.error("No agent ID found in Q&A tool config")
+          return {
+            status: "error",
+            result: {
+              error: "No agent ID configured for this Q&A agent tool",
+              details: "Agent should have been created during workflow template creation",
+              config: qaConfig
+            }
+          }
+        }
+
+        try {
+          Logger.info(`🔄 Q&A Agent extracting Excel metadata for execution ${executionId}`)
+
+          // Find Excel file from previous steps using helper function
+          const stepKeys = Object.keys(previousStepResults)
+          const stepDataArray = stepKeys.map(key => previousStepResults[key])
+          let excelFileData = await findExcelFileFromStepResults(stepDataArray, 'previousSteps')
+          let excelMetadata = null
+
+          if (!excelFileData) {
+            return {
+              status: "error",
+              result: {
+                error: "No Excel file found in previous steps",
+                details: "Q&A agent requires an Excel file from a previous workflow step"
+              }
+            }
+          }
+
+          // Extract Excel metadata using XLSX library
+          const XLSX = await import('xlsx')
+          
+          try {
+            // Fetch the actual Excel file content
+            let fileBuffer: Buffer
+            if (excelFileData.path) {
+              // If file has a path, fetch it
+              const fs = await import('fs')
+              Logger.info(`📁 Attempting to read Excel file at: ${excelFileData.path}`)
+              
+              // Check if file exists first
+              if (!fs.existsSync(excelFileData.path)) {
+                throw new Error(`Excel file not found at path: ${excelFileData.path}`)
+              }
+              
+              fileBuffer = fs.readFileSync(excelFileData.path)
+              Logger.info(`📊 Successfully read Excel file, size: ${fileBuffer.length} bytes`)
+            } else {
+              throw new Error("Excel file path not available")
+            }
+
+            // Parse Excel workbook
+            const workbook = XLSX.read(fileBuffer, { type: 'buffer' })
+            Logger.info(`📋 Excel workbook parsed, found ${workbook.SheetNames.length} sheets: ${workbook.SheetNames.join(', ')}`)
+            
+            // Extract sheet metadata
+            const sheets = workbook.SheetNames.map(sheetName => {
+              const worksheet = workbook.Sheets[sheetName]
+              const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1')
+              
+              // Extract column headers (first row)
+              const columns: string[] = []
+              for (let col = range.s.c; col <= range.e.c; col++) {
+                const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col })
+                const cell = worksheet[cellAddress]
+                const columnName = cell ? String(cell.v) : XLSX.utils.encode_col(col)
+                columns.push(columnName)
+              }
+              
+              return {
+                name: sheetName,
+                columns: columns,
+                rowCount: range.e.r + 1
+              }
+            })
+
+            excelMetadata = {
+              filename: excelFileData.filename,
+              fileId: excelFileData.fileId,
+              filePath: excelFileData.path,
+              sheets: sheets
+            }
+          } catch (fileError) {
+            Logger.error("❌ Failed to parse Excel file:", {
+              error: fileError instanceof Error ? fileError.message : String(fileError),
+              stack: fileError instanceof Error ? fileError.stack : undefined,
+              excelFilePath: excelFileData.path,
+              excelFileName: excelFileData.filename
+            })
+            
+            // Don't provide fallback data - fail the step instead
+            return {
+              status: "error",
+              result: {
+                error: "Failed to parse Excel file",
+                details: `Could not read or parse the Excel file: ${fileError instanceof Error ? fileError.message : String(fileError)}`,
+                filePath: excelFileData.path,
+                fileName: excelFileData.filename
+              }
+            }
+          }
+
+          Logger.info(`✅ Q&A Agent extracted Excel metadata:`, {
+            filename: excelMetadata.filename,
+            sheetCount: excelMetadata.sheets.length,
+            sheetNames: excelMetadata.sheets.map((s: any) => s.name)
+          })
+
+          // Return metadata for frontend to use for sheet/column selection
+          return {
+            status: "success",
+            result: {
+              qaMetadata: excelMetadata,
+              agentId: qaAgentId,
+              executionId: executionId,
+              agentName: qaConfig.agentName || qaConfig.name || "Q&A Agent",
+              model: qaConfig.model || "vertex-gemini-2-5-flash",
+              processedAt: new Date().toISOString(),
+              awaitingUserSelection: true, // Flag to indicate waiting for sheet/column selection
+              message: "Excel metadata extracted. Please select sheet and column to process questions."
+            }
+          }
+        } catch (error) {
+          Logger.error(error, "Q&A Agent metadata extraction failed")
+          return {
+            status: "error",
+            result: {
+              error: "Q&A Agent metadata extraction failed",
+              message: error instanceof Error ? error.message : String(error),
             }
           }
         }
@@ -3574,7 +4388,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           workflowTemplateId: template.id,
           name: stepData.name,
           description: stepData.description || "",
-          type: stepData.type === "form_submission" || stepData.type === "manual" ? "manual" : "automated",
+          type: stepData.type === "form_submission" || stepData.type === "manual" || stepData.type === "qna_agent" ? "manual" : "automated",
           timeEstimate: 180, // Default time estimate
           metadata: {
             icon: stepData.metadata?.icon,
@@ -5406,6 +6220,17 @@ async function triggerWorkflowFromWebhook(
       .update(workflowExecution)
       .set({ rootWorkflowStepExeId: rootStepExecution.id })
       .where(eq(workflowExecution.id, execution.id))
+    
+    // Mark root step as ACTIVE when workflow starts
+    await db
+      .update(workflowStepExecution)
+      .set({ 
+        status: WorkflowStatus.ACTIVE,
+        updatedAt: new Date()
+      })
+      .where(eq(workflowStepExecution.id, rootStepExecution.id))
+    
+    Logger.info(`🚀 Marked root step as ACTIVE: ${rootStepExecution.name} (${rootStepExecution.id})`)
 
     Logger.info({
       executionId: execution.id,
@@ -5818,5 +6643,713 @@ export const ServeWorkflowFileApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
+  }
+}
+
+// Helper function to find Excel files from workflow step results
+const findExcelFileFromStepResults = async (
+  stepResults: any[], 
+  resultType: 'previousSteps' | 'stepExecutions' = 'previousSteps'
+): Promise<any> => {
+  let excelFileData = null
+
+  for (const stepData of stepResults) {
+    // For previousSteps format (from qa_agent case)
+    if (resultType === 'previousSteps') {
+      // Check uploadedFiles array (legacy format)
+      const uploadedFiles = stepData?.result?.uploadedFiles || stepData?.toolExecution?.result?.uploadedFiles || []
+      
+      for (const file of uploadedFiles) {
+        // Check for Excel files
+        if (file?.mimeType?.includes('spreadsheet') || 
+            file?.filename?.match(/\.(xlsx|xls)$/i)) {
+          excelFileData = file
+          Logger.info(`📊 Found Excel file in uploadedFiles: ${file.filename}`)
+          break
+        }
+      }
+      
+      // Also check form data structure (new format)
+      if (!excelFileData) {
+        const formData = stepData?.result?.formData || stepData?.toolExecution?.result?.formData
+        if (formData) {
+          // Check all form fields for file data
+          for (const [fieldName, fieldValue] of Object.entries(formData)) {
+            if (fieldValue && typeof fieldValue === 'object' && 
+                (fieldValue as any).fileName && (fieldValue as any).mimetype) {
+              const file = fieldValue as any
+              // Check for Excel files
+              if (file.mimetype?.includes('spreadsheet') || 
+                  file.fileName?.match(/\.(xlsx|xls)$/i)) {
+                // Convert form file data to expected format
+                let filePath = file.filePath || file.path || file.absolutePath
+                if (!filePath && file.workflowExecutionId && file.workflowStepId) {
+                  // Search for the actual uploaded file in the workflow directory
+                  const fs = await import('fs')
+                  const path = await import('path')
+                  const baseDir = "/tmp/workflow_uploads"
+                  const stepDir = path.join(baseDir, file.workflowExecutionId, file.workflowStepId)
+                  
+                  try {
+                    if (fs.existsSync(stepDir)) {
+                      const files = fs.readdirSync(stepDir)
+                      // Find file that ends with the original filename
+                      const matchingFile = files.find(f => f.endsWith(`_${file.fileName}`))
+                      if (matchingFile) {
+                        filePath = path.join(stepDir, matchingFile)
+                        Logger.info(`Found Excel file at: ${filePath}`)
+                      }
+                    }
+                  } catch (err) {
+                    Logger.warn(`Could not search for file in ${stepDir}:`, err)
+                  }
+                }
+                
+                excelFileData = {
+                  filename: file.fileName,
+                  mimeType: file.mimetype,
+                  path: filePath,
+                  fileId: file.fileId,
+                  fileSize: file.fileSize
+                }
+                Logger.info(`📊 Found Excel file in form data: ${file.fileName}`)
+                break
+              }
+            }
+          }
+        }
+      }
+    } 
+    // For stepExecutions format (from processQAQuestionsInBackground)
+    else if (resultType === 'stepExecutions') {
+      const metadata = stepData.metadata as any
+      
+      // Check uploadedFiles array (legacy format)
+      const uploadedFiles = metadata?.uploadedFiles || []
+      
+      for (const file of uploadedFiles) {
+        if (file?.mimeType?.includes('spreadsheet') || 
+            file?.filename?.match(/\.(xlsx|xls)$/i)) {
+          excelFileData = file
+          Logger.info(`✅ Found Excel in uploadedFiles:`, excelFileData)
+          break
+        }
+      }
+      
+      // Also check form data structure (new format)
+      if (!excelFileData && metadata?.formSubmission?.formData) {
+        const formData = metadata.formSubmission.formData
+        
+        // Check all form fields for file data
+        for (const [fieldName, fieldValue] of Object.entries(formData)) {
+          if (fieldValue && typeof fieldValue === 'object' && 
+              (fieldValue as any).fileName && (fieldValue as any).mimetype) {
+            const file = fieldValue as any
+            // Check for Excel files
+            if (file.mimetype?.includes('spreadsheet') || 
+                file.fileName?.match(/\.(xlsx|xls)$/i)) {
+              // Convert form file data to expected format
+              let filePath = file.filePath || file.path || file.absolutePath
+              if (!filePath && file.workflowExecutionId && file.workflowStepId) {
+                // Search for the actual uploaded file in the workflow directory
+                const fs = await import('fs')
+                const path = await import('path')
+                const baseDir = "/tmp/workflow_uploads"
+                const stepDir = path.join(baseDir, file.workflowExecutionId, file.workflowStepId)
+                
+                try {
+                  if (fs.existsSync(stepDir)) {
+                    const files = fs.readdirSync(stepDir)
+                    // Find file that ends with the original filename
+                    const matchingFile = files.find(f => f.endsWith(`_${file.fileName}`))
+                    if (matchingFile) {
+                      filePath = path.join(stepDir, matchingFile)
+                      Logger.info(`Found Excel file at: ${filePath}`)
+                    }
+                  }
+                } catch (err) {
+                  Logger.warn(`Could not search for file in ${stepDir}:`, err)
+                }
+              }
+              
+              excelFileData = {
+                filename: file.fileName,
+                mimeType: file.mimetype,
+                path: filePath,
+                fileId: file.fileId,
+                fileSize: file.fileSize
+              }
+              Logger.info(`📊 Found Excel file in form data: ${file.fileName}`)
+              break
+            }
+          }
+        }
+      }
+    }
+    
+    if (excelFileData) break
+  }
+
+  return excelFileData
+}
+
+// Background Q&A Processing Function - Handles all Q&A processing in background
+const processQAQuestionsInBackground = async (
+  executionId: string,
+  sheetName: string,
+  columnName: string,
+  agentId: string,
+  executionContext: any,
+  execution: any,
+  stepExecutions: any[],
+  toolExecutions: any[]
+) => {
+  try {
+    Logger.info(`🔄 Starting background Q&A processing for execution ${executionId}`)
+
+    // Find Excel file data using helper function
+    Logger.info(`🔍 Searching for Excel file in ${stepExecutions.length} step executions and ${toolExecutions.length} tool executions`)
+    let excelFileData = await findExcelFileFromStepResults(stepExecutions, 'stepExecutions')
+
+    // If not found in step executions, check tool executions for Q&A agent metadata
+    if (!excelFileData) {
+      Logger.info(`🔍 Excel not found in step executions, checking tool executions...`)
+      
+      for (const toolExec of toolExecutions) {
+        if (toolExec.toolType === 'qna_agent' && toolExec.result) {
+          const result = toolExec.result as any
+          Logger.info(`📋 Q&A Tool result:`, JSON.stringify(result, null, 2))
+          
+          // Check if this Q&A tool has Excel metadata  
+          if (result.qaMetadata && result.qaMetadata.sheets && Array.isArray(result.qaMetadata.sheets)) {
+            excelFileData = {
+              filename: result.qaMetadata.filename || 'Excel File',
+              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+              path: result.qaMetadata.filePath,
+              fileId: result.qaMetadata.fileId,
+              sheets: result.qaMetadata.sheets
+            }
+            Logger.info(`✅ Found Excel metadata in Q&A tool result:`, excelFileData)
+            break
+          }
+        }
+      }
+    }
+
+    if (!excelFileData) {
+      throw new Error("No Excel file found in workflow execution")
+    }
+
+    // Parse Excel and extract questions
+    const XLSX = await import('xlsx')
+    
+    let questions: string[] = []
+    // Fetch the Excel file
+    const fs = await import('fs')
+    const fileBuffer = fs.readFileSync(excelFileData.path)
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' })
+    
+    // Find the specified sheet
+    const worksheet = workbook.Sheets[sheetName]
+    if (!worksheet) {
+      throw new Error(`Sheet "${sheetName}" not found in Excel file`)
+    }
+
+    // Extract questions from the specified column
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1')
+    
+    // Find column index by name
+    let columnIndex = -1
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const headerCell = worksheet[XLSX.utils.encode_cell({ r: 0, c: col })]
+      if (headerCell && String(headerCell.v) === columnName) {
+        columnIndex = col
+        break
+      }
+    }
+
+    if (columnIndex === -1) {
+      throw new Error(`Column "${columnName}" not found in sheet "${sheetName}"`)
+    }
+
+    // Extract questions (skip header row)
+    for (let row = 1; row <= range.e.r; row++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: row, c: columnIndex })
+      const cell = worksheet[cellAddress]
+      if (cell && cell.v && String(cell.v).trim()) {
+        questions.push(String(cell.v).trim())
+      }
+    }
+
+    Logger.info(`📊 Extracted ${questions.length} questions from ${sheetName}[${columnName}]`)
+
+    if (questions.length === 0) {
+      throw new Error(`No questions found in column "${columnName}" of sheet "${sheetName}"`)
+    }
+
+    // Process each question individually with the agent
+    const answers: string[] = []
+    const errors: string[] = []
+
+    for (let i = 0; i < questions.length; i++) {
+      const question = questions[i]
+      Logger.info(`🤖 Processing question ${i + 1}/${questions.length}: ${question.substring(0, 50)}...`)
+      
+      try {
+        const result = await executeAgentForWorkflowWithRag({
+          agentId: agentId,
+          userQuery: question,
+          userEmail: executionContext.userEmail,
+          workspaceId: executionContext.workspaceId,
+          isStreamable: false,
+          attachmentFileIds: [],
+          nonImageAttachmentFileIds: [],
+          temperature: 0.7,
+        })
+
+        if (result?.success && result?.response) {
+          answers.push(result.response)
+          Logger.info(`✅ Question ${i + 1} answered successfully`)
+        } else {
+          const errorMsg = `Failed to get answer: ${result?.error || 'Unknown error'}`
+          answers.push(errorMsg)
+          errors.push(`Question ${i + 1}: ${errorMsg}`)
+          Logger.error(`❌ Question ${i + 1} failed:`, result?.error)
+        }
+      } catch (agentError) {
+        const errorMsg = `Agent error: ${agentError instanceof Error ? agentError.message : String(agentError)}`
+        answers.push(errorMsg)
+        errors.push(`Question ${i + 1}: ${errorMsg}`)
+        Logger.error(`❌ Question ${i + 1} agent error:`, agentError)
+      }
+    }
+
+    // Generate new Excel file with questions and answers
+    const XLSX2 = await import('xlsx')
+    const newWorkbook = XLSX2.utils.book_new()
+    
+    // Create data array with questions and answers
+    const qaData = [
+      ['Question', 'Answer'], // Header row
+      ...questions.map((question, index) => [question, answers[index]])
+    ]
+    
+    const qaWorksheet = XLSX2.utils.aoa_to_sheet(qaData)
+    XLSX2.utils.book_append_sheet(newWorkbook, qaWorksheet, 'Q&A Results')
+    
+    // Generate file buffer
+    const resultBuffer = XLSX2.write(newWorkbook, { type: 'buffer', bookType: 'xlsx' })
+    
+    // Upload to Vespa instead of saving to disk (following form tool pattern)
+    const qaResultsFileName = `qa-results-${executionId}.xlsx`
+    const attachmentMetadata = await uploadQAResultsToVespa(
+      resultBuffer,
+      qaResultsFileName, 
+      executionContext.userEmail,
+      executionId
+    )
+
+    Logger.info(`✅ Background Q&A processing completed:`, {
+      totalQuestions: questions.length,
+      successfulAnswers: answers.length - errors.length,
+      errors: errors.length,
+      attachmentId: attachmentMetadata.fileId,
+      resultFile: qaResultsFileName
+    })
+
+    // Mark the Q&A step as completed
+    const qaToolExecution = toolExecutions.find(te => te.toolType === 'qna_agent' && te.status !== 'completed')
+    
+    if (qaToolExecution) {
+      Logger.info(`🎯 Marking Q&A step as completed:`, {
+        toolExecutionId: qaToolExecution.id,
+        toolType: qaToolExecution.toolType
+      })
+
+      // Update the tool execution with the results
+      await db
+        .update(toolExecution)
+        .set({
+          status: 'completed',
+          result: {
+            ...((qaToolExecution.result as any) || {}),
+            qaProcessingCompleted: true,
+            // Add attachment metadata like form tool does
+            attachmentMetadata: attachmentMetadata,
+            attachmentId: attachmentMetadata.fileId, // Add top-level attachmentId for email logic
+            qaResults: {
+              totalQuestions: questions.length,
+              successfulAnswers: answers.length - errors.length,
+              errors: errors.length,
+              attachmentId: attachmentMetadata.fileId,
+              resultFile: {
+                filename: qaResultsFileName,
+                attachmentId: attachmentMetadata.fileId,
+                size: resultBuffer.length
+              },
+              questionsAndAnswers: questions.map((question, index) => ({
+                question,
+                answer: answers[index]
+              }))
+            }
+          },
+          completedAt: new Date()
+        })
+        .where(eq(toolExecution.id, qaToolExecution.id))
+
+      // Also find and update the corresponding workflow step execution using tool association
+      const qaStepExecution = stepExecutions.find(se => 
+        se.toolExecIds && se.toolExecIds.includes(qaToolExecution.id)
+      )
+      
+      if (qaStepExecution && qaStepExecution.status !== 'completed') {
+        Logger.info(`📝 Marking step execution as completed:`, {
+          stepExecutionId: qaStepExecution.id,
+          stepName: qaStepExecution.name
+        })
+
+        await db
+          .update(workflowStepExecution)
+          .set({
+            status: 'completed',
+            completedAt: new Date()
+          })
+          .where(eq(workflowStepExecution.id, qaStepExecution.id))
+      }
+
+      Logger.info(`✅ Successfully marked Q&A step as completed`)
+
+      // Continue workflow execution after Q&A completion
+      try {
+        // Find the next step to execute using nextStepIds
+        const currentQAStep = qaStepExecution
+        if (currentQAStep) {
+          Logger.info(`🔄 Starting workflow continuation after Q&A step: ${currentQAStep.name}`)
+          
+          // Get the current step template to access nextStepIds
+          const currentStepTemplate = await db
+            .select()
+            .from(workflowStepTemplate)
+            .where(eq(workflowStepTemplate.id, currentQAStep.workflowStepTemplateId))
+            .limit(1)
+
+          if (currentStepTemplate.length === 0) {
+            Logger.warn(`❌ Could not find step template for step: ${currentQAStep.id}`)
+            return
+          }
+
+          const nextStepIds = currentStepTemplate[0].nextStepIds
+          
+          if (!nextStepIds || nextStepIds.length === 0) {
+            Logger.info(`✅ Q&A step has no next steps - workflow completion`)
+            return
+          }
+
+          // Process each next step (supports branching)
+          for (const nextStepId of nextStepIds) {
+            const nextStepTemplate = await db
+              .select()
+              .from(workflowStepTemplate)
+              .where(eq(workflowStepTemplate.id, nextStepId))
+              .limit(1)
+
+            if (nextStepTemplate.length === 0) {
+              Logger.warn(`❌ Could not find next step template: ${nextStepId}`)
+              continue
+            }
+            const currentNextStepTemplate = nextStepTemplate[0]
+            
+            // Check if next step execution already exists
+            let nextStepExecution = stepExecutions.find(se => 
+              se.workflowStepTemplateId === currentNextStepTemplate.id
+            )
+            
+            if (nextStepExecution) {
+              // Mark next step as active if it's not already completed
+              if (nextStepExecution.status !== 'completed') {
+                Logger.info(`📍 Marking next step as active: ${currentNextStepTemplate.name}`)
+                
+                await db
+                  .update(workflowStepExecution)
+                  .set({
+                    status: 'active'
+                  })
+                  .where(eq(workflowStepExecution.id, nextStepExecution.id))
+              }
+              
+              // Continue workflow execution synchronously (no setImmediate)
+              Logger.info(`🚀 Starting workflow execution from step: ${currentNextStepTemplate.name}`)
+              
+              // Get tools for the workflow execution
+              const tools = await db.select().from(workflowTool)
+              
+              // Build previous results from all completed steps before the current step
+              const previousResults = await buildPreviousStepResults(executionId, nextStepExecution!.id)
+              Logger.info(`📊 Built previous results for continuation:`, {
+                previousResultsKeys: Object.keys(previousResults || {}),
+                totalSteps: Object.keys(previousResults || {}).length
+              })
+              
+              await executeWorkflowChain(
+                executionId,
+                nextStepExecution!.id,
+                tools,
+                previousResults
+              )
+            } else {
+              Logger.info(`ℹ️ Next step execution not found, workflow may need manual step creation`)
+            }
+          }
+        }
+      } catch (backgroundContinuationError) {
+        Logger.error(backgroundContinuationError, "Failed to start workflow continuation")
+        throw backgroundContinuationError
+      }
+    } else {
+      Logger.info(`ℹ️ No pending Q&A tool execution found to mark as completed`)
+    }
+
+    Logger.info(`🎉 Background Q&A processing fully completed for execution ${executionId}`)
+
+  } catch (error) {
+    Logger.error(error, `❌ Background Q&A processing failed for execution ${executionId}`)
+    
+    // Mark Q&A step as failed
+    try {
+      // Find QA tool execution first to locate associated step
+      const failedQAToolExecution = toolExecutions.find(te => te.toolType === 'qna_agent' && te.status !== 'completed')
+      const qaStepExecution = failedQAToolExecution 
+        ? stepExecutions.find(se => se.toolExecIds && se.toolExecIds.includes(failedQAToolExecution.id))
+        : null
+      
+      if (qaStepExecution) {
+        await db
+          .update(workflowStepExecution)
+          .set({
+            status: WorkflowStatus.FAILED,
+            completedAt: new Date()
+          })
+          .where(eq(workflowStepExecution.id, qaStepExecution.id))
+
+        Logger.info(`❌ Marked Q&A step as failed: ${qaStepExecution.name}`)
+      }
+
+      // Also mark tool execution as failed
+      if (failedQAToolExecution) {
+        await db
+          .update(toolExecution)
+          .set({
+            status: 'failed',
+            result: {
+              ...((failedQAToolExecution.result as any) || {}),
+              error: error instanceof Error ? error.message : String(error),
+              failedAt: new Date().toISOString()
+            },
+            completedAt: new Date()
+          })
+          .where(eq(toolExecution.id, failedQAToolExecution.id))
+      }
+    } catch (markFailedError) {
+      Logger.error(markFailedError, "Failed to mark Q&A step as failed")
+    }
+    
+    throw error
+  }
+}
+
+// Q&A Agent Processing API - Process questions from selected Excel sheet/column
+export const ProcessQAQuestionsApi = async (c: Context) => {
+  try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
+    const body = await c.req.json()
+    
+    const { executionId, sheetName, columnName, agentId } = body
+
+    if (!executionId || !sheetName || !columnName || !agentId) {
+      return c.json({
+        success: false,
+        error: "Missing required parameters: executionId, sheetName, columnName, agentId"
+      }, 400)
+    }
+
+    Logger.info(`🔄 Q&A API called for execution ${executionId}:`, {
+      sheetName,
+      columnName,
+      agentId
+    })
+
+    // Get the execution with proper permission checks
+    const execution = await getWorkflowExecutionByIdWithChecks(
+      db,
+      executionId,
+      user.workspaceId,
+      user.id
+    )
+
+    if (!execution) {
+      return c.json({
+        success: false,
+        error: "Workflow execution not found"
+      }, 404)
+    }
+
+    // Get execution context after confirming execution exists
+    const executionContext = await getExecutionContext(executionId)
+    if (!executionContext) {
+      return c.json({
+        success: false,
+        error: "Execution context not found"
+      }, 404)
+    }
+
+    // Get step executions and tool executions
+    const stepExecutions = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+    const toolExecutions = await db
+      .select({
+        id: toolExecution.id,
+        workflowToolId: toolExecution.workflowToolId,
+        workflowExecutionId: toolExecution.workflowExecutionId,
+        status: toolExecution.status,
+        result: toolExecution.result,
+        startedAt: toolExecution.startedAt,
+        completedAt: toolExecution.completedAt,
+        createdAt: toolExecution.createdAt,
+        updatedAt: toolExecution.updatedAt,
+        toolType: workflowTool.type,
+      })
+      .from(toolExecution)
+      .leftJoin(workflowTool, eq(toolExecution.workflowToolId, workflowTool.id))
+      .where(eq(toolExecution.workflowExecutionId, executionId))
+
+    // Find Q&A step execution using tool association
+    const qaToolExecution = toolExecutions.find(te => te.toolType === 'qna_agent')
+    const qaStepExecution = qaToolExecution 
+      ? stepExecutions.find(se => se.toolExecIds && se.toolExecIds.includes(qaToolExecution.id))
+      : null
+
+    if (!qaStepExecution) {
+      return c.json({
+        success: false,
+        error: "Q&A step execution not found"
+      }, 404)
+    }
+
+    Logger.info(`📊 Q&A step status check:`, {
+      stepId: qaStepExecution.id,
+      stepName: qaStepExecution.name,
+      stepStatus: qaStepExecution.status,
+      toolStatus: qaToolExecution?.status
+    })
+
+    // Check current step status and return appropriate response
+    if (qaStepExecution.status === WorkflowStatus.COMPLETED) {
+      // Step is already completed - return existing results
+      Logger.info(`✅ Q&A step already completed, returning existing results`)
+      
+      if (qaToolExecution?.result && (qaToolExecution.result as any).qaResults) {
+        const qaResults = (qaToolExecution.result as any).qaResults
+        return c.json({
+          success: true,
+          status: "completed",
+          data: {
+            totalQuestions: qaResults.totalQuestions,
+            processedQuestions: qaResults.totalQuestions,
+            successfulAnswers: qaResults.successfulAnswers,
+            errors: qaResults.errors || [],
+            resultFile: qaResults.resultFile,
+            questionsAndAnswers: qaResults.questionsAndAnswers
+          }
+        })
+      } else {
+        return c.json({
+          success: true,
+          status: "completed",
+          message: "Q&A processing completed but results not found in expected format"
+        })
+      }
+    }
+
+    if (qaStepExecution.status === WorkflowStatus.FAILED) {
+      // Step failed - return failure status
+      Logger.info(`❌ Q&A step failed, returning failure status`)
+      return c.json({
+        success: false,
+        status: "failed",
+        error: "Q&A processing failed",
+        message: qaToolExecution?.result ? 
+          (qaToolExecution.result as any).error || "Q&A processing failed" :
+          "Q&A processing failed"
+      })
+    }
+
+    if (qaStepExecution.status === WorkflowStatus.PROCESSING) {
+      // Step is currently processing - return processing status
+      Logger.info(`⏳ Q&A step is processing, returning processing status`)
+      return c.json({
+        success: true,
+        status: "processing",
+        message: "Q&A processing is currently running in background",
+        processingStartedAt: qaStepExecution.createdAt
+      })
+    }
+
+    if (qaStepExecution.status === WorkflowStatus.ACTIVE) {
+      // Step is active - start processing
+      Logger.info(`🚀 Q&A step is active, starting background processing`)
+
+      // Mark step as processing before starting background work
+      await db
+        .update(workflowStepExecution)
+        .set({
+          status: WorkflowStatus.PROCESSING
+        })
+        .where(eq(workflowStepExecution.id, qaStepExecution.id))
+
+      // Start background processing - use Promise.resolve to ensure it runs asynchronously
+      Promise.resolve().then(async () => {
+        try {
+          await processQAQuestionsInBackground(
+            executionId,
+            sheetName,
+            columnName,
+            agentId,
+            executionContext,
+            execution,
+            stepExecutions,
+            toolExecutions
+          )
+        } catch (backgroundError) {
+          Logger.error(backgroundError, `❌ Background Q&A processing failed for execution ${executionId}`)
+        }
+      })
+
+      return c.json({
+        success: true,
+        status: "processing",
+        message: "Q&A processing started in background",
+        processingStartedAt: new Date().toISOString()
+      })
+    }
+
+    // Step is in draft status or other status - not ready for processing
+    Logger.info(`📝 Q&A step not ready for processing, status: ${qaStepExecution.status}`)
+    return c.json({
+      success: false,
+      status: qaStepExecution.status,
+      error: "Q&A step is not ready for processing",
+      message: `Q&A step status is '${qaStepExecution.status}'. It must be 'active' to start processing.`
+    }, 400)
+
+  } catch (error) {
+    Logger.error(error, "Failed to handle Q&A processing request")
+    return c.json({
+      success: false,
+      error: "Failed to handle Q&A processing request",
+      message: error instanceof Error ? error.message : String(error)
+    }, 500)
   }
 }
