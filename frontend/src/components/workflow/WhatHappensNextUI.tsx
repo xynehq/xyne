@@ -47,6 +47,12 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       icon: <Mail className="w-5 h-5" />,
     },
     {
+      id: "run_script",
+      name: "Run Script/Code",
+      description: "Run code or scripts",
+      icon: <Code className="w-5 h-5" />,
+    },
+    {
       id: "select_agents",
       name: "Select Agents",
       description: "Choose from your existing direct agents",
@@ -67,13 +73,6 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       name: "Conditionals",
       description: "Branch, merge or loop the flow etc",
       icon: <GitBranch className="w-5 h-5" />,
-      isComingSoon: true,
-    },
-    {
-      id: "run_script",
-      name: "Run Script/Code",
-      description: "Run code or scripts",
-      icon: <Code className="w-5 h-5" />,
       isComingSoon: true,
     },
     {
@@ -113,7 +112,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
           <div
             key={action.id}
             onClick={() => {
-              if (action.id === "ai_agent" || action.id === "email" || action.id === "http_request" || action.id === "select_agents") {
+              if (action.id === "ai_agent" || action.id === "email" || action.id === "run_script" || action.id === "http_request" || action.id === "select_agents") {
                 // For AI Agent, Email, HTTP Request, and Select Agents, trigger custom event to open respective ConfigUI
                 onSelectAction(action.id)
                 onClose() // Close WhatHappensNextUI

@@ -23,7 +23,7 @@ services:
       dockerfile: Dockerfile
     container_name: xyne-app
     user: "${DOCKER_UID}:${DOCKER_GID}"
-    # Ports removed - NGINX handles external access
+    privileged: true
     # ports:
     #   - "${PORT:-3000}:${PORT:-3000}"
     #   - "3001:3001"
