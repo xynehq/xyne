@@ -1,3 +1,10 @@
+# [3.33.0](https://github.com/xynehq/xyne/compare/v3.32.0...v3.33.0) (2025-11-25)
+
+
+### Features
+
+* added multiple owner selection for agent creation ([#1224](https://github.com/xynehq/xyne/issues/1224)) ([55bc008](https://github.com/xynehq/xyne/commit/55bc0083b4c45640d7a63f0dc3c354dbeef9569e))
+
 # [3.32.0](https://github.com/xynehq/xyne/compare/v3.31.6...v3.32.0) (2025-11-19)
 
 

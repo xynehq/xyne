@@ -40,7 +40,7 @@ import {
   markParentAsProcessing,
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
-import { cleanUpAgentDb, getAgentByExternalId } from "@/db/agent"
+import { cleanUpAgentDb, getAgentByExternalId, getAgentCollections } from "@/db/agent"
 import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
@@ -388,6 +388,7 @@ export const ListCollectionsApi = async (c: Context) => {
   }
   const showOnlyOwn = c.req.query("ownOnly") === "true"
   const includeItems = c.req.query("includeItems") === "true"
+  const agentId = c.req.query("agentId") // Get agentId from query parameters
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -397,9 +398,19 @@ export const ListCollectionsApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const collections = showOnlyOwn
+    let collections = showOnlyOwn
       ? await getCollectionsByOwner(db, user.id)
       : await getAccessibleCollections(db, user.id)
+    
+    if (agentId) {
+      const agentCollections = await getAgentCollections(db, agentId, user.id, user.workspaceId)
+      // Merge and deduplicate based on collection id
+      const allCollections = [...collections, ...agentCollections]
+      const uniqueCollections = allCollections.filter((collection, index, self) => 
+        index === self.findIndex(c => c.id === collection.id)
+      )
+      collections = uniqueCollections
+    }
 
     // If includeItems is requested, fetch items for each collection
     if (includeItems) {
@@ -407,7 +418,7 @@ export const ListCollectionsApi = async (c: Context) => {
         collections.map(async (collection) => {
           try {
             // Check access: owner can always access, others only if Collection is public
-            if (collection.ownerId !== user.id && collection.isPrivate) {
+            if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
               return {
                 ...collection,
                 items: [], // Return empty items array for inaccessible collections
@@ -483,7 +494,7 @@ export const GetCollectionApi = async (c: Context) => {
     }
 
     // Check access: owner can always access, others only if Collection is public
-    if (collection.ownerId !== user.id && collection.isPrivate) {
+    if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Collection",
       })
@@ -600,7 +611,7 @@ export const UpdateCollectionApi = async (c: Context) => {
     }
 
     // Check ownership
-    if (collection.ownerId !== user.id) {
+    if (collection.ownerId !== user.id && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Collection",
       })
@@ -669,7 +680,7 @@ export const DeleteCollectionApi = async (c: Context) => {
     }
 
     // Check ownership
-    if (collection.ownerId !== user.id) {
+    if (collection.ownerId !== user.id && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Collection",
       })
@@ -823,6 +834,7 @@ export const ListCollectionItemsApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const collectionId = c.req.param("clId")
   const parentId = c.req.query("parentId") || null
+  const agentId = c.req.query("agentId") // Get agentId from query parameters
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -837,11 +849,28 @@ export const ListCollectionItemsApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check access: owner can always access, others only if Collection is public
-    if (collection.ownerId !== user.id && collection.isPrivate) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Collection",
-      })
+    // If agentId is provided, check if the collection belongs to that agent
+    if (agentId) {
+      const agentCollections = await getAgentCollections(db, agentId, user.id, user.workspaceId)
+      const collectionBelongsToAgent = agentCollections.some(
+        (agentCollection) => agentCollection.id === collectionId
+      )
+      
+      if (!collectionBelongsToAgent && collection.ownerId !== user.id) {
+        throw new HTTPException(403, {
+          message: "Collection does not belong to the specified agent",
+        })
+      }
+      
+      // Skip the normal ownership/privacy check since the collection belongs to the agent
+    } else {
+      // Normal access check: owner can always access, others only if Collection is public
+
+      if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
+        throw new HTTPException(403, {
+          message: "You don't have access to this Collection",
+        })
+      }
     }
 
     const items = await getCollectionItemsByParent(db, collectionId, parentId)
@@ -1644,7 +1673,7 @@ export const DeleteItemApi = async (c: Context) => {
     }
 
     // Check ownership
-    if (collection.ownerId !== user.id) {
+    if (collection.ownerId !== user.id && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Knowledge Base",
       })
@@ -1831,7 +1860,7 @@ export const GetFilePreviewApi = async (c: Context) => {
     }
 
     // Check access: owner can always access, others only if Collection is public
-    if (collection.ownerId !== user.id && collection.isPrivate) {
+    if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Collection",
       })
@@ -2103,7 +2132,7 @@ export const DownloadFileApi = async (c: Context) => {
     }
 
     // Check access: owner can always access, others only if Collection is public
-    if (collection.ownerId !== user.id && collection.isPrivate) {
+    if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
       throw new HTTPException(403, {
         message: "You don't have access to this Collection",
       })

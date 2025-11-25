@@ -56,7 +56,15 @@ export const getCollectionsByOwner = async (
   const results = await trx
     .select()
     .from(collections)
-    .where(and(eq(collections.ownerId, ownerId), isNull(collections.deletedAt)))
+    .where(
+      and(
+        or(
+          eq(collections.ownerId, ownerId),
+          sql`${collections.permissions} @> ${JSON.stringify([ownerId])}`,
+        ),
+        isNull(collections.deletedAt),
+      ),
+    )
     .orderBy(desc(collections.updatedAt))
   return results
 }
@@ -72,7 +80,11 @@ export const getAccessibleCollections = async (
     .where(
       and(
         isNull(collections.deletedAt),
-        or(eq(collections.ownerId, userId), eq(collections.isPrivate, false)),
+        or(
+          eq(collections.ownerId, userId),
+          eq(collections.isPrivate, false),
+          sql`${collections.permissions} @> ${JSON.stringify([userId])}`,
+        ),
       ),
     )
     .orderBy(desc(collections.updatedAt))
@@ -964,9 +976,15 @@ export const updateParentStatus = async (
     }
 
     if (isCollection) {
-      await trx.update(collections).set(updateData).where(eq(collections.id, parentId))
+      await trx
+        .update(collections)
+        .set(updateData)
+        .where(eq(collections.id, parentId))
     } else {
-      await trx.update(collectionItems).set(updateData).where(eq(collectionItems.id, parentId))
+      await trx
+        .update(collectionItems)
+        .set(updateData)
+        .where(eq(collectionItems.id, parentId))
     }
     return
   }
@@ -988,9 +1006,15 @@ export const updateParentStatus = async (
     }
 
     if (isCollection) {
-      await trx.update(collections).set(updateData).where(eq(collections.id, parentId))
+      await trx
+        .update(collections)
+        .set(updateData)
+        .where(eq(collections.id, parentId))
     } else {
-      await trx.update(collectionItems).set(updateData).where(eq(collectionItems.id, parentId))
+      await trx
+        .update(collectionItems)
+        .set(updateData)
+        .where(eq(collectionItems.id, parentId))
 
       // For folders, recursively check the parent folder/collection
       const [folder] = await trx
@@ -1059,7 +1083,10 @@ export const getRecordBypath = async (
     .where(
       and(
         eq(collections.name, collectionName),
-        eq(collections.ownerId, user[0].id),
+        or(
+          eq(collections.ownerId, user[0].id),
+          sql`${collections.permissions} @> ${JSON.stringify([user[0].id])}`,
+        ),
         isNull(collections.deletedAt),
       ),
     )

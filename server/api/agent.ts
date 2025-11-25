@@ -17,6 +17,7 @@ import { fetchedDataSourceSchema } from "@/db/schema/agents"
 import {
   syncAgentUserPermissions,
   getAgentUsers,
+  checkUserAgentAccessByExternalId,
 } from "@/db/userAgentPermission"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -83,6 +84,7 @@ export const createAgentSchema = z.object({
   isRagOn: z.boolean().optional().default(true),
   uploadedFileNames: z.array(z.string()).optional().default([]),
   userEmails: z.array(z.string().email()).optional().default([]),
+  ownerEmails: z.array(z.string().email()).optional().default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
 })
 export type CreateAgentPayload = z.infer<typeof createAgentSchema>
@@ -93,6 +95,7 @@ export const updateAgentSchema = createAgentSchema.partial().extend({
   // but you could add specific checks if needed.
   // For example, if name could not be unset: name: z.string().min(1).optional()
   userEmails: z.array(z.string().email()).optional(),
+  ownerEmails: z.array(z.string().email()).optional(),
 })
 export type UpdateAgentPayload = z.infer<typeof updateAgentSchema>
 
@@ -206,6 +209,26 @@ export const CreateAgentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "User or workspace not found" })
     }
 
+    // check for intersection of userEmails and ownerEmails
+    // owners can't be added in users
+    if (validatedBody.userEmails && validatedBody.ownerEmails) {
+      const userEmailsSet = new Set(validatedBody.userEmails)
+      const ownerEmailsSet = new Set(validatedBody.ownerEmails)
+      const intersection = validatedBody.userEmails.filter((email) =>
+        ownerEmailsSet.has(email),
+      )
+
+      if (intersection.length > 0) {
+        return c.json(
+          {
+            message: "Users cannot be both owners and regular users",
+            conflictingEmails: intersection,
+          },
+          400,
+        )
+      }
+    }
+
     const agentData = {
       name: validatedBody.name,
       description: validatedBody.description,
@@ -217,6 +240,7 @@ export const CreateAgentApi = async (c: Context) => {
       isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
       docIds: validatedBody.docIds,
+      ownerEmails: validatedBody.ownerEmails,
       via_apiKey,
     }
 
@@ -239,6 +263,7 @@ export const CreateAgentApi = async (c: Context) => {
           tx,
           agent.id,
           validatedBody.userEmails,
+          validatedBody.ownerEmails,
           userAndWorkspace.workspace.id,
         )
       }
@@ -307,8 +332,39 @@ export const UpdateAgentApi = async (c: Context) => {
       userAndWorkspace.workspace.id,
       userAndWorkspace.user.id,
     )
-    if (!existingAgent || existingAgent.userId !== userAndWorkspace.user.id) {
+    const agentUserPermission = await checkUserAgentAccessByExternalId(
+      db,
+      userAndWorkspace.user.id,
+      agentExternalId,
+      userAndWorkspace.workspace.id,
+    )
+    if (
+      !existingAgent ||
+      !agentUserPermission?.find(
+        (user) => user.userId == userAndWorkspace.user.id,
+      )
+    ) {
       return c.json({ message: "Agent not found or access denied" }, 404)
+    }
+
+    // Check for intersection of userEmails and ownerEmails
+    // owners can't be added in users
+    if (validatedBody.userEmails && validatedBody.ownerEmails) {
+      const userEmailsSet = new Set(validatedBody.userEmails)
+      const ownerEmailsSet = new Set(validatedBody.ownerEmails)
+      const intersection = validatedBody.userEmails.filter((email) =>
+        ownerEmailsSet.has(email),
+      )
+
+      if (intersection.length > 0) {
+        return c.json(
+          {
+            message: "Users cannot be both owners and regular users",
+            conflictingEmails: intersection,
+          },
+          400,
+        )
+      }
     }
 
     // Update agent and sync user permissions in a transaction
@@ -332,6 +388,7 @@ export const UpdateAgentApi = async (c: Context) => {
           tx,
           agent.id,
           [], // Empty array clears all non-owner permissions
+          validatedBody.ownerEmails || [],
           userAndWorkspace.workspace.id,
         )
       } else if (
@@ -343,6 +400,7 @@ export const UpdateAgentApi = async (c: Context) => {
           tx,
           agent.id,
           validatedBody.userEmails,
+          validatedBody.ownerEmails || [],
           userAndWorkspace.workspace.id,
         )
       } else if (validatedBody.userEmails !== undefined) {
@@ -352,6 +410,7 @@ export const UpdateAgentApi = async (c: Context) => {
             tx,
             agent.id,
             validatedBody.userEmails,
+            validatedBody.ownerEmails || [],
             userAndWorkspace.workspace.id,
           )
         }
@@ -413,7 +472,16 @@ export const DeleteAgentApi = async (c: Context) => {
       userAndWorkspace.workspace.id,
       userAndWorkspace.user.id,
     )
-    if (!existingAgent || existingAgent.userId !== userAndWorkspace.user.id) {
+
+    const agentUserPermission = await checkUserAgentAccessByExternalId(
+      db,
+      userAndWorkspace.user.id,
+      agentExternalId,
+      userAndWorkspace.workspace.id,
+    )
+
+
+    if (!existingAgent ||  !agentUserPermission?.find((user)=> user.userId == userAndWorkspace.user.id)) {
       return c.json({ message: "Agent not found or access denied" }, 404)
     }
 
@@ -538,8 +606,8 @@ export const GetWorkspaceUsersApi = async (c: Context) => {
       .where(
         and(
           eq(users.workspaceId, userAndWorkspace.workspace.id),
-          isNull(users.deletedAt)
-        )
+          isNull(users.deletedAt),
+        ),
       )
 
     return c.json(workspaceUsers)
@@ -595,8 +663,11 @@ export const GetAgentPermissionsApi = async (c: Context) => {
     const userEmails = permissions
       .filter((p) => p.role !== UserAgentRole.Owner)
       .map((p) => p.user.email)
+    const ownerEmails = permissions
+      .filter((p) => p.role === UserAgentRole.Owner)
+      .map((p) => p.user.email)
 
-    return c.json({ userEmails })
+    return c.json({ userEmails, ownerEmails })
   } catch (error) {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: email }).error(

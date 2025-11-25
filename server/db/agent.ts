@@ -23,11 +23,78 @@ import {
 import { db } from "./client"
 import { getLoggerWithChild } from "@/logger"
 import { getUserByEmail } from "./user"
-
+import { getCollectionById, getCollectionItemById, updateCollection } from "./knowledgeBase"
 
 export { getAgentsMadeByMe, getAgentsSharedToMe }
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Db)
+
+// Helper to update collection permissions based on ownerEmails
+async function updateCollectionsWithOwnerEmails(
+  trx: TxnOrClient,
+  agentData: any,
+  newAgent: SelectAgent,
+  userId: number,
+) {
+  const agentOwnerEmails = agentData.ownerEmails || []
+  if (!agentOwnerEmails.length) return
+
+  const collectionIds = await getAgentCollectionIds(trx, newAgent)
+  if (!collectionIds.length) return
+
+  for (const collectionId of collectionIds) {
+    try {
+      const collection = await getCollectionById(trx, collectionId)
+      if (collection) {
+        // permissions is an array of userIds (numbers)
+        const currentPermissions: number[] = Array.isArray(
+          collection.permissions,
+        )
+          ? (collection.permissions as number[])
+          : []
+        const newPermissions = [...currentPermissions]
+        let permissionsUpdated = false
+
+        // Get userIds from emails
+        const userIds: number[] = []
+        for (const email of agentOwnerEmails) {
+          try {
+            const users = await getUserByEmail(trx, email)
+            if (users && users.length > 0) {
+              userIds.push(users[0].id)
+            }
+          } catch (error) {
+            loggerWithChild().warn(
+              `Failed to fetch userId for email ${email}: ${error}`,
+            )
+          }
+        }
+        // Add new userIds to permissions if not already present
+        for (const id of userIds) {
+          if (!newPermissions.includes(id)) {
+            newPermissions.push(id)
+            permissionsUpdated = true
+          }
+        }
+
+        if (permissionsUpdated) {
+          await updateCollection(trx, collectionId, {
+            permissions: newPermissions,
+            updatedAt: new Date(),
+          })
+          loggerWithChild().info(
+            `Updated permissions for collection ${collectionId}: added ${agentOwnerEmails.length} emails`,
+          )
+        }
+      }
+    } catch (error) {
+      loggerWithChild().warn(
+        `Failed to update permissions for collection ${collectionId}: ${error}`,
+      )
+    }
+  }
+}
+
 export const insertAgent = async (
   trx: TxnOrClient,
   agentData: Omit<InsertAgent, "externalId" | "userId" | "workspaceId">,
@@ -63,6 +130,15 @@ export const insertAgent = async (
       agentId: newAgent.id,
       role: UserAgentRole.Owner,
     })
+
+    // Handle collection permissions for agent's knowledge base integrations
+    try {
+      await updateCollectionsWithOwnerEmails(tx, agentData, newAgent, userId)
+    } catch (error) {
+      loggerWithChild().warn(
+        `Failed to process collection permissions for agent ${newAgent.externalId}: ${error}`,
+      )
+    }
 
     return newAgent
   })
@@ -162,7 +238,9 @@ export const updateAgentByExternalId = async (
   agentExternalId: string,
   workspaceId: number,
   agentData: Partial<
-    Omit<InsertAgent, "externalId" | "userId" | "workspaceId">
+    Omit<InsertAgent, "externalId" | "userId" | "workspaceId"> & {
+      ownerEmails?: string[]
+    }
   >,
 ): Promise<SelectAgent | null> => {
   const updateData = { ...agentData, updatedAt: new Date() }
@@ -185,7 +263,30 @@ export const updateAgentByExternalId = async (
   if (!agentArr || !agentArr.length) {
     return null
   }
-  return selectAgentSchema.parse(agentArr[0])
+  const updatedAgent = selectAgentSchema.parse(agentArr[0])
+
+  // If ownerEmails is present in agentData, update collection permissions
+  if (
+    agentData?.ownerEmails &&
+    Array.isArray(agentData.ownerEmails) &&
+    agentData.ownerEmails.length > 0
+  ) {
+    try {
+      // We don't have userId here, so pass updatedAgent.userId
+      await updateCollectionsWithOwnerEmails(
+        trx,
+        agentData,
+        updatedAgent,
+        updatedAgent.userId,
+      )
+    } catch (error) {
+      loggerWithChild().warn(
+        `Failed to process collection permissions for agent ${updatedAgent.externalId}: ${error}`,
+      )
+    }
+  }
+
+  return updatedAgent
 }
 
 /**
@@ -207,11 +308,11 @@ export const updateAgentByExternalIdWithPermissionCheck = async (
     agentExternalId,
     workspaceId,
   )
-
+  const requiredUser = permission?.find((user) => user.userId == userId)
   if (
-    !permission ||
-    (permission.role !== UserAgentRole.Owner &&
-      permission.role !== UserAgentRole.Editor)
+    !requiredUser ||
+    (requiredUser.role !== UserAgentRole.Owner &&
+      requiredUser.role !== UserAgentRole.Editor)
   ) {
     return null // User doesn't have edit permission
   }
@@ -257,8 +358,8 @@ export const deleteAgentByExternalIdWithPermissionCheck = async (
     agentExternalId,
     workspaceId,
   )
-
-  if (!permission || permission.role !== UserAgentRole.Owner) {
+  const requiredUser = permission?.find((user) => user.userId == userId)
+  if (!requiredUser || requiredUser.role !== UserAgentRole.Owner) {
     return null // Only owners can delete agents
   }
 
@@ -501,7 +602,6 @@ export const cleanUpAgentDb = async (
   }
 }
 
-
 export const getAllPublicAgents = async (
   trx: TxnOrClient,
   workspaceId: number,
@@ -517,4 +617,168 @@ export const getAllPublicAgents = async (
       ),
     )
   return z.array(selectPublicAgentSchema).parse(publicAgents)
+}
+
+/**
+ * Utility function to extract collection IDs from an agent's app integrations
+ * Can accept either agentId (external ID) or agentData (agent object)
+ */
+export const getAgentCollectionIds = async (
+  trx: TxnOrClient,
+  agentInput: string | SelectAgent,
+  userId?: number,
+  userWorkspaceId?: number,
+): Promise<string[]> => {
+  let agent: SelectAgent
+
+  // Handle different input types
+  if (typeof agentInput === "string") {
+    // agentInput is an external ID
+    if (!userId || !userWorkspaceId) {
+      throw new Error("userId and userWorkspaceId are required when providing agentId")
+    }
+    const fetchedAgent = await getAgentByExternalIdWithPermissionCheck(
+      trx,
+      agentInput,
+      userWorkspaceId,
+      userId,
+    )
+    if (!fetchedAgent) {
+      throw new Error("Agent cannot be accessed or does not exist")
+    }
+    agent = fetchedAgent
+  } else {
+    // agentInput is already an agent object
+    agent = agentInput
+  }
+
+  // Parse app integrations
+  const appIntegrations = agent.appIntegrations as Record<string, any>
+  const collectionIds: string[] = []
+
+  // Handle knowledge base integrations
+  if (
+    appIntegrations &&
+    typeof appIntegrations === "object" &&
+    appIntegrations.knowledge_base
+  ) {
+    const clConfig = appIntegrations.knowledge_base
+    const itemIds = clConfig.itemIds || []
+
+    if (itemIds.length > 0) {
+      // Extract collection IDs from prefixed format
+      const directCollectionIds: string[] = []
+      const itemCollectionIds: string[] = []
+
+      for (const itemId of itemIds) {
+        if (itemId.startsWith("cl-")) {
+          // This is a direct collection ID
+          directCollectionIds.push(itemId.replace("cl-", ""))
+        } else if (itemId.startsWith("clfd-") || itemId.startsWith("clf-")) {
+          // This is a folder or file ID - we need to get its collection ID
+          const actualItemId = itemId.replace(/^(clfd-|clf-)/, "")
+          try {
+            const item = await getCollectionItemById(trx, actualItemId)
+            if (item && item.collectionId) {
+              itemCollectionIds.push(item.collectionId)
+            }
+          } catch (error) {
+            loggerWithChild().warn(
+              `Failed to fetch KB item ${actualItemId} for collection ID extraction: ${error}`,
+            )
+          }
+        }
+      }
+
+      // Combine and deduplicate collection IDs
+      const allCollectionIds = [...directCollectionIds, ...itemCollectionIds]
+      collectionIds.push(...new Set(allCollectionIds))
+    }
+  }
+
+  return collectionIds
+}
+
+/**
+
+ * Extract collections from an agent's app integrations
+ */
+export const getAgentCollections = async (
+  trx: TxnOrClient,
+  agentExternalId: string,
+  userId: number,
+  userWorkspaceId: number,
+): Promise<any[]> => {
+  // Get the agent with permission check
+  const agent = await getAgentByExternalIdWithPermissionCheck(
+    trx,
+    agentExternalId,
+    userWorkspaceId,
+    userId,
+  )
+
+  if (!agent) {
+    throw new Error("Agent cannot be accessed or does not exist")
+  }
+
+  // Parse app integrations
+  const appIntegrations = agent.appIntegrations as Record<string, any>
+  const collectionIds: string[] = []
+
+  // Handle knowledge base integrations
+  if (
+    appIntegrations &&
+    typeof appIntegrations === "object" &&
+    appIntegrations.knowledge_base
+  ) {
+    const clConfig = appIntegrations.knowledge_base
+    const itemIds = clConfig.itemIds || []
+
+    if (itemIds.length > 0) {
+      // Extract collection IDs from prefixed format
+      const directCollectionIds: string[] = []
+      const itemCollectionIds: string[] = []
+
+      for (const itemId of itemIds) {
+        if (itemId.startsWith("cl-")) {
+          // This is a direct collection ID
+          directCollectionIds.push(itemId.replace("cl-", ""))
+        } else if (itemId.startsWith("clfd-") || itemId.startsWith("clf-")) {
+          // This is a folder or file ID - we need to get its collection ID
+          const actualItemId = itemId.replace(/^(clfd-|clf-)/, "")
+          try {
+            const item = await getCollectionItemById(trx, actualItemId)
+            if (item && item.collectionId) {
+              itemCollectionIds.push(item.collectionId)
+            }
+          } catch (error) {
+            loggerWithChild().warn(
+              `Failed to fetch KB item ${actualItemId} for collection ID extraction: ${error}`,
+            )
+          }
+        }
+      }
+
+      // Combine and deduplicate collection IDs
+      const allCollectionIds = [...directCollectionIds, ...itemCollectionIds]
+      collectionIds.push(...new Set(allCollectionIds))
+    }
+  }
+
+  // Fetch the actual collection data for each collection ID
+  const collections = []
+  for (const collectionId of collectionIds) {
+    try {
+      const collection = await getCollectionById(trx, collectionId)
+      if (collection) {
+        collections.push(collection)
+      }
+    } catch (error) {
+      loggerWithChild().warn(
+        `Failed to fetch collection ${collectionId}: ${error}`,
+      )
+    }
+  }
+
+  return collections
 }

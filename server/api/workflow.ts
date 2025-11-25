@@ -4308,6 +4308,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
               isRagOn: false,
               uploadedFileNames: [],
               docIds: [],
+              ownerEmails: [],
               userEmails: []
             }
 

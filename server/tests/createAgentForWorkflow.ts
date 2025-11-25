@@ -21,6 +21,7 @@ async function testCreateAgentHelper() {
         isRagOn: true,
         uploadedFileNames: [],
         userEmails: [],
+        ownerEmails: [],
         docIds: []
       }
 
