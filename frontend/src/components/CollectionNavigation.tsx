@@ -53,6 +53,7 @@ interface CollectionNavigationProps {
   }>
   toggleIntegrationSelection: (integrationId: string) => void
   navigateToCl: (clId: string, clName: string) => Promise<void>
+  agentId?: string // Add optional agent ID prop
 }
 
 // Helper function to check if an item should be non-selectable based on upload status
@@ -153,6 +154,7 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
   allAvailableIntegrations,
   toggleIntegrationSelection,
   navigateToCl,
+  agentId,
 }) => {
   const navigateToFolder = async (folderId: string, folderName: string) => {
     const clId = navigationPath.find((item) => item.type === "cl")?.id
@@ -170,7 +172,9 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
     try {
       const response = await api.cl[":clId"].items.$get({
         param: { clId },
-        query: { parentId: folderId },
+        query: agentId
+          ? { parentId: folderId, agentId }
+          : { parentId: folderId },
       })
       if (response.ok) {
         const data = await response.json()
@@ -231,7 +235,7 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                 const handleResultSelect = () => {
                   // Don't allow selection changes for inherited items
                   if (isInherited) return
-                  
+
                   // For non-selectable items, prevent all interactions (no navigation or selection)
                   if (isNonSelectable) return
 

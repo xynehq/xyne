@@ -70,7 +70,6 @@ import {
 } from "@/components/ui/tooltip"
 import { useToast } from "@/hooks/use-toast"
 import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
-import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
@@ -85,6 +84,7 @@ import { SlackPeopleFilter } from "@/components/agent/SlackPeopleFilter"
 import { SlackChannelFilter } from "@/components/agent/SlackChannelFilter"
 import { TimelineFilter } from "@/components/agent/TimelineFilter"
 import { FilterBadge } from "@/components/agent/FilterBadge"
+import { UserEmailInput } from "@/components/UserEmailInput"
 
 type CurrentResp = {
   resp: string
@@ -759,30 +759,31 @@ function AgentComponent() {
     const newPath =
       navigationPath.length === 1 && navigationPath[0].type === "cl-root"
         ? [
-          {
-            id: "cl-root",
-            name: "Collection",
-            type: "cl-root" as const,
-          },
-          {
-            id: clId,
-            name: clName,
-            type: "cl" as const,
-          },
-        ]
+            {
+              id: "cl-root",
+              name: "Collection",
+              type: "cl-root" as const,
+            },
+            {
+              id: clId,
+              name: clName,
+              type: "cl" as const,
+            },
+          ]
         : [
-          {
-            id: clId,
-            name: clName,
-            type: "cl" as const,
-          },
-        ]
+            {
+              id: clId,
+              name: clName,
+              type: "cl" as const,
+            },
+          ]
 
     setNavigationPath(newPath)
     setIsLoadingItems(true)
     try {
       const response = await api.cl[":clId"].items.$get({
         param: { clId: clId },
+        query: { agentId: editingAgent?.externalId },
       })
       if (response.ok) {
         const data = await response.json()
@@ -900,13 +901,9 @@ function AgentComponent() {
   const { toast } = useToast()
 
   const [users, setUsers] = useState<User[]>([])
-  const [searchQuery, setSearchQuery] = useState("")
-  const [filteredUsers, setFilteredUsers] = useState<User[]>([])
   const [selectedUsers, setSelectedUsers] = useState<User[]>([])
-  const [showSearchResults, setShowSearchResults] = useState(false)
-  const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
+  const [selectedOwners, setSelectedOwners] = useState<User[]>([])
   const [isAgenticMode, setIsAgenticMode] = useState(Boolean(false))
-  const searchResultsRef = useRef<HTMLDivElement>(null)
   const [listSearchQuery, setListSearchQuery] = useState("")
   const [testAgentIsRagOn, setTestAgentIsRagOn] = useState(true)
   const [activeTab, setActiveTab] = useState<
@@ -948,73 +945,6 @@ function AgentComponent() {
         : [...prevFavorites, agentExternalId],
     )
   }, [])
-
-  useEffect(() => {
-    setSelectedSearchIndex(-1)
-  }, [searchQuery])
-
-  useEffect(() => {
-    if (selectedSearchIndex >= 0 && searchResultsRef.current) {
-      const container = searchResultsRef.current
-      const selectedElement = container.children[
-        selectedSearchIndex
-      ] as HTMLElement
-
-      if (selectedElement) {
-        const containerRect = container.getBoundingClientRect()
-        const elementRect = selectedElement.getBoundingClientRect()
-
-        if (elementRect.bottom > containerRect.bottom) {
-          selectedElement.scrollIntoView({ behavior: "smooth", block: "end" })
-        } else if (elementRect.top < containerRect.top) {
-          selectedElement.scrollIntoView({ behavior: "smooth", block: "start" })
-        }
-      }
-    }
-  }, [selectedSearchIndex])
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (filteredUsers.length === 0) return
-
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault()
-        setSelectedSearchIndex((prev) =>
-          prev >= filteredUsers.length - 1 ? 0 : prev + 1,
-        )
-        break
-      case "ArrowUp":
-        e.preventDefault()
-        setSelectedSearchIndex((prev) =>
-          prev <= 0 ? filteredUsers.length - 1 : prev - 1,
-        )
-        break
-      case "Enter":
-        e.preventDefault()
-        if (selectedSearchIndex >= 0) {
-          handleSelectUser(filteredUsers[selectedSearchIndex])
-        } else if (filteredUsers.length > 0) {
-          handleSelectUser(filteredUsers[0])
-        }
-        break
-    }
-  }
-
-  useEffect(() => {
-    if (searchQuery.trim() === "") {
-      setFilteredUsers([])
-      setShowSearchResults(false)
-    } else {
-      const filtered = users.filter(
-        (user) =>
-          !selectedUsers.some((selected) => selected.id === user.id) &&
-          (user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            user.email.toLowerCase().includes(searchQuery.toLowerCase())),
-      )
-      setFilteredUsers(filtered)
-      setShowSearchResults(true)
-    }
-  }, [searchQuery, users, selectedUsers])
 
   useEffect(() => {
     const fetchInitialAgentForChat = async () => {
@@ -1174,7 +1104,7 @@ function AgentComponent() {
           // Fetch both data sources and collections in parallel
           const [dsResponse, clResponse] = await Promise.all([
             api.datasources.$get(),
-            api.cl.$get(),
+            api.cl.$get({ query: { agentId: editingAgent?.externalId } }),
           ])
 
           if (dsResponse.ok) {
@@ -1238,16 +1168,6 @@ function AgentComponent() {
     }
     loadUsers()
   }, [toast])
-
-  const handleSelectUser = (user: User) => {
-    setSelectedUsers((prev) => [...prev, user])
-    setSearchQuery("")
-    setShowSearchResults(false)
-  }
-
-  const handleRemoveUser = (userId: number) => {
-    setSelectedUsers((prev) => prev.filter((user) => user.id !== userId))
-  }
 
   // Helper function to properly cleanup EventSource
   const cleanupPromptGenerationEventSource = () => {
@@ -1414,8 +1334,7 @@ function AgentComponent() {
     setSelectedItemDetailsInGoogleDrive({})
     setEditingAgent(null)
     setSelectedUsers([])
-    setSearchQuery("")
-    setShowSearchResults(false)
+    setSelectedOwners([])
     setIsGeneratingPrompt(false)
     setShouldHighlightPrompt(false)
     cleanupPromptGenerationEventSource()
@@ -1426,7 +1345,6 @@ function AgentComponent() {
     resetForm()
     setViewMode("create")
   }
-
 
   const handleViewAgent = (agent: SelectPublicAgent) => {
     setViewingAgent(agent)
@@ -1904,17 +1822,22 @@ function AgentComponent() {
             const existingUsers = users.filter((user) =>
               data.userEmails.includes(user.email),
             )
+            const existingOwners = users.filter((user) =>
+              data.ownerEmails.includes(user.email),
+            )
 
             setSelectedUsers(existingUsers)
+            setSelectedOwners(existingOwners)
           }
         } catch (error) {
           console.error("Failed to load agent permissions:", error)
         }
       }
 
-      if (users.length > 0 && !editingAgent.isPublic) {
+      if (users.length > 0) {
         loadAgentPermissions()
-      } else if (editingAgent.isPublic) {
+      } 
+      if (editingAgent.isPublic) {
         setSelectedUsers([]) // Clear users for public agents
       }
       
@@ -2180,7 +2103,7 @@ function AgentComponent() {
             // Ignore any additional timeline filters in the same filter string
           }
         }
-        
+
         // Add parsed fields to filter object
         if (fromEmails.length > 0) filter.from = fromEmails
         if (toEmails.length > 0) filter.to = toEmails
@@ -2188,21 +2111,21 @@ function AgentComponent() {
         if (bccEmails.length > 0) filter.bcc = bccEmails
         if (senderIds.length > 0) filter.senderId = senderIds
         if (channelIds.length > 0) filter.channelId = channelIds
-        
+
         // Add single timeRange if found
         if (timeRange) {
           filter.timeRange = timeRange
         }
-        
+
         // Add filter if it has at least one field (including timeRange-only filters)
         if (Object.keys(filter).length > 1) {
           filters.push(filter)
         }
       }
-      
+
       return filters.length > 0 ? filters : undefined
     }
-    
+
     // Build the new simplified appIntegrations structure
     const appIntegrationsObject: Record<
       string,
@@ -2330,6 +2253,15 @@ function AgentComponent() {
       }
     }
 
+    const ownerEmails = selectedOwners.map((owner) => owner.email)
+    if(ownerEmails.length === 0){
+      toast.error({
+        title: "Error",
+        description: "At least one owner must be selected.",
+      })
+      return
+    }
+
     const agentPayload = {
       name: agentName,
       description: agentDescription,
@@ -2340,11 +2272,9 @@ function AgentComponent() {
       appIntegrations: appIntegrationsObject,
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
-    }
-
-
-    console.log("Agent payload to be sent:", agentPayload)
-    
+      // Include owner emails
+      ownerEmails: ownerEmails,
+    } 
 
     try {
       let response
@@ -2582,7 +2512,7 @@ function AgentComponent() {
       const googleDriveIntegration = allAvailableIntegrations.find(
         (int) => int.id === "googledrive",
       )
-      
+
       if (googleDriveIntegration) {
         if (selectedItemsInGoogleDrive.size === 0) {
           // No specific items selected, show just Google Drive
@@ -2661,7 +2591,7 @@ function AgentComponent() {
                 integrationIdToNameMap[itemId]?.name || item.name
               const itemType = integrationIdToNameMap[itemId]?.type || item.type
               const itemIcon = getItemIcon(itemType)
-              
+
               children.push({
                 id: `${clId}_${itemId}`,
                 name: displayName,
@@ -2891,7 +2821,10 @@ function AgentComponent() {
         isPublic: isPublic,
         isRagOn: isRagOn,
         appIntegrations: appIntegrationsObject,
+        // Only include userEmails for private agents
         userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
+        // Include owner emails
+        ownerEmails: selectedOwners.map((user) => user.email),
         allowWebSearch: false, // Not supported in form config
       }
     }
@@ -3892,8 +3825,9 @@ function AgentComponent() {
                                             .$get({
                                               param: { clId: clId },
                                               query: parentId
-                                                ? { parentId }
-                                                : {},
+                                                ? { parentId, agentId: editingAgent?.externalId }
+                                                : { agentId: editingAgent?.externalId },
+                                                
                                             })
                                             .then((response: Response) => {
                                               if (response.ok) {
@@ -4037,8 +3971,9 @@ function AgentComponent() {
                                                         .$get({
                                                           param: { clId: clId },
                                                           query: parentId
-                                                            ? { parentId }
-                                                            : {},
+                                                ? { parentId, agentId: editingAgent?.externalId }
+                                                : { agentId: editingAgent?.externalId },
+                                                
                                                         })
                                                         .then(
                                                           (
@@ -4832,6 +4767,7 @@ function AgentComponent() {
                                               toggleIntegrationSelection
                                             }
                                             navigateToCl={navigateToCl}
+                                            agentId={editingAgent?.externalId}
                                           />
                                         )
                                       }
@@ -4847,123 +4783,35 @@ function AgentComponent() {
                 </div>
 
                 {!isPublic && (
-                  <div>
-                    <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
-                      Agent Users{" "}
-                      {selectedUsers.length > 0 && (
-                        <span className="text-sm text-gray-500 dark:text-gray-300 ml-1">
-                          ({selectedUsers.length})
-                        </span>
-                      )}
-                    </Label>
-                    <div className="mt-3 dark:bg-slate-700 border-gray-300 dark:border-slate-600 dark:text-gray-100">
-                      <div className="relative w-full ">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <Input
-                          placeholder="Search users by name or email..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          onKeyDown={handleKeyDown}
-                          className="pl-10 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg w-full dark:text-gray-100"
-                        />
-                        {showSearchResults && (
-                          <Card className="absolute z-10 mt-1 shadow-lg w-full dark:bg-slate-800 dark:border-slate-700">
-                            <CardContent
-                              className="p-0 max-h-[125px] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent hover:scrollbar-thumb-gray-400"
-                              ref={searchResultsRef}
-                              style={{
-                                scrollbarWidth: "thin",
-                                WebkitOverflowScrolling: "touch",
-                                scrollbarColor: "#D1D5DB transparent",
-                                overflowY: "auto",
-                                display: "block",
-                              }}
-                            >
-                              {filteredUsers.length > 0 ? (
-                                filteredUsers.map((user, index) => (
-                                  <div
-                                    key={user.id}
-                                    className={`flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 last:border-b-0 ${index === selectedSearchIndex
-                                      ? "bg-gray-100 dark:bg-slate-700"
-                                      : ""
-                                      }`}
-                                    onClick={() => handleSelectUser(user)}
-                                  >
-                                    <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
-                                      <span className="text-sm text-gray-600 dark:text-white truncate">
-                                        {user.name}
-                                      </span>
-                                      <span className="text-gray-50 flex-shrink-0">
-                                        -
-                                      </span>
-                                      <span className="text-gray-500 truncate">
-                                        {user.email}
-                                      </span>
-                                    </div>
-                                    <UserPlus className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                                  </div>
-                                ))
-                              ) : (
-                                <div className="p-3 text-center text-gray-500">
-                                  No users found matching "{searchQuery}"
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  <UserEmailInput
+                    label="Agent Users"
+                    placeholder="Search users by name or email..."
+                    users={users}
+                    selectedEmails={selectedUsers.map(user => user.email)}
+                    onEmailsChange={(emails) => {
+                      const newSelectedUsers = emails.map(email => 
+                        users.find(user => user.email === email)
+                      ).filter(Boolean) as User[]
+                      setSelectedUsers(newSelectedUsers)
+                    }}
+                    selectedByOther={selectedOwners.map(user => user.email)}
+                  />
                 )}
 
-                {/* Agent Users Section */}
-                {!isPublic && (
-                  <div>
-                    <Card className="mt-3 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700">
-                      <CardContent className="p-4">
-                        <div className="space-y-1.5 h-[126px] overflow-y-auto">
-                          {selectedUsers.length > 0 ? (
-                            selectedUsers.map((user) => (
-                              <div
-                                key={user.id}
-                                className="flex items-center justify-between p-1.5 bg-gray-100 dark:bg-slate-700 rounded-lg"
-                              >
-                                <div className="flex items-center space-x-2 min-w-0 flex-1 pr-2">
-                                  <span className="text-sm text-gray-700 dark:text-slate-100 truncate">
-                                    {user.name}
-                                  </span>
-                                  <span className="text-gray-500 dark:text-slate-400 flex-shrink-0">
-                                    -
-                                  </span>
-                                  <span className="text-gray-500 dark:text-slate-400 truncate">
-                                    {user.email}
-                                  </span>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleRemoveUser(user.id)}
-                                  className="text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-600 h-6 w-6 p-0 flex-shrink-0"
-                                >
-                                  <LucideX className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="text-center py-4 text-gray-500 dark:text-gray-400">
-                              <UserPlus className="h-8 w-8 mx-auto mb-2 text-gray-400 dark:text-gray-500" />
-                              <p>No users added yet</p>
-                              <p className="text-sm">
-                                Search and select users to add them to this
-                                agent
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                )}
+                {/* Owner selection */}
+                <UserEmailInput
+                  label="Agent Owners"
+                  placeholder="Search users by name or email..."
+                  users={users}
+                  selectedEmails={selectedOwners.map(user => user.email)}
+                  onEmailsChange={(emails) => {
+                    const newSelectedOwners = emails.map(email => 
+                      users.find(user => user.email === email)
+                    ).filter(Boolean) as User[]
+                    setSelectedOwners(newSelectedOwners)
+                  }}
+                  selectedByOther={selectedUsers.map(user => user.email)}
+                />
                 <div className="flex justify-end w-full mt-8 mb-4">
                   <Button
                     onClick={handleSaveAgent}
