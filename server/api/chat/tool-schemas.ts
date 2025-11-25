@@ -205,6 +205,44 @@ export const SearchDriveInputSchema = z.object({
 
 export type SearchDriveInput = z.infer<typeof SearchDriveInputSchema>
 
+export const SearchKnowledgeBaseInputSchema = z.object({
+  query: z
+    .string()
+    .min(1)
+    .describe("Keywords or phrases to search within the knowledge base"),
+  limit: z
+    .number()
+    .min(1)
+    .max(25)
+    .optional()
+    .describe("Maximum number of KB results to return"),
+  offset: z
+    .number()
+    .min(0)
+    .optional()
+    .describe("Pagination offset for KB results"),
+  collectionId: z
+    .string()
+    .optional()
+    .describe("Restrict search to a single knowledge base collection"),
+  folderId: z
+    .string()
+    .optional()
+    .describe("Restrict search to a collection folder"),
+  fileId: z
+    .string()
+    .optional()
+    .describe("Restrict search to a collection file"),
+  excludedIds: z
+    .array(z.string())
+    .optional()
+    .describe("Document IDs to exclude"),
+})
+
+export type SearchKnowledgeBaseInput = z.infer<
+  typeof SearchKnowledgeBaseInputSchema
+>
+
 // Calendar search input
 export const SearchCalendarInputSchema = z.object({
   query: z.string().describe("Calendar event search query"),
@@ -418,6 +456,14 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
     description: "Search across all accessible data sources. Use for broad searches when specific app is unknown.",
     category: ToolCategory.Search,
     inputSchema: SearchGlobalInputSchema,
+    outputSchema: ToolOutputSchema,
+  },
+
+  searchKnowledgeBase: {
+    name: "searchKnowledgeBase",
+    description: "Search the user's knowledge base collections and return relevant document fragments with citations.",
+    category: ToolCategory.Search,
+    inputSchema: SearchKnowledgeBaseInputSchema,
     outputSchema: ToolOutputSchema,
   },
 

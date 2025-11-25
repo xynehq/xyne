@@ -398,7 +398,9 @@ export const startStream = async (
   if (isAgenticMode) {
     url.searchParams.append("agentic", "true")
   }
-  if (isMessageAgentsMode) {
+  const shouldUseMessageAgentsMode =
+    isMessageAgentsMode || isAgenticMode || false
+  if (shouldUseMessageAgentsMode) {
     url.searchParams.append("isMessageAgentsMode", "true")
   }
   // Build selected model JSON configuration (optional)
@@ -1100,6 +1102,9 @@ export const useChatStream = (
       url.searchParams.append("messageId", messageId)
       if (isAgenticMode) {
         url.searchParams.append("agentic", "true")
+      }
+      if (isAgenticMode) {
+        url.searchParams.append("isMessageAgentsMode", "true")
       }
       if (selectedModelConfig) {
         url.searchParams.append("selectedModelConfig", selectedModelConfig)

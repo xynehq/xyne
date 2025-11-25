@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
-import { ChevronRight, Loader2, FileText, Users, Brain, Globe } from "lucide-react"
+import { ChevronRight, FileText, Users, Brain, Globe } from "lucide-react"
 import { cn, splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import { AgentReasoningStepType, Citation, XyneTools, Apps } from "shared/types"
 import MarkdownPreview from "@uiw/react-markdown-preview"
@@ -383,14 +383,6 @@ const ReasoningStepComponent: React.FC<{
       !isInitialMessage &&
       !isIterationSummary &&
       step.content !== (step.aiGeneratedSummary || step.stepSummary)
-    const isWaitingForSummary =
-      isStreaming &&
-      isLastStep &&
-      !hasAISummary &&
-      step.content &&
-      !isInitialMessage &&
-      !isIterationSummary
-
     // Special styling for iteration headers and summaries
     const getStepClassName = () => {
       if (isIteration) {
@@ -622,14 +614,6 @@ const ReasoningStepComponent: React.FC<{
                     ),
                   }}
                 />
-              </div>
-              <div className="w-full">
-                {isWaitingForSummary && step.type !== "ReasoningStep" && (
-                  <div className="mt-1 text-xs text-gray-400 dark:text-gray-500 flex items-center">
-                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                    Generating AI summary...
-                  </div>
-                )}
               </div>
             </div>
           </div>

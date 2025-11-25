@@ -12,6 +12,10 @@ import type {
   ResourceAccessItem,
   ResourceAccessSummary,
 } from "./tool-schemas"
+import {
+  buildKnowledgeBaseCollectionSelections,
+  KnowledgeBaseScope,
+} from "@/api/chat/knowledgeBaseSelections"
 
 export type UserConnectorState = {
   slackConnected: boolean
@@ -155,6 +159,26 @@ export async function evaluateAgentResourceAccess(params: {
         status: deriveStatus(available.length, missing.length),
         availableItems: available,
         missingItems: missing,
+      })
+      continue
+    }
+
+    if (app === Apps.KnowledgeBase) {
+      const kbSelections = await buildKnowledgeBaseCollectionSelections({
+        scope: KnowledgeBaseScope.AgentScoped,
+        email: userEmail,
+        selectedItems: selectionMap,
+      })
+      const hasCollections = kbSelections.length > 0
+      summaries.push({
+        app,
+        status: hasCollections ? "available" : "missing",
+        availableItems: hasCollections
+          ? (selectionMap[app] || []).map((id) => ({ id }))
+          : undefined,
+        note: hasCollections
+          ? undefined
+          : "No permitted knowledge base collections configured for this agent.",
       })
       continue
     }

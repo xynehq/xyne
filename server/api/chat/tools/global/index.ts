@@ -28,6 +28,13 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import type { MinimalAgentFragment } from "../../types"
 import config from "@/config"
+import {
+  buildKnowledgeBaseCollectionSelections,
+  KnowledgeBaseScope,
+  type KnowledgeBaseSelection,
+} from "@/api/chat/knowledgeBaseSelections"
+
+const Logger = getLogger(Subsystem.Chat)
 
 const searchGlobalToolSchema = z.object({
   query: createQuerySchema(undefined, true),
@@ -94,6 +101,28 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         selectedItems,
       } = parseAgentAppIntegrations(agentPrompt)
 
+      const kbScope = agentPrompt
+        ? KnowledgeBaseScope.AgentScoped
+        : KnowledgeBaseScope.UserOwned
+
+      const kbSelections = await buildKnowledgeBaseCollectionSelections({
+        scope: kbScope,
+        email,
+        selectedItems,
+      })
+
+      Logger.info(
+        {
+          email,
+          scope: kbScope,
+          selectionCount: kbSelections.length,
+          selectedItemKeys: Object.keys(
+            selectedItems as Record<string, unknown>,
+          ).length,
+        },
+        "[Agents][searchGlobalTool] Using KnowledgeBaseScope for global search",
+      )
+
       const channelIds = agentPrompt
         ? await getChannelIdsFromAgentPrompt(agentPrompt)
         : []
@@ -115,6 +144,7 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         collectionFolderIds: agentSpecificCollectionFolderIds,
         collectionFileIds: agentSpecificCollectionFileIds,
         selectedItems: selectedItems,
+        collectionSelections: kbSelections,
       })
 
       return ToolResponse.success(fragments)
@@ -137,7 +167,6 @@ export const fallbackTool: Tool<FallbackToolParams, Ctx> = {
     parameters: toToolSchemaParameters(fallbackToolSchema),
   },
   async execute(params: FallbackToolParams, context: Ctx) {
-    const Logger = getLogger(Subsystem.Chat)
     const userCtx = context.userContext
     try {
       // Generate detailed reasoning about why the search failed
@@ -211,9 +240,10 @@ interface UnifiedSearchOptions {
   collectionIds?: string[]
   collectionFolderIds?: string[]
   collectionFileIds?: string[]
+  collectionSelections?: KnowledgeBaseSelection[]
 }
 
-async function executeVespaSearch(options: UnifiedSearchOptions): Promise<MinimalAgentFragment[]> {
+export async function executeVespaSearch(options: UnifiedSearchOptions): Promise<MinimalAgentFragment[]> {
   const {
     email,
     query,
@@ -231,6 +261,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<Minima
     collectionIds,
     collectionFolderIds,
     collectionFileIds,
+    collectionSelections,
     selectedItems,
     orderBy,
     owner,
@@ -263,6 +294,15 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<Minima
     ? new Date(timestampRange.to).getTime()
     : undefined
 
+  const resolvedCollectionSelections =
+    collectionSelections && collectionSelections.length
+      ? collectionSelections
+      : buildCollectionSelectionsFromIds(
+          collectionIds,
+          collectionFolderIds,
+          collectionFileIds,
+        )
+
   if (agentAppEnums && agentAppEnums.length > 0) {
     const appsToCheck = Array.isArray(app) ? app : app ? [app] : []
     const invalidApps = appsToCheck.filter((a) => !agentAppEnums.includes(a))
@@ -284,22 +324,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<Minima
             : undefined,
         dataSourceIds: options.dataSourceIds ?? undefined,
         channelIds,
-        collectionSelections:
-          collectionIds?.length ||
-          collectionFolderIds?.length ||
-          collectionFileIds?.length
-            ? [
-                {
-                  collectionIds: collectionIds?.length ? collectionIds : undefined,
-                  collectionFolderIds: collectionFolderIds?.length
-                    ? collectionFolderIds
-                    : undefined,
-                  collectionFileIds: collectionFileIds?.length
-                    ? collectionFileIds
-                    : undefined,
-                },
-              ]
-            : undefined,
+        collectionSelections: resolvedCollectionSelections,
         selectedItem: selectedItems,
       },
     )
@@ -315,6 +340,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<Minima
           fromTimestamp && toTimestamp
             ? { from: fromTimestamp, to: toTimestamp }
             : undefined,
+        collectionSelections: resolvedCollectionSelections,
       },
     )
   }
@@ -340,4 +366,27 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<Minima
   })
 
   return fragments
+}
+
+function buildCollectionSelectionsFromIds(
+  collectionIds?: string[],
+  collectionFolderIds?: string[],
+  collectionFileIds?: string[],
+): KnowledgeBaseSelection[] | undefined {
+  if (
+    (!collectionIds || collectionIds.length === 0) &&
+    (!collectionFolderIds || collectionFolderIds.length === 0) &&
+    (!collectionFileIds || collectionFileIds.length === 0)
+  ) {
+    return undefined
+  }
+
+  const selection: KnowledgeBaseSelection = {}
+  if (collectionIds?.length) selection.collectionIds = collectionIds
+  if (collectionFolderIds?.length)
+    selection.collectionFolderIds = collectionFolderIds
+  if (collectionFileIds?.length)
+    selection.collectionFileIds = collectionFileIds
+
+  return [selection]
 }

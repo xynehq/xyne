@@ -35,6 +35,7 @@ import fs from "fs"
 import { regex, findImageByName } from "@/ai/provider/base"
 import type { AgentRunContext } from "./agent-schemas"
 import { getRecentImagesFromContext } from "./runContextUtils"
+import { raceWithStop, throwIfStopRequested } from "./agent-stop"
 const { IMAGE_CONTEXT_CONFIG } = config
 const IMAGE_BASE_DIR = path.resolve(
   process.env.IMAGE_DIR || "downloads/xyne_images_db",
@@ -192,6 +193,9 @@ export const makeXyneJAFProvider = <Ctx>(
       
       // Check if this is a LiteLLM model - use OpenAI client directly like JAF does
       const providerType = ModelToProviderMap[model as Models]
+      const runContext = state.context as unknown as AgentRunContext
+      const stopSignal =
+        runContext?.stopSignal ?? runContext?.stopController?.signal
       
       if (providerType === AIProviders.LiteLLM) {
         // Use OpenAI client directly for LiteLLM (same as JAF's makeLiteLLMProvider)
@@ -301,7 +305,11 @@ export const makeXyneJAFProvider = <Ctx>(
           params.response_format = { type: "json_object" }
         }
 
-        const resp = await client.chat.completions.create(params)
+        throwIfStopRequested(stopSignal)
+        const resp = await raceWithStop(
+          client.chat.completions.create(params),
+          stopSignal,
+        )
 
         // Return in JAF format (same as JAF's makeLiteLLMProvider)
         const choice = resp.choices[0]
@@ -335,8 +343,6 @@ export const makeXyneJAFProvider = <Ctx>(
       // For other providers, use AI SDK as before
       const provider = getAISDKProviderByModel(model as Models)
       const languageModel = provider.languageModel(actualModelId)
-
-      const runContext = state.context as unknown as AgentRunContext
       const pendingReview = runContext?.review?.pendingReview
       if (pendingReview) {
         try {
@@ -351,6 +357,7 @@ export const makeXyneJAFProvider = <Ctx>(
             "[JAF Provider] Pending review promise rejected; continuing LLM call"
           )
         }
+        throwIfStopRequested(stopSignal)
       }
 
       const prompt = buildPromptFromMessages(
@@ -477,7 +484,11 @@ export const makeXyneJAFProvider = <Ctx>(
         prompt: sanitizedPrompt,
       }, "[JAF Provider] FULL PROMPT/MESSAGES ARRAY SENT TO LLM")
 
-      const result = await languageModel.doGenerate(callOptions)
+      throwIfStopRequested(stopSignal)
+      const result = await raceWithStop(
+        languageModel.doGenerate(callOptions),
+        stopSignal,
+      )
 
       const contentSummary = (result.content || []).map((part, index) => {
         if (part.type === "text") {

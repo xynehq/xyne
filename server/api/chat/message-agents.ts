@@ -30,7 +30,7 @@ import type {
   ToolExecutionRecordWithResult,
 } from "./agent-schemas"
 import { ToolExpectationSchema, ReviewResultSchema } from "./agent-schemas"
-import { getTracer } from "@/tracer"
+import { getTracer, type Span } from "@/tracer"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import config from "@/config"
@@ -91,6 +91,7 @@ import type { ZodTypeAny } from "zod"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { db } from "@/db/client"
 import { insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
+import { insertChatTrace } from "@/db/chatTrace"
 import { insertMessage } from "@/db/message"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import {
@@ -107,6 +108,7 @@ import { executeAgentForWorkflowWithRag } from "@/api/agent/workflowAgentUtils"
 import { getDateForAI } from "@/utils/index"
 import googleTools from "./tools/google"
 import { searchGlobalTool, fallbackTool } from "./tools/global"
+import { searchKnowledgeBaseTool } from "./tools/knowledgeBase"
 import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
 import type { AttachmentMetadata } from "@/shared/types"
 import { processMessage } from "./utils"
@@ -131,6 +133,7 @@ import {
   buildMCPJAFTools,
   type FinalToolsList,
 } from "./jaf-adapter"
+import { activeStreams } from "./stream"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import {
@@ -141,6 +144,7 @@ import {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
 
 const {
   defaultBestModel,
@@ -911,6 +915,9 @@ function initializeAgentContext(
     userContext?: string
     agentPrompt?: string
     workspaceNumericId?: number
+    chatId?: number
+    stopController?: AbortController
+    stopSignal?: AbortSignal
   }
 ): AgentRunContext {
   const finalSynthesis: FinalSynthesisState = {
@@ -931,6 +938,7 @@ function initializeAgentContext(
       workspaceNumericId: options?.workspaceNumericId,
     },
     chat: {
+      id: options?.chatId,
       externalId: chatExternalId,
       metadata: {},
     },
@@ -981,6 +989,12 @@ function initializeAgentContext(
     finalSynthesis,
     runtime: undefined,
     maxOutputTokens: undefined,
+    stopController: options?.stopController,
+    stopSignal: options?.stopController?.signal ?? options?.stopSignal,
+    stopRequested:
+      options?.stopController?.signal?.aborted ??
+      options?.stopSignal?.aborted ??
+      false,
   }
 }
 
@@ -997,7 +1011,13 @@ async function performAutomaticReview(
     toolCallHistory: input.toolCallHistory,
     plan: input.plan,
   }
-
+  const tripReviewSpan = getTracer("chat").startSpan("auto_review")
+  tripReviewSpan.setAttribute("focus", input.focus)
+  tripReviewSpan.setAttribute("turn_number", input.turnNumber ?? -1)
+  tripReviewSpan.setAttribute(
+    "expected_results_count",
+    input.expectedResults?.length ?? 0
+  )
   let reviewResult: ReviewResult
   try {
     reviewResult = await runReviewLLM(reviewContext, {
@@ -1007,6 +1027,8 @@ async function performAutomaticReview(
       delegationEnabled: fullContext.delegationEnabled,
     })
   } catch (error) {
+    tripReviewSpan.setAttribute("error", true)
+    tripReviewSpan.setAttribute("error_message", getErrorMessage(error))
     Logger.error(error, "Automatic review failed, falling back to default response")
     reviewResult = {
       status: "needs_attention",
@@ -1021,6 +1043,17 @@ async function performAutomaticReview(
       clarificationQuestions: [],
     }
   }
+
+  tripReviewSpan.setAttribute("review_status", reviewResult.status)
+  tripReviewSpan.setAttribute(
+    "recommendation",
+    reviewResult.recommendation ?? "unknown"
+  )
+  tripReviewSpan.setAttribute(
+    "anomalies_detected",
+    reviewResult.anomaliesDetected ?? false
+  )
+  tripReviewSpan.end()
 
   appendReviewResultToTranscript(reviewContext, reviewResult, input.turnNumber)
   return reviewResult
@@ -1559,17 +1592,29 @@ export async function afterToolExecutionHook(
         )
 
         // Use extractBestDocumentIndexes to filter to best documents
-        const bestDocIndexes = await extractBestDocumentIndexes(
-          userMessage,
-          contextStrings,
-          {
-            modelId: config.defaultBestModel,
-            json: false,
-            stream: false,
-          },
-          messagesWithNoErrResponse
-        )
-
+        const selectionSpan = getTracer("chat").startSpan("select_best_documents")
+        selectionSpan.setAttribute("tool_name", toolName)
+        selectionSpan.setAttribute("context_count", contextStrings.length)
+        let bestDocIndexes: number[] = []
+        try {
+          bestDocIndexes = await extractBestDocumentIndexes(
+            userMessage,
+            contextStrings,
+            {
+              modelId: config.defaultBestModel,
+              json: false,
+              stream: false,
+            },
+            messagesWithNoErrResponse
+          )
+          selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
+        } catch (error) {
+          selectionSpan.setAttribute("error", true)
+          selectionSpan.setAttribute("error_message", getErrorMessage(error))
+          throw error
+        } finally {
+          selectionSpan.end()
+        }
         // LOG: extractBestDocumentIndexes response
         loggerWithChild({ email: context.user.email }).info(
           {
@@ -1631,7 +1676,17 @@ export async function afterToolExecutionHook(
 
             if (extractedImages.length > 0) {
               const turnForImages = ensureTurnNumber(context.turnCount)
-              
+              const imageSpan = getTracer("chat").startSpan(
+                "tool_image_extraction"
+              )
+              imageSpan.setAttribute("tool_name", toolName)
+              imageSpan.setAttribute("turn_number", turnForImages)
+              imageSpan.setAttribute("extracted_count", extractedImages.length)
+              imageSpan.setAttribute(
+                "image_names_preview",
+                extractedImages.slice(0, 5).join(",")
+              )
+
               // LOG: Before attaching images
               loggerWithChild({ email: context.user.email }).info(
                 {
@@ -1649,6 +1704,13 @@ export async function afterToolExecutionHook(
                 sourceToolName: toolName,
                 isUserAttachment: false,
               })
+              imageSpan.setAttribute(
+                "fragments_with_images",
+                fragmentsForResult.filter(
+                  (fragment) => fragment.images && fragment.images.length > 0
+                ).length
+              )
+              imageSpan.end()
 
               // LOG: After attaching images
               loggerWithChild({ email: context.user.email }).info(
@@ -2210,6 +2272,14 @@ async function runReviewLLM(
     delegationEnabled?: boolean
   }
 ): Promise<ReviewResult> {
+  const tracer = getTracer("chat")
+  const reviewSpan = tracer.startSpan("review_llm_call")
+  reviewSpan.setAttribute("focus", options?.focus ?? "unknown")
+  reviewSpan.setAttribute("turn_number", options?.turnNumber ?? -1)
+  reviewSpan.setAttribute(
+    "expected_results_count",
+    options?.expectedResults?.length ?? 0
+  )
   Logger.info(
     {
       focus: options?.focus,
@@ -2414,6 +2484,18 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     },
     "[MessageAgents][runReviewLLM] Review LLM call completed"
   )
+  reviewSpan.setAttribute("model_id", modelId)
+  reviewSpan.setAttribute("review_status", validation.data.status)
+  reviewSpan.setAttribute("recommendation", validation.data.recommendation)
+  reviewSpan.setAttribute(
+    "anomalies_detected",
+    validation.data.anomaliesDetected ?? false
+  )
+  reviewSpan.setAttribute(
+    "tool_feedback_count",
+    validation.data.toolFeedback.length
+  )
+  reviewSpan.end()
   return validation.data
 }
 
@@ -2421,6 +2503,7 @@ function buildInternalToolAdapters(): Tool<unknown, AgentRunContext>[] {
   const baseTools = [
     createToDoWriteTool(),
     searchGlobalTool,
+    searchKnowledgeBaseTool,
     ...googleTools,
     getSlackRelatedMessagesTool,
     fallbackTool,
@@ -2445,6 +2528,7 @@ const TOOL_ACCESS_REQUIREMENTS: Record<string, ToolAccessRequirement> = {
     requiredApp: Apps.GoogleCalendar,
     connectorFlag: "googleCalendarSynced",
   },
+  searchKnowledgeBase: { requiredApp: Apps.KnowledgeBase },
   searchGoogleContacts: {
     requiredApp: Apps.GoogleWorkspace,
     connectorFlag: "googleWorkspaceSynced",
@@ -2698,6 +2782,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         workspaceExternalId: context.user.workspaceId,
         mcpAgents: context.mcpAgents,
         parentTurn: ensureTurnNumber(context.turnCount),
+        stopSignal: context.stopSignal,
       })
       Logger.info(
         { params: validation.data, email: context.user.email },
@@ -3246,6 +3331,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
     )
 
     let chatRecord: SelectChat
+    let lastPersistedMessageId = 0
+    let lastPersistedMessageExternalId = ""
+
     try {
       const bootstrap = await ensureChatAndPersistUserMessage({
         chatId,
@@ -3259,6 +3347,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
         agentId: resolvedAgentId ?? undefined,
       })
       chatRecord = bootstrap.chat
+      lastPersistedMessageId = bootstrap.userMessage.id
+      lastPersistedMessageExternalId = String(bootstrap.userMessage.externalId)
       const chatAgentId = chatRecord.agentId
         ? String(chatRecord.agentId)
         : undefined
@@ -3313,7 +3403,49 @@ export async function MessageAgents(c: Context): Promise<Response> {
     const delegationEnabled = !hasExplicitAgent
 
     return streamSSE(c, async (stream) => {
+      const stopController = new AbortController()
+      const streamKey = String(chatRecord.externalId)
+      let agentContextRef: AgentRunContext | null = null
+      const markStop = () => {
+        if (agentContextRef) {
+          agentContextRef.stopRequested = true
+        }
+      }
+      stopController.signal.addEventListener("abort", markStop)
+      activeStreams.set(streamKey, { stream, stopController })
+
       const mcpClients: Array<{ close?: () => Promise<void> }> = []
+      const persistTrace = async (
+        messageId: number,
+        messageExternalId: string,
+      ) => {
+        try {
+          const traceJson = tracer.serializeToJson()
+          await insertChatTrace({
+            workspaceId: workspace.id,
+            userId: user.id,
+            chatId: chatRecord.id,
+            messageId,
+            chatExternalId: chatRecord.externalId,
+            email: user.email,
+            messageExternalId,
+            traceJson,
+          })
+        } catch (traceError) {
+          loggerWithChild({ email }).error(
+            traceError,
+            "Failed to persist chat trace",
+          )
+        }
+      }
+      const persistTraceForLastMessage = async () => {
+        if (lastPersistedMessageId > 0 && lastPersistedMessageExternalId) {
+          await persistTrace(
+            lastPersistedMessageId,
+            lastPersistedMessageExternalId,
+          )
+        }
+      }
       try {
         let thinkingLog = ""
         const emitReasoningStep: ReasoningEmitter = async (payload) => {
@@ -3337,8 +3469,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
             userContext: userCtxString,
             workspaceNumericId: workspace.id,
             agentPrompt: agentPromptForLLM,
+            chatId: chatRecord.id,
+            stopController,
           }
         )
+        agentContextRef = agentContext
         agentContext.delegationEnabled = delegationEnabled
 
         // Build MCP connector tool map (mirrors MessageWithToolsApi semantics)
@@ -3729,6 +3864,25 @@ export async function MessageAgents(c: Context): Promise<Response> {
         agentContext.transcript = {
           getMessages: () => runState.messages,
         }
+        const jafStreamingSpan = rootSpan.startSpan("jaf_stream")
+        jafStreamingSpan.setAttribute("chat_external_id", chatRecord.externalId)
+        jafStreamingSpan.setAttribute("run_id", runId)
+        jafStreamingSpan.setAttribute("trace_id", traceId)
+        let turnSpan: Span | undefined
+        const endTurnSpan = () => {
+          if (turnSpan) {
+            turnSpan.end()
+            turnSpan = undefined
+          }
+        }
+        let jafSpanEnded = false
+        const endJafSpan = () => {
+          if (!jafSpanEnded) {
+            endTurnSpan()
+            jafStreamingSpan.end()
+            jafSpanEnded = true
+          }
+        }
 
         const messagesWithNoErrResponse: Message[] = [
           {
@@ -3980,8 +4134,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
         const streamAnswerText = async (text: string) => {
           if (!text) return
+          throwIfStopRequested(stopController.signal)
           const chunkSize = 200
           for (let i = 0; i < text.length; i += chunkSize) {
+            throwIfStopRequested(stopController.signal)
             const chunk = text.slice(i, i + chunkSize)
             answer += chunk
             await stream.writeSSE({
@@ -4054,7 +4210,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
           if (stream.closed) break
 
           switch (evt.type) {
-            case "turn_start":
+            case "turn_start": {
+              endTurnSpan()
+              turnSpan = jafStreamingSpan.startSpan(`turn_${evt.data.turn}`)
+              turnSpan.setAttribute("turn_number", evt.data.turn)
+              turnSpan.setAttribute("agent_name", evt.data.agentName)
               agentContext.turnCount = evt.data.turn
               currentTurn = evt.data.turn
               flushExpectationBufferToTurn(currentTurn)
@@ -4064,15 +4224,19 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 { iteration: currentTurn }
               )
               break
+            }
 
-            case "tool_requests":
+            case "tool_requests": {
+              const plannedTools = evt.data.toolCalls.map((toolCall) => ({
+                name: toolCall.name,
+                args: toolCall.args,
+              }))
+              const toolRequestsSpan = turnSpan?.startSpan("tool_requests")
+              toolRequestsSpan?.setAttribute("tool_calls_count", plannedTools.length)
               Logger.info(
                 {
                   turn: currentTurn,
-                  plannedTools: evt.data.toolCalls.map((toolCall) => ({
-                    name: toolCall.name,
-                    args: toolCall.args,
-                  })),
+                  plannedTools,
                   chatId: agentContext.chat.externalId,
                 },
                 "[MessageAgents] Tool plan for turn"
@@ -4094,6 +4258,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     assignedExpectation.expectation
                   )
                 }
+                const selectionSpan = toolRequestsSpan?.startSpan("tool_selection")
+                selectionSpan?.setAttribute("tool_name", toolCall.name)
+                selectionSpan?.setAttribute(
+                  "args",
+                  JSON.stringify(toolCall.args ?? {})
+                )
                 await streamReasoningStep(
                   emitReasoningStep,
                   `Tool selected: ${toolCall.name}`,
@@ -4130,10 +4300,19 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     { toolName: toolCall.name }
                   )
                 }
+                selectionSpan?.end()
               }
+              toolRequestsSpan?.end()
               break
+            }
 
-            case "tool_call_start":
+            case "tool_call_start": {
+              const toolStartSpan = turnSpan?.startSpan("tool_call_start")
+              toolStartSpan?.setAttribute("tool_name", evt.data.toolName)
+              toolStartSpan?.setAttribute(
+                "args",
+                JSON.stringify(evt.data.args ?? {})
+              )
               Logger.info({
                 toolName: evt.data.toolName,
                 args: evt.data.args,
@@ -4149,9 +4328,21 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   detail: JSON.stringify(evt.data.args ?? {}),
                 }
               )
+              toolStartSpan?.end()
               break
+            }
 
-            case "tool_call_end":
+            case "tool_call_end": {
+              const toolEndSpan = turnSpan?.startSpan("tool_call_end")
+              toolEndSpan?.setAttribute("tool_name", evt.data.toolName)
+              toolEndSpan?.setAttribute(
+                "status",
+                evt.data.error ? "error" : evt.data.status ?? "completed"
+              )
+              toolEndSpan?.setAttribute(
+                "execution_time_ms",
+                evt.data.executionTime ?? 0
+              )
               Logger.info({
                 toolName: evt.data.toolName,
                 result: evt.data.result,
@@ -4200,9 +4391,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
               } else {
                 consecutiveToolErrors.delete(evt.data.toolName)
               }
+              toolEndSpan?.end()
               break
+            }
 
-            case "turn_end":
+            case "turn_end": {
+              const turnEndSpan = turnSpan?.startSpan("turn_end")
+              turnEndSpan?.setAttribute("turn_number", evt.data.turn)
               // DETERMINISTIC REVIEW: Run after every turn completes
               await streamReasoningStep(
                 emitReasoningStep,
@@ -4232,8 +4427,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 )
               }
               break
+            }
 
-            case "assistant_message":
+            case "assistant_message": {
+              const assistantSpan = turnSpan?.startSpan("assistant_message")
               Logger.info(
                 {
                   turn: currentTurn,
@@ -4247,6 +4444,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 "[MessageAgents] Assistant output received"
               )
               const content = getTextContent(evt.data.message.content) || ""
+              const hasToolCalls =
+                Array.isArray(evt.data.message?.tool_calls) &&
+                (evt.data.message.tool_calls?.length ?? 0) > 0
+              assistantSpan?.setAttribute("content_length", content.length)
+              assistantSpan?.setAttribute("has_tool_calls", hasToolCalls)
               
               if (content) {
                 const extractedExpectations = extractExpectedResults(content)
@@ -4294,15 +4496,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 }
               }
 
-              const hasToolCalls =
-                Array.isArray(evt.data.message?.tool_calls) &&
-                (evt.data.message.tool_calls?.length ?? 0) > 0
-
               if (hasToolCalls) {
                 await streamReasoningStep(
                   emitReasoningStep,
                   content || "Model planned tool usage."
                 )
+                assistantSpan?.end()
                 break
               }
 
@@ -4314,15 +4513,91 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     "Final synthesis acknowledged. Closing out the run."
                   )
                 }
+                assistantSpan?.end()
                 break
               }
 
               if (content) {
                 await streamAnswerText(content)
               }
+              assistantSpan?.end()
               break
+            }
 
-            case "final_output":
+            case "token_usage": {
+              const tokenUsageSpan = jafStreamingSpan.startSpan("token_usage")
+              tokenUsageSpan.setAttribute("prompt_tokens", evt.data.prompt ?? 0)
+              tokenUsageSpan.setAttribute(
+                "completion_tokens",
+                evt.data.completion ?? 0
+              )
+              tokenUsageSpan.setAttribute("total_tokens", evt.data.total ?? 0)
+              tokenUsageSpan.end()
+              break
+            }
+
+            case "guardrail_violation": {
+              const guardrailSpan = jafStreamingSpan.startSpan("guardrail_violation")
+              guardrailSpan.setAttribute("stage", evt.data.stage)
+              guardrailSpan.setAttribute("reason", evt.data.reason)
+              guardrailSpan.end()
+              break
+            }
+
+            case "decode_error": {
+              const decodeSpan = jafStreamingSpan.startSpan("decode_error")
+              decodeSpan.setAttribute(
+                "errors",
+                JSON.stringify(evt.data.errors ?? [])
+              )
+              decodeSpan.end()
+              break
+            }
+
+            case "handoff_denied": {
+              const handoffSpan = jafStreamingSpan.startSpan("handoff_denied")
+              handoffSpan.setAttribute("from", evt.data.from)
+              handoffSpan.setAttribute("to", evt.data.to)
+              handoffSpan.setAttribute("reason", evt.data.reason)
+              handoffSpan.end()
+              break
+            }
+
+            case "clarification_requested": {
+              const clarificationSpan = jafStreamingSpan.startSpan(
+                "clarification_requested"
+              )
+              clarificationSpan.setAttribute(
+                "clarification_id",
+                evt.data.clarificationId
+              )
+              clarificationSpan.setAttribute("question", evt.data.question)
+              clarificationSpan.setAttribute(
+                "options_count",
+                evt.data.options.length
+              )
+              clarificationSpan.end()
+              break
+            }
+
+            case "clarification_provided": {
+              const clarificationProvidedSpan = jafStreamingSpan.startSpan(
+                "clarification_provided"
+              )
+              clarificationProvidedSpan.setAttribute(
+                "clarification_id",
+                evt.data.clarificationId
+              )
+              clarificationProvidedSpan.setAttribute(
+                "selected_id",
+                evt.data.selectedId
+              )
+              clarificationProvidedSpan.end()
+              break
+            }
+
+            case "final_output": {
+              const finalOutputSpan = jafStreamingSpan.startSpan("final_output")
               const output = evt.data.output
               if (
                 !agentContext.finalSynthesis.suppressAssistantStreaming &&
@@ -4334,10 +4609,21 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   await streamAnswerText(remaining)
                 }
               }
+              finalOutputSpan.setAttribute(
+                "output_length",
+                typeof output === "string" ? output.length : 0
+              )
+              finalOutputSpan.end()
               break
+            }
 
-            case "run_end":
+            case "run_end": {
+              const runEndSpan = jafStreamingSpan.startSpan("run_end")
               const outcome = evt.data.outcome
+              runEndSpan.setAttribute(
+                "outcome_status",
+                outcome?.status ?? "unknown"
+              )
               if (outcome?.status === "completed") {
                 const finalTurnNumber = ensureTurnNumber(
                   agentContext.turnCount ?? currentTurn
@@ -4381,6 +4667,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   } as unknown as Omit<InsertMessage, "externalId">
                   const msg = await insertMessage(db, assistantInsert)
                   assistantMessageId = String(msg.externalId)
+                  lastPersistedMessageId = msg.id
+                  lastPersistedMessageExternalId = assistantMessageId
+                  await persistTrace(msg.id, msg.externalId)
                 } catch (error) {
                   loggerWithChild({ email }).error(
                     error,
@@ -4394,6 +4683,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   cost: totalCost,
                   tokens: totalTokens,
                 }, "Response generated successfully")
+                runEndSpan.setAttribute("total_cost", totalCost)
+                runEndSpan.setAttribute("total_tokens", totalTokens)
+                runEndSpan.setAttribute("citations_count", citations.length)
                 
                 // Send final metadata with messageId
                 await stream.writeSSE({
@@ -4409,6 +4701,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   data: "",
                 })
               } else if (outcome?.status === "error") {
+                if (stopController.signal.aborted) {
+                  await persistTraceForLastMessage()
+                  break
+                }
                 const err = outcome.error
                 const errDetail =
                   err && typeof err === "object" && "detail" in err
@@ -4440,27 +4736,45 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   event: ChatSSEvents.End,
                   data: "",
                 })
+                await persistTraceForLastMessage()
               }
+              runEndSpan.end()
+              endJafSpan()
               break
+            }
           }
         }
 
+        endJafSpan()
         rootSpan.end()
       } catch (error) {
-        loggerWithChild({ email }).error(error, "MessageAgents stream error")
-        await stream.writeSSE({
-          event: ChatSSEvents.Error,
-          data: JSON.stringify({
-            error: "stream_error",
-            message: getErrorMessage(error),
-          }),
-        })
-        await stream.writeSSE({
-          event: ChatSSEvents.End,
-          data: "",
-        })
-        rootSpan.end()
+        if (stopController.signal.aborted || isMessageAgentStopError(error)) {
+          loggerWithChild({ email }).info(
+            { chatId: chatRecord.externalId },
+            "MessageAgents stream terminated due to stop request",
+          )
+          endJafSpan()
+          await persistTraceForLastMessage()
+          rootSpan.end()
+        } else {
+          loggerWithChild({ email }).error(error, "MessageAgents stream error")
+          await stream.writeSSE({
+            event: ChatSSEvents.Error,
+            data: JSON.stringify({
+              error: "stream_error",
+              message: getErrorMessage(error),
+            }),
+          })
+          await stream.writeSSE({
+            event: ChatSSEvents.End,
+            data: "",
+          })
+          endJafSpan()
+          await persistTraceForLastMessage()
+          rootSpan.end()
+        }
       } finally {
+        endJafSpan()
         for (const client of mcpClients) {
           try {
             await client.close?.()
@@ -4470,6 +4784,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
               "Failed to close MCP client",
             )
           }
+        }
+        stopController.signal.removeEventListener("abort", markStop)
+        const activeEntry = activeStreams.get(streamKey)
+        if (activeEntry?.stream === stream) {
+          activeStreams.delete(streamKey)
         }
       }
     })
@@ -4672,6 +4991,7 @@ export async function executeCustomAgent(
     maxTokens?: number
     parentTurn?: number
     mcpAgents?: MCPVirtualAgentRuntime[]
+    stopSignal?: AbortSignal
   }
 ): Promise<ToolOutput> {
   const turnInfo =
@@ -4684,6 +5004,7 @@ export async function executeCustomAgent(
     : `${params.query}${turnInfo}`
 
   if (params.agentId.startsWith("mcp:")) {
+    throwIfStopRequested(params.stopSignal)
     return executeMcpAgent(params.agentId, combinedQuery, {
       mcpAgents: params.mcpAgents,
       maxTokens: params.maxTokens,
@@ -4691,6 +5012,8 @@ export async function executeCustomAgent(
       userEmail: params.userEmail,
     })
   }
+
+  throwIfStopRequested(params.stopSignal)
 
   if (config.delegation_agentic) {
     return runDelegatedAgentWithMessageAgents({
@@ -4701,6 +5024,7 @@ export async function executeCustomAgent(
       maxTokens: params.maxTokens,
       parentTurn: params.parentTurn,
       mcpAgents: params.mcpAgents,
+      stopSignal: params.stopSignal,
     })
   }
 
@@ -4717,6 +5041,7 @@ export async function executeCustomAgent(
       attachmentFileIds: [],
       nonImageAttachmentFileIds: [],
     })
+    throwIfStopRequested(params.stopSignal)
 
     if (!result.success) {
       return {
@@ -4765,6 +5090,7 @@ type DelegatedAgentRunParams = {
   maxTokens?: number
   parentTurn?: number
   mcpAgents?: MCPVirtualAgentRuntime[]
+  stopSignal?: AbortSignal
 }
 
 async function runDelegatedAgentWithMessageAgents(
@@ -4772,6 +5098,7 @@ async function runDelegatedAgentWithMessageAgents(
 ): Promise<ToolOutput> {
   const logger = loggerWithChild({ email: params.userEmail })
   try {
+    throwIfStopRequested(params.stopSignal)
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       params.workspaceExternalId,
@@ -4832,6 +5159,7 @@ async function runDelegatedAgentWithMessageAgents(
         userContext: userCtxString,
         agentPrompt: agentPromptForLLM,
         workspaceNumericId: workspace.id,
+        stopSignal: params.stopSignal,
       }
     )
     agentContext.delegationEnabled = false
@@ -5142,6 +5470,7 @@ async function runDelegatedAgentWithMessageAgents(
     let answer = ""
     const streamAnswerText = async (text: string) => {
       if (!text) return
+      throwIfStopRequested(params.stopSignal)
       answer += text
     }
     agentContext.runtime = {
@@ -5160,6 +5489,7 @@ async function runDelegatedAgentWithMessageAgents(
         runCfg,
         traceEventHandler
       )) {
+        throwIfStopRequested(params.stopSignal)
         switch (evt.type) {
           case "turn_start":
             agentContext.turnCount = evt.data.turn
@@ -5209,7 +5539,7 @@ async function runDelegatedAgentWithMessageAgents(
             )
             break
 
-          case "tool_call_end":
+          case "tool_call_end": {
             await streamReasoningStep(
               emitReasoningStep,
               `Tool ${evt.data.toolName} completed`,
@@ -5249,8 +5579,9 @@ async function runDelegatedAgentWithMessageAgents(
               consecutiveToolErrors.delete(evt.data.toolName)
             }
             break
+          }
 
-          case "turn_end":
+          case "turn_end": {
             await streamReasoningStep(
               emitReasoningStep,
               "Turn complete. Reviewing progress and results...",
@@ -5272,16 +5603,16 @@ async function runDelegatedAgentWithMessageAgents(
                 { iteration: evt.data.turn }
               )
             } else {
-              await streamReasoningStep(
-                emitReasoningStep,
-                `No tools were executed in turn ${evt.data.turn}.`,
-                { iteration: evt.data.turn }
-              )
-            }
-
+                await streamReasoningStep(
+                  emitReasoningStep,
+                  `No tools were executed in turn ${evt.data.turn}.`,
+                  { iteration: evt.data.turn }
+                )
+              }
             break
+          }
 
-          case "assistant_message":
+          case "assistant_message": {
             const content = getTextContent(evt.data.message.content) || ""
             if (content) {
               const extractedExpectations = extractExpectedResults(content)
@@ -5337,6 +5668,7 @@ async function runDelegatedAgentWithMessageAgents(
               await agentContext.runtime?.streamAnswerText?.(content)
             }
             break
+          }
 
           case "final_output":
             const output = evt.data.output
@@ -5388,6 +5720,9 @@ async function runDelegatedAgentWithMessageAgents(
         }
       }
     } catch (error) {
+      if (isMessageAgentStopError(error)) {
+        throw error
+      }
       logger.error(error, "[DelegatedAgenticRun] Stream processing failed")
       return {
         result: "Agent execution failed",
@@ -5457,6 +5792,9 @@ async function runDelegatedAgentWithMessageAgents(
       },
     }
   } catch (error) {
+    if (isMessageAgentStopError(error)) {
+      throw error
+    }
     logger.error(error, "[DelegatedAgenticRun] Failed to execute agent")
     return {
       result: "Agent execution threw an exception",

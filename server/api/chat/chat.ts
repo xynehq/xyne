@@ -187,6 +187,11 @@ import {
   type AppFilter,
 } from "./utils"
 import {
+  buildKnowledgeBaseCollectionSelections,
+  KnowledgeBaseScope,
+  type PathExtractedInfo,
+} from "./knowledgeBaseSelections"
+import {
   getRecentChainBreakClassifications,
   formatChainBreaksForPrompt,
 } from "./utils"
@@ -345,6 +350,25 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
+const logKnowledgeBaseScopeUsage = (
+  email: string,
+  scope: KnowledgeBaseScope,
+  selectionCount: number,
+  context: string,
+  extra?: Record<string, unknown>,
+) => {
+  const payload = {
+    scope,
+    selectionCount,
+    context,
+    ...(extra ?? {}),
+  }
+  loggerWithChild({ email }).info(
+    payload,
+    "[Chat][KnowledgeBase] Built collection selections",
+  )
+}
 
 export const GetChatTraceApi = async (c: Context) => {
   let email = ""
@@ -1261,51 +1285,33 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
 
-      // Extract collection selections from knowledge_base selections
-      if (selectedItems[Apps.KnowledgeBase]) {
-        const collectionIds: string[] = []
-        const collectionFolderIds: string[] = []
-        const collectionFileIds: string[] = []
-        const source = getCollectionSource(pathExtractedInfo, selectedItems)
-
-        for (const itemId of source) {
-          if (itemId.startsWith("cl-")) {
-            // Entire collection - remove cl- prefix
-            collectionIds.push(itemId.replace(/^cl[-_]/, ""))
-          } else if (itemId.startsWith("clfd-")) {
-            // Collection folder - remove clfd- prefix
-            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
-          } else if (itemId.startsWith("clf-")) {
-            // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
-          }
-        }
-
-        // Create the key-value pair object
-        if (
-          collectionIds.length > 0 ||
-          collectionFolderIds.length > 0 ||
-          collectionFileIds.length > 0
-        ) {
-          agentSpecificCollectionSelections.push({
-            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
-            collectionFolderIds:
-              collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
-            collectionFileIds:
-              collectionFileIds.length > 0 ? collectionFileIds : undefined,
-          })
-        }
-      } else {
-        console.log("No KnowledgeBase items found in selectedItems")
-      }
     }
-  } else if (publicAgents && publicAgents.length > 0) {
-    processPublicAgentsCollectionSelections(
-      publicAgents,
-      pathExtractedInfo,
-      agentSpecificCollectionSelections,
-    )
   }
+
+  const iterativeKbScope = agentPrompt
+    ? KnowledgeBaseScope.AgentScoped
+    : KnowledgeBaseScope.UserOwned
+
+  agentSpecificCollectionSelections =
+    await buildKnowledgeBaseCollectionSelections({
+      scope: iterativeKbScope,
+      email,
+      selectedItems: selectedItem,
+      pathExtractedInfo,
+      publicAgents,
+    })
+
+  logKnowledgeBaseScopeUsage(
+    email,
+    iterativeKbScope,
+    agentSpecificCollectionSelections.length,
+    "generateIterativeTimeFilterAndQueryRewrite",
+    {
+      selectedKbItemCount: selectedItem[Apps.KnowledgeBase]?.length ?? 0,
+      hasPathOverrides: Boolean(pathExtractedInfo),
+      hasAgentPrompt: Boolean(agentPrompt),
+    },
+  )
 
   let message = input
 
@@ -2533,8 +2539,7 @@ export async function* generateAnswerFromDualRag(
         const { selectedApps, selectedItems } = parseAppSelections(
           agentPromptData.appIntegrations,
         )
-        
-        // Debug log to see what parseAppSelections returned
+
         loggerWithChild({ email }).info(
           `[generateAnswerFromDualRag] selectedApps: ${JSON.stringify(selectedApps)}`,
         )
@@ -2542,47 +2547,29 @@ export async function* generateAnswerFromDualRag(
           `[generateAnswerFromDualRag] selectedItems: ${JSON.stringify(selectedItems)}`,
         )
         selectedItem = selectedItems
-        
-        if (selectedItems[Apps.KnowledgeBase]) {
-          const kbItemIds = selectedItems[Apps.KnowledgeBase]
-          
-          const collectionIds: string[] = []
-          const collectionFolderIds: string[] = []
-          const collectionFileIds: string[] = []
-          
-          for (const itemId of kbItemIds) {
-            if (itemId.startsWith("cl-")) {
-              collectionIds.push(itemId.replace(/^cl[-_]/, ""))
-            } else if (itemId.startsWith("clfd-")) {
-              collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
-            } else if (itemId.startsWith("clf-")) {
-              collectionFileIds.push(
-                ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
-              )
-            }
-          }
-          
-          if (
-            collectionIds.length > 0 ||
-            collectionFolderIds.length > 0 ||
-            collectionFileIds.length > 0
-          ) {
-            agentSpecificCollectionSelections.push({
-              collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
-              collectionFolderIds:
-                collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
-              collectionFileIds:
-                collectionFileIds.length > 0 ? collectionFileIds : undefined,
-            })
-          }
-          
-          loggerWithChild({ email }).info(
-            `[generateAnswerFromDualRag] Built collection selections: ${JSON.stringify(agentSpecificCollectionSelections)}`,
-          )
-        }
-
       }
     }
+
+    const dualRagKbScope = KnowledgeBaseScope.AgentScoped
+    agentSpecificCollectionSelections =
+      await buildKnowledgeBaseCollectionSelections({
+        scope: dualRagKbScope,
+        email,
+        selectedItems: selectedItem,
+        pathExtractedInfo,
+      })
+
+    logKnowledgeBaseScopeUsage(
+      email,
+      dualRagKbScope,
+      agentSpecificCollectionSelections.length,
+      "generateAnswerFromDualRag",
+      {
+        selectedKbItemCount: selectedItem[Apps.KnowledgeBase]?.length ?? 0,
+        hasPathOverrides: Boolean(pathExtractedInfo),
+        hasAgentPrompt: Boolean(agentPrompt),
+      },
+    )
 
     const kbSearchSpan = generateAnswerSpan?.startSpan("kb_search")
     const channelIds = agentPrompt ? getChannelIdsFromAgentPrompt(agentPrompt) : []
@@ -3133,48 +3120,33 @@ async function* generatePointQueryTimeExpansion(
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
 
-      // Extract collection selections from knowledge_base selections
-      if (selectedItems[Apps.KnowledgeBase]) {
-        const collectionIds: string[] = []
-        const collectionFolderIds: string[] = []
-        const collectionFileIds: string[] = []
-        const source = getCollectionSource(pathExtractedInfo, selectedItems)
-        for (const itemId of source) {
-          if (itemId.startsWith("cl-")) {
-            // Entire collection - remove cl- prefix
-            collectionIds.push(itemId.replace(/^cl[-_]/, ""))
-          } else if (itemId.startsWith("clfd-")) {
-            // Collection folder - remove clfd- prefix
-            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
-          } else if (itemId.startsWith("clf-")) {
-            // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
-          }
-        }
-
-        // Create the key-value pair object
-        if (
-          collectionIds.length > 0 ||
-          collectionFolderIds.length > 0 ||
-          collectionFileIds.length > 0
-        ) {
-          agentSpecificCollectionSelections.push({
-            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
-            collectionFolderIds:
-              collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
-            collectionFileIds:
-              collectionFileIds.length > 0 ? collectionFileIds : undefined,
-          })
-        }
-      }
     }
-  } else if (publicAgents && publicAgents.length > 0) {
-    processPublicAgentsCollectionSelections(
-      publicAgents,
-      pathExtractedInfo,
-      agentSpecificCollectionSelections,
-    )
   }
+
+  const pointQueryKbScope = agentPrompt
+    ? KnowledgeBaseScope.AgentScoped
+    : KnowledgeBaseScope.UserOwned
+
+  agentSpecificCollectionSelections =
+    await buildKnowledgeBaseCollectionSelections({
+      scope: pointQueryKbScope,
+      email,
+      selectedItems: selectedItem,
+      pathExtractedInfo,
+      publicAgents,
+    })
+
+  logKnowledgeBaseScopeUsage(
+    email,
+    pointQueryKbScope,
+    agentSpecificCollectionSelections.length,
+    "generatePointQueryTimeExpansion",
+    {
+      selectedKbItemCount: selectedItem[Apps.KnowledgeBase]?.length ?? 0,
+      hasPathOverrides: Boolean(pathExtractedInfo),
+      hasAgentPrompt: Boolean(agentPrompt),
+    },
+  )
 
   let userAlpha = await getUserPersonalizationAlpha(db, email, alpha)
   const direction = classification.direction as string
@@ -3668,7 +3640,7 @@ async function* generateMetadataQueryAnswer(
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> = []
-  let selectedItem = {}
+  let selectedItem: Partial<Record<Apps, string[]>> = {}
   let agentAppFilters: any = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
@@ -3760,49 +3732,35 @@ async function* generateMetadataQueryAnswer(
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
 
-      // Extract collection selections from knowledge_base selections
-      if (selectedItems[Apps.KnowledgeBase]) {
-        const collectionIds: string[] = []
-        const collectionFolderIds: string[] = []
-        const collectionFileIds: string[] = []
-        const source = getCollectionSource(pathExtractedInfo, selectedItems)
-        for (const itemId of source) {
-          if (itemId.startsWith("cl-")) {
-            // Entire collection - remove cl- prefix
-            collectionIds.push(itemId.replace(/^cl[-_]/, ""))
-          } else if (itemId.startsWith("clfd-")) {
-            // Collection folder - remove clfd- prefix
-            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
-          } else if (itemId.startsWith("clf-")) {
-            // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
-          }
-        }
-
-        // Create the key-value pair object
-        if (
-          collectionIds.length > 0 ||
-          collectionFolderIds.length > 0 ||
-          collectionFileIds.length > 0
-        ) {
-          agentSpecificCollectionSelections.push({
-            collectionIds: collectionIds.length > 0 ? collectionIds : undefined,
-            collectionFolderIds:
-              collectionFolderIds.length > 0 ? collectionFolderIds : undefined,
-            collectionFileIds:
-              collectionFileIds.length > 0 ? collectionFileIds : undefined,
-          })
-        }
-      }
     }
-  } else if (publicAgents && publicAgents.length > 0) {
-    processPublicAgentsCollectionSelections(
-      publicAgents,
-      pathExtractedInfo,
-      agentSpecificCollectionSelections,
-    )
   }
 
+  const metadataKbScope = agentPrompt
+    ? KnowledgeBaseScope.AgentScoped
+    : KnowledgeBaseScope.UserOwned
+
+  agentSpecificCollectionSelections =
+    await buildKnowledgeBaseCollectionSelections({
+      scope: metadataKbScope,
+      email,
+      selectedItems: selectedItem,
+      pathExtractedInfo,
+      publicAgents,
+    })
+
+  logKnowledgeBaseScopeUsage(
+    email,
+    metadataKbScope,
+    agentSpecificCollectionSelections.length,
+    "generateMetadataQueryAnswer",
+    {
+      selectedKbItemCount: selectedItem[Apps.KnowledgeBase]?.length ?? 0,
+      hasPathOverrides: Boolean(pathExtractedInfo),
+      hasAgentPrompt: Boolean(agentPrompt),
+    },
+  )
+
+  // Process timestamp
   // Process timestamp
   const from = startTime ? new Date(startTime).getTime() : null
   const to = endTime ? new Date(endTime).getTime() : null
@@ -4463,120 +4421,7 @@ const fallbackText = (classification: QueryRouterLLMResponse): string => {
   return `${searchDescription}${timeDescription}`
 }
 
-export type PathExtractedInfo = {
-  collectionFileIds: string[]
-  collectionFolderIds: string[]
-  collectionIds: string[]
-}
 
-export function getCollectionSource(
-  pathExtractedInfo: PathExtractedInfo | undefined,
-  selectedItems: Record<string, any>,
-): string[] {
-  if (
-    pathExtractedInfo &&
-    (pathExtractedInfo.collectionFileIds.length ||
-      pathExtractedInfo.collectionFolderIds.length ||
-      pathExtractedInfo.collectionIds.length)
-  ) {
-    if (pathExtractedInfo.collectionFolderIds.length) {
-      return pathExtractedInfo.collectionFolderIds
-    } else if (pathExtractedInfo.collectionFileIds.length) {
-      return pathExtractedInfo.collectionFileIds
-    } else {
-      return pathExtractedInfo.collectionIds
-    }
-  } else {
-    return selectedItems[Apps.KnowledgeBase] || []
-  }
-}
-
-function processPublicAgentsCollectionSelections(
-  publicAgents: SelectPublicAgent[],
-  pathExtractedInfo: PathExtractedInfo | undefined,
-  agentSpecificCollectionSelections: Array<{
-    collectionIds?: string[]
-    collectionFolderIds?: string[]
-    collectionFileIds?: string[]
-  }>,
-): void {
-  // Iterate through all public agent prompts and gather app integrations
-  for (const publicAgent of publicAgents) {
-    if (!publicAgent) continue
-
-    // parsing for the new type of integration which we are going to save
-    if (isAppSelectionMap(publicAgent.appIntegrations)) {
-      const { selectedItems } = parseAppSelections(publicAgent.appIntegrations)
-
-      // Extract collection selections from knowledge_base selections
-      if (selectedItems[Apps.KnowledgeBase]) {
-        const collectionIds: string[] = []
-        const collectionFolderIds: string[] = []
-        const collectionFileIds: string[] = []
-        const source = getCollectionSource(pathExtractedInfo, selectedItems)
-        for (const itemId of source) {
-          if (itemId.startsWith("cl-")) {
-            // Entire collection - remove cl- prefix
-            collectionIds.push(itemId.replace(/^cl[-_]/, ""))
-          } else if (itemId.startsWith("clfd-")) {
-            // Collection folder - remove clfd- prefix
-            collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
-          } else if (itemId.startsWith("clf-")) {
-            // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
-          }
-        }
-
-        // Create or add to the first agent specific collection selection in the key-value pair object
-        if (
-          collectionIds.length > 0 ||
-          collectionFolderIds.length > 0 ||
-          collectionFileIds.length > 0
-        ) {
-          if (agentSpecificCollectionSelections.length === 0) {
-            // Create the first agent specific collection selection if it doesn't exist
-            agentSpecificCollectionSelections.push({
-              collectionIds:
-                collectionIds.length > 0 ? collectionIds : undefined,
-              collectionFolderIds:
-                collectionFolderIds.length > 0
-                  ? collectionFolderIds
-                  : undefined,
-              collectionFileIds:
-                collectionFileIds.length > 0 ? collectionFileIds : undefined,
-            })
-          } else {
-            // Add the other agent specific collection selections with deduplication using Sets
-            const collectionSelection = agentSpecificCollectionSelections[0]
-            if (collectionIds.length > 0) {
-              const existingIds = new Set(
-                collectionSelection.collectionIds || [],
-              )
-              collectionIds.forEach((id) => existingIds.add(id))
-              collectionSelection.collectionIds = Array.from(existingIds)
-            }
-            if (collectionFolderIds.length > 0) {
-              const existingFolderIds = new Set(
-                collectionSelection.collectionFolderIds || [],
-              )
-              collectionFolderIds.forEach((id) => existingFolderIds.add(id))
-              collectionSelection.collectionFolderIds =
-                Array.from(existingFolderIds)
-            }
-            if (collectionFileIds.length > 0) {
-              const existingFileIds = new Set(
-                collectionSelection.collectionFileIds || [],
-              )
-              collectionFileIds.forEach((id) => existingFileIds.add(id))
-              collectionSelection.collectionFileIds =
-                Array.from(existingFileIds)
-            }
-          }
-        }
-      }
-    }
-  }
-}
 
 export async function* UnderstandMessageAndAnswer(
   email: string,
@@ -7706,6 +7551,12 @@ export const StopStreamingApi = async (c: Context) => {
         `[StopStreamingApi] Closing active stream: ${streamKey}.`,
       )
       try {
+        const stopController = activeStream.stopController
+        if (stopController && !stopController.signal.aborted) {
+          stopController.abort(
+            `[StopStreamingApi] Stop requested for chat ${streamKey}.`,
+          )
+        }
         await stream.close()
       } catch (closeError) {
         loggerWithChild({ email: email }).error(

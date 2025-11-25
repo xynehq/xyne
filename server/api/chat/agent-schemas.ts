@@ -148,6 +148,7 @@ export interface AgentRunContext {
     workspaceNumericId?: number
   }
   chat: {
+    id?: number
     externalId: string
     metadata: Record<string, unknown>
   }
@@ -211,6 +212,9 @@ export interface AgentRunContext {
   finalSynthesis: FinalSynthesisState
   runtime?: AgentRuntimeCallbacks
   maxOutputTokens?: number
+  stopController?: AbortController
+  stopSignal?: AbortSignal
+  stopRequested: boolean
 }
 
 // ============================================================================
