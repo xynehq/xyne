@@ -155,6 +155,12 @@ export const checkAndYieldCitationsForAgent = async function* (
                     "image_extension",
                     imageData.extension || "unknown",
                   )
+                  
+                  // Mark as successfully processed only after successful yield
+                  if (!yieldedImageCitations.has(docIndex)) {
+                    yieldedImageCitations.set(docIndex, new Set<number>())
+                  }
+                  yieldedImageCitations.get(docIndex)?.add(imageIndex)
                 }
                 imageSpan.end()
               } catch (error) {
@@ -170,10 +176,6 @@ export const checkAndYieldCitationsForAgent = async function* (
                   { citationKey: imgMatch[1], error: getErrorMessage(error) },
                 )
               }
-              if (!yieldedImageCitations.has(docIndex)) {
-                yieldedImageCitations.set(docIndex, new Set<number>())
-              }
-              yieldedImageCitations.get(docIndex)?.add(imageIndex)
             } else {
               loggerWithChild({ email }).warn(
                 "Found a citation index but could not find it in the search result ",

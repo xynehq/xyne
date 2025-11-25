@@ -1451,6 +1451,8 @@ export const AgentMessageApi = async (c: Context) => {
                 actualModelId || config.defaultBestModel,
                 isValidPath,
                 pathExtractedInfo.collectionFolderIds,
+                pathExtractedInfo,
+                undefined,
               )
 
               stream.writeSSE({

@@ -10,8 +10,10 @@
 
 import { z } from "zod"
 import { Apps } from "@xyne/vespa-ts/types"
-import { ToolReviewFindingSchema } from "./agent-schemas"
+import { ToolReviewFindingSchema, ListCustomAgentsInputSchema, SubTaskSchema } from "./agent-schemas"
 import type { Entity, MailParticipant } from "@xyne/vespa-ts/types"
+
+export type { ListCustomAgentsInput } from "./agent-schemas"
 
 // ============================================================================
 // UNIVERSAL TOOL SCHEMA STRUCTURE
@@ -103,16 +105,6 @@ export type ToolOutput = z.infer<typeof ToolOutputSchema>
 // PLANNING TOOL SCHEMAS
 // ============================================================================
 
-// SubTask schema for planning
-export const SubTaskSchema = z.object({
-  id: z.string(),
-  description: z.string().describe("Clear description of what this sub-goal achieves"),
-  status: z.enum(["pending", "in_progress", "completed", "blocked", "failed"]).default("pending"),
-  toolsRequired: z.array(z.string()).describe("All tools needed to achieve this sub-goal"),
-  result: z.string().optional(),
-  completedAt: z.number().optional(),
-  error: z.string().optional(),
-})
 
 // toDoWrite input schema
 export const ToDoWriteInputSchema = z.object({
@@ -205,7 +197,17 @@ export const SearchDriveInputSchema = z.object({
 
 export type SearchDriveInput = z.infer<typeof SearchDriveInputSchema>
 
-export const SearchKnowledgeBaseInputSchema = z.object({
+export type SearchKnowledgeBaseToolParams = {
+  query: string
+  limit?: number
+  offset?: number
+  collectionId?: string
+  folderId?: string
+  fileId?: string
+  excludedIds?: string[]
+}
+
+export const SearchKnowledgeBaseInputSchema: z.ZodType<SearchKnowledgeBaseToolParams> = z.object({
   query: z
     .string()
     .min(1)
@@ -291,15 +293,6 @@ export type GetSlackUserProfileInput = z.infer<typeof GetSlackUserProfileInputSc
 // ============================================================================
 // AGENT TOOL SCHEMAS
 // ============================================================================
-
-// List custom agents input
-export const ListCustomAgentsInputSchema = z.object({
-  query: z.string().describe("User query to find relevant agents"),
-  requiredCapabilities: z.array(z.string()).optional().describe("Required agent capabilities"),
-  maxAgents: z.number().min(1).max(10).optional().default(5).describe("Maximum agents to return"),
-})
-
-export type ListCustomAgentsInput = z.infer<typeof ListCustomAgentsInputSchema>
 
 // List custom agents output
 const ResourceItemSchema = z.object({
@@ -433,7 +426,6 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
         ],
       },
       output: {
-        result: "Plan created successfully",
         plan: {
           goal: "Find what Alex says about Q4",
           subTasks: [

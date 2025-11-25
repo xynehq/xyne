@@ -345,11 +345,15 @@ interface UnifiedSearchOptions {
   collectionIds?: string[]
   collectionFolderIds?: string[]
   collectionFileIds?: string[]
+  userMetadata?: UserMetadataType
 }
 
-const userMetadata: UserMetadataType = {
-  userTimezone: "Asia/Kolkata",
-  dateForAI: getDateForAI({ userTimeZone: "Asia/Kolkata" }),
+// Helper function to create per-request userMetadata with proper timezone
+function createUserMetadata(userTimezone: string = "Asia/Kolkata"): UserMetadataType {
+  return {
+    userTimezone,
+    dateForAI: getDateForAI({ userTimeZone: userTimezone }),
+  }
 }
 
 async function executeVespaSearch(
@@ -378,7 +382,11 @@ async function executeVespaSearch(
     owner,
     eventStatus,
     eventAttendees,
+    userMetadata: providedUserMetadata,
   } = options
+
+  // Use provided userMetadata or fallback to default timezone
+  const userMetadata = providedUserMetadata || createUserMetadata()
 
   const execSpan = span?.startSpan("execute_vespa_search_helper")
   execSpan?.setAttribute("email", email)
@@ -656,6 +664,9 @@ export const searchGlobal: AgentTool = {
         })
       }
 
+      // Create userMetadata with default timezone (can be enhanced later to read from user context)
+      const userMetadata = createUserMetadata()
+
       const {
         agentAppEnums,
         agentSpecificCollectionIds,
@@ -678,6 +689,7 @@ export const searchGlobal: AgentTool = {
         collectionFolderIds: agentSpecificCollectionFolderIds,
         collectionFileIds: agentSpecificCollectionFileIds,
         selectedItems: selectedItems,
+        userMetadata,
       })
     } catch (error) {
       const errMsg = getErrorMessage(error)
@@ -816,6 +828,9 @@ export const getSlackMessagesFromUser: AgentTool = {
     }
 
     try {
+      // Create userMetadata with default timezone
+      const userMetadata = createUserMetadata()
+      
       let appToUse: Apps = Apps.Slack // This tool is specific to Slack
       if (!params.user_email) {
         return {
@@ -1042,13 +1057,16 @@ export const getSlackRelatedMessages: AgentTool = {
     }
 
     try {
+      // Create userMetadata with default timezone
+      const userMetadata = createUserMetadata()
+      
       // Validate that at least one scope parameter is provided
       const hasScope =
         params.channel_name ||
         params.user_email ||
         params.thread_id || // Assuming thread_id might be a parameter for this unified tool
-        params.from ||
-        params.to
+        params.date_from ||
+        params.date_to
 
       if (!hasScope && !params.filter_query) {
         return toolError("Insufficient search parameters", {
@@ -1063,8 +1081,8 @@ export const getSlackRelatedMessages: AgentTool = {
         offset: Math.max(params.offset || 0, 0),
         filterQuery: params.filter_query,
         orderDirection: (params.order_direction || "desc") as "asc" | "desc",
-        dateFrom: params.from || null,
-        dateTo: params.to || null,
+        dateFrom: params.date_from || null,
+        dateTo: params.date_to || null,
         span: execSpan,
       }
 
@@ -1094,7 +1112,7 @@ export const getSlackRelatedMessages: AgentTool = {
       if (params.user_email) searchStrategy.push(`user: ${params.user_email}`)
       if (params.thread_id) searchStrategy.push(`thread: ${params.thread_id}`)
       if (params.date_from || params.date_to) {
-        searchStrategy.push(`dates: ${params.from} to ${params.to}`)
+        searchStrategy.push(`dates: ${params.date_from} to ${params.date_to}`)
       }
       if (params.filter_query)
         searchStrategy.push(`query: "${params.filter_query}"`)
@@ -1157,7 +1175,6 @@ export const getSlackRelatedMessages: AgentTool = {
         try {
           const threadResponse = await SearchVespaThreads(
             threadIdsToFetch,
-            execSpan!,
           )
           const threadItems = (threadResponse?.root?.children || []).filter(
             (item): item is VespaSearchResults =>
@@ -1329,7 +1346,8 @@ export const getUserSlackProfile: AgentTool = {
 
       const userProfileDoc = children[0] as VespaSearchResults
       if (!userProfileDoc.fields) {
-        Logger.warn("Couldn't retrieve user profile", {
+        Logger.warn({
+          message: "Couldn't retrieve user profile",
           docId: userProfileDoc.id,
           fields: userProfileDoc.fields,
         })
@@ -1481,6 +1499,9 @@ export const getSlackMessagesFromChannel: AgentTool = {
     }
 
     try {
+      // Create userMetadata with default timezone
+      const userMetadata = createUserMetadata()
+      
       let appToUse: Apps = Apps.Slack // This tool is specific to Slack
       if (!params.channel_name) {
         return {
@@ -1534,7 +1555,7 @@ export const getSlackMessagesFromChannel: AgentTool = {
       const rawItems = searchResponse?.root?.children || []
       const items: VespaSearchResults[] = rawItems.filter(
         (item): item is VespaSearchResults =>
-          !!(item && item.fields && "sddocname" in item.fields),
+          !!(item && typeof item === 'object' && item !== null && 'fields' in item && item.fields && typeof item.fields === 'object' && item.fields !== null && "sddocname" in item.fields),
       )
 
       if (!items.length) {
@@ -1688,6 +1709,9 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
     }
 
     try {
+      // Create userMetadata with default timezone
+      const userMetadata = createUserMetadata()
+      
       // Correctly check for date_from and date_to as per the tool's parameters
       if (!params.date_from || !params.date_to) {
         return {
@@ -1743,7 +1767,7 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
       const rawItems = searchResponse?.root?.children || []
       const items: VespaSearchResults[] = rawItems.filter(
         (item): item is VespaSearchResults =>
-          !!(item && item.fields && "sddocname" in item.fields),
+          !!(item && typeof item === 'object' && item !== null && 'fields' in item && item.fields && typeof item.fields === 'object' && item.fields !== null && "sddocname" in item.fields),
       )
 
       if (!items.length) {

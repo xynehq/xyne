@@ -69,7 +69,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useToast } from "@/hooks/use-toast"
-import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
+import {
+  ChatBox,
+  ChatBoxRef,
+  type HandleSendOptions,
+} from "@/components/ChatBox"
 import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
@@ -2725,16 +2729,10 @@ function AgentComponent() {
     }
   }, [isStreaming])
 
-  const handleSend = async (
-    messageToSend: string,
-    metadata?: AttachmentMetadata[],
-    selectedSources?: string[],
-    agentId?: string | null,
-    toolsList?: any[],
-    selectedModel?: string,
-    isFollowup?: boolean,
-    selectedKbItems?: string[],
-  ) => {
+  const handleSend = async ({
+    messageToSend,
+    metadata,
+  }: HandleSendOptions) => {
     if (!messageToSend || isStreaming) return
 
     setUserHasScrolled(false)
@@ -3173,7 +3171,10 @@ function AgentComponent() {
       if (userMessageToResend && userMessageToResend.messageRole === "user") {
         const userMessageAttachments = userMessageToResend.attachments
         setMessages((prev) => prev.slice(0, assistantMessageIndex - 1))
-        await handleSend(userMessageToResend.message, userMessageAttachments)
+        await handleSend({
+          messageToSend: userMessageToResend.message,
+          metadata: userMessageAttachments,
+        })
       } else {
         toast({
           title: "Retry Error",

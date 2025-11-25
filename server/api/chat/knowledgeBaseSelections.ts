@@ -81,7 +81,9 @@ async function buildUserOwnedSelections(
   const ownedCollections = await getCollectionsByOwner(db, user.id)
   if (!ownedCollections.length) return []
 
-  const ownedCollectionIds = new Set(ownedCollections.map((c) => c.id))
+  const ownedCollectionIds = new Set(
+    ownedCollections.map((c) => Number(c.id)),
+  )
 
   const prefixedSelections = explicitSelections.length
     ? await filterPrefixedIdsToOwner(explicitSelections, ownedCollectionIds, user.id)
@@ -138,7 +140,7 @@ function resolveKnowledgeItemIds(
 
 async function filterPrefixedIdsToOwner(
   prefixedIds: string[],
-  ownedCollectionIds: Set<string>,
+  ownedCollectionIds: Set<number>,
   ownerId: number,
 ): Promise<string[]> {
   const collectionIds: string[] = []
@@ -152,7 +154,11 @@ async function filterPrefixedIdsToOwner(
       fileIds.push(id.replace(/^clf[-_]/, ""))
     } else if (id.startsWith("cl-")) {
       const collectionId = id.replace(/^cl[-_]/, "")
-      if (ownedCollectionIds.has(collectionId)) {
+      const numericCollectionId = Number(collectionId)
+      if (
+        !Number.isNaN(numericCollectionId) &&
+        ownedCollectionIds.has(numericCollectionId)
+      ) {
         collectionIds.push(collectionId)
       }
     }

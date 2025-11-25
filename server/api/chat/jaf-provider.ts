@@ -1,6 +1,5 @@
 import { getAISDKProviderByModel } from "@/ai/provider"
 import { MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
-import config from "@/config"
 import type {
   ModelProvider as JAFModelProvider,
   Message as JAFMessage,
@@ -90,6 +89,11 @@ const parseImageFileName = (
     console.warn(`[JAF Provider] Suspicious docId detected: ${docId}`)
     return null
   }
+  if (imageNumber.includes("..") || imageNumber.includes("/") || imageNumber.includes("\\")) {
+   console.warn(`[JAF Provider] Suspicious imageNumber detected: ${imageNumber}`)
+   return null
+  }
+
   return { docIndex, docId, imageNumber }
 }
 

@@ -4,8 +4,10 @@ import { getErrorMessage } from "@/utils"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import type { Ctx } from "../types"
-import { SearchKnowledgeBaseInputSchema } from "../tool-schemas"
-import { z } from "zod"
+import {
+  SearchKnowledgeBaseInputSchema,
+  type SearchKnowledgeBaseToolParams,
+} from "../tool-schemas"
 import { parseAgentAppIntegrations } from "./utils"
 import {
   buildKnowledgeBaseCollectionSelections,
@@ -15,10 +17,6 @@ import {
 import { executeVespaSearch } from "./global"
 
 const Logger = getLogger(Subsystem.Chat)
-
-export type SearchKnowledgeBaseToolParams = z.infer<
-  typeof SearchKnowledgeBaseInputSchema
->
 
 const buildOverrideSelections = (
   params: SearchKnowledgeBaseToolParams,
@@ -39,11 +37,7 @@ export const searchKnowledgeBaseTool: Tool<
     name: "searchKnowledgeBase",
     description:
       "Search the user's knowledge base collections and return relevant document fragments with citations.",
-    parameters:
-      SearchKnowledgeBaseInputSchema as unknown as Tool<
-        SearchKnowledgeBaseToolParams,
-        Ctx
-      >["schema"]["parameters"],
+    parameters: SearchKnowledgeBaseInputSchema,
   },
   async execute(params, context) {
     const email = context.user.email

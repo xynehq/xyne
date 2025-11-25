@@ -13,7 +13,7 @@ import {
   AttachmentMetadata,
 } from "shared/types"
 import { api } from "@/api"
-import { ChatBox } from "@/components/ChatBox"
+import { ChatBox, type HandleSendOptions } from "@/components/ChatBox"
 import Sparkle from "@/assets/singleSparkle.svg?react"
 import { errorComponent } from "@/components/error"
 import {
@@ -208,16 +208,14 @@ const Index = () => {
     }
   }
 
-  const handleAsk = (
-    messageToSend: string,
-    metadata?: AttachmentMetadata[],
-    selectedSources?: string[],
-    agentId?: string | null,
-    toolsList?: ToolsListItem[],
-    selectedModel?: string,
-    _isFollowUp?: boolean,
-    _selectedKbItems?: string[],
-  ) => {
+  const handleAsk = ({
+    messageToSend,
+    metadata,
+    selectedSources,
+    agentId,
+    toolsList,
+    selectedModel,
+  }: HandleSendOptions) => {
     if (messageToSend.trim()) {
       const searchParams: {
         q: string

@@ -2321,6 +2321,8 @@ export async function* generateAnswerFromDualRag(
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
+  pathExtractedInfo?: PathExtractedInfo,
+  publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2557,6 +2559,7 @@ export async function* generateAnswerFromDualRag(
         email,
         selectedItems: selectedItem,
         pathExtractedInfo,
+        publicAgents,
       })
 
     logKnowledgeBaseScopeUsage(

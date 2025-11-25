@@ -309,12 +309,22 @@ export interface AgentCapability {
 /**
  * ListCustomAgentsInput - Input for listing suitable agents
  */
-export interface ListCustomAgentsInput {
-  query: string
-  workspaceId: string
-  requiredCapabilities?: string[]
-  maxAgents?: number
-}
+export const ListCustomAgentsInputSchema = z.object({
+  query: z.string().describe("User query to find relevant agents"),
+  requiredCapabilities: z
+    .array(z.string())
+    .optional()
+    .describe("Required agent capabilities"),
+  maxAgents: z
+    .number()
+    .min(1)
+    .max(10)
+    .optional()
+    .default(5)
+    .describe("Maximum agents to return"),
+})
+
+export type ListCustomAgentsInput = z.infer<typeof ListCustomAgentsInputSchema>
 
 /**
  * RunPublicAgentInput - Input for executing a custom agent
@@ -332,25 +342,17 @@ export interface RunPublicAgentInput {
 
 export const SubTaskSchema = z.object({
   id: z.string(),
-  description: z.string(),
-  status: z.enum(["pending", "in_progress", "completed", "blocked", "failed"]),
-  toolsRequired: z.array(z.string()),
+  description: z.string().describe("Clear description of what this sub-goal achieves"),
+  status: z.enum(["pending", "in_progress", "completed", "blocked", "failed"]).default("pending"),
+  toolsRequired: z.array(z.string()).describe("All tools needed to achieve this sub-goal"),
   result: z.string().optional(),
   completedAt: z.number().optional(),
   error: z.string().optional(),
-  completedTools: z.array(z.string()).optional(),
 })
 
 export const PlanStateSchema = z.object({
   goal: z.string(),
   subTasks: z.array(SubTaskSchema),
-})
-
-export const ListCustomAgentsInputSchema = z.object({
-  query: z.string(),
-  workspaceId: z.string(),
-  requiredCapabilities: z.array(z.string()).optional(),
-  maxAgents: z.number().default(5),
 })
 
 export const RunPublicAgentInputSchema = z.object({

@@ -23,10 +23,10 @@ export type UserConnectorState = {
   gmailSynced: boolean
   googleCalendarSynced: boolean
   googleWorkspaceSynced: boolean
-  microsoftDriveSynced: boolean
-  microsoftSharepointSynced: boolean
-  microsoftOutlookSynced: boolean
-  microsoftCalendarSynced: boolean
+  microsoftDriveConnected: boolean
+  microsoftSharepointConnected: boolean
+  microsoftOutlookConnected: boolean
+  microsoftCalendarConnected: boolean
   githubConnected: boolean
 }
 
@@ -37,10 +37,10 @@ export function createEmptyConnectorState(): UserConnectorState {
     gmailSynced: false,
     googleCalendarSynced: false,
     googleWorkspaceSynced: false,
-    microsoftDriveSynced: false,
-    microsoftSharepointSynced: false,
-    microsoftOutlookSynced: false,
-    microsoftCalendarSynced: false,
+    microsoftDriveConnected: false,
+    microsoftSharepointConnected: false,
+    microsoftOutlookConnected: false,
+    microsoftCalendarConnected: false,
     githubConnected: false,
   }
 }
@@ -76,10 +76,10 @@ export async function getUserConnectorState(
     gmailSynced,
     googleCalendarSynced,
     googleWorkspaceSynced,
-    microsoftDriveSynced,
-    microsoftSharepointSynced,
-    microsoftOutlookSynced,
-    microsoftCalendarSynced,
+    microsoftDriveConnected,
+    microsoftSharepointConnected,
+    microsoftOutlookConnected,
+    microsoftCalendarConnected,
     githubConnected,
   ] = await Promise.all([
     hasConnector(trx, Apps.Slack, userEmail),
@@ -100,10 +100,10 @@ export async function getUserConnectorState(
     gmailSynced,
     googleCalendarSynced,
     googleWorkspaceSynced,
-    microsoftDriveSynced,
-    microsoftSharepointSynced,
-    microsoftOutlookSynced,
-    microsoftCalendarSynced,
+    microsoftDriveConnected,
+    microsoftSharepointConnected,
+    microsoftOutlookConnected,
+    microsoftCalendarConnected,
     githubConnected,
   }
 }
@@ -298,6 +298,8 @@ function normalizeApp(value: string): Apps | null {
       return Apps.MicrosoftOutlook
     case "microsoftcalendar":
       return Apps.MicrosoftCalendar
+    case "knowledgebase":
+      return Apps.KnowledgeBase
     default:
       return null
   }
@@ -338,28 +340,28 @@ function getConnectorGateStatus(
             reason: "Google Workspace directory is not connected for this user.",
           }
     case Apps.MicrosoftDrive:
-      return state.microsoftDriveSynced
+      return state.microsoftDriveConnected
         ? { available: true }
         : {
             available: false,
             reason: "Microsoft Drive is not connected for this user.",
           }
     case Apps.MicrosoftSharepoint:
-      return state.microsoftSharepointSynced
+      return state.microsoftSharepointConnected
         ? { available: true }
         : {
             available: false,
             reason: "Microsoft SharePoint is not connected for this user.",
           }
     case Apps.MicrosoftOutlook:
-      return state.microsoftOutlookSynced
+      return state.microsoftOutlookConnected
         ? { available: true }
         : {
             available: false,
             reason: "Microsoft Outlook is not connected for this user.",
           }
     case Apps.MicrosoftCalendar:
-      return state.microsoftCalendarSynced
+      return state.microsoftCalendarConnected
         ? { available: true }
         : {
             available: false,
