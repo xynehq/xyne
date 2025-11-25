@@ -948,7 +948,6 @@ export const ChatPage = ({
     selectedModel?: string,
     isFollowUp?: boolean,
     selectedKbItems?: string[],
-    isMessageAgentsMode?: boolean,
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
@@ -985,7 +984,6 @@ export const ChatPage = ({
         selectedModel,
         isFollowUp,
         selectedKbItems || [],
-        isMessageAgentsMode ?? false,
       )
     } catch (error) {
       // If there's an error, clear the optimistically added message from cache

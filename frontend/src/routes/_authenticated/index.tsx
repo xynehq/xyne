@@ -217,7 +217,6 @@ const Index = () => {
     selectedModel?: string,
     _isFollowUp?: boolean,
     _selectedKbItems?: string[],
-    _isMessageAgentsMode?: boolean,
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {

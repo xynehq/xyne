@@ -234,7 +234,6 @@ export const messageSchema = z.object({
       .optional(),
   ),
   agentPromptPayload: agentPromptPayloadSchema.optional(),
-  isMessageAgentsMode: z.string().optional().default("false"),
   streamOff: z
     .string()
     .optional()
@@ -257,7 +256,6 @@ export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
   agentId: z.string().optional(),
   agentic: z.string().optional().default("false"),
-  isMessageAgentsMode: z.string().optional().default("false"),
   selectedModelConfig: z.string().optional(),
 })
 

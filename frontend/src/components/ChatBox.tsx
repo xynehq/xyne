@@ -32,7 +32,6 @@ import {
   Presentation,
   FileImage,
   Globe,
-  Users, // Import Users icon for message-agents mode
 } from "lucide-react"
 import { siOpenai, siClaude, siGooglegemini } from "simple-icons"
 import Attach from "@/assets/attach.svg?react"
@@ -201,7 +200,6 @@ interface ChatBoxProps {
     selectedModel?: string,
     isFollowup?: boolean,
     selectedKbItems?: string[],
-    isMessageAgentsMode?: boolean,
   ) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
@@ -548,9 +546,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
     const [uploadingFilesCount, setUploadingFilesCount] = useState(0)
     const uploadCompleteResolver = useRef<(() => void) | null>(null)
-
-    // Message Agents mode state
-    const [isMessageAgentsMode, setIsMessageAgentsMode] = useState(false)
 
     // Model selection state
     const [availableModels, setAvailableModels] = useState<
@@ -2181,7 +2176,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           JSON.stringify(modelConfig), // Send model config as JSON string
           isFollowUp,
           undefined, // selectedKbItems
-          isMessageAgentsMode,
         )
 
         // Clear the input and attached files after sending
@@ -2212,7 +2206,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     setQuery,
     setSelectedFiles,
     cleanupPreviewUrls,
-    isMessageAgentsMode,
   ],
 )
 
@@ -3704,30 +3697,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
                   >
                     Agent
-                  </span>
-                </button>
-              )}
-
-            {/* Message Agents Mode Button */}
-            {showAdvancedOptions &&
-              (user?.role === UserRole.Admin ||
-                user?.role === UserRole.SuperAdmin) && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setIsMessageAgentsMode(!isMessageAgentsMode)
-                  }}
-                  className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px]`}
-                >
-                  <Users
-                    size={14}
-                    strokeWidth={2.4}
-                    className={`${isMessageAgentsMode ? "text-purple-500" : "text-[#464D53]"} ${isMessageAgentsMode ? "font-medium" : ""}`}
-                  />
-                  <span
-                    className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isMessageAgentsMode ? "text-purple-500" : "text-[#464D53]"}`}
-                  >
-                    Agents
                   </span>
                 </button>
               )}

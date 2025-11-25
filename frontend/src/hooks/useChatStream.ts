@@ -360,7 +360,6 @@ export const startStream = async (
   selectedModel?: string,
   selectedKbItems: string[] = [],
   isFollowUp: boolean = false,
-  isMessageAgentsMode: boolean = false,
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -397,11 +396,6 @@ export const startStream = async (
   }
   if (isAgenticMode) {
     url.searchParams.append("agentic", "true")
-  }
-  const shouldUseMessageAgentsMode =
-    isMessageAgentsMode || isAgenticMode || false
-  if (shouldUseMessageAgentsMode) {
-    url.searchParams.append("isMessageAgentsMode", "true")
   }
   // Build selected model JSON configuration (optional)
   let modelConfig: { model?: string; capabilities?: any } | null = null
@@ -957,7 +951,6 @@ export const useChatStream = (
       selectedModel?: string,
       isFollowUp: boolean = false,
       selectedKbItems: string[] = [],
-      isMessageAgentsMode: boolean = false,
     ) => {
       const streamKey = currentStreamKey
 
@@ -977,7 +970,6 @@ export const useChatStream = (
         selectedModel,
         selectedKbItems,
         isFollowUp,
-        isMessageAgentsMode,
       )
 
       setStreamInfo(getStreamState(streamKey))
@@ -1102,9 +1094,6 @@ export const useChatStream = (
       url.searchParams.append("messageId", messageId)
       if (isAgenticMode) {
         url.searchParams.append("agentic", "true")
-      }
-      if (isAgenticMode) {
-        url.searchParams.append("isMessageAgentsMode", "true")
       }
       if (selectedModelConfig) {
         url.searchParams.append("selectedModelConfig", selectedModelConfig)

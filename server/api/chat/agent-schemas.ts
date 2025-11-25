@@ -157,6 +157,7 @@ export interface AgentRunContext {
     attachments: Array<{ fileId: string; isImage: boolean }>
     timestamp: string
   }
+  modelId?: string
 
   // Planning state
   plan: PlanState | null

@@ -160,7 +160,7 @@ import {
   type ImageCitation,
 } from "./types"
 import { activeStreams } from "./stream"
-import { AgentMessageApi, MessageWithToolsApi } from "@/api/chat/agents"
+import { AgentMessageApi } from "@/api/chat/agents"
 import { MessageAgents } from "@/api/chat/message-agents"
 import {
   extractFileIdsFromMessage,
@@ -4716,7 +4716,7 @@ function buildTopicConversationThread(
  * MessageApi - Main chat endpoint with intelligent routing
  *
  * Routes chat requests to specialized handlers based on configuration:
- * - MessageWithToolsApi: For agentic mode without web search
+ * - MessageAgents: JAF-based agentic mode without web search
  * - AgentMessageApi: For agent conversations
  * - Default RAG flow: For standard chat with search capabilities
  *
@@ -4851,18 +4851,12 @@ export const MessageApi = async (c: Context) => {
         ? agentId
         : undefined // Use undefined if not a valid CUID
     
-    // Check for message-agents mode (new JAF-based agentic flow)
-    let isMessageAgentsMode = c.req.query("isMessageAgentsMode") === "true"
-    Logger.info(`isMessageAgentsMode: ${isMessageAgentsMode}`)
-    // isMessageAgentsMode = true
-    if (isMessageAgentsMode) {
-      Logger.info(`Routing to MessageAgents (new JAF-based flow)`)
+    const shouldUseMessageAgents =
+      isAgentic && !enableWebSearch && !deepResearchEnabled
+
+    if (shouldUseMessageAgents) {
+      Logger.info(`Routing to MessageAgents (JAF-based agentic flow)`)
       return MessageAgents(c)
-    }
-    
-    if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
-      Logger.info(`Routing to MessageWithToolsApi`)
-      return MessageWithToolsApi(c)
     }
 
     let attachmentMetadata = parseAttachmentMetadata(c)

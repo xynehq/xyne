@@ -35,6 +35,7 @@ import { getLogger, getLoggerWithChild } from "@/logger"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import config from "@/config"
 import { Models, type ModelParams } from "@/ai/types"
+import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   runStream,
   generateRunId,
@@ -918,6 +919,7 @@ function initializeAgentContext(
     chatId?: number
     stopController?: AbortController
     stopSignal?: AbortSignal
+    modelId?: string
   }
 ): AgentRunContext {
   const finalSynthesis: FinalSynthesisState = {
@@ -947,6 +949,7 @@ function initializeAgentContext(
       attachments,
       timestamp: new Date().toISOString(),
     },
+    modelId: options?.modelId,
     plan: null,
     currentSubTask: null,
     userContext: options?.userContext ?? "",
@@ -1020,12 +1023,16 @@ async function performAutomaticReview(
   )
   let reviewResult: ReviewResult
   try {
-    reviewResult = await runReviewLLM(reviewContext, {
-      focus: input.focus,
-      turnNumber: input.turnNumber,
-      expectedResults: input.expectedResults,
-      delegationEnabled: fullContext.delegationEnabled,
-    })
+    reviewResult = await runReviewLLM(
+      reviewContext,
+      {
+        focus: input.focus,
+        turnNumber: input.turnNumber,
+        expectedResults: input.expectedResults,
+        delegationEnabled: fullContext.delegationEnabled,
+      },
+      fullContext.modelId
+    )
   } catch (error) {
     tripReviewSpan.setAttribute("error", true)
     tripReviewSpan.setAttribute("error_message", getErrorMessage(error))
@@ -1147,6 +1154,7 @@ type ChatBootstrapParams = {
 type ChatBootstrapResult = {
   chat: SelectChat
   userMessage: SelectMessage
+  attachmentError?: Error
 }
 
 async function ensureChatAndPersistUserMessage(
@@ -1157,6 +1165,7 @@ async function ensureChatAndPersistUserMessage(
   const userId = Number(params.user.id)
   const userEmail = String(params.user.email)
   const incomingChatId = params.chatId ? String(params.chatId) : undefined
+  let attachmentError: Error | null = null
   return await db.transaction(async (tx) => {
     if (!incomingChatId) {
       const chatInsert = {
@@ -1186,10 +1195,18 @@ async function ensureChatAndPersistUserMessage(
       const userMessage = await insertMessage(tx, messageInsert)
 
       if (params.attachmentMetadata.length > 0) {
-        await storeAttachmentSafely(tx, userEmail, String(userMessage.externalId), params.attachmentMetadata)
+        const storageErr = await storeAttachmentSafely(
+          tx,
+          userEmail,
+          String(userMessage.externalId),
+          params.attachmentMetadata
+        )
+        if (storageErr) {
+          attachmentError = storageErr
+        }
       }
 
-      return { chat, userMessage }
+      return { chat, userMessage, attachmentError: attachmentError ?? undefined }
     }
 
     const chat = await updateChatByExternalIdWithAuth(
@@ -1214,10 +1231,18 @@ async function ensureChatAndPersistUserMessage(
     const userMessage = await insertMessage(tx, messageInsert)
 
     if (params.attachmentMetadata.length > 0) {
-      await storeAttachmentSafely(tx, userEmail, String(userMessage.externalId), params.attachmentMetadata)
+      const storageErr = await storeAttachmentSafely(
+        tx,
+        userEmail,
+        String(userMessage.externalId),
+        params.attachmentMetadata
+      )
+      if (storageErr) {
+        attachmentError = storageErr
+      }
     }
 
-    return { chat, userMessage }
+    return { chat, userMessage, attachmentError: attachmentError ?? undefined }
   })
 }
 
@@ -1226,14 +1251,16 @@ async function storeAttachmentSafely(
   email: string,
   messageExternalId: string,
   attachments: AttachmentMetadata[]
-) {
+): Promise<Error | null> {
   try {
     await storeAttachmentMetadata(tx, messageExternalId, attachments, email)
+    return null
   } catch (error) {
     loggerWithChild({ email }).error(
       error,
       `Failed to store attachment metadata for message ${messageExternalId}`
     )
+    return error as Error
   }
 }
 
@@ -1581,12 +1608,13 @@ export async function afterToolExecutionHook(
 
       try {
         // LOG: Calling extractBestDocumentIndexes
+        const rankingModelId = context.modelId || config.defaultBestModel
         loggerWithChild({ email: context.user.email }).info(
           {
             toolName,
             userMessage,
             contextStringsCount: contextStrings.length,
-            modelId: config.defaultBestModel,
+            modelId: rankingModelId,
           },
           "[afterToolExecutionHook][select_best_documents] CALLING extractBestDocumentIndexes"
         )
@@ -1601,7 +1629,7 @@ export async function afterToolExecutionHook(
             userMessage,
             contextStrings,
             {
-              modelId: config.defaultBestModel,
+              modelId: rankingModelId,
               json: false,
               stream: false,
             },
@@ -2270,7 +2298,8 @@ async function runReviewLLM(
     maxFindings?: number
     expectedResults?: ToolExpectationAssignment[]
     delegationEnabled?: boolean
-  }
+  },
+  modelOverride?: string
 ): Promise<ReviewResult> {
   const tracer = getTracer("chat")
   const reviewSpan = tracer.startSpan("review_llm_call")
@@ -2294,7 +2323,9 @@ async function runReviewLLM(
     "[MessageAgents][runReviewLLM] invoked - FULL expectedResults"
   )
   const modelId =
-    (defaultFastModel as Models) || (defaultBestModel as Models)
+    (modelOverride as Models) ||
+    (defaultFastModel as Models) ||
+    (defaultBestModel as Models)
   const delegationNote =
     options?.delegationEnabled === false
       ? "- Delegation tools (list_custom_agents/run_public_agent) were disabled for this run; do not flag their absence."
@@ -2907,7 +2938,8 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         )
       }
 
-      const modelId = (defaultBestModel as Models) || Models.Gpt_4o
+      const modelId =
+        (context.modelId as Models) || (defaultBestModel as Models) || Models.Gpt_4o
       const modelParams: ModelParams = {
         modelId,
         systemPrompt,
@@ -3184,10 +3216,11 @@ function buildAgentInstructions(
 }
 
 /**
- * MessageAgents - New JAF-based agentic flow
- * 
- * This is the new implementation that will eventually replace MessageWithToolsApi
- * Activated via a flag/parameter in the request
+ * MessageAgents - JAF-based agentic flow
+ *
+ * Primary implementation for agentic conversations when web search and deep
+ * research are disabled. Activated either explicitly via query flag or by the
+ * MessageApi router when the request qualifies for agentic handling.
  */
 export async function MessageAgents(c: Context): Promise<Response> {
   const tracer = getTracer("chat")
@@ -3196,7 +3229,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
   const { sub: email, workspaceId } = c.get(JwtPayloadKey)
   
   try {
-    loggerWithChild({ email }).info("MessageAgents - New agentic flow starting")
+    loggerWithChild({ email }).info("MessageAgents agentic flow starting")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
@@ -3208,11 +3241,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
       chatId,
       agentId: rawAgentId,
       toolsList,
+      selectedModelConfig,
     }: {
       message: string
       chatId?: string
       agentId?: string
       toolsList?: Array<{ connectorId: string; tools: string[] }>
+      selectedModelConfig?: string
     } = body
     
     if (!message) {
@@ -3222,6 +3257,83 @@ export async function MessageAgents(c: Context): Promise<Response> {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     rootSpan.setAttribute("chatId", chatId || "new")
+
+    let parsedModelId: string | undefined = undefined
+    let isReasoningEnabled = false
+    let enableWebSearch = false
+    let isDeepResearchEnabled = false
+
+    if (selectedModelConfig) {
+      try {
+        const modelConfig = JSON.parse(selectedModelConfig)
+        parsedModelId = modelConfig.model
+        isReasoningEnabled = modelConfig.reasoning === true
+        enableWebSearch = modelConfig.websearch === true
+        isDeepResearchEnabled = modelConfig.deepResearch === true
+
+        if (
+          modelConfig.capabilities &&
+          !isReasoningEnabled &&
+          !enableWebSearch &&
+          !isDeepResearchEnabled
+        ) {
+          if (Array.isArray(modelConfig.capabilities)) {
+            isReasoningEnabled = modelConfig.capabilities.includes("reasoning")
+            enableWebSearch = modelConfig.capabilities.includes("websearch")
+            isDeepResearchEnabled = modelConfig.capabilities.includes("deepResearch")
+          } else if (typeof modelConfig.capabilities === "object") {
+            isReasoningEnabled = modelConfig.capabilities.reasoning === true
+            enableWebSearch = modelConfig.capabilities.websearch === true
+            isDeepResearchEnabled = modelConfig.capabilities.deepResearch === true
+          }
+        }
+
+        loggerWithChild({ email }).info(
+          `Parsed model config for MessageAgents: model="${parsedModelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
+        )
+      } catch (error) {
+        loggerWithChild({ email }).warn(
+          error,
+          "Failed to parse selectedModelConfig JSON in MessageAgents. Using defaults.",
+        )
+        parsedModelId = config.defaultBestModel
+      }
+    } else {
+      parsedModelId = config.defaultBestModel
+      loggerWithChild({ email }).info(
+        "No model config provided to MessageAgents, using default",
+      )
+    }
+
+    let actualModelId: string = parsedModelId || config.defaultBestModel
+    if (parsedModelId) {
+      const convertedModelId = getModelValueFromLabel(parsedModelId)
+      if (convertedModelId) {
+        actualModelId = convertedModelId as string
+        loggerWithChild({ email }).info(
+          `Converted model label "${parsedModelId}" to value "${actualModelId}" for MessageAgents`,
+        )
+      } else if (parsedModelId in Models) {
+        actualModelId = parsedModelId
+        loggerWithChild({ email }).info(
+          `Using model ID "${parsedModelId}" directly for MessageAgents`,
+        )
+      } else {
+        loggerWithChild({ email }).error(
+          `Invalid model: ${parsedModelId}. Model not found in label mappings or Models enum for MessageAgents.`,
+        )
+        throw new HTTPException(400, {
+          message: `Invalid model: ${parsedModelId}`,
+        })
+      }
+    }
+
+    rootSpan.setAttribute("selectedModelId", actualModelId)
+    rootSpan.setAttribute("reasoningEnabled", isReasoningEnabled)
+    rootSpan.setAttribute("webSearchEnabled", enableWebSearch)
+    rootSpan.setAttribute("deepResearchEnabled", isDeepResearchEnabled)
+
+    const runModelId = actualModelId
 
     if (typeof toolsList === "string") {
       try {
@@ -3333,6 +3445,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
     let chatRecord: SelectChat
     let lastPersistedMessageId = 0
     let lastPersistedMessageExternalId = ""
+    let attachmentStorageError: Error | null = null
 
     try {
       const bootstrap = await ensureChatAndPersistUserMessage({
@@ -3343,12 +3456,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
         message,
         fileIds: messageFileIds,
         attachmentMetadata,
-        modelId: defaultBestModel,
+        modelId: runModelId,
         agentId: resolvedAgentId ?? undefined,
       })
       chatRecord = bootstrap.chat
       lastPersistedMessageId = bootstrap.userMessage.id
       lastPersistedMessageExternalId = String(bootstrap.userMessage.externalId)
+      attachmentStorageError = bootstrap.attachmentError ?? null
       const chatAgentId = chatRecord.agentId
         ? String(chatRecord.agentId)
         : undefined
@@ -3414,6 +3528,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
       stopController.signal.addEventListener("abort", markStop)
       activeStreams.set(streamKey, { stream, stopController })
 
+      if (!chatId) {
+        await stream.writeSSE({
+          event: ChatSSEvents.ChatTitleUpdate,
+          data: chatRecord.title || "Untitled",
+        })
+      }
+
       const mcpClients: Array<{ close?: () => Promise<void> }> = []
       const persistTrace = async (
         messageId: number,
@@ -3471,12 +3592,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
             agentPrompt: agentPromptForLLM,
             chatId: chatRecord.id,
             stopController,
+            modelId: runModelId,
           }
         )
         agentContextRef = agentContext
         agentContext.delegationEnabled = delegationEnabled
 
-        // Build MCP connector tool map (mirrors MessageWithToolsApi semantics)
+        // Build MCP connector tool map using the legacy agentic semantics
         const finalToolsMap: FinalToolsList = {}
         type FinalToolsEntry = FinalToolsList[string]
         type AdapterTool = FinalToolsEntry["tools"][number]
@@ -3831,7 +3953,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           name: "xyne-agent",
           instructions,
           tools: allTools,
-          modelConfig: { name: defaultBestModel },
+          modelConfig: { name: runModelId },
         }
 
         // Set up model provider
@@ -4065,7 +4187,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           agentRegistry,
           modelProvider,
           maxTurns: 100,
-          modelOverride: defaultBestModel,
+          modelOverride: runModelId,
           onTurnEnd: async ({ turn }) => {
             await runTurnEndReviewAndCleanup(turn)
           },
@@ -4121,6 +4243,28 @@ export async function MessageAgents(c: Context): Promise<Response> {
             chatId: agentContext.chat.externalId,
           }),
         })
+
+        if (attachmentMetadata.length > 0 && lastPersistedMessageExternalId) {
+          await stream.writeSSE({
+            event: ChatSSEvents.AttachmentUpdate,
+            data: JSON.stringify({
+              messageId: lastPersistedMessageExternalId,
+              attachments: attachmentMetadata,
+            }),
+          })
+        }
+
+        if (attachmentStorageError) {
+          await stream.writeSSE({
+            event: ChatSSEvents.Error,
+            data: JSON.stringify({
+              error: "attachment_storage_failed",
+              message:
+                "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
+              details: attachmentStorageError.message,
+            }),
+          })
+        }
 
         // Execute JAF run with streaming
         let currentTurn = 0
@@ -4196,7 +4340,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           {
             runId,
             chatId: agentContext.chat.externalId,
-            modelOverride: defaultBestModel,
+            modelOverride: runModelId,
             email,
           },
           "[MessageAgents] Starting assistant call"
@@ -4640,7 +4784,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   finalTurnNumber
                 )
                 // Store the response in database to prevent vanishing
-                // TODO: Implement full DB integration similar to MessageWithToolsApi
+                // TODO: Implement full DB integration similar to the previous legacy controller
                 // For now, store basic message data
                 loggerWithChild({ email }).info("Storing assistant response in database")
                 
@@ -4650,21 +4794,21 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentContext.tokenUsage.input + agentContext.tokenUsage.output
 
                 try {
-                  const assistantInsert = {
-                    chatId: chatRecord.id,
-                    userId: user.id,
-                    workspaceExternalId: String(workspace.externalId),
-                    chatExternalId: String(chatRecord.externalId),
-                    messageRole: MessageRole.Assistant,
-                    email: String(user.email),
-                    sources: citations,
-                    imageCitations,
-                    message: processMessage(answer, citationMap),
-                    thinking: thinkingLog,
-                    modelId: defaultBestModel,
-                    cost: totalCost.toString(),
-                    tokensUsed: totalTokens,
-                  } as unknown as Omit<InsertMessage, "externalId">
+                const assistantInsert = {
+                  chatId: chatRecord.id,
+                  userId: user.id,
+                  workspaceExternalId: String(workspace.externalId),
+                  chatExternalId: String(chatRecord.externalId),
+                  messageRole: MessageRole.Assistant,
+                  email: String(user.email),
+                  sources: citations,
+                  imageCitations,
+                  message: processMessage(answer, citationMap),
+                  thinking: thinkingLog,
+                  modelId: runModelId,
+                  cost: totalCost.toString(),
+                  tokensUsed: totalTokens,
+                } as unknown as Omit<InsertMessage, "externalId">
                   const msg = await insertMessage(db, assistantInsert)
                   assistantMessageId = String(msg.externalId)
                   lastPersistedMessageId = msg.id
@@ -5097,6 +5241,7 @@ async function runDelegatedAgentWithMessageAgents(
   params: DelegatedAgentRunParams
 ): Promise<ToolOutput> {
   const logger = loggerWithChild({ email: params.userEmail })
+  const delegateModelId = defaultBestModel
   try {
     throwIfStopRequested(params.stopSignal)
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -5160,6 +5305,7 @@ async function runDelegatedAgentWithMessageAgents(
         agentPrompt: agentPromptForLLM,
         workspaceNumericId: workspace.id,
         stopSignal: params.stopSignal,
+        modelId: delegateModelId,
       }
     )
     agentContext.delegationEnabled = false
@@ -5216,7 +5362,7 @@ async function runDelegatedAgentWithMessageAgents(
       name: "xyne-delegate",
       instructions,
       tools: allTools,
-      modelConfig: { name: defaultBestModel },
+      modelConfig: { name: delegateModelId },
     }
 
     const modelProvider = makeXyneJAFProvider<AgentRunContext>()
@@ -5412,7 +5558,7 @@ async function runDelegatedAgentWithMessageAgents(
       agentRegistry,
       modelProvider,
       maxTurns: Math.min(DELEGATED_RUN_MAX_TURNS, 100),
-      modelOverride: defaultBestModel,
+      modelOverride: delegateModelId,
       onTurnEnd: async ({ turn }) => {
         await runTurnEndReviewAndCleanup(turn)
       },

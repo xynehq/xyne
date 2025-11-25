@@ -664,7 +664,6 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
     selectedModel?: string,
     isFollowUp: boolean = false,
     selectedKbItems: string[] = [],
-    _isMessageAgentsMode?: boolean,
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 

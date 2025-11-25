@@ -28,7 +28,7 @@ export type CitationYieldEvent = {
 
 /**
  * Shared citation extraction utility used by agentic chat flows.
- * Mirrors the behavior from MessageWithToolsApi but lives in a reusable module.
+ * Mirrors the behavior from the legacy agentic flow but lives in a reusable module.
  */
 export const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
