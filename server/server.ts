@@ -327,6 +327,7 @@ import {
   formSubmissionSchema,
   listWorkflowExecutionsQuerySchema,
 } from "@/api/workflow"
+import { GetScriptLanguagesApi } from "@/api/script"
 import {
   workflowTool,
   workflowStepTemplate,
@@ -1542,6 +1543,7 @@ export const AppRoutes = app
   .post("/workflow/qa/process", ProcessQAQuestionsApi)
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
   .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
+  .get("/workflow/script/languages", GetScriptLanguagesApi)
 
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)

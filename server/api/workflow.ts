@@ -227,6 +227,7 @@ import {
   createWorkflowTool,
   createToolExecution,
 } from "@/db/workflowTool"
+import { executeScript, ScriptLanguage } from "@/workflowScriptExecutorTool"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -3731,6 +3732,105 @@ ${JSON.stringify(stepData.result, null, 2)}`
           }
         }
 
+      case "script":
+        // Execute script using unified script executor
+        const scriptContent = tool.value.script
+        const scriptConfig = tool.value.config
+        const language = tool.value.language
+        Logger.info(`Executing script in language: ${language}`)
+        if (!scriptContent) {
+          return {
+            status: "error",
+            result: { error: "No script content found in tool value" },
+          }
+        }
+
+        // Map language string to ScriptLanguage enum
+        let scriptLanguage: ScriptLanguage
+        switch (language.toLowerCase()) {
+          case "python":
+            scriptLanguage = ScriptLanguage.Python
+            break
+          case "javascript":
+          case "js":
+            scriptLanguage = ScriptLanguage.JavaScript
+            break
+          case "r":
+            scriptLanguage = ScriptLanguage.R
+            break
+          default:
+            return {
+              status: "error",
+              result: { error: `Unsupported script language: ${language}` },
+            }
+        }
+        try {
+          // Extract the latest step's result for script input
+          let scriptInput = previousStepResults
+          
+          // If we have structured step results, extract the latest step's output
+          if (previousStepResults && typeof previousStepResults === 'object') {
+            const stepKeys = Object.keys(previousStepResults)
+            if (stepKeys.length > 0) {
+              const latestStepKey = stepKeys[stepKeys.length - 1]
+              const latestStep = previousStepResults[latestStepKey]
+              
+              // Use the latest step's result as the script input
+              if (latestStep?.result) {
+                scriptInput = latestStep.result
+                Logger.info(`Using latest step '${latestStepKey}' result as script input`)
+              } else if (latestStep?.formSubmission) {
+                // For form steps, use the form data
+                scriptInput = latestStep.formSubmission
+                Logger.info(`Using latest step '${latestStepKey}' form data as script input`)
+              } else {
+                Logger.warn(`Latest step '${latestStepKey}' has no result or formData, using full object`)
+                scriptInput = previousStepResults
+              }
+            }
+          }
+          
+          const executionResult = await executeScript({
+            type: "complete",
+            language: scriptLanguage,
+            script: scriptContent,
+            input: scriptInput,
+            config: scriptConfig,
+          }, executionId)
+
+          if (executionResult.success) {
+            return {
+              status: "success",
+              result: {
+                output: executionResult.output,
+                consoleLogs: executionResult.consoleLogs,
+                extractedFiles: executionResult.extractedFiles,
+                language: language,
+                exitCode: executionResult.exitCode,
+                processedAt: new Date().toISOString(),
+              },
+            }
+          } else {
+            return {
+              status: "error",
+              result: {
+                error: executionResult.error || "Script execution failed",
+                consoleLogs: executionResult.consoleLogs,
+                language: language,
+                exitCode: executionResult.exitCode,
+              },
+            }
+          }
+        } catch (error) {
+          return {
+            status: "error",
+            result: {
+              error: "Script execution failed",
+              message: error instanceof Error ? error.message : String(error),
+              language: language,
+            },
+          }
+        }
       case "http_request":
         try {
           const httpConfig = tool.config || {}

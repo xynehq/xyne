@@ -31,8 +31,6 @@ RUN chmod +x docker-init.sh 2>/dev/null || true
 WORKDIR /usr/src/app/frontend
 RUN bun run build
 
-# Set the environment as production
-ENV NODE_ENV=production
 
 # Install required tools, canvas dependencies, and vespa CLI
 USER root
@@ -50,11 +48,26 @@ RUN apt-get update && apt-get install -y \
     libpixman-1-dev \
     libfontconfig1-dev \
     libfreetype6-dev \
+    python3 python3-pip nodejs npm r-base-core r-base-dev \
+    build-essential libcurl4-openssl-dev libssl-dev libxml2-dev \
+    jq bubblewrap \
     && wget https://github.com/vespa-engine/vespa/releases/download/v8.453.24/vespa-cli_8.453.24_linux_amd64.tar.gz \
     && tar -xzf vespa-cli_8.453.24_linux_amd64.tar.gz \
     && mv vespa-cli_8.453.24_linux_amd64/bin/vespa /usr/local/bin/ \
     && rm -rf vespa-cli_8.453.24_linux_amd64 vespa-cli_8.453.24_linux_amd64.tar.gz \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+
+
+# Copy and install language requirements
+COPY requirements.txt /usr/src/app/
+COPY js-requirements.json /usr/src/app/
+COPY requirements.R /usr/src/app/
+
+# Install language packages
+RUN python3 -m pip install --break-system-packages -r /usr/src/app/requirements.txt
+RUN npm install -g $(cat /usr/src/app/js-requirements.json | jq -r '.dependencies | keys[]')
+RUN Rscript /usr/src/app/requirements.R
 
 
 # Copy data restoration script and make it executable
@@ -66,15 +79,19 @@ RUN apt-get update && apt-get install -y \
 
 # Note: Application ports are exposed below
 
+# Set the environment as production
+ENV NODE_ENV=production
+
 WORKDIR /usr/src/app/server
 
 # Create runtime directories and set ownership for bun user
-RUN mkdir -p downloads vespa-data vespa-logs uploads migrations && \
-    chown bun:bun downloads vespa-data vespa-logs uploads migrations
+RUN mkdir -p downloads vespa-data vespa-logs uploads migrations script_executor_utils && \
+    chown bun:bun downloads vespa-data vespa-logs uploads migrations script_executor_utils
 
 # Copy and setup startup script
 COPY --chown=bun:bun start.sh /usr/src/app/start.sh
 RUN chmod +x /usr/src/app/start.sh
+RUN chmod u+s $(which bwrap)
 
 USER bun
 
