@@ -74,7 +74,6 @@ import {
   ChatBoxRef,
   type HandleSendOptions,
 } from "@/components/ChatBox"
-import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 import { AttachmentGallery } from "@/components/AttachmentGallery"

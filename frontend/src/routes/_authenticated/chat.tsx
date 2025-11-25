@@ -93,7 +93,7 @@ import {
 import React from "react"
 // import { jsonToHtmlMessage } from "@/lib/messageUtils"
 import { CLASS_NAMES } from "@/lib/constants"
-import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
+import { Reference, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
@@ -2132,7 +2132,7 @@ interface VirtualizedMessagesProps {
   handleShowRagTrace: (messageId: string) => void
   handleFeedback?: (messageId: string, feedback: MessageFeedback) => void
   handleShare?: () => void
-  handleSend: (message: string) => void
+  handleSend: (options: HandleSendOptions) => void
   scrollToBottom: () => void
   chatId: string | null
   userHasScrolled: boolean
