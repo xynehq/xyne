@@ -22,7 +22,6 @@ import type {
   ToolExpectation,
   ToolExpectationAssignment,
   FinalSynthesisState,
-  AgentRuntimeCallbacks,
   SubTask,
   MCPVirtualAgentRuntime,
   MCPToolDefinition,
@@ -364,7 +363,7 @@ function recordFragmentsForContext(
       context.currentTurnArtifacts.images,
       fragmentImages
     )
-    loggerWithChild({ email: context.user.email }).info(
+    loggerWithChild({ email: context.user.email }).debug(
       {
         chatId: context.chat.externalId,
         turnNumber,
@@ -402,7 +401,7 @@ function finalizeTurnImages(
   }
   context.recentImages = mergeImageReferences([], flattened)
   context.currentTurnArtifacts.images = []
-  loggerWithChild({ email: context.user.email }).info(
+  loggerWithChild({ email: context.user.email }).debug(
     {
       chatId: context.chat.externalId,
       turnNumber,
@@ -1418,7 +1417,7 @@ export async function afterToolExecutionHook(
   const context = state.context as AgentRunContext
 
   // LOG: Hook entry point
-  loggerWithChild({ email: context.user.email }).info(
+  loggerWithChild({ email: context.user.email }).debug(
     {
       toolName,
       turnNumber: turnNumber ?? context.turnCount,
@@ -1438,7 +1437,7 @@ export async function afterToolExecutionHook(
   )
 
   if (providedTurn === undefined && context.turnCount >= MIN_TURN_NUMBER) {
-    Logger.info(
+    Logger.debug(
       {
         toolName,
         providedTurnNumber: turnNumber,
@@ -1535,7 +1534,7 @@ export async function afterToolExecutionHook(
   }
 
   // LOG: Context extraction results
-  loggerWithChild({ email: context.user.email }).info(
+  loggerWithChild({ email: context.user.email }).debug(
     {
       toolName,
       totalContextsExtracted: contexts.length,
@@ -1550,7 +1549,7 @@ export async function afterToolExecutionHook(
     )
 
     // LOG: Filtering results
-    loggerWithChild({ email: context.user.email }).info(
+    loggerWithChild({ email: context.user.email }).debug(
       {
         toolName,
         totalContexts: contexts.length,
@@ -1580,7 +1579,7 @@ export async function afterToolExecutionHook(
       )
 
       // LOG: Prepared context strings for ranking
-      loggerWithChild({ email: context.user.email }).info(
+      loggerWithChild({ email: context.user.email }).debug(
         {
           toolName,
           contextStringsCount: contextStrings.length,
@@ -1593,7 +1592,7 @@ export async function afterToolExecutionHook(
       try {
         // LOG: Calling extractBestDocumentIndexes
         const rankingModelId = context.modelId || config.defaultBestModel
-        loggerWithChild({ email: context.user.email }).info(
+        loggerWithChild({ email: context.user.email }).debug(
           {
             toolName,
             userMessage,
@@ -1628,7 +1627,7 @@ export async function afterToolExecutionHook(
           selectionSpan.end()
         }
         // LOG: extractBestDocumentIndexes response
-        loggerWithChild({ email: context.user.email }).info(
+        loggerWithChild({ email: context.user.email }).debug(
           {
             toolName,
             bestDocIndexes,
@@ -1650,7 +1649,7 @@ export async function afterToolExecutionHook(
           })
 
           // LOG: Document selection results
-          loggerWithChild({ email: context.user.email }).info(
+          loggerWithChild({ email: context.user.email }).debug(
             {
               toolName,
               selectedDocsCount: selectedDocs.length,
@@ -1700,7 +1699,7 @@ export async function afterToolExecutionHook(
               )
 
               // LOG: Before attaching images
-              loggerWithChild({ email: context.user.email }).info(
+              loggerWithChild({ email: context.user.email }).debug(
                 {
                   toolName,
                   extractedImagesCount: extractedImages.length,
@@ -1725,7 +1724,7 @@ export async function afterToolExecutionHook(
               imageSpan.end()
 
               // LOG: After attaching images
-              loggerWithChild({ email: context.user.email }).info(
+              loggerWithChild({ email: context.user.email }).debug(
                 {
                   toolName,
                   attachedImagesCount: extractedImages.length,
@@ -1740,7 +1739,7 @@ export async function afterToolExecutionHook(
 
           addToolFragments(fragmentsForResult)
         } else {
-          loggerWithChild({ email: context.user.email }).info(
+          loggerWithChild({ email: context.user.email }).debug(
             {
               toolName,
               filteredContextsCount: filteredContexts.length,
@@ -1866,7 +1865,7 @@ export async function afterToolExecutionHook(
   })
 
   // LOG: Hook exit point
-  loggerWithChild({ email: context.user.email }).info(
+  loggerWithChild({ email: context.user.email }).debug(
     {
       toolName,
       turnNumber: effectiveTurnNumber,
@@ -2068,9 +2067,9 @@ function safeJsonParse(text: string): unknown {
 }
 
 function summarizePlan(plan: PlanState | null): string {
-  Logger.info({ plan }, "summarizePlan input")
+  Logger.debug({ plan }, "summarizePlan input")
   if (!plan) {
-    Logger.info(
+    Logger.debug(
       { summary: "No plan available." },
       "summarizePlan output"
     )
@@ -2087,7 +2086,7 @@ function summarizePlan(plan: PlanState | null): string {
     )
     .join("\n")
   const summary = `Goal: ${plan.goal}\n${steps}`
-  Logger.info(
+  Logger.debug(
     { summary, subTaskCount: plan.subTasks.length },
     "summarizePlan output"
   )
@@ -2097,16 +2096,16 @@ function summarizePlan(plan: PlanState | null): string {
 function formatExpectationsForReview(
   expectations?: ToolExpectationAssignment[]
 ): string {
-  Logger.info({ expectations }, "formatExpectationsForReview input")
+  Logger.debug({ expectations }, "formatExpectationsForReview input")
   if (!expectations || expectations.length === 0) {
-    Logger.info(
+    Logger.debug(
       { serialized: "[]" },
       "formatExpectationsForReview output"
     )
     return "[]"
   }
   const serialized = JSON.stringify(expectations, null, 2)
-  Logger.info(
+  Logger.debug(
     {
       expectationCount: expectations.length,
       serializedLength: serialized.length,
@@ -2188,7 +2187,7 @@ function appendReviewResultToTranscript(
   } as unknown as JAFMessage
 
   transcript.push(reviewMessage)
-  Logger.info(
+  Logger.debug(
     {
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -2293,7 +2292,7 @@ async function runReviewLLM(
     "expected_results_count",
     options?.expectedResults?.length ?? 0
   )
-  Logger.info(
+  Logger.debug(
     {
       focus: options?.focus,
       turnNumber: options?.turnNumber,
@@ -2323,7 +2322,7 @@ async function runReviewLLM(
     options,
     options?.expectedResults
   )
-  Logger.info(
+  Logger.debug(
     {
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -2340,7 +2339,7 @@ async function runReviewLLM(
     "[MessageAgents][runReviewLLM] Context summary for review model"
   )
 
-  Logger.info(
+  Logger.debug(
     {
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -2390,7 +2389,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
   if (currentImages.length > 0) {
     params.imageFileNames = currentImages
   }
-  Logger.info(
+  Logger.debug(
     { 
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -2403,7 +2402,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     },
     "[MessageAgents][runReviewLLM] LLM params prepared"
   )
-  Logger.info(
+  Logger.debug(
     {
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -2412,7 +2411,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     "[MessageAgents][runReviewLLM] Review user prompt"
   )
 
-  Logger.info(
+  Logger.debug(
     { 
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -2433,7 +2432,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     params
   )
   
-  Logger.info({ 
+  Logger.debug({ 
     email: context.user.email,
     chatId: context.chat.externalId,
     text,
@@ -2444,7 +2443,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
   }
 
   const parsed = jsonParseLLMOutput(text)
-  Logger.info({ 
+  Logger.debug({ 
     email: context.user.email,
     chatId: context.chat.externalId,
     parsed,
@@ -2480,7 +2479,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     )
   }
 
-  Logger.info(
+  Logger.debug(
     { 
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -2488,7 +2487,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     },
     "[MessageAgents][runReviewLLM] Returning review result"
   )
-  Logger.info(
+  Logger.debug(
     {
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -2580,7 +2579,7 @@ function filterToolsByAvailability(
       rule.connectorFlag &&
       !params.connectorState[rule.connectorFlag]
     ) {
-      loggerWithChild({ email: params.email, agentId: params.agentId }).info(
+      loggerWithChild({ email: params.email, agentId: params.agentId }).debug(
         `Disabling tool ${tool.schema.name}: connector '${rule.connectorFlag}' unavailable.`,
       )
       return false
@@ -2592,7 +2591,7 @@ function filterToolsByAvailability(
       params.allowedAgentApps.size > 0 &&
       !params.allowedAgentApps.has(rule.requiredApp)
     ) {
-      loggerWithChild({ email: params.email, agentId: params.agentId }).info(
+      loggerWithChild({ email: params.email, agentId: params.agentId }).debug(
         `Disabling tool ${tool.schema.name}: agent not configured for ${rule.requiredApp}.`,
       )
       return false
@@ -2611,7 +2610,7 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
     },
     async execute(args, context) {
       const mutableContext = mutableAgentContext(context)
-      Logger.info(
+      Logger.debug(
         {
           email: context.user.email,
           args,
@@ -2634,7 +2633,7 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
       const activeSubTaskId = initializePlanState(plan)
       mutableContext.plan = plan
       mutableContext.currentSubTask = activeSubTaskId
-      Logger.info(
+      Logger.debug(
         {
           email: context.user.email,
           goal: plan.goal,
@@ -2704,11 +2703,11 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
         maxAgents: validation.data.maxAgents,
         mcpAgents: context.mcpAgents,
       })
-      Logger.info(
+      Logger.debug(
         { params: validation.data, email: context.user.email },
         "[list_custom_agents] input params"
       )
-      Logger.info(
+      Logger.debug(
         { selection: result, email: context.user.email },
         "[list_custom_agents] selection result"
       )
@@ -2765,7 +2764,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         )
       }
 
-      Logger.info(
+      Logger.debug(
         {
           requestedAgentId: validation.data.agentId,
           availableAgents: context.availableAgents.map((a) => ({
@@ -2799,11 +2798,11 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         parentTurn: ensureTurnNumber(context.turnCount),
         stopSignal: context.stopSignal,
       })
-      Logger.info(
+      Logger.debug(
         { params: validation.data, email: context.user.email },
         "[run_public_agent] input params"
       )
-      Logger.info(
+      Logger.debug(
         { toolOutput, email: context.user.email },
         "[run_public_agent] tool output"
       )
@@ -2878,7 +2877,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
 
       const { selected, total, dropped, userAttachmentCount } =
         selectImagesForFinalSynthesis(context)
-      loggerWithChild({ email: context.user.email }).info(
+      loggerWithChild({ email: context.user.email }).debug(
         {
           chatId: context.chat.externalId,
           selectedImages: selected,
@@ -2891,7 +2890,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
 
       const { systemPrompt, userMessage } = buildFinalSynthesisPayload(context)
       const fragmentsCount = context.allFragments.length
-      loggerWithChild({ email: context.user.email }).info(
+      loggerWithChild({ email: context.user.email }).debug(
         {
           chatId: context.chat.externalId,
           finalSynthesisSystemPrompt: systemPrompt,
@@ -2912,7 +2911,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
 
       const logger = loggerWithChild({ email: context.user.email })
       if (dropped.length > 0) {
-        logger.info(
+        logger.debug(
           {
             droppedCount: dropped.length,
             limit: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
@@ -2940,7 +2939,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           content: [{ text: finalUserPrompt }],
         },
       ]
-      Logger.info(
+      Logger.debug(
         {
           email: context.user.email,
           chatId: context.chat.externalId,
@@ -2953,7 +2952,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         "[MessageAgents][FinalSynthesis] Context summary for synthesis call"
       )
 
-      Logger.info({
+      Logger.debug({
         email: context.user.email,
         chatId: context.chat.externalId,
         modelId,
@@ -2981,7 +2980,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         }
 
         context.finalSynthesis.completed = true
-        loggerWithChild({ email: context.user.email }).info(
+        loggerWithChild({ email: context.user.email }).debug(
           {
             chatId: context.chat.externalId,
             streamedCharacters,
@@ -3180,7 +3179,7 @@ function buildAgentInstructions(
   const finalInstructions = instructionLines.join("\n")
 
 
-  // Logger.info({
+  // Logger.debug({
   //   email: context.user.email,
   //   chatId: context.chat.externalId,
   //   turnCount: context.turnCount,
@@ -3190,7 +3189,7 @@ function buildAgentInstructions(
   //   delegationEnabled,
   // }, "[MessageAgents] Final agent instructions built")
 
-  // Logger.info({
+  // Logger.debug({
   //   email: context.user.email,
   //   chatId: context.chat.externalId,
   //   instructions: finalInstructions,
@@ -3272,7 +3271,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           }
         }
 
-        loggerWithChild({ email }).info(
+        loggerWithChild({ email }).debug(
           `Parsed model config for MessageAgents: model="${parsedModelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
         )
       } catch (error) {
@@ -3284,7 +3283,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
       }
     } else {
       parsedModelId = config.defaultBestModel
-      loggerWithChild({ email }).info(
+      loggerWithChild({ email }).debug(
         "No model config provided to MessageAgents, using default",
       )
     }
@@ -3294,12 +3293,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
       const convertedModelId = getModelValueFromLabel(parsedModelId)
       if (convertedModelId) {
         actualModelId = convertedModelId as string
-        loggerWithChild({ email }).info(
+        loggerWithChild({ email }).debug(
           `Converted model label "${parsedModelId}" to value "${actualModelId}" for MessageAgents`,
         )
       } else if (parsedModelId in Models) {
         actualModelId = parsedModelId
-        loggerWithChild({ email }).info(
+        loggerWithChild({ email }).debug(
           `Using model ID "${parsedModelId}" directly for MessageAgents`,
         )
       } else {
@@ -3634,7 +3633,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               const loadedMode = loadedConfig.mode || "sse"
 
               if (loadedUrl) {
-                loggerWithChild({ email }).info(
+                loggerWithChild({ email }).debug(
                   `Connecting to MCP client at ${loadedUrl} with mode: ${loadedMode}`,
                 )
 
@@ -3654,7 +3653,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   )
                 }
               } else if (loadedConfig.command) {
-                loggerWithChild({ email }).info(
+                loggerWithChild({ email }).debug(
                   `Connecting to MCP Stdio client with command: ${loadedConfig.command}`,
                 )
                 await client.connect(
@@ -3693,7 +3692,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               const isIncluded =
                 !!toolExternalId && requestedToolIds.includes(toolExternalId)
               if (!isIncluded) {
-                loggerWithChild({ email }).info(
+                loggerWithChild({ email }).debug(
                   `[MessageAgents][MCP] Tool ${toolExternalId}:${tool.toolName} not in requested toolExternalIds.`,
                 )
               }
@@ -3820,13 +3819,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
           allTools.map((tool) => tool.schema.name)
         )
         agentContext.mcpAgents = mcpAgentCandidates
-        loggerWithChild({ email }).info({
+        loggerWithChild({ email }).debug({
           totalToolBudget,
           internalTools: internalTools.length,
           directMcpTools: directMcpTools.length,
           mcpAgents: mcpAgentCandidates.map((a) => a.agentId),
         }, "[MessageAgents][MCP] Tool budget applied")
-        Logger.info({
+        Logger.debug({
           enabledTools: Array.from(agentContext.enabledTools),
           mcpAgentConnectors: Array.from(agentConnectorIds),
           directMcpTools: directMcpTools.length,
@@ -4077,7 +4076,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const runTurnEndReviewAndCleanup = async (
           turn: number
         ): Promise<void> => {
-          Logger.info({
+          Logger.debug({
             turn,
             expectationHistoryKeys: Array.from(expectationHistory.keys()),
             expectationsForThisTurn: expectationHistory.get(turn),
@@ -4361,7 +4360,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               }))
               const toolRequestsSpan = turnSpan?.startSpan("tool_requests")
               toolRequestsSpan?.setAttribute("tool_calls_count", plannedTools.length)
-              Logger.info(
+              Logger.debug(
                 {
                   turn: currentTurn,
                   plannedTools,
@@ -4441,7 +4440,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 "args",
                 JSON.stringify(evt.data.args ?? {})
               )
-              Logger.info({
+              Logger.debug({
                 toolName: evt.data.toolName,
                 args: evt.data.args,
                 runId,
@@ -4471,7 +4470,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 "execution_time_ms",
                 evt.data.executionTime ?? 0
               )
-              Logger.info({
+              Logger.debug({
                 toolName: evt.data.toolName,
                 result: evt.data.result,
                 error: evt.data.error,
@@ -4559,7 +4558,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
             case "assistant_message": {
               const assistantSpan = turnSpan?.startSpan("assistant_message")
-              Logger.info(
+              Logger.debug(
                 {
                   turn: currentTurn,
                   hasToolCalls:
@@ -4580,7 +4579,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               
               if (content) {
                 const extractedExpectations = extractExpectedResults(content)
-                Logger.info({
+                Logger.debug({
                   turn: currentTurn,
                   extractedCount: extractedExpectations.length,
                   extractedExpectations,
@@ -4604,7 +4603,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     ...extractedExpectations
                   )
                   if (currentTurn > 0) {
-                    Logger.info({
+                    Logger.debug({
                       turn: currentTurn,
                       expectationsCount: extractedExpectations.length,
                       chatId: agentContext.chat.externalId,
@@ -4614,7 +4613,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                       extractedExpectations
                     )
                   } else {
-                    Logger.info({
+                    Logger.debug({
                       turn: currentTurn,
                       expectationsCount: extractedExpectations.length,
                       chatId: agentContext.chat.externalId,
@@ -4770,7 +4769,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 // Store the response in database to prevent vanishing
                 // TODO: Implement full DB integration similar to the previous legacy controller
                 // For now, store basic message data
-                loggerWithChild({ email }).info("Storing assistant response in database")
+                loggerWithChild({ email }).debug("Storing assistant response in database")
                 
                 // Calculate costs and tokens
                 const totalCost = agentContext.totalCost
@@ -5092,7 +5091,7 @@ export async function listCustomAgentsSuitable(
     )
   }
 
-  loggerWithChild({ email: params.userEmail }).info(
+  loggerWithChild({ email: params.userEmail }).debug(
     { 
       query: params.query,
       totalAgents: combinedBriefs.length,
@@ -5462,7 +5461,7 @@ async function runDelegatedAgentWithMessageAgents(
     const runTurnEndReviewAndCleanup = async (
       turn: number
     ): Promise<void> => {
-      Logger.info({
+      Logger.debug({
         turn,
         expectationHistoryKeys: Array.from(expectationHistory.keys()),
         expectationsForThisTurn: expectationHistory.get(turn),
