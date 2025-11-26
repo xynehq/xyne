@@ -1,7 +1,4 @@
-import type {
-  VespaSearchResponse,
-  VespaSchema,
-} from "@xyne/vespa-ts/types"
+import type { VespaSearchResponse, VespaSchema } from "@xyne/vespa-ts/types"
 import {
   // VespaSchema, // No longer imported as a value
   fileSchema,
@@ -18,8 +15,6 @@ import {
 } from "@xyne/vespa-ts/types"
 
 async function getVespaSchemas(): Promise<string[]> {
-  // Returns prefixed names e.g. "my_content.file"
-  // Use hardcoded schema list instead of reading from filesystem
   const schemaNames = [
     "file",
     "user",
