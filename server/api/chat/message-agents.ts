@@ -1394,8 +1394,8 @@ export async function afterToolExecutionHook(
   messagesWithNoErrResponse: Message[],
   gatheredFragmentsKeys: Set<string>,
   expectedResult: ToolExpectation | undefined,
-  reasoningEmitter?: ReasoningEmitter,
-  turnNumber: number
+  turnNumber: number,
+  reasoningEmitter?: ReasoningEmitter
 ): Promise<string | ToolResult | null> {
   const { state, executionTime, status, args } = hookContext
   const context = state.context as AgentRunContext
@@ -1573,7 +1573,7 @@ export async function afterToolExecutionHook(
 
       try {
         // LOG: Calling extractBestDocumentIndexes
-        const rankingModelId = context.modelId || config.defaultBestModel
+        const rankingModelId = (context.modelId as Models) || config.defaultBestModel
         loggerWithChild({ email: context.user.email }).info(
           {
             toolName,
@@ -3362,7 +3362,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         agentId: resolvedAgentId ?? undefined,
       })
       chatRecord = bootstrap.chat
-      lastPersistedMessageId = bootstrap.userMessage.id
+      lastPersistedMessageId = bootstrap.userMessage.id as number
       lastPersistedMessageExternalId = String(bootstrap.userMessage.externalId)
       attachmentStorageError = bootstrap.attachmentError ?? null
       const chatAgentId = chatRecord.agentId
@@ -3433,7 +3433,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
       if (!chatId) {
         await stream.writeSSE({
           event: ChatSSEvents.ChatTitleUpdate,
-          data: chatRecord.title || "Untitled",
+          data: String(chatRecord.title) || "Untitled",
         })
       }
 
@@ -3445,13 +3445,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
         try {
           const traceJson = tracer.serializeToJson()
           await insertChatTrace({
-            workspaceId: workspace.id,
-            userId: user.id,
-            chatId: chatRecord.id,
-            messageId,
-            chatExternalId: chatRecord.externalId,
-            email: user.email,
-            messageExternalId,
+            workspaceId: workspace.id as number,
+            userId: user.id as number,
+            chatId: chatRecord.id as number,
+            messageId: messageId as number,
+            chatExternalId: chatRecord.externalId as string,
+            email: user.email as string,
+            messageExternalId: messageExternalId as string,
             traceJson,
           })
         } catch (traceError) {
@@ -3492,7 +3492,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             userContext: userCtxString,
             workspaceNumericId: workspace.id,
             agentPrompt: agentPromptForLLM,
-            chatId: chatRecord.id,
+            chatId: chatRecord.id as number,
             stopController,
             modelId: runModelId,
           }
@@ -4136,8 +4136,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
               messagesWithNoErrResponse,
               gatheredFragmentsKeys,
               expectationForCall,
-              emitReasoningStep,
-              turnForCall
+              turnForCall,
+              emitReasoningStep
             )
             
             return content
@@ -4720,9 +4720,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 } as unknown as Omit<InsertMessage, "externalId">
                   const msg = await insertMessage(db, assistantInsert)
                   assistantMessageId = String(msg.externalId)
-                  lastPersistedMessageId = msg.id
+                  lastPersistedMessageId = msg.id as number
                   lastPersistedMessageExternalId = assistantMessageId
-                  await persistTrace(msg.id, msg.externalId)
+                  await persistTrace(msg.id as number, msg.externalId)
                 } catch (error) {
                   loggerWithChild({ email }).error(
                     error,
@@ -4806,7 +4806,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
             { chatId: chatRecord.externalId },
             "MessageAgents stream terminated due to stop request",
           )
-          endJafSpan()
           await persistTraceForLastMessage()
           rootSpan.end()
         } else {
@@ -4822,12 +4821,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
             event: ChatSSEvents.End,
             data: "",
           })
-          endJafSpan()
           await persistTraceForLastMessage()
           rootSpan.end()
         }
       } finally {
-        endJafSpan()
         for (const client of mcpClients) {
           try {
             await client.close?.()
@@ -5512,8 +5509,8 @@ async function runDelegatedAgentWithMessageAgents(
           messagesWithNoErrResponse,
           gatheredFragmentsKeys,
           expectationForCall,
-          emitReasoningStep,
-          turnForCall
+          turnForCall,
+          emitReasoningStep
         )
       },
     }
