@@ -10,10 +10,15 @@
 
 import { z } from "zod"
 import { Apps } from "@xyne/vespa-ts/types"
-import { ToolReviewFindingSchema, ListCustomAgentsInputSchema, SubTaskSchema } from "./agent-schemas"
+import {
+  ToolReviewFindingSchema,
+  ListCustomAgentsInputSchema,
+  RunPublicAgentInputSchema,
+  SubTaskSchema,
+} from "./agent-schemas"
 import type { Entity, MailParticipant } from "@xyne/vespa-ts/types"
 
-export type { ListCustomAgentsInput } from "./agent-schemas"
+export type { ListCustomAgentsInput, RunPublicAgentInput } from "./agent-schemas"
 
 // ============================================================================
 // UNIVERSAL TOOL SCHEMA STRUCTURE
@@ -331,16 +336,6 @@ export const ListCustomAgentsOutputSchema = z.object({
 export type ListCustomAgentsOutput = z.infer<typeof ListCustomAgentsOutputSchema>
 export type ResourceAccessItem = z.infer<typeof ResourceItemSchema>
 export type ResourceAccessSummary = z.infer<typeof ResourceAccessSummarySchema>
-
-// Run public agent input
-export const RunPublicAgentInputSchema = z.object({
-  agentId: z.string().describe("Agent ID from list_custom_agents"),
-  query: z.string().describe("Detailed, specific query for the agent"),
-  context: z.string().optional().describe("Additional context for the agent"),
-  maxTokens: z.number().optional().describe("Maximum tokens for agent response"),
-})
-
-export type RunPublicAgentInput = z.infer<typeof RunPublicAgentInputSchema>
 
 // Review agent input
 export const ReviewAgentInputSchema = z.object({})

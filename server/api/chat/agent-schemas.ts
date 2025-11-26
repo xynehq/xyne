@@ -177,9 +177,6 @@ export interface AgentRunContext {
   imagesByTurn: Map<number, FragmentImageReference[]>
   recentImages: FragmentImageReference[]
   currentTurnArtifacts: CurrentTurnArtifacts
-  transcript?: {
-    getMessages: () => readonly JAFMessage[]
-  }
   turnCount: number
 
   // Performance metrics
@@ -325,16 +322,6 @@ export const ListCustomAgentsInputSchema = z.object({
 
 export type ListCustomAgentsInput = z.infer<typeof ListCustomAgentsInputSchema>
 
-/**
- * RunPublicAgentInput - Input for executing a custom agent
- */
-export interface RunPublicAgentInput {
-  agentId: string
-  query: string // Modified query specific to this agent
-  context?: string
-  maxTokens?: number
-}
-
 // ============================================================================
 // ZOD SCHEMAS FOR VALIDATION
 // ============================================================================
@@ -355,11 +342,23 @@ export const PlanStateSchema = z.object({
 })
 
 export const RunPublicAgentInputSchema = z.object({
-  agentId: z.string(),
-  query: z.string().describe("Detailed, specific query for this agent"),
-  context: z.string().optional(),
-  maxTokens: z.number().optional(),
+  agentId: z
+    .string()
+    .describe("Agent identifier returned by list_custom_agents"),
+  query: z
+    .string()
+    .describe("Fully disambiguated, agent-specific instructions for this run"),
+  context: z
+    .string()
+    .optional()
+    .describe("Optional supporting context/snippets the agent should consider"),
+  maxTokens: z
+    .number()
+    .optional()
+    .describe("Optional upper bound on tokens/cost for the delegated agent output"),
 })
+
+export type RunPublicAgentInput = z.infer<typeof RunPublicAgentInputSchema>
 
 export const ToolExpectationSchema = z.object({
   goal: z.string().min(1),

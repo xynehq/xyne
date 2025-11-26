@@ -132,7 +132,7 @@ describe("message-agents context tracking", () => {
       new Set<string>(),
       undefined,
       undefined,
-      undefined
+      context.turnCount
     )
 
     expect(context.allFragments).toHaveLength(1)
