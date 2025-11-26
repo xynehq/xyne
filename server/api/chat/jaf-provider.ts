@@ -172,7 +172,7 @@ const buildLanguageModelImageParts = async (
     (part): part is ImagePromptPart => part !== null
   )
   
-  // console.info('[IMAGE addition][JAF Provider] Image loading complete:', {
+  // console.debug('[IMAGE addition][JAF Provider] Image loading complete:', {
   //   requested: imageFileNames.length,
   //   loaded: loadStats.success,
   //   failed: loadStats.failed,
@@ -369,7 +369,7 @@ export const makeXyneJAFProvider = <Ctx>(
         agent.instructions(state),
       )
 
-      // console.info('[IMAGE addition][JAF Provider] getCompletion called with context:', {
+      // console.debug('[IMAGE addition][JAF Provider] getCompletion called with context:', {
       //   hasContext: !!state.context,
       //   hasImageFileNames: !!(state.context as any)?.imageFileNames,
       //   imageFileNamesLength: ((state.context as any)?.imageFileNames)?.length || 0,
@@ -382,7 +382,7 @@ export const makeXyneJAFProvider = <Ctx>(
       //   agentName: agent.name,
       // })
       const selectedImages = getRecentImagesFromContext(runContext)
-      Logger.info(
+      Logger.debug(
         {
           email: runContext?.user?.email,
           turn: normalizeTurnNumber(runContext?.turnCount),
@@ -409,7 +409,7 @@ export const makeXyneJAFProvider = <Ctx>(
                 userContent.push({ type: "text", text: label } as LanguageModelV2TextPart)
                 userContent.push(filePart)
               }
-              // console.info('[IMAGE addition][JAF Provider] Attached images to prompt:', {
+              // console.debug('[IMAGE addition][JAF Provider] Attached images to prompt:', {
               //   turn: runContext.turnCount ?? MIN_TURN_NUMBER,
               //   messageIndex: lastUserIndex,
               //   imagesAttached: imageParts.length,
@@ -465,7 +465,7 @@ export const makeXyneJAFProvider = <Ctx>(
       const userEmail = runContext?.user?.email || "unknown"
       const turnNumber = normalizeTurnNumber(runContext?.turnCount)
       
-      Logger.info({
+      Logger.debug({
         email: userEmail,
         turn: turnNumber,
         model: actualModelId,
@@ -481,7 +481,7 @@ export const makeXyneJAFProvider = <Ctx>(
       // Sanitize prompt to avoid logging large file data buffers
       const sanitizedPrompt = sanitizePromptForLogging(callOptions.prompt)
       
-      Logger.info({
+      Logger.debug({
         email: userEmail,
         turn: turnNumber,
         model: actualModelId,
@@ -490,7 +490,7 @@ export const makeXyneJAFProvider = <Ctx>(
 
       throwIfStopRequested(stopSignal)
       const result = await raceWithStop(
-        languageModel.doGenerate(callOptions),
+        Promise.resolve(languageModel.doGenerate(callOptions)),
         stopSignal,
       )
 
@@ -505,7 +505,7 @@ export const makeXyneJAFProvider = <Ctx>(
         return { index, type: part.type }
       })
 
-      Logger.info(
+      Logger.debug(
         {
           email: userEmail,
           turn: turnNumber,
