@@ -55,38 +55,6 @@ services:
     environment:
       - POSTGRES_PASSWORD=xyne
 
-  vespa:
-    image: vespaengine/vespa
-    container_name: vespa
-    user: "1000:1000"
-    hostname: vespa-container
-    deploy:
-      resources:
-        limits:
-          memory: 20G
-    ulimits:
-      nproc: 409600
-    ports:
-      - "8080:8080"
-      - "8081:8081"
-      - "19071:19071"
-    volumes:
-      - ../server/vespa-data:/opt/vespa/var
-    networks:
-      - xyne
-    environment:
-      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx16g -XX:+UseG1GC -XX:G1HeapRegionSize=32M
-      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx8g -XX:+UseG1GC
-
-
-
-    restart: always
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "6"
-
   xyne-db:
     image: postgres:15-alpine
     container_name: xyne-db
@@ -148,7 +116,5 @@ networks:
   xyne:
     driver: bridge
 volumes:
-  vespa-data:
-    driver: local
   grafana-storage:  
     driver: local

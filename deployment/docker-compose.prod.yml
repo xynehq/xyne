@@ -52,61 +52,6 @@ services:
     environment:
       - POSTGRES_PASSWORD=xyne
 
-  vespa:
-    image: xyne/vespa-gpu:8.583.10 # Uses the custom GPU-enabled Vespa image
-    container_name: vespa
-    hostname: vespa-container
-    # sudo chown -R 1000:1000 ./server/vespa-data
-    user: "1000:1000" # Run as vespa user
-    deploy:
-      resources:
-        limits:
-          memory: 230G
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all  # or "all" for all GPUs
-              capabilities: [gpu]
-    ports:
-      - "8080:8080"
-      - "8081:8081"
-      - "19071:19071"
-    volumes:
-      - ../server/vespa-data:/opt/vespa/var # Ensure this directory has correct permissions
-      - ../server/vespa-logs:/opt/vespa/logs # Ensure correct permissions
-    networks:
-      - xyne
-    ulimits:
-      nproc: 409600
-    restart: always
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "6"
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-
-      # Config server - reduced from 4g to free up memory for searchnode
-      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx2g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash
-      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx1g -XX:+UseG1GC
-
-      # Main query container - handles ONNX Runtime GPU inference and query processing
-      - VESPA_CONTAINER_JVMARGS=-Xms10g -Xmx20g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash -XX:MaxGCPauseMillis=200
-
-      # Storage and search nodes - SIGNIFICANTLY INCREASED to handle 102GB dataset
-      # Content node handles document storage and metadata
-      - VESPA_CONTENT_JVMARGS=-Xms20g -Xmx40g -XX:+UseG1GC -XX:MaxGCPauseMillis=500 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash
-      # Searchnode is the critical component - needs much more memory for embeddings and indexes
-      - VESPA_SEARCHNODE_JVMARGS=-Xms160g -Xmx160g -XX:+UseG1GC -XX:MaxGCPauseMillis=500 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash
-
-      # Support components (kept small)
-      - VESPA_LOGSERVER_JVMARGS=-Xms128m -Xmx256m -XX:+UseG1GC
-      - VESPA_LOGS_JVMARGS=-Xms128m -Xmx256m -XX:+UseG1GC
-      - VESPA_CLUSTER_CONTROLLER_JVMARGS=-Xms128m -Xmx256m -XX:+UseG1GC
-      - VESPA_METRICS_JVMARGS=-Xms256m -Xmx512m -XX:+UseG1GC
-
   xyne-db:
     image: postgres:15-alpine
     container_name: xyne-db
@@ -175,7 +120,5 @@ networks:
   xyne:
     driver: bridge
 volumes:
-  vespa-data:
-    driver: local
   grafana-storage:
     driver: local
