@@ -1,3 +1,10 @@
+## [3.33.1](https://github.com/xynehq/xyne/compare/v3.33.0...v3.33.1) (2025-11-27)
+
+
+### Bug Fixes
+
+* fixed follow up query generation context ([#1232](https://github.com/xynehq/xyne/issues/1232)) ([9ee8ef8](https://github.com/xynehq/xyne/commit/9ee8ef8d3b1c4083ea2d9a1e012d1b25aee034e5))
+
 # [3.33.0](https://github.com/xynehq/xyne/compare/v3.32.0...v3.33.0) (2025-11-25)
 
 
