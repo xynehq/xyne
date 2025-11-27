@@ -30,16 +30,10 @@ interface DeepResearchStep {
   fullReasoningContent?: string // Complete reasoning content when step is done
 }
 
-// Clarification types for HITL
-export interface ClarificationOption {
-  id: string
-  label: string
-}
-
 export interface ClarificationRequest {
   clarificationId: string
   question: string
-  options: ClarificationOption[]
+  options: string[]
   context?: any
 }
 
@@ -659,9 +653,9 @@ export const startStream = async (
     ChatSSEvents.ClarificationProvided,
     (event) => {
       try {
-        const { clarificationId, selectedId } = JSON.parse(event.data)
+        const { clarificationId, selectedOption } = JSON.parse(event.data)
         console.log(
-          `Clarification provided: ${clarificationId} -> ${selectedId}`,
+          `Clarification provided: ${clarificationId} -> ${selectedOption}`,
         )
         streamState.waitingForClarification = false
         streamState.clarificationRequest = undefined

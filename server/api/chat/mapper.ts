@@ -30,25 +30,7 @@ import { flattenObject } from "@/api/chat/utils"
 import { getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { SystemEntity, XyneTools } from "@/shared/types"
-import {
-  Apps,
-  MailEntity,
-  MailAttachmentEntity,
-  DriveEntity,
-  CalendarEntity,
-  GooglePeopleEntity,
-  GoogleApps,
-} from "@xyne/vespa-ts/types"
-import type {
-  ConversationalParams,
-  MetadataRetrievalParams,
-  SearchParams,
-  SlackRelatedMessagesParams,
-  SlackThreadsParams,
-  SlackUserProfileParams,
-} from "@/api/chat/types"
-import config from "@/config"
-import { A } from "ollama/dist/shared/ollama.6319775f.mjs"
+import { Apps } from "@xyne/vespa-ts/types"
 
 const getLoggerForMapper = (emailSub: string) =>
   getLoggerWithChild(Subsystem.Chat, { email: emailSub })

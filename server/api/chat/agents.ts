@@ -152,13 +152,14 @@ import {
   ToolResponse,
   type ToolResult,
   type ToolCall,
+  createInMemoryClarificationStorage,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
 import {
   buildMCPJAFTools,
   type FinalToolsList as JAFinalToolsList,
-  type JAFAdapterCtx,
+  type JAFCtx,
   buildToolsOverview,
   buildContextSection,
 } from "@/api/chat/jaf-adapter"
@@ -324,10 +325,13 @@ async function performSynthesis(
       attachmentFileIds?.length || 0,
     )
 
-    await agentSteps.logAndStreamReasoning({
-      type: AgentReasoningStepType.Synthesis,
-      details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
-    }, message)
+    await agentSteps.logAndStreamReasoning(
+      {
+        type: AgentReasoningStepType.Synthesis,
+        details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
+      },
+      message,
+    )
 
     const synthesisSpan = span.startSpan("synthesis_llm_call")
     const synthesisResponse = await generateSynthesisBasedOnToolOutput(
@@ -346,7 +350,10 @@ async function performSynthesis(
         ),
       },
     )
-    synthesisSpan.setAttribute("model_id", (modelId as Models) || defaultBestModel)
+    synthesisSpan.setAttribute(
+      "model_id",
+      (modelId as Models) || defaultBestModel,
+    )
     synthesisSpan.setAttribute(
       "response_length",
       synthesisResponse.text?.length || 0,
@@ -432,10 +439,13 @@ async function performSynthesis(
       synthesisError,
       "Error during synthesis LLM call.",
     )
-    await agentSteps.logAndStreamReasoning({
-      type: AgentReasoningStepType.LogMessage,
-      message: `Synthesis failed: No relevant information found. Attempting to gather more data.`,
-    }, message)
+    await agentSteps.logAndStreamReasoning(
+      {
+        type: AgentReasoningStepType.LogMessage,
+        message: `Synthesis failed: No relevant information found. Attempting to gather more data.`,
+      },
+      message,
+    )
     // If the call itself fails, we must assume the context is insufficient.
     parseSynthesisOutput = {
       synthesisState: ContextSysthesisState.Partial,
@@ -907,22 +917,27 @@ export const MessageWithToolsApi = async (c: Context) => {
         type AdapterTool = FinalToolsEntry["tools"][number]
         let iterationCount = 0
         let isCustomMCP = false
-        
+
         // Set up dependencies for AgentSteps
         const thinkingRef = { value: thinking }
-        const dateForAIForAgentSteps = getDateForAI({ userTimeZone: userTimezone })
-        
+        const dateForAIForAgentSteps = getDateForAI({
+          userTimeZone: userTimezone,
+        })
+
         const agentSteps = new AgentSteps({
           stream,
           thinking: thinkingRef,
           dateForAI: dateForAIForAgentSteps,
           actualModelId: actualModelId || null,
         })
-        
-        await agentSteps.logAndStreamReasoning({
-          type: AgentReasoningStepType.LogMessage,
-          message: `We're reading your question and figuring out the best way to find the answer — whether it's checking documents, searching emails, or gathering helpful info. This might take a few seconds... hang tight! <br> <br> We're analyzing your query and choosing the best path forward — whether it's searching internal docs, retrieving emails, or piecing together context. Hang tight while we think through it step by step.`,
-        }, message)
+
+        await agentSteps.logAndStreamReasoning(
+          {
+            type: AgentReasoningStepType.LogMessage,
+            message: `We're reading your question and figuring out the best way to find the answer — whether it's checking documents, searching emails, or gathering helpful info. This might take a few seconds... hang tight! <br> <br> We're analyzing your query and choosing the best path forward — whether it's searching internal docs, retrieving emails, or piecing together context. Hang tight while we think through it step by step.`,
+          },
+          message,
+        )
         if (toolsList && toolsList.length > 0) {
           for (const item of toolsList) {
             const { connectorId, tools: toolExternalIds } = item
@@ -1093,10 +1108,13 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         if (hasReferencedContext && iterationCount === 0) {
           const contextFetchSpan = rootSpan.startSpan("fetchDocumentContext")
-          await agentSteps.logAndStreamReasoning({
-            type: AgentReasoningStepType.Iteration,
-            iteration: iterationCount,
-          }, message)
+          await agentSteps.logAndStreamReasoning(
+            {
+              type: AgentReasoningStepType.Iteration,
+              iteration: iterationCount,
+            },
+            message,
+          )
           try {
             const results = await GetDocumentsByDocIds(
               fileIds,
@@ -1234,16 +1252,22 @@ export const MessageWithToolsApi = async (c: Context) => {
                 imageAttachmentFileIds,
                 actualModelId || undefined,
               )
-              await agentSteps.logAndStreamReasoning({
-                type: AgentReasoningStepType.LogMessage,
-                message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
-              }, message)
-              await agentSteps.logAndStreamReasoning({
-                type: AgentReasoningStepType.LogMessage,
-                message: ` Synthesis: ${
-                  parseSynthesisOutput?.answer || "No Synthesis details"
-                }`,
-              }, message)
+              await agentSteps.logAndStreamReasoning(
+                {
+                  type: AgentReasoningStepType.LogMessage,
+                  message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
+                },
+                message,
+              )
+              await agentSteps.logAndStreamReasoning(
+                {
+                  type: AgentReasoningStepType.LogMessage,
+                  message: ` Synthesis: ${
+                    parseSynthesisOutput?.answer || "No Synthesis details"
+                  }`,
+                },
+                message,
+              )
               const isContextSufficient =
                 parseSynthesisOutput?.synthesisState ===
                 ContextSysthesisState.Complete
@@ -1253,11 +1277,14 @@ export const MessageWithToolsApi = async (c: Context) => {
               if (isContextSufficient) {
                 parseSynthesisResult = JSON.stringify(parseSynthesisOutput)
                 // Context is complete. We can break the loop and generate the final answer.
-                await agentSteps.logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message:
-                    "Context is sufficient. Proceeding to generate final answer.",
-                }, message)
+                await agentSteps.logAndStreamReasoning(
+                  {
+                    type: AgentReasoningStepType.LogMessage,
+                    message:
+                      "Context is sufficient. Proceeding to generate final answer.",
+                  },
+                  message,
+                )
               }
             }
           } catch (error) {
@@ -1273,7 +1300,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         // Compose JAF tools: internal + MCP
         const toolsCompositionSpan =
           jafProcessingSpan.startSpan("tools_composition")
-        const baseCtx: JAFAdapterCtx = {
+        const baseCtx: JAFCtx = {
           email: sub,
           userCtx: ctx,
           agentPrompt: agentPromptForLLM,
@@ -1319,26 +1346,28 @@ export const MessageWithToolsApi = async (c: Context) => {
             role: m.messageRole === MessageRole.User ? "user" : "assistant",
             content: m.message,
           }))
-        const agenticModelId: Models = 
-            actualModelId === defaultBestModelAgenticMode || actualModelId === defaultBestModel
+        const agenticModelId: Models =
+          actualModelId === defaultBestModelAgenticMode ||
+          actualModelId === defaultBestModel
             ? (actualModelId as Models)
-            : (defaultBestModelAgenticMode && defaultBestModelAgenticMode !== ("" as Models)
-                ? (defaultBestModelAgenticMode as Models)
-                : defaultBestModel)
-        const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
+            : defaultBestModelAgenticMode &&
+                defaultBestModelAgenticMode !== ("" as Models)
+              ? (defaultBestModelAgenticMode as Models)
+              : defaultBestModel
+        const jafAgent: JAFAgent<JAFCtx, string> = {
           name: "xyne-agent",
           instructions: () => agentInstructions,
           tools: allJAFTools,
           modelConfig: { name: agenticModelId },
         }
 
-        const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
+        const modelProvider = makeXyneJAFProvider<JAFCtx>()
 
-        const agentRegistry = new Map<string, JAFAgent<JAFAdapterCtx, string>>([
+        const agentRegistry = new Map<string, JAFAgent<JAFCtx, string>>([
           [jafAgent.name, jafAgent],
         ])
 
-        let runState: JAFRunState<JAFAdapterCtx> = {
+        let runState: JAFRunState<JAFCtx> = {
           runId,
           traceId,
           messages: initialMessages,
@@ -1348,20 +1377,25 @@ export const MessageWithToolsApi = async (c: Context) => {
         }
 
         let toolContextsMap: Record<string, number> = {}
-        const runCfg: JAFRunConfig<JAFAdapterCtx> = {
+
+        // Create clarification storage for HITL
+        const clarificationStorage = createInMemoryClarificationStorage()
+
+        const runCfg: JAFRunConfig<JAFCtx> = {
           agentRegistry,
           modelProvider,
           maxTurns: 10,
           modelOverride: agenticModelId,
           allowClarificationRequests: true,
           clarificationDescription: hitlClarificationDescription,
+          clarificationStorage,
           onAfterToolExecution: async (
             toolName: string,
             result: any,
             context: {
               toolCall: ToolCall
               args: any
-              state: JAFRunState<JAFAdapterCtx>
+              state: JAFRunState<JAFCtx>
               agentName: string
               executionTime: number
               status: string | ToolResult
@@ -1373,12 +1407,20 @@ export const MessageWithToolsApi = async (c: Context) => {
 
             const toolEndSpan = turnSpan?.startSpan(`tool_call_end`)
             toolEndSpan?.setAttribute("tool_name", toolName)
-            toolEndSpan?.setAttribute("status", context.status as string || "completed")
+            toolEndSpan?.setAttribute(
+              "status",
+              (context.status as string) || "completed",
+            )
             toolEndSpan?.setAttribute("contexts_found", contextsLength)
             toolContextsMap[`${currentTurn}_${toolName}`] = contextsLength
             if (Array.isArray(contexts) && contexts.length > 0) {
-              const confidences = contexts.map((c: MinimalAgentFragment) => c.confidence || 0)
-              toolEndSpan?.setAttribute("tool_relevence", Math.max(...confidences))
+              const confidences = contexts.map(
+                (c: MinimalAgentFragment) => c.confidence || 0,
+              )
+              toolEndSpan?.setAttribute(
+                "tool_relevence",
+                Math.max(...confidences),
+              )
             }
 
             if (Array.isArray(contexts) && contexts.length) {
@@ -1467,7 +1509,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         // Stream JAF events → existing SSE protocol
         const jafStreamingSpan = jafProcessingSpan.startSpan("jaf_streaming")
-        let turnSpan: Span | undefined;
+        let turnSpan: Span | undefined
         const yieldedCitations = new Set<number>()
         const yieldedImageCitations = new Map<number, Set<number>>()
         let currentTurn = 0

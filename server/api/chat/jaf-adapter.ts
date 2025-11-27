@@ -8,14 +8,14 @@ import { Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Chat).child({ module: "jaf-adapter" })
 
-export type JAFAdapterCtx = {
+export type JAFCtx = {
   email: string
   userCtx: string
   agentPrompt?: string
   userMessage: string
 }
 
-type ToolSchemaParameters = Tool<unknown, JAFAdapterCtx>["schema"]["parameters"]
+type ToolSchemaParameters = Tool<unknown, JAFCtx>["schema"]["parameters"]
 
 const toToolSchemaParameters = (schema: ZodType): ToolSchemaParameters =>
   schema as unknown as ToolSchemaParameters
@@ -66,8 +66,8 @@ export type FinalToolsList = Record<
 
 export function buildMCPJAFTools(
   finalTools: FinalToolsList,
-): Tool<unknown, JAFAdapterCtx>[] {
-  const tools: Tool<unknown, JAFAdapterCtx>[] = []
+): Tool<unknown, JAFCtx>[] {
+  const tools: Tool<unknown, JAFCtx>[] = []
   for (const [connectorId, info] of Object.entries(finalTools)) {
     for (const t of info.tools) {
       const toolName = t.toolName
