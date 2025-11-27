@@ -7996,10 +7996,10 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Message not found" })
     }
 
-    // Use all messages from the chat for better context
-    const contextMessages = messages
+    // Collect the whole chain using isFollowUp to get all messages in the current conversation thread
+    const contextMessages = buildTopicConversationThread(messages, messageIndex)
 
-    // Format conversation context with all messages
+    // Format conversation context with messages from the chain
     const conversationContext = contextMessages
       .map(
         (msg) =>
