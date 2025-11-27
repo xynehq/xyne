@@ -85,6 +85,8 @@ export const getWorkflowTemplateByIdWithPermissionCheck = async (
       rootWorkflowStepTemplateId: workflowTemplate.rootWorkflowStepTemplateId,
       createdAt: workflowTemplate.createdAt,
       updatedAt: workflowTemplate.updatedAt,
+      state: workflowTemplate.state,
+      deprecated: workflowTemplate.deprecated,
     })
     .from(workflowTemplate)
     .leftJoin(
@@ -103,7 +105,33 @@ export const getWorkflowTemplateByIdWithPermissionCheck = async (
     )
     .limit(1)
 
-  return template ? selectWorkflowTemplateSchema.parse(template) : null
+  return (template && !template.deprecated) ? selectWorkflowTemplateSchema.parse(template) : null
+}
+
+export const checkAccessWithTemplateStepId = async (
+  trx: TxnOrClient,
+  templateStepId: string,
+  workspaceId: number,
+  userId: number,
+): Promise<Boolean> => {
+  // Verify template access first
+  const [teamplateStep] = await trx
+    .select({
+      workflowTemplateId: workflowStepTemplate.workflowTemplateId,
+    })
+    .from(workflowStepTemplate)
+    .where(eq(workflowStepTemplate.id, templateStepId))
+    .limit(1)
+  const template = await getWorkflowTemplateByIdWithPermissionCheck(
+    trx,
+    teamplateStep.workflowTemplateId,
+    workspaceId,
+    userId
+  )
+  if (!template) {
+    return false
+  }
+  return true
 }
 
 // gets workflow templates along with the queried user's role for each

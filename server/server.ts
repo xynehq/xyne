@@ -340,6 +340,25 @@ import {
   ToolExecutionStatus,
 } from "@/types/workflowTypes"
 import { sql, eq } from "drizzle-orm"
+import {
+  GetAvailableToolTypesApi,
+  GetToolTypeSchemaApi,
+  CreateTemplateApi,
+  UpdateTemplateApi,
+  DeleteTemplateApi,
+  GetTemplateApi,
+  HandleStateChangeTemplateApi,
+  createTemplateSchema,
+} from "@/api/workflow-template"
+import { AddTemplateStepApiHandler, addTemplateStepSchema, UpdateTemplateStepApiHandler, updateTemplateStepSchema, DeleteTemplateStepApiHandler, deleteTemplateStepSchema, deleteLink, deleteLinkSchema } from "@/api/workflow-template-step"
+import { TemplateState } from "@/types/workflowTypes"
+import { 
+  ExecuteTemplateHandler, 
+  StopExecutionApi, 
+  GetEngineHealthApi,
+  HandleManualTrigger,
+  GetWorkflowExecutionDetailsApi
+} from "@/api/workflow-execution"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
   handleAttachmentUpload,
@@ -1529,6 +1548,42 @@ export const AppRoutes = app
   .post("/workflow/tools/jira/delete-webhook", DeleteJiraWebhookApi)
   .post("/workflow/tools/jira/metadata", GetJiraMetadataApi)
   // Webhook routes moved to before AuthMiddleware (lines 892-893)
+  .get("/workflow/tool-types", GetAvailableToolTypesApi)
+  .get("/workflow/tool-types/:toolType", GetToolTypeSchemaApi)
+  .post(
+    "/workflow/template/create",
+    zValidator("json", createTemplateSchema),
+    CreateTemplateApi
+  )
+  .get("/workflow/template/:templateId", GetTemplateApi)
+  .put("/workflow/template/:templateId", UpdateTemplateApi)
+  .delete("/workflow/template/:templateId", DeleteTemplateApi)
+  .post(
+    "/workflow/template/step/add",
+    zValidator("json", addTemplateStepSchema),
+    AddTemplateStepApiHandler
+  )
+  .put(
+    "/workflow/template/step/update",
+    zValidator("json", updateTemplateStepSchema),
+    UpdateTemplateStepApiHandler
+  )
+  .delete(
+    "/workflow/template/step/delete",
+    zValidator("json", deleteTemplateStepSchema),
+    DeleteTemplateStepApiHandler
+  )
+  .delete(
+    "/workflow/template/step/delete-link",
+    zValidator("json", deleteLinkSchema),
+    deleteLink
+  )
+  .post("/workflow/template/execute", ExecuteTemplateHandler)
+  .post("/workflow/template/activate", (c: Context) => HandleStateChangeTemplateApi(c, TemplateState.ACTIVE))
+  .post("/workflow/template/deactivate", (c: Context) => HandleStateChangeTemplateApi(c, TemplateState.INACTIVE))
+  .get("/workflow/execution/:executionId/details", GetWorkflowExecutionDetailsApi)
+  .post("/workflow/execution/:executionId/stop", StopExecutionApi)
+  .get("/workflow/engine/health", GetEngineHealthApi)
   .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
   .put(
     "/workflow/steps/:stepId",
@@ -1538,6 +1593,7 @@ export const AppRoutes = app
   .post("/workflow/steps/:stepId/complete", CompleteWorkflowStepExecutionApi)
   .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
+  .post("/workflow/:workflowId/manual-trigger/:stepId", HandleManualTrigger)
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)
   .post("/workflow/qa/process", ProcessQAQuestionsApi)
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
@@ -2381,6 +2437,10 @@ app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
+  // Initialize message queue for inter-service communication with execution engine
+  const { messageQueue } = await import("@/execution-engine/message-queue")
+  await messageQueue.initialize()
+  
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
 

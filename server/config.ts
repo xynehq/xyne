@@ -8,10 +8,12 @@ let postgresBaseHost = "0.0.0.0"
 let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
 let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
+let executionEnginePort = process.env.EXECUTION_ENGINE_PORT || 3020
 let host = process.env.HOST || "http://localhost:3000"
 let paddleStatusEndpoint =
   process.env.STATUS_ENDPOINT || "http://localhost:8000/instance_status"
 let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
+let executionEngineHost = process.env.EXECUTION_ENGINE_HOST || "localhost"
 
 // Centralized database URL construction
 function getDatabaseUrl(): string {
@@ -300,4 +302,6 @@ export default {
   langfuseSecretKey,
   langfuseBaseUrl,
   langfuseEnabled,
+  executionEnginePort,
+  executionEngineHost,
 }

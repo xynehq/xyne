@@ -98,7 +98,7 @@ export const setupServiceAccountCronjobs = async () => {
       SyncServiceAccountSchedulerQueue,
       Every20Minutes,
       {},
-      { retryLimit: 0, expireInHours: JobExpiryHours },
+      { retryLimit: 0, expireInSeconds: JobExpiryHours * 3600 },
     )
   } else {
     Logger.info("Using batch service account sync mode (legacy)")
@@ -111,7 +111,7 @@ export const setupServiceAccountCronjobs = async () => {
       SyncServiceAccountSaaSQueue,
       Every10Minutes,
       {},
-      { retryLimit: 0, expireInHours: JobExpiryHours },
+      { retryLimit: 0, expireInSeconds: JobExpiryHours * 3600 },
     )
   }
 
@@ -120,7 +120,7 @@ export const setupServiceAccountCronjobs = async () => {
     SyncGoogleWorkspace,
     Every6Hours,
     {},
-    { retryLimit: 0, expireInHours: JobExpiryHours },
+    { retryLimit: 0, expireInSeconds: JobExpiryHours * 3600 },
   )
 }
 
@@ -157,13 +157,13 @@ const initWorkers = async () => {
     SyncOAuthSaaSQueue,
     Every10Minutes,
     {},
-    { retryLimit: 0, expireInHours: JobExpiryHours },
+    { retryLimit: 0, expireInSeconds: JobExpiryHours * 3600 },
   )
   await boss.schedule(
     CheckDownloadsFolderQueue,
     EveryWeek,
     {},
-    { retryLimit: 0, expireInHours: JobExpiryHours },
+    { retryLimit: 0, expireInSeconds: JobExpiryHours * 3600 },
   )
   // Slack sync scheduling - conditional based on per-user mode
 
@@ -178,7 +178,7 @@ const initWorkers = async () => {
       SyncSlackSchedulerQueue,
       Every20Minutes,
       {},
-      { retryLimit: 0, expireInHours: JobExpiryHours },
+      { retryLimit: 0, expireInSeconds: JobExpiryHours * 3600},
     )
   } else {
     Logger.info("Using batch Slack sync mode (legacy)")
@@ -191,7 +191,7 @@ const initWorkers = async () => {
       SyncSlackQueue,
       Every15Minutes,
       {},
-      { retryLimit: 0, expireInHours: JobExpiryHours },
+      { retryLimit: 0, expireInSeconds: JobExpiryHours * 3600 },
     )
   }
 
@@ -199,14 +199,14 @@ const initWorkers = async () => {
     SyncToolsQueue,
     EveryWeek,
     {},
-    { retryLimit: 0, expireInHours: JobExpiryHours },
+    { retryLimit: 0, expireInSeconds: JobExpiryHours * 3600 },
   )
 
   await boss.schedule(
     CleanupAttachmentsQueue,
     EveryDay,
     {},
-    { retryLimit: 0, expireInHours: JobExpiryHours },
+    { retryLimit: 0, expireInSeconds: JobExpiryHours * 3600 },
   )
 
   await setupServiceAccountCronjobs()
@@ -362,7 +362,7 @@ const initWorkers = async () => {
             },
             {
               retryLimit: 0,
-              expireInHours: JobExpiryHours,
+              expireInSeconds: JobExpiryHours * 3600,
               singletonKey: userEmail,
             },
           )
@@ -555,7 +555,7 @@ const initWorkers = async () => {
             },
             {
               retryLimit: 0,
-              expireInHours: JobExpiryHours,
+              expireInSeconds: JobExpiryHours * 3600,
               singletonKey: userEmail,
             },
           )
@@ -754,6 +754,28 @@ boss.on("error", (error) => {
   console.error(`Queue error: ${error} ${(error as Error).stack}`)
 })
 
-boss.on("monitor-states", (states) => {
-  Logger.info(`Queue States: ${JSON.stringify(states, null, 2)}`)
-})
+// PgBoss 11.x removed monitor-states event - use getQueues() instead
+// Set up periodic queue monitoring
+// const monitorQueues = async () => {
+//   try {
+//     const queues = await boss.getQueues()
+//     if (queues && queues.length > 0) {
+//       const queueStats = queues.map(queue => ({
+//         name: queue.name,
+//         deferredCount: queue.deferredCount || 0,
+//         queuedCount: queue.queuedCount || 0,
+//         activeCount: queue.activeCount || 0,
+//         totalCount: queue.totalCount || 0,
+//       }))
+//       Logger.info(`Queue Stats: ${JSON.stringify(queueStats, null, 2)}`)
+//     }
+//   } catch (error) {
+//     Logger.warn(`Failed to get queue stats: ${error}`)
+//   }
+// }
+
+// // Monitor queues every 10 minutes (600000ms)
+// setInterval(monitorQueues, 600000)
+
+// // Initial monitoring call
+// setTimeout(monitorQueues, 5000) // Wait 5 seconds after startup
