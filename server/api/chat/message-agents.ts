@@ -48,7 +48,7 @@ import {
   type RunState as JAFRunState,
   type Tool,
   type ToolCall,
-  type ToolResult,
+  type ToolResult, 
   type TraceEvent,
 } from "@xynehq/jaf"
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -148,10 +148,12 @@ import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
 
 const {
   defaultBestModel,
+  defaultBestModelAgenticMode,
   defaultFastModel,
   JwtPayloadKey,
   IMAGE_CONTEXT_CONFIG,
 } = config
+
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
@@ -167,6 +169,26 @@ const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
   toolOutputs: [],
   images: [],
 })
+
+function resolveAgenticModelId(
+  requestedModelId?: string | Models
+): Models {
+  const hasAgenticOverride =
+    defaultBestModelAgenticMode && defaultBestModelAgenticMode !== ("" as Models)
+  const fallback = hasAgenticOverride
+    ? (defaultBestModelAgenticMode as Models)
+    : (defaultBestModel as Models)
+  const normalized = (requestedModelId as Models) || fallback
+
+  if (
+    normalized === defaultBestModel ||
+    (hasAgenticOverride && normalized === defaultBestModelAgenticMode)
+  ) {
+    return normalized
+  }
+
+  return fallback
+}
 
 const toToolParameters = (
   schema: ZodTypeAny
@@ -3230,12 +3252,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
       }
     }
 
+    const agenticModelId = resolveAgenticModelId(actualModelId)
     rootSpan.setAttribute("selectedModelId", actualModelId)
+    rootSpan.setAttribute("agenticModelId", agenticModelId)
     rootSpan.setAttribute("reasoningEnabled", isReasoningEnabled)
     rootSpan.setAttribute("webSearchEnabled", enableWebSearch)
     rootSpan.setAttribute("deepResearchEnabled", isDeepResearchEnabled)
-
-    const runModelId = actualModelId
 
     if (typeof toolsList === "string") {
       try {
@@ -3358,7 +3380,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         message,
         fileIds: messageFileIds,
         attachmentMetadata,
-        modelId: runModelId,
+        modelId: agenticModelId,
         agentId: resolvedAgentId ?? undefined,
       })
       chatRecord = bootstrap.chat
@@ -3494,7 +3516,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             agentPrompt: agentPromptForLLM,
             chatId: chatRecord.id as number,
             stopController,
-            modelId: runModelId,
+            modelId: agenticModelId,
           }
         )
         agentContextRef = agentContext
@@ -3855,7 +3877,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           name: "xyne-agent",
           instructions,
           tools: allTools,
-          modelConfig: { name: runModelId },
+          modelConfig: { name: agenticModelId },
         }
 
         // Set up model provider
@@ -4086,7 +4108,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           agentRegistry,
           modelProvider,
           maxTurns: 100,
-          modelOverride: runModelId,
+          modelOverride: agenticModelId,
           onTurnEnd: async ({ turn }) => {
             await runTurnEndReviewAndCleanup(turn)
           },
@@ -4248,7 +4270,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           {
             runId,
             chatId: agentContext.chat.externalId,
-            modelOverride: runModelId,
+            modelOverride: agenticModelId,
             email,
           },
           "[MessageAgents] Starting assistant call"
@@ -4714,7 +4736,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   imageCitations,
                   message: processMessage(answer, citationMap),
                   thinking: thinkingLog,
-                  modelId: runModelId,
+                  modelId: agenticModelId,
                   cost: totalCost.toString(),
                   tokensUsed: totalTokens,
                 } as unknown as Omit<InsertMessage, "externalId">
@@ -5147,7 +5169,7 @@ async function runDelegatedAgentWithMessageAgents(
   params: DelegatedAgentRunParams
 ): Promise<ToolOutput> {
   const logger = loggerWithChild({ email: params.userEmail })
-  const delegateModelId = defaultBestModel
+  const delegateModelId = resolveAgenticModelId(defaultBestModel)
   try {
     throwIfStopRequested(params.stopSignal)
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
