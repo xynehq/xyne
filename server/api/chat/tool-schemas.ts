@@ -17,6 +17,7 @@ import {
   SubTaskSchema,
 } from "./agent-schemas"
 import type { Entity, MailParticipant } from "@xyne/vespa-ts/types"
+import { timeRangeSchema } from "./tools/schemas"
 
 export type { ListCustomAgentsInput, RunPublicAgentInput } from "./agent-schemas"
 
@@ -54,12 +55,6 @@ export interface ToolExample<TInput, TOutput> {
 // ============================================================================
 // BASE SCHEMAS
 // ============================================================================
-
-// Common timestamp range schema
-export const TimestampRangeSchema = z.object({
-  startTime: z.string().optional().describe("ISO 8601 date string (e.g., '2024-01-01' or '2024-01-01T00:00:00Z')"),
-  endTime: z.string().optional().describe("ISO 8601 date string (e.g., '2024-12-31' or '2024-12-31T23:59:59Z')"),
-}).optional()
 
 // Pagination schema
 export const PaginationSchema = z.object({
@@ -179,7 +174,7 @@ export const SearchGmailInputSchema = z.object({
   query: z.string().describe("Email search query"),
   participants: MailParticipantSchema,
   labels: z.array(z.string()).optional().describe("Gmail labels to filter by"),
-  timeRange: TimestampRangeSchema,
+  timeRange: timeRangeSchema,
   limit: z.number().optional(),
   offset: z.number().optional(),
   sortBy: SortDirectionSchema,
@@ -193,7 +188,7 @@ export const SearchDriveInputSchema = z.object({
   query: z.string().describe("Drive file search query"),
   owner: z.string().email().optional().describe("Filter by file owner email"),
   filetype: z.array(z.string()).optional().describe("File entity types (e.g., 'document', 'spreadsheet')"),
-  timeRange: TimestampRangeSchema,
+  timeRange: timeRangeSchema,
   limit: z.number().optional(),
   offset: z.number().optional(),
   sortBy: SortDirectionSchema,
@@ -255,7 +250,7 @@ export const SearchCalendarInputSchema = z.object({
   query: z.string().describe("Calendar event search query"),
   attendees: z.array(z.string().email()).optional().describe("Filter by attendee emails"),
   status: z.enum(["confirmed", "tentative", "cancelled"]).optional().describe("Event status"),
-  timeRange: TimestampRangeSchema,
+  timeRange: timeRangeSchema,
   limit: z.number().optional(),
   offset: z.number().optional(),
   sortBy: SortDirectionSchema,
