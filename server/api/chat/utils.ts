@@ -453,34 +453,34 @@ export const extractImageFileNames = (
   for (const match of matches) {
     let imageContent = match[1].trim()
     try {
-      if (imageContent) {
-        // Split by newlines and spaces to handle various formatting
-        const individualFileNames = imageContent
-          .split(/\s+/)
-          .map((name) => name.trim())
-          .filter((name) => name.length > 0)
+      if (!imageContent) {
+        continue
+      }
 
-        for (const fileName of individualFileNames) {
-          const lastUnderscoreIndex = fileName.lastIndexOf("_")
-          if (lastUnderscoreIndex === -1) {
-            console.warn(`Invalid image file name format: ${fileName}`)
-            continue
-          }
+      // Extract only tokens that look like actual image references e.g. <docId>_<index>[.<ext>]
+      const individualFileNames =
+        imageContent.match(/[A-Za-z0-9._-]+_\d+(?:\.[A-Za-z0-9]+)?/g) || []
 
-          const docId = fileName.substring(0, lastUnderscoreIndex)
+      if (individualFileNames.length === 0) {
+        continue
+      }
 
-          const docIndex =
-            results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
-
-          if (docIndex === -1) {
-            console.warn(
-              `No matching document found for docId: ${docId} in results for image content extraction.`,
-            )
-            continue
-          }
-
-          imageFileNames.push(`${docIndex}_${fileName}`)
+      for (const fileName of individualFileNames) {
+        const lastUnderscoreIndex = fileName.lastIndexOf("_")
+        if (lastUnderscoreIndex === -1) {
+          continue
         }
+
+        const docId = fileName.substring(0, lastUnderscoreIndex)
+
+        const docIndex =
+          results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
+
+        if (docIndex === -1) {
+          continue
+        }
+
+        imageFileNames.push(`${docIndex}_${fileName}`)
       }
     } catch (error) {
       console.error(

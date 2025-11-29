@@ -44,7 +44,8 @@ export const searchDriveFilesTool: Tool<DriveSearchToolParams, Ctx> = {
     params: DriveSearchToolParams & { excludedIds?: string[] },
     context: Ctx,
   ) {
-    const { email, agentPrompt } = context
+    const email = context.user.email
+    const agentPrompt = context.agentPrompt
 
     try {
       if (!email) {
@@ -115,7 +116,7 @@ export const searchDriveFilesTool: Tool<DriveSearchToolParams, Ctx> = {
         docIds: driveSourceIds,
       })
 
-      const response = await formatSearchToolResponse(searchResults, {
+      const fragments = await formatSearchToolResponse(searchResults, {
         query: params.query,
         app: GoogleApps.Drive,
         timeRange: timeRange,
@@ -124,10 +125,7 @@ export const searchDriveFilesTool: Tool<DriveSearchToolParams, Ctx> = {
         searchType: "Drive file",
       })
 
-      return ToolResponse.success(response.result, {
-        toolName: "searchDriveFiles",
-        contexts: response.contexts,
-      })
+      return ToolResponse.success(fragments)
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(

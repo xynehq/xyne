@@ -1,21 +1,16 @@
-import { z, type ZodRawShape, type ZodType } from "zod"
+import { z, type ZodType } from "zod"
 import type { Tool } from "@xynehq/jaf"
 import { ToolResponse } from "@xynehq/jaf"
-import type { MinimalAgentFragment } from "./types"
+import type { MinimalAgentFragment, Citation } from "./types"
+import type { AgentRunContext } from "./agent-schemas"
 import { answerContextMapFromFragments } from "@/ai/context"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import { Apps } from "@xyne/vespa-ts/types"
 
 const Logger = getLogger(Subsystem.Chat).child({ module: "jaf-adapter" })
 
-export type JAFAdapterCtx = {
-  email: string
-  userCtx: string
-  agentPrompt?: string
-  userMessage: string
-}
-
-type ToolSchemaParameters = Tool<unknown, JAFAdapterCtx>["schema"]["parameters"]
+type ToolSchemaParameters = Tool<unknown, AgentRunContext>["schema"]["parameters"]
 
 const toToolSchemaParameters = (schema: ZodType): ToolSchemaParameters =>
   schema as unknown as ToolSchemaParameters
@@ -61,13 +56,17 @@ export type FinalToolsList = Record<
   {
     tools: Array<MCPToolItem>
     client: MCPToolClient
+    metadata?: {
+      name?: string
+      description?: string
+    }
   }
 >
 
 export function buildMCPJAFTools(
   finalTools: FinalToolsList,
-): Tool<unknown, JAFAdapterCtx>[] {
-  const tools: Tool<unknown, JAFAdapterCtx>[] = []
+): Tool<unknown, AgentRunContext>[] {
+  const tools: Tool<unknown, AgentRunContext>[] = []
   for (const [connectorId, info] of Object.entries(finalTools)) {
     for (const t of info.tools) {
       const toolName = t.toolName
@@ -132,6 +131,27 @@ export function buildMCPJAFTools(
                 { err: error, toolName },
                 "Could not parse MCP tool response",
               )
+            }
+
+            if (newFragments.length === 0 && formattedContent) {
+              const syntheticSource: Citation = {
+                docId: connectorId,
+                title: info.metadata?.name || `Connector ${connectorId}`,
+                url: "",
+                app: Apps.MCP,
+                entity: {
+                  type: "mcp",
+                  connectorId,
+                  name: info.metadata?.name || connectorId,
+                } as unknown as Citation["entity"],
+              }
+              const syntheticId = `${connectorId}:${toolName}:${Date.now()}`
+              newFragments.push({
+                id: syntheticId,
+                content: formattedContent,
+                source: syntheticSource,
+                confidence: 0.7,
+              })
             }
 
             return ToolResponse.success(formattedContent, {

@@ -185,22 +185,24 @@ function slackTs(ts: any) {
   return ts.replace(".", "").padEnd(16, "0")
 }
 
+export interface HandleSendOptions {
+  messageToSend: string
+  metadata?: AttachmentMetadata[]
+  selectedSources?: string[]
+  agentId?: string | null
+  toolsList?: ToolsListItem[]
+  selectedModel?: string
+  isFollowup?: boolean
+  selectedKbItems?: string[]
+}
+
 interface ChatBoxProps {
   role: UserRole
   query: string
   setQuery: (query: string) => void
   setIsAgenticMode: Dispatch<SetStateAction<boolean>>
   isAgenticMode: boolean
-  handleSend: (
-    messageToSend: string,
-    metadata?: AttachmentMetadata[],
-    selectedSources?: string[],
-    agentId?: string | null,
-    toolsList?: ToolsListItem[],
-    selectedModel?: string,
-    isFollowup?: boolean,
-    selectedKbItems?: string[],
-  ) => void // Expects agentId string and optional fileIds
+  handleSend: (options: HandleSendOptions) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
   handleStop?: () => void
@@ -2167,15 +2169,16 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           deepResearch: selectedCapability === "deepResearch",
         }
 
-        handleSend(
-          htmlMessage,
-          attachmentsMetadata,
-          activeSourceIds.length > 0 ? activeSourceIds : undefined,
-          persistedAgentId,
-          toolsListToSend,
-          JSON.stringify(modelConfig), // Send model config as JSON string
-          isFollowUp,
-        )
+        handleSend({
+          messageToSend: htmlMessage,
+          metadata: attachmentsMetadata,
+          selectedSources:
+            activeSourceIds.length > 0 ? activeSourceIds : undefined,
+          agentId: persistedAgentId,
+          toolsList: toolsListToSend,
+          selectedModel: JSON.stringify(modelConfig), // Send model config as JSON string
+          isFollowup: isFollowUp,
+        })
 
         // Clear the input and attached files after sending
         if (inputRef.current) {

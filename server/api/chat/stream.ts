@@ -13,6 +13,7 @@ export interface ActiveStreamState {
     clarificationId: string,
     selectedOptionId: { selectedOptionId: string; selectedOption: string; customInput?: string },
   ) => void
+  stopController?: AbortController
 }
 
 // Map to store active streams: Key = "chatId", Value = ActiveStreamState

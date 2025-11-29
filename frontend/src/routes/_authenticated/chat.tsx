@@ -85,11 +85,15 @@ import { FollowUpQuestions } from "@/components/FollowUpQuestions"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
 import { ToastAction } from "@/components/ui/toast"
-import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
+import {
+  ChatBox,
+  ChatBoxRef,
+  type HandleSendOptions,
+} from "@/components/ChatBox"
 import React from "react"
 // import { jsonToHtmlMessage } from "@/lib/messageUtils"
 import { CLASS_NAMES } from "@/lib/constants"
-import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
+import { Reference, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
@@ -683,15 +687,15 @@ export const ChatPage = ({
       }
 
       // Call handleSend, passing agentId from chatParams if available
-      handleSend(
+      handleSend({
         messageToSend,
-        chatParams.metadata,
-        sourcesArray,
-        chatParams.agentId,
-        chatParams.toolsList,
-        chatParams.selectedModel, // Use selectedModel from URL params
-        false, // isFollowup = false for initial query
-      )
+        metadata: chatParams.metadata,
+        selectedSources: sourcesArray,
+        agentId: chatParams.agentId,
+        toolsList: chatParams.toolsList,
+        selectedModel: chatParams.selectedModel, // Use selectedModel from URL params
+        isFollowup: false, // isFollowup = false for initial query
+      })
       hasHandledQueryParam.current = true
       router.navigate({
         to: "/chat",
@@ -939,15 +943,16 @@ export const ChatPage = ({
     setTimeout(() => adjustBottomSpaceForContent(true), 150)
   }, [adjustBottomSpaceForContent])
 
-  const handleSend = async (
-    messageToSend: string,
-    metadata?: AttachmentMetadata[],
-    selectedSources?: string[],
-    agentIdFromChatBox?: string | null,
-    toolsList?: ToolsListItem[],
-    selectedModel?: string,
-    isFollowUp?: boolean,
-  ) => {
+  const handleSend = async ({
+    messageToSend,
+    metadata,
+    selectedSources,
+    agentId,
+    toolsList,
+    selectedModel,
+    isFollowup,
+    selectedKbItems,
+  }: HandleSendOptions) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
     setUserHasScrolled(false)
@@ -969,8 +974,8 @@ export const ChatPage = ({
       }
     })
 
-    // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
-    const agentIdToUse = agentIdFromChatBox || chatParams.agentId
+    // Use agentId from options if provided, otherwise fallback to chat params
+    const agentIdToUse = agentId ?? chatParams.agentId
 
     try {
       await startStream(
@@ -981,7 +986,8 @@ export const ChatPage = ({
         toolsList,
         metadata,
         selectedModel,
-        isFollowUp,
+        isFollowup,
+        selectedKbItems || [],
       )
     } catch (error) {
       // If there's an error, clear the optimistically added message from cache
@@ -2126,7 +2132,7 @@ interface VirtualizedMessagesProps {
   handleShowRagTrace: (messageId: string) => void
   handleFeedback?: (messageId: string, feedback: MessageFeedback) => void
   handleShare?: () => void
-  handleSend: (message: string) => void
+  handleSend: (options: HandleSendOptions) => void
   scrollToBottom: () => void
   chatId: string | null
   userHasScrolled: boolean

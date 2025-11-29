@@ -11,7 +11,11 @@ import { useTheme } from "@/components/ThemeContext"
 import { useToast } from "@/hooks/use-toast"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
-import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
+import {
+  ChatBox,
+  ChatBoxRef,
+  type HandleSendOptions,
+} from "@/components/ChatBox"
 import { api } from "@/api"
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import { Copy, ThumbsUp, ThumbsDown } from "lucide-react"
@@ -32,7 +36,6 @@ import {
   processMessage,
   createTableComponents,
 } from "@/utils/chatUtils.tsx"
-import { ToolsListItem } from "@/types"
 import { ImageCitationComponent } from "../routes/_authenticated/chat"
 import { createCitationLink, Citation } from "@/components/CitationLink"
 import Retry from "@/assets/retry.svg"
@@ -655,16 +658,13 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
 
   // Handle sending messages
   // Handle sending messages
-  const handleSend = async (
-    messageToSend: string,
-    metadata?: AttachmentMetadata[],
-    selectedSources: string[] = [],
-    agentIdFromChatBox?: string | null,
-    toolsList?: ToolsListItem[] | null,
-    selectedModel?: string,
-    isFollowUp: boolean = false,
-    selectedKbItems: string[] = [],
-  ) => {
+  const handleSend = async ({
+    messageToSend,
+    metadata,
+    selectedModel,
+    isFollowup = false,
+    selectedKbItems = [],
+  }: HandleSendOptions) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
     setUserHasScrolled(false)
@@ -701,7 +701,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
         [],
         metadata,
         selectedModel,
-        isFollowUp,
+        isFollowup,
         kbItemsWithChat,
       )
     } catch (error) {

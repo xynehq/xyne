@@ -44,6 +44,7 @@ export const executeAgentSchema = z.object({
   isStreamable: z.boolean().optional().default(false),
   temperature: z.number().min(0).max(2).optional(),
   max_new_tokens: z.number().positive().optional(),
+  parentTurn: z.number().int().nonnegative().optional(),
   attachmentFileIds: z.array(z.string()).optional().default([]),        // For images: ["att_123", "att_456"]
   nonImageAttachmentFileIds: z.array(z.string()).optional().default([]), // For PDFs: ["att_789"]
 })
@@ -63,6 +64,7 @@ type ExecuteAgentSuccess = {
   title: string
   agentName: string
   modelId: string
+  parentTurn?: number
 }
 
 type StreamingExecuteAgentResponse = ExecuteAgentSuccess & {
@@ -120,16 +122,17 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     const tracer = getTracer("executeAgent")
     const executeAgentSpan = tracer.startSpan('executeAgent')
     const {
-      agentId,
-      userQuery,
-      isStreamable = true,
-      temperature,
-      max_new_tokens,
-      workspaceId,
-      userEmail,
-      attachmentFileIds = [],
-      nonImageAttachmentFileIds = [],
-    } = validatedParams
+    agentId,
+    userQuery,
+    isStreamable = true,
+    temperature,
+    max_new_tokens,
+    parentTurn,
+    workspaceId,
+    userEmail,
+    attachmentFileIds = [],
+    nonImageAttachmentFileIds = [],
+  } = validatedParams
 
     Logger.info(`🚀 executeAgent called with parameters:`)
     Logger.info(`   - agentId: ${agentId}`)
@@ -387,6 +390,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
           title,
           agentName: agent.name,
           modelId: actualModel,
+          parentTurn,
         }
       } catch (providerError) {
         Logger.error(providerError, "❌ Error creating streaming iterator")
@@ -444,6 +448,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         response: response,
         agentName: agent.name,
         modelId: actualModel,
+        parentTurn,
       }
     }
 
