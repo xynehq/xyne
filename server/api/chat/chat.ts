@@ -7845,6 +7845,7 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
     // Fetch agent details if agentId is provided
     let agentName: string | undefined
     let agentScopesText: string | undefined
+    let agentDescription: string | undefined
     if (agentId) {
       try {
         const agent = await getAgentByExternalIdWithPermissionCheck(
@@ -7856,6 +7857,7 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
         if (agent) {
           agentName = agent.name
           agentScopesText = formatAgentScopesText(agent)
+          agentDescription = agent.description ?? undefined
         }
       } catch (error) {
         // Log error but don't fail the request - just proceed without agent context
@@ -7892,12 +7894,11 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
       .join("\n\n")
 
     // Extract last user message and last assistant message for focus
-    const lastUserMsg = [...contextMessages]
-      .reverse()
-      .find((m) => m.messageRole === "user")
-    const lastAssistantMsg = [...contextMessages]
-      .reverse()
-      .find((m) => m.messageRole === "assistant")
+    const reversedMessages = [...contextMessages].reverse();
+    const lastUserMsg = reversedMessages.find((m) => m.messageRole === "user");
+    const lastAssistantMsg = reversedMessages.find(
+      (m) => m.messageRole === "assistant",
+    );
 
     // Generate user context
     const ctx = userContext(userAndWorkspace)
@@ -7906,6 +7907,7 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
       ctx,
       agentName,
       agentScopesText,
+      agentDescription,
     )
 
     const userPrompt = `Here is the conversation thread (oldest first):
