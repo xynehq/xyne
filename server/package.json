@@ -115,7 +115,7 @@
     "pdfjs-dist": "^5.3.31",
     "pg-boss": "^10.1.5",
     "picocolors": "^1.1.1",
-    "pino": "^9.6.0",
+    "pino": "9.6.0",
     "pino-http": "^10.3.0",
     "pino-pretty": "^13.0.0",
     "playwright": "^1.49.1",

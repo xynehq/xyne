@@ -454,7 +454,7 @@ ${userContext}`
 
   const agentAwareSection = agentName && agentScopesText ? `
 ### Data this agent can access
-The "${agentName}" "(${agentDescription})" agent can ONLY use:
+The "${agentName}"${agentDescription ? ` (${agentDescription})` : ""} agent can ONLY use:
 ${agentScopesText}` : `
 ### System Context
 This is a workplace data search system with access to:
