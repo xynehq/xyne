@@ -1,15 +1,4 @@
-import config from "../config"
-import path from "path"
-import fs from "fs/promises" // Using Node.js fs/promises for broader compatibility
-import type {
-  VespaSearchResponse,
-  VespaUser,
-  VespaFile,
-  VespaEvent,
-  VespaSchema,
-  VespaUserQueryHistory,
-  VespaGetResult,
-} from "@xyne/vespa-ts/types" // VespaFile is already here
+import type { VespaSearchResponse, VespaSchema } from "@xyne/vespa-ts/types"
 import {
   // VespaSchema, // No longer imported as a value
   fileSchema,
@@ -26,20 +15,23 @@ import {
 } from "@xyne/vespa-ts/types"
 
 async function getVespaSchemas(): Promise<string[]> {
-  // Returns prefixed names e.g. "my_content.file"
-  // Determine path relative to the current file's directory
-  const scriptDir = path.dirname(new URL(import.meta.url).pathname)
-  const schemasDir = path.join(scriptDir, "../vespa/schemas")
-  try {
-    const files = await fs.readdir(schemasDir)
-    const schemaNames = files
-      .filter((file) => file.endsWith(".sd"))
-      .map((file) => `my_content.${file.replace(".sd", "")}`) // No incorrect cast here
-    return schemaNames
-  } catch (error) {
-    console.error(`Error reading Vespa schemas directory ${schemasDir}:`, error)
-    return []
-  }
+  const schemaNames = [
+    "file",
+    "user",
+    "mail",
+    "mail_attachment",
+    "event",
+    "chat_message",
+    "chat_container",
+    "chat_user",
+    "chat_team",
+    "chat_attachment",
+    "datasource",
+    "datasource_file",
+    "kb_items",
+    "user_query",
+  ]
+  return schemaNames.map((name) => `my_content.${name}`)
 }
 
 import VespaClient from "@xyne/vespa-ts/client" // Import the Vespa client
