@@ -60,6 +60,9 @@ export enum GoogleAIModels {
 
 export enum LiteLLMModels {
   GLM_4_5 = "glm-45-fp8",
+  Claude_Sonnet_4 = "claude-sonnet-4",
+  Gemini_2_5_Pro = "gemini-2.5-pro",
+  Gemini_2_5_Flash = "gemini-2.5-flash",
 }
 
 export enum VertexAIModels {
@@ -165,6 +168,9 @@ export enum Models {
   // Vertex_Gemini_1_5_Pro_002 = VertexAIModels.Gemini_1_5_Pro_002,
   // Vertex_Gemini_1_5_Pro_Exp_0827 = VertexAIModels.Gemini_1_5_Pro_Exp_0827,
   GLM_4_5 = LiteLLMModels.GLM_4_5, // GLM 4.5
+  LiteLLM_Claude_Sonnet_4 = LiteLLMModels.Claude_Sonnet_4,
+  LiteLLM_Gemini_2_5_Pro = LiteLLMModels.Gemini_2_5_Pro,
+  LiteLLM_Gemini_2_5_Flash = LiteLLMModels.Gemini_2_5_Flash,
 }
 
 // Model availability mapping - which providers support which models
@@ -196,6 +202,9 @@ export const ModelProviderAvailability: Record<string, AIProviders[]> = {
   "GPT-4": [AIProviders.OpenAI],
   "Gemini 2.0 Flash Thinking": [AIProviders.GoogleAI],
   "GLM 4.5": [AIProviders.LiteLLM],
+  "LiteLLM Claude Sonnet 4": [AIProviders.LiteLLM],
+  "LiteLLM Gemini 2.5 Pro": [AIProviders.LiteLLM],
+  "LiteLLM Gemini 2.5 Flash": [AIProviders.LiteLLM],
 }
 
 // Model display names enum - proper enum instead of string to string mapping
@@ -262,6 +271,9 @@ export enum ModelDisplayNames {
   // VERTEX_GEMINI_1_5_PRO_002 = "Gemini 1.5 Pro 002",
   // VERTEX_GEMINI_1_5_PRO_EXP_0827 = "Gemini 1.5 Pro Exp 0827",
   LITELLM_GLM_4_5 = "GLM 4.5", // GLM 4.5
+  LITELLM_CLAUDE_SONNET_4 = "Claude Sonnet 4",
+  LITELLM_GEMINI_2_5_PRO = "Gemini 2.5 Pro",
+  LITELLM_GEMINI_2_5_FLASH = "Gemini 2.5 Flash",
 }
 
 export enum QueryCategory {

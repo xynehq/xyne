@@ -442,25 +442,72 @@ If information is missing, unclear, or the query lacks context:
 // This prompt is used to provide a structured response to user queries based on the retrieved context and user information in JSON format.
 export const generateFollowUpQuestionsSystemPrompt = (
   userContext: string,
-) => `You are an assistant for an AI-powered workspace data retrieval system. Generate 3 concise, relevant follow-up questions based on the user's conversation history with the data search system.
+  agentName?: string,
+  agentScopesText?: string,
+) => {
+  const basePrompt = `You are an assistant that suggests 3 genuinely useful next-step follow-up questions
+for a user interacting with ${
+    agentName ? `the "${agentName}" agent` : "a workspace data search system"
+  }.
 
-**Context of the user:** ${userContext}
+### Context of the user talking to you
+${userContext}`
 
-**System Context:** This is a workplace data search system with access to:
+  const agentAwareSection =
+    agentName && agentScopesText
+      ? `
+### Data this agent can access
+The "${agentName}" agent can ONLY use:
+${agentScopesText}`
+      : `
+### System Context
+This is a workplace data search system with access to:
 - Files (documents, spreadsheets, presentations)
 - Emails and email metadata
 - Calendar events and meetings
 - User profiles and contacts
-- Slack messages and workspace data
+- Slack messages and workspace data`
 
+  const constraints =
+    agentName && agentScopesText
+      ? `
+Constraints:
+- At most **one** follow-up can be a pure "find more documentation / guide" type.
+- At least **one** follow-up must be about **clarifying or deepening understanding** 
+  (e.g., examples, edge cases, impact, trade-offs, "how does this interact with X?").
+- At least **one** follow-up must be **action/decision oriented**
+  (e.g., "What are the next steps to…", "Show related incidents where…", "Find implementations using…").
+- All 3 questions must target **different but related angles** of the topic (avoid rephrasing the same intent).
+
+Hard rules:
+- Do NOT ask for data or actions that clearly cannot be satisfied by the scopes.
+- Do NOT invent new domains (e.g., "customer support tickets") if the conversation and scopes never mentioned them.
+- Do NOT ask meta questions such as "What would you like to search for next?" or "Do you want to explore X?". Each question must itself be a concrete, runnable search query.`
+      : `
 **Guidelines for Follow-up Questions:**
 1. **Natural User Questions**: Generate questions that sound like natural user queries, using phrases like "what", "show me", "find", etc.
-2. **No Meta Questions**: Do NOT ask users what they want to search for. Instead, suggest specific things they could search for
-3. **Conversational**: Make questions sound like how users would naturally ask (e.g., "what emails did I get from..." instead of "emails from...")
-4. **Immediately Actionable**: Each question should be a complete search query ready to execute
-5. **Diverse Angles**: Cover different data types or search approaches related to the conversation topic
-6. **Temporal Awareness**: Include time-based queries when relevant (recent, past, upcoming)
+2. **No Meta Questions**: Do NOT ask users what they want to search for. Instead, suggest specific things they could search for.
+3. **Conversational**: Make questions sound like how users would naturally ask (e.g., "what emails did I get from..." instead of "emails from...").
+4. **Immediately Actionable**: Each question should be a complete search query ready to execute.
+5. **Diverse Angles**: Cover different data types or search approaches related to the conversation topic. Avoid asking three variations of the same thing.
+6. **Temporal Awareness**: Include time-based queries when relevant (recent, past, upcoming).`
 
+  const examples =
+    agentName && agentScopesText
+      ? `
+Good follow-ups (adapt to the actual topic):
+- "Show examples where this API was used in real flows."
+- "Find incidents or tickets where this issue caused failures."
+- "What other modules or services depend on this component?"
+- "Show recent changes or PRs related to this feature."
+- "Find design docs that compare this solution with alternatives."
+
+Bad follow-ups (avoid):
+- Asking only for "more documentation" repeatedly.
+- Asking about tools/data this agent doesn't have (e.g., emails if not in scope).
+- Very generic things like "Show everything related to payments".
+- Meta questions like "What do you want to search for next?" or "Should I look for more docs?".`
+      : `
 **Question Categories to Generate:**
 - Related people searches: "what documents did John Smith share recently?"
 - Temporal searches: "what are the latest project updates this week?"
@@ -469,16 +516,6 @@ export const generateFollowUpQuestionsSystemPrompt = (
 - Meeting searches: "what meetings did we have about product launch?"
 - File searches: "what presentations did Sarah create?"
 - Status searches: "what are the deadline updates from January?"
-
-**Response Format:**
-Return exactly 3 follow-up questions in a JSON array format:
-{
-  "followUpQuestions": [
-    "Specific search query users can click",
-    "Another direct search query", 
-    "Third actionable search query"
-  ]
-}
 
 **Example Good Questions (Direct Search Queries):**
 - "What emails did I receive from the project team recently?"
@@ -491,11 +528,43 @@ Return exactly 3 follow-up questions in a JSON array format:
 **Example BAD Questions (Meta Questions - AVOID):**
 - "What specific type of workspace data do you need?"
 - "Can I help you search for recent files or emails?"
-- "Would you like to explore your calendar or contacts?"
+- "Would you like to explore your calendar or contacts?"`
+
+  return `${basePrompt}
+${agentAwareSection}
+
+Your job:
+- Read the conversation.
+- Infer what the user is actually trying to achieve right now.
+- Propose 3 follow-up questions that:
+  - Are **strongly grounded** in this conversation (not generic suggestions).
+  - Are **clearly answerable** using ONLY the data in the ${
+    agentName && agentScopesText ? "scopes" : "available system"
+  }.
+  - Help the user gather **more knowledge**, clarify requirements, or move towards a decision – not just "find another doc".
+
+Before finalizing each question:
+- Perform a quick internal **answerability check**:
+  - If a question would obviously require tools, data sources, or agents that are not described above, discard it and replace it with one that is realistically answerable.
+- Ensure that the three questions are **meaningfully different** from one another.
+
+${constraints}
+${examples}
+
+**Response Format:**
+Return exactly 3 follow-up questions in a JSON array format:
+{
+  "followUpQuestions": [
+    "First question...",
+    "Second question...",
+    "Third question..."
+  ]
+}
 
 **CRITICAL:** Generate ONLY natural, conversational search questions that users would actually ask.
 
 Do not include explanatory text outside the JSON structure. Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.`
+}
 
 export const baselinePromptJson = (
   userContext: string,

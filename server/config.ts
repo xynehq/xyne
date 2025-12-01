@@ -181,8 +181,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["VERTEX_BEST_MODEL"] as Models)
     : Models.Vertex_Claude_Sonnet_4 // Default best model
   sqlInferenceModel = Models.Vertex_Claude_Sonnet_4
-}
-if (process.env["LITELLM_API_KEY"] && process.env["LITELLM_MODEL"]) {
+} else if (process.env["LITELLM_API_KEY"]) {
   if (process.env["LITELLM_BASE_URL"]) {
     if (!isURLValid(process.env["LITELLM_BASE_URL"])) {
       console.warn(`Configuration Warning : Encountered invalid base url`)
@@ -191,8 +190,17 @@ if (process.env["LITELLM_API_KEY"] && process.env["LITELLM_MODEL"]) {
     }
   }
   LiteLLMApiKey = process.env["LITELLM_API_KEY"]
-  LiteLLMModel = process.env["LITELLM_MODEL"]
-  defaultBestModelAgenticMode = LiteLLMModel as Models
+  defaultBestModelAgenticMode = process.env["LITELLM_BEST_AGENTIC_MODEL"] 
+  ? (process.env["LITELLM_BEST_AGENTIC_MODEL"] as Models)
+  : Models.GLM_4_5
+  // Set default models for LiteLLM (no longer requiring LITELLM_MODEL to be set)
+  defaultFastModel = process.env["LITELLM_FAST_MODEL"]
+    ? (process.env["LITELLM_FAST_MODEL"] as Models)
+    : Models.LiteLLM_Gemini_2_5_Flash// Default fast model
+  defaultBestModel = process.env["LITELLM_BEST_MODEL"]
+    ? (process.env["LITELLM_BEST_MODEL"] as Models)
+    : Models.LiteLLM_Claude_Sonnet_4 // Default best model
+  sqlInferenceModel = Models.LiteLLM_Claude_Sonnet_4
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"

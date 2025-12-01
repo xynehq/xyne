@@ -1656,6 +1656,7 @@ export const ChatPage = ({
                 clarificationRequest={clarificationRequest}
                 waitingForClarification={waitingForClarification}
                 provideClarification={provideClarification}
+                agentId={data?.chat?.agentId ?? null}
               />
               {showRagTrace && chatId && selectedMessageId && (
                 <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
@@ -2154,6 +2155,7 @@ interface VirtualizedMessagesProps {
     selectedOptionLabel: string,
     customInput?: string,
   ) => void
+  agentId?: string | null
 }
 
 const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
@@ -2200,6 +2202,7 @@ const VirtualizedMessages = React.forwardRef<
       clarificationRequest,
       waitingForClarification,
       provideClarification,
+      agentId,
     },
     ref,
   ) => {
@@ -2503,6 +2506,7 @@ const VirtualizedMessages = React.forwardRef<
                         }}
                         isStreaming={isStreaming || retryIsStreaming}
                         onQuestionsLoaded={onFollowUpQuestionsLoaded}
+                        agentId={agentId ?? null}
                       />
                     )}
                   </Fragment>
