@@ -170,6 +170,9 @@ const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
   images: [],
 })
 
+const reviewsAllowed = (context: AgentRunContext): boolean =>
+  !context.review.lockedByFinalSynthesis
+
 function resolveAgenticModelId(
   requestedModelId?: string | Models
 ): Models {
@@ -789,6 +792,7 @@ function buildFinalSynthesisPayload(
 
 ### Evidence Intake
 - Prioritize the highest-signal fragments, but pull any supporting fragment that improves accuracy.
+- Only draw on context that directly answers the user's question; ignore unrelated fragments even if they were retrieved earlier.
 - Treat delegated-agent outputs as citeable fragments; reference them like any other context entry.
 - Describe evidence gaps plainly before concluding; never guess.
 - Extract actionable details from provided images and cite them via their fragment indices.
@@ -971,10 +975,11 @@ function initializeAgentContext(
     review: {
       lastReviewTurn: null,
       reviewFrequency: 5,
-      lastReviewSummary: null,
       lastReviewResult: null,
       outstandingAnomalies: [],
       clarificationQuestions: [],
+      lockedByFinalSynthesis: false,
+      lockedAtTurn: null,
       cachedPlanSummary: undefined,
       cachedContextSummary: undefined,
     },
@@ -1062,7 +1067,6 @@ async function handleReviewOutcome(
   focus: AutoReviewInput["focus"],
   reasoningEmitter?: ReasoningEmitter
 ): Promise<void> {
-  context.review.lastReviewSummary = reviewResult.notes
   context.review.lastReviewResult = reviewResult
   context.review.lastReviewTurn = iteration
   context.ambiguityResolved = reviewResult.ambiguityResolved
@@ -2302,6 +2306,7 @@ async function runReviewLLM(
 - Evaluate the current plan to see if it still fits the evidence gathered from the tool calls; suggest plan changes when necessary.
 - Detect anomalies (unexpected behaviors, contradictory data, missing outputs, or unresolved ambiguities) and call them out explicitly. If intent remains unclear, set ambiguityResolved=false and include the ambiguity notes inside the anomalies array.
 ${delegationNote}
+- When the available context is already relevant and sufficient  and it meets all the requirement of user's ask , set planChangeNeeded=true and use planChangeReason to state that the plan should pivot toward final synthesis because the evidence is complete.
 - Set recommendation to "gather_more" when required evidence or data is missing, "clarify_query" when ambiguity remains unresolved, and "replan" only when the current plan is no longer viable.
 - Always set ambiguityResolved=false whenever outstanding clarifications exist or anomalies highlight missing/contradictory information; otherwise leave it true.
 Respond strictly in JSON matching this schema: ${JSON.stringify({
@@ -2798,6 +2803,18 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
     },
     async execute(_args, context) {
       const mutableContext = mutableAgentContext(context)
+      if (!mutableContext.review.lockedByFinalSynthesis) {
+        mutableContext.review.lockedByFinalSynthesis = true
+        mutableContext.review.lockedAtTurn =
+          mutableContext.turnCount ?? MIN_TURN_NUMBER
+        loggerWithChild({ email: context.user.email }).info(
+          {
+            chatId: context.chat.externalId,
+            turn: mutableContext.review.lockedAtTurn,
+          },
+          "[MessageAgents][FinalSynthesis] Review lock activated after synthesis tool call."
+        )
+      }
       if (
         mutableContext.finalSynthesis.requested &&
         mutableContext.finalSynthesis.completed
@@ -3008,8 +3025,13 @@ function buildAgentInstructions(
   const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
   const attachmentDirective = buildAttachmentDirective(context)
   const promptAddendum = buildAgentPromptAddendum()
-  const reviewSummaryBlock = context.review.lastReviewSummary
-    ? `<last_review_summary>\n${context.review.lastReviewSummary}\n</last_review_summary>\n`
+  const reviewResultBlock = context.review.lastReviewResult
+    ? [
+        "<last_review_result>",
+        JSON.stringify(context.review.lastReviewResult, null, 2),
+        "</last_review_result>",
+        "",
+      ].join("\n")
     : ""
 
   let planSection = "\n<plan>\n"
@@ -3063,13 +3085,13 @@ function buildAgentInstructions(
 
   instructionLines.push(promptAddendum.trim())
 
-  if (reviewSummaryBlock) {
-    instructionLines.push("", reviewSummaryBlock.trim(), "")
+  if (reviewResultBlock) {
+    instructionLines.push("", reviewResultBlock.trim(), "")
   }
 
   instructionLines.push(
     "# REVIEW FEEDBACK",
-    "- Inspect the <last_review_summary> block above; treat every instruction, anomaly, and clarification inside it as mandatory.",
+    "- Inspect the <last_review_result> block above; treat every instruction, anomaly, and clarification inside it as mandatory.",
     "- Example: if the review notes “Tool X lacked evidence,” reopen that sub-task, add a step to fetch the missing evidence, and mark status accordingly before launching tools.",
     "- Log every required fix directly in the plan so auditors can see alignment with the review.",
     "- When the review lists anomalies or ambiguity, capture each as a corrective sub-task (e.g., “Validate source for claim [2]”) and close it before moving forward.",
@@ -3077,17 +3099,25 @@ function buildAgentInstructions(
     "",
     "# PLANNING",
     "- Always call toDoWrite at the start of a turn to update the plan with review findings, new context, and clarifications.",
+    "- Terminate the active plan the moment you have enough evidence to cater to the complete requirement of the user; immediately drop any remaining subtasks when the goal is satisfied.",
+    "- Scale the number of subtasks to the query’s true complexity , however quality of the final answer and complete execution and satisfaction of user's query outranks task count, you must always prioritize quality",
+    "- If the review reports `planChangeNeeded=true`, rewrite the plan around the provided `planChangeReason` before running any new tools, even if older tasks were mid-flight.",
+    "- Mirror every `toolFeedback.followUp` and `unmetExpectations` item with a dedicated sub-task (or reopened task) and list the tools that will satisfy it.",
+    "- Track each `clarificationQuestions` entry as its own sub-task or outbound user question until the ambiguity is resolved inside <last_review_result>.",
     "- Maintain one sub-task per concrete goal; list only the tools truly needed for that sub-task.",
+    "- Only chain subtasks when real dependencies exist—for example, “fetch the people who messaged me today → gather the emails received from them → summarize the combined thread” keeps later steps paused until earlier outputs arrive.",
     "- After every tool run, immediately update the active sub-task’s status, result, and any newly required tasks so the plan mirrors reality.",
     "- If review feedback demands a brand-new approach, rebuild the plan; otherwise refine the existing tasks.",
     "- Never finish a turn after only calling toDoWrite—run at least one execution tool that advances the active task.",
     "- If no plan change is needed, explicitly mark the tasks “in_progress” or “completed” so the reviewer sees momentum.",
-    "",
     "# EXECUTION STRATEGY",
     "- Work tasks sequentially; complete the current task before starting the next.",
     "- Call tools with precise parameters tied to the sub-task goal; reuse stored fragments instead of re-fetching data.",
     "- When delegation is enabled and justified, run list_custom_agents before run_public_agent; document why the selected agent accelerates the plan.",
     "- Prefer list_custom_agents → run_public_agent before core tools when delegation is enabled and justified by the plan.",
+    "- Invoke list_custom_agents at the sub-task level whenever targeted delegation could unlock better results; multi-part queries may require multiple calls as the context evolves.",
+    "- Let earlier tool outputs reshape later sub-tasks (e.g., if getSlackRelatedMessages returns only Finance senders, rewrite the next list_custom_agents query with that Finance focus before proceeding).",
+    "- Obey the `recommendation` flag: pause for clarifications when it reads `clarify_query`, keep collecting data for `gather_more`, and do not progress until a fresh plan is in place for `replan`.",
     "- If anomalies or notes in the latest review call out missing evidence, misalignments, or unresolved questions, fix those items before progressing and explain the remediation in the plan.",
     "",
     "# TOOL CALLS & EXPECTATIONS",
@@ -4022,6 +4052,17 @@ export async function MessageAgents(c: Context): Promise<Response> {
           }, "[DEBUG] Expectation history state at turn_end")
 
           try {
+            if (!reviewsAllowed(agentContext)) {
+              Logger.info(
+                {
+                  turn,
+                  chatId: agentContext.chat.externalId,
+                  lockedAtTurn: agentContext.review.lockedAtTurn,
+                },
+                "[MessageAgents] Review skipped because final synthesis was already requested."
+              )
+              return
+            }
             const { reviewInput, fallbackUsed } = buildTurnReviewInput(turn)
             if (
               fallbackUsed &&
@@ -4449,17 +4490,28 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     .filter((record) => record.toolName === evt.data.toolName)
                     .slice(-newCount)
                   if (recentHistory.length > 0) {
-                    await runAndBroadcastReview(
-                      {
-                        focus: "tool_error",
-                        turnNumber: currentTurn,
-                        toolCallHistory: recentHistory,
-                        plan: agentContext.plan,
-                        expectedResults:
-                          expectationHistory.get(currentTurn) || [],
-                      },
-                      currentTurn
-                    )
+                    if (reviewsAllowed(agentContext)) {
+                      await runAndBroadcastReview(
+                        {
+                          focus: "tool_error",
+                          turnNumber: currentTurn,
+                          toolCallHistory: recentHistory,
+                          plan: agentContext.plan,
+                          expectedResults:
+                            expectationHistory.get(currentTurn) || [],
+                        },
+                        currentTurn
+                      )
+                    } else {
+                      Logger.info(
+                        {
+                          turn: currentTurn,
+                          chatId: agentContext.chat.externalId,
+                          lockedAtTurn: agentContext.review.lockedAtTurn,
+                        },
+                        "[MessageAgents] Tool error review skipped due to final synthesis lock."
+                      )
+                    }
                   }
                 }
               } else {
@@ -4703,17 +4755,28 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
                   MIN_TURN_NUMBER
                 )
-                await runAndBroadcastReview(
-                  {
-                    focus: "run_end",
-                    turnNumber: finalTurnNumber,
-                    toolCallHistory: agentContext.toolCallHistory,
-                    plan: agentContext.plan,
-                    expectedResults:
-                      expectationHistory.get(finalTurnNumber) || [],
-                  },
-                  finalTurnNumber
-                )
+                if (reviewsAllowed(agentContext)) {
+                  await runAndBroadcastReview(
+                    {
+                      focus: "run_end",
+                      turnNumber: finalTurnNumber,
+                      toolCallHistory: agentContext.toolCallHistory,
+                      plan: agentContext.plan,
+                      expectedResults:
+                        expectationHistory.get(finalTurnNumber) || [],
+                    },
+                    finalTurnNumber
+                  )
+                } else {
+                  Logger.info(
+                    {
+                      turn: finalTurnNumber,
+                      chatId: agentContext.chat.externalId,
+                      lockedAtTurn: agentContext.review.lockedAtTurn,
+                    },
+                    "[MessageAgents] Run-end review skipped because final synthesis already locked reviews."
+                  )
+                }
                 // Store the response in database to prevent vanishing
                 // TODO: Implement full DB integration similar to the previous legacy controller
                 // For now, store basic message data
@@ -5411,6 +5474,17 @@ async function runDelegatedAgentWithMessageAgents(
       }, "[DelegatedAgenticRun][DEBUG] Expectation history state at turn_end")
 
       try {
+        if (!reviewsAllowed(agentContext)) {
+          Logger.info(
+            {
+              turn,
+              chatId: agentContext.chat.externalId,
+              lockedAtTurn: agentContext.review.lockedAtTurn,
+            },
+            "[DelegatedAgenticRun] Review skipped because final synthesis was already requested."
+          )
+          return
+        }
         const { reviewInput, fallbackUsed } = buildTurnReviewInput(turn)
         if (
           fallbackUsed &&
@@ -5637,11 +5711,12 @@ async function runDelegatedAgentWithMessageAgents(
               const newCount =
                 (consecutiveToolErrors.get(evt.data.toolName) ?? 0) + 1
               consecutiveToolErrors.set(evt.data.toolName, newCount)
-                if (newCount >= 2) {
-                  const recentHistory = agentContext.toolCallHistory
-                    .filter((record) => record.toolName === evt.data.toolName)
-                    .slice(-newCount)
-                  if (recentHistory.length > 0) {
+              if (newCount >= 2) {
+                const recentHistory = agentContext.toolCallHistory
+                  .filter((record) => record.toolName === evt.data.toolName)
+                  .slice(-newCount)
+                if (recentHistory.length > 0) {
+                  if (reviewsAllowed(agentContext)) {
                     await runAndBroadcastReview(
                       {
                         focus: "tool_error",
@@ -5651,8 +5726,18 @@ async function runDelegatedAgentWithMessageAgents(
                         expectedResults:
                           expectationHistory.get(currentTurn) || [],
                       },
-                    currentTurn
-                  )
+                      currentTurn
+                    )
+                  } else {
+                    Logger.info(
+                      {
+                        turn: currentTurn,
+                        chatId: agentContext.chat.externalId,
+                        lockedAtTurn: agentContext.review.lockedAtTurn,
+                      },
+                      "[DelegatedAgenticRun] Tool error review skipped due to final synthesis lock."
+                    )
+                  }
                 }
               }
             } else {
@@ -5771,17 +5856,28 @@ async function runDelegatedAgentWithMessageAgents(
                 agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
                 MIN_TURN_NUMBER
               )
-              await runAndBroadcastReview(
-                {
-                  focus: "run_end",
-                  turnNumber: finalTurnNumber,
-                  toolCallHistory: agentContext.toolCallHistory,
-                  plan: agentContext.plan,
-                  expectedResults:
-                    expectationHistory.get(finalTurnNumber) || [],
-                },
-                finalTurnNumber
-              )
+              if (reviewsAllowed(agentContext)) {
+                await runAndBroadcastReview(
+                  {
+                    focus: "run_end",
+                    turnNumber: finalTurnNumber,
+                    toolCallHistory: agentContext.toolCallHistory,
+                    plan: agentContext.plan,
+                    expectedResults:
+                      expectationHistory.get(finalTurnNumber) || [],
+                  },
+                  finalTurnNumber
+                )
+              } else {
+                Logger.info(
+                  {
+                    turn: finalTurnNumber,
+                    chatId: agentContext.chat.externalId,
+                    lockedAtTurn: agentContext.review.lockedAtTurn,
+                  },
+                  "[DelegatedAgenticRun] Run-end review skipped because final synthesis already locked reviews."
+                )
+              }
               runCompleted = true
               break
             }
