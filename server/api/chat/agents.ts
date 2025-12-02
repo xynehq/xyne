@@ -1,7 +1,6 @@
 import {
   answerContextMap,
   answerContextMapFromFragments,
-  cleanContext,
   userContext,
 } from "@/ai/context"
 import { AgentCreationSource } from "@/db/schema"
@@ -10,7 +9,6 @@ import {
   jsonParseLLMOutput,
   baselineRAGOffJsonStream,
   agentWithNoIntegrationsQuestion,
-  extractBestDocumentIndexes,
 } from "@/ai/provider"
 
 import {
@@ -32,47 +30,38 @@ import { type SelectChat, type SelectMessage } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import {
-  AgentReasoningStepType,
   ApiKeyScopes,
   ChatSSEvents,
-  ContextSysthesisState,
-  KnowledgeBaseEntity,
-  type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
-import { getErrorMessage, splitGroupedCitationsWithSpaces } from "@/utils"
+import { getErrorMessage } from "@/utils"
 import {
   type ConversationRole,
   type Message,
 } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { streamSSE } from "hono/streaming" // Import SSEStreamingApi
-import { z } from "zod"
-import { getTracer, type Span, type Tracer } from "@/tracer"
+import { streamSSE } from "hono/streaming" 
+import { getTracer, type Tracer } from "@/tracer"
 import {
   GetDocumentsByDocIds,
-  getDocumentOrNull,
-  searchVespaAgent,
-  SearchVespaThreads,
   getAllDocumentsForAgent,
-  searchSlackInVespa,
 } from "@/search/vespa"
 import {
+  expandSheetIds,
+  validateVespaIdInAgentIntegrations,
+} from "@/search/utils"
+import {
   Apps,
-  chatUserSchema,
-  chatContainerSchema,
-  VespaChatContainerSearchSchema,
-  VespaChatUserSchema,
   type VespaSearchResult,
   type VespaSearchResults,
-  AttachmentEntity,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import { insertChatTrace } from "@/db/chatTrace"
-import type { AttachmentMetadata, SelectPublicAgent } from "@/shared/types"
+import type { SelectPublicAgent } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
+import { getRecordBypath } from "@/db/knowledgeBase"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
@@ -94,7 +83,6 @@ import {
   extractItemIdsFromPath,
   handleError,
   isMessageWithContext,
-  mimeTypeMap,
   processMessage,
   searchToCitation,
   parseAppSelections,
@@ -105,9 +93,7 @@ import {
 import config from "@/config"
 import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
-  buildContext,
   buildUserQuery,
-  getThreadContext,
   isContextSelected,
   UnderstandMessageAndAnswer,
   generateAnswerFromDualRag,
@@ -116,10 +102,7 @@ import {
 import { getDateForAI } from "@/utils/index"
 import { getAuth, safeGet } from "../agent"
 const {
-  JwtPayloadKey,
   defaultBestModel,
-  defaultBestModelAgenticMode,
-  defaultFastModel,
   maxDefaultSummary,
   isReasoning,
   StartThinkingToken,
@@ -129,17 +112,6 @@ const {
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null
-
-type ChatContainerFields = z.infer<typeof VespaChatContainerSearchSchema>
-type ChatUserFields = z.infer<typeof VespaChatUserSchema>
-
-const isChatContainerFields = (value: unknown): value is ChatContainerFields =>
-  isRecord(value) && VespaChatContainerSearchSchema.safeParse(value).success
-
-const isChatUserFields = (value: unknown): value is ChatUserFields =>
-  isRecord(value) && VespaChatUserSchema.safeParse(value).success
 
 // Create mock agent from form data for testing
 const createMockAgentFromFormData = (
@@ -208,12 +180,143 @@ export const checkAgentWithNoIntegrations = (
   return false
 }
 
+const vespaResultToMinimalAgentFragment = async (
+  child: VespaSearchResult,
+  idx: number,
+  userMetadata: UserMetadataType,
+  query: string,
+): Promise<MinimalAgentFragment> => ({
+  id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
+  content: await answerContextMap(
+    child as VespaSearchResults,
+    userMetadata,
+    0,
+    true,
+    undefined,
+    query,
+  ),
+  source: searchToCitation(child as VespaSearchResults),
+  confidence: 1.0,
+})
+
+async function* nonRagIterator(
+  message: string,
+  userCtx: string,
+  dateForAI: string,
+  context: string,
+  results: MinimalAgentFragment[],
+  agentPrompt?: string,
+  messages: Message[] = [],
+  imageFileNames: string[] = [],
+  email?: string,
+  isReasoning = true,
+  modelId?: string,
+): AsyncIterableIterator<
+  ConverseResponse & {
+    citation?: { index: number; item: Citation }
+    imageCitation?: ImageCitation
+  }
+> {
+  const ragOffIterator = baselineRAGOffJsonStream(
+    message,
+    userCtx,
+    dateForAI,
+    context,
+    {
+      modelId: (modelId as Models) || defaultBestModel,
+      stream: true,
+      json: false,
+      reasoning: isReasoning,
+      imageFileNames,
+    },
+    agentPrompt ?? "",
+    messages,
+  )
+
+  // const previousResultsLength = 0
+  let buffer = ""
+  let thinking = ""
+  let reasoning = isReasoning
+  let yieldedCitations = new Set<number>()
+  let yieldedImageCitations = new Map<number, Set<number>>()
+
+  for await (const chunk of ragOffIterator) {
+    try {
+      if (chunk.text) {
+        if (reasoning) {
+          if (thinking && !chunk.text.includes(EndThinkingToken)) {
+            thinking += chunk.text
+            yield* checkAndYieldCitationsForAgent(
+              thinking,
+              yieldedCitations,
+              results,
+              undefined,
+              email!,
+            )
+            yield { text: chunk.text, reasoning }
+          } else {
+            const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
+            if (
+              startThinkingIndex !== -1 &&
+              chunk.text.trim().length > StartThinkingToken.length
+            ) {
+              let token = chunk.text.slice(
+                startThinkingIndex + StartThinkingToken.length,
+              )
+              if (chunk.text.includes(EndThinkingToken)) {
+                token = chunk.text.split(EndThinkingToken)[0]
+                thinking += token
+              } else {
+                thinking += token
+              }
+              yield* checkAndYieldCitationsForAgent(
+                thinking,
+                yieldedCitations,
+                results,
+                undefined,
+                email!,
+              )
+              yield { text: token, reasoning }
+            }
+          }
+        }
+
+        if (reasoning && chunk.text.includes(EndThinkingToken)) {
+          reasoning = false
+          chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+        }
+
+        if (!reasoning) {
+          buffer += chunk.text
+          yield { text: chunk.text }
+          yield* checkAndYieldCitationsForAgent(
+            buffer,
+            yieldedCitations,
+            results,
+            yieldedImageCitations,
+            email ?? "",
+          )
+        }
+      }
+
+      if (chunk.cost) {
+        yield { cost: chunk.cost }
+      }
+      if (chunk.metadata) {
+        yield { metadata: chunk.metadata }
+      }
+    } catch (error) {
+      Logger.error(`Error processing chunk: ${error}`)
+      continue
+    }
+  }
+}
+
 export const AgentMessageApiRagOff = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
 
-  let stream: any
-  let chat: SelectChat
+
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
   const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
@@ -325,9 +428,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           fileIds: [],
         }
     const fileIds = extractedInfo?.fileIds
-    const totalValidFileIdsFromLinkCount =
-      extractedInfo?.totalValidFileIdsFromLinkCount
-
     let messages: SelectMessage[] = []
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
@@ -476,7 +576,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           let finalImageFileNames: string[] = []
           let fragments: MinimalAgentFragment[] = []
           if (docIds.length > 0) {
-            let previousResultsLength = 0
             const chunksSpan = streamSpan.startSpan("get_documents_by_doc_ids")
             const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
             // const allChunksCopy
@@ -580,9 +679,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             }
 
             if (chunk.imageCitation) {
-              loggerWithChild({ email: email }).info(
-                `Found image citation, sending it`,
+              loggerWithChild({ email }).info(
                 { citationKey: chunk.imageCitation.citationKey },
+                "Found image citation, sending it",
               )
               imageCitations.push(chunk.imageCitation)
               stream.writeSSE({
@@ -1168,8 +1267,6 @@ export const AgentMessageApi = async (c: Context) => {
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
-
-    const agentDocs = agentForDb?.docIds || []
 
     //add docIds of agents here itself
     const totalValidFileIdsFromLinkCount =
@@ -1773,9 +1870,9 @@ export const AgentMessageApi = async (c: Context) => {
                   citationValues[index] = item
                 }
                 if (chunk.imageCitation) {
-                  loggerWithChild({ email: email }).info(
-                    `Found image citation, sending it`,
+                  loggerWithChild({ email }).info(
                     { citationKey: chunk.imageCitation.citationKey },
+                    "Found image citation, sending it",
                   )
                   imageCitations.push(chunk.imageCitation)
                   stream.writeSSE({
@@ -2400,9 +2497,9 @@ export const AgentMessageApi = async (c: Context) => {
                     citationValues[index] = item
                   }
                   if (chunk.imageCitation) {
-                    loggerWithChild({ email: email }).info(
-                      `Found image citation, sending it`,
+                    loggerWithChild({ email }).info(
                       { citationKey: chunk.imageCitation.citationKey },
+                      "Found image citation, sending it",
                     )
                     imageCitations.push(chunk.imageCitation)
                     stream.writeSSE({
@@ -2680,8 +2777,6 @@ export const AgentMessageApi = async (c: Context) => {
               content: [{ text: msg.message }],
             }
           })
-
-        const limitedMessages = messagesWithNoErrResponse.slice(-8)
 
         // Extract previous classification for pagination and follow-up queries
         let previousClassification: QueryRouterLLMResponse | null = null
