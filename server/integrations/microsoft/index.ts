@@ -65,12 +65,10 @@ import {
   makePagedGraphApiCall,
   type MicrosoftGraphClient,
 } from "./client"
-import { Client } from "@microsoft/microsoft-graph-client"
-import type { DriveItem } from "@microsoft/microsoft-graph-types"
+
 import { handleOutlookIngestion } from "./outlook"
 import { getUniqueEmails } from "../google"
 import { htmlToText } from "html-to-text"
-import type { InvokeModelResponseFilterSensitiveLog } from "@aws-sdk/client-bedrock-runtime"
 import {
   discoverSharePointSites,
   discoverSiteDrives,

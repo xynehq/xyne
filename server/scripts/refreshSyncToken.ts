@@ -356,18 +356,17 @@ const listUsers = async (
   let nextPageToken = null
   try {
     do {
-      const res: GaxiosResponse<admin_directory_v1.Schema$Users> =
-        await retryWithBackoff(
-          () =>
-            admin.users.list({
-              domain: domain,
-              maxResults: 500,
-              orderBy: "email",
-              ...(nextPageToken! ? { pageToken: nextPageToken } : {}),
-            }),
-          `Fetching all users`,
-          Apps.GoogleDrive,
-        )
+      const res = await retryWithBackoff(
+        () =>
+          admin.users.list({
+            domain: domain,
+            maxResults: 500,
+            orderBy: "email",
+            ...(nextPageToken! ? { pageToken: nextPageToken } : {}),
+          }),
+        `Fetching all users`,
+        Apps.GoogleDrive,
+      )
       if (res.data.users) {
         users = users.concat(res.data.users)
       }
