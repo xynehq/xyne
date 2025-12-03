@@ -16,13 +16,14 @@ import {
   mimeTypeMap,
   textToCitationIndex,
   textToImageCitationIndex,
+  textToKbItemCitationIndex,
 } from "./utils"
 
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
 export type CitationYieldEvent = {
-  citation?: { index: number; item: Citation }
+  citation?: { index: string; item: Citation }
   imageCitation?: ImageCitation
 }
 
@@ -32,7 +33,7 @@ export type CitationYieldEvent = {
  */
 export const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
-  yieldedCitations: Set<number>,
+  yieldedCitations: Set<string>,
   fragments: MinimalAgentFragment[],
   yieldedImageCitations?: Map<number, Set<number>>,
   email = "",
@@ -50,20 +51,50 @@ export const checkAndYieldCitationsForAgent = async function* (
     const text = splitGroupedCitationsWithSpaces(textInput)
     let match: RegExpExecArray | null
     let imgMatch: RegExpExecArray | null = null
+    let kbMatch: RegExpExecArray | null = null
     let citationsProcessed = 0
     let imageCitationsProcessed = 0
     let citationsYielded = 0
     let imageCitationsYielded = 0
+    let kbCitationsProcessed = 0
 
     while (
       (match = textToCitationIndex.exec(text)) !== null ||
-      (imgMatch = textToImageCitationIndex.exec(text)) !== null
+      (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
+      (kbMatch = textToKbItemCitationIndex.exec(text)) !== null
     ) {
-      if (match) {
+      if (match || kbMatch) {
         citationsProcessed++
-        const citationIndex = parseInt(match[1], 10)
-        if (!yieldedCitations.has(citationIndex)) {
-          const fragment = fragments[citationIndex - 1]
+        const citationKey = (() => {
+          if (match) return match[1]
+          if (kbMatch) return `K[${kbMatch[1]}_${kbMatch[2]}]`
+          return ""
+        })()
+
+        if (!citationKey) continue
+        if (!yieldedCitations.has(citationKey)) {
+          const resolveChunkIndex = (frag: MinimalAgentFragment): number | null => {
+            const parts = frag.id?.split(":")
+            const last = parts?.[parts.length - 1]
+            const parsed = last ? Number(last) : NaN
+            return Number.isFinite(parsed) ? parsed : null
+          }
+
+          let fragment: MinimalAgentFragment | undefined
+          if (match) {
+            const citationIndex = parseInt(match[1], 10)
+            fragment = fragments[citationIndex - 1]
+          } else if (kbMatch) {
+            const docId = kbMatch[1]
+            const chunkIndex = parseInt(kbMatch[2], 10)
+            fragment =
+              fragments.find(
+                (frag) =>
+                  frag.source?.docId === docId &&
+                  resolveChunkIndex(frag) === chunkIndex,
+              ) || fragments.find((frag) => frag.source?.docId === docId)
+          }
+
           if (!fragment?.source) {
             Logger.info(
               "[checkAndYieldCitationsForAgent] Fragment source missing entirely, skipping",
@@ -85,16 +116,29 @@ export const checkAndYieldCitationsForAgent = async function* (
             continue
           }
 
-          yield { citation: { index: citationIndex, item: fragment.source } }
-          yieldedCitations.add(citationIndex)
+          yield { citation: { index: citationKey, item: fragment.source } }
+          Logger.info(
+            {
+              citationKey,
+              docId: fragment.source.docId,
+              hasChunkSuffix: !!kbMatch,
+              fragmentId: fragment.id,
+            },
+            "[checkAndYieldCitationsForAgent] Yielded citation",
+          )
+          yieldedCitations.add(citationKey)
           citationsYielded++
         }
+        if (kbMatch) {
+          kbCitationsProcessed++
+        }
       } else if (imgMatch && yieldedImageCitations) {
-        imageCitationsProcessed++
+        citationsProcessed++
         const parts = imgMatch[1].split("_")
         if (parts.length >= 2) {
           const docIndex = parseInt(parts[0], 10)
           const imageIndex = parseInt(parts[1], 10)
+          imageCitationsProcessed++
 
           if (
             !yieldedImageCitations.has(docIndex) ||
@@ -148,6 +192,15 @@ export const checkAndYieldCitationsForAgent = async function* (
                       item: fragment.source,
                     },
                   }
+                  Logger.info(
+                    {
+                      citationKey: imgMatch[1],
+                      docIndex,
+                      imageIndex,
+                      fragmentId: fragment.id,
+                    },
+                    " image citation",
+                  )
                   imageCitationsYielded++
                   imageSpan.setAttribute("processing_success", true)
                   imageSpan.setAttribute(

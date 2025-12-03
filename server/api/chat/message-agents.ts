@@ -205,23 +205,20 @@ function fragmentsToToolContexts(
   if (!fragments?.length) {
     return undefined
   }
-  return fragments.map((fragment) => ({
-    id: fragment.id,
-    content: fragment.content,
-    source: {
-      docId: fragment.source.docId,
-      title: fragment.source.title ?? "Untitled",
-      url: fragment.source.url ?? "",
-      app: fragment.source.app,
-      entity:
-        typeof fragment.source.entity === "string"
-          ? fragment.source.entity
-          : fragment.source.entity
-            ? JSON.stringify(fragment.source.entity)
-            : undefined,
-    },
-    confidence: fragment.confidence,
-  }))
+  return fragments.map((fragment) => {
+    const source = fragment.source || ({} as Citation)
+    return {
+      id: fragment.id,
+      content: fragment.content,
+      source: {
+        ...source,
+        docId: source.docId,
+        title: source.title ?? "Untitled",
+        url: source.url ?? "",
+      },
+      confidence: fragment.confidence,
+    }
+  })
 }
 
 type ToolCallReference = ToolCall | { id?: string | number | null }
@@ -776,6 +773,13 @@ function buildFinalSynthesisPayload(
   const workspaceSection = context.userContext?.trim()
     ? `Workspace Context:\n${context.userContext}`
     : ""
+  const citationPrompt = [
+    "Citation Discipline (chunk-level):",
+    "- Treat each context line as a single chunk and use its key exactly as shown: `K[docId_chunkIndex]`.",
+    "- Every factual sentence must cite the exact chunk that supports it; one key per bracket, never combined.",
+    "- Use the chunk index from the context line (the number after the underscore).",
+    "- Only cite information that is explicitly in the chunk; state gaps without a citation.",
+  ].join("\n")
 
   const parts = [
     `User Question:\n${context.message.text}`,
@@ -783,6 +787,7 @@ function buildFinalSynthesisPayload(
     clarificationSection ? `Clarifications Resolved:\n${clarificationSection}` : "",
     workspaceSection,
     fragmentsSection,
+    citationPrompt,
   ].filter(Boolean)
 
   const userMessage = parts.join("\n\n")
@@ -806,11 +811,6 @@ function buildFinalSynthesisPayload(
 ### Constraint Handling
 - When the user asks for an action the system cannot execute (e.g., sending an email), deliver the closest actionable substitute (draft, checklist, explicit next steps) inside the answer.
 - Pair the substitute with a concise explanation of the limitation and the manual action the user must take.
-
-### Citation Discipline
-- Cite each factual sentence immediately with \`[n]\` (1-based); one fragment per bracket—never combine numbers.
-- Cite only when the fragment explicitly supports the statement; leave interpretations or gap notes uncited.
-- When evidence is missing, state the gap plus the data required to close it.
 
 ### Tone & Delivery
 - Answer with confident, declarative, verb-first sentences that use concrete nouns.
@@ -1485,13 +1485,26 @@ export async function afterToolExecutionHook(
       return
     }
     const deduped: MinimalAgentFragment[] = []
+    const skippedIds: string[] = []
     for (const fragment of fragments) {
       if (!fragment?.id) continue
       if (gatheredFragmentsKeys.has(fragment.id)) {
+        skippedIds.push(fragment.id)
         continue
       }
       gatheredFragmentsKeys.add(fragment.id)
       deduped.push(fragment)
+    }
+    if (deduped.length !== fragments.length) {
+      Logger.info(
+        {
+          toolName,
+          incoming: fragments.length,
+          deduped: deduped.length,
+          skippedIds,
+        },
+        "[afterToolExecutionHook] Deduplicated tool fragments",
+      )
     }
     if (!deduped.length) {
       return
@@ -2770,18 +2783,23 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         metadataFragments.length > 0
           ? metadataFragments
           : Array.isArray(toolOutput.contexts)
-            ? toolOutput.contexts.map((item) => ({
-                id: item.id,
-                content: item.content,
-                source: {
-                  docId: item.source.docId,
-                  title: item.source.title,
-                  url: item.source.url,
-                  app: item.source.app as Apps,
-                  entity: item.source.entity as Citation["entity"],
-                },
-                confidence: item.confidence ?? 0.7,
-              }))
+            ? toolOutput.contexts.map((item) => {
+                const source = (item as any).source || {}
+                const normalizedSource: Citation = {
+                  ...source,
+                  docId: source.docId || item.id || "",
+                  title: source.title || "Untitled",
+                  url: source.url || "",
+                  app: (source.app || Apps.Xyne) as Apps,
+                  entity: source.entity as Citation["entity"],
+                }
+                return {
+                  id: item.id,
+                  content: item.content,
+                  source: normalizedSource,
+                  confidence: item.confidence ?? 0.7,
+                } as MinimalAgentFragment
+              })
             : []
 
       return ToolResponse.success({
@@ -3035,6 +3053,14 @@ function buildAgentInstructions(
       ].join("\n")
     : ""
 
+  // Guidance for chunk-aware citations to preserve chunk indices for highlighting
+  const chunkCitationGuidance = [
+    "# CITATIONS",
+    "- When citing knowledge base snippets, include chunk indices so the UI can highlight correctly.",
+    "- Use the format `K[docIndex_chunkIndex]` in your working draft; the system will remap to `[n_chunkIndex]` when sending to the user.",
+    "- Continue to place citations immediately after the supporting sentence; avoid grouping multiple citations in one bracket.",
+  ].join("\n")
+
   let planSection = "\n<plan>\n"
   if (context.plan) {
     planSection += `Goal: ${context.plan.goal}\n\n`
@@ -3083,6 +3109,8 @@ function buildAgentInstructions(
   if (attachmentDirective) {
     instructionLines.push(attachmentDirective, "")
   }
+
+  instructionLines.push(chunkCitationGuidance, "")
 
   instructionLines.push(promptAddendum.trim())
 
@@ -4259,8 +4287,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
         let answer = ""
         const citations: Citation[] = []
         const imageCitations: ImageCitation[] = []
-        const citationMap: Record<number, number> = {}
-        const yieldedCitations = new Set<number>()
+        const citationMap: Record<string | number, number> = {}
+        const yieldedCitations = new Set<string>()
         const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
 
@@ -4778,6 +4806,17 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 // TODO: Implement full DB integration similar to the previous legacy controller
                 // For now, store basic message data
                 loggerWithChild({ email }).info("Storing assistant response in database")
+                Logger.info(
+                  {
+                    chatId: agentContext.chat.externalId,
+                    turn: finalTurnNumber,
+                    answerPreview: truncateValue(answer, 500),
+                    citationsCount: citations.length,
+                    imageCitationsCount: imageCitations.length,
+                    citationSample: citations.slice(0, 3),
+                  },
+                  "[MessageAgents][FinalSynthesis] LLM output preview"
+                )
 
                 // Calculate costs and tokens
                 const totalCost = agentContext.totalCost
@@ -5916,7 +5955,7 @@ async function runDelegatedAgentWithMessageAgents(
 
     const citations: Citation[] = []
     const imageCitations: ImageCitation[] = []
-    const yieldedCitations = new Set<number>()
+    const yieldedCitations = new Set<string>()
     const yieldedImageCitations = new Map<number, Set<number>>()
 
     const answerForCitations =

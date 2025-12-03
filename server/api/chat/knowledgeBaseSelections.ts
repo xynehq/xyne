@@ -81,12 +81,15 @@ async function buildUserOwnedSelections(
   const ownedCollections = await getCollectionsByOwner(db, user.id)
   if (!ownedCollections.length) return []
 
-  const ownedCollectionIds = new Set(
-    ownedCollections.map((c) => Number(c.id)),
-  )
+  // Collection IDs are UUID strings; keep them as-is for membership checks.
+  const ownedCollectionIds = new Set(ownedCollections.map((c) => c.id))
 
   const prefixedSelections = explicitSelections.length
-    ? await filterPrefixedIdsToOwner(explicitSelections, ownedCollectionIds, user.id)
+    ? await filterPrefixedIdsToOwner(
+        explicitSelections,
+        ownedCollectionIds,
+        user.id,
+      )
     : Array.from(ownedCollectionIds).map((id) => `cl-${id}`)
 
   return convertPrefixedIdsToSelections(prefixedSelections)
@@ -137,7 +140,7 @@ function resolveKnowledgeItemIds(
 
 async function filterPrefixedIdsToOwner(
   prefixedIds: string[],
-  ownedCollectionIds: Set<number>,
+  ownedCollectionIds: Set<string>,
   ownerId: number,
 ): Promise<string[]> {
   const collectionIds: string[] = []
@@ -151,11 +154,7 @@ async function filterPrefixedIdsToOwner(
       fileIds.push(id.replace(/^clf[-_]/, ""))
     } else if (id.startsWith("cl-")) {
       const collectionId = id.replace(/^cl[-_]/, "")
-      const numericCollectionId = Number(collectionId)
-      if (
-        !Number.isNaN(numericCollectionId) &&
-        ownedCollectionIds.has(numericCollectionId)
-      ) {
+      if (collectionId && ownedCollectionIds.has(collectionId)) {
         collectionIds.push(collectionId)
       }
     }

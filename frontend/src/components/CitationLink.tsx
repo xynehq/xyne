@@ -35,8 +35,15 @@ export const createCitationLink =
   }) => {
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)
 
+    // Normalize children text (e.g., convert "[1]" to "1" before rendering)
+    const rawText = typeof children === "string" ? children.trim() : ""
+    const normalizedText = rawText.replace(/^\[(\d+(?:_\d+)?)\]$/, "$1")
+
     // Extract citation index from children (which should be the citation number like "1", "2", etc.)
-    const parts = typeof children === "string" ? children.split("_") : []
+    const parts =
+      typeof normalizedText === "string" && normalizedText.length > 0
+        ? normalizedText.split("_")
+        : []
     const citationIndex = parts.length > 0 ? parseInt(parts[0]) - 1 : -1
     let chunkIndex = parts.length > 1 ? parseInt(parts[1]) : undefined
 
@@ -155,9 +162,10 @@ export const createCitationLink =
 
     // Regular link for non-citation URLs
     const isNumericChild =
-      typeof children === "string" &&
-      !isNaN(parseInt(children)) &&
-      parseInt(children).toString() === children.split("_")[0].trim()
+      typeof normalizedText === "string" &&
+      !isNaN(parseInt(normalizedText)) &&
+      parseInt(normalizedText).toString() ===
+        normalizedText.split("_")[0].trim()
 
     return (
       <a {...linkProps} href={href} target="_blank" rel="noopener noreferrer">
@@ -166,7 +174,7 @@ export const createCitationLink =
             className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150 no-underline"
             style={{ textDecoration: "none" }}
           >
-            {children}
+            {normalizedText || children}
           </span>
         ) : (
           children

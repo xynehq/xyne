@@ -5,7 +5,7 @@ export const generateUUID = () => crypto.randomUUID()
 
 export const textToCitationIndex = /\[(\d+)\]/g
 export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
-export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
+export const textToKbItemCitationIndex = /K\[([^\]]+)_(\d+)\]/g
 
 // Function to clean citation numbers from response text
 export const cleanCitationsFromResponse = (text: string): string => {
@@ -20,7 +20,7 @@ export const cleanCitationsFromResponse = (text: string): string => {
 
 export const processMessage = (
   text: string,
-  citationMap: Record<number, number> | undefined,
+  citationMap: Record<string | number, number> | undefined,
   citationUrls: string[],
 ) => {
   text = splitGroupedCitationsWithSpaces(text)
@@ -38,29 +38,37 @@ export const processMessage = (
   )
 
   if (citationMap) {
-    text = text.replace(textToKbItemCitationIndex, (_, citationKey) => {
-      const index = citationMap[parseInt(citationKey.split("_")[0], 10)]
-      const chunkIndex = parseInt(citationKey.split("_")[1], 10)
-      const url = citationUrls[index]
-      return typeof index === "number" && typeof chunkIndex === "number" && url
-      ? `[${index + 1}_${chunkIndex}](${url})`
-      : ""
-    })
+    text = text.replace(
+      textToKbItemCitationIndex,
+      (_match, docKey, chunkIndexStr) => {
+        const citationKey = `K[${docKey}_${chunkIndexStr}]`
+        const index = citationMap[citationKey]
+        const chunkIndex = parseInt(chunkIndexStr, 10)
+        const url = citationUrls[index]
+        return typeof index === "number" && typeof chunkIndex === "number" && url
+          ? `[${index + 1}_${chunkIndex}](${url})`
+          : ""
+      },
+    )
   } else {
-    let localCitationMap: Record<number, number> = {}
+    let localCitationMap: Record<string, number> = {}
     let localIndex = 0
-    text = text.replace(textToKbItemCitationIndex, (_, citationKey) => {
-      const citationindex = parseInt(citationKey.split("_")[0], 10)
-      if (localCitationMap[citationindex] === undefined) {
-        localCitationMap[citationindex] = localIndex
-        localIndex++
-      }
-      const chunkIndex = parseInt(citationKey.split("_")[1], 10)
-      const url = citationUrls[localCitationMap[citationindex]]
-      return typeof localCitationMap[citationindex] === "number" && typeof chunkIndex === "number" && url
-      ? `[${localCitationMap[citationindex] + 1}_${chunkIndex}](${url})`
-      : ""
-    })
+    text = text.replace(
+      textToKbItemCitationIndex,
+      (_match, docKey, chunkIndexStr) => {
+        if (localCitationMap[docKey] === undefined) {
+          localCitationMap[docKey] = localIndex
+          localIndex++
+        }
+        const chunkIndex = parseInt(chunkIndexStr, 10)
+        const url = citationUrls[localCitationMap[docKey]]
+        return typeof localCitationMap[docKey] === "number" &&
+          typeof chunkIndex === "number" &&
+          url
+          ? `[${localCitationMap[docKey] + 1}_${chunkIndex}](${url})`
+          : ""
+      },
+    )
   }
 
   if (citationMap) {

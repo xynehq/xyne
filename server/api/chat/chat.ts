@@ -413,7 +413,7 @@ export const GetChatTraceApi = async (c: Context) => {
 
 export const processMessage = (
   text: string,
-  citationMap: Record<number, number>,
+  citationMap: Record<string | number, number>,
   email?: string,
 ) => {
   if (!text) {
@@ -430,7 +430,7 @@ export const processMessage = (
 
 export const processWebSearchMessage = (
   text: string,
-  citationMap: Record<number, number>,
+  citationMap: Record<string | number, number>,
   email?: string,
 ) => {
   if (!text) {
@@ -490,7 +490,7 @@ export const processWebSearchMessage = (
 // but need to be kept in mind
 const checkAndYieldCitations = async function* (
   textInput: string,
-  yieldedCitations: Set<number>,
+  yieldedCitations: Set<string>,
   results: any[],
   baseIndex: number = 0,
   email: string,
@@ -506,39 +506,55 @@ const checkAndYieldCitations = async function* (
     (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
     (isMsgWithKbItems &&
       (kbMatch = textToKbItemCitationIndex.exec(text)) !== null)
-  ) {
-    if (match || kbMatch) {
-      let citationIndex = 0
-      if (match) {
-        citationIndex = parseInt(match[1], 10)
-      } else if (kbMatch) {
-        citationIndex = parseInt(kbMatch[1].split("_")[0], 10)
-      }
-      if (!yieldedCitations.has(citationIndex)) {
-        const item = results[citationIndex - baseIndex]
-        if (item) {
-          // TODO: fix this properly, empty citations making streaming broke
-          const f = (item as any)?.fields
-          if (
-            f?.sddocname === dataSourceFileSchema ||
-            Object.values(AttachmentEntity).includes(f?.entity)
+    ) {
+      if (match || kbMatch) {
+        let citationKey: string | null = null
+        let citationIndex = 0
+        if (match) {
+          citationIndex = parseInt(match[1], 10)
+          citationKey = match[1]
+        } else if (kbMatch) {
+          const docId = kbMatch[1]
+          const chunkIndex = parseInt(kbMatch[2], 10)
+          citationKey = `K[${docId}_${chunkIndex}]`
+        }
+        if (!citationKey) continue
+        if (!yieldedCitations.has(citationKey)) {
+          let item: any
+          if (match) {
+            item = results[citationIndex - baseIndex]
+          } else if (kbMatch) {
+            const docId = kbMatch[1]
+            const resolveDocId = (res: any) =>
+              res?.fields?.docId ||
+              res?.fields?.docid ||
+              res?.fields?.id ||
+              res?.id
+            item = results.find((res) => resolveDocId(res) === docId)
+          }
+          if (item) {
+            // TODO: fix this properly, empty citations making streaming broke
+            const f = (item as any)?.fields
+            if (
+              f?.sddocname === dataSourceFileSchema ||
+              Object.values(AttachmentEntity).includes(f?.entity)
           ) {
             // Skip datasource and attachment files from citations
             continue
           }
-          yield {
-            citation: {
-              index: citationIndex,
-              item: searchToCitation(item as VespaSearchResults),
-            },
+            yield {
+              citation: {
+                index: citationKey,
+                item: searchToCitation(item as VespaSearchResults),
+              },
+            }
+            yieldedCitations.add(citationKey)
+          } else {
+            loggerWithChild({ email: email }).error(
+              `Found a citation but could not map it to a search result: ${citationKey}, ${results.length}`,
+            )
           }
-          yieldedCitations.add(citationIndex)
-        } else {
-          loggerWithChild({ email: email }).error(
-            `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`,
-          )
         }
-      }
     } else if (imgMatch) {
       const parts = imgMatch[1].split("_")
       if (parts.length >= 2) {
@@ -638,7 +654,7 @@ async function* processIterator(
   let parsed = { answer: "" }
   let thinking = ""
   let reasoning = config.isReasoning && userRequestsReasoning
-  let yieldedCitations = new Set<number>()
+let yieldedCitations = new Set<string>()
   let yieldedImageCitations = new Set<number>()
   // tied to the json format and output expected, we expect the answer key to be present
   const ANSWER_TOKEN = '"answer":'
@@ -5182,7 +5198,7 @@ export const MessageApi = async (c: Context) => {
             let answer = ""
             let citations = []
             let imageCitations: any[] = []
-            let citationMap: Record<number, number> = {}
+            let citationMap: Record<string | number, number> = {}
             let thinking = ""
             let reasoning =
               userRequestsReasoning &&
@@ -5562,7 +5578,7 @@ export const MessageApi = async (c: Context) => {
             let answer = ""
             let citations: Citation[] = []
             let imageCitations: any[] = []
-            let citationMap: Record<number, number> = {}
+            let citationMap: Record<string | number, number> = {}
             let deepResearchSteps: any[] = []
             let queryFilters = {
               apps: [],
@@ -6637,7 +6653,7 @@ export const MessageRetryApi = async (c: Context) => {
             let answer = ""
             let citations = []
             let imageCitations: any[] = []
-            let citationMap: Record<number, number> = {}
+            let citationMap: Record<string | number, number> = {}
             let thinking = ""
             let reasoning =
               userRequestsReasoning &&
@@ -7009,7 +7025,7 @@ export const MessageRetryApi = async (c: Context) => {
             let currentAnswer = ""
             let answer = ""
             let citations: Citation[] = [] // Changed to Citation[] for consistency
-            let citationMap: Record<number, number> = {}
+            let citationMap: Record<string | number, number> = {}
             let queryFilters = {
               apps: [],
               entities: [],

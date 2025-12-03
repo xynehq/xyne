@@ -38,7 +38,7 @@ export async function formatSearchToolResponse(
     limit?: number
     searchType?: string
   },
-): Promise<MinimalAgentFragment[]> {
+  ): Promise<MinimalAgentFragment[]> {
   const children = (searchResults?.root?.children || []).filter(
     (item): item is VespaSearchResults =>
       !!(item.fields && "sddocname" in item.fields),
@@ -49,10 +49,11 @@ export async function formatSearchToolResponse(
   }
 
   const fragments: MinimalAgentFragment[] = await Promise.all(
-    children.map(async (r) => {
+    children.map(async (r, idx) => {
       const citation = searchToCitation(r)
+      const fragmentId = buildChunkFragmentId(citation.docId, idx)
       return {
-        id: citation.docId,
+        id: fragmentId,
         content: await answerContextMap(
           r,
           userMetadata,
@@ -65,6 +66,10 @@ export async function formatSearchToolResponse(
   )
 
   return fragments
+}
+
+export function buildChunkFragmentId(docId: string, index: number): string {
+  return `${docId}:${index}`
 }
 
 export function parseAgentAppIntegrations(agentPrompt?: string): {
