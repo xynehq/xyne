@@ -59,7 +59,7 @@ import { getFolderItems, SearchEmailThreads } from "@/search/vespa"
 import { getLoggerWithChild, getLogger } from "@/logger"
 import { getTracer, type Span } from "@/tracer"
 import { Subsystem } from "@/types"
-import type { SelectMessage } from "@/db/schema"
+import type { SelectAgent, SelectMessage } from "@/db/schema"
 import { MessageRole } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
@@ -1529,5 +1529,103 @@ export const checkAndYieldCitationsForAgent = async function* (
     })
     span.end()
     throw error
+  }
+}
+
+/**
+ * Format agent scopes as human-readable text for the prompt
+ */
+export const formatAgentScopesText = (agent: SelectAgent): string => {
+  const scopes: string[] = []
+
+  // Extract apps from appIntegrations
+  if (agent.appIntegrations) {
+    if (typeof agent.appIntegrations === "object" && !Array.isArray(agent.appIntegrations)) {
+      // AppSelectionMap format
+      const appNames: string[] = []
+      for (const [appKey, selection] of Object.entries(agent.appIntegrations)) {
+        const appName = formatAppName(appKey)
+        if (appName) {
+          // Type guard for AppSelection
+          if (
+            selection &&
+            typeof selection === "object" &&
+            "selectedAll" in selection
+          ) {
+            if (selection.selectedAll) {
+              appNames.push(`${appName} (all items)`)
+            } else if (
+              Array.isArray(selection.itemIds) &&
+              selection.itemIds.length > 0
+            ) {
+              appNames.push(
+                `${appName} (${selection.itemIds.length} selected items)`,
+              )
+            } else {
+              appNames.push(appName)
+            }
+          } else {
+            appNames.push(appName)
+          }
+        }
+      }
+      if (appNames.length > 0) {
+        scopes.push(...appNames)
+      }
+    } else if (Array.isArray(agent.appIntegrations)) {
+      // Legacy array format
+      const appNames = agent.appIntegrations
+        .map((app: string) => formatAppName(app))
+        .filter((name): name is string => !!name)
+      if (appNames.length > 0) {
+        scopes.push(...appNames)
+      }
+    }
+  }
+
+  // Add web search if enabled
+  if (agent.allowWebSearch) {
+    scopes.push("Web search")
+  }
+
+  return scopes.length > 0
+    ? scopes.join(", ")
+    : "No specific data sources configured"
+}
+
+/**
+ * Format app key to human-readable name
+ */
+function formatAppName(appKey: string): string | null {
+  const normalized = appKey.toLowerCase()
+  switch (normalized) {
+    case "googledrive":
+    case "googlesheets":
+    case "googleslides":
+    case "googledocs":
+      return "Google Drive"
+    case "gmail":
+      return "Gmail"
+    case "googlecalendar":
+      return "Google Calendar"
+    case "google-workspace":
+      return "Google Workspace (contacts)"
+    case "slack":
+      return "Slack"
+    case "github":
+      return "GitHub"
+    case "microsoftdrive":
+      return "Microsoft OneDrive"
+    case "microsoftsharepoint":
+      return "Microsoft SharePoint"
+    case "microsoftoutlook":
+      return "Microsoft Outlook"
+    case "microsoftcalendar":
+      return "Microsoft Calendar"
+    case "knowledgebase":
+    case "knowledge_base":
+      return "Knowledge Base"
+    default:
+      return appKey // Return as-is if unknown
   }
 }

@@ -509,6 +509,34 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     deepResearch: false,
     description: "Tailored for reasoning, coding, and agentic abilities",
   },
+  [Models.LiteLLM_Claude_Sonnet_4]: {
+    actualName: "claude-sonnet-4",
+    labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
+    description: "Balanced for reasoning, long context windows.",
+  },
+  [Models.LiteLLM_Gemini_2_5_Pro]: {
+    actualName: "gemini-2.5-pro",
+    labelName: ModelDisplayNames.LITELLM_GEMINI_2_5_PRO,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
+    description:
+      "Proficient in reasoning across text, visuals, and programming.",
+  },
+  [Models.LiteLLM_Gemini_2_5_Flash]: {
+    actualName: "gemini-2.5-flash",
+    labelName: ModelDisplayNames.LITELLM_GEMINI_2_5_FLASH,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
+    description: "Tailored for cost-effectiveness and rapid response times.",
+  },
 }
 
 // Model display name mappings - using the new enum-based approach
@@ -543,7 +571,7 @@ export const getAvailableModels = (config: {
   VertexProjectId?: string
   VertexRegion?: string
   LiteLLMApiKey?: string
-  LiteLLMModel?: string
+  LiteLLMBaseUrl?: string
 }) => {
   const availableModels: Array<{
     actualName: string
@@ -555,9 +583,24 @@ export const getAvailableModels = (config: {
     description: string
   }> = []
 
-  // Priority (AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex)
+  // Priority (LiteLLM > AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex)
   // Using if-else logic to ensure only ONE provider is active at a time
-  if (config.AwsAccessKey && config.AwsSecretKey) {
+  if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
+    // Add only LiteLLM model
+    Object.values(MODEL_CONFIGURATIONS)
+      .filter((model) => model.provider === AIProviders.LiteLLM)
+      .forEach((model) => {
+        availableModels.push({
+          actualName: model.actualName ?? "",
+          labelName: model.labelName,
+          provider: "LiteLLM",
+          reasoning: model.reasoning,
+          websearch: model.websearch,
+          deepResearch: model.deepResearch,
+          description: model.description,
+        })
+      })
+  } else if (config.AwsAccessKey && config.AwsSecretKey) {
     // Add only AWS Bedrock models
     Object.values(MODEL_CONFIGURATIONS)
       .filter((model) => model.provider === AIProviders.AwsBedrock)
@@ -651,22 +694,6 @@ export const getAvailableModels = (config: {
         })
       })
   } 
-  if (config.LiteLLMApiKey && config.LiteLLMModel) {
-    // Add only LiteLLM model
-    Object.values(MODEL_CONFIGURATIONS)
-      .filter((model) => model.provider === AIProviders.LiteLLM)
-      .forEach((model) => {
-        availableModels.push({
-          actualName: model.actualName ?? "",
-          labelName: model.labelName,
-          provider: "LiteLLM",
-          reasoning: model.reasoning,
-          websearch: model.websearch,
-          deepResearch: model.deepResearch,
-          description: model.description,
-        })
-      })
-  }
 
   return availableModels
 }
@@ -687,7 +714,7 @@ export const getAvailableModelsLegacy = (config: {
   VertexProjectId?: string
   VertexRegion?: string
   LiteLLMApiKey?: string
-  LiteLLMModel?: string
+  LiteLLMBaseUrl?: string
 }) => {
   const newModels = getAvailableModels(config)
   return newModels.map(
@@ -707,8 +734,10 @@ export const getAvailableModelsLegacy = (config: {
 
 // Function to determine the currently active provider based on configuration
 export const getActiveProvider = (): AIProviders | null => {
-  // Priority order: AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex
-  if (config.AwsAccessKey && config.AwsSecretKey) {
+  // Priority order: LiteLLM > AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex
+  if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
+    return AIProviders.LiteLLM
+  } else if (config.AwsAccessKey && config.AwsSecretKey) {
     return AIProviders.AwsBedrock
   } else if (config.OpenAIKey) {
     return AIProviders.OpenAI
@@ -727,19 +756,11 @@ export const getActiveProvider = (): AIProviders | null => {
   return null
 }
 
-export const getLiteLLMProvider = (): AIProviders | null => {
-  if (config.LiteLLMApiKey && config.LiteLLMModel) {
-    return AIProviders.LiteLLM
-  }
-  return null
-}
-
 // Function to convert friendly model label back to the correct provider-specific model enum
 export const getModelValueFromLabel = (
   label: string,
 ): Models | string | null => {
   const activeProvider = getActiveProvider()
-  const liteLLMProvider = getLiteLLMProvider()
 
   if (!activeProvider) {
     return null
@@ -749,7 +770,7 @@ export const getModelValueFromLabel = (
   const modelEntry = Object.entries(MODEL_CONFIGURATIONS).find(
     ([modelKey, config]) => {
       const matches =
-        config.labelName === label && (config.provider === activeProvider || config.provider === liteLLMProvider)
+        config.labelName === label && (config.provider === activeProvider)
       return matches
     },
   )
@@ -786,12 +807,6 @@ export const getModelValueFromLabel = (
         return config.VertexAIModel
       }
       break
-  }
-
-  if (liteLLMProvider) {
-    if (config.LiteLLMModel && label === config.LiteLLMModel) {
-      return config.LiteLLMModel
-    }
   }
 
   return null

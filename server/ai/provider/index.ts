@@ -28,7 +28,6 @@ const {
   VertexRegion,
   VertexAIModel,
   LiteLLMApiKey,
-  LiteLLMModel,
   LiteLLMBaseUrl,
 } = config
 import OpenAI from "openai"
@@ -314,7 +313,7 @@ const initializeProviders = (): void => {
     Logger.info(`Initialized VertexAI provider with ${provider} backend`)
   }
 
-  if (LiteLLMApiKey && LiteLLMModel) {
+  if (LiteLLMApiKey && LiteLLMBaseUrl) {
     const liteLLM = new LiteLLM({
       apiKey: LiteLLMApiKey,
       baseURL: LiteLLMBaseUrl,
@@ -405,7 +404,7 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
             ? AIProviders.GoogleAI
             : VertexProjectId && VertexRegion
               ? AIProviders.VertexAI
-              : LiteLLMApiKey && LiteLLMModel
+              : LiteLLMApiKey && LiteLLMBaseUrl
                 ? AIProviders.LiteLLM
                 : null
 

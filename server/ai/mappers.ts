@@ -342,6 +342,33 @@ export const modelDetailsMap: Record<
       }
     }
   },
+  [getActualModelName(Models.LiteLLM_Claude_Sonnet_4)]:{
+    name:"claude-sonnet-4",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.003,
+        pricePerThousandOutputTokens:0.015,
+      }
+    }
+  },
+  [getActualModelName(Models.LiteLLM_Gemini_2_5_Pro)]:{
+    name:"gemini-2.5-pro",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.00125,
+        pricePerThousandOutputTokens:0.01
+      }
+    }
+  },
+  [getActualModelName(Models.LiteLLM_Gemini_2_5_Flash)]:{
+    name:"gemini-2.5-flash",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0003,
+        pricePerThousandOutputTokens:0.0025,
+      }
+    }
+  },
 }
 
 export const ModelToProviderMap: Record<Models, AIProviders> = {
@@ -408,6 +435,9 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.Vertex_Gemini_1_5_Pro_002]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_1_5_Pro_Exp_0827]: AIProviders.VertexAI,
   [Models.GLM_4_5]: AIProviders.LiteLLM,
+  [Models.LiteLLM_Claude_Sonnet_4]: AIProviders.LiteLLM,
+  [Models.LiteLLM_Gemini_2_5_Pro]: AIProviders.LiteLLM,
+  [Models.LiteLLM_Gemini_2_5_Flash]: AIProviders.LiteLLM,
 }
 
 export const isDeepResearchModel = (modelId: Models): boolean => {

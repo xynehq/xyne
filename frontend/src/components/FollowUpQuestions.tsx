@@ -7,6 +7,7 @@ interface FollowUpQuestionsProps {
   onQuestionClick: (question: string) => void
   isStreaming?: boolean
   onQuestionsLoaded?: () => void
+  agentId?: string | null
 }
 
 export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
@@ -15,6 +16,7 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
   onQuestionClick,
   isStreaming = false,
   onQuestionsLoaded,
+  agentId,
 }) => {
   const [questions, setQuestions] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
@@ -90,6 +92,7 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
           json: {
             chatId,
             messageId,
+            ...(agentId && { agentId }),
           },
         })
 
@@ -106,7 +109,7 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
         setLoading(false)
       }
     },
-    [chatId, messageId, isStreaming],
+    [chatId, messageId, isStreaming, agentId],
   )
 
   if (isStreaming || (!loading && questions.length === 0 && !error)) {
