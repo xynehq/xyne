@@ -151,6 +151,7 @@ import {
   getAgentsAccessibleToUser,
   type SelectAgent,
   getAllPublicAgents,
+  getAgentByExternalIdWithPermissionCheck,
 } from "@/db/agent"
 import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import {
@@ -185,6 +186,7 @@ import {
   collectFollowupContext,
   textToKbItemCitationIndex,
   type AppFilter,
+  formatAgentScopesText,
 } from "./utils"
 import {
   buildKnowledgeBaseCollectionSelections,
@@ -7824,7 +7826,7 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
     email = sub || ""
 
     // @ts-ignore - Validation handled by middleware
-    const { chatId, messageId } = c.req.valid("json")
+    const { chatId, messageId, agentId } = c.req.valid("json")
 
     if (!chatId || !messageId) {
       throw new HTTPException(400, {
@@ -7839,6 +7841,31 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
       email,
     )
     const { user, workspace } = userAndWorkspace
+
+    // Fetch agent details if agentId is provided
+    let agentName: string | undefined
+    let agentScopesText: string | undefined
+    let agentDescription: string | undefined
+    if (agentId) {
+      try {
+        const agent = await getAgentByExternalIdWithPermissionCheck(
+          db,
+          agentId,
+          workspace.id,
+          user.id,
+        )
+        if (agent) {
+          agentName = agent.name
+          agentScopesText = formatAgentScopesText(agent)
+          agentDescription = agent.description ?? undefined
+        }
+      } catch (error) {
+        // Log error but don't fail the request - just proceed without agent context
+        loggerWithChild({ email }).warn(
+          `Failed to fetch agent ${agentId} for follow-up questions: ${getErrorMessage(error)}`,
+        )
+      }
+    }
 
     // Get chat messages for context
     const messages = await getChatMessagesWithAuth(db, chatId, email)
@@ -7866,16 +7893,38 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
       )
       .join("\n\n")
 
+    // Extract last user message and last assistant message for focus
+    const reversedMessages = [...contextMessages].reverse();
+    const lastUserMsg = reversedMessages.find((m) => m.messageRole === "user");
+    const lastAssistantMsg = reversedMessages.find(
+      (m) => m.messageRole === "assistant",
+    );
+
     // Generate user context
     const ctx = userContext(userAndWorkspace)
-    // Use the follow-up questions prompt
-    const systemPrompt = generateFollowUpQuestionsSystemPrompt(ctx)
+    // Use the follow-up questions prompt with optional agent details
+    const systemPrompt = generateFollowUpQuestionsSystemPrompt(
+      ctx,
+      agentName,
+      agentScopesText,
+      agentDescription,
+    )
 
-    const userPrompt = `Based on this conversation, generate 3 relevant follow-up questions:
-
+    const userPrompt = `Here is the conversation thread (oldest first):
 ${conversationContext}
 
-The follow-up questions should be specific to this conversation and help the user explore related topics or get more detailed information about what was discussed.`
+Focus primarily on the LAST user question and the MOST RECENT assistant answer:
+
+Last user question:
+${lastUserMsg?.message || ""}
+
+Most recent assistant answer:
+${lastAssistantMsg?.message || ""}
+
+Based on this, generate 3 follow-up questions that:
+- Help the user explore the topic further
+- Are grounded in what we just discussed
+- Are specific and answerable using ${agentName && agentScopesText ? "the agent's available data" : "the available system data"}.`
 
     // Call LLM to generate follow-up questions
     const response = await generateFollowUpQuestions(userPrompt, systemPrompt, {
@@ -7885,7 +7934,7 @@ The follow-up questions should be specific to this conversation and help the use
     })
 
     loggerWithChild({ email: email }).info(
-      `Generated follow-up questions for message ${messageId} in chat ${chatId}`,
+      `Generated follow-up questions for message ${messageId} in chat ${chatId}${agentName ? ` with agent ${agentName}` : ""}`,
     )
 
     return c.json(response)
@@ -7927,7 +7976,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
       VertexProjectId: config.VertexProjectId,
       VertexRegion: config.VertexRegion,
       LiteLLMApiKey: config.LiteLLMApiKey,
-      LiteLLMModel: config.LiteLLMModel,
+      LiteLLMBaseUrl: config.LiteLLMBaseUrl,
     })
 
     // Filter out actualName and provider fields before sending to frontend

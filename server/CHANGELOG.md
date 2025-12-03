@@ -1,3 +1,10 @@
+## [3.33.2](https://github.com/xynehq/xyne/compare/v3.33.1...v3.33.2) (2025-12-03)
+
+
+### Bug Fixes
+
+* updated the follow up query generation prompt ([#1233](https://github.com/xynehq/xyne/issues/1233)) ([2913b37](https://github.com/xynehq/xyne/commit/2913b374c6e211f06316c06cb140f1621cffa2fa))
+
 ## [3.33.1](https://github.com/xynehq/xyne/compare/v3.33.0...v3.33.1) (2025-11-27)
 
 
