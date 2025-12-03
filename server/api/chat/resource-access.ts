@@ -66,9 +66,6 @@ const DRIVE_LIKE_APPS = new Set<Apps>([
   Apps.MicrosoftSharepoint,
 ])
 
-const CONNECTOR_READY_STATUSES: Partial<Record<Apps, ConnectorStatus[]>> = {
-  [Apps.Slack]: [ConnectorStatus.Authenticated, ConnectorStatus.Connected],
-}
 
 const CONNECTOR_READY_STATUSES: Partial<Record<Apps, ConnectorStatus[]>> = {
   [Apps.Slack]: [ConnectorStatus.Authenticated, ConnectorStatus.Connected],

@@ -170,8 +170,6 @@ const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
   images: [],
 })
 
-const reviewsAllowed = (context: AgentRunContext): boolean =>
-  !context.review.lockedByFinalSynthesis
 
 const reviewsAllowed = (context: AgentRunContext): boolean =>
   !context.review.lockedByFinalSynthesis
