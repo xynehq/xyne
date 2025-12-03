@@ -186,7 +186,7 @@ const vespaResultToMinimalAgentFragment = async (
   userMetadata: UserMetadataType,
   query: string,
 ): Promise<MinimalAgentFragment> => ({
-  id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
+  id: `${(child.fields as any)?.docId || `Fragment_id_${idx}`}`,
   content: await answerContextMap(
     child as VespaSearchResults,
     userMetadata,

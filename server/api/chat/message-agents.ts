@@ -2306,7 +2306,7 @@ async function runReviewLLM(
 - Evaluate the current plan to see if it still fits the evidence gathered from the tool calls; suggest plan changes when necessary.
 - Detect anomalies (unexpected behaviors, contradictory data, missing outputs, or unresolved ambiguities) and call them out explicitly. If intent remains unclear, set ambiguityResolved=false and include the ambiguity notes inside the anomalies array.
 ${delegationNote}
-- When the available context is already relevant and sufficient  and it meets all the requirement of user's ask , set planChangeNeeded=true and use planChangeReason to state that the plan should pivot toward final synthesis because the evidence is complete.
+- When the available context is already relevant and sufficient and it meets all the requirement of user's ask , set planChangeNeeded=true and use planChangeReason to state that the plan should pivot toward final synthesis because the evidence is complete.
 - Set recommendation to "gather_more" when required evidence or data is missing, "clarify_query" when ambiguity remains unresolved, and "replan" only when the current plan is no longer viable.
 - Always set ambiguityResolved=false whenever outstanding clarifications exist or anomalies highlight missing/contradictory information; otherwise leave it true.
 Respond strictly in JSON matching this schema: ${JSON.stringify({
@@ -4052,17 +4052,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
           }, "[DEBUG] Expectation history state at turn_end")
 
           try {
-            if (!reviewsAllowed(agentContext)) {
-              Logger.info(
-                {
-                  turn,
-                  chatId: agentContext.chat.externalId,
-                  lockedAtTurn: agentContext.review.lockedAtTurn,
-                },
-                "[MessageAgents] Review skipped because final synthesis was already requested."
-              )
-              return
-            }
             const { reviewInput, fallbackUsed } = buildTurnReviewInput(turn)
             if (
               fallbackUsed &&
@@ -4078,13 +4067,16 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 "[MessageAgents] No per-turn tool records; defaulting to last tool call."
               )
             }
-            await runAndBroadcastReview(reviewInput, turn)
+            await runAndBroadcastReview(agentContext, reviewInput, turn)
           } catch (error) {
-            Logger.error({
-              turn,
-              chatId: agentContext.chat.externalId,
-              error: getErrorMessage(error),
-            }, "[MessageAgents] Turn-end review failed")
+            Logger.error(
+              {
+                turn,
+                chatId: agentContext.chat.externalId,
+                error: getErrorMessage(error),
+              },
+              "[MessageAgents] Turn-end review failed"
+            )
           } finally {
             const attachmentState = getAttachmentPhaseMetadata(agentContext)
             if (attachmentState.initialAttachmentPhase) {
@@ -4100,9 +4092,22 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
 
         const runAndBroadcastReview = async (
+          context: AgentRunContext,
           reviewInput: AutoReviewInput,
           iteration: number
-        ): Promise<ReviewResult> => {
+        ): Promise<ReviewResult | null> => {
+          if (!reviewsAllowed(context)) {
+            Logger.info(
+              {
+                turn: iteration,
+                chatId: context.chat.externalId,
+                lockedAtTurn: context.review.lockedAtTurn,
+                focus: reviewInput.focus,
+              },
+              `[MessageAgents] Review skipped for focus '${reviewInput.focus}' due to final synthesis lock.`
+            )
+            return null
+          }
           if (
             (!reviewInput.expectedResults ||
               reviewInput.expectedResults.length === 0) &&
@@ -4118,11 +4123,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
           const pendingPromise = (async () => {
             const computedReview = await performAutomaticReview(
               reviewInput,
-              agentContext
+              context
             )
             reviewResult = computedReview
             await handleReviewOutcome(
-              agentContext,
+              context,
               computedReview,
               iteration,
               reviewInput.focus,
@@ -4130,7 +4135,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             )
           })()
 
-          agentContext.review.pendingReview = pendingPromise
+          context.review.pendingReview = pendingPromise
           try {
             await pendingPromise
             if (!reviewResult) {
@@ -4138,8 +4143,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
             }
             return reviewResult
           } finally {
-            if (agentContext.review.pendingReview === pendingPromise) {
-              agentContext.review.pendingReview = undefined
+            if (context.review.pendingReview === pendingPromise) {
+              context.review.pendingReview = undefined
             }
           }
         }
@@ -4490,28 +4495,18 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     .filter((record) => record.toolName === evt.data.toolName)
                     .slice(-newCount)
                   if (recentHistory.length > 0) {
-                    if (reviewsAllowed(agentContext)) {
-                      await runAndBroadcastReview(
-                        {
-                          focus: "tool_error",
-                          turnNumber: currentTurn,
-                          toolCallHistory: recentHistory,
-                          plan: agentContext.plan,
-                          expectedResults:
-                            expectationHistory.get(currentTurn) || [],
-                        },
-                        currentTurn
-                      )
-                    } else {
-                      Logger.info(
-                        {
-                          turn: currentTurn,
-                          chatId: agentContext.chat.externalId,
-                          lockedAtTurn: agentContext.review.lockedAtTurn,
-                        },
-                        "[MessageAgents] Tool error review skipped due to final synthesis lock."
-                      )
-                    }
+                    await runAndBroadcastReview(
+                      agentContext,
+                      {
+                        focus: "tool_error",
+                        turnNumber: currentTurn,
+                        toolCallHistory: recentHistory,
+                        plan: agentContext.plan,
+                        expectedResults:
+                          expectationHistory.get(currentTurn) || [],
+                      },
+                      currentTurn
+                    )
                   }
                 }
               } else {
@@ -4755,54 +4750,44 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
                   MIN_TURN_NUMBER
                 )
-                if (reviewsAllowed(agentContext)) {
-                  await runAndBroadcastReview(
-                    {
-                      focus: "run_end",
-                      turnNumber: finalTurnNumber,
-                      toolCallHistory: agentContext.toolCallHistory,
-                      plan: agentContext.plan,
-                      expectedResults:
-                        expectationHistory.get(finalTurnNumber) || [],
-                    },
-                    finalTurnNumber
-                  )
-                } else {
-                  Logger.info(
-                    {
-                      turn: finalTurnNumber,
-                      chatId: agentContext.chat.externalId,
-                      lockedAtTurn: agentContext.review.lockedAtTurn,
-                    },
-                    "[MessageAgents] Run-end review skipped because final synthesis already locked reviews."
-                  )
-                }
+                await runAndBroadcastReview(
+                  agentContext,
+                  {
+                    focus: "run_end",
+                    turnNumber: finalTurnNumber,
+                    toolCallHistory: agentContext.toolCallHistory,
+                    plan: agentContext.plan,
+                    expectedResults:
+                      expectationHistory.get(finalTurnNumber) || [],
+                  },
+                  finalTurnNumber
+                )
                 // Store the response in database to prevent vanishing
                 // TODO: Implement full DB integration similar to the previous legacy controller
                 // For now, store basic message data
                 loggerWithChild({ email }).info("Storing assistant response in database")
-                
+
                 // Calculate costs and tokens
                 const totalCost = agentContext.totalCost
                 const totalTokens =
                   agentContext.tokenUsage.input + agentContext.tokenUsage.output
 
                 try {
-                const assistantInsert = {
-                  chatId: chatRecord.id,
-                  userId: user.id,
-                  workspaceExternalId: String(workspace.externalId),
-                  chatExternalId: String(chatRecord.externalId),
-                  messageRole: MessageRole.Assistant,
-                  email: String(user.email),
-                  sources: citations,
-                  imageCitations,
-                  message: processMessage(answer, citationMap),
-                  thinking: thinkingLog,
-                  modelId: agenticModelId,
-                  cost: totalCost.toString(),
-                  tokensUsed: totalTokens,
-                } as unknown as Omit<InsertMessage, "externalId">
+                  const assistantInsert = {
+                    chatId: chatRecord.id,
+                    userId: user.id,
+                    workspaceExternalId: String(workspace.externalId),
+                    chatExternalId: String(chatRecord.externalId),
+                    messageRole: MessageRole.Assistant,
+                    email: String(user.email),
+                    sources: citations,
+                    imageCitations,
+                    message: processMessage(answer, citationMap),
+                    thinking: thinkingLog,
+                    modelId: agenticModelId,
+                    cost: totalCost.toString(),
+                    tokensUsed: totalTokens,
+                  } as unknown as Omit<InsertMessage, "externalId">
                   const msg = await insertMessage(db, assistantInsert)
                   assistantMessageId = String(msg.externalId)
                   lastPersistedMessageId = msg.id as number
@@ -4814,7 +4799,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     "Failed to persist assistant response"
                   )
                 }
-                
+
                 loggerWithChild({ email }).debug({
                   answer,
                   citations: citations.length,
@@ -4824,7 +4809,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 runEndSpan.setAttribute("total_cost", totalCost)
                 runEndSpan.setAttribute("total_tokens", totalTokens)
                 runEndSpan.setAttribute("citations_count", citations.length)
-                
+
                 // Send final metadata with messageId
                 await stream.writeSSE({
                   event: ChatSSEvents.ResponseMetadata,
@@ -4833,7 +4818,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     messageId: assistantMessageId || "temp-message-id",
                   }),
                 })
-                
+
                 await stream.writeSSE({
                   event: ChatSSEvents.End,
                   data: "",
@@ -5474,17 +5459,6 @@ async function runDelegatedAgentWithMessageAgents(
       }, "[DelegatedAgenticRun][DEBUG] Expectation history state at turn_end")
 
       try {
-        if (!reviewsAllowed(agentContext)) {
-          Logger.info(
-            {
-              turn,
-              chatId: agentContext.chat.externalId,
-              lockedAtTurn: agentContext.review.lockedAtTurn,
-            },
-            "[DelegatedAgenticRun] Review skipped because final synthesis was already requested."
-          )
-          return
-        }
         const { reviewInput, fallbackUsed } = buildTurnReviewInput(turn)
         if (
           fallbackUsed &&
@@ -5500,7 +5474,7 @@ async function runDelegatedAgentWithMessageAgents(
             "[DelegatedAgenticRun] No per-turn tool records; defaulting to last tool call."
           )
         }
-        await runAndBroadcastReview(reviewInput, turn)
+        await runAndBroadcastReview(agentContext, reviewInput, turn)
       } catch (error) {
         Logger.error({
           turn,
@@ -5526,9 +5500,22 @@ async function runDelegatedAgentWithMessageAgents(
     }
 
     const runAndBroadcastReview = async (
+      context: AgentRunContext,
       reviewInput: AutoReviewInput,
       iteration: number
-    ): Promise<ReviewResult> => {
+    ): Promise<ReviewResult | null> => {
+      if (!reviewsAllowed(context)) {
+        Logger.info(
+          {
+            turn: iteration,
+            chatId: context.chat.externalId,
+            lockedAtTurn: context.review.lockedAtTurn,
+            focus: reviewInput.focus,
+          },
+          `[DelegatedAgenticRun] Review skipped for focus '${reviewInput.focus}' due to final synthesis lock.`
+        )
+        return null
+      }
       if (
         (!reviewInput.expectedResults ||
           reviewInput.expectedResults.length === 0) &&
@@ -5541,10 +5528,10 @@ async function runDelegatedAgentWithMessageAgents(
       }
       const reviewResult = await performAutomaticReview(
         reviewInput,
-        agentContext
+        context
       )
       await handleReviewOutcome(
-        agentContext,
+        context,
         reviewResult,
         iteration,
         reviewInput.focus,
@@ -5716,28 +5703,18 @@ async function runDelegatedAgentWithMessageAgents(
                   .filter((record) => record.toolName === evt.data.toolName)
                   .slice(-newCount)
                 if (recentHistory.length > 0) {
-                  if (reviewsAllowed(agentContext)) {
-                    await runAndBroadcastReview(
-                      {
-                        focus: "tool_error",
-                        turnNumber: currentTurn,
-                        toolCallHistory: recentHistory,
-                        plan: agentContext.plan,
-                        expectedResults:
-                          expectationHistory.get(currentTurn) || [],
-                      },
-                      currentTurn
-                    )
-                  } else {
-                    Logger.info(
-                      {
-                        turn: currentTurn,
-                        chatId: agentContext.chat.externalId,
-                        lockedAtTurn: agentContext.review.lockedAtTurn,
-                      },
-                      "[DelegatedAgenticRun] Tool error review skipped due to final synthesis lock."
-                    )
-                  }
+                  await runAndBroadcastReview(
+                    agentContext,
+                    {
+                      focus: "tool_error",
+                      turnNumber: currentTurn,
+                      toolCallHistory: recentHistory,
+                      plan: agentContext.plan,
+                      expectedResults:
+                        expectationHistory.get(currentTurn) || [],
+                    },
+                    currentTurn
+                  )
                 }
               }
             } else {
@@ -5856,28 +5833,18 @@ async function runDelegatedAgentWithMessageAgents(
                 agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
                 MIN_TURN_NUMBER
               )
-              if (reviewsAllowed(agentContext)) {
-                await runAndBroadcastReview(
-                  {
-                    focus: "run_end",
-                    turnNumber: finalTurnNumber,
-                    toolCallHistory: agentContext.toolCallHistory,
-                    plan: agentContext.plan,
-                    expectedResults:
-                      expectationHistory.get(finalTurnNumber) || [],
-                  },
-                  finalTurnNumber
-                )
-              } else {
-                Logger.info(
-                  {
-                    turn: finalTurnNumber,
-                    chatId: agentContext.chat.externalId,
-                    lockedAtTurn: agentContext.review.lockedAtTurn,
-                  },
-                  "[DelegatedAgenticRun] Run-end review skipped because final synthesis already locked reviews."
-                )
-              }
+              await runAndBroadcastReview(
+                agentContext,
+                {
+                  focus: "run_end",
+                  turnNumber: finalTurnNumber,
+                  toolCallHistory: agentContext.toolCallHistory,
+                  plan: agentContext.plan,
+                  expectedResults:
+                    expectationHistory.get(finalTurnNumber) || [],
+                },
+                finalTurnNumber
+              )
               runCompleted = true
               break
             }
