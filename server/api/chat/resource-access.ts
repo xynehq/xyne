@@ -442,7 +442,7 @@ async function evaluateDriveLikeItems(
         const permissions = fields.permissions || []
         const item: ResourceItem = {
           id: docId,
-          label: fields.title || fields.fileName || docId,
+          label: fields.title || docId,
           type: fields.entity || "file",
         }
         if (permissions.includes(userEmail)) {
@@ -492,7 +492,10 @@ async function hasConnector(
       AuthType.OAuth,
       email,
     )
-    return isConnectorReadyForApp(app, connector.status)
+    const status =
+      (connector?.status as ConnectorStatus | undefined) ||
+      ConnectorStatus.NotConnected
+    return isConnectorReadyForApp(app, status)
   } catch {
     return false
   }
