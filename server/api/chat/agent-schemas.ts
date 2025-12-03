@@ -88,10 +88,11 @@ export interface Decision {
 export interface ReviewState {
   lastReviewTurn: number | null
   reviewFrequency: number // Review every N turns
-  lastReviewSummary: string | null
   outstandingAnomalies: string[]
   clarificationQuestions: string[]
   lastReviewResult: ReviewResult | null
+  lockedByFinalSynthesis: boolean
+  lockedAtTurn: number | null
   pendingReview?: Promise<void>
   cachedPlanSummary?: {
     hash: string

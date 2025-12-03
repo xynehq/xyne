@@ -1,9 +1,11 @@
-import { Tool, ToolErrorCodes, ToolResponse } from "@xynehq/jaf"
+import type { Tool } from "@xynehq/jaf"
+import { ToolErrorCodes, ToolResponse } from "@xynehq/jaf"
+import type { ZodType } from "zod"
 import { Apps } from "@xyne/vespa-ts/types"
 import { getErrorMessage } from "@/utils"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import type { Ctx } from "../types"
+import type { Ctx } from "./types"
 import {
   SearchKnowledgeBaseInputSchema,
   type SearchKnowledgeBaseToolParams,
@@ -17,6 +19,10 @@ import {
 import { executeVespaSearch } from "./global"
 
 const Logger = getLogger(Subsystem.Chat)
+type ToolSchemaParameters<T> = Tool<T, Ctx>["schema"]["parameters"]
+const toToolSchemaParameters = <T>(
+  schema: ZodType,
+): ToolSchemaParameters<T> => schema as unknown as ToolSchemaParameters<T>
 
 const buildOverrideSelections = (
   params: SearchKnowledgeBaseToolParams,
@@ -37,7 +43,9 @@ export const searchKnowledgeBaseTool: Tool<
     name: "searchKnowledgeBase",
     description:
       "Search the user's knowledge base collections and return relevant document fragments with citations.",
-    parameters: SearchKnowledgeBaseInputSchema,
+    parameters: toToolSchemaParameters<SearchKnowledgeBaseToolParams>(
+      SearchKnowledgeBaseInputSchema,
+    ),
   },
   async execute(params, context) {
     const email = context.user.email

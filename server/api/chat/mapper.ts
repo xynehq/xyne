@@ -29,26 +29,10 @@ import { getRelativeTime } from "@/utils"
 import { flattenObject } from "@/api/chat/utils"
 import { getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
-import { SystemEntity, XyneTools } from "@/shared/types"
+import { SystemEntity} from "@/shared/types"
 import {
   Apps,
-  MailEntity,
-  MailAttachmentEntity,
-  DriveEntity,
-  CalendarEntity,
-  GooglePeopleEntity,
-  GoogleApps,
 } from "@xyne/vespa-ts/types"
-import type {
-  ConversationalParams,
-  MetadataRetrievalParams,
-  SearchParams,
-  SlackRelatedMessagesParams,
-  SlackThreadsParams,
-  SlackUserProfileParams,
-} from "@/api/chat/types"
-import config from "@/config"
-import { A } from "ollama/dist/shared/ollama.6319775f.mjs"
 
 const getLoggerForMapper = (emailSub: string) =>
   getLoggerWithChild(Subsystem.Chat, { email: emailSub })
@@ -62,7 +46,6 @@ export const mapGithubToolResponse = (
 ): { formattedContent: string; newFragments: MinimalAgentFragment[] } => {
   let formattedContent = "Tool returned no parsable content."
   const newFragments: MinimalAgentFragment[] = []
-  const Logger = getLoggerForMapper(emailSub)
 
   switch (toolName) {
     case "get_issue": {
