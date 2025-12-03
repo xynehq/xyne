@@ -4806,7 +4806,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 // TODO: Implement full DB integration similar to the previous legacy controller
                 // For now, store basic message data
                 loggerWithChild({ email }).info("Storing assistant response in database")
-                Logger.info(
+                Logger.debug(
                   {
                     chatId: agentContext.chat.externalId,
                     turn: finalTurnNumber,

@@ -213,7 +213,7 @@ async function* nonRagIterator(
   modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: Citation }
+    citation?: { index: string; item: Citation }
     imageCitation?: ImageCitation
   }
 > {
@@ -2347,7 +2347,7 @@ export const AgentMessageApi = async (c: Context) => {
                 let iterator:
                   | AsyncIterableIterator<
                       ConverseResponse & {
-                        citation?: { index: number; item: any }
+                        citation?: { index: string; item: any }
                         imageCitation?: ImageCitation
                       }
                     >
@@ -3035,7 +3035,7 @@ async function collectIterator<
     reasoning?: boolean
     cost?: number
     metadata?: { usage?: { inputTokens: number; outputTokens: number } }
-    citation?: { index: number; item: Citation }
+    citation?: { index: string; item: Citation }
     imageCitation?: ImageCitation
   },
 >(iterator: AsyncIterable<TChunk>, opts?: { maxBytes?: number }) {

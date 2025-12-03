@@ -413,7 +413,7 @@ export const GetChatTraceApi = async (c: Context) => {
 
 export const processMessage = (
   text: string,
-  citationMap: Record<string | number, number>,
+  citationMap: Record<string, number>,
   email?: string,
 ) => {
   if (!text) {
@@ -430,7 +430,7 @@ export const processMessage = (
 
 export const processWebSearchMessage = (
   text: string,
-  citationMap: Record<string | number, number>,
+  citationMap: Record<string, number>,
   email?: string,
 ) => {
   if (!text) {
@@ -645,7 +645,7 @@ async function* processIterator(
   isMsgWithKbItems?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: any }
+    citation?: { index: string; item: any }
     imageCitation?: ImageCitation
   }
 > {
@@ -1187,7 +1187,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: any }
+    citation?: { index: string; item: any }
     imageCitation?: ImageCitation
   }
 > {
@@ -1963,7 +1963,7 @@ async function* generateAnswerFromGivenContext(
   messages: Message[] = [],
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: any }
+    citation?: { index: string; item: any }
     imageCitation?: ImageCitation
   }
 > {
@@ -2343,7 +2343,7 @@ export async function* generateAnswerFromDualRag(
   publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: any }
+    citation?: { index: string; item: any }
     imageCitation?: ImageCitation
   }
 > {
@@ -3030,7 +3030,7 @@ async function* generatePointQueryTimeExpansion(
   publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: any }
+    citation?: { index: string; item: any }
     imageCitation?: ImageCitation
   }
 > {
@@ -3633,7 +3633,7 @@ async function* generateMetadataQueryAnswer(
   publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: any }
+    citation?: { index: string; item: any }
     imageCitation?: ImageCitation
   }
 > {
@@ -4460,7 +4460,7 @@ export async function* UnderstandMessageAndAnswer(
   publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: any }
+    citation?: { index: string; item: any }
     imageCitation?: ImageCitation
   }
 > {
@@ -4608,7 +4608,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   messages: Message[] = [],
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: any }
+    citation?: { index: string; item: any }
     imageCitation?: ImageCitation
   }
 > {
@@ -5198,7 +5198,7 @@ export const MessageApi = async (c: Context) => {
             let answer = ""
             let citations = []
             let imageCitations: any[] = []
-            let citationMap: Record<string | number, number> = {}
+            let citationMap: Record<string, number> = {}
             let thinking = ""
             let reasoning =
               userRequestsReasoning &&
@@ -5239,7 +5239,7 @@ export const MessageApi = async (c: Context) => {
             reasoning = isReasoning && userRequestsReasoning
             citations = []
             citationMap = {}
-            let citationValues: Record<number, string> = {}
+            let citationValues: Record<string, Citation> = {}
             let count = 0
             for await (const chunk of iterator) {
               if (stream.closed) {
@@ -5578,7 +5578,7 @@ export const MessageApi = async (c: Context) => {
             let answer = ""
             let citations: Citation[] = []
             let imageCitations: any[] = []
-            let citationMap: Record<string | number, number> = {}
+            let citationMap: Record<string, number> = {}
             let deepResearchSteps: any[] = []
             let queryFilters = {
               apps: [],
@@ -5907,7 +5907,7 @@ export const MessageApi = async (c: Context) => {
               let iterator:
                 | AsyncIterableIterator<
                     ConverseResponse & {
-                      citation?: { index: number; item: any }
+                      citation?: { index: string; item: any }
                       imageCitation?: ImageCitation
                     }
                   >
@@ -5992,7 +5992,7 @@ export const MessageApi = async (c: Context) => {
               citations = []
               let imageCitations: any[] = []
               citationMap = {}
-              let citationValues: Record<number, string> = {}
+              let citationValues: Record<string, Citation> = {}
 
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -6653,7 +6653,7 @@ export const MessageRetryApi = async (c: Context) => {
             let answer = ""
             let citations = []
             let imageCitations: any[] = []
-            let citationMap: Record<string | number, number> = {}
+            let citationMap: Record<string, number> = {}
             let thinking = ""
             let reasoning =
               userRequestsReasoning &&
@@ -6693,7 +6693,7 @@ export const MessageRetryApi = async (c: Context) => {
             imageCitations = []
             citationMap = {}
             let count = 0
-            let citationValues: Record<number, string> = {}
+            let citationValues: Record<string, Citation> = {}
             for await (const chunk of iterator) {
               if (stream.closed) {
                 loggerWithChild({ email: email }).info(
@@ -7025,7 +7025,7 @@ export const MessageRetryApi = async (c: Context) => {
             let currentAnswer = ""
             let answer = ""
             let citations: Citation[] = [] // Changed to Citation[] for consistency
-            let citationMap: Record<string | number, number> = {}
+            let citationMap: Record<string, number> = {}
             let queryFilters = {
               apps: [],
               entities: [],
@@ -7210,7 +7210,7 @@ export const MessageRetryApi = async (c: Context) => {
               reasoning = config.isReasoning && userRequestsReasoning
               citations = []
               citationMap = {}
-              let citationValues: Record<number, string> = {}
+              let citationValues: Record<string, Citation> = {}
               for await (const chunk of iterator) {
                 if (stream.closed) {
                   loggerWithChild({ email: email }).info(
