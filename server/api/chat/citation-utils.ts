@@ -49,7 +49,7 @@ export const checkAndYieldCitationsForAgent = async function* (
 
     const text = splitGroupedCitationsWithSpaces(textInput)
     let match: RegExpExecArray | null
-    let imgMatch: RegExpExecArray | null
+    let imgMatch: RegExpExecArray | null = null
     let citationsProcessed = 0
     let imageCitationsProcessed = 0
     let citationsYielded = 0
@@ -123,8 +123,11 @@ export const checkAndYieldCitationsForAgent = async function* (
                 if (imageData) {
                   if (!imageData.imagePath || !imageData.imageBuffer) {
                     loggerWithChild({ email }).error(
+                      {
+                        citationKey: imgMatch[1],
+                        imageData,
+                      },
                       "Invalid imageData structure returned",
-                      { citationKey: imgMatch[1], imageData },
                     )
                     imageSpan.setAttribute("processing_success", false)
                     imageSpan.setAttribute(
@@ -155,7 +158,7 @@ export const checkAndYieldCitationsForAgent = async function* (
                     "image_extension",
                     imageData.extension || "unknown",
                   )
-                  
+
                   // Mark as successfully processed only after successful yield
                   if (!yieldedImageCitations.has(docIndex)) {
                     yieldedImageCitations.set(docIndex, new Set<number>())
@@ -178,9 +181,8 @@ export const checkAndYieldCitationsForAgent = async function* (
               }
             } else {
               loggerWithChild({ email }).warn(
-                "Found a citation index but could not find it in the search result ",
-                imageIndex,
-                fragments.length,
+                { imageIndex, fragmentsLength: fragments.length },
+                "Found a citation index but could not find it in the search result",
               )
               continue
             }

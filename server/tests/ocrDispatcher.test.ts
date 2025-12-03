@@ -85,39 +85,47 @@ function createMockFetch(config: MockStatusConfig) {
 
   return {
     install: () => {
-      globalThis.fetch = async (input, init) => {
-        if (typeof input === "string" && input.includes("/instance_status")) {
-          statusCallCount += 1
-          
-          if (config.serverDown) {
-            throw new Error("ECONNREFUSED: Connection refused - instance status server is down")
+      const mockFetch: typeof globalThis.fetch = Object.assign(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (typeof input === "string" && input.includes("/instance_status")) {
+            statusCallCount += 1
+            
+            if (config.serverDown) {
+              throw new Error("ECONNREFUSED: Connection refused - instance status server is down")
+            }
+
+            const idle =
+              config.idleSequence[
+                statusCallCount < config.idleSequence.length
+                  ? statusCallCount - 1
+                  : config.idleSequence.length - 1
+              ] ?? 0
+
+            return new Response(
+              JSON.stringify({
+                active_instances: Math.max(0, 10 - idle),
+                configured_instances: 10,
+                idle_instances: idle,
+                last_updated: Date.now(),
+              }),
+              {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              },
+            )
           }
 
-          const idle =
-            config.idleSequence[
-              statusCallCount < config.idleSequence.length
-                ? statusCallCount - 1
-                : config.idleSequence.length - 1
-            ] ?? 0
-
-          return new Response(
-            JSON.stringify({
-              active_instances: Math.max(0, 10 - idle),
-              configured_instances: 10,
-              idle_instances: idle,
-              last_updated: Date.now(),
-            }),
-            {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            },
+          throw new Error(
+            `[ocrDispatcher.test] Unexpected fetch target: ${String(input)}`,
           )
-        }
+        },
+        {
+          // Preserve Bun's fetch.preconnect signature to satisfy the type.
+          preconnect: originalFetch.preconnect.bind(originalFetch),
+        },
+      )
 
-        throw new Error(
-          `[ocrDispatcher.test] Unexpected fetch target: ${String(input)}`,
-        )
-      }
+      globalThis.fetch = mockFetch
     },
     restore: () => {
       globalThis.fetch = originalFetch
