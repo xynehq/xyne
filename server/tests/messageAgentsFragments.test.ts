@@ -9,6 +9,7 @@ import { getRecentImagesFromContext } from "@/api/chat/runContextUtils"
 import { buildMCPJAFTools } from "@/api/chat/jaf-adapter"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { Apps } from "@xyne/vespa-ts/types"
+import { createRunId, createTraceId } from "@xynehq/jaf"
 
 const baseFragment: MinimalAgentFragment = {
   id: "doc-1",
@@ -71,10 +72,11 @@ const createMockContext = (): AgentRunContext => ({
   review: {
     lastReviewTurn: null,
     reviewFrequency: 5,
-    lastReviewSummary: null,
     outstandingAnomalies: [],
     clarificationQuestions: [],
     lastReviewResult: null,
+    lockedByFinalSynthesis: false,
+    lockedAtTurn: null,
   },
   decisions: [],
   finalSynthesis: {
@@ -84,6 +86,7 @@ const createMockContext = (): AgentRunContext => ({
     streamedText: "",
     ackReceived: false,
   },
+  stopRequested: false,
 })
 
 describe("message-agents context tracking", () => {
@@ -118,8 +121,8 @@ describe("message-agents context tracking", () => {
         state: {
           context,
           messages: [],
-          runId: "run-1",
-          traceId: "trace-1",
+          runId: createRunId("run-1"),
+          traceId: createTraceId("trace-1"),
           currentAgentName: "xyne-agent",
           turnCount: 1,
         },
@@ -130,7 +133,6 @@ describe("message-agents context tracking", () => {
       context.message.text,
       [],
       new Set<string>(),
-      undefined,
       undefined,
       context.turnCount
     )
@@ -256,7 +258,7 @@ describe("message-agents context tracking", () => {
 
     expect(tools).toHaveLength(1)
     const execution = await tools[0].execute({}, {} as AgentRunContext)
-    if (!execution || execution.status !== "success") {
+    if (!execution || typeof execution === "string" || execution.status !== "success") {
       throw new Error("MCP tool did not execute successfully")
     }
     const contexts = (execution.metadata as any)?.contexts as MinimalAgentFragment[]

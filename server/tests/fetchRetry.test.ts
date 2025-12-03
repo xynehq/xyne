@@ -10,6 +10,14 @@ import {
 import config from "@/config"
 import VespaClient from "@xyne/vespa-ts/client"
 
+const originalFetch = global.fetch
+const preconnect =
+  typeof originalFetch?.preconnect === "function"
+    ? originalFetch.preconnect.bind(originalFetch)
+    : () => Promise.resolve()
+const withPreconnect = <T extends (...args: any[]) => any>(fn: T) =>
+  Object.assign(mock(fn), { preconnect }) as unknown as typeof fetch
+
 // mocking at top before importing vespaClient
 const mockPinoLogger = {
   error: mock(() => {}),
@@ -60,6 +68,7 @@ describe("VespaClient", () => {
 
   afterAll(() => {
     mock.restore()
+    global.fetch = originalFetch
   })
 
   test("search should succeed on first attempt", async () => {
@@ -69,10 +78,8 @@ describe("VespaClient", () => {
       },
     }
 
-    global.fetch = mock(() =>
-      Promise.resolve(
-        new Response(JSON.stringify(mockResponse), { status: 200 }),
-      ),
+    global.fetch = withPreconnect(() =>
+      Promise.resolve(new Response(JSON.stringify(mockResponse), { status: 200 })),
     )
 
     const result = await vespaClient.search(mockPayload)
@@ -92,7 +99,7 @@ describe("VespaClient", () => {
   })
 
   test("search should not retry on 404", async () => {
-    global.fetch = mock(() =>
+    global.fetch = withPreconnect(() =>
       Promise.resolve(new Response("Not Found", { status: 404 })),
     )
 
@@ -106,7 +113,7 @@ describe("VespaClient", () => {
   })
 
   test("search should retry on 500 up to maxRetries", async () => {
-    global.fetch = mock(() =>
+    global.fetch = withPreconnect(() =>
       Promise.resolve(new Response("Server Error", { status: 500 })),
     )
 
@@ -134,7 +141,7 @@ describe("VespaClient", () => {
       },
     }
 
-    global.fetch = mock()
+    const fetchMock = mock()
       .mockImplementationOnce(() =>
         Promise.resolve(new Response("Server Error", { status: 500 })),
       )
@@ -143,6 +150,8 @@ describe("VespaClient", () => {
           new Response(JSON.stringify(mockResponse), { status: 200 }),
         ),
       )
+
+    global.fetch = Object.assign(fetchMock, { preconnect }) as unknown as typeof fetch
 
     // Mock setTimeout to speed up tests
     // @ts-ignore

@@ -66,6 +66,10 @@ const DRIVE_LIKE_APPS = new Set<Apps>([
   Apps.MicrosoftSharepoint,
 ])
 
+const CONNECTOR_READY_STATUSES: Partial<Record<Apps, ConnectorStatus[]>> = {
+  [Apps.Slack]: [ConnectorStatus.Authenticated, ConnectorStatus.Connected],
+}
+
 export async function getUserConnectorState(
   trx: TxnOrClient,
   userEmail: string,
@@ -438,7 +442,7 @@ async function evaluateDriveLikeItems(
         const permissions = fields.permissions || []
         const item: ResourceItem = {
           id: docId,
-          label: fields.title || fields.fileName || docId,
+          label: fields.title || docId,
           type: fields.entity || "file",
         }
         if (permissions.includes(userEmail)) {
@@ -468,6 +472,14 @@ function deriveStatus(
   return "missing"
 }
 
+function isConnectorReadyForApp(app: Apps, status: ConnectorStatus): boolean {
+  const allowedStatuses = CONNECTOR_READY_STATUSES[app]
+  if (allowedStatuses?.length) {
+    return allowedStatuses.includes(status)
+  }
+  return status === ConnectorStatus.Connected
+}
+
 async function hasConnector(
   trx: TxnOrClient,
   app: Apps,
@@ -480,7 +492,10 @@ async function hasConnector(
       AuthType.OAuth,
       email,
     )
-    return connector.status === ConnectorStatus.Connected
+    const status =
+      (connector?.status as ConnectorStatus | undefined) ||
+      ConnectorStatus.NotConnected
+    return isConnectorReadyForApp(app, status)
   } catch {
     return false
   }

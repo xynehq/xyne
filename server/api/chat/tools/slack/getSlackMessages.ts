@@ -116,12 +116,7 @@ export const getSlackRelatedMessagesTool: Tool<
         )
       }
 
-      let normalizedTimestampRange:
-        | {
-            from?: number
-            to?: number
-          }
-        | undefined
+      let normalizedTimestampRange: NormalizedTimestampRange = null
       try {
         normalizedTimestampRange = normalizeTimestampRange(scopedTimeRange)
       } catch {
@@ -242,6 +237,8 @@ export const getSlackRelatedMessagesTool: Tool<
   },
 }
 
+type NormalizedTimestampRange = { from: number | null; to: number | null } | null
+
 function buildDefaultRecentRange(): {
   startTime: string
   endTime: string
@@ -256,17 +253,22 @@ function buildDefaultRecentRange(): {
 
 function normalizeTimestampRange(
   range?: { startTime?: string; endTime?: string }
-): { from?: number; to?: number } | undefined {
+): NormalizedTimestampRange {
   if (!range) {
-    return undefined
+    return null
   }
-  const normalized: { from?: number; to?: number } = {}
+  let hasValue = false
+  const normalized: { from: number | null; to: number | null } = {
+    from: null,
+    to: null,
+  }
   if (range.startTime) {
     const from = Date.parse(range.startTime)
     if (Number.isNaN(from)) {
       throw new Error("Invalid startTime")
     }
     normalized.from = from
+    hasValue = true
   }
   if (range.endTime) {
     const to = Date.parse(range.endTime)
@@ -274,6 +276,7 @@ function normalizeTimestampRange(
       throw new Error("Invalid endTime")
     }
     normalized.to = to
+    hasValue = true
   }
-  return Object.keys(normalized).length ? normalized : undefined
+  return hasValue ? normalized : null
 }
