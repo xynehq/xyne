@@ -138,6 +138,16 @@ const AVAILABLE_SCOPES: ApiKeyScope[] = [
     name: "Delete Collection Item",
     description: "Allows deleting items from knowledge base collections",
   },
+  {
+    id: ApiKeyScopes.MESSAGE_FEEDBACK,
+    name: "Message Feedback",
+    description: "Allows submitting feedback on messages (like/dislike)",
+  },
+  {
+    id: ApiKeyScopes.ENHANCED_MESSAGE_FEEDBACK,
+    name: "Enhanced Message Feedback",
+    description: "Allows submitting enhanced feedback with custom comments and options",
+  },
 ]
 
 interface ApiKeyProps {

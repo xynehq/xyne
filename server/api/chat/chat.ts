@@ -7593,9 +7593,19 @@ export const StopStreamingApi = async (c: Context) => {
 }
 
 export const MessageFeedbackApi = async (c: Context) => {
-  const { sub, workspaceId } = c.get(JwtPayloadKey)
-  const email = sub
+  const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
   const Logger = getLogger(Subsystem.Chat)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.MESSAGE_FEEDBACK)) {
+      return c.json(
+        { message: "API key does not have scope to submit message feedback" },
+        403,
+      )
+    }
+  }
 
   try {
     //@ts-ignore - Assuming validation middleware handles this
@@ -7648,9 +7658,22 @@ export const MessageFeedbackApi = async (c: Context) => {
 
 // New Enhanced Feedback API
 export const EnhancedMessageFeedbackApi = async (c: Context) => {
-  const { sub, workspaceId } = c.get(JwtPayloadKey)
-  const email = sub
+  const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
   const Logger = getLogger(Subsystem.Chat)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.ENHANCED_MESSAGE_FEEDBACK)) {
+      return c.json(
+        {
+          message:
+            "API key does not have scope to submit enhanced message feedback",
+        },
+        403,
+      )
+    }
+  }
 
   try {
     //@ts-ignore - Assuming validation middleware handles this
