@@ -1516,7 +1516,7 @@ export const AgentMessageApi = async (c: Context) => {
               let answer = ""
               let citations: Citation[] = []
               let imageCitations: ImageCitation[] = []
-          let citationMap: Record<string | number, number> = {}
+              let citationMap: Record<string | number, number> = {}
               let thinking = ""
               let reasoning =
                 userRequestsReasoning &&
@@ -1767,7 +1767,7 @@ export const AgentMessageApi = async (c: Context) => {
               let answer = ""
               let citations: Citation[] = []
               let imageCitations: ImageCitation[] = []
-          let citationMap: Record<string | number, number> = {}
+              let citationMap: Record<string | number, number> = {}
               let thinking = ""
               let reasoning =
                 userRequestsReasoning &&

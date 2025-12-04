@@ -143,7 +143,6 @@ import {
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
 import { appToSchemaMapper, entityToSchemaMapper } from "@xyne/vespa-ts/mappers"
-import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
   getAgentByExternalId,
@@ -153,7 +152,6 @@ import {
   getAllPublicAgents,
   getAgentByExternalIdWithPermissionCheck,
 } from "@/db/agent"
-import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import {
   ragPipelineConfig,
   RagPipelineStages,
@@ -654,7 +652,7 @@ async function* processIterator(
   let parsed = { answer: "" }
   let thinking = ""
   let reasoning = config.isReasoning && userRequestsReasoning
-let yieldedCitations = new Set<string>()
+  let yieldedCitations = new Set<string>()
   let yieldedImageCitations = new Set<number>()
   // tied to the json format and output expected, we expect the answer key to be present
   const ANSWER_TOKEN = '"answer":'

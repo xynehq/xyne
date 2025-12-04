@@ -78,7 +78,12 @@ import {
   type ToolOutput,
   type ResourceAccessSummary,
 } from "./tool-schemas"
-import { searchToCitation, extractImageFileNames } from "./utils"
+import {
+  searchToCitation,
+  extractImageFileNames,
+  processMessage,
+  checkAndYieldCitationsForAgent,
+} from "./utils"
 import { GetDocumentsByDocIds } from "@/search/vespa"
 import {
   Apps,
@@ -111,8 +116,6 @@ import { searchGlobalTool, fallbackTool } from "./tools/global"
 import { searchKnowledgeBaseTool } from "./tools/knowledgeBase"
 import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
 import type { AttachmentMetadata } from "@/shared/types"
-import { processMessage } from "./utils"
-import { checkAndYieldCitationsForAgent } from "./citation-utils"
 import {
   evaluateAgentResourceAccess,
   getUserConnectorState,
@@ -3109,8 +3112,6 @@ function buildAgentInstructions(
   if (attachmentDirective) {
     instructionLines.push(attachmentDirective, "")
   }
-
-  instructionLines.push(chunkCitationGuidance, "")
 
   instructionLines.push(promptAddendum.trim())
 
