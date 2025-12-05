@@ -390,6 +390,7 @@ export const fetchAgentQueryResponsePairs = async (
       createdAt: string
       cost: number
       tokensUsed: number
+      feedback: unknown | null
     }[]
   }[]
 > => {
@@ -418,6 +419,7 @@ export const fetchAgentQueryResponsePairs = async (
       userName: users.name,
       cost: messages.cost,
       tokensUsed: messages.tokensUsed,
+      feedback: messages.feedback,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
@@ -442,6 +444,7 @@ export const fetchAgentQueryResponsePairs = async (
       createdAt: string
       cost: number
       tokensUsed: number
+      feedback: unknown | null
     }[]
     totalCost: number
     totalTokens: number
@@ -482,6 +485,7 @@ export const fetchAgentQueryResponsePairs = async (
         createdAt: nextMsg.createdAt.toISOString(),
         cost,
         tokensUsed: tokens,
+        feedback: currentMsg.feedback || null, // Feedback is from assistant message
       })
 
       chat.totalCost += cost
