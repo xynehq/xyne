@@ -1124,6 +1124,7 @@ export const answerContextMapFromFragments = (
   }
 
   return fragments
+    .slice(0, maxSummaryChunks)
     .map((fragment, index) => {
       const citationIndex = index + 1
       return `[index ${citationIndex}] ${fragment.content}`

@@ -52,7 +52,6 @@ import {
   type TraceEvent,
 } from "@xynehq/jaf"
 import { makeXyneJAFProvider } from "./jaf-provider"
-import { buildContextSection } from "./jaf-adapter"
 import { getErrorMessage } from "@/utils"
 import { ChatSSEvents, AgentReasoningStepType } from "@/shared/types"
 import type {
@@ -66,7 +65,7 @@ import {
   getProviderByModel,
   jsonParseLLMOutput,
 } from "@/ai/provider"
-import { answerContextMap, userContext } from "@/ai/context"
+import { answerContextMap, answerContextMapFromFragments, userContext } from "@/ai/context"
 import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import {
@@ -770,19 +769,13 @@ function buildFinalSynthesisPayload(
   fragmentsLimit = Math.max(12, context.allFragments.length || 1)
 ): { systemPrompt: string; userMessage: string } {
   const fragments = context.allFragments
-  const fragmentsSection = buildContextSection(fragments, fragmentsLimit)
+  const fragmentsSection = answerContextMapFromFragments(fragments, fragmentsLimit)
+  console.log("fragmentsSection", fragmentsSection)
   const planSection = formatPlanForPrompt(context.plan)
   const clarificationSection = formatClarificationsForPrompt(context.clarifications)
   const workspaceSection = context.userContext?.trim()
     ? `Workspace Context:\n${context.userContext}`
     : ""
-  const citationPrompt = [
-    "Citation Discipline (chunk-level):",
-    "- Treat each context line as a single chunk and use its key exactly as shown: `K[docId_chunkIndex]`.",
-    "- Every factual sentence must cite the exact chunk that supports it; one key per bracket, never combined.",
-    "- Use the chunk index from the context line (the number after the underscore).",
-    "- Only cite information that is explicitly in the chunk; state gaps without a citation.",
-  ].join("\n")
 
   const parts = [
     `User Question:\n${context.message.text}`,
@@ -790,7 +783,6 @@ function buildFinalSynthesisPayload(
     clarificationSection ? `Clarifications Resolved:\n${clarificationSection}` : "",
     workspaceSection,
     fragmentsSection,
-    citationPrompt,
   ].filter(Boolean)
 
   const userMessage = parts.join("\n\n")
@@ -814,6 +806,44 @@ function buildFinalSynthesisPayload(
 ### Constraint Handling
 - When the user asks for an action the system cannot execute (e.g., sending an email), deliver the closest actionable substitute (draft, checklist, explicit next steps) inside the answer.
 - Pair the substitute with a concise explanation of the limitation and the manual action the user must take.
+
+### File & Chunk Formatting (CRITICAL)
+- Each file starts with a header line exactly like:
+  index {docId} {file context begins here...}
+- \`docId\` is a unique identifier for that file (e.g., 0, 1, 2, etc.).
+- Inside the file context, text is split into chunks.
+- Each chunk might begin with a bracketed numeric index, e.g.: [0], [1], [2], etc.
+- This is the chunk index within that file, if it exists.
+
+### Guidelines for Response
+1. Data Interpretation:
+   - Use ONLY the provided files and their chunks as your knowledge base.
+   - Treat every file header \`index {docId} ...\` as the start of a new document.
+   - Treat every bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
+   - If dates exist, interpret them relative to the user's timezone when paraphrasing.
+2. Response Structure:
+   - Start with the most relevant facts from the chunks across files.
+   - Keep order chronological when it helps comprehension.
+   - Every factual statement MUST cite the exact chunk it came from using the format:
+     K[docId_chunkIndex]
+     where:
+       - \`docId\` is taken from the file header line ("index {docId} ...").
+       - \`chunkIndex\` is the bracketed number prefixed on that chunk within the same file.
+   - Examples:
+     - Single citation: "X is true K[12_3]."
+     - Two citations in one sentence (from different files or chunks): "X K[12_3] and Y K[7_0]."
+   - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
+3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
+   - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
+   - Place the citation immediately after the relevant claim.
+   - Do NOT group indices inside one set of brackets (WRONG: "K[12_3,7_1]").
+   - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[12_3] ... K[7_1]".
+   - Only cite information that appears verbatim or is directly inferable from the cited chunk.
+   - If you cannot ground a claim to a specific chunk, do not make the claim.
+4. Quality Assurance:
+   - Cross-check across multiple chunks/files when available and briefly note inconsistencies if they exist.
+   - Keep tone professional and concise.
+   - Acknowledge gaps if the provided chunks don't contain enough detail.
 
 ### Tone & Delivery
 - Answer with confident, declarative, verb-first sentences that use concrete nouns.
@@ -2199,7 +2229,7 @@ export function buildReviewPromptFromContext(
     context.currentTurnArtifacts.toolOutputs
   )
   const expectationsSection = formatExpectationsForReview(turnExpectations)
-  const fragmentsSection = buildContextSection(
+  const fragmentsSection = answerContextMapFromFragments(
     context.allFragments,
     Math.max(12, context.allFragments.length || 1)
   )
@@ -3055,14 +3085,6 @@ function buildAgentInstructions(
         "",
       ].join("\n")
     : ""
-
-  // Guidance for chunk-aware citations to preserve chunk indices for highlighting
-  const chunkCitationGuidance = [
-    "# CITATIONS",
-    "- When citing knowledge base snippets, include chunk indices so the UI can highlight correctly.",
-    "- Use the format `K[docIndex_chunkIndex]` in your working draft; the system will remap to `[n_chunkIndex]` when sending to the user.",
-    "- Continue to place citations immediately after the supporting sentence; avoid grouping multiple citations in one bracket.",
-  ].join("\n")
 
   let planSection = "\n<plan>\n"
   if (context.plan) {
@@ -4288,8 +4310,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
         let answer = ""
         const citations: Citation[] = []
         const imageCitations: ImageCitation[] = []
-        const citationMap: Record<string | number, number> = {}
-        const yieldedCitations = new Set<string>()
+        const citationMap: Record<number, number> = {}
+        const yieldedCitations = new Set<number>()
         const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
 
@@ -4313,6 +4335,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               fragmentsForCitations,
               yieldedImageCitations,
               email,
+              
             )) {
               if (citationEvent.citation) {
                 const { index, item } = citationEvent.citation
@@ -5956,7 +5979,7 @@ async function runDelegatedAgentWithMessageAgents(
 
     const citations: Citation[] = []
     const imageCitations: ImageCitation[] = []
-    const yieldedCitations = new Set<string>()
+    const yieldedCitations = new Set<number>()
     const yieldedImageCitations = new Map<number, Set<number>>()
 
     const answerForCitations =

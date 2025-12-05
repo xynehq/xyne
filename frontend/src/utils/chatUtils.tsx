@@ -5,7 +5,7 @@ export const generateUUID = () => crypto.randomUUID()
 
 export const textToCitationIndex = /\[(\d+)\]/g
 export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
-export const textToKbItemCitationIndex = /K\[([^\]]+)_(\d+)\]/g
+export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
 
 // Function to clean citation numbers from response text
 export const cleanCitationsFromResponse = (text: string): string => {
@@ -20,10 +20,14 @@ export const cleanCitationsFromResponse = (text: string): string => {
 
 export const processMessage = (
   text: string,
-  citationMap: Record<string | number, number> | undefined,
+  citationMap: Record<number, number> | undefined,
   citationUrls: string[],
 ) => {
+  if (!text) return ""
+  
   text = splitGroupedCitationsWithSpaces(text)
+  
+  // Handle image citations
   text = text.replace(
     textToImageCitationIndex,
     (match, citationKey, offset, string) => {
@@ -37,61 +41,59 @@ export const processMessage = (
     },
   )
 
-  if (citationMap) {
-    text = text.replace(
-      textToKbItemCitationIndex,
-      (_match, docKey, chunkIndexStr) => {
-        const citationKey = `K[${docKey}_${chunkIndexStr}]`
-        const index = citationMap[citationKey]
-        const chunkIndex = parseInt(chunkIndexStr, 10)
-        const url = citationUrls[index]
-        return typeof index === "number" && typeof chunkIndex === "number" && url
-          ? `[${index + 1}_${chunkIndex}](${url})`
-          : ""
-      },
-    )
-  } else {
-    let localCitationMap: Record<string, number> = {}
-    let localIndex = 0
-    text = text.replace(
-      textToKbItemCitationIndex,
-      (_match, docKey, chunkIndexStr) => {
-        if (localCitationMap[docKey] === undefined) {
-          localCitationMap[docKey] = localIndex
-          localIndex++
-        }
-        const chunkIndex = parseInt(chunkIndexStr, 10)
-        const url = citationUrls[localCitationMap[docKey]]
-        return typeof localCitationMap[docKey] === "number" &&
-          typeof chunkIndex === "number" &&
-          url
-          ? `[${localCitationMap[docKey] + 1}_${chunkIndex}](${url})`
-          : ""
-      },
-    )
-  }
+  // Handle KB citations
+  // Case 1: K[docId_chunkIndex] format (during streaming, before backend processing)
+  // Case 2: [N_chunkIndex] format (after backend processing or from DB)
+  text = text.replace(textToKbItemCitationIndex, (_, citationKey) => {
+    const parts = citationKey.split("_")
+    const originalIndex = parseInt(parts[0], 10)
+    const chunkIndex = parseInt(parts[1], 10)
+    
+    // If citationMap exists (streaming), remap the index
+    // Otherwise (DB-loaded), use direct index mapping
+    let finalIndex: number
+    if (citationMap && citationMap[originalIndex] !== undefined) {
+      // Streaming: remap using citationMap
+      finalIndex = citationMap[originalIndex]
+    } else {
+      // DB-loaded: direct mapping (text already has final indices)
+      finalIndex = originalIndex - 1 // Convert [1] to array index 0
+    }
+    
+    const url = citationUrls?.[finalIndex]
+    
+    // Show citation number even if URL is missing
+    if (typeof finalIndex === "number" && typeof chunkIndex === "number" && finalIndex >= 0) {
+      return url ? `[${finalIndex + 1}_${chunkIndex}](${url})` : `[${finalIndex + 1}_${chunkIndex}]`
+    }
+    return ""
+  })
 
-  if (citationMap) {
-    return text.replace(textToCitationIndex, (match, num) => {
-      const index = citationMap[num]
-      const url = citationUrls[index]
-      return typeof index === "number" && url ? `[${index + 1}](${url})` : ""
-    })
-  } else {
-    let localCitationMap: Record<number, number> = {}
-    let localIndex = 0
-    return text.replace(textToCitationIndex, (match, num) => {
-      const citationindex = parseInt(num, 10)
-      if (localCitationMap[citationindex] === undefined) {
-        localCitationMap[citationindex] = localIndex
-        localIndex++
-      }
-      const url = citationUrls[localCitationMap[citationindex]]
-      return typeof localCitationMap[citationindex] === "number" && url
-      ? `[${localCitationMap[citationindex] + 1}](${url})`
-      : ""
-    })
-  }
+  // Handle regular citations [N] format
+  // Case 1: During streaming with citationMap - remap original indices
+  // Case 2: From DB without citationMap - use direct index mapping
+  return text.replace(textToCitationIndex, (match, num) => {
+    const originalIndex = parseInt(num, 10)
+    
+    // If citationMap exists (streaming), remap the index
+    // Otherwise (DB-loaded), use direct index mapping
+    let finalIndex: number
+    if (citationMap && citationMap[originalIndex] !== undefined) {
+      // Streaming: remap using citationMap
+      finalIndex = citationMap[originalIndex]
+    } else {
+      // DB-loaded: direct mapping (text already has final indices)
+      finalIndex = originalIndex - 1 // Convert [1] to array index 0
+    }
+    
+    const url = citationUrls?.[finalIndex]
+    
+    // Show citation number even if URL is missing
+    if (typeof finalIndex === "number" && finalIndex >= 0) {
+      return url ? `[${finalIndex + 1}](${url})` : `[${finalIndex + 1}]`
+    }
+    return ""
+  })
 }
 
 export class PersistentMap {

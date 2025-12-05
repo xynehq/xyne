@@ -181,29 +181,3 @@ export function buildToolsOverview<A = unknown, Ctx = unknown>(
     .map((t, idx) => `  ${idx + 1}. ${t.schema.name}: ${t.schema.description}`)
     .join("\n")
 }
-
-export function buildContextSection(
-  fragments: MinimalAgentFragment[],
-  maxItems = 12,
-): string {
-  if (!fragments || fragments.length === 0) return ""
-  const annotated = fragments.slice(0, maxItems).map((fragment, index) => {
-    const parts = fragment.id?.split(":")
-    const last = parts?.[parts.length - 1]
-    const parsedChunk = last ? Number(last) : NaN
-    const chunkIndex = Number.isFinite(parsedChunk) ? parsedChunk : index + 1
-    const docId = fragment.source?.docId || fragment.id || `frag-${index + 1}`
-    const citationKey = `K[${docId}_${chunkIndex}]`
-
-    const sourceMeta = [
-      fragment.source?.docId ? `docId: ${fragment.source.docId}` : null,
-      `chunk: ${chunkIndex}`,
-      fragment.source?.title ? `title: ${fragment.source.title}` : null,
-    ]
-      .filter(Boolean)
-      .join(" | ")
-    const meta = sourceMeta ? ` (${sourceMeta})` : ""
-    return `${citationKey}${meta} ${fragment.content}`
-  })
-  return `\n\nContext Fragments (cite with K[docId_chunkIndex]):\n${annotated.join("\n\n")}`
-}

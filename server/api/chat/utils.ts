@@ -602,34 +602,35 @@ const searchToCitations = (results: VespaSearchResults[]): Citation[] => {
 
 export const textToCitationIndex = /\[(\d+)\]/g
 export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
-// Matches chunk-level citations like K[docId_chunkIndex]; docId can include underscores/hyphens.
-export const textToKbItemCitationIndex = /K\[([^\]]+)_(\d+)\]/g
+export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
 
 export const processMessage = (
   text: string,
-  citationMap: Record<string | number, number>,
+  citationMap: Record<number, number>,
+  email?: string,
 ) => {
   if (!text) {
     return ""
   }
 
   text = splitGroupedCitationsWithSpaces(text)
-  let processed = text.replace(textToCitationIndex, (match, num) => {
-    const index = citationMap[num]
+  
+  // Process regular citations [N] -> remap to final citation array position
+  let processed = text.replace(textToCitationIndex, (_match, num) => {
+    const originalIndex = parseInt(num, 10)
+    const finalIndex = citationMap[originalIndex]
 
-    return typeof index === "number" ? `[${index + 1}]` : ""
+    return typeof finalIndex === "number" ? `[${finalIndex + 1}]` : `[${originalIndex}]`
   })
 
-  // Handle KB chunk-style citations (e.g., K[2_3]) by preserving chunk suffix while remapping the doc index
+  // Process KB citations K[docId_chunkIndex] -> convert to [N_chunkIndex] format
   processed = processed.replace(
     textToKbItemCitationIndex,
-    (_match, docKey, chunkIndexStr) => {
-      const citationKey = `K[${docKey}_${chunkIndexStr}]`
-      const mappedIndex = citationMap[citationKey]
-      if (typeof mappedIndex === "number") {
-        return `[${mappedIndex + 1}_${chunkIndexStr}]`
-      }
-      return ""
+    (_match, docKey) => {
+      const docIndex = parseInt(docKey.split("_")[0], 10)
+      const chunkIndex = parseInt(docKey.split("_")[1], 10)
+      const finalIndex = citationMap[docIndex]
+      return `K[${finalIndex + 1}_${chunkIndex}]`
     },
   )
 
@@ -1366,13 +1367,13 @@ export const addErrMessageToMessage = async (
 
 export const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
-  yieldedCitations: Set<string>,
+  yieldedCitations: Set<number>,
   results: MinimalAgentFragment[],
   yieldedImageCitations?: Map<number, Set<number>>,
   email: string = "",
 ): AsyncGenerator<
   {
-    citation?: { index: string; item: Citation }
+    citation?: { index: number; item: Citation }
     imageCitation?: ImageCitation
   },
   void,
@@ -1402,12 +1403,23 @@ export const checkAndYieldCitationsForAgent = async function* (
       (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
       (kbMatch = textToKbItemCitationIndex.exec(text)) !== null
     ) {
-      if (match) {
+      if (match || kbMatch) {
         citationsProcessed++
-        const citationIndex = parseInt(match[1], 10)
-        const citationKey = match[1]
-        if (!yieldedCitations.has(citationKey)) {
+        let citationIndex = 0
+        if (match) {
+          citationIndex = parseInt(match[1], 10)
+        } else if (kbMatch) {
+          citationIndex = parseInt(kbMatch[1].split("_")[0], 10)
+        }
+        if (!yieldedCitations.has(citationIndex)) {
           const item = results[citationIndex - 1]
+
+          if (!item) {
+            loggerWithChild({ email: email }).warn(
+              `[checkAndYieldCitationsForAgent] Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
+            )
+            continue
+          }
 
           if (!item?.source?.docId && !item?.source?.url) {
             loggerWithChild({ email: email }).info(
@@ -1427,50 +1439,11 @@ export const checkAndYieldCitationsForAgent = async function* (
 
           yield {
             citation: {
-              index: citationKey,
+              index: citationIndex,
               item: item.source,
             },
           }
-          yieldedCitations.add(citationKey)
-          citationsYielded++
-        }
-      } else if (kbMatch) {
-        citationsProcessed++
-        const docId = kbMatch[1]
-        const chunkIndex = parseInt(kbMatch[2], 10)
-        const citationKey = `K[${docId}_${chunkIndex}]`
-        if (!yieldedCitations.has(citationKey)) {
-          const resolveChunkIndex = (frag: MinimalAgentFragment): number | null => {
-            const parts = frag.id?.split(":")
-            const last = parts?.[parts.length - 1]
-            const parsed = last ? Number(last) : NaN
-            return Number.isFinite(parsed) ? parsed : null
-          }
-          const item =
-            results.find(
-              (frag) =>
-                frag.source?.docId === docId &&
-                resolveChunkIndex(frag) === chunkIndex,
-            ) ||
-            results.find((frag) => frag.source?.docId === docId)
-
-          if (!item?.source?.docId && !item?.source?.url) {
-            loggerWithChild({ email: email }).info(
-              "[checkAndYieldCitationsForAgent] No docId or url found for KB citation, skipping",
-            )
-            continue
-          }
-
-          if (
-            Object.values(AttachmentEntity).includes(
-              item.source.entity as AttachmentEntity,
-            )
-          ) {
-            continue
-          }
-
-          yield { citation: { index: citationKey, item: item.source } }
-          yieldedCitations.add(citationKey)
+          yieldedCitations.add(citationIndex)
           citationsYielded++
         }
       } else if (imgMatch && yieldedImageCitations) {

@@ -527,7 +527,7 @@ const endToEndFlow = async (
   let currentAnswer = ""
   let answer = ""
   let citations = []
-  let citationMap: Record<string, number> = {}
+  let citationMap: Record<number, number> = {}
   let queryFilters = {
     apps: [],
     entities: [],

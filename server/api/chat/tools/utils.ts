@@ -5,6 +5,7 @@ import {
   Apps,
   fileSchema,
   GoogleApps,
+  KbItemsSchema,
   type VespaSearchResponse,
   type VespaSearchResults,
 } from "@xyne/vespa-ts"
@@ -58,6 +59,8 @@ export async function formatSearchToolResponse(
           r,
           userMetadata,
           config.maxDefaultSummary,
+          undefined,
+          r.fields?.sddocname === KbItemsSchema,
         ),
         source: citation,
         confidence: r.relevance || 0.7,

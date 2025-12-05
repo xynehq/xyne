@@ -186,7 +186,7 @@ const vespaResultToMinimalAgentFragment = async (
   userMetadata: UserMetadataType,
   query: string,
 ): Promise<MinimalAgentFragment> => ({
-  id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
+  id: `${(child.fields as any)?.docId || `Fragment_id_${idx}`}`,
   content: await answerContextMap(
     child as VespaSearchResults,
     userMetadata,
@@ -213,7 +213,7 @@ async function* nonRagIterator(
   modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: string; item: Citation }
+    citation?: { index: number; item: Citation }
     imageCitation?: ImageCitation
   }
 > {
@@ -237,7 +237,7 @@ async function* nonRagIterator(
   let buffer = ""
   let thinking = ""
   let reasoning = isReasoning
-  let yieldedCitations = new Set<string>()
+  let yieldedCitations = new Set<number>()
   let yieldedImageCitations = new Map<number, Set<number>>()
 
   for await (const chunk of ragOffIterator) {
@@ -633,8 +633,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           let answer = ""
           let citations: Citation[] = []
           let imageCitations: ImageCitation[] = []
-          let citationMap: Record<string | number, number> = {}
-          let citationValues: Record<string | number, Citation> = {}
+          let citationMap: Record<number, number> = {}
+          let citationValues: Record<number, Citation> = {}
           let thinkingLocal = ""
           let reasoning = isReasoningEnabled
           for await (const chunk of ragOffIterator) {
@@ -903,7 +903,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           thinking: string
           citations: Citation[]
           imageCitations: ImageCitation[]
-          citationMap: Record<string | number, number>
+          citationMap: Record<number, number>
           costArr: number[]
           tokenArr: { inputTokens: number; outputTokens: number }[]
         }) => {
@@ -1516,7 +1516,7 @@ export const AgentMessageApi = async (c: Context) => {
               let answer = ""
               let citations: Citation[] = []
               let imageCitations: ImageCitation[] = []
-              let citationMap: Record<string | number, number> = {}
+              let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
                 userRequestsReasoning &&
@@ -1563,7 +1563,7 @@ export const AgentMessageApi = async (c: Context) => {
               citations = []
               imageCitations = []
               citationMap = {}
-              let citationValues: Record<string | number, number> = {}
+              let citationValues: Record<number, number> = {}
               let count = 0
 
               for await (const chunk of iterator) {
@@ -1767,7 +1767,7 @@ export const AgentMessageApi = async (c: Context) => {
               let answer = ""
               let citations: Citation[] = []
               let imageCitations: ImageCitation[] = []
-              let citationMap: Record<string | number, number> = {}
+              let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
                 userRequestsReasoning &&
@@ -1807,7 +1807,7 @@ export const AgentMessageApi = async (c: Context) => {
               citations = []
               imageCitations = []
               citationMap = {}
-              let citationValues: Record<string | number, Citation> = {}
+              let citationValues: Record<number, Citation> = {}
               let count = 0
               for await (const chunk of iterator) {
                 if (stream.closed) {
@@ -2127,7 +2127,7 @@ export const AgentMessageApi = async (c: Context) => {
               let answer = ""
               let citations: Citation[] = []
               let imageCitations: ImageCitation[] = []
-              let citationMap: Record<string | number, number> = {}
+              let citationMap: Record<number, number> = {}
               let queryFilters = {
                 apps: [],
                 entities: [],
@@ -2347,7 +2347,7 @@ export const AgentMessageApi = async (c: Context) => {
                 let iterator:
                   | AsyncIterableIterator<
                       ConverseResponse & {
-                        citation?: { index: string; item: any }
+                        citation?: { index: number; item: any }
                         imageCitation?: ImageCitation
                       }
                     >
@@ -2445,7 +2445,7 @@ export const AgentMessageApi = async (c: Context) => {
                 reasoning = isReasoning && userRequestsReasoning
                 citations = []
                 citationMap = {}
-                let citationValues: Record<string | number, Citation> = {}
+                let citationValues: Record<number, Citation> = {}
                 for await (const chunk of iterator) {
                   if (stream.closed) {
                     Logger.info(
@@ -2811,7 +2811,7 @@ export const AgentMessageApi = async (c: Context) => {
           thinking: string
           citations: Citation[]
           imageCitations: ImageCitation[]
-          citationMap: Record<string | number, number>
+          citationMap: Record<number, number>
           costArr: number[]
           tokenArr: { inputTokens: number; outputTokens: number }[]
         }) => {
@@ -3035,7 +3035,7 @@ async function collectIterator<
     reasoning?: boolean
     cost?: number
     metadata?: { usage?: { inputTokens: number; outputTokens: number } }
-    citation?: { index: string; item: Citation }
+    citation?: { index: number; item: Citation }
     imageCitation?: ImageCitation
   },
 >(iterator: AsyncIterable<TChunk>, opts?: { maxBytes?: number }) {
@@ -3043,7 +3043,7 @@ async function collectIterator<
   let thinking = ""
   let citations: Citation[] = []
   let imageCitations: ImageCitation[] = []
-  let citationMap: Record<string | number, number> = {}
+  let citationMap: Record<number, number> = {}
   let costArr: number[] = []
   let tokenArr: { inputTokens: number; outputTokens: number }[] = []
   let size = 0
