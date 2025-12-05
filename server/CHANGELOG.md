@@ -1,3 +1,10 @@
+# [3.34.0](https://github.com/xynehq/xyne/compare/v3.33.2...v3.34.0) (2025-12-05)
+
+
+### Features
+
+* exposed feed back apis through api key ([#1237](https://github.com/xynehq/xyne/issues/1237)) ([76dcee9](https://github.com/xynehq/xyne/commit/76dcee9ba9e65023710d1bca8a53765895aa7d6f))
+
 ## [3.33.2](https://github.com/xynehq/xyne/compare/v3.33.1...v3.33.2) (2025-12-03)
 
 
