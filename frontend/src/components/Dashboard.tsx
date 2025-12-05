@@ -10,6 +10,7 @@ import {
   ThumbsDown,
   Search,
   Trophy,
+  MessagesSquare,
 } from "lucide-react"
 import {
   Card,
@@ -91,6 +92,24 @@ interface BaseUserData {
   totalCost: number
   totalTokens: number
   lastUsed: string
+}
+interface queryAnalysisData {
+  chatId: string
+  chatTitle: string
+  chatCreatedAt: string
+  userEmail: string
+  userName: string
+  totalCost: number
+  totalTokens: number
+  messageCount: number
+  messages: {
+    messageId: string
+    queryText: string
+    responseText: string
+    createdAt: string
+    cost: number
+    tokensUsed: number
+  }[]
 }
 
 interface BaseAgentData {
@@ -1306,6 +1325,261 @@ const UsersAnalyticsTable = ({
   )
 }
 
+
+const QueryAnalyticsTable = ({
+  queries,
+  title = "Query Analytics",
+  description = "View all queries and responses",
+}: {
+  queries: queryAnalysisData[]
+  title?: string
+  description?: string
+}) => {
+  const [searchQuery, setSearchQuery] = useState<string>("")
+  const [expandedChats, setExpandedChats] = useState<Set<string>>(new Set())
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set())
+
+  // Filter chats based on search
+  const filteredChats = queries.filter((chat) => {
+    const searchLower = searchQuery.toLowerCase()
+    return (
+      chat.chatTitle.toLowerCase().includes(searchLower) ||
+      chat.userEmail.toLowerCase().includes(searchLower) ||
+      chat.userName.toLowerCase().includes(searchLower) ||
+      chat.messages.some(
+        (msg) =>
+          msg.queryText.toLowerCase().includes(searchLower) ||
+          msg.responseText.toLowerCase().includes(searchLower)
+      )
+    )
+  })
+
+  const toggleChat = (chatId: string) => {
+    const newExpanded = new Set(expandedChats)
+    if (newExpanded.has(chatId)) {
+      newExpanded.delete(chatId)
+    } else {
+      newExpanded.add(chatId)
+    }
+    setExpandedChats(newExpanded)
+  }
+
+  const toggleMessage = (messageId: string) => {
+    const newExpanded = new Set(expandedMessages)
+    if (newExpanded.has(messageId)) {
+      newExpanded.delete(messageId)
+    } else {
+      newExpanded.add(messageId)
+    }
+    setExpandedMessages(newExpanded)
+  }
+
+  const truncateText = (text: string, maxLength: number = 100) => {
+    if (text.length <= maxLength) return text
+    return text.substring(0, maxLength) + "..."
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <MessagesSquare className="h-5 w-5" />
+              {title}
+            </CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </div>
+          <Badge variant="outline" className="text-sm">
+            {queries.length} total chats
+          </Badge>
+        </div>
+
+        {/* Search Control */}
+        <div className="mt-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <input
+              type="text"
+              placeholder="Search chats, queries, responses, or users..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {queries.length === 0 ? (
+          <div className="text-center py-12">
+            <MessagesSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+            <p className="text-muted-foreground">
+              No query data available for this agent
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Chats List */}
+            <div className="space-y-3 max-h-[600px] overflow-y-auto">
+              {filteredChats.length > 0 ? (
+                filteredChats.map((chat) => {
+                  const isChatExpanded = expandedChats.has(chat.chatId)
+                  return (
+                    <div
+                      key={chat.chatId}
+                      className="border border-input rounded-lg overflow-hidden"
+                    >
+                      {/* Chat Header */}
+                      <div
+                        className="p-4 bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => toggleChat(chat.chatId)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-sm font-semibold truncate">
+                                {chat.chatTitle}
+                              </h3>
+                              <Badge variant="secondary" className="text-xs">
+                                {chat.messageCount} {chat.messageCount === 1 ? 'query' : 'queries'}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span>{chat.userName} ({chat.userEmail})</span>
+                              <span>Chat ID :  {chat.chatId}</span>
+                              <span>
+                                {new Date(chat.chatCreatedAt).toLocaleString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                              <span className="font-medium text-blue-600">
+                                Total Cost: {formatCostInINR(chat.totalCost)}
+                              </span>
+                              {/* <span className="text-muted-foreground">
+                                {chat.totalTokens.toLocaleString()} tokens
+                              </span> */}
+                            </div>
+                          </div>
+                          <button className="ml-4 text-muted-foreground hover:text-foreground transition-colors">
+                            {isChatExpanded ? (
+                              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                              </svg>
+                            ) : (
+                              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Chat Messages */}
+                      {isChatExpanded && (
+                        <div className="border-t border-input">
+                          {chat.messages.map((message, idx) => {
+                            const isMessageExpanded = expandedMessages.has(message.messageId)
+                            return (
+                              <div
+                                key={message.messageId}
+                                className={`p-4 hover:bg-muted/20 transition-colors cursor-pointer ${
+                                  idx !== chat.messages.length - 1 ? 'border-b border-input/50' : ''
+                                }`}
+                                onClick={() => toggleMessage(message.messageId)}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1 min-w-0 space-y-2">
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded mt-0.5">
+                                        Q
+                                      </span>
+                                      <p className="text-sm font-medium flex-1">
+                                        {isMessageExpanded
+                                          ? message.queryText
+                                          : truncateText(message.queryText, 150)}
+                                      </p>
+                                    </div>
+                                    {isMessageExpanded && (
+                                      <div className="pl-6 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded mt-0.5">
+                                            A
+                                          </span>
+                                          <p className="text-sm text-muted-foreground whitespace-pre-wrap flex-1">
+                                            {message.responseText}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-4 text-xs text-muted-foreground pl-6">
+                                      <span>
+                                        {new Date(message.createdAt).toLocaleString("en-US", {
+                                          month: "short",
+                                          day: "numeric",
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })}
+                                      </span>
+                                      <span className="font-medium text-blue-600">
+                                        {formatCostInINR(message.cost)}
+                                      </span>
+                                      <span className="text-muted-foreground">
+                                        {message.tokensUsed.toLocaleString()} tokens
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    className="ml-4 text-muted-foreground hover:text-foreground transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      toggleMessage(message.messageId)
+                                    }}
+                                  >
+                                    {isMessageExpanded ? (
+                                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No chats found matching your search</p>
+                </div>
+              )}
+            </div>
+
+            {/* Results Summary */}
+            {filteredChats.length > 0 && (
+              <div className="text-xs text-muted-foreground text-center pt-2 border-t">
+                Showing {filteredChats.length} of {queries.length} chats
+                {searchQuery && ` (filtered)`}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 const AgentDetailPage = ({
   agent,
   onBack,
@@ -1941,6 +2215,7 @@ const AgentAnalysisPage = ({
   const [agentAnalysis, setAgentAnalysis] = useState<AgentAnalysisData | null>(
     null,
   )
+  const [queryAnalysisData, setQueryAnalysisData] = useState<queryAnalysisData[]>([])
   const [loading, setLoading] = useState(true)
   const [userSearchQuery, setUserSearchQuery] = useState<string>("")
   const [sortBy, setSortBy] = useState<
@@ -1989,6 +2264,31 @@ const AgentAnalysisPage = ({
 
     fetchAgentAnalysis()
   }, [agent.agentId, timeRange, currentUser])
+
+  useEffect(() => {
+    const fetchQueryAnalysisData = async () => {
+      try {
+        const response = await api.admin.agents[agent.agentId].queries.$get()
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch query analysis data")
+        }
+
+        const data = await response.json()
+        if (data.success && data.data) {
+          setQueryAnalysisData(data.data)
+        } else {
+          console.warn("No query analysis data received:", data)
+          setQueryAnalysisData([])
+        }
+      } catch (error) {
+        console.error("Error fetching query analysis data:", error)
+        setQueryAnalysisData([])
+      }
+    }
+
+    fetchQueryAnalysisData()
+  }, [agent.agentId])
 
   if (loading) {
     return (
@@ -2159,7 +2459,7 @@ const AgentAnalysisPage = ({
           value={avgMessagesPerUser.toString()}
           description="Average per user"
           icon={Activity}
-          className="border-cyan-200 dark:border-cyan-800"
+          className="border-cyan-200 dark:border-cyan-800"  
         />
         <MetricCard
           title="Avg Chats/User"
@@ -2169,7 +2469,12 @@ const AgentAnalysisPage = ({
           className="border-indigo-200 dark:border-indigo-800"
         />
       </div>
-
+      {/* {console.log("OOOOO",agentAnalysis)} */}
+      <QueryAnalyticsTable
+        queries={queryAnalysisData}
+        title="Query Analytics"
+        description="View all queries and responses for this agent"
+      />
       {/* Unified Users Table with Sort */}
       <UsersAnalyticsTable
         users={agentAnalysis.userLeaderboard}

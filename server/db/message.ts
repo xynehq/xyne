@@ -2,6 +2,7 @@ import { createId } from "@paralleldrive/cuid2"
 import {
   messages,
   chats,
+  users,
   selectMessageSchema,
   type InsertMessage,
   type SelectMessage,
@@ -366,4 +367,138 @@ export const fetchUserQueriesForChat = async (
     .where(and(...conditions))
     .orderBy(asc(messages.createdAt))
   return queries.map((q) => q.content)
+}
+
+export const fetchAgentQueryResponsePairs = async (
+  trx: TxnOrClient,
+  agentExternalId: string,
+  workspaceExternalId?: string,
+): Promise<
+  {
+    chatId: string
+    chatTitle: string
+    chatCreatedAt: string
+    userEmail: string
+    userName: string
+    totalCost: number
+    totalTokens: number
+    messageCount: number
+    messages: {
+      messageId: string
+      queryText: string
+      responseText: string
+      createdAt: string
+      cost: number
+      tokensUsed: number
+    }[]
+  }[]
+> => {
+  const conditions = [
+    eq(chats.agentId, agentExternalId),
+    isNull(messages.deletedAt),
+    isNull(chats.deletedAt),
+  ]
+
+  // Add workspace validation if workspaceExternalId is provided
+  if (workspaceExternalId) {
+    conditions.push(eq(chats.workspaceExternalId, workspaceExternalId))
+  }
+
+  // Get all messages for the agent, ordered by creation time (newest first)
+  const allMessages = await trx
+    .select({
+      chatId: messages.chatExternalId,
+      chatTitle: chats.title,
+      chatCreatedAt: chats.createdAt,
+      messageId: messages.externalId,
+      messageRole: messages.messageRole,
+      message: messages.message,
+      createdAt: messages.createdAt,
+      userEmail: messages.email,
+      userName: users.name,
+      cost: messages.cost,
+      tokensUsed: messages.tokensUsed,
+    })
+    .from(messages)
+    .innerJoin(chats, eq(messages.chatId, chats.id))
+    .innerJoin(users, eq(messages.email, users.email))
+    .where(and(...conditions))
+    .orderBy(desc(chats.createdAt), desc(messages.createdAt))
+
+  console.log("fetchAgentQueryResponsePairs: agentExternalId=", agentExternalId, "workspaceExternalId=", workspaceExternalId)
+  console.log("fetchAgentQueryResponsePairs: allMessages count=", allMessages.length)
+
+  // Group messages by chat and pair user queries with assistant responses
+  const chatMap = new Map<string, {
+    chatId: string
+    chatTitle: string
+    chatCreatedAt: string
+    userEmail: string
+    userName: string
+    messages: {
+      messageId: string
+      queryText: string
+      responseText: string
+      createdAt: string
+      cost: number
+      tokensUsed: number
+    }[]
+    totalCost: number
+    totalTokens: number
+  }>()
+
+  // First pass: pair messages
+  for (let i = 0; i < allMessages.length - 1; i++) {
+    const currentMsg = allMessages[i]
+    const nextMsg = allMessages[i + 1]
+
+    // Check if current is assistant message and next is user message in same chat
+    if (
+      currentMsg.messageRole === MessageRole.Assistant &&
+      nextMsg.messageRole === MessageRole.User &&
+      currentMsg.chatId === nextMsg.chatId
+    ) {
+      if (!chatMap.has(currentMsg.chatId)) {
+        chatMap.set(currentMsg.chatId, {
+          chatId: currentMsg.chatId,
+          chatTitle: currentMsg.chatTitle || "Untitled Chat",
+          chatCreatedAt: currentMsg.chatCreatedAt.toISOString(),
+          userEmail: nextMsg.userEmail,
+          userName: nextMsg.userName || "Unknown User",
+          messages: [],
+          totalCost: 0,
+          totalTokens: 0,
+        })
+      }
+
+      const chat = chatMap.get(currentMsg.chatId)!
+      const cost = Number(currentMsg.cost) || 0
+      const tokens = Number(currentMsg.tokensUsed) || 0
+
+      chat.messages.push({
+        messageId: nextMsg.messageId,
+        queryText: nextMsg.message,
+        responseText: currentMsg.message,
+        createdAt: nextMsg.createdAt.toISOString(),
+        cost,
+        tokensUsed: tokens,
+      })
+
+      chat.totalCost += cost
+      chat.totalTokens += tokens
+    }
+  }
+
+  // Convert map to array and sort by latest message timestamp (newest first)
+  return Array.from(chatMap.values())
+    .map(chat => ({
+      ...chat,
+      messageCount: chat.messages.length,
+      // Get the latest message timestamp for sorting
+      latestMessageTime: chat.messages.length > 0
+        ? Math.max(...chat.messages.map(m => new Date(m.createdAt).getTime()))
+        : new Date(chat.chatCreatedAt).getTime()
+    }))
+    .sort((a, b) => b.latestMessageTime - a.latestMessageTime)
+    .map(({ latestMessageTime, ...chat }) => chat) // Remove latestMessageTime from final result
 }
