@@ -620,7 +620,7 @@ export const processMessage = (
     const originalIndex = parseInt(num, 10)
     const finalIndex = citationMap[originalIndex]
 
-    return typeof finalIndex === "number" ? `[${finalIndex + 1}]` : `[${originalIndex}]`
+    return typeof finalIndex === "number" ? `[${finalIndex + 1}]` : ""
   })
 
   // Process KB citations K[docId_chunkIndex] -> convert to [N_chunkIndex] format
@@ -630,7 +630,8 @@ export const processMessage = (
       const docIndex = parseInt(docKey.split("_")[0], 10)
       const chunkIndex = parseInt(docKey.split("_")[1], 10)
       const finalIndex = citationMap[docIndex]
-      return `K[${finalIndex + 1}_${chunkIndex}]`
+
+      return typeof finalIndex === "number" ? `K[${finalIndex + 1}_${chunkIndex}]` : ""
     },
   )
 
