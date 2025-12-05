@@ -835,6 +835,7 @@ function buildFinalSynthesisPayload(
    - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
 3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
    - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
+   - Every chunk level citation must start with the K prefix eg. K[12_3] K[7_0] correct, but K[12_3] [7_0] is incorrect.
    - Place the citation immediately after the relevant claim.
    - Do NOT group indices inside one set of brackets (WRONG: "K[12_3,7_1]").
    - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[12_3] ... K[7_1]".
@@ -4335,7 +4336,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               fragmentsForCitations,
               yieldedImageCitations,
               email,
-              
+
             )) {
               if (citationEvent.citation) {
                 const { index, item } = citationEvent.citation
