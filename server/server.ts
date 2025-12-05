@@ -2004,6 +2004,16 @@ app
   .delete("/agent/:agentExternalId", DeleteAgentApi) // Delete Agent
   .get("/agent/:agentExternalId", GetAgentApi) // Get Agent details
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
+  .post(
+    "/message/feedback",
+    zValidator("json", messageFeedbackSchema),
+    MessageFeedbackApi,
+  ) // Submit message feedback
+  .post(
+    "/message/feedback/enhanced",
+    zValidator("json", enhancedMessageFeedbackSchema),
+    EnhancedMessageFeedbackApi,
+  ) // Submit enhanced message feedback
   .post("/cl", CreateCollectionApi) // Create collection (KB)
   .get("/cl", ListCollectionsApi) // List all collections
   .get(
