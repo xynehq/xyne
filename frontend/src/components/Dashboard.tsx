@@ -130,6 +130,7 @@ interface BaseAgentData {
   agentId: string
   agentName: string
   agentDescription?: string | null
+  isPublic?: boolean
   chatCount: number
   messageCount: number
   likes: number
@@ -2449,6 +2450,12 @@ const AgentAnalysisPage = ({
 
   useEffect(() => {
     const fetchQueryAnalysisData = async () => {
+      // Only fetch query analytics for public agents
+      if (!agent.isPublic) {
+        setQueryAnalysisData([])
+        return
+      }
+
       try {
         const response = await api.admin.agents[agent.agentId].queries.$get()
 
@@ -2470,7 +2477,7 @@ const AgentAnalysisPage = ({
     }
 
     fetchQueryAnalysisData()
-  }, [agent.agentId])
+  }, [agent.agentId, agent.isPublic])
 
   if (loading) {
     return (
@@ -2651,12 +2658,14 @@ const AgentAnalysisPage = ({
           className="border-indigo-200 dark:border-indigo-800"
         />
       </div>
-      {/* {console.log("OOOOO",agentAnalysis)} */}
-      <QueryAnalyticsTable
-        queries={queryAnalysisData}
-        title="Query Analytics"
-        description="View all queries and responses for this agent"
-      />
+      {/* Only show Query Analytics for public agents */}
+      {agent.isPublic && (
+        <QueryAnalyticsTable
+          queries={queryAnalysisData}
+          title="Query Analytics"
+          description="View all queries and responses for this agent"
+        />
+      )}
       {/* Unified Users Table with Sort */}
       <UsersAnalyticsTable
         users={agentAnalysis.userLeaderboard}
@@ -3602,6 +3611,7 @@ export const Dashboard = ({
           agentUsageMap.set(chat.agentId, {
             agentId: chat.agentId,
             agentName: agent?.name || `Unknown Agent`,
+            isPublic: agent?.isPublic,
             chatCount: 0,
             messageCount: 0,
             likes: 0,
@@ -3947,6 +3957,7 @@ export const Dashboard = ({
             agentUsageMap.set(chat.agentId, {
               agentId: chat.agentId,
               agentName: agent.name,
+              isPublic: agent.isPublic,
               chatCount: 0,
               messageCount: 0,
               likes: 0,
@@ -4132,6 +4143,7 @@ export const Dashboard = ({
         existingUsage || {
           agentId: agent.externalId,
           agentName: agent.name,
+          isPublic: agent.isPublic,
           chatCount: 0,
           messageCount: 0,
           likes: 0,

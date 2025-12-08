@@ -3,6 +3,7 @@ import {
   messages,
   chats,
   users,
+  agents,
   selectMessageSchema,
   type InsertMessage,
   type SelectMessage,
@@ -400,6 +401,7 @@ export const fetchAgentQueryResponsePairs = async (
     eq(chats.agentId, agentExternalId),
     isNull(messages.deletedAt),
     isNull(chats.deletedAt),
+    eq(agents.isPublic, true), // Only fetch data for public agents
   ]
 
   // Add workspace validation if workspaceExternalId is provided
@@ -425,6 +427,7 @@ export const fetchAgentQueryResponsePairs = async (
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
+    .innerJoin(agents, eq(chats.agentId, agents.externalId))
     .innerJoin(users, eq(messages.email, users.email))
     .where(and(...conditions))
     .orderBy(desc(chats.createdAt), desc(messages.createdAt))
