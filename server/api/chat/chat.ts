@@ -143,7 +143,6 @@ import {
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
 import { appToSchemaMapper, entityToSchemaMapper } from "@xyne/vespa-ts/mappers"
-import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
   getAgentByExternalId,
@@ -153,7 +152,6 @@ import {
   getAllPublicAgents,
   getAgentByExternalIdWithPermissionCheck,
 } from "@/db/agent"
-import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import {
   ragPipelineConfig,
   RagPipelineStages,
@@ -187,6 +185,7 @@ import {
   textToKbItemCitationIndex,
   type AppFilter,
   formatAgentScopesText,
+  processMessage,
 } from "./utils"
 import {
   buildKnowledgeBaseCollectionSelections,
@@ -411,23 +410,6 @@ export const GetChatTraceApi = async (c: Context) => {
   }
 }
 
-export const processMessage = (
-  text: string,
-  citationMap: Record<number, number>,
-  email?: string,
-) => {
-  if (!text) {
-    return ""
-  }
-
-  text = splitGroupedCitationsWithSpaces(text)
-  return text.replace(textToCitationIndex, (match, num) => {
-    const index = citationMap[num]
-
-    return typeof index === "number" ? `[${index + 1}]` : ""
-  })
-}
-
 export const processWebSearchMessage = (
   text: string,
   citationMap: Record<number, number>,
@@ -506,39 +488,39 @@ const checkAndYieldCitations = async function* (
     (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
     (isMsgWithKbItems &&
       (kbMatch = textToKbItemCitationIndex.exec(text)) !== null)
-  ) {
-    if (match || kbMatch) {
-      let citationIndex = 0
-      if (match) {
-        citationIndex = parseInt(match[1], 10)
-      } else if (kbMatch) {
-        citationIndex = parseInt(kbMatch[1].split("_")[0], 10)
-      }
-      if (!yieldedCitations.has(citationIndex)) {
-        const item = results[citationIndex - baseIndex]
-        if (item) {
-          // TODO: fix this properly, empty citations making streaming broke
-          const f = (item as any)?.fields
-          if (
-            f?.sddocname === dataSourceFileSchema ||
-            Object.values(AttachmentEntity).includes(f?.entity)
-          ) {
-            // Skip datasource and attachment files from citations
-            continue
-          }
-          yield {
-            citation: {
-              index: citationIndex,
-              item: searchToCitation(item as VespaSearchResults),
-            },
-          }
-          yieldedCitations.add(citationIndex)
-        } else {
-          loggerWithChild({ email: email }).error(
-            `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`,
-          )
+    ) {
+      if (match || kbMatch) {
+        let citationIndex = 0
+        if (match) {
+          citationIndex = parseInt(match[1], 10)
+        } else if (kbMatch) {
+          citationIndex = parseInt(kbMatch[1].split("_")[0], 10)
         }
-      }
+        if (!yieldedCitations.has(citationIndex)) {
+          const item = results[citationIndex - baseIndex]
+          if (item) {
+            // TODO: fix this properly, empty citations making streaming broke
+            const f = (item as any)?.fields
+            if (
+              f?.sddocname === dataSourceFileSchema ||
+              Object.values(AttachmentEntity).includes(f?.entity)
+            ) {
+              // Skip datasource and attachment files from citations
+              continue
+            }
+            yield {
+              citation: {
+                index: citationIndex,
+                item: searchToCitation(item as VespaSearchResults),
+              },
+            }
+            yieldedCitations.add(citationIndex)
+          } else {
+            loggerWithChild({ email: email }).error(
+              `Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
+            )
+          }
+        }
     } else if (imgMatch) {
       const parts = imgMatch[1].split("_")
       if (parts.length >= 2) {
@@ -5223,7 +5205,7 @@ export const MessageApi = async (c: Context) => {
             reasoning = isReasoning && userRequestsReasoning
             citations = []
             citationMap = {}
-            let citationValues: Record<number, string> = {}
+            let citationValues: Record<number, number> = {}
             let count = 0
             for await (const chunk of iterator) {
               if (stream.closed) {
@@ -5976,7 +5958,7 @@ export const MessageApi = async (c: Context) => {
               citations = []
               let imageCitations: any[] = []
               citationMap = {}
-              let citationValues: Record<number, string> = {}
+              let citationValues: Record<number, Citation> = {}
 
               stream.writeSSE({
                 event: ChatSSEvents.Start,

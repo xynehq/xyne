@@ -35,7 +35,6 @@ export const createCitationLink =
   }) => {
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)
 
-    // Extract citation index from children (which should be the citation number like "1", "2", etc.)
     const parts = typeof children === "string" ? children.split("_") : []
     const citationIndex = parts.length > 0 ? parseInt(parts[0]) - 1 : -1
     let chunkIndex = parts.length > 1 ? parseInt(parts[1]) : undefined

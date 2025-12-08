@@ -52,7 +52,6 @@ import {
   type TraceEvent,
 } from "@xynehq/jaf"
 import { makeXyneJAFProvider } from "./jaf-provider"
-import { buildContextSection } from "./jaf-adapter"
 import { getErrorMessage } from "@/utils"
 import { ChatSSEvents, AgentReasoningStepType } from "@/shared/types"
 import type {
@@ -66,7 +65,7 @@ import {
   getProviderByModel,
   jsonParseLLMOutput,
 } from "@/ai/provider"
-import { answerContextMap, userContext } from "@/ai/context"
+import { answerContextMap, answerContextMapFromFragments, userContext } from "@/ai/context"
 import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import {
@@ -78,7 +77,12 @@ import {
   type ToolOutput,
   type ResourceAccessSummary,
 } from "./tool-schemas"
-import { searchToCitation, extractImageFileNames } from "./utils"
+import {
+  searchToCitation,
+  extractImageFileNames,
+  processMessage,
+  checkAndYieldCitationsForAgent,
+} from "./utils"
 import { GetDocumentsByDocIds } from "@/search/vespa"
 import {
   Apps,
@@ -111,8 +115,6 @@ import { searchGlobalTool, fallbackTool } from "./tools/global"
 import { searchKnowledgeBaseTool } from "./tools/knowledgeBase"
 import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
 import type { AttachmentMetadata } from "@/shared/types"
-import { processMessage } from "./utils"
-import { checkAndYieldCitationsForAgent } from "./citation-utils"
 import {
   evaluateAgentResourceAccess,
   getUserConnectorState,
@@ -170,6 +172,7 @@ const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
   images: [],
 })
 
+
 const reviewsAllowed = (context: AgentRunContext): boolean =>
   !context.review.lockedByFinalSynthesis
 
@@ -204,23 +207,20 @@ function fragmentsToToolContexts(
   if (!fragments?.length) {
     return undefined
   }
-  return fragments.map((fragment) => ({
-    id: fragment.id,
-    content: fragment.content,
-    source: {
-      docId: fragment.source.docId,
-      title: fragment.source.title ?? "Untitled",
-      url: fragment.source.url ?? "",
-      app: fragment.source.app,
-      entity:
-        typeof fragment.source.entity === "string"
-          ? fragment.source.entity
-          : fragment.source.entity
-            ? JSON.stringify(fragment.source.entity)
-            : undefined,
-    },
-    confidence: fragment.confidence,
-  }))
+  return fragments.map((fragment) => {
+    const source = fragment.source || ({} as Citation)
+    return {
+      id: fragment.id,
+      content: fragment.content,
+      source: {
+        ...source,
+        docId: source.docId,
+        title: source.title ?? "Untitled",
+        url: source.url ?? "",
+      },
+      confidence: fragment.confidence,
+    }
+  })
 }
 
 type ToolCallReference = ToolCall | { id?: string | number | null }
@@ -769,7 +769,7 @@ function buildFinalSynthesisPayload(
   fragmentsLimit = Math.max(12, context.allFragments.length || 1)
 ): { systemPrompt: string; userMessage: string } {
   const fragments = context.allFragments
-  const fragmentsSection = buildContextSection(fragments, fragmentsLimit)
+  const fragmentsSection = answerContextMapFromFragments(fragments, fragmentsLimit)
   const planSection = formatPlanForPrompt(context.plan)
   const clarificationSection = formatClarificationsForPrompt(context.clarifications)
   const workspaceSection = context.userContext?.trim()
@@ -806,10 +806,44 @@ function buildFinalSynthesisPayload(
 - When the user asks for an action the system cannot execute (e.g., sending an email), deliver the closest actionable substitute (draft, checklist, explicit next steps) inside the answer.
 - Pair the substitute with a concise explanation of the limitation and the manual action the user must take.
 
-### Citation Discipline
-- Cite each factual sentence immediately with \`[n]\` (1-based); one fragment per bracket—never combine numbers.
-- Cite only when the fragment explicitly supports the statement; leave interpretations or gap notes uncited.
-- When evidence is missing, state the gap plus the data required to close it.
+### File & Chunk Formatting (CRITICAL)
+- Each file starts with a header line exactly like:
+  index {docId} {file context begins here...}
+- \`docId\` is a unique identifier for that file (e.g., 0, 1, 2, etc.).
+- Inside the file context, text is split into chunks.
+- Each chunk might begin with a bracketed numeric index, e.g.: [0], [1], [2], etc.
+- This is the chunk index within that file, if it exists.
+
+### Guidelines for Response
+1. Data Interpretation:
+   - Use ONLY the provided files and their chunks as your knowledge base.
+   - Treat every file header \`index {docId} ...\` as the start of a new document.
+   - Treat every bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
+   - If dates exist, interpret them relative to the user's timezone when paraphrasing.
+2. Response Structure:
+   - Start with the most relevant facts from the chunks across files.
+   - Keep order chronological when it helps comprehension.
+   - Every factual statement MUST cite the exact chunk it came from using the format:
+     K[docId_chunkIndex]
+     where:
+       - \`docId\` is taken from the file header line ("index {docId} ...").
+       - \`chunkIndex\` is the bracketed number prefixed on that chunk within the same file.
+   - Examples:
+     - Single citation: "X is true K[12_3]."
+     - Two citations in one sentence (from different files or chunks): "X K[12_3] and Y K[7_0]."
+   - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
+3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
+   - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
+   - Every chunk level citation must start with the K prefix eg. K[12_3] K[7_0] correct, but K[12_3] [7_0] is incorrect.
+   - Place the citation immediately after the relevant claim.
+   - Do NOT group indices inside one set of brackets (WRONG: "K[12_3,7_1]").
+   - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[12_3] ... K[7_1]".
+   - Only cite information that appears verbatim or is directly inferable from the cited chunk.
+   - If you cannot ground a claim to a specific chunk, do not make the claim.
+4. Quality Assurance:
+   - Cross-check across multiple chunks/files when available and briefly note inconsistencies if they exist.
+   - Keep tone professional and concise.
+   - Acknowledge gaps if the provided chunks don't contain enough detail.
 
 ### Tone & Delivery
 - Answer with confident, declarative, verb-first sentences that use concrete nouns.
@@ -1484,13 +1518,26 @@ export async function afterToolExecutionHook(
       return
     }
     const deduped: MinimalAgentFragment[] = []
+    const skippedIds: string[] = []
     for (const fragment of fragments) {
       if (!fragment?.id) continue
       if (gatheredFragmentsKeys.has(fragment.id)) {
+        skippedIds.push(fragment.id)
         continue
       }
       gatheredFragmentsKeys.add(fragment.id)
       deduped.push(fragment)
+    }
+    if (deduped.length !== fragments.length) {
+      Logger.info(
+        {
+          toolName,
+          incoming: fragments.length,
+          deduped: deduped.length,
+          skippedIds,
+        },
+        "[afterToolExecutionHook] Deduplicated tool fragments",
+      )
     }
     if (!deduped.length) {
       return
@@ -2182,7 +2229,7 @@ export function buildReviewPromptFromContext(
     context.currentTurnArtifacts.toolOutputs
   )
   const expectationsSection = formatExpectationsForReview(turnExpectations)
-  const fragmentsSection = buildContextSection(
+  const fragmentsSection = answerContextMapFromFragments(
     context.allFragments,
     Math.max(12, context.allFragments.length || 1)
   )
@@ -2769,18 +2816,23 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         metadataFragments.length > 0
           ? metadataFragments
           : Array.isArray(toolOutput.contexts)
-            ? toolOutput.contexts.map((item) => ({
-                id: item.id,
-                content: item.content,
-                source: {
-                  docId: item.source.docId,
-                  title: item.source.title,
-                  url: item.source.url,
-                  app: item.source.app as Apps,
-                  entity: item.source.entity as Citation["entity"],
-                },
-                confidence: item.confidence ?? 0.7,
-              }))
+            ? toolOutput.contexts.map((item) => {
+                const source = (item as any).source || {}
+                const normalizedSource: Citation = {
+                  ...source,
+                  docId: source.docId || item.id || "",
+                  title: source.title || "Untitled",
+                  url: source.url || "",
+                  app: (source.app || Apps.Xyne) as Apps,
+                  entity: source.entity as Citation["entity"],
+                }
+                return {
+                  id: item.id,
+                  content: item.content,
+                  source: normalizedSource,
+                  confidence: item.confidence ?? 0.7,
+                } as MinimalAgentFragment
+              })
             : []
 
       return ToolResponse.success({
@@ -4052,6 +4104,17 @@ export async function MessageAgents(c: Context): Promise<Response> {
           }, "[DEBUG] Expectation history state at turn_end")
 
           try {
+            if (!reviewsAllowed(agentContext)) {
+              Logger.info(
+                {
+                  turn,
+                  chatId: agentContext.chat.externalId,
+                  lockedAtTurn: agentContext.review.lockedAtTurn,
+                },
+                "[MessageAgents] Review skipped because final synthesis was already requested."
+              )
+              return
+            }
             const { reviewInput, fallbackUsed } = buildTurnReviewInput(turn)
             if (
               fallbackUsed &&
@@ -4272,6 +4335,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               fragmentsForCitations,
               yieldedImageCitations,
               email,
+
             )) {
               if (citationEvent.citation) {
                 const { index, item } = citationEvent.citation
@@ -4766,6 +4830,17 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 // TODO: Implement full DB integration similar to the previous legacy controller
                 // For now, store basic message data
                 loggerWithChild({ email }).info("Storing assistant response in database")
+                Logger.debug(
+                  {
+                    chatId: agentContext.chat.externalId,
+                    turn: finalTurnNumber,
+                    answerPreview: truncateValue(answer, 500),
+                    citationsCount: citations.length,
+                    imageCitationsCount: imageCitations.length,
+                    citationSample: citations.slice(0, 3),
+                  },
+                  "[MessageAgents][FinalSynthesis] LLM output preview"
+                )
 
                 // Calculate costs and tokens
                 const totalCost = agentContext.totalCost
@@ -5459,6 +5534,17 @@ async function runDelegatedAgentWithMessageAgents(
       }, "[DelegatedAgenticRun][DEBUG] Expectation history state at turn_end")
 
       try {
+        if (!reviewsAllowed(agentContext)) {
+          Logger.info(
+            {
+              turn,
+              chatId: agentContext.chat.externalId,
+              lockedAtTurn: agentContext.review.lockedAtTurn,
+            },
+            "[DelegatedAgenticRun] Review skipped because final synthesis was already requested."
+          )
+          return
+        }
         const { reviewInput, fallbackUsed } = buildTurnReviewInput(turn)
         if (
           fallbackUsed &&

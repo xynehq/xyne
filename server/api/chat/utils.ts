@@ -607,17 +607,35 @@ export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
 export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
+  email?: string,
 ) => {
   if (!text) {
     return ""
   }
 
   text = splitGroupedCitationsWithSpaces(text)
-  return text.replace(textToCitationIndex, (match, num) => {
-    const index = citationMap[num]
+  
+  // Process regular citations [N] -> remap to final citation array position
+  let processed = text.replace(textToCitationIndex, (_match, num) => {
+    const originalIndex = parseInt(num, 10)
+    const finalIndex = citationMap[originalIndex]
 
-    return typeof index === "number" ? `[${index + 1}]` : ""
+    return typeof finalIndex === "number" ? `[${finalIndex + 1}]` : ""
   })
+
+  // Process KB citations K[docId_chunkIndex] -> convert to [N_chunkIndex] format
+  processed = processed.replace(
+    textToKbItemCitationIndex,
+    (_match, docKey) => {
+      const docIndex = parseInt(docKey.split("_")[0], 10)
+      const chunkIndex = parseInt(docKey.split("_")[1], 10)
+      const finalIndex = citationMap[docIndex]
+
+      return typeof finalIndex === "number" ? `K[${finalIndex + 1}_${chunkIndex}]` : ""
+    },
+  )
+
+  return processed
 }
 
 export function flattenObject(obj: any, parentKey = ""): [string, string][] {
@@ -1375,6 +1393,7 @@ export const checkAndYieldCitationsForAgent = async function* (
     const text = splitGroupedCitationsWithSpaces(textInput)
     let match
     let imgMatch
+    let kbMatch
     let citationsProcessed = 0
     let imageCitationsProcessed = 0
     let citationsYielded = 0
@@ -1382,15 +1401,28 @@ export const checkAndYieldCitationsForAgent = async function* (
 
     while (
       (match = textToCitationIndex.exec(text)) !== null ||
-      (imgMatch = textToImageCitationIndex.exec(text)) !== null
+      (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
+      (kbMatch = textToKbItemCitationIndex.exec(text)) !== null
     ) {
-      if (match) {
+      if (match || kbMatch) {
         citationsProcessed++
-        const citationIndex = parseInt(match[1], 10)
+        let citationIndex = 0
+        if (match) {
+          citationIndex = parseInt(match[1], 10)
+        } else if (kbMatch) {
+          citationIndex = parseInt(kbMatch[1].split("_")[0], 10)
+        }
         if (!yieldedCitations.has(citationIndex)) {
           const item = results[citationIndex - 1]
 
-          if (!item?.source?.docId || !item.source?.url) {
+          if (!item) {
+            loggerWithChild({ email: email }).warn(
+              `[checkAndYieldCitationsForAgent] Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
+            )
+            continue
+          }
+
+          if (!item?.source?.docId && !item?.source?.url) {
             loggerWithChild({ email: email }).info(
               "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
             )

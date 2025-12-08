@@ -181,12 +181,3 @@ export function buildToolsOverview<A = unknown, Ctx = unknown>(
     .map((t, idx) => `  ${idx + 1}. ${t.schema.name}: ${t.schema.description}`)
     .join("\n")
 }
-
-export function buildContextSection(
-  fragments: MinimalAgentFragment[],
-  maxItems = 12,
-): string {
-  if (!fragments || fragments.length === 0) return ""
-  const ctx = answerContextMapFromFragments(fragments, maxItems)
-  return `\n\nContext Fragments (use [n] to cite):\n${ctx}`
-}

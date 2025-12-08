@@ -60,7 +60,7 @@ export enum GoogleAIModels {
 
 export enum LiteLLMModels {
   GLM_4_5 = "glm-45-fp8",
-  Claude_Sonnet_4 = "claude-sonnet-4",
+  Claude_Sonnet_4 = "claude-sonnet-4-5",
   Gemini_2_5_Pro = "gemini-2.5-pro",
   Gemini_2_5_Flash = "gemini-2.5-flash",
 }

@@ -11,7 +11,7 @@ import {
 } from "@xyne/vespa-ts"
 import { getErrorMessage } from "@/utils"
 import { searchSlackMessages, SearchVespaThreads } from "@/search/vespa"
-import { formatSearchToolResponse, parseAgentAppIntegrations } from "../utils"
+import { buildChunkFragmentId, parseAgentAppIntegrations } from "../utils"
 import { searchToCitation } from "@/api/chat/utils"
 import { answerContextMap } from "@/ai/context"
 import { getLogger, Subsystem } from "@/logger"
@@ -205,14 +205,17 @@ export const getSlackRelatedMessagesTool: Tool<
 
       const fragments: MinimalAgentFragment[] = await Promise.all(
         allItems.map(
-          async (item: VespaSearchResults): Promise<MinimalAgentFragment> => {
+          async (
+            item: VespaSearchResults,
+            idx: number,
+          ): Promise<MinimalAgentFragment> => {
             const citation = searchToCitation(item)
             const content = item.fields
               ? await answerContextMap(item, userMetadata)
               : `Content unavailable for ${citation.title || citation.docId}`
 
             return {
-              id: `${citation.docId}`,
+              id: buildChunkFragmentId(citation.docId, idx),
               content: content,
               source: citation,
               confidence: item.relevance || 0.7,

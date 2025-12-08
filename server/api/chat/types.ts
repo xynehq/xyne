@@ -88,7 +88,7 @@ export interface ImageCitation {
 }
 
 export type ConverseResponseWithCitations = ConverseResponse & {
-  citation?: { index: number; item: any }
+  citation?: { index: string; item: any }
   imageCitation?: ImageCitation
 }
 

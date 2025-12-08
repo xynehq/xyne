@@ -1,5 +1,4 @@
-import { processMessage } from "@/api/chat/chat"
-import { textToCitationIndex } from "@/api/chat/utils"
+import { processMessage, textToCitationIndex } from "@/api/chat/utils"
 import { splitGroupedCitationsWithSpaces } from "@/utils"
 import { describe, expect, test } from "bun:test"
 
