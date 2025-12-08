@@ -20,6 +20,13 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Sidebar } from "@/components/Sidebar"
 import {
   safeNumberConversion,
@@ -93,7 +100,7 @@ interface BaseUserData {
   totalTokens: number
   lastUsed: string
 }
-interface queryAnalysisData {
+interface QueryAnalysisData {
   chatId: string
   chatTitle: string
   chatCreatedAt: string
@@ -102,6 +109,8 @@ interface queryAnalysisData {
   totalCost: number
   totalTokens: number
   messageCount: number
+  totalLikes: number
+  totalDislikes: number
   messages: {
     messageId: string
     queryText: string
@@ -1336,24 +1345,25 @@ const QueryAnalyticsTable = ({
   title = "Query Analytics",
   description = "View all queries and responses",
 }: {
-  queries: queryAnalysisData[]
+  queries: QueryAnalysisData[]
   title?: string
   description?: string
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [expandedChats, setExpandedChats] = useState<Set<string>>(new Set())
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set())
+  const [sortBy, setSortBy] = useState<string>("time")
 
   // Pagination states
   const [currentChatPage, setCurrentChatPage] = useState(1)
   const [chatMessagePages, setChatMessagePages] = useState<Map<string, number>>(new Map())
-  const chatsPerPage = 10
+  const chatsPerPage = 5
   const messagesPerPage = 5
 
-  // Reset to page 1 when search changes
+  // Reset to page 1 when search or sort changes
   useEffect(() => {
     setCurrentChatPage(1)
-  }, [searchQuery])
+  }, [searchQuery, sortBy])
 
   // Filter chats based on search
   const filteredChats = queries.filter((chat) => {
@@ -1370,10 +1380,33 @@ const QueryAnalyticsTable = ({
     )
   })
 
+  // Sort chats based on selected criteria
+  const sortedChats = [...filteredChats].sort((a, b) => {
+    switch (sortBy) {
+      case "time":
+        // Sort by latest message timestamp (newest first)
+        const aLatestTime = a.messages.length > 0
+          ? Math.max(...a.messages.map(m => new Date(m.createdAt).getTime()))
+          : new Date(a.chatCreatedAt).getTime()
+        const bLatestTime = b.messages.length > 0
+          ? Math.max(...b.messages.map(m => new Date(m.createdAt).getTime()))
+          : new Date(b.chatCreatedAt).getTime()
+        return bLatestTime - aLatestTime
+      case "likes":
+        return (b.totalLikes || 0) - (a.totalLikes || 0)
+      case "dislikes":
+        return (b.totalDislikes || 0) - (a.totalDislikes || 0)
+      case "cost":
+        return (b.totalCost || 0) - (a.totalCost || 0)
+      default:
+        return 0
+    }
+  })
+
   // Chat-level pagination
-  const totalChatPages = Math.ceil(filteredChats.length / chatsPerPage)
+  const totalChatPages = Math.ceil(sortedChats.length / chatsPerPage)
   const startChatIndex = (currentChatPage - 1) * chatsPerPage
-  const paginatedChats = filteredChats.slice(startChatIndex, startChatIndex + chatsPerPage)
+  const paginatedChats = sortedChats.slice(startChatIndex, startChatIndex + chatsPerPage)
   console.log('paginatedChats', paginatedChats,totalChatPages)
 
   const toggleChat = (chatId: string) => {
@@ -1427,8 +1460,8 @@ const QueryAnalyticsTable = ({
           </Badge>
         </div>
 
-        {/* Search Control */}
-        <div className="mt-4">
+        {/* Search and Sort Controls */}
+        <div className="mt-4 flex items-center gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
             <input
@@ -1438,6 +1471,19 @@ const QueryAnalyticsTable = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Sort by..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="time">Sort by Time</SelectItem>
+                <SelectItem value="likes">Sort by Likes</SelectItem>
+                <SelectItem value="dislikes">Sort by Dislikes</SelectItem>
+                <SelectItem value="cost">Sort by Cost</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </CardHeader>
@@ -1496,9 +1542,18 @@ const QueryAnalyticsTable = ({
                               <span className="font-medium text-blue-600">
                                 Total Cost: {formatCostInINR(chat.totalCost)}
                               </span>
-                              {/* <span className="text-muted-foreground">
-                                {chat.totalTokens.toLocaleString()} tokens
-                              </span> */}
+                              {(chat.totalLikes > 0 || chat.totalDislikes > 0) && (
+                                <div className="flex items-center gap-2 text-xs">
+                                  <div className="flex items-center gap-1 text-green-600">
+                                    <ThumbsUp className="h-3 w-3" />
+                                    <span>{chat.totalLikes || 0}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-red-600">
+                                    <ThumbsDown className="h-3 w-3" />
+                                    <span> {chat.totalDislikes || 0}</span>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                           <button className="ml-4 text-muted-foreground hover:text-foreground transition-colors">
@@ -1563,9 +1618,6 @@ const QueryAnalyticsTable = ({
                                       </span>
                                       <span className="font-medium text-blue-600">
                                         {formatCostInINR(message.cost)}
-                                      </span>
-                                      <span className="text-muted-foreground">
-                                        {message.tokensUsed.toLocaleString()} tokens
                                       </span>
                                       {message.feedback && message.feedback.type && (
                                         <span className={`flex items-center gap-1 font-medium ${
@@ -2345,7 +2397,7 @@ const AgentAnalysisPage = ({
   const [agentAnalysis, setAgentAnalysis] = useState<AgentAnalysisData | null>(
     null,
   )
-  const [queryAnalysisData, setQueryAnalysisData] = useState<queryAnalysisData[]>([])
+  const [queryAnalysisData, setQueryAnalysisData] = useState<QueryAnalysisData[]>([])
   const [loading, setLoading] = useState(true)
   const [userSearchQuery, setUserSearchQuery] = useState<string>("")
   const [sortBy, setSortBy] = useState<

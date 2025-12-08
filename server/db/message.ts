@@ -383,6 +383,8 @@ export const fetchAgentQueryResponsePairs = async (
     totalCost: number
     totalTokens: number
     messageCount: number
+    totalLikes: number
+    totalDislikes: number
     messages: {
       messageId: string
       queryText: string
@@ -448,6 +450,8 @@ export const fetchAgentQueryResponsePairs = async (
     }[]
     totalCost: number
     totalTokens: number
+    totalLikes: number
+    totalDislikes: number
   }>()
 
   // First pass: pair messages
@@ -471,12 +475,24 @@ export const fetchAgentQueryResponsePairs = async (
           messages: [],
           totalCost: 0,
           totalTokens: 0,
+          totalLikes: 0,
+          totalDislikes: 0,
         })
       }
 
       const chat = chatMap.get(currentMsg.chatId)!
       const cost = Number(currentMsg.cost) || 0
       const tokens = Number(currentMsg.tokensUsed) || 0
+
+      // Count likes and dislikes
+      if (currentMsg.feedback && typeof currentMsg.feedback === 'object') {
+        const feedbackObj = currentMsg.feedback as { type?: string }
+        if (feedbackObj.type === 'like') {
+          chat.totalLikes++
+        } else if (feedbackObj.type === 'dislike') {
+          chat.totalDislikes++
+        }
+      }
 
       chat.messages.push({
         messageId: nextMsg.messageId,
