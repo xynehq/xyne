@@ -770,7 +770,6 @@ function buildFinalSynthesisPayload(
 ): { systemPrompt: string; userMessage: string } {
   const fragments = context.allFragments
   const fragmentsSection = answerContextMapFromFragments(fragments, fragmentsLimit)
-  console.log("fragmentsSection", fragmentsSection)
   const planSection = formatPlanForPrompt(context.plan)
   const clarificationSection = formatClarificationsForPrompt(context.clarifications)
   const workspaceSection = context.userContext?.trim()
