@@ -2538,6 +2538,7 @@ export const GetAgentQueryResponsePairs = async (c: Context) => {
   try {
     const agentId = c.req.param("agentId")
     const { workspaceId: currentWorkspaceId } = c.get(JwtPayloadKey)
+    const { from, to } = c.req.query()
 
     if (!agentId) {
       return c.json(
@@ -2553,6 +2554,8 @@ export const GetAgentQueryResponsePairs = async (c: Context) => {
       db,
       agentId,
       currentWorkspaceId,
+      from,
+      to,
     )
 
     return c.json(

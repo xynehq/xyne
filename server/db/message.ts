@@ -14,6 +14,8 @@ import {
   asc,
   eq,
   lt,
+  gte,
+  lte,
   count,
   inArray,
   sql,
@@ -374,6 +376,8 @@ export const fetchAgentQueryResponsePairs = async (
   trx: TxnOrClient,
   agentExternalId: string,
   workspaceExternalId?: string,
+  fromDate?: string,
+  toDate?: string,
 ): Promise<
   {
     chatId: string
@@ -408,6 +412,17 @@ export const fetchAgentQueryResponsePairs = async (
   if (workspaceExternalId) {
     conditions.push(eq(chats.workspaceExternalId, workspaceExternalId))
   }
+
+  // Add date range filtering - default to last 1 month if not provided
+  const now = new Date()
+  const defaultFromDate = new Date()
+  defaultFromDate.setMonth(defaultFromDate.getMonth() - 1)
+
+  const from = fromDate ? new Date(fromDate) : defaultFromDate
+  const to = toDate ? new Date(toDate) : now
+
+  conditions.push(gte(messages.createdAt, from))
+  conditions.push(lte(messages.createdAt, to))
 
   // Get all messages for the agent, ordered by creation time (newest first)
   const allMessages = await trx

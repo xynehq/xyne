@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { Sidebar } from "@/components/Sidebar"
 import {
   safeNumberConversion,
@@ -1345,10 +1346,16 @@ const QueryAnalyticsTable = ({
   queries,
   title = "Query Analytics",
   description = "View all queries and responses",
+  dateFrom,
+  dateTo,
+  onDateRangeChange,
 }: {
   queries: QueryAnalysisData[]
   title?: string
   description?: string
+  dateFrom?: Date
+  dateTo?: Date
+  onDateRangeChange?: (from: Date | undefined, to: Date | undefined) => void
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [expandedChats, setExpandedChats] = useState<Set<string>>(new Set())
@@ -1487,6 +1494,20 @@ const QueryAnalyticsTable = ({
               : `${queries.length} total chats`}
           </Badge>
         </div>
+
+        {/* Date Range Filter */}
+        {onDateRangeChange && (
+          <div className="mt-4 flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Date Range:</span>
+            <DateRangePicker
+              from={dateFrom}
+              to={dateTo}
+              disableFutureDates={true}
+              onSelect={onDateRangeChange}
+              placeholder="Select date range"
+            />
+          </div>
+        )}
 
         {/* Search and Sort Controls */}
         <div className="mt-4 flex items-center gap-3">
@@ -2428,6 +2449,17 @@ const AgentAnalysisPage = ({
     null,
   )
   const [queryAnalysisData, setQueryAnalysisData] = useState<QueryAnalysisData[]>([])
+
+  // Initialize date range to last 1 month
+  const getDefaultDateRange = () => {
+    const to = new Date()
+    const from = new Date()
+    from.setMonth(from.getMonth() - 1)
+    return { from, to }
+  }
+
+  const [queryDateFrom, setQueryDateFrom] = useState<Date | undefined>(getDefaultDateRange().from)
+  const [queryDateTo, setQueryDateTo] = useState<Date | undefined>(getDefaultDateRange().to)
   const [loading, setLoading] = useState(true)
   const [userSearchQuery, setUserSearchQuery] = useState<string>("")
   const [sortBy, setSortBy] = useState<
@@ -2486,7 +2518,18 @@ const AgentAnalysisPage = ({
       }
 
       try {
-        const response = await api.admin.agents[agent.agentId].queries.$get()
+        // Build query object - if dates are provided, include them
+        const query: { from?: string; to?: string } = {}
+        if (queryDateFrom) {
+          query.from = queryDateFrom.toISOString()
+        }
+        if (queryDateTo) {
+          query.to = queryDateTo.toISOString()
+        }
+
+        const response = await api.admin.agents[agent.agentId].queries.$get({
+          query
+        })
 
         if (!response.ok) {
           throw new Error("Failed to fetch query analysis data")
@@ -2506,7 +2549,7 @@ const AgentAnalysisPage = ({
     }
 
     fetchQueryAnalysisData()
-  }, [agent.agentId, agent.isPublic])
+  }, [agent.agentId, agent.isPublic, queryDateFrom, queryDateTo])
 
   if (loading) {
     return (
@@ -2693,6 +2736,12 @@ const AgentAnalysisPage = ({
           queries={queryAnalysisData}
           title="Query Analytics"
           description="View all queries and responses for this agent"
+          dateFrom={queryDateFrom}
+          dateTo={queryDateTo}
+          onDateRangeChange={(from, to) => {
+            setQueryDateFrom(from)
+            setQueryDateTo(to)
+          }}
         />
       )}
       {/* Unified Users Table with Sort */}
