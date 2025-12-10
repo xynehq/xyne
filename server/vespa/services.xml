@@ -140,6 +140,7 @@
             <!-- Route all document indexing/processing through the feed container cluster -->
             <!-- This ensures document embeddings are done by the feed container's GPU -->
             <document-processing cluster="feed" />
+            <document type="ticket" mode="index"/>
         </documents>  
   
         <nodes>  
