@@ -432,8 +432,6 @@ export const fetchAgentQueryResponsePairs = async (
     .where(and(...conditions))
     .orderBy(desc(chats.createdAt), desc(messages.createdAt))
 
-  console.log("fetchAgentQueryResponsePairs: agentExternalId=", agentExternalId, "workspaceExternalId=", workspaceExternalId)
-  console.log("fetchAgentQueryResponsePairs: allMessages count=", allMessages.length)
 
   // Group messages by chat and pair user queries with assistant responses
   const chatMap = new Map<string, {

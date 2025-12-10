@@ -1366,20 +1366,46 @@ const QueryAnalyticsTable = ({
     setCurrentChatPage(1)
   }, [searchQuery, sortBy])
 
-  // Filter chats based on search
-  const filteredChats = queries.filter((chat) => {
-    const searchLower = searchQuery.toLowerCase()
-    return (
-      chat.chatTitle.toLowerCase().includes(searchLower) ||
-      chat.userEmail.toLowerCase().includes(searchLower) ||
-      chat.userName.toLowerCase().includes(searchLower) ||
-      chat.messages.some(
+  // Filter chats and messages based on search
+  const filteredChats = queries
+    .map((chat) => {
+      const searchLower = searchQuery.toLowerCase()
+      const originalMessageCount = chat.messageCount
+
+      // Check if chat-level fields match
+      const chatMatches =
+        chat.chatTitle.toLowerCase().includes(searchLower) ||
+        chat.userEmail.toLowerCase().includes(searchLower) ||
+        chat.userName.toLowerCase().includes(searchLower)
+
+      // If chat-level matches, include all messages
+      if (chatMatches) {
+        return {
+          ...chat,
+          originalMessageCount, // Preserve original count
+        }
+      }
+
+      // Otherwise, filter messages that match the search
+      const filteredMessages = chat.messages.filter(
         (msg) =>
           msg.queryText.toLowerCase().includes(searchLower) ||
           msg.responseText.toLowerCase().includes(searchLower)
       )
-    )
-  })
+
+      // Only include the chat if it has matching messages
+      if (filteredMessages.length > 0) {
+        return {
+          ...chat,
+          messages: filteredMessages,
+          messageCount: filteredMessages.length, // Update message count to reflect filtered messages
+          originalMessageCount, // Preserve original count for display
+        }
+      }
+
+      return null
+    })
+    .filter((chat): chat is QueryAnalysisData & { originalMessageCount: number } => chat !== null)
 
   // Sort chats based on selected criteria
   const sortedChats = [...filteredChats].sort((a, b) => {
@@ -1408,7 +1434,6 @@ const QueryAnalyticsTable = ({
   const totalChatPages = Math.ceil(sortedChats.length / chatsPerPage)
   const startChatIndex = (currentChatPage - 1) * chatsPerPage
   const paginatedChats = sortedChats.slice(startChatIndex, startChatIndex + chatsPerPage)
-  console.log('paginatedChats', paginatedChats,totalChatPages)
 
   const toggleChat = (chatId: string) => {
     const newExpanded = new Set(expandedChats)
@@ -1457,7 +1482,9 @@ const QueryAnalyticsTable = ({
             <CardDescription>{description}</CardDescription>
           </div>
           <Badge variant="outline" className="text-sm">
-            {queries.length} total chats
+            {searchQuery
+              ? `${filteredChats.length} of ${queries.length} chats`
+              : `${queries.length} total chats`}
           </Badge>
         </div>
 
@@ -1525,7 +1552,9 @@ const QueryAnalyticsTable = ({
                                 {chat.chatTitle}
                               </h3>
                               <Badge variant="secondary" className="text-xs">
-                                {chat.messageCount} {chat.messageCount === 1 ? 'query' : 'queries'}
+                                {searchQuery && chat.messageCount !== chat.originalMessageCount
+                                  ? `${chat.messageCount} of ${chat.originalMessageCount} ${chat.originalMessageCount === 1 ? 'query' : 'queries'}`
+                                  : `${chat.messageCount} ${chat.messageCount === 1 ? 'query' : 'queries'}`}
                               </Badge>
                             </div>
                             <div className="flex items-center gap-4 text-xs text-muted-foreground">
