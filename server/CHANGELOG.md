@@ -1,3 +1,10 @@
+## [3.34.1](https://github.com/xynehq/xyne/compare/v3.34.0...v3.34.1) (2025-12-11)
+
+
+### Bug Fixes
+
+* **react:** upgrade react version ([#1239](https://github.com/xynehq/xyne/issues/1239)) ([911fb1f](https://github.com/xynehq/xyne/commit/911fb1f2d79a80cafddfd0bcc7be1fd747427b79))
+
 # [3.34.0](https://github.com/xynehq/xyne/compare/v3.33.2...v3.34.0) (2025-12-05)
 
 
