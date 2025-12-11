@@ -8,7 +8,7 @@ import {
 } from "@/db/connector"
 import { getOAuthProvider } from "@/db/oauthProvider"
 import type { SelectConnector } from "@/db/schema"
-import { NoUserFound, OAuthCallbackError } from "@/errors"
+import { NoUserFound, OAuthCallbackError, NoConnectorsFound } from "@/errors"
 import { boss, SaaSQueue } from "@/queue"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Apps, ConnectorStatus, ConnectorType, AuthType } from "@/shared/types"
@@ -123,10 +123,17 @@ export const OAuthCallback = async (c: Context) => {
           connectorId: existingConnectorId,
         })
       } catch (error) {
-        // No existing connector found, will create new one
-        Logger.info("✅ ZOHO CALLBACK: No existing connector, will create new", {
-          email,
-        })
+        if (error instanceof NoConnectorsFound) {
+          // No existing connector found, will create new one
+          Logger.info(
+            "✅ ZOHO CALLBACK: No existing connector, will create new",
+            {
+              email,
+            },
+          )
+        } else {
+          throw error
+        }
       }
 
       provider = {
