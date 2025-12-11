@@ -126,9 +126,17 @@ export const googleDriveOAuthIngestionStateSchema = z.object({
   lastUpdated: z.string(),
 })
 
+export const zohoDeskOAuthIngestionStateSchema = z.object({
+  app: z.literal(Apps.ZohoDesk),
+  authType: z.literal(AuthType.OAuth),
+  lastModifiedTime: z.string().optional(), // ISO timestamp of last sync
+  lastUpdated: z.string(), // ISO timestamp of when state was last updated
+})
+
 export const ingestionStateSchema = z.discriminatedUnion("app", [
   slackOAuthIngestionStateSchema,
   googleDriveOAuthIngestionStateSchema,
+  zohoDeskOAuthIngestionStateSchema,
   // googleDriveServiceAccountIngestionStateSchema,
 ])
 
@@ -141,6 +149,9 @@ export const selectConnectorSchema = createSelectSchema(connectors, {
 export type IngestionStateUnion = z.infer<typeof ingestionStateSchema>
 export type SlackOAuthIngestionState = z.infer<
   typeof slackOAuthIngestionStateSchema
+>
+export type ZohoDeskOAuthIngestionState = z.infer<
+  typeof zohoDeskOAuthIngestionStateSchema
 >
 
 export type SelectConnector = z.infer<typeof selectConnectorSchema>

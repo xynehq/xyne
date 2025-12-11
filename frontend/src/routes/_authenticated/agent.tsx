@@ -447,6 +447,13 @@ export const availableIntegrationsList: IntegrationSource[] = [
     entity: "event",
     icon: getIcon(Apps.GoogleCalendar, "event", { w: 16, h: 16, mr: 8 }),
   },
+    {
+    id: "zohodesk",
+    name: "Zoho Desk",
+    app: Apps.ZohoDesk,
+    entity: "ticket",
+    icon: getIcon(Apps.ZohoDesk, "ticket", { w: 16, h: 16, mr: 8 }),
+  },
   {
     id: "pdf",
     name: "PDF",

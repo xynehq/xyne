@@ -211,6 +211,27 @@ export interface AppFilter {
     startDate: number
     endDate: number
   }
+  // Zoho Desk filters - nested under zoho field
+  zoho?: {
+    ticketNumber?: string[]
+    status?: string[]
+    departmentName?: string[]
+    priority?: string[]
+    classification?: string[]
+    category?: string[]
+    subCategory?: string[]
+    assigneeEmail?: string[]
+    contact?: string[]
+    accountName?: string[]
+    productName?: string[]
+    teamName?: string[]
+    merchantId?: string[]
+    isOverDue?: boolean
+    isResponseOverdue?: boolean
+    isEscalated?: boolean
+    channel?: string[]
+    subject?: string[]
+  }
 }
 
 export interface AppSelectionMap {
@@ -245,6 +266,8 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
       app = Apps.KnowledgeBase
     } else if (appName == "slack") {
       app = Apps.Slack
+    } else if (appName == "zohodesk") {
+      app = Apps.ZohoDesk
     } else if (appName == "google-workspace") app = Apps.GoogleWorkspace
     else {
       app = appName as unknown as Apps

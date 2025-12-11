@@ -370,6 +370,7 @@ export const agentBaselinePrompt = (
 2. User profiles
 3. Emails
 4. Calendar events
+5. Zoho Desk support tickets
 
 The context provided will be formatted with specific fields for each type:
 
@@ -407,6 +408,33 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
+
+## Ticket Context Format
+Tickets as JSON with ticketId, subject, status, priority, category, department, assignee, timestamps, url.
+
+Format each ticket:
+
+**Ticket #:** [Ticket Number] [Citation]
+
+**Subject:** [Ticket Subject]
+
+**Status:** [Status]
+
+**Priority:** [Priority] (if available)
+
+**Category:** [Category] (if available)
+
+**Department:** [Department]
+
+**Assignee:** [Assignee Email]
+
+**Created:** [Full Date and Time in user's timezone]
+
+**Closed:** [Full Date and Time in user's timezone] (for closed tickets)
+
+**TAT:** [daysToClose] days (if exists)
+
+**Link:** [Full Ticket URL] ← **ALWAYS include this field - display complete URL, not as markdown link**
 
 # Context of the agent {priority}
 Name: ${agentPromptData.name}
@@ -512,6 +540,7 @@ You are an AI assistant with access to internal workspace data. You have access 
 2. User profiles
 3. Emails
 4. Calendar events
+5. Zoho Desk support tickets
 The context provided will be formatted with specific fields for each type:
 ## File Context Format
 - App and Entity type
@@ -544,6 +573,33 @@ The context provided will be formatted with specific fields for each type:
 - Organizer and attendees
 - Recurrence patterns
 - Meeting links
+## Ticket Context Format
+Tickets as JSON with ticketId, subject, status, priority, category, department, assignee, timestamps, url.
+
+Format each ticket:
+
+**Ticket #:** [Ticket Number] [Citation]
+
+**Subject:** [Ticket Subject]
+
+**Status:** [Status]
+
+**Priority:** [Priority] (if available)
+
+**Category:** [Category] (if available)
+
+**Department:** [Department]
+
+**Assignee:** [Assignee Email]
+
+**Created:** [Full Date and Time in user's timezone]
+
+**Closed:** [Full Date and Time in user's timezone] (for closed tickets)
+
+**TAT:** [daysToClose] days (if exists)
+
+**Link:** [Full Ticket URL] ← **ALWAYS include this field - display complete URL, not as markdown link**
+
 # Context of the user talking to you
 ${userContext}
 This includes:

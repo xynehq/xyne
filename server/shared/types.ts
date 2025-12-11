@@ -28,6 +28,7 @@ import {
   SlackEntity,
   MicrosoftPeopleEntity,
   AttachmentEntity,
+  ZohoEntity,
 } from "@xyne/vespa-ts/types"
 export {
   GooglePeopleEntity,
@@ -45,7 +46,11 @@ export {
   WebSearchEntity,
   KnowledgeBaseEntity,
   datasourceSchema,
+  ZohoEntity,
 } from "@xyne/vespa-ts/types"
+
+// Zoho Desk Entity - alias for ZohoEntity from vespa-ts
+export { ZohoEntity as ZohoDeskEntity } from "@xyne/vespa-ts/types"
 export type {
   Entity,
   VespaDataSourceFile,
@@ -76,6 +81,7 @@ const NotionEntitySchema = z.nativeEnum(NotionEntity)
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 export const ChatEntitySchema = z.nativeEnum(SlackEntity)
 export const MicrosoftPeopleEntitySchema = z.nativeEnum(MicrosoftPeopleEntity)
+export const ZohoDeskEntitySchema = z.nativeEnum(ZohoEntity)
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
@@ -89,6 +95,7 @@ export const entitySchema = z.union([
   DataSourceEntitySchema,
   WebSearchEntitySchema,
   KnowledgeBaseEntitySchema,
+  ZohoDeskEntitySchema,
 ])
 
 // Define an enum for connection types - MOVED HERE FROM server/types.ts
@@ -121,7 +128,7 @@ export type {
   SelectPublicChat,
   PublicWorkspace,
   SelectPublicAgent,
-  UserMetadata
+  UserMetadata,
   // @ts-ignore
 } from "@/db/schema"
 

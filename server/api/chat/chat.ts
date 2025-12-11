@@ -153,6 +153,10 @@ import {
   getAgentByExternalIdWithPermissionCheck,
 } from "@/db/agent"
 import {
+  fetchZohoPermissionIds,
+  getConnectedApps,
+} from "@/integrations/zoho/utils"
+import {
   ragPipelineConfig,
   RagPipelineStages,
   type Citation,
@@ -686,14 +690,15 @@ async function* processIterator(
           }
           // If we have an answer and it's different from what we've seen
           if (parsed.answer && currentAnswer !== parsed.answer) {
-            if (currentAnswer === "") {
-              // First valid answer - send the whole thing
-              yield { text: parsed.answer }
-            } else {
-              // Subsequent chunks - send only the new part
-              const newText = parsed.answer.slice(currentAnswer.length)
+            const baseLength = currentAnswer.length
+            const newText = parsed.answer.slice(baseLength)
+
+            currentAnswer = parsed.answer
+
+            if (newText.length > 0) {
               yield { text: newText }
             }
+
             yield* checkAndYieldCitations(
               parsed.answer,
               yieldedCitations,
@@ -703,7 +708,6 @@ async function* processIterator(
               yieldedImageCitations,
               isMsgWithKbItems,
             )
-            currentAnswer = parsed.answer
           }
         } catch (e) {
           // If we can't parse the JSON yet, continue accumulating
@@ -716,6 +720,7 @@ async function* processIterator(
       yield { cost: chunk.cost }
     }
   }
+
   return parsed.answer
 }
 
@@ -1120,6 +1125,13 @@ export async function buildContext(
   builtUserQuery?: string,
   isMsgWithKbItems?: boolean,
 ): Promise<string> {
+  // Count tickets in results
+  const ticketCount = results.filter(
+    (r: any) =>
+      r.fields?.sddocname === "ticket" || r.fields?.platform === "zoho-desk",
+  ).length
+
+  // Use standard "Index N" format for all document types (including Zoho tickets)
   const contextPromises = results?.map(
     async (v, i) =>
       `Index ${i + startIndex} \n ${await answerContextMap(
@@ -1237,6 +1249,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               case "slack":
                 if (!agentAppEnums.includes(Apps.Slack))
                   agentAppEnums.push(Apps.Slack)
+                break
+              case Apps.ZohoDesk.toLowerCase():
+              case "zohodesk":
+                if (!agentAppEnums.includes(Apps.ZohoDesk))
+                  agentAppEnums.push(Apps.ZohoDesk)
                 break
               default:
                 loggerWithChild({ email: email }).warn(
@@ -1364,6 +1381,53 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   if (classification.filterQuery) {
     message = classification.filterQuery
   }
+
+  // Store user's permission ID for permission filtering (department ID for Zoho)
+  let userPermissionId: string | undefined = undefined
+
+  // ALWAYS fetch permission ID for Zoho Desk queries (needed for permission filtering)
+  if (
+    agentAppEnums.includes(Apps.ZohoDesk) ||
+    classification.filters.apps?.includes(Apps.ZohoDesk)
+  ) {
+    const permissionIds = await fetchZohoPermissionIds(db, email)
+    userPermissionId = permissionIds?.[0]
+  }
+
+
+  if (
+    classification.filters.ticketParticipants &&
+    Object.keys(classification.filters.ticketParticipants).length > 0 &&
+    (agentAppEnums.includes(Apps.ZohoDesk) ||
+      classification.filters.apps?.includes(Apps.ZohoDesk))
+  ) {
+    loggerWithChild({ email: email }).info(
+      `[Iterative RAG] 🔄 Converting ticketParticipants to appFilters: ${JSON.stringify(classification.filters.ticketParticipants)}`,
+    )
+    if (!agentAppFilters) {
+      agentAppFilters = {}
+    }
+    if (!agentAppFilters[Apps.ZohoDesk]) {
+      agentAppFilters[Apps.ZohoDesk] = []
+    }
+
+    // Add required id field and properly nest Zoho filters under the 'zoho' field
+    const appFilter: AppFilter = {
+      id: Date.now(),
+      // Zoho Desk filters must be nested under the 'zoho' field
+      zoho: classification.filters.ticketParticipants,
+    }
+
+    agentAppFilters[Apps.ZohoDesk].push(appFilter)
+    loggerWithChild({ email: email }).info(
+      `[Iterative RAG] ✅ Final appFilters after conversion: ${JSON.stringify(agentAppFilters)}`,
+    )
+  } else {
+    loggerWithChild({ email: email }).info(
+      `[Iterative RAG] ❌ Skipping ticketParticipants conversion - ticketParticipants: ${!!classification.filters.ticketParticipants}, ZohoDesk in apps: ${classification.filters.apps?.includes(Apps.ZohoDesk) || agentAppEnums.includes(Apps.ZohoDesk)}`
+    )
+  }
+
   let searchResults: VespaSearchResponse
   if (!agentPrompt) {
     searchResults = await searchVespa(message, email, null, null, {
@@ -1372,6 +1436,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       timestampRange,
       span: initialSearchSpan,
       collectionSelections: agentSpecificCollectionSelections,
+      permissionId: userPermissionId,
+      appFilters: agentAppFilters, // Pass the converted appFilters
     })
   } else {
     Logger.info(
@@ -1398,6 +1464,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         collectionSelections: agentSpecificCollectionSelections,
         selectedItem: selectedItem,
         appFilters: agentAppFilters,
+        permissionId: userPermissionId,
       },
     )
   }
@@ -1446,6 +1513,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           alpha: userAlpha,
           span: vespaSearchSpan,
           collectionSelections: agentSpecificCollectionSelections,
+          permissionId: userPermissionId,
+          appFilters: agentAppFilters,
         })
       } else {
         results = await searchVespaAgent(
@@ -1524,6 +1593,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               timestampRange,
               span: latestSearchSpan,
               collectionSelections: agentSpecificCollectionSelections,
+              permissionId: userPermissionId,
+              appFilters: agentAppFilters,
             })
           : searchVespaAgent(query, email, null, null, agentAppEnums, {
               limit: pageSize,
@@ -1580,6 +1651,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
               ?.map((v: VespaSearchResult) => (v.fields as any).docId)
               ?.filter((v) => !!v),
             collectionSelections: agentSpecificCollectionSelections,
+            permissionId: userPermissionId,
+            appFilters: agentAppFilters,
           })
         } else {
           results = await searchVespaAgent(
@@ -1710,6 +1783,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           excludedIds: latestIds,
           span: searchSpan,
           collectionSelections: agentSpecificCollectionSelections,
+          permissionId: userPermissionId,
+          appFilters: agentAppFilters,
         })
       } else {
         results = await searchVespaAgent(
@@ -1770,6 +1845,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           alpha: userAlpha,
           span: searchSpan,
           collectionSelections: agentSpecificCollectionSelections,
+          permissionId: userPermissionId,
+          appFilters: agentAppFilters,
         })
       } else {
         results = await searchVespaAgent(
@@ -2384,7 +2461,7 @@ export async function* generateAnswerFromDualRag(
   //Total budget of chunks (120 is empirically validated)
   const targetChunks = 120
 
-  
+
   if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
     const fileSearchSpan = generateAnswerSpan?.startSpan("file_search")
     let results
@@ -2422,7 +2499,7 @@ export async function* generateAnswerFromDualRag(
 
       const allAttachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
 
-  
+
       loggerWithChild({ email }).info(
         `[Dual RAG ] Attachment file IDs identified: ${JSON.stringify(
           allAttachmentFileIds,
@@ -2526,6 +2603,7 @@ export async function* generateAnswerFromDualRag(
           agentPromptData.appIntegrations,
         )
 
+        // Debug log to see what parseAppSelections returned
         loggerWithChild({ email }).info(
           `[generateAnswerFromDualRag] selectedApps: ${JSON.stringify(selectedApps)}`,
         )
@@ -2577,7 +2655,7 @@ export async function* generateAnswerFromDualRag(
           limit: 6, // Max 6 results from KB
           alpha: userAlpha, // Use personalized alpha
           collectionSelections: agentSpecificCollectionSelections,
-          selectedItem: selectedItem, 
+          selectedItem: selectedItem,
           dataSourceIds: [],        // Empty array (todo: support data sources later)
           channelIds: channelIds,
           span: kbSearchSpan,       // Pass the span for tracing
@@ -2732,12 +2810,12 @@ export async function* generateAnswerFromDualRag(
   // STEP 6: CONTEXT BUILDING
   const startIndex = isReasoning ? previousResultsLength : 0
   // Apply intelligent chunk selection based on document relevance and chunk scores
-    chunksPerDocument = await getChunkCountPerDoc(
-      combinedSearchResponse,
-      targetChunks,
-      email,
-      generateAnswerSpan,
-    )
+  chunksPerDocument = await getChunkCountPerDoc(
+    combinedSearchResponse,
+    targetChunks,
+    email,
+    generateAnswerSpan,
+  )
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
     let content = await answerContextMap(
       v as VespaSearchResults,
@@ -2797,7 +2875,10 @@ export async function* generateAnswerFromDualRag(
     initialContext?.length || 0,
   )
   // Do not log raw context; log size/hash only
-  initialContextSpan?.setAttribute("context_length_only", initialContext?.length || 0)
+  initialContextSpan?.setAttribute(
+    "context_length_only",
+    initialContext?.length || 0,
+  )
   initialContextSpan?.setAttribute(
     "number_of_chunks",
     combinedSearchResponse?.length || 0,
@@ -3075,6 +3156,11 @@ async function* generatePointQueryTimeExpansion(
               case "slack":
                 if (!agentAppEnums.includes(Apps.Slack))
                   agentAppEnums.push(Apps.Slack)
+                break
+              case Apps.ZohoDesk.toLowerCase():
+              case "zohodesk":
+                if (!agentAppEnums.includes(Apps.ZohoDesk))
+                  agentAppEnums.push(Apps.ZohoDesk)
                 break
               default:
                 Logger.warn(
@@ -3684,6 +3770,11 @@ async function* generateMetadataQueryAnswer(
                 if (!agentAppEnums.includes(Apps.Slack))
                   agentAppEnums.push(Apps.Slack)
                 break
+              case Apps.ZohoDesk.toLowerCase():
+              case "zohodesk":
+                if (!agentAppEnums.includes(Apps.ZohoDesk))
+                  agentAppEnums.push(Apps.ZohoDesk)
+                break
               case Apps.KnowledgeBase.toLowerCase():
                 if (!agentAppEnums.includes(Apps.KnowledgeBase))
                   agentAppEnums.push(Apps.KnowledgeBase)
@@ -3788,13 +3879,22 @@ async function* generateMetadataQueryAnswer(
     schema = [
       ...new Set(
         entities
-          .map((entity) => entityToSchemaMapper(entity))
+          .map((entity) => entityToSchemaMapper(entity, apps?.[0]))
           .filter((s) => s !== null),
       ),
     ]
   }
 
   let items: VespaSearchResult[] = []
+
+  // Store user's permission ID for permission filtering (department ID for Zoho)
+  let userPermissionId: string | undefined = undefined
+
+  // Fetch permission ID for Zoho Desk queries (needed for permission filtering)
+  if (apps?.includes(Apps.ZohoDesk)) {
+    const permissionIds = await fetchZohoPermissionIds(db, email)
+    userPermissionId = permissionIds?.[0]
+  }
 
   // Determine search strategy based on conditions
   if (
@@ -3838,6 +3938,7 @@ async function* generateMetadataQueryAnswer(
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
       mailParticipants: resolvedMailParticipants,
+      permissionId: userPermissionId,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -4008,6 +4109,35 @@ async function* generateMetadataQueryAnswer(
       )
     }
 
+    // Convert ticketParticipants from LLM response to appFilters for vespa-ts
+    if (
+      classification.filters.ticketParticipants &&
+      Object.keys(classification.filters.ticketParticipants).length > 0 &&
+      apps?.includes(Apps.ZohoDesk)
+    ) {
+      loggerWithChild({ email: email }).info(
+        `[GetItems] Converting ticketParticipants to appFilters: ${JSON.stringify(classification.filters.ticketParticipants)}`,
+      )
+      if (!agentAppFilters) {
+        agentAppFilters = {}
+      }
+      if (!agentAppFilters[Apps.ZohoDesk]) {
+        agentAppFilters[Apps.ZohoDesk] = []
+      }
+
+      // Add required id field and properly nest Zoho filters under the 'zoho' field
+      const appFilter: AppFilter = {
+        id: Date.now(),
+        // Zoho Desk filters must be nested under the 'zoho' field
+        zoho: classification.filters.ticketParticipants,
+      }
+
+      agentAppFilters[Apps.ZohoDesk].push(appFilter)
+      loggerWithChild({ email: email }).info(
+        `[GetItems] Final appFilters after conversion: ${JSON.stringify(agentAppFilters)}`,
+      )
+    }
+
     if (!schema) {
       loggerWithChild({ email: email }).error(
         `[generateMetadataQueryAnswer] Could not determine a valid schema for apps: ${JSON.stringify(apps)}, entities: ${JSON.stringify(entities)}`,
@@ -4032,7 +4162,7 @@ async function* generateMetadataQueryAnswer(
       }
       if (agentApps.length) {
         loggerWithChild({ email: email }).info(
-          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${agentApps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}`,
+          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${agentApps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}, permissionId: ${JSON.stringify(userPermissionId)}`,
         )
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await getItems({
@@ -4049,6 +4179,7 @@ async function* generateMetadataQueryAnswer(
           selectedItem: selectedItem,
           collectionSelections: agentSpecificCollectionSelections,
           appFilters: agentAppFilters,
+          permissionId: userPermissionId,
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -4057,7 +4188,7 @@ async function* generateMetadataQueryAnswer(
       }
     } else {
       loggerWithChild({ email: email }).info(
-        `[GetItems] Calling getItems - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}`,
+        `[GetItems] Calling getItems - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}, permissionId: ${JSON.stringify(userPermissionId)}`,
       )
 
       const getItemsParams = {
@@ -4072,6 +4203,8 @@ async function* generateMetadataQueryAnswer(
         mailParticipants: resolvedMailParticipants || {},
         collectionSelections: agentSpecificCollectionSelections,
         selectedItem: selectedItem,
+        appFilters: agentAppFilters,
+        permissionId: userPermissionId,
       }
 
       loggerWithChild({ email: email }).info(
@@ -4190,6 +4323,35 @@ async function* generateMetadataQueryAnswer(
       )
     }
 
+    // Convert ticketParticipants from LLM response to appFilters for vespa-ts
+    if (
+      classification.filters.ticketParticipants &&
+      Object.keys(classification.filters.ticketParticipants).length > 0 &&
+      apps?.includes(Apps.ZohoDesk)
+    ) {
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] Converting ticketParticipants to appFilters: ${JSON.stringify(classification.filters.ticketParticipants)}`,
+      )
+      if (!agentAppFilters) {
+        agentAppFilters = {}
+      }
+      if (!agentAppFilters[Apps.ZohoDesk]) {
+        agentAppFilters[Apps.ZohoDesk] = []
+      }
+
+      // Add required id field and properly nest Zoho filters under the 'zoho' field
+      const appFilter: AppFilter = {
+        id: Date.now(),
+        // Zoho Desk filters must be nested under the 'zoho' field
+        zoho: classification.filters.ticketParticipants,
+      }
+
+      agentAppFilters[Apps.ZohoDesk].push(appFilter)
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] Final appFilters after conversion: ${JSON.stringify(agentAppFilters)}`,
+      )
+    }
+
     const searchOptions = {
       limit: pageSize,
       alpha: userAlpha,
@@ -4197,6 +4359,8 @@ async function* generateMetadataQueryAnswer(
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
       mailParticipants: resolvedMailParticipants,
+      appFilters: agentAppFilters,
+      permissionId: userPermissionId,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -5509,6 +5673,9 @@ export const MessageApi = async (c: Context) => {
                 extractedInfo.webSearchResults,
               )
             } else {
+              // Get connected apps for LLM prompt
+              const connectedApps = await getConnectedApps(db, email)
+
               searchOrAnswerIterator =
                 generateSearchQueryOrAnswerFromConversation(
                   message,
@@ -5533,6 +5700,7 @@ export const MessageApi = async (c: Context) => {
                   undefined,
                   previousClassification,
                   formattedChainBreaks,
+                  connectedApps,
                 )
             }
 
@@ -5554,6 +5722,7 @@ export const MessageApi = async (c: Context) => {
               count: 0,
               sortDirection: "",
               mailParticipants: {},
+              ticketParticipants: {},
               offset: 0,
             }
             let parsed = {
@@ -5815,6 +5984,7 @@ export const MessageApi = async (c: Context) => {
             conversationSpan.setAttribute("answer", answer)
             conversationSpan.setAttribute("query_rewrite", parsed.queryRewrite)
             conversationSpan.end()
+
             let classification
             const {
               apps,
@@ -5824,6 +5994,7 @@ export const MessageApi = async (c: Context) => {
               sortDirection,
               startTime,
               mailParticipants,
+              ticketParticipants,
               offset,
             } = parsed?.filters || {}
             classification = {
@@ -5840,6 +6011,7 @@ export const MessageApi = async (c: Context) => {
                 count,
                 offset: offset || 0,
                 mailParticipants: mailParticipants || {},
+                ticketParticipants: ticketParticipants || {},
               },
             } as QueryRouterLLMResponse
 
@@ -6967,6 +7139,9 @@ export const MessageRetryApi = async (c: Context) => {
             )
 
             const searchSpan = streamSpan.startSpan("conversation_search")
+            // Get connected apps for LLM prompt
+            const connectedApps = await getConnectedApps(db, email)
+
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(
                 message,
@@ -6987,6 +7162,7 @@ export const MessageRetryApi = async (c: Context) => {
                 undefined,
                 previousClassification,
                 formattedChainBreaks,
+                connectedApps,
               )
             let currentAnswer = ""
             let answer = ""
@@ -7000,6 +7176,7 @@ export const MessageRetryApi = async (c: Context) => {
               count: 0,
               sortDirection: "",
               mailParticipants: {},
+              ticketParticipants: {},
               offset: 0,
             }
             let parsed = {
@@ -7145,6 +7322,7 @@ export const MessageRetryApi = async (c: Context) => {
                   count,
                   offset: parsed?.filters?.offset || 0,
                   mailParticipants: parsed?.filters?.mailParticipants || {},
+                  ticketParticipants: parsed?.filters?.ticketParticipants || {},
                 },
               } as QueryRouterLLMResponse
 

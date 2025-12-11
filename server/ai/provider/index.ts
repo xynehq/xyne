@@ -35,6 +35,7 @@ import { getLogger } from "@/logger"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { parse } from "partial-json"
+import { Apps } from "@/shared/types"
 
 import { ModelToProviderMap } from "@/ai/mappers"
 import type {
@@ -1688,6 +1689,7 @@ export function generateSearchQueryOrAnswerFromConversation(
   toolContext?: string,
   previousClassification?: QueryRouterLLMResponse | null,
   chainBreakClassifications?: ChainBreakClassifications | null,
+  connectedApps?: Apps[],
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   let defaultReasoning = isReasoning
@@ -1710,6 +1712,7 @@ export function generateSearchQueryOrAnswerFromConversation(
       userMetadata.dateForAI,
       previousClassification,
       chainBreakClassifications,
+      connectedApps,
     )
   }
 

@@ -266,6 +266,16 @@ export const chatIdParamSchema = z.object({
   chatId: z.string().min(1, "Chat ID must be a non-empty string"),
 })
 
+export const createZohoDeskConnectorSchema = z.object({
+  app: z.literal("zoho-desk" as const).optional(),
+  authType: z.literal(AuthType.OAuth),
+  refreshToken: z.string().min(1, "Refresh token is required"),
+})
+
+export type CreateZohoDeskConnector = z.infer<
+  typeof createZohoDeskConnectorSchema
+>
+
 export const updateConnectorStatusSchema = z.object({
   connectorId: z.string(),
   status: z.nativeEnum(ConnectorStatus),
@@ -345,6 +355,16 @@ export type OAuthCredentials = {
     refresh_token: string
     accessTokenExpiresAt: Date
   }
+}
+
+export interface ZohoOAuthCredentials {
+  accessToken: string
+  refreshToken: string
+  tokenType: string
+  expiresIn: number
+  scope: string
+  departmentIds: string[]
+  departments: Array<{ id: string; name: string }>
 }
 
 export enum SyncCron {
@@ -522,6 +542,7 @@ export enum Subsystem {
   Chat = "Chat",
   Utils = "Utils",
   Queue = "Queue",
+  Worker = "Worker",
   Eval = "Eval",
   AI = "AI",
   Tuning = "Tuning",
@@ -586,6 +607,9 @@ export const startSlackIngestionSchema = z.object({
 })
 export const startGoogleIngestionSchema = z.object({
   connectorId: z.string(),
+})
+export const startZohoDeskSyncSchema = z.object({
+  // No parameters needed - syncs all Zoho Desk connectors like the 2 AM cron
 })
 
 export type EntityType =

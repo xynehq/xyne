@@ -22,6 +22,7 @@ export * from "@/db/schema/directMessages"
 export * from "@/db/schema/channels"
 export * from "@/db/schema/threads"
 export * from "@/db/schema/ingestions"
+export * from "@/db/schema/summaries"
 
 // Export combined types
 import type { PublicUser, SelectUser } from "@/db/schema/users"

@@ -15,6 +15,7 @@ import { AuthType, ConnectorStatus } from "@/shared/types"
 import { extractDriveIds, extractCollectionVespaIds } from "./utils"
 import { getAppSyncJobsByEmail } from "@/db/syncJob"
 import { sharedVespaService as vespa } from "./vespaService"
+import { isZohoDeskConnected as checkZohoDeskConnected } from "@/integrations/zoho/utils"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 
@@ -35,6 +36,7 @@ export const searchVespa = async (
   let isDriveConnected = false
   let isGmailConnected = false
   let isCalendarConnected = false
+  let isZohoDeskConnected = false
 
   let connector
   try {
@@ -78,15 +80,24 @@ export const searchVespa = async (
       "Error fetching Google sync jobs status",
     )
   }
+  // Use utility function to check Zoho Desk connection
+  isZohoDeskConnected = await checkZohoDeskConnected(db, email)
   const processedCollectionSelections = await extractCollectionVespaIds(options)
-  return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
+
+  // For Zoho Desk queries, use permissionId (department ID) instead of email for filtering
+  // This allows users to only see tickets from their assigned departments
+  const emailOrPermission = options.permissionId || email
+
+  return await vespa.searchVespa.bind(vespa)(query, emailOrPermission, app, entity, {
     ...options,
+    appFilters: options.appFilters, // Explicitly pass appFilters
     recencyDecayRate:
       options.recencyDecayRate || config.defaultRecencyDecayRate,
     isSlackConnected,
     isDriveConnected,
     isGmailConnected,
     isCalendarConnected,
+    isZohoDeskConnected,
     processedCollectionSelections,
   })
 }
@@ -100,18 +111,35 @@ export const searchVespaAgent = async (
   options: Partial<VespaQueryConfig> = {},
 ) => {
 
-  Logger.info(`[searchVespaAgent] options.collectionSelections: ${JSON.stringify(options.collectionSelections)}`)
-  Logger.info(`[searchVespaAgent] options.selectedItem: ${JSON.stringify(options.selectedItem)}`)
+  Logger.info(
+    `[searchVespaAgent] options.collectionSelections: ${JSON.stringify(options.collectionSelections)}`,
+  )
+  Logger.info(
+    `[searchVespaAgent] options.selectedItem: ${JSON.stringify(options.selectedItem)}`,
+  )
   const driveIds = await extractDriveIds(options, email)
   const processedCollectionSelections = await extractCollectionVespaIds(options)
-  Logger.debug({ 
-    hasCollectionIds: Boolean(processedCollectionSelections.collectionIds?.length),
-    hasFolderIds: Boolean(processedCollectionSelections.collectionFolderIds?.length),
-    hasFileIds: Boolean(processedCollectionSelections.collectionFileIds?.length)
-  }, '[searchVespaAgent] Processed selections summary')
+  Logger.debug(
+    {
+      hasCollectionIds: Boolean(
+        processedCollectionSelections.collectionIds?.length,
+      ),
+      hasFolderIds: Boolean(
+        processedCollectionSelections.collectionFolderIds?.length,
+      ),
+      hasFileIds: Boolean(
+        processedCollectionSelections.collectionFileIds?.length,
+      ),
+    },
+    "[searchVespaAgent] Processed selections summary",
+  )
+
+  // Send permissionId if available, otherwise send email
+  const emailOrPermission = (options as any).permissionId || email
+
   return await vespa.searchVespaAgent.bind(vespa)(
     query,
-    email,
+    emailOrPermission,
     app,
     entity,
     AgentApps,
@@ -150,6 +178,7 @@ export const getItems = async (
       collectionFileIds?: string[]
     }>
     appFilters?: any
+    permissionId?: string
   },
 ) => {
   const driveIds = await extractDriveIds(
@@ -159,10 +188,16 @@ export const getItems = async (
   const processedCollectionSelections = await extractCollectionVespaIds({
     collectionSelections: params.collectionSelections,
   })
+  
+  // Extract permissionId and use it if available, otherwise use email
+  const { permissionId, email, ...restParams } = params
+  const emailOrPermission = permissionId || email
+  
   return await vespa.getItems.bind(vespa)({
     processedCollectionSelections,
     driveIds,
-    ...params,
+    email: emailOrPermission,
+    ...restParams,
   })
 }
 
@@ -206,4 +241,5 @@ export const ifDocumentsExistInSchema =
   vespa.ifDocumentsExistInSchema.bind(vespa)
 export const ifDocumentsExistInChatContainer =
   vespa.ifDocumentsExistInChatContainer.bind(vespa)
+
 export default vespa
