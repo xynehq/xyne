@@ -257,65 +257,44 @@ export const OAuthCallback = async (c: Context) => {
     let connector: SelectConnector
 
     // For Zoho Desk user OAuth, create a new connector if none exists; otherwise update existing
-    if (app === Apps.ZohoDesk) {
-      if (provider.connectorId === null) {
-        // Create new connector for Zoho Desk user
-        Logger.info("✅ ZOHO CALLBACK: Creating new connector for user", {
-          email,
-        })
+    if (app === Apps.ZohoDesk && provider.connectorId === null) {
+      // Create new connector for Zoho Desk user
+      Logger.info("✅ ZOHO CALLBACK: Creating new connector for user", {
+        email,
+      })
 
-        const departmentIds = (tokens as ZohoOAuthCredentials).departmentIds || []
-        const departmentId = departmentIds.length > 0 ? departmentIds[0] : null
+      const departmentIds = (tokens as ZohoOAuthCredentials).departmentIds || []
+      const departmentId = departmentIds.length > 0 ? departmentIds[0] : null
 
-        Logger.info("✅ ZOHO CALLBACK: Department assignment", {
-          email,
-        })
+      Logger.info("✅ ZOHO CALLBACK: Department assignment", {
+        email,
+      })
 
-        const newConnector = await insertConnector(
-          db,
-          userRes[0].workspaceId,
-          userRes[0].id,
-          userRes[0].workspaceExternalId,
-          `${Apps.ZohoDesk}-${ConnectorType.SaaS}-${AuthType.OAuth}`,
-          ConnectorType.SaaS,
-          AuthType.OAuth,
-          Apps.ZohoDesk,
-          {}, // initial state
-          null, // no credentials needed for OAuth
-          email, // subject
-          JSON.stringify(tokens), // OAuth credentials (includes departmentIds)
-          null, // apiKey
-          ConnectorStatus.Connected,
-        )
+      const newConnector = await insertConnector(
+        db,
+        userRes[0].workspaceId,
+        userRes[0].id,
+        userRes[0].workspaceExternalId,
+        `${Apps.ZohoDesk}-${ConnectorType.SaaS}-${AuthType.OAuth}`,
+        ConnectorType.SaaS,
+        AuthType.OAuth,
+        Apps.ZohoDesk,
+        {}, // initial state
+        null, // no credentials needed for OAuth
+        email, // subject
+        JSON.stringify(tokens), // OAuth credentials (includes departmentIds)
+        null, // apiKey
+        ConnectorStatus.Connected,
+      )
 
-        // Cast to SelectConnector with correct app type
-        connector = { ...newConnector, app: Apps.ZohoDesk } as SelectConnector
+      // Cast to SelectConnector with correct app type
+      connector = { ...newConnector, app: Apps.ZohoDesk } as SelectConnector
 
-        Logger.info("✅ ZOHO CALLBACK: Connector created successfully", {
-          email,
-        })
-      } else {
-        // Update existing ZohoDesk connector
-        Logger.info("✅ ZOHO CALLBACK: Updating existing connector", {
-          email,
-          connectorId: provider.connectorId,
-        })
-
-        const updateData: any = {
-          subject: email,
-          oauthCredentials: JSON.stringify(tokens), // departmentIds will be stored in oauthCredentials
-          status: ConnectorStatus.Authenticated,
-        }
-
-        connector = await updateConnector(db, provider.connectorId, updateData)
-
-        Logger.info("✅ ZOHO CALLBACK: Connector updated successfully", {
-          email,
-          connectorId: connector.id,
-        })
-      }
+      Logger.info("✅ ZOHO CALLBACK: Connector created successfully", {
+        email,
+      })
     } else {
-      // Update existing connector for other apps
+      // Update existing connector for all apps (including ZohoDesk with existing connector)
       if (provider.connectorId === null) {
         throw new HTTPException(500, {
           message: "Invalid state: database provider must have connectorId",
@@ -324,7 +303,7 @@ export const OAuthCallback = async (c: Context) => {
 
       const updateData: any = {
         subject: email,
-        oauthCredentials: JSON.stringify(tokens), // departmentIds will be stored in oauthCredentials
+        oauthCredentials: JSON.stringify(tokens),
         status: ConnectorStatus.Authenticated,
       }
 
