@@ -500,6 +500,33 @@ export const deleteConnector = async (
   connectorId: string,
   userId: number,
 ): Promise<void> => {
+  // First get the connector's internal ID
+  const connector = await trx
+    .select({ id: connectors.id })
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.externalId, connectorId),
+        eq(connectors.userId, userId),
+      ),
+    )
+    .limit(1)
+
+  if (!connector || connector.length === 0) {
+    Logger.warn(`Connector not found: ${connectorId}`)
+    return
+  }
+
+  const internalConnectorId = connector[0].id
+
+  // Delete ingestions first (they reference connectors via foreign key)
+  const { ingestions } = await import("./schema")
+  await trx
+    .delete(ingestions)
+    .where(eq(ingestions.connectorId, internalConnectorId))
+  Logger.debug(`Deleted ingestions for connector: ${connectorId}`)
+
+  // Now delete the connector itself
   return await trx
     .delete(connectors)
     .where(
@@ -518,15 +545,24 @@ export const deleteOauthConnector = async (
     `Attempting to delete OAuth connector and related data for connector ID: ${connectorId}`,
   )
   try {
+    // Delete ingestions first (they reference connectors via foreign key)
+    const { ingestions } = await import("./schema")
+    await trx.delete(ingestions).where(eq(ingestions.connectorId, connectorId))
+    Logger.debug(`Deleted ingestions for connector ID: ${connectorId}`)
+
+    // Delete sync jobs
     await trx.delete(syncJobs).where(eq(syncJobs.connectorId, connectorId))
     Logger.debug(`Deleted sync jobs for connector ID: ${connectorId}`)
 
+    // Delete OAuth providers
     await trx
       .delete(oauthProviders)
       .where(eq(oauthProviders.connectorId, connectorId))
     Logger.debug(`Deleted OAuth providers for connector ID: ${connectorId}`)
 
+    // Finally delete the connector itself
     await trx.delete(connectors).where(eq(connectors.id, connectorId))
+    Logger.info(`Successfully deleted connector ID: ${connectorId}`)
   } catch (error) {
     Logger.error(
       { error, connectorId },

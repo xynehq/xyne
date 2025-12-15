@@ -32,6 +32,15 @@ import {
 import { getAppSyncJobs } from "@/db/syncJob"
 import { db } from "@/db/client"
 
+import { handleZohoDeskSync } from "@/integrations/zoho/sync"
+import {
+  processTicketJob,
+  processAttachmentJob,
+  type TicketJob,
+  type AttachmentJob,
+} from "@/integrations/zoho/queue"
+import { startSummaryWorker } from "@/workers/summary-worker"
+import { SUMMARY_QUEUE_NAME } from "./summary-generation"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
 const SYNC_JOB_AUTH_TYPE_CLEANUP = "cleanup"
@@ -53,6 +62,9 @@ export const CheckDownloadsFolderQueue = `check-downloads-folder`
 export const SyncSlackQueue = `sync-${Apps.Slack}-${AuthType.OAuth}`
 export const SyncSlackPerUserQueue = `sync-${Apps.Slack}-${AuthType.OAuth}-per-user`
 export const SyncSlackSchedulerQueue = `sync-${Apps.Slack}-${AuthType.OAuth}-scheduler`
+export const SyncZohoDeskQueue = `sync-${Apps.ZohoDesk}-${AuthType.OAuth}`
+export const ProcessZohoDeskTicketQueue = `process-${Apps.ZohoDesk}-ticket`
+export const ProcessZohoDeskAttachmentQueue = `process-${Apps.ZohoDesk}-attachment`
 export const SyncToolsQueue = `sync-tools`
 export const CleanupAttachmentsQueue = `cleanup-attachments`
 
@@ -79,8 +91,12 @@ export const init = async () => {
   await boss.createQueue(SyncSlackQueue)
   await boss.createQueue(SyncSlackPerUserQueue)
   await boss.createQueue(SyncSlackSchedulerQueue)
+  await boss.createQueue(SyncZohoDeskQueue)
+  await boss.createQueue(ProcessZohoDeskTicketQueue)
+  await boss.createQueue(ProcessZohoDeskAttachmentQueue)
   await boss.createQueue(SyncToolsQueue)
   await boss.createQueue(CleanupAttachmentsQueue)
+  await boss.createQueue(SUMMARY_QUEUE_NAME)
   await initWorkers()
 }
 
@@ -194,6 +210,13 @@ const initWorkers = async () => {
       { retryLimit: 0, expireInHours: JobExpiryHours },
     )
   }
+
+  await boss.schedule(
+    SyncZohoDeskQueue,
+    EveryDay,
+    {},
+    { retryLimit: 0, expireInHours: JobExpiryHours },
+  )
 
   await boss.schedule(
     SyncToolsQueue,
@@ -443,15 +466,11 @@ const initWorkers = async () => {
           const userEmail = jobData.email
 
           try {
-            Logger.info(
-              `Per-User Worker: Starting sync for user ${userEmail}`,
-            )
+            Logger.info(`Per-User Worker: Starting sync for user ${userEmail}`)
 
             await handleGoogleServiceAccountChanges(boss, job)
 
-            Logger.info(
-              `Per-User Worker: Completed sync for user ${userEmail}`,
-            )
+            Logger.info(`Per-User Worker: Completed sync for user ${userEmail}`)
 
             const endTime = Date.now()
             syncJobSuccess.inc(
@@ -706,6 +725,133 @@ const initWorkers = async () => {
       )
     }
   })
+
+  await boss.work(SyncZohoDeskQueue, async ([job]) => {
+    const startTime = Date.now()
+    try {
+      await handleZohoDeskSync(job as PgBoss.Job<{ connectorId: number }>)
+      const endTime = Date.now()
+      syncJobSuccess.inc(
+        {
+          sync_job_name: SyncZohoDeskQueue,
+          sync_job_auth_type: AuthType.OAuth,
+        },
+        1,
+      )
+      syncJobDuration.observe(
+        {
+          sync_job_name: SyncZohoDeskQueue,
+          sync_job_auth_type: AuthType.OAuth,
+        },
+        endTime - startTime,
+      )
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `Unhandled Error while syncing Zoho Desk ${errorMessage} ${(error as Error).stack}`,
+      )
+      syncJobError.inc(
+        {
+          sync_job_name: SyncZohoDeskQueue,
+          sync_job_auth_type: AuthType.OAuth,
+          sync_job_error_type: `${errorMessage}`,
+        },
+        1,
+      )
+    }
+  })
+
+  // Zoho Desk Ticket Processing Worker - processes individual tickets
+  await boss.work(
+    ProcessZohoDeskTicketQueue,
+    { batchSize: 3 },
+    async (jobs) => {
+      await Promise.all(
+        jobs.map(async (job) => {
+          const startTime = Date.now()
+          try {
+            await processTicketJob(job as PgBoss.Job<TicketJob>)
+            const endTime = Date.now()
+            syncJobSuccess.inc(
+              {
+                sync_job_name: ProcessZohoDeskTicketQueue,
+                sync_job_auth_type: AuthType.OAuth,
+              },
+              1,
+            )
+            syncJobDuration.observe(
+              {
+                sync_job_name: ProcessZohoDeskTicketQueue,
+                sync_job_auth_type: AuthType.OAuth,
+              },
+              endTime - startTime,
+            )
+          } catch (error) {
+            const errorMessage = getErrorMessage(error)
+            Logger.error(
+              error,
+              `Error processing Zoho Desk ticket ${errorMessage} ${(error as Error).stack}`,
+            )
+            syncJobError.inc(
+              {
+                sync_job_name: ProcessZohoDeskTicketQueue,
+                sync_job_auth_type: AuthType.OAuth,
+                sync_job_error_type: `${errorMessage}`,
+              },
+              1,
+            )
+          }
+        }),
+      )
+    },
+  )
+
+  //Zoho Desk Attachment Processing Worker - processes OCR for attachments
+  await boss.work(
+    ProcessZohoDeskAttachmentQueue,
+    { batchSize: 5 },
+    async (jobs) => {
+      await Promise.all(
+        jobs.map(async (job) => {
+          const startTime = Date.now()
+          try {
+            await processAttachmentJob(job as PgBoss.Job<AttachmentJob>)
+            const endTime = Date.now()
+            syncJobSuccess.inc(
+              {
+                sync_job_name: ProcessZohoDeskAttachmentQueue,
+                sync_job_auth_type: AuthType.OAuth,
+              },
+              1,
+            )
+            syncJobDuration.observe(
+              {
+                sync_job_name: ProcessZohoDeskAttachmentQueue,
+                sync_job_auth_type: AuthType.OAuth,
+              },
+              endTime - startTime,
+            )
+          } catch (error) {
+            const errorMessage = getErrorMessage(error)
+            Logger.error(
+              error,
+              `Error processing Zoho Desk attachment ${errorMessage} ${(error as Error).stack}`,
+            )
+            syncJobError.inc(
+              {
+                sync_job_name: ProcessZohoDeskAttachmentQueue,
+                sync_job_auth_type: AuthType.OAuth,
+                sync_job_error_type: `${errorMessage}`,
+              },
+              1,
+            )
+          }
+        }),
+      )
+    },
+  )
+
   await boss.work(CleanupAttachmentsQueue, async () => {
     const startTime = Date.now()
     try {
@@ -746,6 +892,9 @@ const initWorkers = async () => {
       )
     }
   })
+
+  // Initialize summary generation worker
+  await startSummaryWorker()
 }
 
 export const ProgressEvent = "progress-event"

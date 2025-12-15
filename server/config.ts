@@ -90,6 +90,9 @@ let useLegacySlackSync = process.env.USE_LEGACY_SLACK_SYNC === "true"
 let delegationAgentic = "true"
 let CurrentAuthType: AuthType =
   (process.env.AUTH_TYPE as AuthType) || AuthType.OAuth
+let ZohoClientId = process.env.ZOHO_CLIENT_ID || ""
+let ZohoClientSecret = process.env.ZOHO_CLIENT_SECRET || ""
+let ZohoOrgId = process.env.ZOHO_ORG_ID || ""
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 const MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES = 3 * 1024 // 3KB - generous limit for service account JSON files
 const AccessTokenCookie = "access-token"
@@ -317,4 +320,7 @@ export default {
   langfuseEnabled,
   IMAGE_CONTEXT_CONFIG,
   delegation_agentic: delegationAgentic,
+  ZohoClientId,
+  ZohoClientSecret,
+  ZohoOrgId,
 }

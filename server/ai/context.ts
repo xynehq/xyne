@@ -22,6 +22,7 @@ import {
   type VespaKbFileSearch,
   chatContainerSchema,
   type VespaChatContainerSearch,
+  ticketSchema,
 } from "@xyne/vespa-ts/types"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getRelativeTime } from "@/utils"
@@ -131,35 +132,44 @@ const extractHeaderAndDataChunks = (
 
 const aggregateTableChunksForPdf = (
   chunks_summary:
-  | (string | { chunk: string; score: number; index: number })[]
-  | undefined,
-  chunks_map: 
-  | ChunkMetadata[]
-  | undefined,
+    | (string | { chunk: string; score: number; index: number })[]
+    | undefined,
+  chunks_map: ChunkMetadata[] | undefined,
   matchfeatures?: any,
-  ): {
-    chunks_summary: (string | { chunk: string; score: number; index: number })[]
-    matchfeatures: any
-  } => {
+): {
+  chunks_summary: (string | { chunk: string; score: number; index: number })[]
+  matchfeatures: any
+} => {
   if (!chunks_summary || !chunks_map || chunks_summary.length === 0) {
-    return { chunks_summary: chunks_summary || [], matchfeatures: matchfeatures }
+    return {
+      chunks_summary: chunks_summary || [],
+      matchfeatures: matchfeatures,
+    }
   }
 
   if (chunks_summary.length !== chunks_map.length) {
-    console.warn('chunks_summary and chunks_map length mismatch; skipping table aggregation')
-    return { chunks_summary: chunks_summary || [], matchfeatures: matchfeatures }
+    console.warn(
+      "chunks_summary and chunks_map length mismatch; skipping table aggregation",
+    )
+    return {
+      chunks_summary: chunks_summary || [],
+      matchfeatures: matchfeatures,
+    }
   }
 
   // Find all chunks that have 'table' in their block_labels
   const tableChunkIndices = new Set<number>()
   chunks_map.forEach((metadata, index) => {
-    if (metadata.block_labels?.includes('table')) {
+    if (metadata.block_labels?.includes("table")) {
       tableChunkIndices.add(index)
     }
   })
 
   if (tableChunkIndices.size === 0) {
-    return { chunks_summary: chunks_summary || [], matchfeatures: matchfeatures }
+    return {
+      chunks_summary: chunks_summary || [],
+      matchfeatures: matchfeatures,
+    }
   }
 
   // Group consecutive table chunks
@@ -196,68 +206,76 @@ const aggregateTableChunksForPdf = (
   }
 
   // Process each table group
-  const processedChunks: (string | { chunk: string; score: number; index: number })[] = chunks_summary || []
+  const processedChunks: (
+    | string
+    | { chunk: string; score: number; index: number }
+  )[] = chunks_summary || []
   const existingCells = matchfeatures?.chunk_scores?.cells || {}
   const newChunkScores: Record<string, number> = {}
   Object.entries(existingCells).forEach(([idx, score]) => {
     newChunkScores[parseInt(idx).toString()] = score as number
   })
-  
+
   // Process each table group
   tableGroups.forEach((group) => {
     if (group.length === 0) return
 
     // Get scores for chunks in this group from matchfeatures
     const groupScores: { index: number; score: number }[] = []
-    
+
     if (matchfeatures?.chunk_scores?.cells) {
       group.forEach((chunkIndex) => {
-        const score = matchfeatures.chunk_scores.cells[chunkIndex.toString()] || 0
+        const score =
+          matchfeatures.chunk_scores.cells[chunkIndex.toString()] || 0
         groupScores.push({ index: chunkIndex, score })
       })
     } else {
       // If no matchfeatures, use chunk scores from chunks_summary
       group.forEach((chunkIndex) => {
         const chunk = chunks_summary[chunkIndex]
-        const score = typeof chunk === 'string' ? 0 : chunk.score
+        const score = typeof chunk === "string" ? 0 : chunk.score
         groupScores.push({ index: chunkIndex, score })
       })
     }
 
     // Find the chunk with the highest score
-    const highestScoreChunk = groupScores.reduce((max, current) => 
-      current.score > max.score ? current : max
+    const highestScoreChunk = groupScores.reduce((max, current) =>
+      current.score > max.score ? current : max,
     )
 
     // Concatenate all chunks in the group
     const concatenatedContent = group
       .map((chunkIndex) => {
         const chunk = chunks_summary[chunkIndex]
-        return typeof chunk === 'string' ? chunk : chunk.chunk
+        return typeof chunk === "string" ? chunk : chunk.chunk
       })
-      .join('\n')
+      .join("\n")
 
     // Clear out all chunks in this group except the highest scoring one
     group.forEach((chunkIndex) => {
       if (chunkIndex !== highestScoreChunk.index) {
-        processedChunks[chunkIndex] = typeof processedChunks[chunkIndex] === 'string' ? "" : {
-          chunk: "",
-          score: 0,
-          index: chunkIndex,
-        }
+        processedChunks[chunkIndex] =
+          typeof processedChunks[chunkIndex] === "string"
+            ? ""
+            : {
+                chunk: "",
+                score: 0,
+                index: chunkIndex,
+              }
         newChunkScores[chunkIndex.toString()] = 0
       }
     })
 
     // Create the merged chunk using the highest scoring chunk's structure
     const originalChunk = chunks_summary[highestScoreChunk.index]
-    const mergedChunk = typeof originalChunk === 'string' 
-      ? concatenatedContent
-      : {
-          chunk: concatenatedContent,
-          score: highestScoreChunk.score,
-          index: highestScoreChunk.index,
-        }
+    const mergedChunk =
+      typeof originalChunk === "string"
+        ? concatenatedContent
+        : {
+            chunk: concatenatedContent,
+            score: highestScoreChunk.score,
+            index: highestScoreChunk.index,
+          }
 
     processedChunks[highestScoreChunk.index] = mergedChunk
     newChunkScores[highestScoreChunk.index.toString()] = highestScoreChunk.score
@@ -349,6 +367,43 @@ const processSheetQuery = async (
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
+
+// Function for handling Zoho Desk ticket context - returns clean JSON string
+const constructTicketContext = (fields: any): string => {
+  const ticket: any = {
+    ticketId: fields.ticketNumber || fields.id || "",
+    subject: fields.subject || "",
+    status: fields.status || "",
+    department: fields.departmentName || "",
+  }
+
+  if (fields.priority) ticket.priority = fields.priority
+  if (fields.category) ticket.category = fields.category
+  if (fields.assigneeEmail) ticket.assignee = fields.assigneeEmail
+  if (fields.email) ticket.requester = fields.email
+
+  if (typeof fields.createdTime === "number" && isFinite(fields.createdTime)) {
+    ticket.createdAt = new Date(fields.createdTime).toISOString()
+  }
+  if (typeof fields.closedTime === "number" && isFinite(fields.closedTime)) {
+    ticket.closedAt = new Date(fields.closedTime).toISOString()
+  }
+  if (typeof fields.daysToClose === "number" && isFinite(fields.daysToClose)) {
+    ticket.daysToClose = fields.daysToClose
+  }
+
+  if (fields.description) {
+    ticket.description = fields.description
+  }
+  if (fields.resolution) {
+    ticket.resolution = fields.resolution
+  }
+  if (fields.webUrl) ticket.url = fields.webUrl
+  if (fields.threadSummary) ticket.threadSummary = fields.threadSummary
+  if (fields.commentSummary) ticket.commentSummary = fields.commentSummary
+
+  return JSON.stringify(ticket)
+}
 
 export const constructToolContext = (
   tool_schema: string,
@@ -1107,6 +1162,8 @@ export const answerContextMap = async (
       isSelectedFiles,
       isMsgWithKbItems,
     )
+  } else if (searchResult.fields.sddocname === ticketSchema) {
+    return constructTicketContext(searchResult.fields)
   } else {
     throw new Error(
       `Invalid search result type: ${searchResult.fields.sddocname}`,

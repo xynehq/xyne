@@ -75,6 +75,12 @@ export const MinimalCitationSchema = z.object({
   itemId: z.string().optional(),
   clId: z.string().optional(),
   parentThreadId: z.string().optional(),
+  // Zoho Desk ticket timestamps
+  createdAt: z.string().optional(), // ISO timestamp for ticket creation
+  resolvedAt: z.string().optional(), // ISO timestamp for ticket resolution
+  closedAt: z.string().optional(), // ISO timestamp for ticket closure
+  status: z.string().optional(), // Ticket status (Open, Closed, etc.)
+  ticketNumber: z.string().optional(), // Ticket number
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>
