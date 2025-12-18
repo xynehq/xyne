@@ -1,3 +1,10 @@
+# [3.35.0](https://github.com/xynehq/xyne/compare/v3.34.1...v3.35.0) (2025-12-18)
+
+
+### Features
+
+* Agent query analytics UI ([#1238](https://github.com/xynehq/xyne/issues/1238)) ([fbe083f](https://github.com/xynehq/xyne/commit/fbe083f17dda80e71e34af3acaf1e58b707d6160))
+
 ## [3.34.1](https://github.com/xynehq/xyne/compare/v3.34.0...v3.34.1) (2025-12-11)
 
 
