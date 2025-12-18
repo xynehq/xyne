@@ -13,6 +13,7 @@ interface DateRangePickerProps {
 
   minYear?: number
   maxYear?: number
+  disableFutureDates?: boolean
 }
 
 export function DateRangePicker({
@@ -23,6 +24,7 @@ export function DateRangePicker({
   className,
   minYear = new Date().getFullYear() - 100,
   maxYear = new Date().getFullYear() + 10,
+  disableFutureDates = false,
 }: DateRangePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [tempFrom, setTempFrom] = useState<Date | undefined>(from)
@@ -111,6 +113,7 @@ export function DateRangePicker({
   const isDateSelected = (date: Date) => {
     return (tempFrom && isSameDay(date, tempFrom)) || (tempTo && isSameDay(date, tempTo))
   }
+  const now = new Date()
 
   const displayText =
     from && to
@@ -253,19 +256,22 @@ export function DateRangePicker({
                 {daysInMonth.map((date) => {
                   const isSelected = isDateSelected(date)
                   const isInRange = isDateInRange(date)
-                  const isToday = isSameDay(date, new Date())
+                  const isToday = isSameDay(date, now)
+                  const isFutureDateDisabled = date > now && disableFutureDates
 
                   return (
                     <button
                       key={date.toISOString()}
                       type="button"
                       onClick={() => handleDateClick(date)}
+                      disabled={isFutureDateDisabled}
                       className={cn(
                         "w-10 h-10 flex items-center justify-center rounded-full text-sm transition-colors",
                         isSelected && "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-semibold",
                         !isSelected && isInRange && "bg-slate-100 dark:bg-slate-800",
-                        !isSelected && !isInRange && "hover:bg-slate-100 dark:hover:bg-slate-800",
-                        isToday && !isSelected && "border border-slate-300 dark:border-slate-600"
+                        !isSelected && !isInRange && !isFutureDateDisabled && "hover:bg-slate-100 dark:hover:bg-slate-800",
+                        isToday && !isSelected && "border border-slate-300 dark:border-slate-600",
+                        isFutureDateDisabled && "opacity-30 cursor-not-allowed"
                       )}
                     >
                       {format(date, "d")}

@@ -10,6 +10,9 @@ import {
   ThumbsDown,
   Search,
   Trophy,
+  MessagesSquare,
+  ChevronUp, 
+  ChevronDown 
 } from "lucide-react"
 import {
   Card,
@@ -19,6 +22,14 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { Sidebar } from "@/components/Sidebar"
 import {
   safeNumberConversion,
@@ -40,6 +51,7 @@ import {
   AreaChart,
 } from "recharts"
 import type { AdminChat } from "@/components/AdminChatsTable"
+import { useMemo } from 'react';
 
 interface Chat {
   externalId: string
@@ -92,11 +104,37 @@ interface BaseUserData {
   totalTokens: number
   lastUsed: string
 }
+interface QueryAnalysisData {
+  chatId: string
+  chatTitle: string
+  chatCreatedAt: string
+  userEmail: string
+  userName: string
+  totalCost: number
+  totalTokens: number
+  messageCount: number
+  totalLikes: number
+  totalDislikes: number
+  messages: {
+    messageId: string
+    queryText: string
+    responseText: string
+    createdAt: string
+    cost: number
+    tokensUsed: number
+    feedback: {
+      type?: string
+      share_chat?: boolean
+      feedback?: string[]
+    } | null
+  }[]
+}
 
 interface BaseAgentData {
   agentId: string
   agentName: string
   agentDescription?: string | null
+  isPublic?: boolean
   chatCount: number
   messageCount: number
   likes: number
@@ -1306,6 +1344,489 @@ const UsersAnalyticsTable = ({
   )
 }
 
+
+const QueryAnalyticsTable = ({
+  queries,
+  title = "Query Analytics",
+  description = "View all queries and responses",
+  dateFrom,
+  dateTo,
+  onDateRangeChange,
+}: {
+  queries: QueryAnalysisData[]
+  title?: string
+  description?: string
+  dateFrom?: Date
+  dateTo?: Date
+  onDateRangeChange?: (from: Date | undefined, to: Date | undefined) => void
+}) => {
+  const [searchQuery, setSearchQuery] = useState<string>("")
+  const [expandedChats, setExpandedChats] = useState<Set<string>>(new Set())
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set())
+  const [sortBy, setSortBy] = useState<string>("time")
+
+  // Pagination states
+  const [currentChatPage, setCurrentChatPage] = useState(1)
+  const [chatMessagePages, setChatMessagePages] = useState<Map<string, number>>(new Map())
+  const chatsPerPage = 5
+  const messagesPerPage = 5
+
+  // Reset to page 1 when search or sort changes
+  useEffect(() => {
+    setCurrentChatPage(1)
+  }, [searchQuery, sortBy])
+
+  // Filter chats and messages based on search
+
+  const filteredChats = useMemo(() => {
+    if (!searchQuery) {
+      return queries.map(chat => ({
+        ...chat,
+        originalMessageCount: chat.messageCount
+      }));
+    }
+
+    const searchLower = searchQuery.toLowerCase();
+
+    return queries
+      .map((chat) => {
+        const originalMessageCount = chat.messageCount;
+
+        // Chat-level match
+        const chatMatches =
+          chat.chatTitle.toLowerCase().includes(searchLower) ||
+          chat.userEmail.toLowerCase().includes(searchLower) ||
+          chat.userName.toLowerCase().includes(searchLower);
+
+        // If chat matches, return all messages
+        if (chatMatches) {
+          return {
+            ...chat,
+            originalMessageCount
+          };
+        }
+
+        // Filter messages
+        const filteredMessages = chat.messages.filter(
+          (msg) =>
+            msg.queryText.toLowerCase().includes(searchLower) ||
+            msg.responseText.toLowerCase().includes(searchLower)
+        );
+
+        if (filteredMessages.length > 0) {
+          return {
+            ...chat,
+            messages: filteredMessages,
+            messageCount: filteredMessages.length,
+            originalMessageCount
+          };
+        }
+
+        return null;
+      })
+      .filter(
+        (chat): chat is QueryAnalysisData & { originalMessageCount: number } =>
+          chat !== null
+      );
+  }, [queries, searchQuery]);
+
+  // Sort chats based on selected criteria
+  const sortedChats = [...filteredChats].sort((a, b) => {
+    switch (sortBy) {
+      case "time":
+        // Sort by latest message timestamp (newest first)
+        const aLatestTime = a.messages.length > 0
+          ? Math.max(...a.messages.map(m => new Date(m.createdAt).getTime()))
+          : new Date(a.chatCreatedAt).getTime()
+        const bLatestTime = b.messages.length > 0
+          ? Math.max(...b.messages.map(m => new Date(m.createdAt).getTime()))
+          : new Date(b.chatCreatedAt).getTime()
+        return bLatestTime - aLatestTime
+      case "likes":
+        return (b.totalLikes || 0) - (a.totalLikes || 0)
+      case "dislikes":
+        return (b.totalDislikes || 0) - (a.totalDislikes || 0)
+      case "cost":
+        return (b.totalCost || 0) - (a.totalCost || 0)
+      default:
+        return 0
+    }
+  })
+
+  // Chat-level pagination
+  const totalChatPages = Math.ceil(sortedChats.length / chatsPerPage)
+  const startChatIndex = (currentChatPage - 1) * chatsPerPage
+  const paginatedChats = sortedChats.slice(startChatIndex, startChatIndex + chatsPerPage)
+
+  const toggleChat = (chatId: string) => {
+    const newExpanded = new Set(expandedChats)
+    if (newExpanded.has(chatId)) {
+      newExpanded.delete(chatId)
+    } else {
+      newExpanded.add(chatId)
+    }
+    setExpandedChats(newExpanded)
+  }
+
+  const toggleMessage = (messageId: string) => {
+    const newExpanded = new Set(expandedMessages)
+    if (newExpanded.has(messageId)) {
+      newExpanded.delete(messageId)
+    } else {
+      newExpanded.add(messageId)
+    }
+    setExpandedMessages(newExpanded)
+  }
+
+  const getMessagePage = (chatId: string) => {
+    return chatMessagePages.get(chatId) || 1
+  }
+
+  const setMessagePage = (chatId: string, page: number) => {
+    const newPages = new Map(chatMessagePages)
+    newPages.set(chatId, page)
+    setChatMessagePages(newPages)
+  }
+
+  const truncateText = (text: string, maxLength: number = 100) => {
+    if (text.length <= maxLength) return text
+    return text.substring(0, maxLength) + "..."
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <MessagesSquare className="h-5 w-5" />
+              {title}
+            </CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </div>
+          <Badge variant="outline" className="text-sm">
+            {searchQuery
+              ? `${filteredChats.length} of ${queries.length} chats`
+              : `${queries.length} total chats`}
+          </Badge>
+        </div>
+
+        {/* Date Range Filter */}
+        {onDateRangeChange && (
+          <div className="mt-4 flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Date Range:</span>
+            <DateRangePicker
+              from={dateFrom}
+              to={dateTo}
+              disableFutureDates={true}
+              onSelect={onDateRangeChange}
+              placeholder="Select date range"
+            />
+          </div>
+        )}
+
+        {/* Search and Sort Controls */}
+        <div className="mt-4 flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <input
+              type="text"
+              placeholder="Search chats, queries, responses, or users..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Sort by..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="time">Sort by Time</SelectItem>
+                <SelectItem value="likes">Sort by Likes</SelectItem>
+                <SelectItem value="dislikes">Sort by Dislikes</SelectItem>
+                <SelectItem value="cost">Sort by Cost</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {queries.length === 0 ? (
+          <div className="text-center py-12">
+            <MessagesSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+            <p className="text-muted-foreground">
+              No query data available for this agent
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Chats List */}
+            <div className="space-y-3">
+              {paginatedChats.length > 0 ? (
+                paginatedChats.map((chat) => {
+                  const isChatExpanded = expandedChats.has(chat.chatId)
+                  const totalMessagePages = Math.max(
+                    1,
+                    Math.ceil(chat.messages.length / messagesPerPage),
+                  )
+                  const currentMessagePage = Math.min(
+                    getMessagePage(chat.chatId),
+                    totalMessagePages,
+                  )
+                  const startMessageIndex = (currentMessagePage - 1) * messagesPerPage
+                  const paginatedMessages = chat.messages.slice(startMessageIndex, startMessageIndex + messagesPerPage)
+
+                  return (
+                    <div
+                      key={chat.chatId}
+                      className="border border-input rounded-lg overflow-hidden"
+                    >
+                      {/* Chat Header */}
+                      <div
+                        className="p-4 bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => toggleChat(chat.chatId)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-sm font-semibold truncate">
+                                {chat.chatTitle}
+                              </h3>
+                              <Badge variant="secondary" className="text-xs">
+                                {searchQuery && chat.messageCount !== chat.originalMessageCount
+                                  ? `${chat.messageCount} of ${chat.originalMessageCount} ${chat.originalMessageCount === 1 ? 'query' : 'queries'}`
+                                  : `${chat.messageCount} ${chat.messageCount === 1 ? 'query' : 'queries'}`}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span>{chat.userName} ({chat.userEmail})</span>
+                              <span>Chat ID :  {chat.chatId}</span>
+                              <span>
+                                {new Date(chat.chatCreatedAt).toLocaleString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                              <span className="font-medium text-blue-600">
+                                Total Cost: {formatCostInINR(chat.totalCost)}
+                              </span>
+                              {(chat.totalLikes > 0 || chat.totalDislikes > 0) && (
+                                <div className="flex items-center gap-2 text-xs">
+                                  <div className="flex items-center gap-1 text-green-600">
+                                    <ThumbsUp className="h-3 w-3" />
+                                    <span>{chat.totalLikes || 0}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-red-600">
+                                    <ThumbsDown className="h-3 w-3" />
+                                    <span> {chat.totalDislikes || 0}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <button className="ml-4 text-muted-foreground hover:text-foreground transition-colors">
+                            {isChatExpanded ? (
+                              <ChevronUp className="h-5 w-5" />
+                            ) : (
+                              <ChevronDown className="h-5 w-5" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Chat Messages */}
+                      {isChatExpanded && (
+                        <div className="border-t border-input">
+                          {paginatedMessages.map((message, idx) => {
+                            const isMessageExpanded = expandedMessages.has(message.messageId)
+                            return (
+                              <div
+                                key={message.messageId}
+                                className={`p-4 hover:bg-muted/20 transition-colors cursor-pointer ${
+                                  idx !== paginatedMessages.length - 1 ? 'border-b border-input/50' : ''
+                                }`}
+                                onClick={() => toggleMessage(message.messageId)}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1 min-w-0 space-y-2">
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded mt-0.5">
+                                        Q
+                                      </span>
+                                      <p className="text-sm font-medium flex-1">
+                                        {isMessageExpanded
+                                          ? message.queryText
+                                          : truncateText(message.queryText, 150)}
+                                      </p>
+                                    </div>
+                                    {isMessageExpanded && (
+                                      <div className="pl-6 space-y-2">
+                                        <div className="flex items-start gap-2">
+                                          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded mt-0.5">
+                                            A
+                                          </span>
+                                          <p className="text-sm text-muted-foreground whitespace-pre-wrap flex-1">
+                                            {message.responseText}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-4 text-xs text-muted-foreground pl-6">
+                                      <span>
+                                        {new Date(message.createdAt).toLocaleString("en-US", {
+                                          month: "short",
+                                          day: "numeric",
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })}
+                                      </span>
+                                      <span className="font-medium text-blue-600">
+                                        {formatCostInINR(message.cost)}
+                                      </span>
+                                      {message.feedback && message.feedback.type && (
+                                        <span className={`flex items-center gap-1 font-medium ${
+                                          message.feedback.type === 'like' ? 'text-green-600' : 'text-red-600'
+                                        }`}>
+                                          {message.feedback.type === 'like' ? (
+                                            <>
+                                              <ThumbsUp className="h-3 w-3 " />
+                                              <span>Liked</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <ThumbsDown className="h-3 w-3 " />
+                                              <span>Disliked</span>
+                                            </>
+                                          )}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {message.feedback && message.feedback.feedback && message.feedback.feedback.length > 0 && message.feedback.type !== 'like' && isMessageExpanded && (
+                                      <div className="pl-6 mt-3">
+                                        <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-3 border border-amber-200 dark:border-amber-800">
+                                          <div className="flex items-start gap-2">
+                                            <MessageSquare className="h-4 w-4 text-amber-600 dark:text-amber-500 mt-0.5 flex-shrink-0" />
+                                            <div className="flex-1">
+                                              <div className="font-semibold text-amber-900 dark:text-amber-100 text-xs mb-1">
+                                                User Feedback
+                                              </div>
+                                              <div className="text-sm text-amber-800 dark:text-amber-200">
+                                                {message.feedback.feedback.map((item, index) => (
+                                                <div key={index}>{item}</div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <button
+                                    className="ml-4 text-muted-foreground hover:text-foreground transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      toggleMessage(message.messageId)
+                                    }}
+                                  >
+                                    {isMessageExpanded ? (
+                                      <ChevronUp className="h-4 w-4" />
+                                    ) : (
+                                      <ChevronDown className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+
+                          {/* Message-level Pagination */}
+                          {totalMessagePages > 1 && (
+                            <div className="p-3 bg-muted/20 border-t border-input/50">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground">
+                                  Showing {startMessageIndex + 1}-{Math.min(startMessageIndex + messagesPerPage, chat.messages.length)} of {chat.messages.length} queries
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setMessagePage(chat.chatId, Math.max(1, currentMessagePage - 1))
+                                    }}
+                                    disabled={currentMessagePage === 1}
+                                    className="px-2 py-1 rounded border border-input bg-background hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Previous
+                                  </button>
+                                  <span className="text-muted-foreground">
+                                    Page {currentMessagePage} of {totalMessagePages}
+                                  </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setMessagePage(chat.chatId, Math.min(totalMessagePages, currentMessagePage + 1))
+                                    }}
+                                    disabled={currentMessagePage === totalMessagePages}
+                                    className="px-2 py-1 rounded border border-input bg-background hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Next
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No chats found matching your search</p>
+                </div>
+              )}
+            </div>
+      
+            {/* Chat-level Pagination */}
+            {totalChatPages > 1 && (
+              <div className="flex items-center justify-between pt-4 border-t">
+                <span className="text-xs text-muted-foreground">
+                  Showing {startChatIndex + 1}-{Math.min(startChatIndex + chatsPerPage, filteredChats.length)} of {filteredChats.length} chats
+                  {searchQuery && ` (filtered from ${queries.length})`}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentChatPage(Math.max(1, currentChatPage - 1))}
+                    disabled={currentChatPage === 1}
+                    className="px-3 py-1.5 text-sm rounded border border-input bg-background hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {currentChatPage} of {totalChatPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentChatPage(Math.min(totalChatPages, currentChatPage + 1))}
+                    disabled={currentChatPage === totalChatPages}
+                    className="px-3 py-1.5 text-sm rounded border border-input bg-background hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 const AgentDetailPage = ({
   agent,
   onBack,
@@ -1941,6 +2462,18 @@ const AgentAnalysisPage = ({
   const [agentAnalysis, setAgentAnalysis] = useState<AgentAnalysisData | null>(
     null,
   )
+  const [queryAnalysisData, setQueryAnalysisData] = useState<QueryAnalysisData[]>([])
+
+  // Initialize date range to last 1 month
+  const getDefaultDateRange = () => {
+    const to = new Date()
+    const from = new Date()
+    from.setMonth(from.getMonth() - 1)
+    return { from, to }
+  }
+
+  const [queryDateFrom, setQueryDateFrom] = useState<Date | undefined>(getDefaultDateRange().from)
+  const [queryDateTo, setQueryDateTo] = useState<Date | undefined>(getDefaultDateRange().to)
   const [loading, setLoading] = useState(true)
   const [userSearchQuery, setUserSearchQuery] = useState<string>("")
   const [sortBy, setSortBy] = useState<
@@ -1989,6 +2522,48 @@ const AgentAnalysisPage = ({
 
     fetchAgentAnalysis()
   }, [agent.agentId, timeRange, currentUser])
+
+  useEffect(() => {
+    const fetchQueryAnalysisData = async () => {
+      // Only fetch query analytics for public agents
+      if (!agent.isPublic) {
+        setQueryAnalysisData([])
+        return
+      }
+
+      try {
+        // Build query object - if dates are provided, include them
+        const query: { from?: string; to?: string } = {}
+        if (queryDateFrom) {
+          query.from = queryDateFrom.toISOString()
+        }
+        if (queryDateTo) {
+          query.to = queryDateTo.toISOString()
+        }
+
+        const response = await api.admin.agents[agent.agentId].queries.$get({
+          query
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch query analysis data")
+        }
+
+        const data = await response.json()
+        if (data.success && data.data) {
+          setQueryAnalysisData(data.data)
+        } else {
+          console.warn("No query analysis data received:", data)
+          setQueryAnalysisData([])
+        }
+      } catch (error) {
+        console.error("Error fetching query analysis data:", error)
+        setQueryAnalysisData([])
+      }
+    }
+
+    fetchQueryAnalysisData()
+  }, [agent.agentId, agent.isPublic, queryDateFrom, queryDateTo])
 
   if (loading) {
     return (
@@ -2169,7 +2744,20 @@ const AgentAnalysisPage = ({
           className="border-indigo-200 dark:border-indigo-800"
         />
       </div>
-
+      {/* Only show Query Analytics for public agents */}
+      {agent.isPublic && (
+        <QueryAnalyticsTable
+          queries={queryAnalysisData}
+          title="Query Analytics"
+          description="View all queries and responses for this agent"
+          dateFrom={queryDateFrom}
+          dateTo={queryDateTo}
+          onDateRangeChange={(from, to) => {
+            setQueryDateFrom(from)
+            setQueryDateTo(to)
+          }}
+        />
+      )}
       {/* Unified Users Table with Sort */}
       <UsersAnalyticsTable
         users={agentAnalysis.userLeaderboard}
@@ -3115,6 +3703,7 @@ export const Dashboard = ({
           agentUsageMap.set(chat.agentId, {
             agentId: chat.agentId,
             agentName: agent?.name || `Unknown Agent`,
+            isPublic: agent?.isPublic,
             chatCount: 0,
             messageCount: 0,
             likes: 0,
@@ -3460,6 +4049,7 @@ export const Dashboard = ({
             agentUsageMap.set(chat.agentId, {
               agentId: chat.agentId,
               agentName: agent.name,
+              isPublic: agent.isPublic,
               chatCount: 0,
               messageCount: 0,
               likes: 0,
@@ -3645,6 +4235,7 @@ export const Dashboard = ({
         existingUsage || {
           agentId: agent.externalId,
           agentName: agent.name,
+          isPublic: agent.isPublic,
           chatCount: 0,
           messageCount: 0,
           likes: 0,
