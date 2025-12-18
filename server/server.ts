@@ -89,6 +89,7 @@ import {
   GetKbVespaContent,
   GetChatQueriesApi,
   CreateZohoDeskConnector,
+  GetAgentQueryResponsePairs,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { initApiServerQueue } from "@/queue/api-server-queue"
@@ -1913,6 +1914,10 @@ export const AppRoutes = app
     "/agents/:agentId/analysis",
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentAnalysis,
+  )
+  .get(
+    "/agents/:agentId/queries",
+    GetAgentQueryResponsePairs,
   )
   .get(
     "/agents/:agentId/feedback",

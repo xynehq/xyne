@@ -158,7 +158,7 @@ import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
 import { GetDocument } from "@/search/vespa"
 import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 import { replaceSheetIndex } from "@/search/utils"
-import { fetchUserQueriesForChat } from "@/db/message"
+import { fetchUserQueriesForChat, fetchAgentQueryResponsePairs } from "@/db/message"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -2704,5 +2704,51 @@ export const StartZohoDeskSyncApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: `Failed to start Zoho Desk sync: ${getErrorMessage(error)}`,
     })
+  }
+}
+
+export const GetAgentQueryResponsePairs = async (c: Context) => {
+  try {
+    const agentId = c.req.param("agentId")
+    const { workspaceId: currentWorkspaceId } = c.get(JwtPayloadKey)
+    const { from, to } = c.req.query()
+
+    if (!agentId) {
+      return c.json(
+        {
+          success: false,
+          message: "Agent ID is required",
+        },
+        400,
+      )
+    }
+
+    const queryResponsePairs = await fetchAgentQueryResponsePairs(
+      db,
+      agentId,
+      currentWorkspaceId,
+      from,
+      to,
+    )
+
+    return c.json(
+      {
+        success: true,
+        data: queryResponsePairs,
+      },
+      200,
+    )
+  } catch (error) {
+    Logger.error(error, "Error fetching agent query-response pairs")
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
   }
 }
