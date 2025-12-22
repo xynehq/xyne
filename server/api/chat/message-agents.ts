@@ -82,11 +82,15 @@ import {
   extractImageFileNames,
   processMessage,
   checkAndYieldCitationsForAgent,
+  extractFileIdsFromMessage,
+  isMessageWithContext,
+  processThreadResults,
 } from "./utils"
-import { GetDocumentsByDocIds } from "@/search/vespa"
+import { searchCollectionRAG, SearchEmailThreads, searchVespaInFiles } from "@/search/vespa"
 import {
   Apps,
   KnowledgeBaseEntity,
+  SearchModes,
   type VespaSearchResult,
   type VespaSearchResults,
 } from "@xyne/vespa-ts/types"
@@ -147,6 +151,9 @@ import {
   type StreamableHTTPClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
+import { parseMessageText } from "./chat"
+import { getUserPersonalizationByEmail } from "@/db/personalization"
+import { getChunkCountPerDoc } from "./chunk-selection"
 
 const {
   defaultBestModel,
@@ -1295,7 +1302,8 @@ async function vespaResultToAttachmentFragment(
   child: VespaSearchResult,
   idx: number,
   userMetadata: UserMetadataType,
-  query: string
+  query: string,
+  maxSummaryChunks?: number,
 ): Promise<MinimalAgentFragment> {
   const docId =
     (child.fields as Record<string, unknown>)?.docId ||
@@ -1306,7 +1314,7 @@ async function vespaResultToAttachmentFragment(
     content: await answerContextMap(
       child as VespaSearchResults,
       userMetadata,
-      0,
+      maxSummaryChunks ? maxSummaryChunks : 0,
       true,
       undefined,
       query
@@ -1318,28 +1326,144 @@ async function vespaResultToAttachmentFragment(
 
 async function prepareInitialAttachmentContext(
   fileIds: string[],
+  threadIds: string[],
   userMetadata: UserMetadataType,
-  query: string
+  query: string,
+  email: string,
 ): Promise<{ fragments: MinimalAgentFragment[]; summary: string } | null> {
   if (!fileIds?.length) {
     return null
+  }
+
+  const queryText = parseMessageText(query)
+  let userAlpha = 0.5
+  try {
+    const personalization = await getUserPersonalizationByEmail(db, email)
+    if (personalization) {
+      const nativeRankParams =
+        personalization.parameters?.[SearchModes.NativeRank]
+      if (nativeRankParams?.alpha !== undefined) {
+        userAlpha = nativeRankParams.alpha
+      }
+    }
+  } catch (err) {
+    // proceed with default alpha
   }
 
   const tracer = getTracer("chat")
   const span = tracer.startSpan("prepare_initial_attachment_context")
 
   try {
-    const results = await GetDocumentsByDocIds(fileIds, span)
-    const children = results?.root?.children || []
-    if (children.length === 0) {
-      return null
-    }
+      const combinedSearchResponse: VespaSearchResult[] = []
+      let chunksPerDocument: number[] = []
+      const targetChunks = 120
+    
+      if (fileIds && fileIds.length > 0) {
+        const fileSearchSpan = span.startSpan("file_search")
+        let results
+        // Split into 3 groups
+        // Search each group
+        // Push results to combinedSearchResponse
+        const collectionFileIds = fileIds.filter(
+          (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
+        )
+        const nonCollectionFileIds = fileIds.filter(
+          (fid) => !fid.startsWith("clf-") && !fid.startsWith("att"),
+        )
+        const attachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
+        if (nonCollectionFileIds && nonCollectionFileIds.length > 0) {
+          results = await searchVespaInFiles(
+            queryText,
+            email,
+            nonCollectionFileIds,
+            {
+              limit: fileIds?.length,
+              alpha: userAlpha,
+            },
+          )
+          if (results.root.children) {
+            combinedSearchResponse.push(...results.root.children)
+          }
+        }
+        if (collectionFileIds && collectionFileIds.length > 0) {
+          results = await searchCollectionRAG(
+            queryText,
+            collectionFileIds,
+            undefined,
+          )
+          if (results.root.children) {
+            combinedSearchResponse.push(...results.root.children)
+          }
+        }
+        if (attachmentFileIds && attachmentFileIds.length > 0) {
+          results = await searchVespaInFiles(
+            queryText,
+            email,
+            attachmentFileIds,
+            {
+              limit: fileIds?.length,
+              alpha: userAlpha,
+              rankProfile: SearchModes.AttachmentRank,
+            },
+          )
+          if (results.root.children) {
+            combinedSearchResponse.push(...results.root.children)
+          }
+        }
+    
+        // Apply intelligent chunk selection based on document relevance and chunk scores
+        chunksPerDocument = await getChunkCountPerDoc(
+          combinedSearchResponse,
+          targetChunks,
+          email,
+          fileSearchSpan,
+        )
+        fileSearchSpan?.end()
+      }
+    
+      if (threadIds && threadIds.length > 0) {
+        const threadSpan = span.startSpan("fetch_email_threads")
+        threadSpan.setAttribute("threadIds", JSON.stringify(threadIds))
+    
+        try {
+          const threadResults = await SearchEmailThreads(threadIds, email)
+          if (
+            threadResults.root.children &&
+            threadResults.root.children.length > 0
+          ) {
+            const existingDocIds = new Set(
+              combinedSearchResponse.map((child: any) => child.fields.docId),
+            )
+    
+            // Use the helper function to process thread results
+            const { addedCount, threadInfo } = processThreadResults(
+              threadResults.root.children,
+              existingDocIds,
+              combinedSearchResponse,
+            )
+            threadSpan.setAttribute("added_email_count", addedCount)
+            threadSpan.setAttribute(
+              "total_thread_emails_found",
+              threadResults.root.children.length,
+            )
+            threadSpan.setAttribute("thread_info", JSON.stringify(threadInfo))
+          }
+        } catch (error) {
+          loggerWithChild({ email: email }).error(
+            error,
+            `Error fetching email threads: ${getErrorMessage(error)}`,
+          )
+          threadSpan?.setAttribute("error", getErrorMessage(error))
+        }
+    
+        threadSpan?.end()
+      }
 
     const fragments = await Promise.all(
-      children.map((child, idx) =>
+      combinedSearchResponse.map((child, idx) =>
         vespaResultToAttachmentFragment(
           child as VespaSearchResult,
-          idx,
+          idx < chunksPerDocument.length ? chunksPerDocument[idx] : 0,
           userMetadata,
           query
         )
@@ -3370,20 +3494,34 @@ export async function MessageAgents(c: Context): Promise<Response> {
       })
     }
 
+    const isMsgWithContext = isMessageWithContext(message)
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message, email)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+          threadIds: [],
+        }
+    let attachmentsForContext = 
+      extractedInfo?.fileIds.map((fileId) => ({
+        fileId,
+        isImage: false,
+      })) || []
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const attachmentsForContext = attachmentMetadata.map((meta) => ({
+    attachmentsForContext = attachmentsForContext.concat(attachmentMetadata.map((meta) => ({
       fileId: meta.fileId,
       isImage: meta.isImage,
-    }))
+    })))
+    const threadIds = extractedInfo?.threadIds || []
     const referencedFileIds = Array.from(
       new Set(
-        attachmentMetadata
+        attachmentsForContext
           .filter((meta) => !meta.isImage)
           .flatMap((meta) => expandSheetIds(meta.fileId))
       )
     )
     const imageAttachmentFileIds = Array.from(
-      new Set(attachmentMetadata.filter((meta) => meta.isImage).map((meta) => meta.fileId))
+      new Set(attachmentsForContext.filter((meta) => meta.isImage).map((meta) => meta.fileId))
     )
 
     const userAndWorkspace: InternalUserWorkspace = await getUserAndWorkspaceByEmail(
@@ -3441,12 +3579,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
       dateForAI,
     }
     const userCtxString = userContext(userAndWorkspace)
-    const messageFileIds = Array.from(
-      new Set([
-        ...referencedFileIds,
-        ...attachmentMetadata.map((meta) => meta.fileId),
-      ])
-    )
 
     let chatRecord: SelectChat
     let lastPersistedMessageId = 0
@@ -3460,7 +3592,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         user: { id: user.id, email: user.email },
         workspace: { id: workspace.id, externalId: workspace.externalId },
         message,
-        fileIds: messageFileIds,
+        fileIds: referencedFileIds,
         attachmentMetadata,
         modelId: agenticModelId,
         agentId: resolvedAgentId ?? undefined,
@@ -3873,8 +4005,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
           )
           initialAttachmentContext = await prepareInitialAttachmentContext(
             referencedFileIds,
+            threadIds,
             userMetadata,
-            message
+            message,
+            email,
           )
           if (initialAttachmentContext) {
             await streamReasoningStep(

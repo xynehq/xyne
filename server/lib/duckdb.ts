@@ -32,6 +32,7 @@ const unlinkWithRetry = async (path: string, attempts = 5, delayMs = 50) => {
 export const querySheetChunks = async (
   sheetChunks: string[],
   userQuery: string,
+  sheetName: string,
 ): Promise<DuckDBResult | null> => {
   if (!sheetChunks.length) {
     return null;
@@ -85,7 +86,16 @@ export const querySheetChunks = async (
   await connection.run(`PRAGMA threads=${Math.max(1, Math.floor(cpus().length / 2))}`);
   await connection.run(`PRAGMA memory_limit='4GB'`);
 
-  const tableName = `v_${Date.now().toString(36)}`;
+  const rawSheetName = sheetName.split("/").pop()?.trim() || sheetName;
+
+  const safeSheetName = rawSheetName
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 30);
+
+  const tableName = `v_${safeSheetName}_${crypto.randomUUID().slice(0, 6)}`;
   const startTime = Date.now();
 
   try {
@@ -110,6 +120,7 @@ export const querySheetChunks = async (
         )
       `);
       Logger.debug(`VIEW ${tableName} created successfully`);
+      Logger.debug(`Active view ${tableName} maps to sheet ${sheetName}`);
     } catch (viewError) {
       Logger.error(`Failed to create VIEW ${tableName}:`, viewError);
       throw viewError;
@@ -143,6 +154,7 @@ export const querySheetChunks = async (
     const duckDBQuery = await analyzeQueryAndGenerateSQL(
       userQuery,
       tableName,
+      sheetName,
       schema,
       sampleRows,
     );
