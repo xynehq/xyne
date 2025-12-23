@@ -333,12 +333,21 @@ export const modelDetailsMap: Record<
       }
     }
   },
-  [getActualModelName(Models.GLM_4_5)]:{
-    name:"glm-45-fp8",
+  // [getActualModelName(Models.GLM_4_5)]:{
+  //   name:"glm-45-fp8",
+  //   cost:{
+  //     onDemand:{
+  //       pricePerThousandInputTokens:0.0006,
+  //       pricePerThousandOutputTokens:0.00011,
+  //     }
+  //   }
+  // },
+  [getActualModelName(Models.GLM_4_6)]:{
+    name:"glm-46-fp8",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.00011,
+        pricePerThousandInputTokens:0.00075,
+        pricePerThousandOutputTokens:0.00015,
       }
     }
   },
@@ -434,7 +443,8 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.Vertex_Gemini_1_5_Flash_8b_Exp_0827]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_1_5_Pro_002]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_1_5_Pro_Exp_0827]: AIProviders.VertexAI,
-  [Models.GLM_4_5]: AIProviders.LiteLLM,
+  // [Models.GLM_4_5]: AIProviders.LiteLLM,
+  [Models.GLM_4_6]: AIProviders.LiteLLM,
   [Models.LiteLLM_Claude_Sonnet_4]: AIProviders.LiteLLM,
   [Models.LiteLLM_Gemini_2_5_Pro]: AIProviders.LiteLLM,
   [Models.LiteLLM_Gemini_2_5_Flash]: AIProviders.LiteLLM,

@@ -346,6 +346,7 @@ const {
   defaultBestModel,
   defaultFastModel,
   maxDefaultSummary,
+  maxChunksPerPage,
   chatPageSize,
   isReasoning,
   fastModelReasoning,
@@ -1124,6 +1125,7 @@ export async function buildContext(
   startIndex: number = 0,
   builtUserQuery?: string,
   isMsgWithKbItems?: boolean,
+  chunksPerDoc?: number[],
 ): Promise<string> {
   // Count tickets in results
   const ticketCount = results.filter(
@@ -1137,7 +1139,7 @@ export async function buildContext(
       `Index ${i + startIndex} \n ${await answerContextMap(
         v as VespaSearchResults,
         userMetadata,
-        maxSummaryCount,
+        chunksPerDoc && i < chunksPerDoc.length ? chunksPerDoc[i] : maxSummaryCount,
         undefined,
         isMsgWithKbItems,
         builtUserQuery,
@@ -1557,6 +1559,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           ) || [],
         ),
       )
+      
+      // Apply intelligent chunk selection based on document relevance and chunk scores
+      const chunksPerDocument = await getChunkCountPerDoc(
+        results?.root?.children,
+        maxChunksPerPage,
+        email,
+        vespaSearchSpan,
+      )
       vespaSearchSpan?.end()
 
       const initialContext = await buildContext(
@@ -1566,6 +1576,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         0,
         message,
         agentSpecificCollectionSelections.length > 0,
+        chunksPerDocument
       )
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
@@ -1702,6 +1713,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
+        // Apply intelligent chunk selection based on document relevance and chunk scores
+        const chunksPerDocument = await getChunkCountPerDoc(
+          totalResults,
+          maxChunksPerPage,
+          email,
+          contextSpan,
+        )
         const initialContext = await buildContext(
           totalResults,
           maxSummaryCount,
@@ -1709,6 +1727,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           0,
           message,
           agentSpecificCollectionSelections.length > 0,
+          chunksPerDocument
         )
 
         const { imageFileNames } = extractImageFileNames(
@@ -1908,6 +1927,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     pageSearchSpan?.end()
     const startIndex = isReasoning ? previousResultsLength : 0
     const contextSpan = pageSpan?.startSpan("build_context")
+    // Apply intelligent chunk selection based on document relevance and chunk scores
+    const chunksPerDocument = await getChunkCountPerDoc(
+      results?.root?.children,
+      maxChunksPerPage,
+      email,
+      contextSpan,
+    )
     const initialContext = await buildContext(
       results?.root?.children,
       maxSummaryCount,
@@ -1915,6 +1941,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       startIndex,
       message,
       agentSpecificCollectionSelections.length > 0,
+      chunksPerDocument
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -2060,7 +2087,7 @@ async function* generateAnswerFromGivenContext(
   let previousResultsLength = 0
   const combinedSearchResponse: VespaSearchResult[] = []
   let chunksPerDocument: number[] = []
-  const targetChunks = 120
+  const targetChunks = maxChunksPerPage
 
   if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
     const fileSearchSpan = generateAnswerSpan?.startSpan("file_search")
@@ -2458,8 +2485,8 @@ export async function* generateAnswerFromDualRag(
   const combinedSearchResponse: VespaSearchResult[] = []
   //How many chunks to take from each document
   let chunksPerDocument: number[] = []
-  //Total budget of chunks (120 is empirically validated)
-  const targetChunks = 120
+  //Total budget of chunks
+  const targetChunks = maxChunksPerPage
 
 
   if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
@@ -3473,12 +3500,21 @@ async function* generatePointQueryTimeExpansion(
     // Prepare context for LLM
     const contextSpan = iterationSpan?.startSpan("build_context")
     const startIndex = isReasoning ? previousResultsLength : 0
+    // Apply intelligent chunk selection based on document relevance and chunk scores
+    const chunksPerDocument = await getChunkCountPerDoc(
+      combinedResults?.root?.children,
+      maxChunksPerPage,
+      email,
+      contextSpan,
+    )
     const initialContext = await buildContext(
       combinedResults?.root?.children,
       maxSummaryCount,
       userMetadata,
       startIndex,
       message,
+      undefined,
+      chunksPerDocument,
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -3601,6 +3637,7 @@ async function* processResultsForMetadata(
   agentContext?: string,
   modelId?: string,
   isMsgWithKbItems?: boolean,
+  chunksCountPerDoc?: number[],
 ) {
   if (app?.length == 1 && app[0] === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -3608,10 +3645,10 @@ async function* processResultsForMetadata(
       `Google Drive, Chunk size: ${chunksCount}`,
     )
     span?.setAttribute("Google Drive, chunk_size", chunksCount)
+  } else if (chunksCount === undefined) {
+    chunksCount = maxDefaultSummary
   }
 
-  // TODO: Calculate the token count for the selected model's capacity and pass the full context accordingly.
-  chunksCount = 20
   span?.setAttribute(
     "Document chunk size",
     `full_context maxed to ${chunksCount}`,
@@ -3623,6 +3660,7 @@ async function* processResultsForMetadata(
     0,
     input,
     isMsgWithKbItems,
+    chunksCountPerDoc,
   )
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
@@ -4008,15 +4046,24 @@ async function* generateMetadataQueryAnswer(
         ),
       )
 
+      // Apply intelligent chunk selection based on document relevance and chunk scores
+      const chunksPerDocument = await getChunkCountPerDoc(
+        items,
+        maxChunksPerPage,
+        email,
+        pageSpan,
+      )
+
       pageSpan?.setAttribute(
         "context",
         await buildContext(
           items,
-          20,
+          maxDefaultSummary,
           userMetadata,
           0,
           input,
           agentSpecificCollectionSelections.length > 0,
+          chunksPerDocument
         ),
       )
       if (!items.length) {
@@ -4046,6 +4093,7 @@ async function* generateMetadataQueryAnswer(
         agentPrompt,
         modelId,
         agentSpecificCollectionSelections.length > 0,
+        chunksPerDocument
       )
 
       if (answer == null) {
@@ -4237,15 +4285,24 @@ async function* generateMetadataQueryAnswer(
       ),
     )
 
+    // Apply intelligent chunk selection based on document relevance and chunk scores
+    const chunksPerDocument = await getChunkCountPerDoc(
+      items,
+      maxChunksPerPage,
+      email,
+      span,
+    )
+
     span?.setAttribute(
       "context",
       await buildContext(
         items,
-        20,
+        maxDefaultSummary,
         userMetadata,
         0,
         input,
         agentSpecificCollectionSelections.length > 0,
+        chunksPerDocument
       ),
     )
     span?.end()
@@ -4277,6 +4334,7 @@ async function* generateMetadataQueryAnswer(
       agentPrompt,
       modelId,
       agentSpecificCollectionSelections.length > 0,
+      chunksPerDocument
     )
     return
   } else if (
@@ -4428,15 +4486,23 @@ async function* generateMetadataQueryAnswer(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
+      // Apply intelligent chunk selection based on document relevance and chunk scores
+      const chunksPerDocument = await getChunkCountPerDoc(
+        items,
+        maxChunksPerPage,
+        email,
+        iterationSpan,
+      )
       iterationSpan?.setAttribute(
         `context`,
         await buildContext(
           items,
-          20,
+          maxDefaultSummary,
           userMetadata,
           0,
           input,
           agentSpecificCollectionSelections.length > 0,
+          chunksPerDocument
         ),
       )
       iterationSpan?.end()
@@ -4471,6 +4537,7 @@ async function* generateMetadataQueryAnswer(
         agentPrompt,
         modelId,
         agentSpecificCollectionSelections.length > 0,
+        chunksPerDocument
       )
 
       if (answer == null) {

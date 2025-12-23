@@ -195,7 +195,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   LiteLLMApiKey = process.env["LITELLM_API_KEY"]
   defaultBestModelAgenticMode = process.env["LITELLM_BEST_AGENTIC_MODEL"] 
   ? (process.env["LITELLM_BEST_AGENTIC_MODEL"] as Models)
-  : Models.GLM_4_5
+  : Models.GLM_4_6
   // Set default models for LiteLLM (no longer requiring LITELLM_MODEL to be set)
   defaultFastModel = process.env["LITELLM_FAST_MODEL"]
     ? (process.env["LITELLM_FAST_MODEL"] as Models)
@@ -277,6 +277,7 @@ export default {
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
   maxDefaultSummary: 10,
+  maxChunksPerPage: 200,
   chatPageSize: 20, // default page size for ai search
   VespaPageSize: 20, // default page size for vespa search
   maxGoogleDriveSummary: 50,

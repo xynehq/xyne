@@ -500,9 +500,18 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   websearch: true,
   //   deepResearch: true, // Pro experimental, good research capabilities
   // },
-  [Models.GLM_4_5]: {
-    actualName: "glm-45-fp8",
-    labelName: ModelDisplayNames.LITELLM_GLM_4_5,
+  // [Models.GLM_4_5]: {
+  //   actualName: "glm-45-fp8",
+  //   labelName: ModelDisplayNames.LITELLM_GLM_4_5,
+  //   provider: AIProviders.LiteLLM,
+  //   reasoning: true,
+  //   websearch: false,
+  //   deepResearch: false,
+  //   description: "Tailored for reasoning, coding, and agentic abilities",
+  // },
+  [Models.GLM_4_6]: {
+    actualName: "glm-46-fp8",
+    labelName: ModelDisplayNames.LITELLM_GLM_4_6,
     provider: AIProviders.LiteLLM,
     reasoning: true,
     websearch: false,
