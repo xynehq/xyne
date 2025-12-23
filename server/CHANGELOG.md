@@ -1,3 +1,10 @@
+## [3.35.2](https://github.com/xynehq/xyne/compare/v3.35.1...v3.35.2) (2025-12-23)
+
+
+### Bug Fixes
+
+* corrected the syntax of the sql of duckdb ([#1242](https://github.com/xynehq/xyne/issues/1242)) ([11854b3](https://github.com/xynehq/xyne/commit/11854b3691f327aced1ffcbf8ad9426f4afb60fc))
+
 ## [3.35.1](https://github.com/xynehq/xyne/compare/v3.35.0...v3.35.1) (2025-12-23)
 
 
