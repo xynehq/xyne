@@ -2115,7 +2115,7 @@ async function* generateAnswerFromGivenContext(
       const attachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
       if (nonCollectionFileIds && nonCollectionFileIds.length > 0) {
         results = await searchVespaInFiles(
-          builtUserQuery,
+          messageText,
           email,
           nonCollectionFileIds,
           {
@@ -2139,7 +2139,7 @@ async function* generateAnswerFromGivenContext(
       }
       if (attachmentFileIds && attachmentFileIds.length > 0) {
         results = await searchVespaInFiles(
-          builtUserQuery,
+          messageText,
           email,
           attachmentFileIds,
           {

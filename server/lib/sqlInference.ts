@@ -21,6 +21,7 @@ const Logger = getLogger(Subsystem.Integrations).child({
 export const analyzeQueryAndGenerateSQL = async (
   query: string,
   tableName: string,
+  sheetName: string,
   schema: string,
   fewShotSamples: string
 ): Promise<DuckDBQuery | null> => {
@@ -65,10 +66,19 @@ Rules for SQL generation:
 - Output must be a single-line minified JSON object. Do NOT include markdown, code fences, comments, or any prose
 - If ambiguous, choose the simplest interpretation and state the assumption in "notes"
 
+IMPORTANT SQL IDENTIFIER RULES:
+- Column names MAY contain spaces, hyphens, or special characters
+- ALWAYS wrap EVERY column name and table name in DOUBLE QUOTES ("")
+- Do NOT remove, shorten, normalize, or rewrite column names
+- Use column names EXACTLY as provided in the schema, character-for-character
+- Example:
+  Correct:  SELECT "Merchant Integration" FROM "my_table"
+  Incorrect: SELECT Merchant Integration FROM my_table
+
 Context:
 - User question: ${query}
 - Available tables and columns with types and short descriptions:
-table name: ${tableName}
+table name: ${tableName} is generated from a sheet named: "${sheetName}"
 schema: ${schema}
 - Example rows (up to 5 per table; strings truncated):
 ${fewShotSamples}`;

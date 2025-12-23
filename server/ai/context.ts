@@ -296,6 +296,7 @@ const aggregateTableChunksForPdf = (
 
 // Utility function to process sheet queries for spreadsheet files
 const processSheetQuery = async (
+  sheetName: string,
   chunks_summary:
     | (string | { chunk: string; score: number; index: number })[]
     | undefined,
@@ -309,6 +310,7 @@ const processSheetQuery = async (
   const duckDBResult = await querySheetChunks(
     chunks_summary?.map((c) => (typeof c === "string" ? c : c.chunk)) || [],
     query,
+    sheetName,
   )
 
   // If DuckDB query failed (null means not metric-related or SQL generation failed), return null to fallback to original approach
@@ -1055,10 +1057,17 @@ export const answerContextMap = async (
     searchResult.fields.sddocname === mailAttachmentSchema
   ) {
     let mimeType
+    let sheetName
     if (searchResult.fields.sddocname === mailAttachmentSchema) {
       mimeType = searchResult.fields.fileType
+      sheetName = searchResult.fields.filename
     } else {
       mimeType = searchResult.fields.mimeType
+      if(searchResult.fields.sddocname === fileSchema) {
+        sheetName = searchResult.fields.title
+      } else {
+        sheetName = searchResult.fields.fileName
+      }
     }
     if (
       mimeType ===
@@ -1077,6 +1086,7 @@ export const answerContextMap = async (
 
       if (query) {
         const sheetResult = await processSheetQuery(
+          sheetName || "sheet",
           searchResult.fields.chunks_summary,
           query,
           searchResult.fields.matchfeatures,
