@@ -161,6 +161,7 @@ schema event {
             query(e) tensor<bfloat16>(v[DIMS])
             query(alpha) double 
             query(recency_decay_rate) double
+             query(eventBoost) double
         }
 
         constants {
@@ -195,6 +196,9 @@ schema event {
                 (META_FIELDS_DECAY * (bm25(attachmentFilenames) + bm25(attendeesNames)))
             }
         }
+        function is_event() {
+            expression: if(attribute(app) == "google-calendar", 1, 0)
+    }
 
         function matchedFieldCount() {
             expression {
@@ -205,7 +209,7 @@ schema event {
 
         function combined_nativeRank() {
             expression {
-                (
+               ( (
                     (
                         nativeRank(name) + 
                         nativeRank(description) + 
@@ -213,7 +217,7 @@ schema event {
                     ) / if(matchedFieldCount == 0, 1, matchedFieldCount)
                 ) 
                 +
-                (META_FIELDS_DECAY * (nativeRank(attachmentFilenames) + nativeRank(attendeesNames)))
+                (META_FIELDS_DECAY * (nativeRank(attachmentFilenames) + nativeRank(attendeesNames))) ) * if(is_event == 1, query(eventBoost), 1)
             }
         }
     }
