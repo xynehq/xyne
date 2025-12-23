@@ -1,3 +1,10 @@
+## [3.35.1](https://github.com/xynehq/xyne/compare/v3.35.0...v3.35.1) (2025-12-23)
+
+
+### Bug Fixes
+
+* corrected llm context per document ([#1241](https://github.com/xynehq/xyne/issues/1241)) ([d207f56](https://github.com/xynehq/xyne/commit/d207f56b4d645a8d5d0ca5d74ce6e4a60f6c5fc6))
+
 # [3.35.0](https://github.com/xynehq/xyne/compare/v3.34.1...v3.35.0) (2025-12-18)
 
 
