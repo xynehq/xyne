@@ -3,7 +3,7 @@ import { useRef, useEffect, forwardRef } from "react"
 import { SearchFilters } from "@/components/SearchFilter"
 import { ArrowRight, X } from "lucide-react" // Assuming ArrowRight and X are imported from lucide-react
 import { AutocompleteElement } from "@/components/Autocomplete"
-import { useNavigate } from "@tanstack/react-router"
+import { useNavigate, useRouter } from "@tanstack/react-router"
 
 export const SearchBar = forwardRef<HTMLDivElement, any>(
   (
@@ -26,6 +26,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
   ) => {
     const inputRef = useRef<HTMLInputElement | null>(null)
     const navigate = useNavigate({ from: "/search" })
+    const router = useRouter()
     const trimmedQuery = query.trim()
 
     useEffect(() => {
@@ -36,10 +37,17 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
 
     const navigateToSearch = () => {
       if (hasSearched) setActiveQuery(query) // Update activeQuery
+      const currentSearch = router.state.location.search as {
+        embedded?: string | boolean
+      }
+      const isEmbedded =
+        currentSearch?.embedded === "true" ||
+        currentSearch?.embedded === true
       navigate({
         to: "/search",
         search: {
           query: encodeURIComponent(decodeURIComponent(query)),
+          ...(isEmbedded ? { embedded: true } : {}),
         },
         state: { isQueryTyped: !!query.length },
       })
@@ -92,6 +100,7 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
                     if (e.key === "Enter") {
                       if (trimmedQuery) {
                         setOffset(0)
+                        handleSearch()
                         navigateToSearch()
                         setFilter((prevFilter: { lastUpdated?: string }) => ({
                           lastUpdated: prevFilter.lastUpdated || "anytime",

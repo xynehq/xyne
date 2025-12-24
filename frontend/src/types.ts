@@ -26,6 +26,10 @@ export const searchSchema = z.object({
 
 export const indexSearchParamsSchema = z.object({
   agentId: z.string().optional(),
+  embedded: z
+    .union([z.string(), z.boolean()])
+    .transform((val) => val === true || val === "true")
+    .optional(),
 })
 
 export const toolsListItemSchema = z.object({
