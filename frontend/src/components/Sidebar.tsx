@@ -135,7 +135,7 @@ export const Sidebar = ({
           CLASS_NAMES.SIDEBAR_CONTAINER,
         )}
       >
-        {!isEmbedded && showHistory && (
+        {showHistory && (
           <HistoryModal
             pathname={location.pathname}
             onClose={() => setShowHistory(false)}
@@ -156,6 +156,10 @@ export const Sidebar = ({
         <div className="flex flex-col items-center mt-[10px]">
           <Link
             to="/"
+            search={(prev) => ({
+              ...prev,
+              embedded: isEmbedded,
+            })}
             className="flex w-8 h-8 border border-[#C4D0DC] items-center justify-center rounded-md"
           >
             <Tooltip>

@@ -250,6 +250,7 @@ export const ChatPage = ({
       search: {
         ...(!isGlobalDebugMode && isDebugMode ? { debug: true } : {}),
         ...(isAgenticMode ? { agentic: true } : {}),
+        ...(isEmbedded ? { embedded: true } : {}),
       },
     })
   }
@@ -707,6 +708,8 @@ export const ChatPage = ({
           agentId: undefined, // Clear agentId from URL after processing
           toolsList: undefined, // Clear toolsList from URL after processing
           metadata: undefined, // Clear metadata from URL after processing
+          // Preserve embedded parameter
+          ...(isEmbedded ? { embedded: true } : {}),
         }),
         replace: true,
       })
@@ -2876,10 +2879,10 @@ const chatParams = z.object({
     .optional()
     .default("false"),
   embedded: z
-    .string()
-    .transform((val) => val === "true")
+    .union([z.string(), z.boolean()])
+    .transform((val) => val === true || val === "true")
     .optional()
-    .default("false"),
+    .default(false),
   refs: z // Changed from docId to refs, expects a JSON string array
     .string()
     .optional()
