@@ -309,7 +309,7 @@ const Index = () => {
             </div>
           )}
           <div className="flex flex-col flex-grow justify-center items-center w-full">
-            <div className="flex flex-col min-h-36 w-full max-w-3xl z-10">
+            <div className="flex flex-col min-h-36 w-full max-w-3xl z-10 justify-center items-center">
               {" "}
               {/* Ensure content is above the text logo */}
               <div className="flex mb-[14px] w-full justify-start">
@@ -370,7 +370,7 @@ const Index = () => {
                 </Tooltip>
               </div>
               {activeTab === "search" && (
-                <div className="w-full h-72">
+                <div className={`w-full ${isEmbedded ? "" : "h-72"}`}>
                   <SearchBar
                     query={query}
                     setQuery={setQuery}
@@ -388,7 +388,7 @@ const Index = () => {
                 </div>
               )}
               {activeTab === "ask" && (
-                <div className="w-full h-72">
+                <div className={`w-full ${isEmbedded ? "" : "h-72"}`}>
                   <ChatBox
                     role={user?.role}
                     query={query}
@@ -424,7 +424,7 @@ const Index = () => {
                             to: "/",
                             search: {
                               agentId: agent.externalId,
-                              embedded: isEmbedded ? true : undefined,
+                              ...(isEmbedded ? { embedded: true } : {}),
                             },
                           })
                         }

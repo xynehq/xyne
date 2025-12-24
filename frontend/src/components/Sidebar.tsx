@@ -158,7 +158,7 @@ export const Sidebar = ({
             to="/"
             search={(prev) => ({
               ...prev,
-              embedded: isEmbedded,
+              ...(isEmbedded ? { embedded: true } : {}),
             })}
             className="flex w-8 h-8 border border-[#C4D0DC] items-center justify-center rounded-md"
           >
