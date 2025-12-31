@@ -38,11 +38,9 @@ export const SearchBar = forwardRef<HTMLDivElement, any>(
     const navigateToSearch = () => {
       if (hasSearched) setActiveQuery(query) // Update activeQuery
       const currentSearch = router.state.location.search as {
-        embedded?: string | boolean
+        embedded?: boolean
       }
-      const isEmbedded =
-        currentSearch?.embedded === "true" ||
-        currentSearch?.embedded === true
+      const isEmbedded = currentSearch?.embedded ?? false
       navigate({
         to: "/search",
         search: {

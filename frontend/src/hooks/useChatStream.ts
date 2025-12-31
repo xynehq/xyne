@@ -605,7 +605,7 @@ export const startStream = async (
         const isGlobalDebugMode =
           import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
         const currentSearch = router.state.location.search as {
-          embedded?: string | boolean
+          embedded?: boolean
           debug?: string
         }
         const searchParams: {
@@ -616,7 +616,7 @@ export const startStream = async (
           searchParams.debug = true
         }
         // Preserve embedded parameter if present
-        if (currentSearch?.embedded === true || currentSearch?.embedded === "true") {
+        if (currentSearch?.embedded) {
           searchParams.embedded = true
         }
         router.navigate({

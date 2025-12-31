@@ -84,7 +84,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   let search: XyneSearch = useSearch({
     from: "/_authenticated/search",
   })
-  const isEmbedded = Boolean(search.embedded)
+  const isEmbedded = search.embedded ?? false
   const navigate = useNavigate({ from: "/search" })
   if (!search.query) {
     navigate({
@@ -611,10 +611,8 @@ const searchParams = z
     entity: z.string().optional(),
     lastUpdated: z.string().optional(),
     debug: z.boolean().optional(),
-    embedded: z
-      .union([z.string(), z.boolean()])
-      .transform((val) => val === true || val === "true")
-      .optional(),
+    embedded: z.coerce.boolean().optional(),
+
   })
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",

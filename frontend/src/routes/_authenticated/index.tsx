@@ -139,7 +139,7 @@ const Index = () => {
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const searchParams = useSearch({ from: "/_authenticated/" })
-  const isEmbedded = Boolean(searchParams.embedded)
+  const isEmbedded = searchParams.embedded ?? false
 
   useEffect(() => {
     setPersistedAgentId(searchParams.agentId || null)

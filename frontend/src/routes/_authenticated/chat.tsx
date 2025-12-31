@@ -228,7 +228,7 @@ export const ChatPage = ({
   const [isAgenticMode, setIsAgenticMode] = useState(
     Boolean(chatParams.agentic),
   )
-  const isEmbedded = Boolean(chatParams.embedded)
+  const isEmbedded = chatParams.embedded ?? false
   const isWithChatId = !!(params as any).chatId
   const isSharedChat = !!chatParams.shareToken
   const [sharedChatData, setSharedChatData] = useState<any>(null)
@@ -2878,11 +2878,7 @@ const chatParams = z.object({
     .transform((val) => val === "true")
     .optional()
     .default("false"),
-  embedded: z
-    .union([z.string(), z.boolean()])
-    .transform((val) => val === true || val === "true")
-    .optional()
-    .default(false),
+  embedded: z.coerce.boolean().optional(),
   refs: z // Changed from docId to refs, expects a JSON string array
     .string()
     .optional()

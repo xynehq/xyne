@@ -207,11 +207,9 @@ const HistoryModal = ({
 
       if (existingChatId === chatId) {
         const currentSearch = router.state.location.search as {
-          embedded?: string | boolean
+          embedded?: boolean
         }
-        const isEmbedded =
-          currentSearch?.embedded === "true" ||
-          currentSearch?.embedded === true
+        const isEmbedded = currentSearch?.embedded ?? false
         navigate({
           to: "/",
           search: {
@@ -436,11 +434,9 @@ const HistoryModal = ({
                 className="text-[14px] dark:text-gray-200 pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
                 onClick={() => {
                   const currentSearch = router.state.location.search as {
-                    embedded?: string | boolean
+                    embedded?: boolean
                   }
-                  const isEmbedded =
-                    currentSearch?.embedded === "true" ||
-                    currentSearch?.embedded === true
+                  const isEmbedded = currentSearch?.embedded ?? false
                   router.navigate({
                     to: "/chat/$chatId",
                     params: { chatId: item.externalId },
