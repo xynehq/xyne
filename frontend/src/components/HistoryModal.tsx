@@ -206,7 +206,16 @@ const HistoryModal = ({
       queryClient.invalidateQueries({ queryKey: ["favorite-chats"] })
 
       if (existingChatId === chatId) {
-        navigate({ to: "/" })
+        const currentSearch = router.state.location.search as {
+          embedded?: boolean
+        }
+        const isEmbedded = currentSearch?.embedded ?? false
+        navigate({
+          to: "/",
+          search: {
+            ...(isEmbedded ? { embedded: true } : {}),
+          },
+        })
       }
     },
     onError: (error: Error) => {
@@ -424,9 +433,16 @@ const HistoryModal = ({
               <span
                 className="text-[14px] dark:text-gray-200 pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]"
                 onClick={() => {
+                  const currentSearch = router.state.location.search as {
+                    embedded?: boolean
+                  }
+                  const isEmbedded = currentSearch?.embedded ?? false
                   router.navigate({
                     to: "/chat/$chatId",
                     params: { chatId: item.externalId },
+                    search: isEmbedded
+                      ? { embedded: true }
+                      : {},
                   })
                 }}
               >

@@ -84,6 +84,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   let search: XyneSearch = useSearch({
     from: "/_authenticated/search",
   })
+  const isEmbedded = search.embedded ?? false
   const navigate = useNavigate({ from: "/search" })
   if (!search.query) {
     navigate({
@@ -451,6 +452,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         photoLink={user?.photoLink ?? ""}
         role={user?.role}
         isAgentMode={agentWhiteList}
+        isEmbedded={isEmbedded}
       />
       <div className={`flex flex-col flex-grow h-full "ml-[52px]"`}>
         <SearchBar
@@ -609,6 +611,8 @@ const searchParams = z
     entity: z.string().optional(),
     lastUpdated: z.string().optional(),
     debug: z.boolean().optional(),
+    embedded: z.coerce.boolean().optional(),
+
   })
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",

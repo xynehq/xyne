@@ -139,6 +139,7 @@ const Index = () => {
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const searchParams = useSearch({ from: "/_authenticated/" })
+  const isEmbedded = searchParams.embedded ?? false
 
   useEffect(() => {
     setPersistedAgentId(searchParams.agentId || null)
@@ -203,6 +204,7 @@ const Index = () => {
         search: {
           query: encodeURIComponent(decodeURIComponent(query.trim())),
           debug: false,
+          ...(isEmbedded ? { embedded: true } : {}),
         },
       })
     }
@@ -225,6 +227,7 @@ const Index = () => {
         agentic?: boolean
         metadata?: AttachmentMetadata[]
         selectedModel?: string
+        embedded?: boolean
       } = {
         q: encodeURIComponent(messageToSend.trim()),
       }
@@ -251,6 +254,11 @@ const Index = () => {
 
       if (selectedModel) {
         searchParams.selectedModel = selectedModel
+      }
+
+      // Preserve embedded parameter
+      if (isEmbedded) {
+        searchParams.embedded = true
       }
 
       navigate({
@@ -283,6 +291,7 @@ const Index = () => {
           photoLink={user?.photoLink ?? ""}
           role={user?.role}
           isAgentMode={agentWhiteList}
+          isEmbedded={isEmbedded}
         />
         <div className="flex flex-col flex-grow ml-[52px] relative">
           {agent && (
@@ -300,7 +309,7 @@ const Index = () => {
             </div>
           )}
           <div className="flex flex-col flex-grow justify-center items-center w-full">
-            <div className="flex flex-col min-h-36 w-full max-w-3xl z-10">
+            <div className="flex flex-col min-h-36 w-full max-w-3xl z-10 justify-center items-center">
               {" "}
               {/* Ensure content is above the text logo */}
               <div className="flex mb-[14px] w-full justify-start">
@@ -361,7 +370,7 @@ const Index = () => {
                 </Tooltip>
               </div>
               {activeTab === "search" && (
-                <div className="w-full h-72">
+                <div className={`w-full ${isEmbedded ? "" : "h-72"}`}>
                   <SearchBar
                     query={query}
                     setQuery={setQuery}
@@ -379,7 +388,7 @@ const Index = () => {
                 </div>
               )}
               {activeTab === "ask" && (
-                <div className="w-full h-72">
+                <div className={`w-full ${isEmbedded ? "" : "h-72"}`}>
                   <ChatBox
                     role={user?.role}
                     query={query}
@@ -413,7 +422,10 @@ const Index = () => {
                         onClick={() =>
                           navigate({
                             to: "/",
-                            search: { agentId: agent.externalId },
+                            search: {
+                              agentId: agent.externalId,
+                              ...(isEmbedded ? { embedded: true } : {}),
+                            },
                           })
                         }
                       />

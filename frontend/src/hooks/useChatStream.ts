@@ -604,10 +604,25 @@ export const startStream = async (
       ) {
         const isGlobalDebugMode =
           import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
+        const currentSearch = router.state.location.search as {
+          embedded?: boolean
+          debug?: string
+        }
+        const searchParams: {
+          debug?: boolean
+          embedded?: boolean
+        } = {}
+        if (isGlobalDebugMode) {
+          searchParams.debug = true
+        }
+        // Preserve embedded parameter if present
+        if (currentSearch?.embedded) {
+          searchParams.embedded = true
+        }
         router.navigate({
           to: "/chat/$chatId",
           params: { chatId: realId },
-          search: isGlobalDebugMode ? { debug: true } : {},
+          search: searchParams,
           replace: true,
         })
       }

@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react" // Ensure React is imported
-import { useNavigate } from "@tanstack/react-router"
+import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
@@ -429,6 +429,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     )
     const [globalResults, setGlobalResults] = useState<SearchResult[]>([])
     const fileAbortControllers = useRef<Map<string, AbortController>>(new Map())
+    const currentSearch = useRouterState({ select: (s) => s.location.search }) as {
+      embedded?: boolean
+    }
+    const isEmbedded = currentSearch?.embedded ?? false
 
     // Unified function to enhance Google Sheets items with dummy "whole sheet" options
     const enhanceGoogleSheetsResults = useCallback(
@@ -2538,6 +2542,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
+          {!chatId && isEmbedded && !hideButtons && user?.name && (
+            <div className="px-4 pt-4 pb-2 border-b border-gray-100 dark:border-gray-700">
+              <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Hello, {user.name} 👋
+              </span>
+            </div>
+          )}
           <div className="relative flex items-center">
             {isPlaceholderVisible && (
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">

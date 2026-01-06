@@ -228,6 +228,7 @@ export const ChatPage = ({
   const [isAgenticMode, setIsAgenticMode] = useState(
     Boolean(chatParams.agentic),
   )
+  const isEmbedded = chatParams.embedded ?? false
   const isWithChatId = !!(params as any).chatId
   const isSharedChat = !!chatParams.shareToken
   const [sharedChatData, setSharedChatData] = useState<any>(null)
@@ -249,6 +250,7 @@ export const ChatPage = ({
       search: {
         ...(!isGlobalDebugMode && isDebugMode ? { debug: true } : {}),
         ...(isAgenticMode ? { agentic: true } : {}),
+        ...(isEmbedded ? { embedded: true } : {}),
       },
     })
   }
@@ -706,6 +708,8 @@ export const ChatPage = ({
           agentId: undefined, // Clear agentId from URL after processing
           toolsList: undefined, // Clear toolsList from URL after processing
           metadata: undefined, // Clear metadata from URL after processing
+          // Preserve embedded parameter
+          ...(isEmbedded ? { embedded: true } : {}),
         }),
         replace: true,
       })
@@ -1433,7 +1437,10 @@ export const ChatPage = ({
   if ((data?.error || historyLoading) && !isSharedChat) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
-        <Sidebar isAgentMode={agentWhiteList} />
+        <Sidebar 
+          isAgentMode={agentWhiteList}
+          isEmbedded={isEmbedded}
+        />
         {/* <div className="ml-[120px]">Error: Could not get data</div> */}
       </div>
     )
@@ -1447,6 +1454,7 @@ export const ChatPage = ({
           photoLink={user?.photoLink ?? ""}
           role={user?.role}
           isAgentMode={agentWhiteList}
+          isEmbedded={isEmbedded}
         />
         <div className="h-full w-full flex items-center justify-center">
           <div className="text-lg">Loading shared chat...</div>
@@ -1463,6 +1471,7 @@ export const ChatPage = ({
           photoLink={user?.photoLink ?? ""}
           role={user?.role}
           isAgentMode={agentWhiteList}
+          isEmbedded={isEmbedded}
         />
         <div className="h-full w-full flex items-center justify-center">
           <div className="text-center">
@@ -1545,6 +1554,7 @@ export const ChatPage = ({
         photoLink={user?.photoLink ?? ""}
         role={user?.role}
         isAgentMode={agentWhiteList}
+        isEmbedded={isEmbedded}
       />
       <div className="h-full w-full flex flex-col relative">
         <div
@@ -2868,6 +2878,7 @@ const chatParams = z.object({
     .transform((val) => val === "true")
     .optional()
     .default("false"),
+  embedded: z.coerce.boolean().optional(),
   refs: z // Changed from docId to refs, expects a JSON string array
     .string()
     .optional()
