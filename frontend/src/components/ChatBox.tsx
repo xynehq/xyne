@@ -430,11 +430,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [globalResults, setGlobalResults] = useState<SearchResult[]>([])
     const fileAbortControllers = useRef<Map<string, AbortController>>(new Map())
     const currentSearch = useRouterState({ select: (s) => s.location.search }) as {
-      embedded?: string | boolean
+      embedded?: boolean
     }
-    const isEmbedded =
-      currentSearch?.embedded === "true" ||
-      currentSearch?.embedded === true
+    const isEmbedded = currentSearch?.embedded ?? false
 
     // Unified function to enhance Google Sheets items with dummy "whole sheet" options
     const enhanceGoogleSheetsResults = useCallback(
