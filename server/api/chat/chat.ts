@@ -4992,14 +4992,6 @@ export const MessageApi = async (c: Context) => {
         enableWebSearch = config.websearch === true
         isDeepResearchEnabled = config.deepResearch === true
 
-        // For deep research, always use Claude Sonnet 4 regardless of UI selection
-        if (isDeepResearchEnabled) {
-          modelId = "Claude Sonnet 4"
-          loggerWithChild({ email: email }).info(
-            `Deep research enabled - forcing model to Claude Sonnet 4`,
-          )
-        }
-
         // Check capabilities - handle both array and object formats for backward compatibility
         if (
           config.capabilities &&
@@ -5018,11 +5010,6 @@ export const MessageApi = async (c: Context) => {
             enableWebSearch = config.capabilities.websearch === true
             isDeepResearchEnabled = config.capabilities.deepResearch === true
           }
-
-          // For deep research from old format, also force Claude Sonnet 4
-          if (isDeepResearchEnabled) {
-            modelId = "Claude Sonnet 4"
-          }
         }
 
         loggerWithChild({ email: email }).info(
@@ -5032,17 +5019,15 @@ export const MessageApi = async (c: Context) => {
         loggerWithChild({ email: email }).warn(
           `Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`,
         )
-        modelId = config.defaultBestModel // fallback
       }
     } else {
       // Fallback if no model config provided
-      modelId = config.defaultBestModel
       loggerWithChild({ email: email }).info(
         "No model config provided, using default",
       )
     }
     // Convert modelId from friendly label to actual model value
-    let actualModelId: string = modelId || config.defaultBestModel // Ensure we always have a string
+    let actualModelId: string | undefined = undefined
     if (modelId) {
       const convertedModelId = getModelValueFromLabel(modelId)
       if (convertedModelId) {
@@ -5050,16 +5035,15 @@ export const MessageApi = async (c: Context) => {
         loggerWithChild({ email: email }).info(
           `Converted model label "${modelId}" to value "${actualModelId}"`,
         )
-      } else if (modelId in Models) {
+      } else if (Object.values(Models).includes(modelId as Models)) {
         actualModelId = modelId // Use the raw model ID if it exists in Models enum
         loggerWithChild({ email: email }).info(
           `Using model ID "${modelId}" directly as it exists in Models enum`,
         )
       } else {
         loggerWithChild({ email: email }).error(
-          `Invalid model: ${modelId}. Model not found in label mappings or Models enum.`,
+          `Invalid model: ${modelId}. Model not found in label mappings or Models enum. Using default`,
         )
-        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
       }
     }
     const webSearchEnabled = enableWebSearch ?? false
@@ -5578,7 +5562,7 @@ export const MessageApi = async (c: Context) => {
                   ? processWebSearchMessage(answer, citationMap, email)
                   : processMessage(answer, citationMap, email),
                 thinking: thinking,
-                modelId: actualModelId,
+                modelId: actualModelId || config.defaultBestModel,
                 cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
@@ -5707,7 +5691,7 @@ export const MessageApi = async (c: Context) => {
                 "Using deep research for the question",
               )
               searchOrAnswerIterator = getDeepResearchResponse(message, ctx, {
-                modelId: Models.o3_Deep_Research,
+                modelId: config.defaultDeepResearchModel,
                 stream: true,
                 json: false,
                 agentPrompt: JSON.stringify(agentDetails),
@@ -5726,7 +5710,7 @@ export const MessageApi = async (c: Context) => {
                 message,
                 ctx,
                 {
-                  modelId: Models.Gemini_2_5_Flash,
+                  modelId: config.defaultWebSearchModel,
                   stream: true,
                   json: false,
                   agentPrompt: JSON.stringify(agentDetails),

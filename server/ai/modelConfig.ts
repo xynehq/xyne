@@ -509,15 +509,6 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   deepResearch: false,
   //   description: "Tailored for reasoning, coding, and agentic abilities",
   // },
-  [Models.GLM_LATEST]: {
-    actualName: "glm-latest",
-    labelName: ModelDisplayNames.LITELLM_GLM_LATEST,
-    provider: AIProviders.LiteLLM,
-    reasoning: true,
-    websearch: false,
-    deepResearch: false,
-    description: "Tailored for reasoning, coding, and agentic abilities",
-  },
   [Models.LiteLLM_Claude_Sonnet_4_5]: {
     actualName: "claude-sonnet-4-5",
     labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_5,
@@ -545,6 +536,15 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     websearch: true,
     deepResearch: true,
     description: "Tailored for cost-effectiveness and rapid response times.",
+  },
+  [Models.GLM_LATEST]: {
+    actualName: "glm-latest",
+    labelName: ModelDisplayNames.LITELLM_GLM_LATEST,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: false,
+    deepResearch: false,
+    description: "Tailored for reasoning, coding, and agentic abilities",
   },
 }
 

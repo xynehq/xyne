@@ -356,7 +356,7 @@ const getDefaultModel = (availableModels: ModelConfiguration[]): string => {
   // Try to find Claude Sonnet 4 as default, otherwise use first available
   const defaultModel =
     availableModels.find(
-      (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
+      (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4.5",
     ) || availableModels[0]
 
   return defaultModel.labelName
@@ -629,7 +629,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const isModelDisabled = useCallback(
       (model: ModelConfiguration) => {
         if (selectedCapability === "websearch") {
-          return model.labelName !== "Gemini 2.5 Flash"
+          return model.labelName !== "Gemini 3 Flash" && model.labelName !== "Gemini 2.5 Flash"
         } else if (selectedCapability === "deepResearch") {
           return model.labelName !== "GPT O3 Research"
         } else if (selectedCapability === "reasoning") {
@@ -795,7 +795,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         } else if (newCapability === "websearch") {
           // Auto-select Gemini 2.5 Flash for web search
           const geminiModel = availableModels.find(
-            (m: ModelConfiguration) => m.labelName === "Gemini 2.5 Flash",
+            (m: ModelConfiguration) => m.labelName === "Gemini 3 Flash" || m.labelName === "Gemini 2.5 Flash",
           )
           if (geminiModel) {
             setSelectedModel(geminiModel.labelName)
@@ -3754,6 +3754,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     {filteredModels.length > 0 ? (
                       (() => {
                         // Group models by provider
+                        console.log("filteredModels", filteredModels)
                         const modelsByProvider = filteredModels.reduce(
                           (acc, model) => {
                             let provider = "Other"
