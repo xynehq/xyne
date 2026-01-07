@@ -333,6 +333,24 @@ export const modelDetailsMap: Record<
       }
     }
   },
+  [getActualModelName(Models.Vertex_Gemini_3_Pro)]:{
+    name:"vertex-gemini-3-pro-preview",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.00125,
+        pricePerThousandOutputTokens:0.01
+      }
+    }
+  },
+  [getActualModelName(Models.Vertex_Gemini_3_Flash)]:{
+    name:"vertex-gemini-3-flash-preview",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0003,
+        pricePerThousandOutputTokens:0.0025,
+      }
+    }
+  },
   // [getActualModelName(Models.GLM_4_5)]:{
   //   name:"glm-45-fp8",
   //   cost:{
@@ -342,8 +360,8 @@ export const modelDetailsMap: Record<
   //     }
   //   }
   // },
-  [getActualModelName(Models.GLM_4_6)]:{
-    name:"glm-46-fp8",
+  [getActualModelName(Models.GLM_LATEST)]:{
+    name:"glm-latest",
     cost:{
       onDemand:{
         pricePerThousandInputTokens:0.00075,
@@ -351,8 +369,8 @@ export const modelDetailsMap: Record<
       }
     }
   },
-  [getActualModelName(Models.LiteLLM_Claude_Sonnet_4)]:{
-    name:"claude-sonnet-4",
+  [getActualModelName(Models.LiteLLM_Claude_Sonnet_4_5)]:{
+    name:"claude-sonnet-4-5",
     cost:{
       onDemand:{
         pricePerThousandInputTokens:0.003,
@@ -360,8 +378,8 @@ export const modelDetailsMap: Record<
       }
     }
   },
-  [getActualModelName(Models.LiteLLM_Gemini_2_5_Pro)]:{
-    name:"gemini-2.5-pro",
+  [getActualModelName(Models.LiteLLM_Gemini_3_Pro)]:{
+    name:"gemini-3-pro-preview",
     cost:{
       onDemand:{
         pricePerThousandInputTokens:0.00125,
@@ -369,8 +387,8 @@ export const modelDetailsMap: Record<
       }
     }
   },
-  [getActualModelName(Models.LiteLLM_Gemini_2_5_Flash)]:{
-    name:"gemini-2.5-flash",
+  [getActualModelName(Models.LiteLLM_Gemini_3_Flash)]:{
+    name:"gemini-3-flash-preview",
     cost:{
       onDemand:{
         pricePerThousandInputTokens:0.0003,
@@ -435,6 +453,8 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.Vertex_Gemini_2_5_Pro_Exp_03_25]: AIProviders.VertexAI,
   [Models.Vertex_Gemini_2_5_Pro]: AIProviders.VertexAI, // 2.5 Pro
   [Models.Vertex_Gemini_2_5_Flash]: AIProviders.VertexAI, // 2.5 Flash
+  [Models.Vertex_Gemini_3_Pro]: AIProviders.VertexAI, // 3.0 Pro
+  [Models.Vertex_Gemini_3_Flash]: AIProviders.VertexAI, // 3.0 Flash
   // [Models.Vertex_Gemini_2_5_Flash_Lite_Preview]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_2_0_Flash_Thinking_Exp_01_21]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_Exp_1206]: AIProviders.VertexAI,
@@ -444,10 +464,10 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.Vertex_Gemini_1_5_Pro_002]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_1_5_Pro_Exp_0827]: AIProviders.VertexAI,
   // [Models.GLM_4_5]: AIProviders.LiteLLM,
-  [Models.GLM_4_6]: AIProviders.LiteLLM,
-  [Models.LiteLLM_Claude_Sonnet_4]: AIProviders.LiteLLM,
-  [Models.LiteLLM_Gemini_2_5_Pro]: AIProviders.LiteLLM,
-  [Models.LiteLLM_Gemini_2_5_Flash]: AIProviders.LiteLLM,
+  [Models.GLM_LATEST]: AIProviders.LiteLLM,
+  [Models.LiteLLM_Claude_Sonnet_4_5]: AIProviders.LiteLLM,
+  [Models.LiteLLM_Gemini_3_Pro]: AIProviders.LiteLLM,
+  [Models.LiteLLM_Gemini_3_Flash]: AIProviders.LiteLLM,
 }
 
 export const isDeepResearchModel = (modelId: Models): boolean => {

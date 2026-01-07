@@ -2095,7 +2095,7 @@ export const getDeepResearchResponse = (
 ): AsyncIterableIterator<ConverseResponse> => {
   try {
     if (!params.modelId) {
-      params.modelId = Models.o3_Deep_Research
+      params.modelId = config.defaultDeepResearchModel
     }
 
     params.webSearch = true

@@ -43,6 +43,8 @@ if (process.env.NODE_ENV !== "production") {
 let defaultFastModel: Models = "" as Models
 let defaultBestModel: Models = "" as Models
 let defaultBestModelAgenticMode: Models = "" as Models
+let defaultDeepResearchModel: Models = Models.o3_Deep_Research
+let defaultWebSearchModel: Models = "" as Models
 let AwsAccessKey = ""
 let AwsSecretKey = ""
 let OpenAIKey = ""
@@ -121,6 +123,10 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.Claude_Sonnet_4
   sqlInferenceModel = Models.Claude_Sonnet_4
+  if(defaultDeepResearchModel === "" as Models) {
+    defaultDeepResearchModel = Models.DeepSeek_R1
+  }
+  defaultWebSearchModel = Models.Claude_3_5_Sonnet
 } else if (process.env["OPENAI_API_KEY"]) {
   if (process.env["BASE_URL"]) {
     if (!isURLValid(process.env["BASE_URL"])) {
@@ -132,6 +138,10 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   OpenAIKey = process.env["OPENAI_API_KEY"]
   defaultFastModel = Models.Gpt_4o_mini
   defaultBestModel = Models.Gpt_4o
+  if(defaultDeepResearchModel === "" as Models) {
+    defaultDeepResearchModel = Models.o3_Deep_Research
+  }
+  defaultWebSearchModel = Models.Gpt_4o
 } else if (process.env["OLLAMA_MODEL"]) {
   if (process.env["BASE_URL"]) {
     if (!isURLValid(process.env["BASE_URL"])) {
@@ -145,6 +155,10 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["OLLAMA_FAST_MODEL"] as Models)
     : (OllamaModel as Models)
   defaultBestModel = OllamaModel as Models
+  if(defaultDeepResearchModel === "" as Models) {
+    defaultDeepResearchModel = OllamaModel as Models
+  }
+  defaultWebSearchModel = OllamaModel as Models
 } else if (process.env["TOGETHER_MODEL"] && process.env["TOGETHER_API_KEY"]) {
   TogetherAIModel = process.env["TOGETHER_MODEL"]
   TogetherApiKey = process.env["TOGETHER_API_KEY"]
@@ -152,6 +166,10 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["TOGETHER_FAST_MODEL"] as Models)
     : (TogetherAIModel as Models)
   defaultBestModel = TogetherAIModel as Models
+  if(defaultDeepResearchModel === "" as Models) {
+    defaultDeepResearchModel = TogetherAIModel as Models
+  }
+  defaultWebSearchModel = TogetherAIModel as Models
   if (process.env["BASE_URL"]) {
     if (!isURLValid(process.env["BASE_URL"])) {
       console.warn(`Configuration Warning : Encountered invalid base url`)
@@ -166,6 +184,10 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["FIREWORKS_FAST_MODEL"] as Models)
     : (FireworksAIModel as Models)
   defaultBestModel = FireworksAIModel as Models
+  if(defaultDeepResearchModel === "" as Models) {
+    defaultDeepResearchModel = FireworksAIModel as Models
+  }
+  defaultWebSearchModel = FireworksAIModel as Models
 } else if (process.env["GEMINI_MODEL"] && process.env["GEMINI_API_KEY"]) {
   GeminiAIModel = process.env["GEMINI_MODEL"] as Models
   GeminiApiKey = process.env["GEMINI_API_KEY"]
@@ -173,6 +195,10 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["GEMINI_FAST_MODEL"] as Models)
     : (GeminiAIModel as Models)
   defaultBestModel = GeminiAIModel as Models
+  if(defaultDeepResearchModel === "" as Models) {
+    defaultDeepResearchModel = GeminiAIModel as Models
+  }
+  defaultWebSearchModel = GeminiAIModel as Models
 } else if (process.env["VERTEX_PROJECT_ID"] && process.env["VERTEX_REGION"]) {
   VertexProjectId = process.env["VERTEX_PROJECT_ID"]
   VertexRegion = process.env["VERTEX_REGION"]
@@ -184,6 +210,10 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["VERTEX_BEST_MODEL"] as Models)
     : Models.Vertex_Claude_Sonnet_4 // Default best model
   sqlInferenceModel = Models.Vertex_Claude_Sonnet_4
+  if(defaultDeepResearchModel === "" as Models) {
+    defaultDeepResearchModel = Models.Vertex_Gemini_2_5_Pro
+  }
+  defaultWebSearchModel = Models.Vertex_Gemini_2_5_Flash
 } else if (process.env["LITELLM_API_KEY"]) {
   if (process.env["LITELLM_BASE_URL"]) {
     if (!isURLValid(process.env["LITELLM_BASE_URL"])) {
@@ -195,15 +225,19 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   LiteLLMApiKey = process.env["LITELLM_API_KEY"]
   defaultBestModelAgenticMode = process.env["LITELLM_BEST_AGENTIC_MODEL"] 
   ? (process.env["LITELLM_BEST_AGENTIC_MODEL"] as Models)
-  : Models.GLM_4_6
+  : Models.GLM_LATEST
   // Set default models for LiteLLM (no longer requiring LITELLM_MODEL to be set)
   defaultFastModel = process.env["LITELLM_FAST_MODEL"]
     ? (process.env["LITELLM_FAST_MODEL"] as Models)
-    : Models.LiteLLM_Gemini_2_5_Flash// Default fast model
+    : Models.LiteLLM_Gemini_3_Flash// Default fast model
   defaultBestModel = process.env["LITELLM_BEST_MODEL"]
     ? (process.env["LITELLM_BEST_MODEL"] as Models)
-    : Models.LiteLLM_Claude_Sonnet_4 // Default best model
-  sqlInferenceModel = Models.LiteLLM_Claude_Sonnet_4
+    : Models.LiteLLM_Claude_Sonnet_4_5 // Default best model
+  sqlInferenceModel = Models.LiteLLM_Claude_Sonnet_4_5
+  if(defaultDeepResearchModel === "" as Models) {
+    defaultDeepResearchModel = Models.LiteLLM_Gemini_3_Pro
+  }
+  defaultWebSearchModel = Models.LiteLLM_Gemini_3_Flash
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
@@ -273,6 +307,8 @@ export default {
   defaultBestModel,
   defaultBestModelAgenticMode,
   defaultFastModel,
+  defaultDeepResearchModel,
+  defaultWebSearchModel,
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,

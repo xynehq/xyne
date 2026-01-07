@@ -436,6 +436,24 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     deepResearch: true,
     description: "Tailored for cost-effectiveness and rapid response times.",
   },
+  [Models.Vertex_Gemini_3_Pro]: {
+    actualName: "gemini-3-pro-preview",
+    labelName: ModelDisplayNames.VERTEX_GEMINI_3_PRO,
+    provider: AIProviders.VertexAI,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
+    description: "Proficient in reasoning across text, visuals, and programming.",
+  },
+  [Models.Vertex_Gemini_3_Flash]: {
+    actualName: "gemini-3-flash-preview",
+    labelName: ModelDisplayNames.VERTEX_GEMINI_3_FLASH,
+    provider: AIProviders.VertexAI,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
+    description: "Tailored for cost-effectiveness and rapid response times.",
+  },
   // [Models.Vertex_Gemini_2_5_Flash_Lite_Preview]: {
   //   actualName: "gemini-2.5-flash-lite-preview-06-17",
   //   labelName: ModelDisplayNames.VERTEX_GEMINI_2_5_FLASH_LITE_PREVIEW,
@@ -509,27 +527,18 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   deepResearch: false,
   //   description: "Tailored for reasoning, coding, and agentic abilities",
   // },
-  [Models.GLM_4_6]: {
-    actualName: "glm-46-fp8",
-    labelName: ModelDisplayNames.LITELLM_GLM_4_6,
-    provider: AIProviders.LiteLLM,
-    reasoning: true,
-    websearch: false,
-    deepResearch: false,
-    description: "Tailored for reasoning, coding, and agentic abilities",
-  },
-  [Models.LiteLLM_Claude_Sonnet_4]: {
-    actualName: "claude-sonnet-4-5",
-    labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4,
+  [Models.LiteLLM_Claude_Sonnet_4_5]: {
+    actualName: "claude-sonnet-4-5-20250929",
+    labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_5,
     provider: AIProviders.LiteLLM,
     reasoning: true,
     websearch: true,
     deepResearch: true,
     description: "Balanced for reasoning, long context windows.",
   },
-  [Models.LiteLLM_Gemini_2_5_Pro]: {
-    actualName: "gemini-2.5-pro",
-    labelName: ModelDisplayNames.LITELLM_GEMINI_2_5_PRO,
+  [Models.LiteLLM_Gemini_3_Pro]: {
+    actualName: "gemini-3-pro-preview",
+    labelName: ModelDisplayNames.LITELLM_GEMINI_3_PRO,
     provider: AIProviders.LiteLLM,
     reasoning: true,
     websearch: true,
@@ -537,14 +546,23 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     description:
       "Proficient in reasoning across text, visuals, and programming.",
   },
-  [Models.LiteLLM_Gemini_2_5_Flash]: {
-    actualName: "gemini-2.5-flash",
-    labelName: ModelDisplayNames.LITELLM_GEMINI_2_5_FLASH,
+  [Models.LiteLLM_Gemini_3_Flash]: {
+    actualName: "gemini-3-flash-preview",
+    labelName: ModelDisplayNames.LITELLM_GEMINI_3_FLASH,
     provider: AIProviders.LiteLLM,
     reasoning: true,
     websearch: true,
     deepResearch: true,
     description: "Tailored for cost-effectiveness and rapid response times.",
+  },
+  [Models.GLM_LATEST]: {
+    actualName: "glm-latest",
+    labelName: ModelDisplayNames.LITELLM_GLM_LATEST,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: false,
+    deepResearch: false,
+    description: "Tailored for reasoning, coding, and agentic abilities",
   },
 }
 

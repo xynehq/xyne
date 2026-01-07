@@ -91,7 +91,7 @@ import {
   addErrMessageToMessage,
 } from "./utils"
 import config from "@/config"
-import { getModelValueFromLabel } from "@/ai/modelConfig"
+import { getModelValueFromLabel, getActiveProvider } from "@/ai/modelConfig"
 import {
   buildUserQuery,
   isContextSelected,
@@ -1113,14 +1113,6 @@ export const AgentMessageApi = async (c: Context) => {
         enableWebSearch = config.websearch === true
         isDeepResearchEnabled = config.deepResearch === true
 
-        // For deep research, always use Claude Sonnet 4 regardless of UI selection
-        if (isDeepResearchEnabled) {
-          modelId = "Claude Sonnet 4"
-          loggerWithChild({ email: email }).info(
-            `[AgentMessageApi] Deep research enabled - forcing model to Claude Sonnet 4`,
-          )
-        }
-
         // Check capabilities - handle both array and object formats for backward compatibility
         if (
           config.capabilities &&
@@ -1138,11 +1130,6 @@ export const AgentMessageApi = async (c: Context) => {
             isReasoningEnabled = config.capabilities.reasoning === true
             enableWebSearch = config.capabilities.websearch === true
             isDeepResearchEnabled = config.capabilities.deepResearch === true
-          }
-
-          // For deep research from old format, also force Claude Sonnet 4
-          if (isDeepResearchEnabled) {
-            modelId = "Claude Sonnet 4"
           }
         }
 
@@ -1164,7 +1151,7 @@ export const AgentMessageApi = async (c: Context) => {
     }
 
     // Convert friendly model label to actual model value
-    let actualModelId: string = modelId || "gemini-2-5-pro"
+    let actualModelId: string | undefined = undefined
     if (modelId) {
       // Ensure we always have a string
       const convertedModelId = getModelValueFromLabel(modelId)
@@ -1173,11 +1160,15 @@ export const AgentMessageApi = async (c: Context) => {
         loggerWithChild({ email: email }).info(
           `[AgentMessageApi] Converted model label "${modelId}" to value "${actualModelId}"`,
         )
-      } else {
-        loggerWithChild({ email: email }).warn(
-          `[AgentMessageApi] Could not convert model label "${modelId}" to value, will use as-is`,
+      } else if (Object.values(Models).includes(modelId as Models)) {
+        actualModelId = modelId // Use the raw model ID if it exists in Models enum
+        loggerWithChild({ email: email }).info(
+          `Using model ID "${modelId}" directly as it exists in Models enum`,
         )
-        actualModelId = modelId // fallback to using the label as-is
+      } else {
+        loggerWithChild({ email: email }).error(
+          `Invalid model: ${modelId}. Model not found in label mappings or Models enum. Using default`,
+        )
       }
     }
 
@@ -1307,7 +1298,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId: (modelId as Models) || defaultBestModel,
+            modelId: actualModelId || config.defaultBestModel,
             fileIds: fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -1358,7 +1349,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId: (modelId as Models) || defaultBestModel,
+            modelId: actualModelId || config.defaultBestModel,
             fileIds,
           })
           // Store attachment metadata for user message if attachments exist
