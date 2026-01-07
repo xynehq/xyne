@@ -1,3 +1,11 @@
+## [3.35.3](https://github.com/xynehq/xyne/compare/v3.35.2...v3.35.3) (2026-01-07)
+
+
+### Bug Fixes
+
+* added column filtering while sheet ingestion ([#1245](https://github.com/xynehq/xyne/issues/1245)) ([25459e2](https://github.com/xynehq/xyne/commit/25459e2119b9e6dd0ac0c1562995c645b5f44148))
+* corrected the lite llm model names ([#1244](https://github.com/xynehq/xyne/issues/1244)) ([bb5077e](https://github.com/xynehq/xyne/commit/bb5077e83a8f583004b5373764478399f40bfe01))
+
 ## [3.35.2](https://github.com/xynehq/xyne/compare/v3.35.1...v3.35.2) (2025-12-23)
 
 
