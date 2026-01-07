@@ -104,6 +104,7 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
       createdAt: connectors.createdAt,
       config: connectors.config,
       connectorId: connectors.id,
+      state: connectors.state,
     })
     .from(connectors)
     .where(
