@@ -171,6 +171,61 @@ function guessHeaderRowsByKeywords(rows: any[][], maxSearchRows = 3): number {
   return 1
 }
 
+/**
+ * Removes columns that are completely empty or very sparse (mostly empty)
+ * A column is considered sparse if less than 5% of its cells have content
+ */
+function removeEmptyColumns(rows: any[][]): any[][] {
+  if (rows.length === 0) return rows
+  
+  // Find the maximum column count across all rows
+  const maxColumns = Math.max(...rows.map(row => row.length), 0)
+  if (maxColumns === 0) return rows
+  
+  // Threshold: columns with less than 5% non-empty cells are considered sparse
+  const SPARSE_THRESHOLD = 0.05
+  
+  // Check which columns are completely empty or very sparse
+  const columnsToRemove = new Set<number>()
+  
+  for (let colIndex = 0; colIndex < maxColumns; colIndex++) {
+    let nonEmptyCount = 0
+    let totalCells = rows.length
+    
+    for (const row of rows) {
+      const cell = row[colIndex]
+      
+      // Check if cell has any meaningful content
+      if (cell !== undefined && cell !== null && cell !== "") {
+        const cellStr = cell.toString().trim()
+        if (cellStr.length > 0) {
+          nonEmptyCount++
+        }
+      }
+    }
+    
+    // Calculate the ratio of non-empty cells
+    const nonEmptyRatio = nonEmptyCount / totalCells
+    
+    // Remove column if it's completely empty or very sparse (less than threshold)
+    if (nonEmptyRatio < SPARSE_THRESHOLD) {
+      columnsToRemove.add(colIndex)
+    }
+  }
+  
+  // If no columns to remove, return rows as-is
+  if (columnsToRemove.size === 0) {
+    return rows
+  }
+  
+  // Remove empty/sparse columns from all rows
+  const filteredRows = rows.map(row => 
+    row.filter((_, colIndex) => !columnsToRemove.has(colIndex))
+  )
+  
+  return filteredRows
+}
+
 function inferHeaderRows(input: XLSX.WorkSheet, rows: any[][], isDummyHeader = false): number {
   let mergedHeaderRows = 1
     
@@ -203,6 +258,7 @@ function inferHeaderRows(input: XLSX.WorkSheet, rows: any[][], isDummyHeader = f
 }
 
 function processSheetData(input: XLSX.WorkSheet, headerRowsParam?: number): ProcessedSheetData {
+  const MAX_COLUMNS = 100
   let rows: any[][] = []
   try {
     // Use sheet_to_json with proper options to preserve empty cells and formatting
@@ -210,10 +266,21 @@ function processSheetData(input: XLSX.WorkSheet, headerRowsParam?: number): Proc
       header: 1,        // Generate array of arrays
       raw: false,       // Use formatted strings (not raw values)
       defval: "",       // Use empty string for null/undefined values
+      blankrows: false, // Don't include blank rows
     })
   } catch (error) {
     console.error("Error converting sheet to JSON:", error)
     return { headerRow: [], dataRows: [] }
+  }
+  
+  // Remove completely empty columns before inferring header rows
+  rows = removeEmptyColumns(rows)
+
+  // Enforce maximum column limit
+  const maxColumns = Math.max(...rows.map(row => row.length), 0)
+  if (maxColumns > MAX_COLUMNS) {
+    console.warn(`[processSheetData] Sheet has ${maxColumns} columns, exceeding maximum of ${MAX_COLUMNS}. Truncating to first ${MAX_COLUMNS} columns.`)
+    rows = rows.map(row => row.slice(0, MAX_COLUMNS))
   }
   
   let headerRows = headerRowsParam ?? inferHeaderRows(input, rows)
