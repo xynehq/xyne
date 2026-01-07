@@ -1,3 +1,10 @@
+## [3.35.4](https://github.com/xynehq/xyne/compare/v3.35.3...v3.35.4) (2026-01-07)
+
+
+### Bug Fixes
+
+* **fix/zoho-last-sync:** fixing zoho last sync date ([#1246](https://github.com/xynehq/xyne/issues/1246)) ([9c30166](https://github.com/xynehq/xyne/commit/9c30166dafb758db5f3cb5d9fc0b18e7eede38b8))
+
 ## [3.35.3](https://github.com/xynehq/xyne/compare/v3.35.2...v3.35.3) (2026-01-07)
 
 
