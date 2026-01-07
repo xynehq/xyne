@@ -195,15 +195,15 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   LiteLLMApiKey = process.env["LITELLM_API_KEY"]
   defaultBestModelAgenticMode = process.env["LITELLM_BEST_AGENTIC_MODEL"] 
   ? (process.env["LITELLM_BEST_AGENTIC_MODEL"] as Models)
-  : Models.GLM_4_6
+  : Models.GLM_LATEST
   // Set default models for LiteLLM (no longer requiring LITELLM_MODEL to be set)
   defaultFastModel = process.env["LITELLM_FAST_MODEL"]
     ? (process.env["LITELLM_FAST_MODEL"] as Models)
-    : Models.LiteLLM_Gemini_2_5_Flash// Default fast model
+    : Models.LiteLLM_Gemini_3_Flash// Default fast model
   defaultBestModel = process.env["LITELLM_BEST_MODEL"]
     ? (process.env["LITELLM_BEST_MODEL"] as Models)
-    : Models.LiteLLM_Claude_Sonnet_4 // Default best model
-  sqlInferenceModel = Models.LiteLLM_Claude_Sonnet_4
+    : Models.LiteLLM_Claude_Sonnet_4_5 // Default best model
+  sqlInferenceModel = Models.LiteLLM_Claude_Sonnet_4_5
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
