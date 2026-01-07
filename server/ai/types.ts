@@ -103,6 +103,8 @@ export enum VertexAIModels {
   // Gemini_1_5_Flash_8b_Exp_0827 = "vertex-gemini-1-5-flash-8b-exp-0827",
   // Gemini_1_5_Pro_002 = "vertex-gemini-1-5-pro-002",
   // Gemini_1_5_Pro_Exp_0827 = "vertex-gemini-1-5-pro-exp-0827",
+  Gemini_3_Pro = "vertex-gemini-3-pro-preview",
+  Gemini_3_Flash = "vertex-gemini-3-flash-preview",
 }
 
 // Unified Models enum that includes all provider models
@@ -160,6 +162,8 @@ export enum Models {
   // Vertex_Gemini_2_5_Pro_Exp_03_25 = VertexAIModels.Gemini_2_5_Pro_Exp_03_25,
   Vertex_Gemini_2_5_Pro = VertexAIModels.Gemini_2_5_Pro,
   Vertex_Gemini_2_5_Flash = VertexAIModels.Gemini_2_5_Flash,
+  Vertex_Gemini_3_Pro = VertexAIModels.Gemini_3_Pro,
+  Vertex_Gemini_3_Flash = VertexAIModels.Gemini_3_Flash,
   // Vertex_Gemini_2_5_Flash_Lite_Preview = VertexAIModels.Gemini_2_5_Flash_Lite_Preview,
   // Vertex_Gemini_2_0_Flash_Thinking_Exp_01_21 = VertexAIModels.Gemini_2_0_Flash_Thinking_Exp_01_21,
   // Vertex_Gemini_Exp_1206 = VertexAIModels.Gemini_Exp_1206,
@@ -265,6 +269,8 @@ export enum ModelDisplayNames {
   // VERTEX_GEMINI_2_5_PRO_EXP_03_25 = "Gemini 2.5 Pro Exp 03-25",
   VERTEX_GEMINI_2_5_PRO = "Gemini 2.5 Pro", // 2.5 Pro
   VERTEX_GEMINI_2_5_FLASH = "Gemini 2.5 Flash", // 2.5 Flash
+  VERTEX_GEMINI_3_PRO = "Gemini 3 Pro", // 3.0 Pro
+  VERTEX_GEMINI_3_FLASH = "Gemini 3 Flash", // 3.0 Flash
   // VERTEX_GEMINI_2_5_FLASH_LITE_PREVIEW = "Gemini 2.5 Flash Lite Preview",
   // VERTEX_GEMINI_2_0_FLASH_THINKING_EXP_01_21 = "Gemini 2.0 Flash Thinking Exp 01-21",
   // VERTEX_GEMINI_EXP_1206 = "Gemini Exp 1206",

@@ -333,6 +333,24 @@ export const modelDetailsMap: Record<
       }
     }
   },
+  [getActualModelName(Models.Vertex_Gemini_3_Pro)]:{
+    name:"vertex-gemini-3-pro-preview",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.00125,
+        pricePerThousandOutputTokens:0.01
+      }
+    }
+  },
+  [getActualModelName(Models.Vertex_Gemini_3_Flash)]:{
+    name:"vertex-gemini-3-flash-preview",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0003,
+        pricePerThousandOutputTokens:0.0025,
+      }
+    }
+  },
   // [getActualModelName(Models.GLM_4_5)]:{
   //   name:"glm-45-fp8",
   //   cost:{
@@ -435,6 +453,8 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.Vertex_Gemini_2_5_Pro_Exp_03_25]: AIProviders.VertexAI,
   [Models.Vertex_Gemini_2_5_Pro]: AIProviders.VertexAI, // 2.5 Pro
   [Models.Vertex_Gemini_2_5_Flash]: AIProviders.VertexAI, // 2.5 Flash
+  [Models.Vertex_Gemini_3_Pro]: AIProviders.VertexAI, // 3.0 Pro
+  [Models.Vertex_Gemini_3_Flash]: AIProviders.VertexAI, // 3.0 Flash
   // [Models.Vertex_Gemini_2_5_Flash_Lite_Preview]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_2_0_Flash_Thinking_Exp_01_21]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_Exp_1206]: AIProviders.VertexAI,

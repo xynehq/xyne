@@ -3754,7 +3754,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     {filteredModels.length > 0 ? (
                       (() => {
                         // Group models by provider
-                        console.log("filteredModels", filteredModels)
                         const modelsByProvider = filteredModels.reduce(
                           (acc, model) => {
                             let provider = "Other"
