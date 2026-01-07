@@ -356,7 +356,7 @@ const getDefaultModel = (availableModels: ModelConfiguration[]): string => {
   // Try to find Claude Sonnet 4 as default, otherwise use first available
   const defaultModel =
     availableModels.find(
-      (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4.5",
+      (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4.5" || m.labelName === "Claude Sonnet 4",
     ) || availableModels[0]
 
   return defaultModel.labelName
