@@ -190,11 +190,10 @@ function removeEmptyColumns(rows: any[][]): any[][] {
   
   for (let colIndex = 0; colIndex < maxColumns; colIndex++) {
     let nonEmptyCount = 0
-    let totalCells = 0
+    let totalCells = rows.length
     
     for (const row of rows) {
       const cell = row[colIndex]
-      totalCells++
       
       // Check if cell has any meaningful content
       if (cell !== undefined && cell !== null && cell !== "") {
@@ -206,7 +205,7 @@ function removeEmptyColumns(rows: any[][]): any[][] {
     }
     
     // Calculate the ratio of non-empty cells
-    const nonEmptyRatio = totalCells > 0 ? nonEmptyCount / totalCells : 0
+    const nonEmptyRatio = nonEmptyCount / totalCells
     
     // Remove column if it's completely empty or very sparse (less than threshold)
     if (nonEmptyRatio < SPARSE_THRESHOLD) {
