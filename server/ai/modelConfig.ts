@@ -510,7 +510,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   description: "Tailored for reasoning, coding, and agentic abilities",
   // },
   [Models.LiteLLM_Claude_Sonnet_4_5]: {
-    actualName: "claude-sonnet-4-5",
+    actualName: "claude-sonnet-4-5-20250929",
     labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_5,
     provider: AIProviders.LiteLLM,
     reasoning: true,
