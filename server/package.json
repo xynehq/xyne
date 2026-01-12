@@ -3,6 +3,10 @@
   "module": "server/server.ts",
   "type": "module",
   "version": "3.35.4",
+  "trustedDependencies": [
+    "duckdb",
+    "canvas"
+  ],
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@commitlint/cli": "^19.8.1",
@@ -87,6 +91,7 @@
     "cors": "^2.8.5",
     "drizzle-orm": "^0.44.5",
     "drizzle-zod": "^0.8.3",
+    "duckdb": "^1.4.3",
     "duckdb-async": "1.4.0",
     "fast-xml-parser": "^5.2.5",
     "file-type": "^21.0.0",
