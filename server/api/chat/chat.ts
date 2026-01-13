@@ -8240,7 +8240,8 @@ export const GetAvailableModelsApi = async (c: Context) => {
 export const GenerateChatTitleApi = async (c: Context) => {
   let email = ""
   try {
-    const { email, via_apiKey } = getAuth(c)
+    const { email: authEmail, via_apiKey } = getAuth(c)
+    email = authEmail
 
     if (via_apiKey) {
       const apiKeyScopes =
