@@ -8240,8 +8240,21 @@ export const GetAvailableModelsApi = async (c: Context) => {
 export const GenerateChatTitleApi = async (c: Context) => {
   let email = ""
   try {
-    const { sub, workspaceId } = c.get(JwtPayloadKey)
-    email = sub
+    const { email, via_apiKey } = getAuth(c)
+
+    if (via_apiKey) {
+      const apiKeyScopes =
+        safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+      if (!apiKeyScopes.includes(ApiKeyScopes.GENERATE_CHAT_TITLE)) {
+        return c.json(
+          {
+            message:
+              "API key does not have scope to generate chat title",
+          },
+          403,
+        )
+      }
+    }
 
     // @ts-ignore
     const { chatId, message } = c.req.valid("json")
@@ -8254,12 +8267,6 @@ export const GenerateChatTitleApi = async (c: Context) => {
     ) {
       assistantResponse = currentChat[1].message
     }
-
-    const { user, workspace } = await getUserAndWorkspaceByEmail(
-      db,
-      workspaceId,
-      email,
-    )
 
     // Generate proper title using LLM
     loggerWithChild({ email: email }).info(
