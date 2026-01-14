@@ -95,6 +95,24 @@ services:
       POSTGRES_PASSWORD: xyne
       POSTGRES_DB: xyne
       POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    command: >
+      postgres
+      -c log_statement=mod
+      -c log_min_duration_statement=1000ms
+      -c logging_collector=on
+      -c log_destination=stderr
+      -c log_directory=log
+      -c log_filename=postgresql-%Y-%m-%d.log
+      -c log_file_mode=0640
+      -c log_rotation_age=3d
+      -c log_rotation_size=100MB
+      -c log_truncate_on_rotation=off
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_duration=on
+      -c log_hostname=on
+      -c log_line_prefix='%m [%p] %u@%d:%r '
+      -c log_timezone=Asia/Kolkata  
     volumes:
       - ../server/xyne-data:/var/lib/postgresql/data
     ports:
