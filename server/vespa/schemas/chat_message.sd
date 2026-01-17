@@ -133,6 +133,7 @@ schema chat_message {
     inputs {
       query(e) tensor<bfloat16>(v[DIMS])
       query(alpha) double
+      query(slackBoost) double
     }
 
     constants {
@@ -158,13 +159,19 @@ schema chat_message {
       }
     }
 
+    function is_slack() {
+      expression: if(attribute(app) == "slack", 1, 0)
+    }
+
     function combined_nativeRank() {
       expression { 
         (
-          nativeRank(text) + 
-          nativeRank(username) + 
-          nativeRank(name)
-        ) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+          (
+            nativeRank(text) + 
+            nativeRank(username) + 
+            nativeRank(name)
+          ) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+        ) * if(is_slack == 1, query(slackBoost), 1)
       }
     }
 
@@ -196,6 +203,7 @@ schema chat_message {
       nativeRank(text)
       nativeRank(username)
       nativeRank(name)
+      is_slack
     }
   }
 
@@ -248,6 +256,7 @@ schema chat_message {
       nativeRank(text)
       nativeRank(username)
       nativeRank(name)
+      is_slack
     }
   }
 
