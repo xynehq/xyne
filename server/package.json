@@ -93,7 +93,7 @@
     "google-auth-library": "^9.14.0",
     "googleapis": "^140.0.1",
     "gpt-tokenizer": "^2.8.1",
-    "hono": "^4.6.15",
+    "hono": "4.6.15",
     "html-to-text": "^9.0.5",
     "i": "^0.3.7",
     "image-type": "^6.0.0",
