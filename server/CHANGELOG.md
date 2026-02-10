@@ -1,3 +1,10 @@
+## [3.35.5](https://github.com/xynehq/xyne/compare/v3.35.4...v3.35.5) (2026-02-10)
+
+
+### Bug Fixes
+
+* **vertex-analytics:** added correct metadata-usage ([#1249](https://github.com/xynehq/xyne/issues/1249)) ([fb155a5](https://github.com/xynehq/xyne/commit/fb155a5dc7aeb4aebd4c157e0ebd96db3f6ff844))
+
 ## [3.35.4](https://github.com/xynehq/xyne/compare/v3.35.3...v3.35.4) (2026-01-07)
 
 
