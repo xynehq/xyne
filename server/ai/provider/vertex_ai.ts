@@ -417,10 +417,10 @@ export class VertexAiProvider extends BaseProvider {
           text: "",
           cost,
           metadata: {
-            model: modelId,
-            inputTokens: totalInputTokens,
-            outputTokens: totalOutputTokens,
-            responseTime: Date.now(),
+            usage: {
+              inputTokens: totalInputTokens,
+              outputTokens: totalOutputTokens,
+            },
           },
         }
         costYielded = true
@@ -686,6 +686,10 @@ export class VertexAiProvider extends BaseProvider {
           yield {
             text: chunkText,
             cost,
+            metadata:
+              totalInputTokens > 0 || totalOutputTokens > 0
+                ? { usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } }
+                : undefined,
             sources:
               aggregatedSources.length > 0 ? aggregatedSources : undefined,
             groundingSupports:
