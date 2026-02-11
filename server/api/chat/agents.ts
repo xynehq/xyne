@@ -705,8 +705,11 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             // Calculate total cost and tokens
             const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
             const totalTokens = tokenArr.reduce(
-              (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
-              0,
+              (acc, tokens) => ({
+                inputTokens: acc.inputTokens + tokens.inputTokens,
+                outputTokens: acc.outputTokens + tokens.outputTokens,
+              }),
+              { inputTokens: 0, outputTokens: 0 },
             )
 
             const msg = await insertMessage(db, {
@@ -722,7 +725,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               thinking: thinkingLocal,
               modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
-              tokensUsed: totalTokens,
+              tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
+              inputTokens: totalTokens.inputTokens,
+              outputTokens: totalTokens.outputTokens,
             })
             assistantMessageId = msg.externalId
 
@@ -737,8 +742,11 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             // Calculate total cost and tokens
             const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
             const totalTokens = tokenArr.reduce(
-              (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
-              0,
+              (acc, tokens) => ({
+                inputTokens: acc.inputTokens + tokens.inputTokens,
+                outputTokens: acc.outputTokens + tokens.outputTokens,
+              }),
+              { inputTokens: 0, outputTokens: 0 },
             )
 
             const msg = await insertMessage(db, {
@@ -754,7 +762,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               thinking: thinkingLocal,
               modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
-              tokensUsed: totalTokens,
+              tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
+              inputTokens: totalTokens.inputTokens,
+              outputTokens: totalTokens.outputTokens,
             })
             assistantMessageId = msg.externalId
           } else {
@@ -764,8 +774,11 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             // Calculate total cost and tokens
             const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
             const totalTokens = tokenArr.reduce(
-              (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
-              0,
+              (acc, tokens) => ({
+                inputTokens: acc.inputTokens + tokens.inputTokens,
+                outputTokens: acc.outputTokens + tokens.outputTokens,
+              }),
+              { inputTokens: 0, outputTokens: 0 },
             )
 
             const msg = await insertMessage(db, {
@@ -781,7 +794,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               thinking: thinkingLocal,
               modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
-              tokensUsed: totalTokens,
+              tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
+              inputTokens: totalTokens.inputTokens,
+              outputTokens: totalTokens.outputTokens,
             })
             assistantMessageId = msg.externalId
             await stream.writeSSE({
@@ -897,7 +912,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           finalImageFileNames = imageFileNames || []
         }
 
-        // Helper: persist & return JSON once ----------------------------------------
+          // Helper: persist & return JSON once ----------------------------------------
         const finalizeAndRespond = async (params: {
           answer: string
           thinking: string
@@ -910,8 +925,11 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const processed = processMessage(params.answer, params.citationMap)
           const totalCost = params.costArr.reduce((s, c) => s + c, 0)
           const totalTokens = params.tokenArr.reduce(
-            (s, t) => s + t.inputTokens + t.outputTokens,
-            0,
+            (acc, tokens) => ({
+              inputTokens: acc.inputTokens + tokens.inputTokens,
+              outputTokens: acc.outputTokens + tokens.outputTokens,
+            }),
+            { inputTokens: 0, outputTokens: 0 },
           )
 
           const msg = await insertMessage(db, {
@@ -927,7 +945,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             thinking: params.thinking, // ALWAYS include collected thinking
             modelId: (actualModelId as Models) || defaultBestModel,
             cost: totalCost.toString(),
-            tokensUsed: totalTokens,
+            tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
+            inputTokens: totalTokens.inputTokens,
+            outputTokens: totalTokens.outputTokens,
           })
           assistantMessageId = msg.externalId
 
@@ -1655,9 +1675,11 @@ export const AgentMessageApi = async (c: Context) => {
               if (answer || wasStreamClosedPrematurely) {
                 const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
                 const totalTokens = tokenArr.reduce(
-                  (sum, tokens) =>
-                    sum + tokens.inputTokens + tokens.outputTokens,
-                  0,
+                  (acc, tokens) => ({
+                    inputTokens: acc.inputTokens + tokens.inputTokens,
+                    outputTokens: acc.outputTokens + tokens.outputTokens,
+                  }),
+                  { inputTokens: 0, outputTokens: 0 },
                 )
 
                 const msg = await insertMessage(db, {
@@ -1675,7 +1697,9 @@ export const AgentMessageApi = async (c: Context) => {
                     ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                       .modelId,
                   cost: totalCost.toString(),
-                  tokensUsed: totalTokens,
+                  tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
+                  inputTokens: totalTokens.inputTokens,
+                  outputTokens: totalTokens.outputTokens,
                 })
                 assistantMessageId = msg.externalId
                 const traceJson = tracer.serializeToJson()
@@ -1902,9 +1926,11 @@ export const AgentMessageApi = async (c: Context) => {
                 // Calculate total cost and tokens
                 const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
                 const totalTokens = tokenArr.reduce(
-                  (sum, tokens) =>
-                    sum + tokens.inputTokens + tokens.outputTokens,
-                  0,
+                  (acc, tokens) => ({
+                    inputTokens: acc.inputTokens + tokens.inputTokens,
+                    outputTokens: acc.outputTokens + tokens.outputTokens,
+                  }),
+                  { inputTokens: 0, outputTokens: 0 },
                 )
 
                 const msg = await insertMessage(db, {
@@ -1922,7 +1948,9 @@ export const AgentMessageApi = async (c: Context) => {
                     ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                       .modelId,
                   cost: totalCost.toString(),
-                  tokensUsed: totalTokens,
+                  tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
+                  inputTokens: totalTokens.inputTokens,
+                  outputTokens: totalTokens.outputTokens,
                 })
                 assistantMessageId = msg.externalId
                 const traceJson = tracer.serializeToJson()
@@ -2532,9 +2560,11 @@ export const AgentMessageApi = async (c: Context) => {
                 // Calculate total cost and tokens
                 const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
                 const totalTokens = tokenArr.reduce(
-                  (sum, tokens) =>
-                    sum + tokens.inputTokens + tokens.outputTokens,
-                  0,
+                  (acc, tokens) => ({
+                    inputTokens: acc.inputTokens + tokens.inputTokens,
+                    outputTokens: acc.outputTokens + tokens.outputTokens,
+                  }),
+                  { inputTokens: 0, outputTokens: 0 },
                 )
 
                 const msg = await insertMessage(db, {
@@ -2552,7 +2582,9 @@ export const AgentMessageApi = async (c: Context) => {
                     ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
                       .modelId,
                   cost: totalCost.toString(),
-                  tokensUsed: totalTokens,
+                  tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
+                  inputTokens: totalTokens.inputTokens,
+                  outputTokens: totalTokens.outputTokens,
                 })
                 assistantMessageId = msg.externalId
 
@@ -2810,8 +2842,11 @@ export const AgentMessageApi = async (c: Context) => {
 
           const totalCost = params.costArr.reduce((s, c) => s + c, 0)
           const totalTokens = params.tokenArr.reduce(
-            (s, t) => s + t.inputTokens + t.outputTokens,
-            0,
+            (acc, tokens) => ({
+              inputTokens: acc.inputTokens + tokens.inputTokens,
+              outputTokens: acc.outputTokens + tokens.outputTokens,
+            }),
+            { inputTokens: 0, outputTokens: 0 },
           )
 
           const msg = await insertMessage(db, {
@@ -2829,7 +2864,9 @@ export const AgentMessageApi = async (c: Context) => {
               (actualModelId as Models) ||
               ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             cost: totalCost.toString(),
-            tokensUsed: totalTokens,
+            tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
+            inputTokens: totalTokens.inputTokens,
+            outputTokens: totalTokens.outputTokens,
           })
           assistantMessageId = msg.externalId
 

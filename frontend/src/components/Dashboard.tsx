@@ -90,6 +90,8 @@ interface BaseStatsData {
   totalMessages: number
   totalCost: number
   totalTokens: number
+  inputTokens: number
+  outputTokens: number
 }
 
 interface BaseUserData {
@@ -102,6 +104,8 @@ interface BaseUserData {
   dislikes: number
   totalCost: number
   totalTokens: number
+  inputTokens: number
+  outputTokens: number
   lastUsed: string
 }
 interface QueryAnalysisData {
@@ -141,6 +145,8 @@ interface BaseAgentData {
   dislikes: number
   totalCost: number
   totalTokens: number
+  inputTokens: number
+  outputTokens: number
   lastUsed: string
 }
 
@@ -884,7 +890,7 @@ const SharedAgentUsageCard = ({
           <MetricCard
             title="Total Tokens"
             value={(totalUsage.totalTokens || 0).toLocaleString()}
-            description="Total tokens processed"
+            description={`${(totalUsage.inputTokens || 0).toLocaleString()} in / ${(totalUsage.outputTokens || 0).toLocaleString()} out`}
             icon={Activity}
           />
           <MetricCard
@@ -967,14 +973,17 @@ const SharedAgentUsageCard = ({
                     </div>
 
                     <div className="flex items-center gap-4 text-right">
-                      <div className="flex flex-col items-center">
-                        <span className="text-sm font-medium">
-                          {agent.totalMessages}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          messages
-                        </span>
-                      </div>
+                  <div className="flex flex-col items-center">
+                    <span className="text-sm font-medium">
+                      {(agent.totalTokens || 0).toLocaleString()}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      total tokens
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      ({(agent.inputTokens || 0).toLocaleString()} in / {(agent.outputTokens || 0).toLocaleString()} out)
+                    </span>
+                  </div>
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">
                           {agent.totalChats}
@@ -999,14 +1008,17 @@ const SharedAgentUsageCard = ({
                           cost
                         </span>
                       </div>
-                      <div className="flex flex-col items-center">
-                        <span className="text-sm font-medium">
-                          {(agent.totalTokens || 0).toLocaleString()}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          tokens
-                        </span>
-                      </div>
+                  <div className="flex flex-col items-center">
+                    <span className="text-sm font-medium">
+                      {(agent.totalTokens || 0).toLocaleString()}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      total tokens
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      ({(agent.inputTokens || 0).toLocaleString()} in / {(agent.outputTokens || 0).toLocaleString()} out)
+                    </span>
+                  </div>
                       <div className="flex items-center gap-2 text-xs">
                         <div className="flex items-center gap-1 text-green-600">
                           <ThumbsUp className="h-3 w-3" />
@@ -1277,7 +1289,10 @@ const UsersAnalyticsTable = ({
                           {(user.totalTokens || 0).toLocaleString()}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          tokens
+                          total tokens
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          ({(user.inputTokens || 0).toLocaleString()} in / {(user.outputTokens || 0).toLocaleString()} out)
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-xs">
@@ -1979,7 +1994,7 @@ const AgentDetailPage = ({
           <MetricCard
             title="Total Tokens"
             value={(agent.totalTokens || 0).toLocaleString()}
-            description={`Avg ${avgTokensPerUser.toLocaleString()} per user`}
+            description={`${(agent.inputTokens || 0).toLocaleString()} in / ${(agent.outputTokens || 0).toLocaleString()} out`}
             icon={Activity}
             className="border-orange-200 dark:border-orange-800"
           />
@@ -2220,7 +2235,10 @@ const AdminUsersLeaderboard = ({
                         {(user.totalTokens || 0).toLocaleString()}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        tokens
+                        total tokens
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        ({(user.inputTokens || 0).toLocaleString()} in / {(user.outputTokens || 0).toLocaleString()} out)
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs">
@@ -3160,7 +3178,7 @@ const UserDetailPage = ({
           <MetricCard
             title="Total Tokens"
             value={(userStats.totalTokens || 0).toLocaleString()}
-            description="Tokens processed"
+            description={`${(userStats.inputTokens || 0).toLocaleString()} in / ${(userStats.outputTokens || 0).toLocaleString()} out`}
             icon={Activity}
             className="border-orange-200 dark:border-orange-800"
           />
@@ -4613,7 +4631,7 @@ export const Dashboard = ({
                       <MetricCard
                         title="Total Tokens"
                         value={(adminStats.totalTokens || 0).toLocaleString()}
-                        description="Total tokens processed"
+                        description={`${(adminStats.inputTokens || 0).toLocaleString()} in / ${(adminStats.outputTokens || 0).toLocaleString()} out`}
                         icon={Activity}
                       />
                       <MetricCard
