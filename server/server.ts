@@ -386,6 +386,7 @@ import {
 } from "@/integrations/slack/client"
 const { JwtPayloadKey } = config
 import { updateMetricsFromThread } from "@/metrics/utils"
+import { fetchModelConfigs } from "@/ai/modelConfig"
 
 import {
   agents,
@@ -2409,6 +2410,9 @@ app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 export const init = async () => {
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
+
+  // Fetch model configurations and costs
+  await fetchModelConfigs()
 
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")

@@ -8195,7 +8195,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
       throw new HTTPException(400, { message: "Email is required" })
     }
 
-    const availableModels = getAvailableModels({
+    const availableModels = await getAvailableModels({
       AwsAccessKey: config.AwsAccessKey,
       AwsSecretKey: config.AwsSecretKey,
       OpenAIKey: config.OpenAIKey,

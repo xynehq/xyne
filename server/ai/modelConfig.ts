@@ -527,33 +527,87 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   deepResearch: false,
   //   description: "Tailored for reasoning, coding, and agentic abilities",
   // },
-  [Models.LiteLLM_Claude_Sonnet_4_5]: {
-    actualName: "claude-sonnet-4-5-20250929",
-    labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_5,
+  // [Models.LiteLLM_Claude_Sonnet_4_5]: {
+  //   actualName: "claude-sonnet-4-5-20250929",
+  //   labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_5,
+  //   provider: AIProviders.LiteLLM,
+  //   reasoning: true,
+  //   websearch: true,
+  //   deepResearch: true,
+  //   description: "Balanced for reasoning, long context windows.",
+  // },
+  // [Models.LiteLLM_Gemini_3_Pro]: {
+  //   actualName: "gemini-3-pro-preview",
+  //   labelName: ModelDisplayNames.LITELLM_GEMINI_3_PRO,
+  //   provider: AIProviders.LiteLLM,
+  //   reasoning: true,
+  //   websearch: true,
+  //   deepResearch: true,
+  //   description:
+  //     "Proficient in reasoning across text, visuals, and programming.",
+  // },
+  // [Models.LiteLLM_Gemini_3_Flash]: {
+  //   actualName: "gemini-3-flash-preview",
+  //   labelName: ModelDisplayNames.LITELLM_GEMINI_3_FLASH,
+  //   provider: AIProviders.LiteLLM,
+  //   reasoning: true,
+  //   websearch: true,
+  //   deepResearch: true,
+  //   description: "Tailored for cost-effectiveness and rapid response times.",
+  // },
+  [Models.KIMI_LATEST]: {
+    actualName: "kimi-latest",
+    labelName: ModelDisplayNames.LITELLM_KIMI_LATEST,
     provider: AIProviders.LiteLLM,
     reasoning: true,
-    websearch: true,
-    deepResearch: true,
-    description: "Balanced for reasoning, long context windows.",
+    websearch: false,
+    deepResearch: false,
+    description: "The latest version of Kimi, a general-purpose AI model.",
   },
-  [Models.LiteLLM_Gemini_3_Pro]: {
-    actualName: "gemini-3-pro-preview",
-    labelName: ModelDisplayNames.LITELLM_GEMINI_3_PRO,
+  [Models.CLAUDE_HAIKU_3_5]: {
+    actualName: "claude-3-5-haiku-20241022",
+    labelName: ModelDisplayNames.LITELLM_CLAUDE_HAIKU_3_5,
     provider: AIProviders.LiteLLM,
     reasoning: true,
-    websearch: true,
-    deepResearch: true,
-    description:
-      "Proficient in reasoning across text, visuals, and programming.",
+    websearch: false,
+    deepResearch: false,
+    description: "A general-purpose AI model with a focus on reasoning and coding.",
   },
-  [Models.LiteLLM_Gemini_3_Flash]: {
-    actualName: "gemini-3-flash-preview",
-    labelName: ModelDisplayNames.LITELLM_GEMINI_3_FLASH,
+  [Models.CLAUDE_HAIKU_3_5_20241022]: {
+    actualName: "claude-3-5-haiku@20241022",
+    labelName: ModelDisplayNames.LITELLM_CLAUDE_HAIKU_3_5_20241022,
     provider: AIProviders.LiteLLM,
     reasoning: true,
-    websearch: true,
-    deepResearch: true,
-    description: "Tailored for cost-effectiveness and rapid response times.",
+    websearch: false,
+    deepResearch: false,
+    description: "A general-purpose AI model with a focus on reasoning and coding.",
+  },
+  [Models.CLAUDE_HAIKU_4_5]: {
+    actualName: "claude-haiku-4-5-20250929",
+    labelName: ModelDisplayNames.LITELLM_CLAUDE_HAIKU_4_5,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: false,
+    deepResearch: false,
+    description: "A general-purpose AI model with a focus on reasoning and coding.",
+  },
+  [Models.GLM_PRIVATE]: {
+    actualName: "glm-private",
+    labelName: ModelDisplayNames.LITELLM_GLM_PRIVATE,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: false,
+    deepResearch: false,
+    description: "The private version of GLM(kimi), a general-purpose AI model.",
+  },
+  [Models.PRIVATE_LARGE]: {
+    actualName: "private-large",
+    labelName: ModelDisplayNames.LITELLM_PRIVATE_LARGE,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: false,
+    deepResearch: false,
+    description: "The Private Large(kimi), a general-purpose AI model.",
   },
   [Models.GLM_LATEST]: {
     actualName: "glm-latest",
@@ -562,7 +616,43 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: false,
     deepResearch: false,
-    description: "Tailored for reasoning, coding, and agentic abilities",
+    description: "The latest version of GLM, a general-purpose AI model.",
+  },
+  [Models.GLM_FLASH]: {
+    actualName: "glm-flash-experimental",
+    labelName: ModelDisplayNames.LITELLM_GLM_FLASH,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: true,
+    deepResearch: false,
+    description: "The GLM Flash, a general-purpose AI model.",
+  },
+  [Models.OPEN_LARGE]: {
+    actualName: "open-large",
+    labelName: ModelDisplayNames.LITELLM_OPEN_LARGE,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: false,
+    deepResearch: false,
+    description: "The Open Large, a general-purpose AI model.",
+  },
+  [Models.GLM_45_AIR]: {
+    actualName: "glm-45-air-curriculum-learning",
+    labelName: ModelDisplayNames.LITELLM_GLM_45_AIR,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: true,
+    deepResearch: false,
+    description: "The GLM 4.5 AIR, a general-purpose AI model.",
+  },
+  [Models.DEEPSEEK]: {
+    actualName: "deepseek",
+    labelName: ModelDisplayNames.LITELLM_DEEPSEEK,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
+    description: "The DeepSeek, a general-purpose AI model.",
   },
 }
 
@@ -583,7 +673,7 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
 }
 
 // Main function to get available models - moved from config.ts for centralization
-export const getAvailableModels = (config: {
+export const getAvailableModels = async (config: {
   AwsAccessKey?: string
   AwsSecretKey?: string
   OpenAIKey?: string
@@ -613,20 +703,27 @@ export const getAvailableModels = (config: {
   // Priority (LiteLLM > AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex)
   // Using if-else logic to ensure only ONE provider is active at a time
   if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
-    // Add only LiteLLM model
-    Object.values(MODEL_CONFIGURATIONS)
-      .filter((model) => model.provider === AIProviders.LiteLLM)
-      .forEach((model) => {
-        availableModels.push({
-          actualName: model.actualName ?? "",
-          labelName: model.labelName,
-          provider: "LiteLLM",
-          reasoning: model.reasoning,
-          websearch: model.websearch,
-          deepResearch: model.deepResearch,
-          description: model.description,
+    // Fetch models from API (hosted_vllm only)
+    const fetchedModels = await fetchModelConfigs()
+    if (fetchedModels.length > 0) {
+      // Use models fetched from API
+      availableModels.push(...fetchedModels)
+    } else {
+      // Fallback to static MODEL_CONFIGURATIONS if API call fails
+      Object.values(MODEL_CONFIGURATIONS)
+        .filter((model) => model.provider === AIProviders.LiteLLM)
+        .forEach((model) => {
+          availableModels.push({
+            actualName: model.actualName ?? "",
+            labelName: model.labelName,
+            provider: "LiteLLM",
+            reasoning: model.reasoning,
+            websearch: model.websearch,
+            deepResearch: model.deepResearch,
+            description: model.description,
+          })
         })
-      })
+    }
   } else if (config.AwsAccessKey && config.AwsSecretKey) {
     // Add only AWS Bedrock models
     Object.values(MODEL_CONFIGURATIONS)
@@ -726,7 +823,7 @@ export const getAvailableModels = (config: {
 }
 
 // Legacy function for backward compatibility (returns old format)
-export const getAvailableModelsLegacy = (config: {
+export const getAvailableModelsLegacy = async (config: {
   AwsAccessKey?: string
   AwsSecretKey?: string
   OpenAIKey?: string
@@ -743,7 +840,7 @@ export const getAvailableModelsLegacy = (config: {
   LiteLLMApiKey?: string
   LiteLLMBaseUrl?: string
 }) => {
-  const newModels = getAvailableModels(config)
+  const newModels = await getAvailableModels(config)
   return newModels.map(
     (model: {
       actualName: string
@@ -843,6 +940,129 @@ export const getModelValueFromLabel = (
 export const getActualNameFromEnum = (enumValue: string): string | null => {
   const modelConfig = MODEL_CONFIGURATIONS[enumValue as Models]
   return modelConfig?.actualName || null
+}
+
+export const fetchModelConfigs = async (): Promise<Array<{
+  actualName: string
+  labelName: string
+  provider: string
+  reasoning: boolean
+  websearch: boolean
+  deepResearch: boolean
+  description: string
+}>> => {
+  try {
+    // Use API key from config
+    if (!config.LiteLLMApiKey) {
+      console.warn("LiteLLM API key not configured, returning empty array")
+      return []
+    }
+
+    // Set timeout of 5 seconds
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+    try {
+      const response = await fetch("https://grid.ai.juspay.net/v1/model/info", {
+        headers: {
+          "x-litellm-api-key": config.LiteLLMApiKey,
+          "accept": "application/json",
+        },
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch model configs: ${response.statusText}`)
+      }
+      const responseData = await response.json()
+      
+      // API returns { data: [...] }, so extract the data array
+      const data = Array.isArray(responseData) ? responseData : (responseData.data || [])
+
+      const availableModels: Array<{
+        actualName: string
+        labelName: string
+        provider: string
+        reasoning: boolean
+        websearch: boolean
+        deepResearch: boolean
+        description: string
+      }> = []
+
+      // Use Set to track seen model IDs to avoid duplicates
+      const seenModelIds = new Set<string>()
+
+      // Filter models with litellm_provider === "hosted_vllm" and return in expected format
+      for (const modelInfo of data) {
+        // Only process models with litellm_provider === "hosted_vllm"
+        // Check model_info.litellm_provider (from API response structure)
+        if (modelInfo.model_info?.litellm_provider !== "hosted_vllm") {
+          continue
+        }
+
+        const modelId = modelInfo.model_name
+        const actualName = modelInfo.litellm_params?.model || modelId
+
+        // Skip if we've already processed this model (deduplicate by model_name)
+        if (seenModelIds.has(modelId)) {
+          continue
+        }
+        seenModelIds.add(modelId)
+
+        // Find the corresponding enum key in Models
+        const modelEnumKey = Object.keys(Models).find(
+          (key) => Models[key as keyof typeof Models] === modelId,
+        ) as keyof typeof Models | undefined
+
+        // Get the enum value from the key (MODEL_CONFIGURATIONS is indexed by enum values, not keys)
+        const modelEnumValue = modelEnumKey ? (Models[modelEnumKey] as Models) : undefined
+
+        // Get model configuration from MODEL_CONFIGURATIONS if it exists
+        const modelConfig = modelEnumValue ? MODEL_CONFIGURATIONS[modelEnumValue] : null
+
+        if (modelConfig) {
+          // Use configuration from MODEL_CONFIGURATIONS
+          availableModels.push({
+            actualName: actualName,
+            labelName: modelConfig.labelName,
+            provider: "LiteLLM",
+            reasoning: modelConfig.reasoning,
+            websearch: modelConfig.websearch,
+            deepResearch: modelConfig.deepResearch,
+            description: modelConfig.description,
+          })
+        } else {
+          // For models not in MODEL_CONFIGURATIONS, use defaults
+          availableModels.push({
+            actualName: actualName,
+            labelName: modelId, // Use model_name as fallback label
+            provider: "LiteLLM",
+            reasoning: false,
+            websearch: true,
+            deepResearch: false,
+            description: "",
+          })
+        }
+      }
+
+      console.log(`Fetched ${availableModels.length} hosted_vllm models from API.`)
+      return availableModels
+    } catch (error) {
+      clearTimeout(timeoutId)
+      if (error instanceof Error && error.name === "AbortError") {
+        console.warn("Model configs API call timed out, using fallback to static configs")
+      } else {
+        console.error("Error fetching model configs:", error)
+      }
+      // Return empty array on error/timeout - fallback to static configs
+      return []
+    }
+  } catch (error) {
+    console.error("Error fetching model configs:", error)
+    // Return empty array on error - fallback to static configs
+    return []
+  }
 }
 
 // Legacy function to convert friendly model label back to actual model value (for backward compatibility)
