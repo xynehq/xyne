@@ -99,15 +99,17 @@ export class LiteLLMProvider extends BaseProvider {
       // Fetch cost configuration from API with fallback to default config (uses cached data)
       const costConfig = await getCostConfigForModel(modelParams.modelId)
 
+      const calculatedCost = calculateCost(
+        {
+          inputTokens,
+          outputTokens,
+        },
+        costConfig,
+      )
+
       return {
         text: messageContent,
-        cost: calculateCost(
-          {
-            inputTokens,
-            outputTokens,
-          },
-          costConfig,
-        ),
+        cost: calculatedCost,
         metadata: {
           usage: {
             inputTokens,
@@ -185,6 +187,9 @@ export class LiteLLMProvider extends BaseProvider {
         tool_choice: tools ? (params.tool_choice ?? "auto") : undefined,
         response_format: modelParams.json ? { type: "json_object" } : undefined,
         stream: true,
+        stream_options: {
+          include_usage: true,
+        },
       }
 
       let accumulatedCost = 0
@@ -196,10 +201,29 @@ export class LiteLLMProvider extends BaseProvider {
       // Fetch cost configuration once before processing stream (uses cached data)
       const costConfig = await getCostConfigForModel(modelParams.modelId)
 
-
       for await (const chunk of stream) {
+        // Check for usage information first (may come in a chunk without choices)
+        const usage = (chunk as any).usage
+        if (usage) {
+          const inputTokens = usage.prompt_tokens || 0
+          const outputTokens = usage.completion_tokens || 0
+
+          accumulatedCost = calculateCost(
+            {
+              inputTokens,
+              outputTokens,
+            },
+            costConfig,
+          )
+          
+          // Continue to process the chunk even if it has usage
+        }
+
         const choice = chunk.choices?.[0]
-        if (!choice) continue
+        if (!choice) {
+          // Chunk without choices might be a usage-only chunk, which we already handled above
+          continue
+        }
 
         const delta = choice.delta
         const finishReason = choice.finish_reason
@@ -236,18 +260,6 @@ export class LiteLLMProvider extends BaseProvider {
           }
         }
 
-        // Handle usage/cost information (usually in the last chunk)
-        if ((chunk as any).usage) {
-          const usage = (chunk as any).usage
-          accumulatedCost = calculateCost(
-            {
-              inputTokens: usage.prompt_tokens || 0,
-              outputTokens: usage.completion_tokens || 0,
-            },
-            costConfig,
-          )
-        }
-
         // Check if this is the final chunk
         if (finishReason) {
           // Yield tool calls if we have any and haven't yielded them yet
@@ -261,12 +273,40 @@ export class LiteLLMProvider extends BaseProvider {
         }
       }
 
+      // Check if stream object has usage info after iteration (fallback)
+      // Also check for LiteLLM's response_cost in _hidden_params
+      const streamUsage = (stream as any).usage || (stream as any).response?.usage
+      const responseCost = (stream as any)._hidden_params?.response_cost || (stream as any).response_cost
+
+      // If LiteLLM provides response_cost directly, use it
+      if (responseCost && typeof responseCost === 'number' && accumulatedCost === 0) {
+        accumulatedCost = responseCost
+      } else if (streamUsage && accumulatedCost === 0) {
+        const inputTokens = streamUsage.prompt_tokens || streamUsage.input_tokens || 0
+        const outputTokens = streamUsage.completion_tokens || streamUsage.output_tokens || 0
+
+        accumulatedCost = calculateCost(
+          {
+            inputTokens,
+            outputTokens,
+          },
+          costConfig,
+        )
+      }
+
       // Yield final cost if we have it
       if (accumulatedCost > 0) {
         yield {
           text: "",
           cost: accumulatedCost,
         }
+      } else {
+        Logger.warn({
+          message: "LiteLLM Stream: No cost calculated - usage info not found in stream or stream object",
+          modelId: modelParams.modelId,
+          accumulatedCost,
+          streamObjectKeys: streamUsage ? Object.keys(streamUsage) : "N/A",
+        })
       }
     } catch (error) {
       Logger.error("LiteLLM Streaming Error:", {
