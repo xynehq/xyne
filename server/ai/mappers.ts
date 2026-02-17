@@ -1,6 +1,5 @@
 import { AIProviders, Models, type Cost } from "@/ai/types"
 import { MODEL_CONFIGURATIONS } from "./modelConfig";
-import { get } from "http";
 
 const getActualModelName=(model:Models):string=>{
   return MODEL_CONFIGURATIONS[model]?.actualName || model;
@@ -360,39 +359,134 @@ export const modelDetailsMap: Record<
   //     }
   //   }
   // },
+  // kimi models
+  [getActualModelName(Models.KIMI_LATEST)]:{
+    name:"kimi-latest",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
+  [getActualModelName(Models.PRIVATE_LARGE)]:{
+    name:"private-large",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
   [getActualModelName(Models.GLM_LATEST)]:{
     name:"glm-latest",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0.00075,
-        pricePerThousandOutputTokens:0.00015,
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.0000022,
       }
     }
   },
-  [getActualModelName(Models.LiteLLM_Claude_Sonnet_4_5)]:{
-    name:"claude-sonnet-4-5",
+  // GLM Models
+  [getActualModelName(Models.GLM_45_AIR)]:{
+    name:"glm-45-air-curriculum-learning",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0.003,
-        pricePerThousandOutputTokens:0.015,
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
       }
     }
   },
-  [getActualModelName(Models.LiteLLM_Gemini_3_Pro)]:{
-    name:"gemini-3-pro-preview",
+  [getActualModelName(Models.GLM_FLASH)]:{
+    name:"glm-flash-experimental",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0.00125,
-        pricePerThousandOutputTokens:0.01
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
       }
     }
   },
+  [getActualModelName(Models.GLM_PRIVATE)]:{
+    name:"glm-private",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
+  [getActualModelName(Models.OPEN_LARGE)]:{
+    name:"open-large",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.0000022,
+      }
+    }
+  },
+  // DeepSeek Models
+  [getActualModelName(Models.DEEPSEEK)]:{
+    name:"deepseek",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
+  // Minmax Models
+  [getActualModelName(Models.MINIMAX_2_5)]:{
+    name:"minimax-2-5",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
+  [getActualModelName(Models.MINIMAX_M2)]:{
+    name:"minimax-m2",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
+  // OpenAI Models
+  [getActualModelName(Models.OPEN_FAST)]:{
+    name:"open-fast",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
+  // [getActualModelName(Models.LiteLLM_Claude_Sonnet_4_5)]:{
+  //   name:"claude-sonnet-4-5",
+  //   cost:{
+  //     onDemand:{
+  //       pricePerThousandInputTokens:0.003,
+  //       pricePerThousandOutputTokens:0.015,
+  //     }
+  //   }
+  // },
+  // [getActualModelName(Models.LiteLLM_Gemini_3_Pro)]:{
+  //   name:"gemini-3-pro-preview",
+  //   cost:{
+  //     onDemand:{
+  //       pricePerThousandInputTokens:0.00125,
+  //       pricePerThousandOutputTokens:0.01
+  //     }
+  //   }
+  // },
   [getActualModelName(Models.LiteLLM_Gemini_3_Flash)]:{
     name:"gemini-3-flash-preview",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0.0003,
-        pricePerThousandOutputTokens:0.0025,
+        pricePerThousandInputTokens:0.0005,
+        pricePerThousandOutputTokens:0.000003,
       }
     }
   },
@@ -464,10 +558,20 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.Vertex_Gemini_1_5_Pro_002]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_1_5_Pro_Exp_0827]: AIProviders.VertexAI,
   // [Models.GLM_4_5]: AIProviders.LiteLLM,
-  [Models.GLM_LATEST]: AIProviders.LiteLLM,
-  [Models.LiteLLM_Claude_Sonnet_4_5]: AIProviders.LiteLLM,
-  [Models.LiteLLM_Gemini_3_Pro]: AIProviders.LiteLLM,
+  // [Models.LiteLLM_Claude_Sonnet_4_5]: AIProviders.LiteLLM,
+  // [Models.LiteLLM_Gemini_3_Pro]: AIProviders.LiteLLM,
   [Models.LiteLLM_Gemini_3_Flash]: AIProviders.LiteLLM,
+  [Models.KIMI_LATEST]: AIProviders.LiteLLM,
+  [Models.PRIVATE_LARGE]: AIProviders.LiteLLM,
+  [Models.GLM_LATEST]: AIProviders.LiteLLM,
+  [Models.GLM_FLASH]: AIProviders.LiteLLM,
+  [Models.GLM_PRIVATE]: AIProviders.LiteLLM,
+  [Models.GLM_45_AIR]: AIProviders.LiteLLM,
+  [Models.OPEN_LARGE]: AIProviders.LiteLLM,
+  [Models.DEEPSEEK]: AIProviders.LiteLLM,
+  [Models.MINIMAX_2_5]: AIProviders.LiteLLM,
+  [Models.MINIMAX_M2]: AIProviders.LiteLLM,
+  [Models.OPEN_FAST]: AIProviders.LiteLLM,
 }
 
 export const isDeepResearchModel = (modelId: Models): boolean => {

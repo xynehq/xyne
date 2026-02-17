@@ -527,25 +527,25 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   deepResearch: false,
   //   description: "Tailored for reasoning, coding, and agentic abilities",
   // },
-  [Models.LiteLLM_Claude_Sonnet_4_5]: {
-    actualName: "claude-sonnet-4-5-20250929",
-    labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_5,
-    provider: AIProviders.LiteLLM,
-    reasoning: true,
-    websearch: true,
-    deepResearch: true,
-    description: "Balanced for reasoning, long context windows.",
-  },
-  [Models.LiteLLM_Gemini_3_Pro]: {
-    actualName: "gemini-3-pro-preview",
-    labelName: ModelDisplayNames.LITELLM_GEMINI_3_PRO,
-    provider: AIProviders.LiteLLM,
-    reasoning: true,
-    websearch: true,
-    deepResearch: true,
-    description:
-      "Proficient in reasoning across text, visuals, and programming.",
-  },
+  // [Models.LiteLLM_Claude_Sonnet_4_5]: {
+  //   actualName: "claude-sonnet-4-5-20250929",
+  //   labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_5,
+  //   provider: AIProviders.LiteLLM,
+  //   reasoning: true,
+  //   websearch: true,
+  //   deepResearch: true,
+  //   description: "Balanced for reasoning, long context windows.",
+  // },
+  // [Models.LiteLLM_Gemini_3_Pro]: {
+  //   actualName: "gemini-3-pro-preview",
+  //   labelName: ModelDisplayNames.LITELLM_GEMINI_3_PRO,
+  //   provider: AIProviders.LiteLLM,
+  //   reasoning: true,
+  //   websearch: true,
+  //   deepResearch: true,
+  //   description:
+  //     "Proficient in reasoning across text, visuals, and programming.",
+  // },
   [Models.LiteLLM_Gemini_3_Flash]: {
     actualName: "gemini-3-flash-preview",
     labelName: ModelDisplayNames.LITELLM_GEMINI_3_FLASH,
@@ -555,14 +555,104 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     deepResearch: true,
     description: "Tailored for cost-effectiveness and rapid response times.",
   },
+  [Models.KIMI_LATEST]: {
+    actualName: "kimi-latest",
+    labelName: ModelDisplayNames.LITELLM_KIMI_LATEST,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The latest version of Kimi, a general-purpose AI model.",
+  },
+  [Models.GLM_PRIVATE]: {
+    actualName: "glm-private",
+    labelName: ModelDisplayNames.LITELLM_GLM_PRIVATE,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The private version of GLM(kimi), a general-purpose AI model.",
+  },
+  [Models.PRIVATE_LARGE]: {
+    actualName: "private-large",
+    labelName: ModelDisplayNames.LITELLM_PRIVATE_LARGE,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The Private Large(kimi), a general-purpose AI model.",
+  },
   [Models.GLM_LATEST]: {
     actualName: "glm-latest",
     labelName: ModelDisplayNames.LITELLM_GLM_LATEST,
     provider: AIProviders.LiteLLM,
-    reasoning: true,
+    reasoning: false,
     websearch: false,
     deepResearch: false,
-    description: "Tailored for reasoning, coding, and agentic abilities",
+    description: "The latest version of GLM, a general-purpose AI model.",
+  },
+  [Models.GLM_FLASH]: {
+    actualName: "glm-flash-experimental",
+    labelName: ModelDisplayNames.LITELLM_GLM_FLASH,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The GLM Flash, a general-purpose AI model.",
+  },
+  [Models.OPEN_LARGE]: {
+    actualName: "open-large",
+    labelName: ModelDisplayNames.LITELLM_OPEN_LARGE,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The Open Large, a general-purpose AI model.",
+  },
+  [Models.GLM_45_AIR]: {
+    actualName: "glm-45-air-curriculum-learning",
+    labelName: ModelDisplayNames.LITELLM_GLM_45_AIR,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The GLM 4.5 AIR, a general-purpose AI model.",
+  },
+  [Models.DEEPSEEK]: {
+    actualName: "deepseek",
+    labelName: ModelDisplayNames.LITELLM_DEEPSEEK,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: false,
+    deepResearch: true,
+    description: "The DeepSeek, a general-purpose AI model.",
+  },
+  [Models.MINIMAX_2_5]: {
+    actualName: "minimaxai/minimax-2-5",
+    labelName: ModelDisplayNames.LITELLM_MINIMAX_2_5,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The Minmax 2.5, a general-purpose AI model.",
+  },
+  [Models.MINIMAX_M2]: {
+    actualName: "minimaxai/minimax-m2",
+    labelName: ModelDisplayNames.LITELLM_MINIMAX_M2,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The Minmax M2, a general-purpose AI model.",
+  },
+  [Models.OPEN_FAST]: {
+    actualName: "open-fast",
+    labelName: ModelDisplayNames.LITELLM_OPEN_FAST,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The Open Fast, a general-purpose AI model.",
   },
 }
 
@@ -580,183 +670,6 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
       ])
       .filter(([key]) => key !== ""), // Remove empty keys
   ),
-}
-
-// Main function to get available models - moved from config.ts for centralization
-export const getAvailableModels = (config: {
-  AwsAccessKey?: string
-  AwsSecretKey?: string
-  OpenAIKey?: string
-  OllamaModel?: string
-  TogetherAIModel?: string
-  TogetherApiKey?: string
-  FireworksAIModel?: string
-  FireworksApiKey?: string
-  GeminiAIModel?: string
-  GeminiApiKey?: string
-  VertexAIModel?: string
-  VertexProjectId?: string
-  VertexRegion?: string
-  LiteLLMApiKey?: string
-  LiteLLMBaseUrl?: string
-}) => {
-  const availableModels: Array<{
-    actualName: string
-    labelName: string
-    provider: string
-    reasoning: boolean
-    websearch: boolean
-    deepResearch: boolean
-    description: string
-  }> = []
-
-  // Priority (LiteLLM > AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex)
-  // Using if-else logic to ensure only ONE provider is active at a time
-  if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
-    // Add only LiteLLM model
-    Object.values(MODEL_CONFIGURATIONS)
-      .filter((model) => model.provider === AIProviders.LiteLLM)
-      .forEach((model) => {
-        availableModels.push({
-          actualName: model.actualName ?? "",
-          labelName: model.labelName,
-          provider: "LiteLLM",
-          reasoning: model.reasoning,
-          websearch: model.websearch,
-          deepResearch: model.deepResearch,
-          description: model.description,
-        })
-      })
-  } else if (config.AwsAccessKey && config.AwsSecretKey) {
-    // Add only AWS Bedrock models
-    Object.values(MODEL_CONFIGURATIONS)
-      .filter((model) => model.provider === AIProviders.AwsBedrock)
-      .forEach((model) => {
-        availableModels.push({
-          actualName: model.actualName ?? "",
-          labelName: model.labelName,
-          provider: "AWS Bedrock",
-          reasoning: model.reasoning,
-          websearch: model.websearch,
-          deepResearch: model.deepResearch,
-          description: model.description,
-        })
-      })
-  } else if (config.OpenAIKey) {
-    // Add only OpenAI models
-    Object.values(MODEL_CONFIGURATIONS)
-      .filter((model) => model.provider === AIProviders.OpenAI)
-      .forEach((model) => {
-        availableModels.push({
-          actualName: model.actualName ?? "",
-          labelName: model.labelName,
-          provider: "OpenAI",
-          reasoning: model.reasoning,
-          websearch: model.websearch,
-          deepResearch: model.deepResearch,
-          description: model.description,
-        })
-      })
-  } else if (config.OllamaModel) {
-    // Add only Ollama model
-    availableModels.push({
-      actualName: config.OllamaModel,
-      labelName: config.OllamaModel,
-      provider: "Ollama",
-      reasoning: false,
-      websearch: true,
-      deepResearch: false,
-      description: "",
-    })
-  } else if (config.TogetherAIModel && config.TogetherApiKey) {
-    // Add only Together AI model
-    availableModels.push({
-      actualName: config.TogetherAIModel,
-      labelName: config.TogetherAIModel,
-      provider: "Together AI",
-      reasoning: false,
-      websearch: true,
-      deepResearch: false,
-      description: "",
-    })
-  } else if (config.FireworksAIModel && config.FireworksApiKey) {
-    // Add only Fireworks AI model
-    availableModels.push({
-      actualName: config.FireworksAIModel,
-      labelName: config.FireworksAIModel,
-      provider: "Fireworks AI",
-      reasoning: false,
-      websearch: true,
-      deepResearch: false,
-      description: "",
-    })
-  } else if (config.GeminiAIModel && config.GeminiApiKey) {
-    // Add all Google AI models
-    Object.values(MODEL_CONFIGURATIONS)
-      .filter((model) => model.provider === AIProviders.GoogleAI)
-      .forEach((model) => {
-        availableModels.push({
-          actualName: model.actualName ?? "",
-          labelName: model.labelName,
-          provider: "Google AI",
-          reasoning: model.reasoning,
-          websearch: model.websearch,
-          deepResearch: model.deepResearch,
-          description: model.description,
-        })
-      })
-  } else if (config.VertexProjectId && config.VertexRegion) {
-    // Add all Vertex AI models - no longer dependent on VERTEX_AI_MODEL being set
-    Object.values(MODEL_CONFIGURATIONS)
-      .filter((model) => model.provider === AIProviders.VertexAI)
-      .forEach((model) => {
-        availableModels.push({
-          actualName: model.actualName ?? "",
-          labelName: model.labelName,
-          provider: "Vertex AI",
-          reasoning: model.reasoning,
-          websearch: model.websearch,
-          deepResearch: model.deepResearch,
-          description: model.description,
-        })
-      })
-  } 
-
-  return availableModels
-}
-
-// Legacy function for backward compatibility (returns old format)
-export const getAvailableModelsLegacy = (config: {
-  AwsAccessKey?: string
-  AwsSecretKey?: string
-  OpenAIKey?: string
-  OllamaModel?: string
-  TogetherAIModel?: string
-  TogetherApiKey?: string
-  FireworksAIModel?: string
-  FireworksApiKey?: string
-  GeminiAIModel?: string
-  GeminiApiKey?: string
-  VertexAIModel?: string
-  VertexProjectId?: string
-  VertexRegion?: string
-  LiteLLMApiKey?: string
-  LiteLLMBaseUrl?: string
-}) => {
-  const newModels = getAvailableModels(config)
-  return newModels.map(
-    (model: {
-      actualName: string
-      labelName: string
-      provider: string
-      reasoning: boolean
-      websearch: boolean
-      deepResearch: boolean
-    }) => ({
-      label: model.labelName,
-      provider: model.provider,
-    }),
-  )
 }
 
 // Function to determine the currently active provider based on configuration

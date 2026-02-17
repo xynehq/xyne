@@ -59,11 +59,32 @@ export enum GoogleAIModels {
 }
 
 export enum LiteLLMModels {
-  // GLM_4_5 = "glm-45-fp8",
-  GLM_LATEST = "glm-latest",
-  Claude_Sonnet_4_5 = "claude-sonnet-4-5-20250929",
-  Gemini_3_Pro = "gemini-3-pro-preview",
+  // Non Free Models
+  // Claude_Sonnet_4_5 = "claude-sonnet-4-5-20250929",
+  // Gemini_3_Pro = "gemini-3-pro-preview",
   Gemini_3_Flash = "gemini-3-flash-preview",
+
+  // Free Models (HOSTED VLLMS)
+  // kimi
+  KIMI_LATEST = "kimi-latest",
+  PRIVATE_LARGE = "private-large",
+  GLM_PRIVATE = "glm-private",
+  
+  // glm
+  GLM_LATEST = "glm-latest",
+  GLM_FLASH = "glm-flash-experimental",
+  OPEN_LARGE = "open-large",
+  GLM_45_AIR = "glm-45-air-curriculum-learning",
+
+  // deepseek
+  DEEPSEEK = "deepseek",
+
+  // OpenAI Models
+  OPEN_FAST = "open-fast",
+  MINIMAX_M2 = "minimaxai/minimax-m2",
+
+  // Minmax Models
+  MINIMAX_2_5 = "minimaxai/minimax-2-5",
 }
 
 export enum VertexAIModels {
@@ -173,10 +194,30 @@ export enum Models {
   // Vertex_Gemini_1_5_Pro_002 = VertexAIModels.Gemini_1_5_Pro_002,
   // Vertex_Gemini_1_5_Pro_Exp_0827 = VertexAIModels.Gemini_1_5_Pro_Exp_0827,
   // GLM_4_5 = LiteLLMModels.GLM_4_5, // GLM 4.5
-  GLM_LATEST = LiteLLMModels.GLM_LATEST,
-  LiteLLM_Claude_Sonnet_4_5 = LiteLLMModels.Claude_Sonnet_4_5,
-  LiteLLM_Gemini_3_Pro = LiteLLMModels.Gemini_3_Pro,
+  // LiteLLM_Claude_Sonnet_4_5 = LiteLLMModels.Claude_Sonnet_4_5,
+  // LiteLLM_Gemini_3_Pro = LiteLLMModels.Gemini_3_Pro,
   LiteLLM_Gemini_3_Flash = LiteLLMModels.Gemini_3_Flash,
+
+  //KIMI
+  KIMI_LATEST = LiteLLMModels.KIMI_LATEST,
+  PRIVATE_LARGE = LiteLLMModels.PRIVATE_LARGE,
+  GLM_PRIVATE = LiteLLMModels.GLM_PRIVATE,
+
+  // GLM
+  GLM_LATEST = LiteLLMModels.GLM_LATEST,
+  GLM_FLASH = LiteLLMModels.GLM_FLASH,
+  OPEN_LARGE = LiteLLMModels.OPEN_LARGE,
+  GLM_45_AIR = LiteLLMModels.GLM_45_AIR,
+
+  // DeepSeek
+  DEEPSEEK = LiteLLMModels.DEEPSEEK,
+
+  // Minmax Models
+  MINIMAX_2_5 = LiteLLMModels.MINIMAX_2_5,
+
+  // OpenAI Models
+  OPEN_FAST = LiteLLMModels.OPEN_FAST,
+  MINIMAX_M2 = LiteLLMModels.MINIMAX_M2,
 }
 
 // Model availability mapping - which providers support which models
@@ -280,10 +321,34 @@ export enum ModelDisplayNames {
   // VERTEX_GEMINI_1_5_PRO_002 = "Gemini 1.5 Pro 002",
   // VERTEX_GEMINI_1_5_PRO_EXP_0827 = "Gemini 1.5 Pro Exp 0827",
   // LITELLM_GLM_4_5 = "GLM 4.5", // GLM 4.5
-  LITELLM_GLM_LATEST = "GLM Latest",
-  LITELLM_CLAUDE_SONNET_4_5 = "Claude Sonnet 4.5",
-  LITELLM_GEMINI_3_PRO = "Gemini 3 Pro",
+  // LITELLM_CLAUDE_SONNET_4_5 = "Claude Sonnet 4.5",
+  // LITELLM_GEMINI_3_PRO = "Gemini 3 Pro",
   LITELLM_GEMINI_3_FLASH = "Gemini 3 Flash",
+
+  // LiteLLM Models
+  // KIMI
+  LITELLM_KIMI_LATEST = "KIMI Latest",
+  LITELLM_CLAUDE_HAIKU_3_5 = "LiteLLM Claude Haiku 3.5",
+  LITELLM_CLAUDE_HAIKU_3_5_20241022 = "LiteLLM Claude Haiku 3.5 20241022",
+  LITELLM_CLAUDE_HAIKU_4_5 = "LiteLLM Claude Haiku 4.5",
+  LITELLM_PRIVATE_LARGE = "LiteLLM Private Large",
+  LITELLM_GLM_PRIVATE = "GLM Private",
+
+  // GLM
+  LITELLM_GLM_LATEST = "GLM Latest",
+  LITELLM_GLM_FLASH = "GLM Flash",
+  LITELLM_OPEN_LARGE = "Open Large",
+  LITELLM_GLM_45_AIR = "GLM 4.5 AIR",
+
+  // DeepSeek
+  LITELLM_DEEPSEEK = "DeepSeek",
+
+  // Minmax Models
+  LITELLM_MINIMAX_2_5 = "Minmax 2.5",
+
+  // OpenAI Models
+  LITELLM_OPEN_FAST = "Open Fast",
+  LITELLM_MINIMAX_M2 = "Minmax M2",
 }
 
 export enum QueryCategory {

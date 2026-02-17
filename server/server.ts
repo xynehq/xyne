@@ -2410,6 +2410,22 @@ export const init = async () => {
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
 
+  // Preload LiteLLM model info cache if configured
+  if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
+    if (!config.LiteLLMModelInfoUrl) {
+      console.error("LiteLLM model info URL not configured. Server cannot start without this configuration.")
+      process.exit(1)
+    }
+    try {
+      const { preloadModelInfoCache } = await import("@/ai/fetchModels")
+      await preloadModelInfoCache()
+    } catch (error) {
+      Logger.warn("Failed to preload LiteLLM model info cache", {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {

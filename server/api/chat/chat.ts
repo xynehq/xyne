@@ -26,7 +26,8 @@ import {
   type WebSearchSource,
 } from "@/ai/types"
 import config from "@/config"
-import { getAvailableModels, getModelValueFromLabel } from "@/ai/modelConfig"
+import { getModelValueFromLabel } from "@/ai/modelConfig"
+import { getAvailableModels } from "@/ai/fetchModels"
 import {
   deleteChatByExternalIdWithAuth,
   deleteMessagesByChatId,
@@ -8195,7 +8196,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
       throw new HTTPException(400, { message: "Email is required" })
     }
 
-    const availableModels = getAvailableModels({
+    const availableModels = await getAvailableModels({
       AwsAccessKey: config.AwsAccessKey,
       AwsSecretKey: config.AwsSecretKey,
       OpenAIKey: config.OpenAIKey,
