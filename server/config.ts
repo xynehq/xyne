@@ -230,7 +230,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   // Set default models for LiteLLM (no longer requiring LITELLM_MODEL to be set)
   defaultFastModel = process.env["LITELLM_FAST_MODEL"]
     ? (process.env["LITELLM_FAST_MODEL"] as Models)
-    : Models.GLM_45_AIR// Default fast model
+    : Models.OPEN_FAST// Default fast model
   defaultBestModel = process.env["LITELLM_BEST_MODEL"]
     ? (process.env["LITELLM_BEST_MODEL"] as Models)
     : Models.KIMI_LATEST // Default best model
@@ -240,7 +240,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     : Models.DEEPSEEK // Default deep research model
   }
   defaultWebSearchModel = process.env["LITELLM_WEB_SEARCH_MODEL"] ? (process.env["LITELLM_WEB_SEARCH_MODEL"] as Models)
-  : Models.GLM_45_AIR // Default web search model
+  : Models.LiteLLM_Gemini_3_Flash // Default web search model
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"

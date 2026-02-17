@@ -546,15 +546,15 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   description:
   //     "Proficient in reasoning across text, visuals, and programming.",
   // },
-  // [Models.LiteLLM_Gemini_3_Flash]: {
-  //   actualName: "gemini-3-flash-preview",
-  //   labelName: ModelDisplayNames.LITELLM_GEMINI_3_FLASH,
-  //   provider: AIProviders.LiteLLM,
-  //   reasoning: true,
-  //   websearch: true,
-  //   deepResearch: true,
-  //   description: "Tailored for cost-effectiveness and rapid response times.",
-  // },
+  [Models.LiteLLM_Gemini_3_Flash]: {
+    actualName: "gemini-3-flash-preview",
+    labelName: ModelDisplayNames.LITELLM_GEMINI_3_FLASH,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
+    description: "Tailored for cost-effectiveness and rapid response times.",
+  },
   [Models.KIMI_LATEST]: {
     actualName: "kimi-latest",
     labelName: ModelDisplayNames.LITELLM_KIMI_LATEST,
@@ -653,6 +653,33 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     websearch: false,
     deepResearch: true,
     description: "The DeepSeek, a general-purpose AI model.",
+  },
+  [Models.MINIMAX_2_5]: {
+    actualName: "minimaxai/minimax-2-5",
+    labelName: ModelDisplayNames.LITELLM_MINIMAX_2_5,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The Minmax 2.5, a general-purpose AI model.",
+  },
+  [Models.MINIMAX_M2]: {
+    actualName: "minimaxai/minimax-m2",
+    labelName: ModelDisplayNames.LITELLM_MINIMAX_M2,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The Minmax M2, a general-purpose AI model.",
+  },
+  [Models.OPEN_FAST]: {
+    actualName: "open-fast",
+    labelName: ModelDisplayNames.LITELLM_OPEN_FAST,
+    provider: AIProviders.LiteLLM,
+    reasoning: false,
+    websearch: false,
+    deepResearch: false,
+    description: "The Open Fast, a general-purpose AI model.",
   },
 }
 

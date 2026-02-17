@@ -62,7 +62,7 @@ export enum LiteLLMModels {
   // Non Free Models
   // Claude_Sonnet_4_5 = "claude-sonnet-4-5-20250929",
   // Gemini_3_Pro = "gemini-3-pro-preview",
-  // Gemini_3_Flash = "gemini-3-flash-preview",
+  Gemini_3_Flash = "gemini-3-flash-preview",
 
   // Free Models (HOSTED VLLMS)
   // kimi
@@ -81,6 +81,13 @@ export enum LiteLLMModels {
 
   // deepseek
   DEEPSEEK = "deepseek",
+
+  // OpenAI Models
+  OPEN_FAST = "open-fast",
+  MINIMAX_M2 = "minimaxai/minimax-m2",
+
+  // Minmax Models
+  MINIMAX_2_5 = "minimaxai/minimax-2-5",
 }
 
 export enum VertexAIModels {
@@ -192,7 +199,7 @@ export enum Models {
   // GLM_4_5 = LiteLLMModels.GLM_4_5, // GLM 4.5
   // LiteLLM_Claude_Sonnet_4_5 = LiteLLMModels.Claude_Sonnet_4_5,
   // LiteLLM_Gemini_3_Pro = LiteLLMModels.Gemini_3_Pro,
-  // LiteLLM_Gemini_3_Flash = LiteLLMModels.Gemini_3_Flash,
+  LiteLLM_Gemini_3_Flash = LiteLLMModels.Gemini_3_Flash,
 
   //KIMI
   KIMI_LATEST = LiteLLMModels.KIMI_LATEST,
@@ -210,6 +217,13 @@ export enum Models {
 
   // DeepSeek
   DEEPSEEK = LiteLLMModels.DEEPSEEK,
+
+  // Minmax Models
+  MINIMAX_2_5 = LiteLLMModels.MINIMAX_2_5,
+
+  // OpenAI Models
+  OPEN_FAST = LiteLLMModels.OPEN_FAST,
+  MINIMAX_M2 = LiteLLMModels.MINIMAX_M2,
 }
 
 // Model availability mapping - which providers support which models
@@ -315,7 +329,7 @@ export enum ModelDisplayNames {
   // LITELLM_GLM_4_5 = "GLM 4.5", // GLM 4.5
   // LITELLM_CLAUDE_SONNET_4_5 = "Claude Sonnet 4.5",
   // LITELLM_GEMINI_3_PRO = "Gemini 3 Pro",
-  // LITELLM_GEMINI_3_FLASH = "Gemini 3 Flash",
+  LITELLM_GEMINI_3_FLASH = "Gemini 3 Flash",
 
   // LiteLLM Models
   // KIMI
@@ -334,6 +348,13 @@ export enum ModelDisplayNames {
 
   // DeepSeek
   LITELLM_DEEPSEEK = "DeepSeek",
+
+  // Minmax Models
+  LITELLM_MINIMAX_2_5 = "Minmax 2.5",
+
+  // OpenAI Models
+  LITELLM_OPEN_FAST = "Open Fast",
+  LITELLM_MINIMAX_M2 = "Minmax M2",
 }
 
 export enum QueryCategory {

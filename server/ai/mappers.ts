@@ -558,7 +558,7 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.GLM_4_5]: AIProviders.LiteLLM,
   // [Models.LiteLLM_Claude_Sonnet_4_5]: AIProviders.LiteLLM,
   // [Models.LiteLLM_Gemini_3_Pro]: AIProviders.LiteLLM,
-  // [Models.LiteLLM_Gemini_3_Flash]: AIProviders.LiteLLM,
+  [Models.LiteLLM_Gemini_3_Flash]: AIProviders.LiteLLM,
   [Models.KIMI_LATEST]: AIProviders.LiteLLM,
   [Models.CLAUDE_HAIKU_3_5]: AIProviders.LiteLLM,
   [Models.CLAUDE_HAIKU_3_5_20241022]: AIProviders.LiteLLM,
@@ -570,6 +570,9 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.GLM_45_AIR]: AIProviders.LiteLLM,
   [Models.OPEN_LARGE]: AIProviders.LiteLLM,
   [Models.DEEPSEEK]: AIProviders.LiteLLM,
+  [Models.MINIMAX_2_5]: AIProviders.LiteLLM,
+  [Models.MINIMAX_M2]: AIProviders.LiteLLM,
+  [Models.OPEN_FAST]: AIProviders.LiteLLM,
 }
 
 export const isDeepResearchModel = (modelId: Models): boolean => {
