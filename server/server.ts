@@ -2413,7 +2413,7 @@ export const init = async () => {
   // Preload LiteLLM model info cache if configured
   if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
     try {
-      const { preloadModelInfoCache } = await import("@/ai/modelConfig")
+      const { preloadModelInfoCache } = await import("@/ai/fetchModels")
       await preloadModelInfoCache()
     } catch (error) {
       Logger.warn("Failed to preload LiteLLM model info cache", {

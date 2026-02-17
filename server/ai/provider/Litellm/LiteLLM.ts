@@ -7,7 +7,7 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { modelDetailsMap } from "@/ai/mappers"
 import OpenAI from "openai"
-import { getCostConfigForModel } from "@/ai/modelConfig"
+import { getCostConfigForModel } from "@/ai/fetchModels"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -191,8 +191,11 @@ export class LiteLLMProvider extends BaseProvider {
       let toolCalls: any[] = []
       let hasYieldedToolCalls = false
 
-
       const stream = await client.chat.completions.create(requestParams)
+
+      // Fetch cost configuration once before processing stream (uses cached data)
+      const costConfig = await getCostConfigForModel(modelParams.modelId)
+
 
       for await (const chunk of stream) {
         const choice = chunk.choices?.[0]
@@ -232,9 +235,6 @@ export class LiteLLMProvider extends BaseProvider {
             }
           }
         }
-
-        // Fetch cost configuration once before processing stream (uses cached data)
-        const costConfig = await getCostConfigForModel(modelParams.modelId)
 
         // Handle usage/cost information (usually in the last chunk)
         if ((chunk as any).usage) {
