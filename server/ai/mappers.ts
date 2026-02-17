@@ -461,6 +461,35 @@ export const modelDetailsMap: Record<
       }
     }
   },
+  // Minmax Models
+  [getActualModelName(Models.MINIMAX_2_5)]:{
+    name:"minimax-2-5",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
+  [getActualModelName(Models.MINIMAX_M2)]:{
+    name:"minimax-m2",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
+  // OpenAI Models
+  [getActualModelName(Models.OPEN_FAST)]:{
+    name:"open-fast",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
   // [getActualModelName(Models.LiteLLM_Claude_Sonnet_4_5)]:{
   //   name:"claude-sonnet-4-5",
   //   cost:{

@@ -235,7 +235,7 @@ export const fetchModelConfigs = async (): Promise<Array<{
         labelName: modelId, // Use model_name as fallback label
         provider: "LiteLLM",
         reasoning: false,
-        websearch: true,
+        websearch: false,
         deepResearch: false,
         description: "",
       })
@@ -247,7 +247,7 @@ export const fetchModelConfigs = async (): Promise<Array<{
 }
 
 // Main function to get available models - moved from config.ts for centralization
-export const getAvailableModels = async (config: {
+export const getAvailableModels = async (providerConfig: {
     AwsAccessKey?: string
     AwsSecretKey?: string
     OpenAIKey?: string
@@ -276,7 +276,7 @@ export const getAvailableModels = async (config: {
 
     // Priority (LiteLLM > AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex)
     // Using if-else logic to ensure only ONE provider is active at a time
-    if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
+    if (providerConfig.LiteLLMApiKey && providerConfig.LiteLLMBaseUrl) {
         // Fetch models from API (hosted_vllm only)
         const fetchedModels = await fetchModelConfigs()
         if (fetchedModels.length > 0) {
@@ -298,7 +298,7 @@ export const getAvailableModels = async (config: {
             })
             })
         }
-    } else if (config.AwsAccessKey && config.AwsSecretKey) {
+    } else if (providerConfig.AwsAccessKey && providerConfig.AwsSecretKey) {
         // Add only AWS Bedrock models
         Object.values(MODEL_CONFIGURATIONS)
         .filter((model) => model.provider === AIProviders.AwsBedrock)
@@ -313,7 +313,7 @@ export const getAvailableModels = async (config: {
             description: model.description,
             })
         })
-    } else if (config.OpenAIKey) {
+    } else if (providerConfig.OpenAIKey) {
         // Add only OpenAI models
         Object.values(MODEL_CONFIGURATIONS)
         .filter((model) => model.provider === AIProviders.OpenAI)
@@ -328,40 +328,40 @@ export const getAvailableModels = async (config: {
             description: model.description,
             })
         })
-    } else if (config.OllamaModel) {
+    } else if (providerConfig.OllamaModel) {
         // Add only Ollama model
         availableModels.push({
-        actualName: config.OllamaModel,
-        labelName: config.OllamaModel,
+        actualName: providerConfig.OllamaModel,
+        labelName: providerConfig.OllamaModel,
         provider: "Ollama",
         reasoning: false,
         websearch: true,
         deepResearch: false,
         description: "",
         })
-    } else if (config.TogetherAIModel && config.TogetherApiKey) {
+    } else if (providerConfig.TogetherAIModel && providerConfig.TogetherApiKey) {
         // Add only Together AI model
         availableModels.push({
-        actualName: config.TogetherAIModel,
-        labelName: config.TogetherAIModel,
+        actualName: providerConfig.TogetherAIModel,
+        labelName: providerConfig.TogetherAIModel,
         provider: "Together AI",
         reasoning: false,
         websearch: true,
         deepResearch: false,
         description: "",
         })
-    } else if (config.FireworksAIModel && config.FireworksApiKey) {
+    } else if (providerConfig.FireworksAIModel && providerConfig.FireworksApiKey) {
         // Add only Fireworks AI model
         availableModels.push({
-        actualName: config.FireworksAIModel,
-        labelName: config.FireworksAIModel,
+        actualName: providerConfig.FireworksAIModel,
+        labelName: providerConfig.FireworksAIModel,
         provider: "Fireworks AI",
         reasoning: false,
         websearch: true,
         deepResearch: false,
         description: "",
         })
-    } else if (config.GeminiAIModel && config.GeminiApiKey) {
+    } else if (providerConfig.GeminiAIModel && providerConfig.GeminiApiKey) {
         // Add all Google AI models
         Object.values(MODEL_CONFIGURATIONS)
         .filter((model) => model.provider === AIProviders.GoogleAI)
@@ -376,7 +376,7 @@ export const getAvailableModels = async (config: {
             description: model.description,
             })
         })
-    } else if (config.VertexProjectId && config.VertexRegion) {
+    } else if (providerConfig.VertexProjectId && providerConfig.VertexRegion) {
         // Add all Vertex AI models - no longer dependent on VERTEX_AI_MODEL being set
         Object.values(MODEL_CONFIGURATIONS)
         .filter((model) => model.provider === AIProviders.VertexAI)
@@ -396,8 +396,8 @@ export const getAvailableModels = async (config: {
     return availableModels
 }
 
-  // Legacy function for backward compatibility (returns old format)
-export const getAvailableModelsLegacy = async (config: {
+// Legacy function for backward compatibility (returns old format)
+export const getAvailableModelsLegacy = async (providerConfig: {
     AwsAccessKey?: string
     AwsSecretKey?: string
     OpenAIKey?: string
@@ -414,7 +414,7 @@ export const getAvailableModelsLegacy = async (config: {
     LiteLLMApiKey?: string
     LiteLLMBaseUrl?: string
 }) => {
-    const newModels = await getAvailableModels(config)
+    const newModels = await getAvailableModels(providerConfig)
     return newModels.map(
         (model: {
         actualName: string

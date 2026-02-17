@@ -226,7 +226,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   LiteLLMApiKey = process.env["LITELLM_API_KEY"]
   defaultBestModelAgenticMode = process.env["LITELLM_BEST_AGENTIC_MODEL"] 
   ? (process.env["LITELLM_BEST_AGENTIC_MODEL"] as Models)
-  : Models.GLM_LATEST
+  : Models.KIMI_LATEST
   // Set default models for LiteLLM (no longer requiring LITELLM_MODEL to be set)
   defaultFastModel = process.env["LITELLM_FAST_MODEL"]
     ? (process.env["LITELLM_FAST_MODEL"] as Models)
@@ -237,7 +237,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   sqlInferenceModel = Models.KIMI_LATEST
   if(defaultDeepResearchModel === "" as Models) {
     defaultDeepResearchModel = process.env["LITELLM_DEEP_RESEARCH_MODEL"] ? (process.env["LITELLM_DEEP_RESEARCH_MODEL"] as Models)
-    : Models.DEEPSEEK // Default deep research model
+    : Models.KIMI_LATEST// Default deep research model
   }
   defaultWebSearchModel = process.env["LITELLM_WEB_SEARCH_MODEL"] ? (process.env["LITELLM_WEB_SEARCH_MODEL"] as Models)
   : Models.LiteLLM_Gemini_3_Flash // Default web search model

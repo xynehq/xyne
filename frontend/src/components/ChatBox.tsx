@@ -596,34 +596,43 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     })
 
     // Hardcoded O3 model for deep research
-    const O3_RESEARCH_MODEL = {
-      labelName: "GPT O3 Research",
+    // const O3_RESEARCH_MODEL = {
+    //   labelName: "GPT O3 Research",
+    //   reasoning: false,
+    //   websearch: false,
+    //   deepResearch: true,
+    //   description: "Advanced research model with deep analysis capabilities.",
+    // }
+
+    // Hardcoded gemini 3 flash model for web search mode
+    const GEMINI_3_FLASH_MODEL = {
+      labelName: "Gemini 3 Flash",
       reasoning: false,
-      websearch: false,
-      deepResearch: true,
-      description: "Advanced research model with deep analysis capabilities.",
+      websearch: true,
+      deepResearch: false,
+      description: "Gemini 3 Flash model with web search capabilities.",
     }
 
-    // Get all models including O3 for deep research mode
-    const allModelsWithO3 = useMemo(() => {
-      return [...availableModels, O3_RESEARCH_MODEL]
+    // Get all models including gemini 3 flash for web search mode
+    const allModelsWithWebSearch = useMemo(() => {
+      return [...availableModels, GEMINI_3_FLASH_MODEL]
     }, [availableModels])
 
     // Get the currently selected model's data
     const selectedModelData = useMemo(() => {
-      return allModelsWithO3.find((m) => m.labelName === selectedModel)
-    }, [allModelsWithO3, selectedModel])
+      return allModelsWithWebSearch.find((m) => m.labelName === selectedModel)
+    }, [allModelsWithWebSearch, selectedModel])
 
     // Get models available for current mode
-    const availableModelsForMode = useMemo(() => {
-      if (selectedCapability === "deepResearch") {
-        // Show all models including O3, but only O3 is enabled
-        return allModelsWithO3
-      } else {
-        // For reasoning and websearch modes, show all API models + O3 (but O3 disabled in non-deep-research)
-        return allModelsWithO3
-      }
-    }, [selectedCapability, allModelsWithO3])
+    // const availableModelsForMode = useMemo(() => {
+    //   if (selectedCapability === "deepResearch") {
+    //     // Show all models including gemini 3 flash, but only gemini 3 flash is enabled
+    //     return allModelsWithWebSearch
+    //   } else {
+    //     // For reasoning and websearch modes, show all API models + gemini 3 flash (but gemini 3 flash disabled in non-web-search mode)
+    //     return allModelsWithWebSearch
+    //   }
+    // }, [selectedCapability, allModelsWithWebSearch])
 
     // Check if a model is disabled in current mode
     const isModelDisabled = useCallback(
@@ -631,13 +640,15 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         if (selectedCapability === "websearch") {
           return model.labelName !== "Gemini 3 Flash" && model.labelName !== "Gemini 2.5 Flash"
         } else if (selectedCapability === "deepResearch") {
-          return model.labelName !== "GPT O3 Research"
-        } else if (selectedCapability === "reasoning") {
-          // Reasoning mode: disable O3 Research
-          return model.labelName === "GPT O3 Research"
-        } else {
-          // No capability selected: disable O3 Research only
-          return model.labelName === "GPT O3 Research"
+          return model.labelName !== "KIMI Latest"
+        } 
+        // else if (selectedCapability === "reasoning") {
+        //   // Reasoning mode: disable kimi latest
+        //   return model.labelName === "KIMI Latest"
+        // } 
+        else {
+          // No capability selected: disable gemini 3 flash only
+          return model.labelName === "Gemini 3 Flash"
         }
       },
       [selectedCapability],
@@ -645,8 +656,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // Filter models based on selected filters
     const filteredModels = useMemo(() => {
-      return availableModelsForMode
-    }, [availableModelsForMode])
+      return allModelsWithWebSearch
+    }, [allModelsWithWebSearch])
 
     const showAdvancedOptions =
       !hideButtons &&
@@ -717,12 +728,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // Effect to validate and set model when availableModels loads
     useEffect(() => {
-      if (availableModels.length > 0) {
+      if (allModelsWithWebSearch.length > 0) {
         const savedModel = getSelectedModelFromStorage()
 
         if (savedModel) {
           // Check if saved model is still available
-          const isModelAvailable = allModelsWithO3.some(
+          const isModelAvailable = allModelsWithWebSearch.some(
             (m) => m.labelName === savedModel,
           )
 
@@ -731,20 +742,20 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             setSelectedModel(savedModel)
           } else if (!isModelAvailable && !selectedModel) {
             // Saved model no longer available and no current selection, use default
-            const defaultModel = getDefaultModel(availableModels)
+            const defaultModel = getDefaultModel(allModelsWithWebSearch)
             if (defaultModel) {
               setSelectedModel(defaultModel)
             }
           }
         } else if (!selectedModel) {
           // No saved model and no current selection, use default
-          const defaultModel = getDefaultModel(availableModels)
+          const defaultModel = getDefaultModel(allModelsWithWebSearch)
           if (defaultModel) {
             setSelectedModel(defaultModel)
           }
         }
       }
-    }, [availableModels, allModelsWithO3])
+    }, [availableModels, allModelsWithWebSearch])
 
     // Effect to trigger animation when model changes
     useEffect(() => {
@@ -765,7 +776,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           // Clicking the same capability toggles it off (deselects)
           setSelectedCapability(null)
           // When deselected, restore default model
-          const defaultModel = getDefaultModel(availableModels)
+          const defaultModel = getDefaultModel(allModelsWithWebSearch)
           if (defaultModel) {
             setSelectedModel(defaultModel)
           }
@@ -780,32 +791,32 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             reasoningModeModel || getSelectedModelFromStorage()
           if (
             storedReasoningModel &&
-            availableModels.find(
+            allModelsWithWebSearch.find(
               (m: ModelConfiguration) => m.labelName === storedReasoningModel,
             )
           ) {
             setSelectedModel(storedReasoningModel)
           } else {
             // Use default model if no valid stored model
-            const defaultModel = getDefaultModel(availableModels)
+            const defaultModel = getDefaultModel(allModelsWithWebSearch)
             if (defaultModel) {
               setSelectedModel(defaultModel)
             }
           }
         } else if (newCapability === "websearch") {
           // Auto-select Gemini 2.5 Flash for web search
-          const geminiModel = availableModels.find(
+          const geminiModel = allModelsWithWebSearch.find(
             (m: ModelConfiguration) => m.labelName === "Gemini 3 Flash" || m.labelName === "Gemini 2.5 Flash",
           )
           if (geminiModel) {
             setSelectedModel(geminiModel.labelName)
           }
         } else if (newCapability === "deepResearch") {
-          // Auto-select O3 Research for deep research
-          setSelectedModel("GPT O3 Research")
+          // Auto-select KIMI Latest for deep research
+          setSelectedModel("KIMI Latest")
         }
       },
-      [selectedCapability, reasoningModeModel, availableModels],
+      [selectedCapability, reasoningModeModel, allModelsWithWebSearch],
     )
 
     // Fetch available models on component mount
@@ -3957,7 +3968,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                           selectedCapability ===
                                             "deepResearch" &&
                                           model.labelName !==
-                                            "GPT O3 Research" && (
+                                            "KIMI Latest" && (
                                             <span className="text-xs text-red-400 dark:text-red-400 mt-1">
                                               Not available in Deep Research
                                               mode
@@ -3966,9 +3977,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                         {isDisabled &&
                                           selectedCapability === "reasoning" &&
                                           model.labelName ===
-                                            "GPT O3 Research" && (
+                                            "KIMI Latest" && (
                                             <span className="text-xs text-red-400 dark:text-red-400 mt-1">
                                               Only available in Deep Research
+                                              mode
+                                            </span>
+                                          )}
+                                          {isDisabled &&
+                                          selectedCapability === null &&
+                                          model.labelName ===
+                                            "Gemini 3 Flash" && (
+                                            <span className="text-xs text-red-400 dark:text-red-400 mt-1">
+                                              Only available in Web Search
                                               mode
                                             </span>
                                           )}
