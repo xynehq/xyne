@@ -64,6 +64,7 @@ let sqlInferenceModel = ""
 let LiteLLMApiKey = ""
 let LiteLLMModel = ""
 let LiteLLMBaseUrl = ""
+let LiteLLMModelInfoUrl = process.env.LITELLM_MODEL_INFO_URL || "https://grid.ai.juspay.net/v1/model/info"
 
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
@@ -299,6 +300,7 @@ export default {
   LiteLLMApiKey,
   LiteLLMModel,
   LiteLLMBaseUrl,
+  LiteLLMModelInfoUrl,
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,

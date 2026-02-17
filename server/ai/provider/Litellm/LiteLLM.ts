@@ -7,125 +7,13 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { modelDetailsMap } from "@/ai/mappers"
 import OpenAI from "openai"
-import config from "@/config"
+import { getCostConfigForModel } from "@/ai/modelConfig"
 
 const Logger = getLogger(Subsystem.AI)
 
 interface LiteLLMClientConfig {
   apiKey: string
   baseURL: string
-}
-
-// Helper function to parse cost value (handles both numbers and scientific notation strings)
-function parseCostValue(value: any): number {
-  if (typeof value === "number") {
-    return value
-  }
-  if (typeof value === "string") {
-    // Handle scientific notation strings like "6e-07"
-    const parsed = parseFloat(value)
-    return isNaN(parsed) ? 0 : parsed
-  }
-  return 0
-}
-
-// Helper function to fetch cost config from API with fallback to default
-async function getCostConfig(
-  modelId: string,
-): Promise<{ pricePerThousandInputTokens: number; pricePerThousandOutputTokens: number }> {
-  try {
-    // Use API key from config
-    if (!config.LiteLLMApiKey) {
-      Logger.warn("LiteLLM API key not configured, using fallback cost config", { modelId })
-      return modelDetailsMap[modelId]?.cost?.onDemand ?? {
-        pricePerThousandInputTokens: 0,
-        pricePerThousandOutputTokens: 0,
-      }
-    }
-
-    // Set timeout of 5 seconds
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000)
-
-    try {
-      const response = await fetch("https://grid.ai.juspay.net/v1/model/info", {
-        headers: {
-          "x-litellm-api-key": config.LiteLLMApiKey,
-          "accept": "application/json",
-        },
-        signal: controller.signal,
-      })
-      clearTimeout(timeoutId)
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch model configs: ${response.statusText}`)
-      }
-      const responseData = await response.json()
-      
-      // API returns { data: [...] }, so extract the data array
-      const data = Array.isArray(responseData) ? responseData : (responseData.data || [])
-
-      // Find the model in the API response
-      // Match by model_name (enum value like "glm-latest") or by the actual model name in litellm_params.model
-      // Also handle cases where modelId might be the full path like "hosted_vllm/zai-org/GLM-4.7-dev"
-      const modelInfo = data.find(
-        (m: any) => {
-          // Direct match by model_name (enum value)
-          if (m.model_name === modelId) return true
-          
-          // Match by litellm_params.model (full path)
-          if (m.litellm_params?.model === modelId) return true
-          
-          // Match if modelId is at the end of the full path (e.g., "glm-latest" matches "hosted_vllm/zai-org/GLM-4.7-dev" if the path ends with it)
-          if (m.litellm_params?.model?.endsWith(`/${modelId}`)) return true
-          
-          // Match if modelId contains the model_name (e.g., "glm-latest" in "hosted_vllm/glm-latest")
-          if (m.litellm_params?.model?.includes(`/${modelId}`)) return true
-          
-          return false
-        },
-      )
-
-      if (modelInfo) {
-        // Try to get costs from model_info first (as numbers), then from litellm_params (as strings)
-        const inputCost = modelInfo.model_info?.input_cost_per_token ?? 
-                         modelInfo.litellm_params?.input_cost_per_token
-        const outputCost = modelInfo.model_info?.output_cost_per_token ?? 
-                          modelInfo.litellm_params?.output_cost_per_token
-
-        if (inputCost !== undefined && inputCost !== null &&
-            outputCost !== undefined && outputCost !== null) {
-          const parsedInputCost = parseCostValue(inputCost)
-          const parsedOutputCost = parseCostValue(outputCost)
-          
-          if (parsedInputCost > 0 || parsedOutputCost > 0) {
-            return {
-              pricePerThousandInputTokens: parsedInputCost * 1000,
-              pricePerThousandOutputTokens: parsedOutputCost * 1000,
-            }
-          }
-        }
-      }
-    } catch (fetchError) {
-      clearTimeout(timeoutId)
-      if (fetchError instanceof Error && fetchError.name === "AbortError") {
-        Logger.warn("Cost config API call timed out, using fallback", { modelId })
-      } else {
-        throw fetchError
-      }
-    }
-  } catch (error) {
-    Logger.warn("Failed to fetch cost config from API, using fallback", {
-      error: error instanceof Error ? error.message : String(error),
-      modelId,
-    })
-  }
-
-  // Fallback to default config from modelDetailsMap
-  return modelDetailsMap[modelId]?.cost?.onDemand ?? {
-    pricePerThousandInputTokens: 0,
-    pricePerThousandOutputTokens: 0,
-  }
 }
 
 export class LiteLLM {
@@ -208,8 +96,8 @@ export class LiteLLMProvider extends BaseProvider {
       const outputTokens = response.usage?.completion_tokens ?? 0
       const totalTokens = response.usage?.total_tokens ?? 0
 
-      // Fetch cost configuration from API with fallback to default config
-      const costConfig = await getCostConfig(modelParams.modelId)
+      // Fetch cost configuration from API with fallback to default config (uses cached data)
+      const costConfig = await getCostConfigForModel(modelParams.modelId)
 
       return {
         text: messageContent,
@@ -303,8 +191,6 @@ export class LiteLLMProvider extends BaseProvider {
       let toolCalls: any[] = []
       let hasYieldedToolCalls = false
 
-      // Fetch cost configuration once before processing stream
-      const costConfig = await getCostConfig(modelParams.modelId)
 
       const stream = await client.chat.completions.create(requestParams)
 
@@ -346,6 +232,9 @@ export class LiteLLMProvider extends BaseProvider {
             }
           }
         }
+
+        // Fetch cost configuration once before processing stream (uses cached data)
+        const costConfig = await getCostConfigForModel(modelParams.modelId)
 
         // Handle usage/cost information (usually in the last chunk)
         if ((chunk as any).usage) {

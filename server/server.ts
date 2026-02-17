@@ -386,7 +386,6 @@ import {
 } from "@/integrations/slack/client"
 const { JwtPayloadKey } = config
 import { updateMetricsFromThread } from "@/metrics/utils"
-import { fetchModelConfigs } from "@/ai/modelConfig"
 
 import {
   agents,
@@ -2411,8 +2410,17 @@ export const init = async () => {
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
 
-  // Fetch model configurations and costs
-  await fetchModelConfigs()
+  // Preload LiteLLM model info cache if configured
+  if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
+    try {
+      const { preloadModelInfoCache } = await import("@/ai/modelConfig")
+      await preloadModelInfoCache()
+    } catch (error) {
+      Logger.warn("Failed to preload LiteLLM model info cache", {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
 
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")

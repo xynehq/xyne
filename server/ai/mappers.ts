@@ -401,8 +401,8 @@ export const modelDetailsMap: Record<
     name:"private-large",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0,
-        pricePerThousandOutputTokens:0,
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
       }
     }
   },
@@ -420,8 +420,8 @@ export const modelDetailsMap: Record<
     name:"glm-45-air-curriculum-learning",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0,
-        pricePerThousandOutputTokens:0,
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
       }
     }
   },
@@ -429,8 +429,8 @@ export const modelDetailsMap: Record<
     name:"glm-flash-experimental",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0,
-        pricePerThousandOutputTokens:0,
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
       }
     }
   },
@@ -438,8 +438,8 @@ export const modelDetailsMap: Record<
     name:"glm-private",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0,
-        pricePerThousandOutputTokens:0,
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
       }
     }
   },
@@ -457,8 +457,8 @@ export const modelDetailsMap: Record<
     name:"deepseek",
     cost:{
       onDemand:{
-        pricePerThousandInputTokens:0,
-        pricePerThousandOutputTokens:0,
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
       }
     }
   },
