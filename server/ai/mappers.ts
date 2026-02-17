@@ -369,33 +369,6 @@ export const modelDetailsMap: Record<
       }
     }
   },
-  [getActualModelName(Models.CLAUDE_HAIKU_3_5)]:{
-    name:"claude-3-5-haiku-20241022",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
-  },
-  [getActualModelName(Models.CLAUDE_HAIKU_3_5_20241022)]:{
-    name:"claude-3-5-haiku@20241022",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
-  },
-  [getActualModelName(Models.CLAUDE_HAIKU_4_5)]:{
-    name:"claude-haiku-4-5-20251001",
-    cost:{
-      onDemand:{
-        pricePerThousandInputTokens:0.0006,
-        pricePerThousandOutputTokens:0.000003,
-      }
-    }
-  },
   [getActualModelName(Models.PRIVATE_LARGE)]:{
     name:"private-large",
     cost:{
@@ -508,15 +481,15 @@ export const modelDetailsMap: Record<
   //     }
   //   }
   // },
-  // [getActualModelName(Models.LiteLLM_Gemini_3_Flash)]:{
-  //   name:"gemini-3-flash-preview",
-  //   cost:{
-  //     onDemand:{
-  //       pricePerThousandInputTokens:0.0003,
-  //       pricePerThousandOutputTokens:0.0025,
-  //     }
-  //   }
-  // },
+  [getActualModelName(Models.LiteLLM_Gemini_3_Flash)]:{
+    name:"gemini-3-flash-preview",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0005,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
 }
 
 export const ModelToProviderMap: Record<Models, AIProviders> = {
@@ -589,9 +562,6 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.LiteLLM_Gemini_3_Pro]: AIProviders.LiteLLM,
   [Models.LiteLLM_Gemini_3_Flash]: AIProviders.LiteLLM,
   [Models.KIMI_LATEST]: AIProviders.LiteLLM,
-  [Models.CLAUDE_HAIKU_3_5]: AIProviders.LiteLLM,
-  [Models.CLAUDE_HAIKU_3_5_20241022]: AIProviders.LiteLLM,
-  [Models.CLAUDE_HAIKU_4_5]: AIProviders.LiteLLM,
   [Models.PRIVATE_LARGE]: AIProviders.LiteLLM,
   [Models.GLM_LATEST]: AIProviders.LiteLLM,
   [Models.GLM_FLASH]: AIProviders.LiteLLM,

@@ -67,9 +67,6 @@ export enum LiteLLMModels {
   // Free Models (HOSTED VLLMS)
   // kimi
   KIMI_LATEST = "kimi-latest",
-  CLAUDE_HAIKU_3_5 = "claude-3-5-haiku-20241022",
-  CLAUDE_HAIKU_3_5_20241022 = "claude-3-5-haiku@20241022",
-  CLAUDE_HAIKU_4_5 = "claude-haiku-4-5-20251001",
   PRIVATE_LARGE = "private-large",
   GLM_PRIVATE = "glm-private",
   
@@ -203,9 +200,6 @@ export enum Models {
 
   //KIMI
   KIMI_LATEST = LiteLLMModels.KIMI_LATEST,
-  CLAUDE_HAIKU_3_5 = LiteLLMModels.CLAUDE_HAIKU_3_5,
-  CLAUDE_HAIKU_3_5_20241022 = LiteLLMModels.CLAUDE_HAIKU_3_5_20241022,
-  CLAUDE_HAIKU_4_5 = LiteLLMModels.CLAUDE_HAIKU_4_5,
   PRIVATE_LARGE = LiteLLMModels.PRIVATE_LARGE,
   GLM_PRIVATE = LiteLLMModels.GLM_PRIVATE,
 
