@@ -2412,6 +2412,10 @@ export const init = async () => {
 
   // Preload LiteLLM model info cache if configured
   if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
+    if (!config.LiteLLMModelInfoUrl) {
+      console.error("LiteLLM model info URL not configured. Server cannot start without this configuration.")
+      process.exit(1)
+    }
     try {
       const { preloadModelInfoCache } = await import("@/ai/fetchModels")
       await preloadModelInfoCache()

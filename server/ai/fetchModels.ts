@@ -50,11 +50,15 @@ async function fetchModelInfoFromAPI(forceRefresh = false): Promise<any[]> {
   const timeoutId = setTimeout(() => controller.abort(), 5000)
 
   try {
-    const apiUrl = config.LiteLLMModelInfoUrl || "https://grid.ai.juspay.net/v1/model/info"
+    const apiUrl = config.LiteLLMModelInfoUrl
+    if (!apiUrl) {
+      throw new Error("LiteLLM model info URL not configured")
+    }
     const response = await fetch(apiUrl, {
       headers: {
         "x-litellm-api-key": config.LiteLLMApiKey,
         "accept": "application/json",
+        "x-litellm-disable-logging": "true",
       },
       signal: controller.signal,
     })
