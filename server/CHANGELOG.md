@@ -1,3 +1,10 @@
+# [3.36.0](https://github.com/xynehq/xyne/compare/v3.35.5...v3.36.0) (2026-02-17)
+
+
+### Features
+
+* added litellm models ([#1253](https://github.com/xynehq/xyne/issues/1253)) ([dc79c0e](https://github.com/xynehq/xyne/commit/dc79c0e9bbf678501b79ee64c603e760bd93b011))
+
 ## [3.35.5](https://github.com/xynehq/xyne/compare/v3.35.4...v3.35.5) (2026-02-10)
 
 
