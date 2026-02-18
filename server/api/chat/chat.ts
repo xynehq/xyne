@@ -2994,6 +2994,28 @@ export const buildUserQuery = (userQuery: UserQuery) => {
   return builtQuery
 }
 
+/**
+ * Safely decodes a URI component, handling cases where:
+ * - The string is already decoded
+ * - The string contains invalid URI encoding sequences
+ * - The string doesn't need decoding
+ * 
+ * @param str - The string to decode
+ * @returns The decoded string, or the original string if decoding fails
+ */
+export const safeDecodeURIComponent = (str: string): string => {
+  try {
+    // Only attempt to decode if it contains encoded characters (check for % followed by hex)
+    if (str.includes("%")) {
+      return decodeURIComponent(str)
+    }
+    return str
+  } catch (error) {
+    // If decoding fails, return the original string (it's likely already decoded)
+    return str
+  }
+}
+
 export const parseMessageText = (message: string): string => {
   if (!message.startsWith("[{")) {
     return message
@@ -5130,7 +5152,8 @@ export const MessageApi = async (c: Context) => {
         message: "Message is required",
       })
     }
-    message = decodeURIComponent(message)
+    // Safely decode URI component - handle cases where message is already decoded or has invalid encoding
+    message = safeDecodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
     // Extract sources from search parameters

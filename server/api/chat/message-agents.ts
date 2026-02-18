@@ -151,7 +151,7 @@ import {
   type StreamableHTTPClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
-import { parseMessageText } from "./chat"
+import { parseMessageText, safeDecodeURIComponent } from "./chat"
 import { getUserPersonalizationByEmail } from "@/db/personalization"
 import { getChunkCountPerDoc } from "./chunk-selection"
 
@@ -3384,7 +3384,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
       throw new HTTPException(400, { message: "Message is required" })
     }
     
-    message = decodeURIComponent(message)
+    message = safeDecodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     rootSpan.setAttribute("chatId", chatId || "new")
 

@@ -332,7 +332,18 @@ export const SearchApi = async (c: Context) => {
   const timestampRange = getTimestamp(lastUpdated)
     ? { from: getTimestamp(lastUpdated)!, to: new Date().getTime() }
     : null
-  const decodedQuery = decodeURIComponent(query)
+  // Safely decode URI component - handle cases where query is already decoded or has invalid encoding
+  let decodedQuery: string
+  try {
+    if ((query as string).includes("%")) {
+      decodedQuery = decodeURIComponent(query)
+    } else {
+      decodedQuery = query as string
+    }
+  } catch (error) {
+    // If decoding fails, use the original query (it's likely already decoded)
+    decodedQuery = query
+  }
 
   if (agentId) {
     const workspaceExternalId = workspaceId
@@ -554,7 +565,18 @@ export const SearchSlackChannels = async (c: Context) => {
   const email = sub
   // @ts-ignore
   const { query } = c.req.valid("query")
-  const decodedQuery = decodeURIComponent(query)
+  // Safely decode URI component - handle cases where query is already decoded or has invalid encoding
+  let decodedQuery: string
+  try {
+    if ((query as string).includes("%")) {
+      decodedQuery = decodeURIComponent(query)
+    } else {
+      decodedQuery = query
+    }
+  } catch (error) {
+    // If decoding fails, use the original query (it's likely already decoded)
+    decodedQuery = query
+  }
   const results = await searchVespa(
     `*${decodedQuery}*`,
     email,
@@ -575,7 +597,18 @@ export const AnswerApi = async (c: Context) => {
 
   // @ts-ignore
   const { query, app, entity } = c.req.valid("query")
-  const decodedQuery = decodeURIComponent(query)
+  // Safely decode URI component - handle cases where query is already decoded or has invalid encoding
+  let decodedQuery: string
+  try {
+    if ((query as string).includes("%")) {
+      decodedQuery = decodeURIComponent(query)
+    } else {
+      decodedQuery = query
+    }
+  } catch (error) {
+    // If decoding fails, use the original query (it's likely already decoded)
+    decodedQuery = query
+  }
   const [userAndWorkspace, results]: [
     PublicUserWorkspace,
     VespaSearchResponse,

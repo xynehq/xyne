@@ -15,6 +15,7 @@ import {
 import { Sidebar } from "@/components/Sidebar"
 import { useState, useCallback, useEffect, memo, useRef, useMemo } from "react"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import CollectionFileUpload, {
   SelectedFile as FileUploadSelectedFile,
 } from "@/components/ClFileUpload"
@@ -374,6 +375,7 @@ function KnowledgeManagementContent() {
   const [selectedFiles, setSelectedFiles] = useState<FileUploadSelectedFile[]>(
     [],
   )
+  const [useOCR, setUseOCR] = useState<boolean>(true) // Default to true for OCR
   // Document viewer state
   const [selectedDocument, setSelectedDocument] = useState<{
     file: FileNode
@@ -672,6 +674,7 @@ function KnowledgeManagementContent() {
     setTargetFolder(null)
     setCollectionName("")
     setSelectedFiles([])
+    setUseOCR(true) // Reset to default
     setOpenDropdown(null)
   }
 
@@ -752,6 +755,7 @@ function KnowledgeManagementContent() {
           cl.id,
           null,
           abortController.signal,
+          useOCR,
         )
 
         // Update individual file statuses based on results
@@ -967,6 +971,7 @@ function KnowledgeManagementContent() {
           addingToCollection.id,
           targetFolder?.id,
           abortController.signal,
+          useOCR,
         )
 
         // Update individual file statuses based on results
@@ -2387,6 +2392,25 @@ function KnowledgeManagementContent() {
                       </p>
                     )}
                   </div>
+                </div>
+                <div className="mb-6">
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="useOCR"
+                      className="block text-sm text-gray-700 dark:text-gray-300"
+                    >
+                      Use OCR for chunking PDFs
+                    </label>
+                    <Switch
+                      id="useOCR"
+                      checked={useOCR}
+                      onCheckedChange={setUseOCR}
+                      disabled={isUploading}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    When enabled, PDFs will be processed using OCR for better text extraction from scanned documents
+                  </p>
                 </div>
                 <CollectionFileUpload
                   onFilesSelect={handleFilesSelect}

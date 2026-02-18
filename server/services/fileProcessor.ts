@@ -58,6 +58,7 @@ export class FileProcessorService {
     storagePath?: string,
     extractImages: boolean = false,
     describeImages: boolean = false,
+    useOCR: boolean = true,
   ): Promise<ProcessingResultArray> {
     const baseMimeType = getBaseMimeType(mimeType || "text/plain")
     let chunks: string[] = []
@@ -75,6 +76,7 @@ export class FileProcessorService {
           vespaDocId,
           extractImages,
           describeImages,
+          useOCR,
         )
         // Wrap in array to match return type
         return [pdfResult]
