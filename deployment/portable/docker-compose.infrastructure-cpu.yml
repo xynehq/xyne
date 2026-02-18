@@ -206,7 +206,7 @@ services:
       - xyne
 
   promtail:
-    image: grafana/promtail:3.4.1
+    image: grafana/promtail:3.6.6
     container_name: promtail
     user: "0:${DOCKER_GROUP_ID:-999}"  # root user with docker group for socket access
     depends_on:
