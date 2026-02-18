@@ -176,7 +176,7 @@ services:
       - xyne
 
   loki:
-    image: grafana/loki:3.4.1
+    image: grafana/loki:3.6.6
     container_name: loki
     user: "10001:10001"
     depends_on:
