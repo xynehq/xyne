@@ -89,6 +89,7 @@ import {
   isAppSelectionMap,
   checkAndYieldCitationsForAgent,
   addErrMessageToMessage,
+  safeDecodeURIComponent,
 } from "./utils"
 import config from "@/config"
 import { getModelValueFromLabel, getActiveProvider } from "@/ai/modelConfig"
@@ -418,7 +419,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         message: "Message is required",
       })
     }
-    message = decodeURIComponent(message)
+    message = safeDecodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
@@ -1223,7 +1224,7 @@ export const AgentMessageApi = async (c: Context) => {
       })
     }
     // Truncate table chats,connectors,nessages;
-    message = decodeURIComponent(message)
+    message = safeDecodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     let ids
     let isValidPath: boolean = false

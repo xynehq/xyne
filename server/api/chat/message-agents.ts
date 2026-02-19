@@ -85,6 +85,7 @@ import {
   extractFileIdsFromMessage,
   isMessageWithContext,
   processThreadResults,
+  safeDecodeURIComponent,
 } from "./utils"
 import { searchCollectionRAG, SearchEmailThreads, searchVespaInFiles } from "@/search/vespa"
 import {
@@ -3384,7 +3385,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
       throw new HTTPException(400, { message: "Message is required" })
     }
     
-    message = decodeURIComponent(message)
+    message = safeDecodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     rootSpan.setAttribute("chatId", chatId || "new")
 

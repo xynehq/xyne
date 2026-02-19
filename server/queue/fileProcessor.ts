@@ -55,6 +55,7 @@ function extractMarkdownTitle(content: string): string {
 export interface FileProcessingJob {
   fileId: string
   type?: ProcessingJobType.FILE // Default type for backward compatibility
+  useOCR?: boolean // Whether to use OCR for PDF processing (default: true)
 }
 
 export interface CollectionProcessingJob {
@@ -233,12 +234,17 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     const fileBuffer = await readFile(file.storagePath)
 
     // Process file to extract content
+    // Get useOCR from job data (default to true for backward compatibility)
+    const useOCR = jobData.useOCR !== false
     const processingResults = await FileProcessorService.processFile(
       fileBuffer,
       file.mimeType || "application/octet-stream",
       file.fileName,
       file.vespaDocId || "",
       file.storagePath,
+      false, // extractImages
+      false, // describeImages
+      useOCR, // useOCR option
     )
 
     // Extract title for markdown files

@@ -1212,6 +1212,8 @@ export const UploadFilesApi = async (c: Context) => {
     const duplicateStrategy =
       (formData.get("duplicateStrategy") as DuplicateStrategy) ||
       DuplicateStrategy.RENAME
+    // Get OCR option (default to true for backward compatibility)
+    const useOCR = formData.get("useOCR") !== "false"
 
     // For batch uploads, get session info
     let sessionId = formData.get("sessionId") as string | null
@@ -1564,7 +1566,11 @@ export const UploadFilesApi = async (c: Context) => {
             : FileProcessingQueue
         await boss.send(
           queueName,
-          { fileId: item.id, type: ProcessingJobType.FILE },
+          { 
+            fileId: item.id, 
+            type: ProcessingJobType.FILE,
+            useOCR: useOCR, // Pass OCR option to the processing job
+          },
           {
             retryLimit: 3,
             expireInHours: 12,

@@ -199,18 +199,23 @@ export class PdfProcessor {
     vespaDocId: string,
     extractImages: boolean = false,
     describeImages: boolean = false,
+    useOCR: boolean = true,
   ): Promise<ProcessingResult> {
-    // Step 1: Try OCR first
-    try {
-      Logger.info(`Attempting OCR processing for ${fileName}`)
-      const ocrResult = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
-      Logger.info(`OCR processing successful for ${fileName}`)
-      return this.finalizeProcessingResult(ocrResult, PDF_PROCESSING_METHOD.OCR)
-    } catch (error) {
-      Logger.warn(
-        error,
-        `OCR-based PDF processing failed for ${fileName}, attempting fallbacks`,
-      )
+    // Step 1: Try OCR first (if enabled)
+    if (useOCR) {
+      try {
+        Logger.info(`Attempting OCR processing for ${fileName}`)
+        const ocrResult = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
+        Logger.info(`OCR processing successful for ${fileName}`)
+        return this.finalizeProcessingResult(ocrResult, PDF_PROCESSING_METHOD.OCR)
+      } catch (error) {
+        Logger.warn(
+          error,
+          `OCR-based PDF processing failed for ${fileName}, attempting fallbacks`,
+        )
+      }
+    } else {
+      Logger.info(`OCR disabled for ${fileName}, skipping OCR processing`)
     }
 
     // Step 2: Determine if we should try Gemini based on page count

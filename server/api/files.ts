@@ -288,6 +288,7 @@ export const handleAttachmentUpload = async (c: Context) => {
             undefined,
             true,
             false,
+            false,
           )
 
           if(processingResults.length > 0 && 'totalSheets' in processingResults[0]) {

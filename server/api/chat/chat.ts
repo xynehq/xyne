@@ -191,6 +191,7 @@ import {
   type AppFilter,
   formatAgentScopesText,
   processMessage,
+  safeDecodeURIComponent,
 } from "./utils"
 import {
   buildKnowledgeBaseCollectionSelections,
@@ -5130,7 +5131,8 @@ export const MessageApi = async (c: Context) => {
         message: "Message is required",
       })
     }
-    message = decodeURIComponent(message)
+    // Safely decode URI component - handle cases where message is already decoded or has invalid encoding
+    message = safeDecodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
     // Extract sources from search parameters

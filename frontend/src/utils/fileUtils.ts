@@ -192,6 +192,7 @@ export const uploadFileBatch = async (
   collectionId: string,
   parentId?: string | null,
   abortSignal?: AbortSignal,
+  useOCR: boolean = true,
 ): Promise<any> => {
   const formData = new FormData()
 
@@ -199,6 +200,9 @@ export const uploadFileBatch = async (
   if (parentId !== undefined && parentId !== null) {
     formData.append("parentId", parentId)
   }
+
+  // Add OCR option
+  formData.append("useOCR", useOCR.toString())
 
   // Add files with their paths
   files.forEach((file) => {
