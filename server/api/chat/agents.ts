@@ -89,6 +89,7 @@ import {
   isAppSelectionMap,
   checkAndYieldCitationsForAgent,
   addErrMessageToMessage,
+  safeDecodeURIComponent,
 } from "./utils"
 import config from "@/config"
 import { getModelValueFromLabel, getActiveProvider } from "@/ai/modelConfig"
@@ -98,7 +99,6 @@ import {
   UnderstandMessageAndAnswer,
   generateAnswerFromDualRag,
   UnderstandMessageAndAnswerForGivenContext,
-  safeDecodeURIComponent,
 } from "./chat"
 import { getDateForAI } from "@/utils/index"
 import { getAuth, safeGet } from "../agent"

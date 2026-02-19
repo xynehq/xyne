@@ -85,6 +85,7 @@ import {
   extractFileIdsFromMessage,
   isMessageWithContext,
   processThreadResults,
+  safeDecodeURIComponent,
 } from "./utils"
 import { searchCollectionRAG, SearchEmailThreads, searchVespaInFiles } from "@/search/vespa"
 import {
@@ -151,7 +152,7 @@ import {
   type StreamableHTTPClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
-import { parseMessageText, safeDecodeURIComponent } from "./chat"
+import { parseMessageText } from "./chat"
 import { getUserPersonalizationByEmail } from "@/db/personalization"
 import { getChunkCountPerDoc } from "./chunk-selection"
 

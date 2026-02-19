@@ -191,6 +191,7 @@ import {
   type AppFilter,
   formatAgentScopesText,
   processMessage,
+  safeDecodeURIComponent,
 } from "./utils"
 import {
   buildKnowledgeBaseCollectionSelections,
@@ -2992,24 +2993,6 @@ export const buildUserQuery = (userQuery: UserQuery) => {
     }
   })
   return builtQuery
-}
-
-/**
- * Safely decodes a URI component, handling cases where:
- * - The string is already decoded
- * - The string contains invalid URI encoding sequences
- * - The string doesn't need decoding
- * 
- * @param str - The string to decode
- * @returns The decoded string, or the original string if decoding fails
- */
-export const safeDecodeURIComponent = (str: string): string => {
-  try {
-    return decodeURIComponent(str)
-  } catch (error) {
-    // If decoding fails, return the original string (it's likely already decoded)
-    return str
-  }
 }
 
 export const parseMessageText = (message: string): string => {

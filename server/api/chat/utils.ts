@@ -1684,3 +1684,12 @@ function formatAppName(appKey: string): string | null {
       return appKey // Return as-is if unknown
   }
 }
+
+export const safeDecodeURIComponent = (str: string): string => {
+  try {
+    return decodeURIComponent(str)
+  } catch (error) {
+    // If decoding fails, return the original string (it's likely already decoded)
+    return str
+  }
+}
