@@ -1,3 +1,10 @@
+# [3.37.0](https://github.com/xynehq/xyne/compare/v3.36.0...v3.37.0) (2026-02-19)
+
+
+### Features
+
+* added ocr toggle button during upload ([#1254](https://github.com/xynehq/xyne/issues/1254)) ([8144522](https://github.com/xynehq/xyne/commit/814452215ee36baaf98b8613fe089322db765646))
+
 # [3.36.0](https://github.com/xynehq/xyne/compare/v3.35.5...v3.36.0) (2026-02-17)
 
 
