@@ -3005,11 +3005,7 @@ export const buildUserQuery = (userQuery: UserQuery) => {
  */
 export const safeDecodeURIComponent = (str: string): string => {
   try {
-    // Only attempt to decode if it contains encoded characters (check for % followed by hex)
-    if (str.includes("%")) {
-      return decodeURIComponent(str)
-    }
-    return str
+    return decodeURIComponent(str)
   } catch (error) {
     // If decoding fails, return the original string (it's likely already decoded)
     return str

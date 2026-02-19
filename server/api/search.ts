@@ -335,11 +335,7 @@ export const SearchApi = async (c: Context) => {
   // Safely decode URI component - handle cases where query is already decoded or has invalid encoding
   let decodedQuery: string
   try {
-    if ((query as string).includes("%")) {
-      decodedQuery = decodeURIComponent(query)
-    } else {
-      decodedQuery = query as string
-    }
+    decodedQuery = decodeURIComponent(query)
   } catch (error) {
     // If decoding fails, use the original query (it's likely already decoded)
     decodedQuery = query
@@ -568,11 +564,7 @@ export const SearchSlackChannels = async (c: Context) => {
   // Safely decode URI component - handle cases where query is already decoded or has invalid encoding
   let decodedQuery: string
   try {
-    if ((query as string).includes("%")) {
-      decodedQuery = decodeURIComponent(query)
-    } else {
-      decodedQuery = query
-    }
+    decodedQuery = decodeURIComponent(query)
   } catch (error) {
     // If decoding fails, use the original query (it's likely already decoded)
     decodedQuery = query
@@ -600,11 +592,7 @@ export const AnswerApi = async (c: Context) => {
   // Safely decode URI component - handle cases where query is already decoded or has invalid encoding
   let decodedQuery: string
   try {
-    if ((query as string).includes("%")) {
-      decodedQuery = decodeURIComponent(query)
-    } else {
-      decodedQuery = query
-    }
+    decodedQuery = decodeURIComponent(query)
   } catch (error) {
     // If decoding fails, use the original query (it's likely already decoded)
     decodedQuery = query
