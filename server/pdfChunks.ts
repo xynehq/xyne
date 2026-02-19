@@ -1,5 +1,5 @@
 import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import { Subsystem, type ChunkMetadata } from "@/types"
 import { createCanvas, Image as CanvasImage, ImageData } from "canvas"
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs"
 import path from "path"
@@ -209,7 +209,10 @@ function processTextParagraphs(
   paragraphs: string[],
   text_chunks: string[],
   text_chunk_pos: number[],
+  text_chunks_map: ChunkMetadata[],
   globalSeq: { value: number },
+  pageNum: number,
+  hasPrevPageOverlap: boolean,
   overlapBytes: number = 32,
 ): string {
   Logger.debug("Processing paragraphs", { count: paragraphs.length })
@@ -234,9 +237,28 @@ function processTextParagraphs(
   const chunks = chunkTextByParagraph(cleanedText, 512, 128)
   // console.log('TEXT DEBUG: Generated chunks count:', chunks.length)
 
-  for (const chunk of chunks) {
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]
     text_chunks.push(chunk)
     text_chunk_pos.push(globalSeq.value)
+    
+    // Determine page numbers for this chunk
+    let page_numbers: number[]
+    if (i === 0 && hasPrevPageOverlap) {
+      // First chunk with overlap from previous page
+      page_numbers = [pageNum - 1, pageNum]
+    } else {
+      // Regular chunk on current page
+      page_numbers = [pageNum]
+    }
+    
+    // Add chunk metadata
+    text_chunks_map.push({
+      chunk_index: globalSeq.value,
+      page_numbers: page_numbers,
+      block_labels: ["text"], // Default label for PDF text chunks
+    })
+    
     // console.log('TEXT DEBUG: Added chunk at position', globalSeq.value, 'content:', chunk)
     globalSeq.value++
   }
@@ -278,6 +300,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
   image_chunks: string[]
   text_chunk_pos: number[]
   image_chunk_pos: number[]
+  text_chunks_map: ChunkMetadata[]
+  image_chunks_map: ChunkMetadata[]
 }> {
   Logger.debug("Starting processing with parameters", {
     docid,
@@ -311,6 +335,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
       image_chunks: [],
       text_chunk_pos: [],
       image_chunk_pos: [],
+      text_chunks_map: [],
+      image_chunks_map: [],
     }
   }
 
@@ -319,6 +345,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
     let image_chunks: string[] = []
     let text_chunk_pos: number[] = []
     let image_chunk_pos: number[] = []
+    let text_chunks_map: ChunkMetadata[] = []
+    let image_chunks_map: ChunkMetadata[] = []
 
     // Use object to pass by reference for sequence counter
     let globalSeq = { value: 0 }
@@ -402,6 +430,9 @@ export async function extractTextAndImagesWithChunksFromPDF(
         
 
         let textOperatorCount = (await page.getTextContent()).items.length
+
+        // Capture if we have overlap from previous page before it's consumed
+        const hasPrevPageOverlap = pageOverlap.trim().length > 0
 
         // Prepend previous page overlap to the first paragraph for continuity
         if (pageOverlap && paragraphs.length > 0) {
@@ -763,6 +794,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           }
                           image_chunks.push(description)
                           image_chunk_pos.push(globalSeq.value)
+                          image_chunks_map.push({
+                            chunk_index: globalSeq.value,
+                            page_numbers: [pageNum],
+                            block_labels: ["image"],
+                          })
                           if (includeImageMarkersInText) {
                             text_chunks.push(`[[IMG#${globalSeq.value}]]`)
                             text_chunk_pos.push(globalSeq.value)
@@ -871,6 +907,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           }
                           image_chunks.push(description)
                           image_chunk_pos.push(globalSeq.value)
+                          image_chunks_map.push({
+                            chunk_index: globalSeq.value,
+                            page_numbers: [pageNum],
+                            block_labels: ["image"],
+                          })
                           if (includeImageMarkersInText) {
                             text_chunks.push(`[[IMG#${globalSeq.value}]]`)
                             text_chunk_pos.push(globalSeq.value)
@@ -1233,6 +1274,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
                     image_chunks.push(description)
                     image_chunk_pos.push(globalSeq.value)
+                    image_chunks_map.push({
+                      chunk_index: globalSeq.value,
+                      page_numbers: [pageNum],
+                      block_labels: ["image"],
+                    })
                     if (includeImageMarkersInText) {
                       text_chunks.push(`[[IMG#${globalSeq.value}]]`)
                       text_chunk_pos.push(globalSeq.value)
@@ -1267,7 +1313,10 @@ export async function extractTextAndImagesWithChunksFromPDF(
           paragraphs,
           text_chunks,
           text_chunk_pos,
+          text_chunks_map,
           globalSeq,
+          pageNum,
+          hasPrevPageOverlap,
         )
 
         // Store overlap for continuity to the next page
@@ -1306,6 +1355,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
       image_chunks,
       text_chunk_pos,
       image_chunk_pos,
+      text_chunks_map,
+      image_chunks_map,
     }
   } finally {
     Logger.debug("Calling PDF document destroy")
