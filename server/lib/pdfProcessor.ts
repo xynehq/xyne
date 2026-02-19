@@ -175,6 +175,8 @@ export class PdfProcessor {
         chunks_pos: pdfJsResult.text_chunk_pos,
         image_chunks: pdfJsResult.image_chunks,
         image_chunks_pos: pdfJsResult.image_chunk_pos,
+        chunks_map: pdfJsResult.text_chunks_map,
+        image_chunks_map: pdfJsResult.image_chunks_map,
       },
       PDF_PROCESSING_METHOD.PDFJS,
     )
