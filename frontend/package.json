@@ -55,7 +55,7 @@
     "lexical": "^0.38.1",
     "livekit-client": "^2.15.7",
     "livekit-server-sdk": "^2.13.3",
-    "lucide-react": "^0.475.0",
+    "lucide-react": "^0.575.0",
     "mermaid": "^11.6.0",
     "notion-md-crawler": "^1.0.0",
     "papaparse": "^5.5.3",
