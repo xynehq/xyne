@@ -1,3 +1,10 @@
+## [3.37.1](https://github.com/xynehq/xyne/compare/v3.37.0...v3.37.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* added page number extraction logic to pdfjs chunking ([#1255](https://github.com/xynehq/xyne/issues/1255)) ([2facd3c](https://github.com/xynehq/xyne/commit/2facd3c11ab949d9aec5dc5cd0b6e2fb15cc5067))
+
 # [3.37.0](https://github.com/xynehq/xyne/compare/v3.36.0...v3.37.0) (2026-02-19)
 
 
