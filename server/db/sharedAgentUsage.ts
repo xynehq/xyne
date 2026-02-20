@@ -37,6 +37,8 @@ export interface SharedAgentUsageData {
   dislikes: number
   totalCost: number
   totalTokens: number
+  inputTokens: number
+  outputTokens: number
   userUsage: AgentUserUsage[]
 }
 
@@ -50,6 +52,8 @@ export interface AgentUserUsage {
   dislikes: number
   totalCost: number
   totalTokens: number
+  inputTokens: number
+  outputTokens: number
   lastUsed: string
 }
 
@@ -63,6 +67,8 @@ export interface UserAgentLeaderboard {
   dislikes: number
   totalCost: number
   totalTokens: number
+  inputTokens: number
+  outputTokens: number
   lastUsed: string
   rank: number
 }
@@ -315,6 +321,8 @@ export async function getAgentUsageByUsers({
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
       totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
       totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
+      inputTokens: sql<number>`COALESCE(SUM(${messages.inputTokens}), 0)::bigint`,
+      outputTokens: sql<number>`COALESCE(SUM(${messages.outputTokens}), 0)::bigint`,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
@@ -355,6 +363,8 @@ export async function getAgentUsageByUsers({
       dislikes: Number(messageStat?.dislikes) || 0,
       totalCost: Number(messageStat?.totalCost) || 0,
       totalTokens: Number(messageStat?.totalTokens) || 0,
+      inputTokens: Number(messageStat?.inputTokens) || 0,
+      outputTokens: Number(messageStat?.outputTokens) || 0,
       lastUsed: chatStat.lastUsed,
     })
   }
@@ -433,6 +443,8 @@ export async function getUserAgentLeaderboard({
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
       totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
       totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
+      inputTokens: sql<number>`COALESCE(SUM(${messages.inputTokens}), 0)::bigint`,
+      outputTokens: sql<number>`COALESCE(SUM(${messages.outputTokens}), 0)::bigint`,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
@@ -466,6 +478,8 @@ export async function getUserAgentLeaderboard({
       dislikes: Number(messageStat?.dislikes) || 0,
       totalCost: Number(messageStat?.totalCost) || 0,
       totalTokens: Number(messageStat?.totalTokens) || 0,
+      inputTokens: Number(messageStat?.inputTokens) || 0,
+      outputTokens: Number(messageStat?.outputTokens) || 0,
       lastUsed: chatStat.lastUsed,
       rank: 0, // Will be set after sorting
     }
@@ -498,6 +512,8 @@ export interface AgentAnalysisData {
   dislikes: number
   totalCost: number
   totalTokens: number
+  inputTokens: number
+  outputTokens: number
   createdAt: string
   userLeaderboard: AgentUserLeaderboard[]
 }
@@ -512,6 +528,8 @@ export interface AgentUserLeaderboard {
   dislikes: number
   totalCost: number
   totalTokens: number
+  inputTokens: number
+  outputTokens: number
   lastUsed: string
   rank: number
 }
@@ -605,6 +623,8 @@ export async function getAgentAnalysis({
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)`,
       totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
       totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
+      inputTokens: sql<number>`COALESCE(SUM(${messages.inputTokens}), 0)::bigint`,
+      outputTokens: sql<number>`COALESCE(SUM(${messages.outputTokens}), 0)::bigint`,
     })
     .from(messages)
     .innerJoin(chats, eq(messages.chatId, chats.id))
@@ -632,6 +652,8 @@ export async function getAgentAnalysis({
       dislikes: Number(messageStat?.dislikes) || 0,
       totalCost: Number(messageStat?.totalCost) || 0,
       totalTokens: Number(messageStat?.totalTokens) || 0,
+      inputTokens: Number(messageStat?.inputTokens) || 0,
+      outputTokens: Number(messageStat?.outputTokens) || 0,
       lastUsed: userStat.lastUsed,
       rank: 0, // Will be set after sorting
     }
@@ -673,6 +695,14 @@ export async function getAgentAnalysis({
     (sum, user) => sum + user.totalTokens,
     0,
   )
+  const inputTokens = userLeaderboard.reduce(
+    (sum, user) => sum + user.inputTokens,
+    0,
+  )
+  const outputTokens = userLeaderboard.reduce(
+    (sum, user) => sum + user.outputTokens,
+    0,
+  )
 
   return {
     agentId: agent.agentId,
@@ -685,6 +715,8 @@ export async function getAgentAnalysis({
     dislikes: totalDislikes,
     totalCost,
     totalTokens,
+    inputTokens,
+    outputTokens,
     createdAt: agent.createdAt.toISOString(),
     userLeaderboard,
   }

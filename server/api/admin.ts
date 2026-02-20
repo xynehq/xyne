@@ -1962,6 +1962,12 @@ export const GetAdminChats = async (c: Context) => {
         totalTokens: sum(
           sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.tokensUsed} ELSE 0 END`,
         ),
+        inputTokens: sum(
+          sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.inputTokens} ELSE 0 END`,
+        ),
+        outputTokens: sum(
+          sql`CASE WHEN ${messages.deletedAt} IS NULL THEN ${messages.outputTokens} ELSE 0 END`,
+        ),
       })
       .from(chats)
       .leftJoin(users, eq(chats.userId, users.id))
@@ -2021,6 +2027,8 @@ export const GetAdminChats = async (c: Context) => {
       ...chat,
       totalCost: Number(chat.totalCost) || 0, // numeric → string at runtime
       totalTokens: Number(chat.totalTokens) || 0, // bigint → string at runtime
+      inputTokens: Number(chat.inputTokens) || 0, // bigint → string at runtime
+      outputTokens: Number(chat.outputTokens) || 0, // bigint → string at runtime
     }))
 
     // Calculate pagination metadata based on paginated parameter
@@ -2110,6 +2118,8 @@ export const GetAdminUsers = async (c: Context) => {
         dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
         totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
         totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
+        inputTokens: sql<number>`COALESCE(SUM(${messages.inputTokens}), 0)::bigint`,
+        outputTokens: sql<number>`COALESCE(SUM(${messages.outputTokens}), 0)::bigint`,
       })
       .from(users)
       .leftJoin(chats, eq(users.id, chats.userId))
@@ -2129,6 +2139,8 @@ export const GetAdminUsers = async (c: Context) => {
       ...user,
       totalCost: Number(user.totalCost) || 0, // numeric → string at runtime
       totalTokens: Number(user.totalTokens) || 0, // bigint → string at runtime
+      inputTokens: Number(user.inputTokens) || 0, // bigint → string at runtime
+      outputTokens: Number(user.outputTokens) || 0, // bigint → string at runtime
     }))
 
     return c.json(processedResult)

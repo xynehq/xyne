@@ -4997,6 +4997,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     modelId: agenticModelId,
                     cost: totalCost.toString(),
                     tokensUsed: totalTokens,
+                    inputTokens: agentContext.tokenUsage.input,
+                    outputTokens: agentContext.tokenUsage.output,
                   } as unknown as Omit<InsertMessage, "externalId">
                   const msg = await insertMessage(db, assistantInsert)
                   assistantMessageId = String(msg.externalId)

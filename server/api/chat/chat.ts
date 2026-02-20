@@ -5568,6 +5568,8 @@ export const MessageApi = async (c: Context) => {
                 modelId: actualModelId || config.defaultBestModel,
                 cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
+                inputTokens: totalTokens.inputTokens,
+                outputTokens: totalTokens.outputTokens,
               })
               assistantMessageId = msg.externalId
               const traceJson = tracer.serializeToJson()
@@ -6363,6 +6365,8 @@ export const MessageApi = async (c: Context) => {
                 modelId: actualModelId || config.defaultBestModel,
                 cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
+                inputTokens: totalTokens.inputTokens,
+                outputTokens: totalTokens.outputTokens,
               })
               assistantMessageId = msg.externalId
 
