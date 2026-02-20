@@ -246,10 +246,10 @@ function processTextParagraphs(
     let page_numbers: number[]
     if (i === 0 && hasPrevPageOverlap) {
       // First chunk with overlap from previous page
-      page_numbers = [pageNum - 1, pageNum]
+      page_numbers = [pageNum - 2, pageNum - 1]
     } else {
       // Regular chunk on current page
-      page_numbers = [pageNum]
+      page_numbers = [pageNum - 1]
     }
     
     // Add chunk metadata
@@ -796,7 +796,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           image_chunk_pos.push(globalSeq.value)
                           image_chunks_map.push({
                             chunk_index: globalSeq.value,
-                            page_numbers: [pageNum],
+                            page_numbers: [pageNum - 1],
                             block_labels: ["image"],
                           })
                           if (includeImageMarkersInText) {
@@ -909,7 +909,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           image_chunk_pos.push(globalSeq.value)
                           image_chunks_map.push({
                             chunk_index: globalSeq.value,
-                            page_numbers: [pageNum],
+                            page_numbers: [pageNum - 1],
                             block_labels: ["image"],
                           })
                           if (includeImageMarkersInText) {
@@ -1276,7 +1276,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     image_chunk_pos.push(globalSeq.value)
                     image_chunks_map.push({
                       chunk_index: globalSeq.value,
-                      page_numbers: [pageNum],
+                      page_numbers: [pageNum - 1],
                       block_labels: ["image"],
                     })
                     if (includeImageMarkersInText) {
