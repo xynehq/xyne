@@ -1,3 +1,10 @@
+## [3.37.2](https://github.com/xynehq/xyne/compare/v3.37.1...v3.37.2) (2026-02-20)
+
+
+### Bug Fixes
+
+* sources ui fix ([#1256](https://github.com/xynehq/xyne/issues/1256)) ([11b4a52](https://github.com/xynehq/xyne/commit/11b4a52695021038dde2901549adb87c5592dc0d))
+
 ## [3.37.1](https://github.com/xynehq/xyne/compare/v3.37.0...v3.37.1) (2026-02-19)
 
 
