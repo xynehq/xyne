@@ -1784,7 +1784,7 @@ const MessageCitationList = ({
 }) => {
   return (
     <TooltipProvider>
-      <ul className={`flex flex-row mt-[24px]`}>
+      <ul className={`flex flex-row mt-[24px] justify-center items-center`}>
         {citations.map((citation: Citation, index: number) => (
           <li
             key={index}
@@ -1824,7 +1824,7 @@ const MessageCitationList = ({
             <TooltipTrigger asChild>
               <img
                 onClick={onToggleSources}
-                className="cursor-pointer"
+                className="cursor-pointer w-[32px] h-[32px] "
                 src={Expand}
               />
             </TooltipTrigger>
