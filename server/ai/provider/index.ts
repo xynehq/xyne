@@ -30,6 +30,9 @@ const {
   LiteLLMApiKey,
   LiteLLMBaseUrl,
 } = config
+import { Agent } from "https";
+
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
@@ -238,6 +241,11 @@ const initializeProviders = (): void => {
       region: AwsRegion,
       retryMode: "adaptive",
       maxAttempts: 5,
+      requestHandler: new NodeHttpHandler({
+httpsAgent: new Agent({
+      keepAlive: true,
+    }),
+      }),
       credentials: {
         accessKeyId: AwsAccessKey,
         secretAccessKey: AwsSecretKey,
