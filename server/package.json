@@ -60,7 +60,7 @@
     "@google-cloud/vertexai": "^1.10.0",
     "@google/genai": "^1.9.0",
     "@hono/event-emitter": "^2.0.0",
-    "@hono/oauth-providers": "^0.6.2",
+    "@hono/oauth-providers": "^0.8.0",
     "@hono/zod-validator": "^0.2.2",
     "@jrmdayn/googleapis-batcher": "^0.8.0",
     "@langchain/community": "^0.3.22",
