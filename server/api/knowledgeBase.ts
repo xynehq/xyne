@@ -103,6 +103,77 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "knowledgeBaseService",
 })
 
+// Utility function to cancel processing jobs for deleted items
+async function cancelProcessingJobs(params: {
+  itemsToDelete: Array<{ id: string; type: string }>
+  collectionId?: string
+  userEmail: string
+}) {
+  const { itemsToDelete, collectionId, userEmail } = params
+  
+  const cancelPromises = [
+    // Cancel jobs for individual items
+    ...itemsToDelete.map(async (item) => {
+      const keyPrefix = item.type === "file" ? "file" : "folder"
+      const singletonKey = `${keyPrefix}_${item.id}`
+      
+      if (item.type === "file") {
+        // For files, try both queues
+        await Promise.all([
+          boss.cancel(FileProcessingQueue, singletonKey).catch(error => {
+            // Only ignore job not found errors, log others
+            if (!error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+              loggerWithChild({ email: userEmail }).warn(
+                error, `Failed to cancel file job ${singletonKey} from ${FileProcessingQueue}`
+              )
+            }
+          }),
+          boss.cancel(PdfFileProcessingQueue, singletonKey).catch(error => {
+            // Only ignore job not found errors, log others
+            if (!error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+              loggerWithChild({ email: userEmail }).warn(
+                error, `Failed to cancel file job ${singletonKey} from ${PdfFileProcessingQueue}`
+              )
+            }
+          })
+        ])
+      } else {
+        // For folders, only file-processing queue
+        await boss.cancel(FileProcessingQueue, singletonKey).catch(error => {
+          // Only ignore job not found errors, log others
+          if (!error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+            loggerWithChild({ email: userEmail }).warn(
+              error, `Failed to cancel folder job ${singletonKey} from ${FileProcessingQueue}`
+            )
+          }
+        })
+      }
+    }),
+    // Cancel collection job if provided
+    ...(collectionId ? [(async () => {
+      const singletonKey = `collection_${collectionId}`
+      await boss.cancel(FileProcessingQueue, singletonKey).catch(error => {
+        // Only ignore job not found errors, log others
+        if (!error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+          loggerWithChild({ email: userEmail }).warn(
+            error, `Failed to cancel collection job ${singletonKey} from ${FileProcessingQueue}`
+          )
+        }
+      })
+    })()] : [])
+  ]
+  
+  await Promise.all(cancelPromises)
+  
+  const fileCount = itemsToDelete.filter(item => item.type === "file").length
+  const folderCount = itemsToDelete.filter(item => item.type === "folder").length
+  const collectionCount = collectionId ? 1 : 0
+  
+  loggerWithChild({ email: userEmail }).info(
+    `Canceled processing jobs: ${fileCount} files, ${folderCount} folders${collectionCount ? `, ${collectionCount} collection` : ""}`
+  )
+}
+
 const { JwtPayloadKey } = config
 
 // Storage configuration for Knowledge Base feature files
@@ -345,6 +416,7 @@ export const CreateCollectionApi = async (c: Context) => {
       {
         retryLimit: 3,
         expireInHours: 12,
+        singletonKey: `collection_${collection.id}`, // Use collection ID as singleton key for easy cancellation
       },
     )
     loggerWithChild({ email: userEmail }).info(
@@ -740,6 +812,13 @@ export const DeleteCollectionApi = async (c: Context) => {
       }
     })
 
+    // After successful database transaction, cancel pending processing jobs
+    await cancelProcessingJobs({
+      itemsToDelete: collectionItemsToDelete,
+      collectionId: collectionId,
+      userEmail: userEmail
+    })
+
     // After successful database transaction, clean up Vespa and storage
     // These operations are logged but don't fail the deletion if they error
     for (const item of collectionItemsToDelete) {
@@ -956,6 +1035,7 @@ export const CreateFolderApi = async (c: Context) => {
       {
         retryLimit: 3,
         expireInHours: 12,
+        singletonKey: `folder_${folder.id}`, // Use folder ID as singleton key for easy cancellation
       },
     )
 
@@ -1106,6 +1186,7 @@ async function ensureFolderPath(
       {
         retryLimit: 3,
         expireInHours: 12,
+        singletonKey: `folder_${newFolder.id}`, // Use folder ID as singleton key for easy cancellation
       },
     )
 
@@ -1574,6 +1655,7 @@ export const UploadFilesApi = async (c: Context) => {
           {
             retryLimit: 3,
             expireInHours: 12,
+            singletonKey: `file_${item.id}`, // Use file ID as singleton key for easy cancellation
           },
         )
 
@@ -1759,6 +1841,12 @@ export const DeleteItemApi = async (c: Context) => {
       if (deletedItemIds.length > 0) {
         await cleanUpAgentDb(tx, deletedItemIds, userEmail)
       }
+    })
+
+    // After successful database transaction, cancel pending processing jobs
+    await cancelProcessingJobs({
+      itemsToDelete: itemsToDelete,
+      userEmail: userEmail
     })
 
     // After successful database transaction, clean up Vespa and storage
