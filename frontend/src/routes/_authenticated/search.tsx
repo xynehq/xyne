@@ -131,6 +131,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   const [isLoading, setIsLoading] = useState(false)
 
   const handleNext = () => {
+    setIsLoading(true)
     const newOffset = offset + page
     setOffset(newOffset)
   }
@@ -165,7 +166,6 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   // Intersection observer for infinite scroll
   useEffect(() => {
     if (!bottomRef.current) return
-
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries
@@ -176,12 +176,10 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
           results.length < filterPageSize &&
           !isLoading
         ) {
-          // Load more results when bottom is visible
-          setIsLoading(true)
           handleNext()
         }
       },
-      { threshold: 0.5 }, // Trigger when 10% of the element is visible
+      { threshold: 0.5 },
     )
 
     observer.observe(bottomRef.current)
@@ -190,6 +188,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
       if (bottomRef.current) {
         observer.unobserve(bottomRef.current)
       }
+      observer.disconnect()
     }
   }, [results, filterPageSize, page, isLoading, handleNext])
 
@@ -242,12 +241,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
 
   useEffect(() => {
     handleSearch()
-  }, [offset])
-
-  useEffect(() => {
-    setOffset(0)
-    handleSearch()
-  }, [filter])
+  }, [offset, filter])
 
   const handleAnswer = async (newFilter = filter) => {
     if (!query) return // If the query is empty, do nothing
@@ -316,18 +310,9 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         debug: showDebugInfo,
       }
 
-      let pageCount = page
       if (filter.app && filter.entity) {
         params.app = filter.app
         params.entity = filter.entity
-        // TODO: there seems to be a bug where if we don't
-        // even if group count value is lower than the page
-        // if we ask for sending the page size it actually
-        // finds that many even though as per groups it had less than page size
-        if (groups) {
-          pageCount = groups[filter.app][filter.entity]
-          params.page = page < pageCount ? page : pageCount
-        }
       }
 
       navigate({
@@ -335,7 +320,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         search: (prev) => ({
           ...prev,
           query: encodeURIComponent(activeQuery),
-          page,
+          page: page,
           offset: newOffset,
           app: params.app,
           entity: params.entity,
@@ -384,17 +369,18 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         })
 
         if (groupCount) {
-          // TODO: temp solution until we resolve groupCount from
-          // not always being true
-          if (!filter.app && !filter.entity) {
-            setSearchMeta({ totalCount: data.count })
+          let total = 0
+          for (const app in data.groupCount) {
+            const entities = data.groupCount[app]
+            for (const entity in entities) {
+              total += entities[entity]
+            }
           }
+          setSearchMeta({ totalCount: total })
           setGroups(data.groupCount)
           setTraceData(data.trace || null) // Store trace data from response
         }
-
         // Reset loading state after results are received
-        setIsLoading(false)
       } else {
         const errorText = await response.text()
         if (!response.ok) {
@@ -412,6 +398,10 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
       logger.error(error, `Error fetching search results:', ${error}`)
       setResults([]) // Clear results on error
       setIsLoading(false) // Reset loading state on error
+    } finally {
+      if (newOffset > 0) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -472,6 +462,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
           onLastUpdated={(value: LastUpdated) => {
             const updatedFilter = { ...filter, lastUpdated: value }
             setFilter(updatedFilter)
+            setOffset(0)
           }}
         />
 
