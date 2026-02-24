@@ -187,7 +187,7 @@ import {
   isValidApp,
   isValidEntity,
   collectFollowupContext,
-  textToKbItemCitationIndex,
+  textToChunkCitationIndex,
   type AppFilter,
   formatAgentScopesText,
   processMessage,
@@ -484,35 +484,32 @@ const checkAndYieldCitations = async function* (
   baseIndex: number = 0,
   email: string,
   yieldedImageCitations: Set<number>,
-  isMsgWithKbItems?: boolean,
+  allowChunkCitations?: boolean,
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
   let imgMatch
-  let kbMatch = null
+  let chunkMatch = null
   while (
     (match = textToCitationIndex.exec(text)) !== null ||
     (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
-    (isMsgWithKbItems &&
-      (kbMatch = textToKbItemCitationIndex.exec(text)) !== null)
+    (allowChunkCitations && 
+      (chunkMatch = textToChunkCitationIndex.exec(text)) !== null)
     ) {
-      if (match || kbMatch) {
+      if (match || chunkMatch) {
         let citationIndex = 0
         if (match) {
           citationIndex = parseInt(match[1], 10)
-        } else if (kbMatch) {
-          citationIndex = parseInt(kbMatch[1].split("_")[0], 10)
+        } else if (chunkMatch) {
+          citationIndex = parseInt(chunkMatch[1].split("_")[0], 10)
         }
         if (!yieldedCitations.has(citationIndex)) {
           const item = results[citationIndex - baseIndex]
           if (item) {
             // TODO: fix this properly, empty citations making streaming broke
             const f = (item as any)?.fields
-            if (
-              f?.sddocname === dataSourceFileSchema ||
-              Object.values(AttachmentEntity).includes(f?.entity)
-            ) {
-              // Skip datasource and attachment files from citations
+            if (f?.sddocname === dataSourceFileSchema) {
+              // Skip datasource files from citations
               continue
             }
             yield {
@@ -615,7 +612,7 @@ async function* processIterator(
   previousResultsLength: number = 0,
   userRequestsReasoning?: boolean,
   email?: string,
-  isMsgWithKbItems?: boolean,
+  allowChunkCitations?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -644,7 +641,7 @@ async function* processIterator(
             previousResultsLength,
             email!,
             yieldedImageCitations,
-            isMsgWithKbItems,
+            allowChunkCitations,
           )
           yield { text: chunk.text, reasoning }
         } else {
@@ -670,7 +667,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
-              isMsgWithKbItems,
+              allowChunkCitations,
             )
             yield { text: token, reasoning }
           }
@@ -709,7 +706,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
-              isMsgWithKbItems,
+              allowChunkCitations,
             )
           }
         } catch (e) {
@@ -2027,8 +2024,7 @@ async function* generateAnswerFromGivenContext(
   agentPrompt?: string,
   passedSpan?: Span,
   threadIds?: string[],
-  attachmentFileIds?: string[],
-  isMsgWithKbItems?: boolean,
+  allowChunkCitations?: boolean,
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
@@ -2276,7 +2272,7 @@ async function* generateAnswerFromGivenContext(
       userMetadata,
       i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
-      isMsgWithKbItems,
+      allowChunkCitations,
       message,
     )
     if (
@@ -2315,12 +2311,6 @@ async function* generateAnswerFromGivenContext(
 
   const finalImageFileNames = imageFileNames || []
 
-  if (attachmentFileIds?.length) {
-    finalImageFileNames.push(
-      ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
-    )
-  }
-
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
   initialContextSpan?.setAttribute(
     "context_length",
@@ -2352,7 +2342,7 @@ async function* generateAnswerFromGivenContext(
       messages: messages,
     },
     true,
-    isMsgWithKbItems,
+    allowChunkCitations,
   )
 
   const answer = yield* processIterator(
@@ -2361,7 +2351,7 @@ async function* generateAnswerFromGivenContext(
     previousResultsLength,
     userRequestsReasoning,
     email,
-    isMsgWithKbItems,
+    allowChunkCitations,
   )
   if (answer) {
     generateAnswerSpan?.setAttribute("answer_found", true)
@@ -2406,8 +2396,7 @@ export async function* generateAnswerFromDualRag(
   agentPrompt?: string,
   passedSpan?: Span,
   threadIds?: string[],
-  attachmentFileIds?: string[],// contains image attachments 
-  isMsgWithSources?: boolean,
+  allowChunkCitations?: boolean,
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
@@ -2432,11 +2421,6 @@ export async function* generateAnswerFromDualRag(
   )
   loggerWithChild({ email: email }).info(
     `generateAnswerFromDualRag - fileIds received: ${JSON.stringify(fileIds)}`,
-  )
-  loggerWithChild({ email: email }).info(
-    `generateAnswerFromDualRag - attachmentFileIds received: ${JSON.stringify(
-      attachmentFileIds,
-    )}`,
   )
   let userAlpha = alpha
   try {
@@ -2851,7 +2835,7 @@ export async function* generateAnswerFromDualRag(
       userMetadata,
       i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
-      isMsgWithSources,
+      allowChunkCitations,
       message,
     )
 
@@ -2877,7 +2861,7 @@ export async function* generateAnswerFromDualRag(
         )
       }
     }
-    return isMsgWithSources ? content : `Index ${i + startIndex} \n ${content}`
+    return `Index ${i + startIndex} \n ${content}`
   })
 
   const resolvedContexts = contextPromises
@@ -2891,12 +2875,6 @@ export async function* generateAnswerFromDualRag(
   )
 
   const finalImageFileNames = imageFileNames || []
-
-  if (attachmentFileIds?.length) {
-    finalImageFileNames.push(
-      ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
-    )
-  }
 
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
   initialContextSpan?.setAttribute(
@@ -2935,7 +2913,7 @@ export async function* generateAnswerFromDualRag(
       imageFileNames: finalImageFileNames,
     },
     true,
-    isMsgWithSources,
+    allowChunkCitations,
   )
 
   const answer = yield* processIterator(
@@ -2944,7 +2922,7 @@ export async function* generateAnswerFromDualRag(
     previousResultsLength,
     userRequestsReasoning,
     email,
-    isMsgWithSources,
+    allowChunkCitations,
   )
 
   if (answer) {
@@ -4798,9 +4776,8 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   userRequestsReasoning: boolean,
   passedSpan?: Span,
   threadIds?: string[],
-  attachmentFileIds?: string[],
   agentPrompt?: string,
-  isMsgWithKbItems?: boolean,
+  allowChunkCitations?: boolean,
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
@@ -4834,8 +4811,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     agentPrompt,
     passedSpan,
     threadIds,
-    attachmentFileIds,
-    isMsgWithKbItems,
+    allowChunkCitations,
     modelId,
     isValidPath,
     folderIds,
@@ -5064,12 +5040,8 @@ export const MessageApi = async (c: Context) => {
     }
 
     let attachmentMetadata = parseAttachmentMetadata(c)
-    let imageAttachmentFileIds = attachmentMetadata
-      .filter((m) => m.isImage)
-      .map((m) => m.fileId)
-    const nonImageAttachmentFileIds = attachmentMetadata
-      .filter((m) => !m.isImage)
-      .flatMap((m) => expandSheetIds(m.fileId))
+    const attachmentFileIds = attachmentMetadata.flatMap((m) => expandSheetIds(m.fileId))
+    const isMsgWithAttachments = attachmentFileIds.length > 0
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -5160,8 +5132,8 @@ export const MessageApi = async (c: Context) => {
     if (extractedInfo?.fileIds.length > 0) {
       fileIds = fileIds.concat(extractedInfo?.fileIds)
     }
-    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
-      fileIds = fileIds.concat(nonImageAttachmentFileIds)
+    if (attachmentFileIds && attachmentFileIds.length > 0) {
+      fileIds = fileIds.concat(attachmentFileIds)
     }
     const threadIds = extractedInfo?.threadIds || []
     const totalValidFileIdsFromLinkCount =
@@ -5375,10 +5347,7 @@ export const MessageApi = async (c: Context) => {
             topicConversationThread,
           )
 
-          if (
-            (fileIds && fileIds?.length > 0) ||
-            (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
-          ) {
+          if (fileIds && fileIds?.length > 0) {
             let answer = ""
             let citations = []
             let imageCitations: any[] = []
@@ -5405,9 +5374,8 @@ export const MessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
-              imageAttachmentFileIds,
               agentPromptValue,
-              isMsgWithKbItems,
+              isMsgWithKbItems || isMsgWithAttachments,
               actualModelId || config.defaultBestModel,
               false,
               [],
@@ -6117,24 +6085,19 @@ export const MessageApi = async (c: Context) => {
                 // Check for follow-up context carry-forward
                 const workingSet = collectFollowupContext(filteredMessages)
 
-                const hasCarriedContext =
-                  workingSet.fileIds.length > 0 ||
-                  workingSet.attachmentFileIds.length > 0
+                const hasCarriedContext = workingSet.fileIds.length > 0
                 if (hasCarriedContext) {
                   fileIds = workingSet.fileIds
-                  imageAttachmentFileIds = workingSet.attachmentFileIds
                   loggerWithChild({ email: email }).info(
                     `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
                   )
                 }
 
-                if (
-                  (fileIds && fileIds.length > 0) ||
-                  (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
-                ) {
+                if (fileIds && fileIds.length > 0) {
                   loggerWithChild({ email: email }).info(
-                    `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
+                    `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(fileIds)}`,
                   )
+                  const allowChunkCitations = fileIds.some((fileId) => fileId.startsWith("clf-")) || fileIds.some((fileId) => fileId.startsWith("attf_"))
                   iterator = UnderstandMessageAndAnswerForGivenContext(
                     email,
                     ctx,
@@ -6145,9 +6108,8 @@ export const MessageApi = async (c: Context) => {
                     userRequestsReasoning,
                     understandSpan,
                     undefined,
-                    imageAttachmentFileIds as string[],
                     agentPromptValue,
-                    fileIds.some((fileId) => fileId.startsWith("clf-")),
+                    allowChunkCitations,
                     actualModelId || config.defaultBestModel,
                   )
                 } else {
@@ -6674,14 +6636,14 @@ export const MessageRetryApi = async (c: Context) => {
 
     // If it's an assistant message, we need to get attachments from the previous user message
     let attachmentMetadata: AttachmentMetadata[] = []
-    let ImageAttachmentFileIds: string[] = []
+    let attachmentFileIds: string[] = []
+    let isMsgWithAttachments = false
 
     if (isUserMessage) {
       // If retrying a user message, get attachments from that message
       attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
-      ImageAttachmentFileIds = attachmentMetadata
-        .filter((m) => m.isImage)
-        .map((m) => m.fileId)
+      attachmentFileIds = attachmentMetadata.flatMap((m) => expandSheetIds(m.fileId))
+      isMsgWithAttachments = attachmentFileIds.length > 0
     }
 
     rootSpan.setAttribute("email", email)
@@ -6735,9 +6697,8 @@ export const MessageRetryApi = async (c: Context) => {
           prevUserMessage.externalId,
           email,
         )
-        ImageAttachmentFileIds = attachmentMetadata
-          .map((m: AttachmentMetadata) => (m.isImage ? m.fileId : null))
-          .filter((m: string | null) => m !== null)
+        attachmentFileIds = attachmentMetadata.flatMap((m) => expandSheetIds(m.fileId))
+        isMsgWithAttachments = attachmentFileIds.length > 0
       }
     }
 
@@ -6803,6 +6764,9 @@ export const MessageRetryApi = async (c: Context) => {
         extractedInfo?.totalValidFileIdsFromLinkCount
       threadIds = extractedInfo?.threadIds || []
     }
+    if (attachmentFileIds && attachmentFileIds.length > 0) {
+      fileIds = fileIds.concat(attachmentFileIds)
+    }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
       conversation = []
@@ -6834,10 +6798,7 @@ export const MessageRetryApi = async (c: Context) => {
 
         try {
           let message = prevUserMessage.message
-          if (
-            (fileIds && fileIds?.length > 0) ||
-            (ImageAttachmentFileIds && ImageAttachmentFileIds?.length > 0)
-          ) {
+          if (fileIds && fileIds?.length > 0) {
             loggerWithChild({ email: email }).info(
               "[RETRY] User has selected some context with query, answering only based on that given context",
             )
@@ -6868,9 +6829,8 @@ export const MessageRetryApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
-              ImageAttachmentFileIds,
               undefined,
-              isMsgWithKbItems,
+              isMsgWithKbItems || isMsgWithAttachments,
               modelId,
             )
             stream.writeSSE({

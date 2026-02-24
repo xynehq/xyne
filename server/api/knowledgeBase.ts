@@ -45,7 +45,7 @@ import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { DeleteDocument, GetDocument } from "@/search/vespa"
-import { ChunkMetadata, KbItemsSchema } from "@xyne/vespa-ts/types"
+import { ChunkMetadata, fileSchema, KbItemsSchema } from "@xyne/vespa-ts/types"
 import {
   boss,
   FileProcessingQueue,
@@ -153,7 +153,7 @@ function calculateChecksum(buffer: ArrayBuffer): string {
   return hash.digest("hex")
 }
 
-function getStoragePath(
+export function getStoragePath(
   workspaceId: string,
   collectionId: string,
   storageKey: string,
@@ -1927,9 +1927,10 @@ export const GetChunkContentApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const chunkIndex = parseInt(c.req.param("cId"))
   const docId = c.req.param("docId")
+  const isAttachment = docId.startsWith("att")
 
   try {
-    const resp = await GetDocument(KbItemsSchema, docId)
+    const resp = await GetDocument(isAttachment ? fileSchema : KbItemsSchema, docId)
 
     if (!resp || !resp.fields) {
       throw new HTTPException(404, {

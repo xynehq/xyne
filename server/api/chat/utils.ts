@@ -78,7 +78,6 @@ import { updateMessageByExternalId } from "@/db/chat"
 // Follow-up context types and utilities
 export type WorkingSet = {
   fileIds: string[]
-  attachmentFileIds: string[] // images etc.
   carriedFromMessageIds: string[]
 }
 
@@ -91,7 +90,6 @@ export function collectFollowupContext(
   const startIdx = messages.length - 1
   const ws: WorkingSet = {
     fileIds: [],
-    attachmentFileIds: [],
     carriedFromMessageIds: [],
   }
 
@@ -108,12 +106,6 @@ export function collectFollowupContext(
     // 1) attachments the user explicitly added
     if (Array.isArray(m.attachments)) {
       for (const a of m.attachments as AttachmentMetadata[]) {
-        if (a.isImage && a.fileId && !seen.has(`img:${a.fileId}`)) {
-          ws.attachmentFileIds.push(a.fileId)
-          ws.carriedFromMessageIds.push(m.externalId)
-          seen.add(`img:${a.fileId}`)
-          continue // images are separate from fileIds
-        }
         if (a.fileId && !seen.has(`f:${a.fileId}`)) {
           ws.fileIds.push(a.fileId)
           ws.carriedFromMessageIds.push(m.externalId)
@@ -157,7 +149,6 @@ export function collectFollowupContext(
 
   // De-dupe & trim
   ws.fileIds = Array.from(new Set(ws.fileIds)).slice(0, MAX_FILES)
-  ws.attachmentFileIds = Array.from(new Set(ws.attachmentFileIds))
 
   return ws
 }
@@ -625,7 +616,7 @@ const searchToCitations = (results: VespaSearchResults[]): Citation[] => {
 
 export const textToCitationIndex = /\[(\d+)\]/g
 export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
-export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
+export const textToChunkCitationIndex = /K\[(\d+_\d+)\]/g
 
 export const processMessage = (
   text: string,
@@ -648,7 +639,7 @@ export const processMessage = (
 
   // Process KB citations K[docId_chunkIndex] -> convert to [N_chunkIndex] format
   processed = processed.replace(
-    textToKbItemCitationIndex,
+    textToChunkCitationIndex,
     (_match, docKey) => {
       const docIndex = parseInt(docKey.split("_")[0], 10)
       const chunkIndex = parseInt(docKey.split("_")[1], 10)
@@ -1416,7 +1407,7 @@ export const checkAndYieldCitationsForAgent = async function* (
     const text = splitGroupedCitationsWithSpaces(textInput)
     let match
     let imgMatch
-    let kbMatch
+    let chunkMatch
     let citationsProcessed = 0
     let imageCitationsProcessed = 0
     let citationsYielded = 0
@@ -1425,15 +1416,15 @@ export const checkAndYieldCitationsForAgent = async function* (
     while (
       (match = textToCitationIndex.exec(text)) !== null ||
       (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
-      (kbMatch = textToKbItemCitationIndex.exec(text)) !== null
+      (chunkMatch = textToChunkCitationIndex.exec(text)) !== null
     ) {
-      if (match || kbMatch) {
+      if (match || chunkMatch) {
         citationsProcessed++
         let citationIndex = 0
         if (match) {
           citationIndex = parseInt(match[1], 10)
-        } else if (kbMatch) {
-          citationIndex = parseInt(kbMatch[1].split("_")[0], 10)
+        } else if (chunkMatch) {
+          citationIndex = parseInt(chunkMatch[1].split("_")[0], 10)
         }
         if (!yieldedCitations.has(citationIndex)) {
           const item = results[citationIndex - 1]
@@ -1449,15 +1440,6 @@ export const checkAndYieldCitationsForAgent = async function* (
             loggerWithChild({ email: email }).info(
               "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
             )
-            continue
-          }
-
-          // we dont want citations for attachments in the chat
-          if (
-            Object.values(AttachmentEntity).includes(
-              item.source.entity as AttachmentEntity,
-            )
-          ) {
             continue
           }
 

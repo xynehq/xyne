@@ -12,6 +12,7 @@ export interface Citation {
   url: string
   title: string
   docId: string
+  app: string
   itemId?: string
   clId?: string
 }
@@ -65,7 +66,9 @@ export const createCitationLink =
       }
     }
 
-    if (citation && citation.clId && citation.itemId) {
+    const isAttachmentLink = citation && citation.app === "attachment"
+
+    if (citation && ((citation.clId && citation.itemId) || isAttachmentLink)) {
       return (
         <TooltipProvider delayDuration={200}>
           <Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen}>
@@ -101,7 +104,7 @@ export const createCitationLink =
                     e.preventDefault()
                     e.stopPropagation()
                     if (onCitationClick) {
-                      onCitationClick(citation)
+                      onCitationClick(citation, chunkIndex)
                     }
                     setIsTooltipOpen(false)
                   }}
@@ -141,7 +144,7 @@ export const createCitationLink =
                       {citation.title.split("/").pop() || "Untitled Document"}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-tight truncate">
-                      {citation.title.replace(/[^/]*$/, "") || "No file name"}
+                      {citation.title.replace(/[^/]*$/, "") || isAttachmentLink ? "attachment" : "No file name"}
                     </div>
                   </div>
                 </div>

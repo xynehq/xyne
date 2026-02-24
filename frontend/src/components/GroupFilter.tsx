@@ -1,5 +1,6 @@
 import {
   Apps,
+  AttachmentEntity,
   CalendarEntity,
   DataSourceEntity,
   DriveEntity,
@@ -158,7 +159,24 @@ export const getName = (app: Apps, entity: Entity): string => {
       return "OutLook-Attachments"
     }
     return "Outlook"
-  } else {
+  } else if (app === Apps.Attachment) {
+    if(entity === AttachmentEntity.Docs){
+      return "Attachments Docs"
+    } else if(entity === AttachmentEntity.PDF){
+      return "Attachments Pdfs"
+    } else if(entity === AttachmentEntity.PPT){
+      return "Attachments PPTs"
+    } else if(entity === AttachmentEntity.Sheets){
+      return "Attachments Sheets"
+    } else if(entity === AttachmentEntity.Image){
+      return "Attachments Images"
+    } else if(entity === AttachmentEntity.Text) {
+      return "Attachments Text"
+    } else {
+      return "Attachments File"
+    }
+  }
+  else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }
 }

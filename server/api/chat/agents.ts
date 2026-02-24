@@ -1079,13 +1079,9 @@ export const AgentMessageApi = async (c: Context) => {
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
-    let attachmentMetadata = parseAttachmentMetadata(c)
-    let imageAttachmentFileIds = attachmentMetadata
-      .filter((m) => m.isImage)
-      .map((m) => m.fileId)
-    const nonImageAttachmentFileIds = attachmentMetadata
-      .filter((m) => !m.isImage)
-      .flatMap((m) => expandSheetIds(m.fileId))
+    const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.flatMap((m) => expandSheetIds(m.fileId))
+    const isMsgWithAttachments = attachmentFileIds.length > 0
     let attachmentStorageError: Error | null = null
     let {
       message,
@@ -1256,8 +1252,8 @@ export const AgentMessageApi = async (c: Context) => {
       ? await extractItemIdsFromPath(ids ?? "")
       : { collectionFileIds: [], collectionFolderIds: [], collectionIds: [] }
     let fileIds = extractedInfo?.fileIds
-    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
-      fileIds = [...fileIds, ...nonImageAttachmentFileIds]
+    if (attachmentFileIds && attachmentFileIds.length > 0) {
+      fileIds = [...fileIds, ...attachmentFileIds]
     }
 
     //add docIds of agents here itself
@@ -1493,9 +1489,7 @@ export const AgentMessageApi = async (c: Context) => {
             }
             //Dual RAG PATH (RAG from both Attachments and app integrations)
             if (
-              ((fileIds && fileIds?.length > 0) ||
-                (imageAttachmentFileIds &&
-                  imageAttachmentFileIds?.length > 0)) &&
+              (fileIds && fileIds?.length > 0) &&
               agentForDb?.appIntegrations &&
               agentForDb?.appIntegrations &&
               agentAppEnums.length > 0
@@ -1535,8 +1529,7 @@ export const AgentMessageApi = async (c: Context) => {
                 agentPromptForLLM,
                 understandSpan,
                 undefined, // threadIds
-                imageAttachmentFileIds,
-                undefined, // isMsgWithSources
+                isMsgWithAttachments,
                 actualModelId || config.defaultBestModel,
                 isValidPath,
                 pathExtractedInfo.collectionFolderIds,
@@ -1749,10 +1742,7 @@ export const AgentMessageApi = async (c: Context) => {
               rootSpan.end()
             }
             // RAG FROM USER SELECTED CONTEXT ONLY
-            else if (
-              (fileIds && fileIds?.length > 0) ||
-              (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
-            ) {
+            else if (fileIds && fileIds?.length > 0) {
               Logger.info(
                 "User has selected some context with query, answering only based on that given context",
               )
@@ -1784,9 +1774,8 @@ export const AgentMessageApi = async (c: Context) => {
                 userRequestsReasoning,
                 understandSpan,
                 [],
-                imageAttachmentFileIds,
                 agentPromptForLLM,
-                false,
+                isMsgWithAttachments,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -2367,25 +2356,19 @@ export const AgentMessageApi = async (c: Context) => {
                   // Check for follow-up context carry-forward
                   const workingSet = collectFollowupContext(filteredMessages)
 
-                  const hasCarriedContext =
-                    workingSet.fileIds.length > 0 ||
-                    workingSet.attachmentFileIds.length > 0
+                  const hasCarriedContext = workingSet.fileIds.length > 0
                   if (hasCarriedContext) {
                     fileIds = workingSet.fileIds
-                    imageAttachmentFileIds = workingSet.attachmentFileIds
                     loggerWithChild({ email: email }).info(
                       `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
                     )
                   }
 
-                  if (
-                    (fileIds && fileIds.length > 0) ||
-                    (imageAttachmentFileIds &&
-                      imageAttachmentFileIds.length > 0)
-                  ) {
+                  if (fileIds && fileIds.length > 0) {
                     loggerWithChild({ email: email }).info(
-                      `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
+                      `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(fileIds)}`,
                     )
+                    const allowedChunkCitations = fileIds.some((fileId) => fileId.startsWith("clf-")) || fileIds.some((fileId) => fileId.startsWith("attf_"))
                     iterator = UnderstandMessageAndAnswerForGivenContext(
                       email,
                       ctx,
@@ -2396,9 +2379,8 @@ export const AgentMessageApi = async (c: Context) => {
                       userRequestsReasoning,
                       understandSpan,
                       undefined,
-                      imageAttachmentFileIds as string[],
                       agentPromptForLLM,
-                      fileIds.some((fileId) => fileId.startsWith("clf-")),
+                      allowedChunkCitations,
                       actualModelId || config.defaultBestModel,
                     )
                   } else {
@@ -2860,10 +2842,7 @@ export const AgentMessageApi = async (c: Context) => {
         }
 
         // Path A: user provided explicit context (fileIds / attachments)
-        if (
-          (fileIds && fileIds.length > 0) ||
-          (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
-        ) {
+        if (fileIds && fileIds.length > 0) {
           const ragSpan = streamSpan.startSpan("rag_processing")
           const understandSpan = ragSpan.startSpan("understand_message")
 
@@ -2877,8 +2856,8 @@ export const AgentMessageApi = async (c: Context) => {
             userRequestsReasoning,
             understandSpan,
             [],
-            imageAttachmentFileIds,
             agentPromptForLLM,
+            isMsgWithAttachments,
           )
 
           // Collect internal stream

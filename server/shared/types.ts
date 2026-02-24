@@ -744,7 +744,7 @@ export const attachmentMetadataSchema = z.object({
   fileType: z.string(),
   fileSize: z.number(),
   isImage: z.boolean(),
-  thumbnailPath: z.string().optional(),
+  thumbnailUrl: z.string().optional(),
   createdAt: z.union([z.string(), z.date()]).transform((val) => {
     if (typeof val === "string") {
       return new Date(val)
