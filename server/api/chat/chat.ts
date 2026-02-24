@@ -2088,6 +2088,7 @@ async function* generateAnswerFromGivenContext(
   const targetChunks = maxChunksPerPage
 
   if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
+    allowChunkCitations = true
     const fileSearchSpan = generateAnswerSpan?.startSpan("file_search")
     let results
     if (isValidPath) {
@@ -2126,6 +2127,7 @@ async function* generateAnswerFromGivenContext(
         }
       }
       if (collectionFileIds && collectionFileIds.length > 0) {
+        allowChunkCitations = true
         results = await searchCollectionRAG(
           messageText,
           collectionFileIds,
@@ -2476,6 +2478,7 @@ export async function* generateAnswerFromDualRag(
 
 
   if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
+    allowChunkCitations = true // if user is explicitly providing kb files, we can allow chunk citations for kb files
     const fileSearchSpan = generateAnswerSpan?.startSpan("file_search")
     let results
     if (isValidPath) {
@@ -2539,6 +2542,7 @@ export async function* generateAnswerFromDualRag(
         }
       }
       if (collectionFileIds && collectionFileIds.length > 0) {
+        allowChunkCitations = true // for the case where kb file is in @
         results = await searchCollectionRAG(
           messageText,
           collectionFileIds,

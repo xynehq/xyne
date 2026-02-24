@@ -1304,6 +1304,7 @@ async function vespaResultToAttachmentFragment(
   idx: number,
   userMetadata: UserMetadataType,
   query: string,
+  allowChunkCitations?: boolean,
   maxSummaryChunks?: number,
 ): Promise<MinimalAgentFragment> {
   const docId =
@@ -1317,7 +1318,7 @@ async function vespaResultToAttachmentFragment(
       userMetadata,
       maxSummaryChunks ? maxSummaryChunks : 0,
       true,
-      undefined,
+      allowChunkCitations ?? false,
       query
     ),
     source: searchToCitation(child as VespaSearchResults),
@@ -1331,6 +1332,7 @@ async function prepareInitialAttachmentContext(
   userMetadata: UserMetadataType,
   query: string,
   email: string,
+  allowChunkCitations?: boolean
 ): Promise<{ fragments: MinimalAgentFragment[]; summary: string } | null> {
   if (!fileIds?.length) {
     return null
@@ -1387,6 +1389,7 @@ async function prepareInitialAttachmentContext(
           }
         }
         if (collectionFileIds && collectionFileIds.length > 0) {
+          allowChunkCitations = true // for the case where kb files are in @
           results = await searchCollectionRAG(
             queryText,
             collectionFileIds,
@@ -1466,7 +1469,8 @@ async function prepareInitialAttachmentContext(
           child as VespaSearchResult,
           idx < chunksPerDocument.length ? chunksPerDocument[idx] : 0,
           userMetadata,
-          query
+          query,
+          allowChunkCitations,
         )
       )
     )
@@ -3524,6 +3528,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
     const imageAttachmentFileIds = Array.from(
       new Set(attachmentsForContext.filter((meta) => meta.isImage).map((meta) => meta.fileId))
     )
+    const isMstWithAttachments = attachmentMetadata.length > 0
 
     const userAndWorkspace: InternalUserWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -4010,6 +4015,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             userMetadata,
             message,
             email,
+            isMstWithAttachments,
           )
           if (initialAttachmentContext) {
             await streamReasoningStep(
