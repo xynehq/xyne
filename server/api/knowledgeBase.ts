@@ -153,6 +153,56 @@ function calculateChecksum(buffer: ArrayBuffer): string {
   return hash.digest("hex")
 }
 
+/**
+ * Sanitizes a filename to prevent path traversal and other security issues
+ * - Removes path separators (/ and \)
+ * - Removes control characters (0x00-0x1F)
+ * - Normalizes unicode to NFC form
+ * - Limits length to 255 characters
+ * - Removes leading dots (hidden files)
+ * - Replaces multiple consecutive dots with single dot
+ * @param fileName - The raw filename to sanitize
+ * @returns A safe filename
+ */
+export function sanitizeFileName(fileName: string): string {
+  // Handle empty or whitespace-only filenames
+  if (!fileName || typeof fileName !== 'string') {
+    return 'unnamed_file'
+  }
+
+  // Normalize unicode to NFC form
+  let sanitized = fileName.normalize('NFC')
+
+  // Remove any path separators (forward and backslash)
+  sanitized = sanitized.replace(/[/\\]/g, '_')
+
+  // Remove control characters (0x00-0x1F)
+  sanitized = sanitized.replace(/[\x00-\x1F]/g, '')
+
+  // Remove leading dots (hidden files) and spaces
+  sanitized = sanitized.replace(/^[\s.]+/, '')
+
+  // Replace multiple consecutive dots with single dot (prevent .. traversal)
+  sanitized = sanitized.replace(/\.{2,}/g, '.')
+
+  // Remove trailing dots and spaces (Windows compatibility)
+  sanitized = sanitized.replace(/[\s.]+$/, '')
+
+  // Limit filename length to 255 characters (preserve extension if possible)
+  if (sanitized.length > 255) {
+    const ext = extname(sanitized)
+    const baseName = sanitized.slice(0, -ext.length || sanitized.length)
+    sanitized = baseName.slice(0, 255 - ext.length) + ext
+  }
+
+  // If filename becomes empty after sanitization, use a default
+  if (!sanitized || sanitized.trim() === '') {
+    return 'unnamed_file'
+  }
+
+  return sanitized
+}
+
 export function getStoragePath(
   workspaceId: string,
   collectionId: string,
@@ -162,13 +212,14 @@ export function getStoragePath(
   const date = new Date()
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
+  const sanitizedFileName = sanitizeFileName(fileName)
   return join(
     KB_STORAGE_ROOT,
     workspaceId,
     collectionId,
     year.toString(),
     month,
-    `${storageKey}_${fileName}`,
+    `${storageKey}_${sanitizedFileName}`,
   )
 }
 

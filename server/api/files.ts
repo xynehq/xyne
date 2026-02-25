@@ -33,6 +33,7 @@ import { expandSheetIds } from "@/search/utils"
 import { promises as fs } from "node:fs"
 import { generateStorageKey } from "@/db/knowledgeBase"
 import { getStoragePath } from "./knowledgeBase"
+import { KB_STORAGE_ROOT } from "@/integrations/ribbie"
 
 const { JwtPayloadKey } = config
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "newApps" })
@@ -429,7 +430,7 @@ export const handleAttachmentUpload = async (c: Context) => {
             )
             // Try to remove empty parent directories
             let currentDir = dirname(filePath)
-            const storageBaseDir = join(process.cwd(), "storage", "kb_files")
+            const storageBaseDir = path.resolve(KB_STORAGE_ROOT)
             while (currentDir !== storageBaseDir && currentDir.length > storageBaseDir.length) {
               const entries = await fs.readdir(currentDir).catch(() => null)
               if (entries && entries.length === 0) {
@@ -569,7 +570,7 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
           if (filePathToDelete) {
             try {
               const resolvedPath = path.resolve(filePathToDelete)
-              const storageBaseDir = path.resolve(join(process.cwd(), "storage", "kb_files"))
+              const storageBaseDir = path.resolve(KB_STORAGE_ROOT)
               
               // Security: ensure path is under allowed directory
               if (resolvedPath.startsWith(storageBaseDir + path.sep) || resolvedPath.startsWith(storageBaseDir + "/")) {
@@ -683,7 +684,7 @@ export const handleAttachmentServe = async (c: Context) => {
     }
 
     // Look up the attachment document in Vespa to get the file path
-    const attachmentDoc = await GetDocument(fileSchema, expandSheetIds(fileId)[0])
+    const attachmentDoc = await GetDocument(fileSchema, fileId)
 
     if (!attachmentDoc || !attachmentDoc.fields) {
       throw new HTTPException(404, { message: "Attachment not found" })
@@ -710,7 +711,7 @@ export const handleAttachmentServe = async (c: Context) => {
 
     const allowedBaseDirs = [
       path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db"),
-      path.resolve(join(process.cwd(), "storage", "kb_files")),
+      path.resolve(KB_STORAGE_ROOT),
     ]
 
     const isAllowed = allowedBaseDirs.some((baseDir) =>
@@ -779,7 +780,7 @@ export const handleThumbnailServe = async (c: Context) => {
     }
 
     // Look up the attachment document in Vespa to get the thumbnail path
-    const attachmentDoc = await GetDocument(fileSchema, expandSheetIds(fileId)[0])
+    const attachmentDoc = await GetDocument(fileSchema, fileId)
 
     if (!attachmentDoc || !attachmentDoc.fields) {
       throw new HTTPException(404, { message: "Attachment not found" })
@@ -806,7 +807,7 @@ export const handleThumbnailServe = async (c: Context) => {
 
     const allowedBaseDirs = [
       path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db"),
-      path.resolve(join(process.cwd(), "storage", "kb_files")),
+      path.resolve(KB_STORAGE_ROOT),
     ]
 
     const isAllowed = allowedBaseDirs.some((baseDir) =>

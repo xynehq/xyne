@@ -85,12 +85,14 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
           {images.length === 1 ? (
             <div className="flex justify-end ml-auto w-fit">
               <div className="relative rounded-md overflow-hidden ml-auto">
-                <img
-                  src={images[0].url}
-                  alt={images[0].fileName}
-                  className="rounded-md shadow border border-gray-200 block ml-auto cursor-pointer hover:opacity-80 transition-opacity max-w-[50%] h-auto"
-                  onClick={() => handleImageGalleryOpen(0)}
-                />
+                {images[0].url && (
+                  <img
+                    src={images[0].url}
+                    alt={images[0].fileName}
+                    className="rounded-md shadow border border-gray-200 block ml-auto cursor-pointer hover:opacity-80 transition-opacity max-w-[50%] h-auto"
+                    onClick={() => handleImageGalleryOpen(0)}
+                  />
+                )}
               </div>
             </div>
           ) : (
@@ -102,7 +104,7 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
                   onClick={() => handleImageGalleryOpen(index)}
                 >
                   <img
-                    src={image.thumbnailUrl}
+                    src={image.thumbnailUrl ?? image.url}
                     alt={image.fileName}
                     className="w-28 h-28 object-cover rounded-md shadow-sm border border-gray-200"
                   />
@@ -178,11 +180,13 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
             </DialogHeader>
 
             <div className="relative h-[90vh] flex items-center justify-center bg-black">
-              <img
-                src={images[currentImageIndex]?.url}
-                alt={images[currentImageIndex]?.fileName}
-                className="max-w-full max-h-full object-contain"
-              />
+              {images[currentImageIndex]?.url && (
+                <img
+                  src={images[currentImageIndex]?.url}
+                  alt={images[currentImageIndex]?.fileName}
+                  className="max-w-full max-h-full object-contain"
+                />
+              )}
 
               {images.length > 1 && (
                 <>
@@ -221,7 +225,7 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
                       onClick={() => setCurrentImageIndex(index)}
                     >
                       <img
-                        src={image.thumbnailUrl}
+                        src={image.thumbnailUrl ?? image.url}
                         alt={image.fileName}
                         className="w-full h-full object-cover rounded"
                       />

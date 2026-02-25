@@ -22,7 +22,7 @@ import { db } from '@/db/client';
 
 
 // Knowledge Base storage path
-const KB_STORAGE_ROOT = path.join(process.cwd(), "storage", "kb_files");
+export const KB_STORAGE_ROOT = path.join(process.cwd(), "storage", "kb_files");
 const Logger = getLogger(Subsystem.Integrations)
 class RIBBIECircularDownloader {
     private downloadedCircularIds = new Set<string>();

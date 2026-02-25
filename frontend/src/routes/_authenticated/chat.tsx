@@ -1206,13 +1206,16 @@ export const ChatPage = ({
   // Handle chunk index changes from CitationPreview
   const handleChunkIndexChange = useCallback(
     async (newChunkIndex: number | null, documentId: string, docId: string) => {
-      const citationId = selectedCitation?.itemId ?? selectedCitation?.docId;
-      if (citationId && !documentId) {
+      // Capture the expected citation identity BEFORE any async operations
+      // to prevent race conditions when selectedCitation changes during the fetch
+      const expectedCitationId = selectedCitation?.itemId ?? selectedCitation?.docId ?? null;
+      
+      if (expectedCitationId && !documentId) {
         console.error("handleChunkIndexChange called without documentId");
         return;
       }
 
-      if (citationId && citationId !== documentId) {
+      if (expectedCitationId && expectedCitationId !== documentId) {
         return;
       }
 
@@ -1244,8 +1247,11 @@ export const ChatPage = ({
 
           const chunkContent = await chunkContentResponse.json()
 
-          // Ensure we are still on the same document before mutating UI
-          if ((selectedCitation?.itemId && selectedCitation?.itemId !== documentId) || (!selectedCitation?.itemId && selectedCitation?.docId && selectedCitation?.docId !== documentId)) {
+          // After await: check if the citation is still the same one we started with
+          // by comparing the captured expectedCitationId with the current selectedCitation
+          const currentCitationId = selectedCitation?.itemId ?? selectedCitation?.docId ?? null;
+          if (currentCitationId !== expectedCitationId) {
+            // Citation changed during the async fetch, bail out to avoid highlighting stale data
             return
           }
 
