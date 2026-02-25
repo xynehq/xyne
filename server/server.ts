@@ -1337,8 +1337,8 @@ export const AppRoutes = app
   )
   .post("files/upload", handleFileUpload)
   .post("/files/upload-attachment", handleAttachmentUpload)
-  .get("/attachments/:storagePath", handleAttachmentServe)
-  .get("/attachments/:storagePath/thumbnail", handleThumbnailServe)
+  .get("/attachments/:fileId", handleAttachmentServe)
+  .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post(
     "/files/delete",
     zValidator("json", handleAttachmentDeleteSchema),

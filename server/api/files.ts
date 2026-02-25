@@ -237,6 +237,7 @@ export const handleAttachmentUpload = async (c: Context) => {
       const fullFileName = `${0}.${ext}`
       const isImage = isImageFile(file.type)
       let outputDir: string | undefined
+      let filePath: string | undefined
       let attachmentApiUrl: string | undefined
       let attachmentThumbnailUrl: string | undefined
 
@@ -249,15 +250,16 @@ export const handleAttachmentUpload = async (c: Context) => {
           outputDir = path.join(baseDir, fileId)
 
           await mkdir(outputDir, { recursive: true })
-          const filePath = path.join(outputDir, fullFileName)
+          filePath = path.join(outputDir, fullFileName)
           await Bun.write(filePath, new Uint8Array(fileBuffer))
 
           // Generate thumbnail for images
           const thumbnailPath = getThumbnailPath(outputDir, fileId)
           await generateThumbnail(Buffer.from(fileBuffer), thumbnailPath)
 
-          attachmentApiUrl = `/api/v1/attachments/${encodeURIComponent(filePath)}`
-          attachmentThumbnailUrl = `/api/v1/attachments/${encodeURIComponent(thumbnailPath)}/thumbnail`
+          // Use opaque fileId in URLs instead of absolute file paths
+          attachmentApiUrl = `/api/v1/attachments/${fileId}`
+          attachmentThumbnailUrl = `/api/v1/attachments/${fileId}/thumbnail`
           const vespaDoc = {
             title: file.name,
             url: attachmentApiUrl,
@@ -278,6 +280,8 @@ export const handleAttachmentUpload = async (c: Context) => {
             mimeType: getBaseMimeType(file.type),
             metadata: JSON.stringify({
               thumbnailUrl: attachmentThumbnailUrl,
+              filePath: filePath,
+              thumbnailPath: thumbnailPath,
             }),
             createdAt: Date.now(),
             updatedAt: Date.now(),
@@ -290,8 +294,8 @@ export const handleAttachmentUpload = async (c: Context) => {
           // collectionId is derived from workspaceExternalId and userId to create a unique namespace per user
           const collectionId = `attachments_${user.workspaceExternalId}_${user.id}`
           const storageKey = generateStorageKey()
-          // Calculate storage path and assign to outer storagePath variable
-          const filePath = getStoragePath(
+          // Calculate storage path and assign to outer filePath variable
+          filePath = getStoragePath(
             user.workspaceExternalId,
             collectionId,
             storageKey,
@@ -342,7 +346,8 @@ export const handleAttachmentUpload = async (c: Context) => {
             const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
               processingResult
 
-            attachmentApiUrl = `/api/v1/attachments/${encodeURIComponent(filePath)}`
+            // Use opaque fileId in URLs instead of absolute file paths
+            attachmentApiUrl = `/api/v1/attachments/${docId}`
             const vespaDoc = {
               title: file.name,
               url: attachmentApiUrl,
@@ -368,6 +373,7 @@ export const handleAttachmentUpload = async (c: Context) => {
                 imageChunksCount: image_chunks.length,
                 processingMethod: getBaseMimeType(file.type || "text/plain"),
                 lastModified: Date.now(),
+                filePath: filePath,
                 ...(('sheetName' in processingResult) && {
                   sheetName: (processingResult as SheetProcessingResult).sheetName,
                   sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
@@ -412,6 +418,31 @@ export const handleAttachmentUpload = async (c: Context) => {
             loggerWithChild({ email }).error(
               cleanupError,
               `Failed to cleanup directory ${outputDir} after file write error`,
+            )
+          }
+        } else if (!isImage && filePath) {
+          // Cleanup non-image file if processing or DB insert fails
+          try {
+            await fs.unlink(filePath)
+            loggerWithChild({ email }).warn(
+              `Cleaned up file ${filePath} after failed processing`,
+            )
+            // Try to remove empty parent directories
+            let currentDir = dirname(filePath)
+            const storageBaseDir = join(process.cwd(), "storage", "kb_files")
+            while (currentDir !== storageBaseDir && currentDir.length > storageBaseDir.length) {
+              const entries = await fs.readdir(currentDir).catch(() => null)
+              if (entries && entries.length === 0) {
+                await fs.rmdir(currentDir).catch(() => {})
+                currentDir = dirname(currentDir)
+              } else {
+                break
+              }
+            }
+          } catch (cleanupError) {
+            loggerWithChild({ email }).error(
+              cleanupError,
+              `Failed to cleanup file ${filePath} after processing error`,
             )
           }
         }
@@ -576,8 +607,8 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
 }
 
 /**
- * Serve attachment file by storagePath
- * The storagePath is URL-encoded in the metadata URL and decoded here.
+ * Serve attachment file by fileId
+ * Resolves fileId to physical path via Vespa lookup to avoid exposing server internals.
  * Security: the resolved path must be under one of the allowed base directories.
  */
 export const handleAttachmentServe = async (c: Context) => {
@@ -585,16 +616,41 @@ export const handleAttachmentServe = async (c: Context) => {
   const email = sub
 
   try {
-    const encodedStoragePath = c.req.param("storagePath")
-    if (!encodedStoragePath) {
-      throw new HTTPException(400, { message: "Storage path is required" })
+    const fileId = c.req.param("fileId")
+    if (!fileId) {
+      throw new HTTPException(400, { message: "File ID is required" })
     }
 
-    // Decode the URL-encoded storage path
-    const storagePath = decodeURIComponent(encodedStoragePath)
+    // Validate fileId to prevent path traversal
+    if (fileId.includes("..") || fileId.includes("/") || fileId.includes("\\")) {
+      throw new HTTPException(400, { message: "Invalid file ID" })
+    }
+
+    // Look up the attachment document in Vespa to get the file path
+    const attachmentDoc = await GetDocument(fileSchema, expandSheetIds(fileId)[0])
+
+    if (!attachmentDoc || !attachmentDoc.fields) {
+      throw new HTTPException(404, { message: "Attachment not found" })
+    }
+
+    // Check permissions
+    const fields = attachmentDoc.fields as any
+    const permissions = Array.isArray(fields.permissions) ? (fields.permissions as string[]) : []
+    if (!permissions.includes(email)) {
+      throw new HTTPException(403, { message: "Access denied" })
+    }
+
+    // Get file path from metadata
+    let resolvedPath: string | undefined
+    const metadata = fields.metadata ? JSON.parse(fields.metadata as string) : {}
+    resolvedPath = metadata.filePath
+
+    if (!resolvedPath) {
+      throw new HTTPException(404, { message: "File path not found for attachment" })
+    }
 
     // Security: resolve the path and ensure it is under one of the allowed base directories
-    const resolvedPath = path.resolve(storagePath)
+    resolvedPath = path.resolve(resolvedPath)
 
     const allowedBaseDirs = [
       path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db"),
@@ -612,17 +668,17 @@ export const handleAttachmentServe = async (c: Context) => {
       throw new HTTPException(403, { message: "Access denied" })
     }
 
-    // Check if file exists at the resolved storage path
+    // Check if file exists at the resolved path
     const file = Bun.file(resolvedPath)
     if (!(await file.exists())) {
       throw new HTTPException(404, { message: "File not found" })
     }
 
-    const fileName = path.basename(resolvedPath)
-    const fileType = file.type || "application/octet-stream"
+    const fileName = fields.title || path.basename(resolvedPath)
+    const fileType = file.type || fields.mimeType || "application/octet-stream"
 
     loggerWithChild({ email }).info(
-      `Serving attachment at ${resolvedPath} for user ${email}`,
+      `Serving attachment ${fileId} at ${resolvedPath} for user ${email}`,
     )
 
     // Set appropriate headers
@@ -647,8 +703,8 @@ export const handleAttachmentServe = async (c: Context) => {
 }
 
 /**
- * Serve thumbnail for attachment by storagePath
- * The storagePath is URL-encoded in the metadata URL and decoded here.
+ * Serve thumbnail for attachment by fileId
+ * Resolves fileId to physical path via Vespa lookup to avoid exposing server internals.
  * Security: the resolved path must be under one of the allowed base directories.
  */
 export const handleThumbnailServe = async (c: Context) => {
@@ -656,16 +712,41 @@ export const handleThumbnailServe = async (c: Context) => {
   const email = sub
 
   try {
-    const encodedStoragePath = c.req.param("storagePath")
-    if (!encodedStoragePath) {
-      throw new HTTPException(400, { message: "Storage path is required" })
+    const fileId = c.req.param("fileId")
+    if (!fileId) {
+      throw new HTTPException(400, { message: "File ID is required" })
     }
 
-    // Decode the URL-encoded storage path
-    const storagePath = decodeURIComponent(encodedStoragePath)
+    // Validate fileId to prevent path traversal
+    if (fileId.includes("..") || fileId.includes("/") || fileId.includes("\\")) {
+      throw new HTTPException(400, { message: "Invalid file ID" })
+    }
+
+    // Look up the attachment document in Vespa to get the thumbnail path
+    const attachmentDoc = await GetDocument(fileSchema, expandSheetIds(fileId)[0])
+
+    if (!attachmentDoc || !attachmentDoc.fields) {
+      throw new HTTPException(404, { message: "Attachment not found" })
+    }
+
+    // Check permissions
+    const fields = attachmentDoc.fields as any
+    const permissions = Array.isArray(fields.permissions) ? (fields.permissions as string[]) : []
+    if (!permissions.includes(email)) {
+      throw new HTTPException(403, { message: "Access denied" })
+    }
+
+    // Get thumbnail path from metadata
+    let resolvedPath: string | undefined
+    const metadata = fields.metadata ? JSON.parse(fields.metadata as string) : {}
+    resolvedPath = metadata.thumbnailPath
+
+    if (!resolvedPath) {
+      throw new HTTPException(404, { message: "Thumbnail not found for attachment" })
+    }
 
     // Security: resolve the path and ensure it is under one of the allowed base directories
-    const resolvedPath = path.resolve(storagePath)
+    resolvedPath = path.resolve(resolvedPath)
 
     const allowedBaseDirs = [
       path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db"),
@@ -683,10 +764,10 @@ export const handleThumbnailServe = async (c: Context) => {
       throw new HTTPException(403, { message: "Access denied" })
     }
 
-    // Check if file exists at the resolved storage path
+    // Check if file exists at the resolved path
     const file = Bun.file(resolvedPath)
     if (!(await file.exists())) {
-      throw new HTTPException(404, { message: "File not found" })
+      throw new HTTPException(404, { message: "Thumbnail file not found" })
     }
 
     // Set appropriate headers for thumbnail
@@ -700,7 +781,7 @@ export const handleThumbnailServe = async (c: Context) => {
   } catch (error) {
     loggerWithChild({ email }).error(
       error,
-      `Error serving thumbnail ${c.req.param("storagePath")}`,
+      `Error serving thumbnail for fileId ${c.req.param("fileId")}`,
     )
     throw error
   }

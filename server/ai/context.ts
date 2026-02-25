@@ -500,12 +500,13 @@ const constructFileContext = (
       fields.docId,
     )
   } else {
-    const imageChunksPos = fields.image_chunks_pos_summary as number[]
+    const imageChunksPos =
+      (fields.image_chunks_pos_summary as number[]) || []
 
     imageChunks =
       fields.image_chunks_summary?.map((chunk, idx) => {
         const result = {
-          chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+          chunk: `${fields.docId}_${imageChunksPos[idx] ?? idx}`,
           index: idx,
           score: 0,
         }
@@ -899,10 +900,11 @@ const constructDataSourceFileContext = (
       fields.docId,
     )
   } else {
-    const imageChunksPos = fields.image_chunks_pos_summary as number[]
+    const imageChunksPos =
+      (fields.image_chunks_pos_summary as number[]) || []
     imageChunks =
       fields.image_chunks_summary?.map((chunk, idx) => ({
-        chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+        chunk: `${fields.docId}_${imageChunksPos[idx] ?? idx}`,
         index: idx,
         score: 0,
       })) || []
@@ -1022,12 +1024,13 @@ const constructCollectionFileContext = (
       fields.docId,
     )
   } else {
-    const imageChunksPos = fields.image_chunks_pos_summary as number[]
+    const imageChunksPos =
+      (fields.image_chunks_pos_summary as number[]) || []
 
     imageChunks =
       fields.image_chunks_summary?.map((chunk, idx) => {
         const result = {
-          chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+          chunk: `${fields.docId}_${imageChunksPos[idx] ?? idx}`,
           index: idx,
           score: 0,
         }

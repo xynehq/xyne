@@ -1206,13 +1206,14 @@ export const ChatPage = ({
   // Handle chunk index changes from CitationPreview
   const handleChunkIndexChange = useCallback(
     async (newChunkIndex: number | null, documentId: string, docId: string) => {
-      if ((selectedCitation?.itemId && !documentId) || (!selectedCitation?.itemId && selectedCitation?.docId && !documentId)) {
-        console.error("handleChunkIndexChange called without documentId")
-        return
+      const citationId = selectedCitation?.itemId ?? selectedCitation?.docId;
+      if (citationId && !documentId) {
+        console.error("handleChunkIndexChange called without documentId");
+        return;
       }
 
-      if ((selectedCitation?.itemId && selectedCitation?.itemId !== documentId) || (!selectedCitation?.itemId && selectedCitation?.docId && selectedCitation?.docId !== documentId)) {
-        return
+      if (citationId && citationId !== documentId) {
+        return;
       }
 
       if (newChunkIndex === null) {
@@ -1301,7 +1302,10 @@ export const ChatPage = ({
   // Handler for citation clicks - moved before conditional returns
   const handleCitationClick = useCallback(
     (citation: Citation, chunkIndex?: number, fromSources: boolean = false) => {
-      if (!citation || ((!citation.clId || !citation.itemId) && (!citation.app || !(citation.app === "attachment")))) {
+      const isRegularCitation = citation?.clId && citation?.itemId;
+      const isAttachment = citation?.app === 'attachment';
+
+      if (!citation || (!isRegularCitation && !isAttachment)) {
         // For citations without clId or itemId, open as regular link
         if (citation.url) {
           window.open(citation.url, "_blank", "noopener,noreferrer")
