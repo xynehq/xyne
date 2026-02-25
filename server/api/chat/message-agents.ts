@@ -1467,10 +1467,11 @@ async function prepareInitialAttachmentContext(
       combinedSearchResponse.map((child, idx) =>
         vespaResultToAttachmentFragment(
           child as VespaSearchResult,
-          idx < chunksPerDocument.length ? chunksPerDocument[idx] : 0,
+          idx,
           userMetadata,
           query,
           allowChunkCitations,
+          idx < chunksPerDocument.length ? chunksPerDocument[idx] : 0,
         )
       )
     )
@@ -3182,6 +3183,11 @@ function buildAttachmentDirective(context: AgentRunContext): string {
     initialAttachmentSummary ||
     "User provided attachment context for this opening turn."
 
+  // Include the actual fragment content, not just metadata
+  const fragmentsContent = context.allFragments.length > 0
+    ? answerContextMapFromFragments(context.allFragments, context.allFragments.length)
+    : "No attachment content available."
+
   return `
 # ATTACHMENT-FIRST TURN
 - ${summaryLine}
@@ -3189,6 +3195,39 @@ function buildAttachmentDirective(context: AgentRunContext): string {
 - If they fully answer the query, respond directly without calling tools.
 - If they are insufficient, explain what is missing, then call toDoWrite to plan additional research before invoking other tools.
 - Capture any useful facts from the attachments so they remain available in later turns.
+
+# ATTACHMENT CONTEXT FRAGMENTS
+${fragmentsContent}
+
+# Guidelines for Response
+1. Data Interpretation:
+   - Use ONLY the provided files and their chunks as your knowledge base.
+   - Treat every file header \`Index {docId} ...\` as the start of a new document.
+   - Treat every square bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
+2. Response Structure:
+   - Start with the most relevant facts from the chunks across files.
+   - Keep order chronological when it helps comprehension.
+   - Every factual statement MUST cite the exact chunk it came from using the format:
+     K[docId_chunkIndex]
+     where:
+       - \`docId\` is taken from the file header line ("Index {docId} ...").
+       - \`chunkIndex\` is the square bracketed number prefixed on that chunk within the same file.
+   - Examples:
+     - Single citation: "X is true K[3_12]."
+     - Two citations in one sentence (from different files or chunks): "X K[3_12] and Y K[1_0]."
+   - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
+3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
+   - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
+   - Place the citation immediately after the relevant claim.
+   - Do NOT group indices inside one set of brackets (WRONG: "K[3_12,1_7]").
+   - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[3_12] ... K[1_0]".
+   - Only cite information that appears verbatim or is directly inferable from the cited chunk.
+   - If you cannot ground a claim to a specific chunk, do not make the claim.
+
+4. Quality Assurance:
+   - Cross-check across multiple chunks/files when available and briefly note inconsistencies if they exist.
+   - Keep tone professional and concise.
+   - Acknowledge gaps if the provided chunks don't contain enough detail.
 `.trim()
 }
 

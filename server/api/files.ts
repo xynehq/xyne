@@ -531,26 +531,82 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
     }
   }
 
-  // Delete non-image attachments from Vespa
+  // Delete non-image attachments from Vespa and disk
   if (nonImageAttachmentFileIds.length > 0) {
     loggerWithChild({ email: email }).info(
-      `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa`,
+      `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa and disk`,
     )
 
     for (const fileId of nonImageAttachmentFileIds) {
       try {
         const vespaIds = expandSheetIds(fileId)
         for (const vespaId of vespaIds) {
+          // Get the document to retrieve file path from metadata before deletion
+          let filePathToDelete: string | undefined
+          try {
+            const doc = await GetDocument(fileSchema, vespaId)
+            if (doc?.fields) {
+              const fields = doc.fields as any
+              const metadata = fields.metadata ? JSON.parse(fields.metadata as string) : {}
+              filePathToDelete = metadata.filePath
+            }
+          } catch (getErr) {
+            loggerWithChild({ email: email }).warn(
+              `Could not fetch document ${vespaId} for file path: ${getErrorMessage(getErr)}`,
+            )
+          }
+
           // Delete from Vespa kb_items or file schema
-          if(vespaId.startsWith("att_")) {
+          if (vespaId.startsWith("att_")) {
             await DeleteDocument(vespaId, KbItemsSchema)
           } else {
             await DeleteDocument(vespaId, fileSchema)
           }
           // Delete images from disk
           await DeleteImages(vespaId)
+
+          // Delete the file from disk
+          if (filePathToDelete) {
+            try {
+              const resolvedPath = path.resolve(filePathToDelete)
+              const storageBaseDir = path.resolve(join(process.cwd(), "storage", "kb_files"))
+              
+              // Security: ensure path is under allowed directory
+              if (resolvedPath.startsWith(storageBaseDir + path.sep) || resolvedPath.startsWith(storageBaseDir + "/")) {
+                await fs.unlink(resolvedPath)
+                loggerWithChild({ email: email }).info(
+                  `Deleted non-image attachment file from disk: ${resolvedPath}`,
+                )
+                
+                // Try to remove empty parent directories
+                let currentDir = dirname(resolvedPath)
+                while (currentDir !== storageBaseDir && currentDir.length > storageBaseDir.length) {
+                  const entries = await fs.readdir(currentDir).catch(() => null)
+                  if (entries && entries.length === 0) {
+                    await fs.rmdir(currentDir).catch(() => {})
+                    currentDir = dirname(currentDir)
+                  } else {
+                    break
+                  }
+                }
+              } else {
+                loggerWithChild({ email: email }).warn(
+                  `Skipping file deletion - path outside allowed directory: ${resolvedPath}`,
+                )
+              }
+            } catch (fileDeleteErr) {
+              const fileDeleteMsg = getErrorMessage(fileDeleteErr)
+              if (!fileDeleteMsg.includes("ENOENT") && !fileDeleteMsg.includes("no such file")) {
+                loggerWithChild({ email: email }).error(
+                  fileDeleteErr,
+                  `Failed to delete non-image attachment file from disk: ${filePathToDelete}`,
+                )
+              }
+            }
+          }
+
           loggerWithChild({ email: email }).info(
-            `Successfully deleted non-image attachment ${vespaId} from Vespa`,
+            `Successfully deleted non-image attachment ${vespaId} from Vespa and disk`,
           )
         }
       } catch (error) {

@@ -1246,7 +1246,7 @@ export const answerContextMapFromFragments = (
     .slice(0, maxSummaryChunks)
     .map((fragment, index) => {
       const citationIndex = index + 1
-      return `[index ${citationIndex}] ${fragment.content}`
+      return `Index ${citationIndex} \n ${fragment.content}`
     })
     .join("\n\n")
 }
