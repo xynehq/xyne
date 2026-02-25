@@ -990,6 +990,7 @@ ${retrievedContext}
    - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
 3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
    - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
+   - Don't change the format of the citation; it must be exactly K[docId_chunkIndex]. docId first then chunkIndex, separated by an underscore, all within square brackets and prefixed with K.
    - Even if there is only one document index (e.g., Index 0), you must still include the document index in the citation (e.g., K[0_3]).
    - Never cite only the document index or only the chunk index; both must be included in the citation.
    - Place the citation immediately after the relevant claim.
