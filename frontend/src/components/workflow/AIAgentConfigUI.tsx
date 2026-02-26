@@ -45,7 +45,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   const [agentConfig, setAgentConfig] = useState<AIAgentConfig>({
     name: "AI Agent",
     description: "some agent description",
-    model: "vertex-gemini-2-5-flash",
+    model: "open-large",
     inputPrompt: "$json.input",
     systemPrompt: "",
     knowledgeBase: "",
@@ -95,38 +95,38 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
 
-  const [models, setModels] = useState<string[]>(["vertex-gemini-2-5-flash"])
+  const [models, setModels] = useState<string[]>(["open-large"])
   const [isLoadingModels, setIsLoadingModels] = useState(false)
   const [modelsLoaded, setModelsLoaded] = useState(false)
 
   
   React.useEffect(() => {
     if (isVisible && !modelsLoaded) {
-      const fetchGeminiModels = async () => {
+      const fetchModels = async () => {
         setIsLoadingModels(true)
         try {
-          const response = await api.workflow.models.gemini.$get()
+          const response = await api.workflow.models.$get()
           
           if (response.ok) {
             const data = await response.json()
             if (data.success && data.data && Array.isArray(data.data)) {
               const enumValues = data.data
-                .filter((model: any) => model.modelType==="gemini")
+                // .filter((model: any) => model.modelType==="gemini")
                 .map((model: any) => model.enumValue)
               setModels(enumValues)
               setModelsLoaded(true)
             }
           } else {
-            console.warn('Failed to fetch Gemini models from API, using defaults')
+            console.warn('Failed to fetch models from API, using defaults')
           }
         } catch (error) {
-          console.warn('Error fetching Gemini models:', error)
+          console.warn('Error fetching models:', error)
         } finally {
           setIsLoadingModels(false)
         }
       }
 
-      fetchGeminiModels()
+      fetchModels()
     }
   }, [isVisible, modelsLoaded])
   
@@ -135,7 +135,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   
   
   const getValidModelId = (modelId: string | undefined): string => {
-    return models.includes(modelId || "") ? (modelId as string) : (models[0] || "vertex-gemini-2-5-flash")
+    return models.includes(modelId || "") ? (modelId as string) : (models[0] || "open-large")
   }
 
   

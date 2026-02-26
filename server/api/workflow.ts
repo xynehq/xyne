@@ -227,6 +227,7 @@ import {
   createWorkflowTool,
   createToolExecution,
 } from "@/db/workflowTool"
+import { getActiveProvider } from "@/ai/modelConfig"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -3714,7 +3715,7 @@ ${JSON.stringify(stepData.result, null, 2)}`
               agentId: qaAgentId,
               executionId: executionId,
               agentName: qaConfig.agentName || qaConfig.name || "Q&A Agent",
-              model: qaConfig.model || "vertex-gemini-2-5-flash",
+              model: qaConfig.model || "open-large",
               processedAt: new Date().toISOString(),
               awaitingUserSelection: true, // Flag to indicate waiting for sheet/column selection
               message: "Excel metadata extracted. Please select sheet and column to process questions."
@@ -5621,6 +5622,148 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Failed to get VertexAI model enums")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+// Get model enum names for workflow tools
+export const GetModelEnumsApi = async (c: Context) => {
+  try {
+    const { fetchModelInfoFromAPI } = await import("@/ai/fetchModels")
+    const { MODEL_CONFIGURATIONS } = await import("@/ai/modelConfig")
+    const { AIProviders } = await import("@/ai/types")
+
+    const activeProvider = getActiveProvider()
+    if (!activeProvider) {
+      throw new HTTPException(400, {
+        message: "Active AI provider is not set.",
+      })
+    }
+
+    // For LiteLLM provider, fetch models from API
+    if (activeProvider === AIProviders.LiteLLM) {
+      const apiModels = await fetchModelInfoFromAPI()
+      
+      // Filter models with litellm_provider === "hosted_vllm"
+      const hostedVllmModels = apiModels.filter(
+        (m: any) => m.model_info?.litellm_provider === "hosted_vllm"
+      )
+
+      // Use Set to track seen model IDs to avoid duplicates
+      const seenModelIds = new Set<string>()
+      const modelEnums: Array<{
+        enumValue: string
+        labelName: string
+        actualName: string
+        description: string
+        reasoning: boolean
+        websearch: boolean
+        deepResearch: boolean
+        modelType: string
+      }> = []
+
+      for (const modelInfo of hostedVllmModels) {
+        const modelId = modelInfo.model_name
+        
+        // Skip duplicates
+        if (seenModelIds.has(modelId)) {
+          continue
+        }
+        seenModelIds.add(modelId)
+
+        const actualName = modelInfo.litellm_params?.model || modelId
+
+        // Check if model exists in MODEL_CONFIGURATIONS for additional metadata
+        const modelConfig = MODEL_CONFIGURATIONS[modelId as keyof typeof MODEL_CONFIGURATIONS]
+
+        if (modelConfig) {
+          // Use configuration from MODEL_CONFIGURATIONS
+          modelEnums.push({
+            enumValue: modelId,
+            labelName: modelConfig.labelName,
+            actualName: actualName,
+            description: modelConfig.description,
+            reasoning: modelConfig.reasoning,
+            websearch: modelConfig.websearch,
+            deepResearch: modelConfig.deepResearch,
+            modelType: modelId.includes('gemini') ? 'gemini' :
+              modelId.includes('claude') ? 'claude' : 'other',
+          })
+        } else {
+          // For models not in MODEL_CONFIGURATIONS, use API data with defaults
+          modelEnums.push({
+            enumValue: modelId,
+            labelName: modelId, // Use model_name as label
+            actualName: actualName,
+            description: modelInfo.model_info?.description || "",
+            reasoning: modelInfo.model_info?.reasoning ?? false,
+            websearch: modelInfo.model_info?.websearch ?? false,
+            deepResearch: modelInfo.model_info?.deep_research ?? false,
+            modelType: modelId.includes('gemini') ? 'gemini' :
+              modelId.includes('claude') ? 'claude' : 'other',
+          })
+        }
+      }
+
+      // Sort by model type and then by label name
+      modelEnums.sort((a, b) => {
+        const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };
+        const orderA = typeOrder[a.modelType] ?? 99;
+        const orderB = typeOrder[b.modelType] ?? 99;
+
+        if (orderA !== orderB) {
+          return orderA - orderB;
+        }
+        return a.labelName.localeCompare(b.labelName);
+      })
+
+      console.log(`Model enums for LiteLLM provider from API:`, modelEnums.length, "models")
+
+      return c.json({
+        success: true,
+        data: modelEnums,
+        count: modelEnums.length,
+        message: "Model enums for the active AI provider (from API)",
+      })
+    }
+
+    // For non-LiteLLM providers, use static MODEL_CONFIGURATIONS
+    const modelEnums = Object.entries(MODEL_CONFIGURATIONS)
+      .filter(([_, config]) => config.provider === activeProvider)
+      .map(([enumValue, config]) => ({
+        enumValue,
+        labelName: config.labelName,
+        actualName: config.actualName,
+        description: config.description,
+        reasoning: config.reasoning,
+        websearch: config.websearch,
+        deepResearch: config.deepResearch,
+        // Add model type for better categorization in frontend
+        modelType: enumValue.includes('gemini') ? 'gemini' :
+          enumValue.includes('claude') ? 'claude' : 'other',
+      }))
+      .sort((a, b) => {
+        const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };
+        const orderA = typeOrder[a.modelType] ?? 99;
+        const orderB = typeOrder[b.modelType] ?? 99;
+
+        if (orderA !== orderB) {
+          return orderA - orderB;
+        }
+        return a.labelName.localeCompare(b.labelName);
+      })
+      console.log(`Model enums for provider ${activeProvider}:`, modelEnums)
+
+    return c.json({
+      success: true,
+      data: modelEnums,
+      count: modelEnums.length,
+      message: "Model enums for the active AI provider",
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to get model enums")
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })

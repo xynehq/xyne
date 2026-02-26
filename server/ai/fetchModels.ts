@@ -30,7 +30,7 @@ let modelInfoCache: ModelInfoCache | null = null
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
 // Shared function to fetch model info from API with caching
-async function fetchModelInfoFromAPI(forceRefresh = false): Promise<any[]> {
+export async function fetchModelInfoFromAPI(forceRefresh = false): Promise<any[]> {
   // Return cached data if still valid
   if (!forceRefresh && modelInfoCache) {
     const age = Date.now() - modelInfoCache.timestamp
