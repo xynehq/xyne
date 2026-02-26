@@ -45,7 +45,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   const [agentConfig, setAgentConfig] = useState<AIAgentConfig>({
     name: "AI Agent",
     description: "some agent description",
-    model: "open-large",
+    model: "default-model", // Will be set from API default
     inputPrompt: "$json.input",
     systemPrompt: "",
     knowledgeBase: "",
@@ -95,9 +95,10 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
 
-  const [models, setModels] = useState<string[]>(["open-large"])
+  const [models, setModels] = useState<string[]>([])
   const [isLoadingModels, setIsLoadingModels] = useState(false)
   const [modelsLoaded, setModelsLoaded] = useState(false)
+  const [defaultModel, setDefaultModel] = useState<string>("")
 
   
   React.useEffect(() => {
@@ -114,6 +115,10 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
                 // .filter((model: any) => model.modelType==="gemini")
                 .map((model: any) => model.enumValue)
               setModels(enumValues)
+              // Set default model from API response
+              if (data.defaultModel) {
+                setDefaultModel(data.defaultModel)
+              }
               setModelsLoaded(true)
             }
           } else {
@@ -135,7 +140,14 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   
   
   const getValidModelId = (modelId: string | undefined): string => {
-    return models.includes(modelId || "") ? (modelId as string) : (models[0] || "open-large")
+    // Prefer the provided modelId if valid, then defaultModel from API, then first model in list
+    if (modelId && models.includes(modelId)) {
+      return modelId
+    }
+    if (defaultModel && models.includes(defaultModel)) {
+      return defaultModel
+    }
+    return models[0] || ""
   }
 
   

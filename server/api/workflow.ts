@@ -3715,7 +3715,7 @@ ${JSON.stringify(stepData.result, null, 2)}`
               agentId: qaAgentId,
               executionId: executionId,
               agentName: qaConfig.agentName || qaConfig.name || "Q&A Agent",
-              model: qaConfig.model || "open-large",
+              model: qaConfig.model || config.defaultBestModel,
               processedAt: new Date().toISOString(),
               awaitingUserSelection: true, // Flag to indicate waiting for sheet/column selection
               message: "Excel metadata extracted. Please select sheet and column to process questions."
@@ -5642,6 +5642,9 @@ export const GetModelEnumsApi = async (c: Context) => {
       })
     }
 
+    // Get the default model from config
+    const defaultModel = config.defaultBestModel
+
     // For LiteLLM provider, fetch models from API
     if (activeProvider === AIProviders.LiteLLM) {
       const apiModels = await fetchModelInfoFromAPI()
@@ -5724,6 +5727,7 @@ export const GetModelEnumsApi = async (c: Context) => {
       return c.json({
         success: true,
         data: modelEnums,
+        defaultModel: defaultModel,
         count: modelEnums.length,
         message: "Model enums for the active AI provider (from API)",
       })
@@ -5759,6 +5763,7 @@ export const GetModelEnumsApi = async (c: Context) => {
     return c.json({
       success: true,
       data: modelEnums,
+      defaultModel: defaultModel,
       count: modelEnums.length,
       message: "Model enums for the active AI provider",
     })

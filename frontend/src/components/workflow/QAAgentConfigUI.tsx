@@ -41,7 +41,7 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
 }) => {
   const [agentConfig, setAgentConfig] = useState<QAAgentConfig>({
     name: "Q&A Agent",
-    model: "open-large",
+    model: "default-model", // Will be set from API default
     systemPrompt: "",
     isExistingAgent: false,
   })
@@ -50,13 +50,21 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
   const [promptError, setPromptError] = useState<string | null>(null)
 
-  const [models, setModels] = useState<string[]>(["open-large"])
+  const [models, setModels] = useState<string[]>([])
   const [isLoadingModels, setIsLoadingModels] = useState(false)
   const [modelsLoaded, setModelsLoaded] = useState(false)
+  const [defaultModel, setDefaultModel] = useState<string>("")
 
   const getValidModelId = useCallback((modelId: string | undefined): string => {
-    return models.includes(modelId || "") ? (modelId as string) : (models[0] || "open-large")
-  }, [models])
+    // Prefer the provided modelId if valid, then defaultModel from API, then first model in list
+    if (modelId && models.includes(modelId)) {
+      return modelId
+    }
+    if (defaultModel && models.includes(defaultModel)) {
+      return defaultModel
+    }
+    return models[0] || ""
+  }, [models, defaultModel])
   
   React.useEffect(() => {
     if (isVisible) {
@@ -105,6 +113,10 @@ const QAAgentConfigUI: React.FC<QAAgentConfigUIProps> = ({
                 // .filter((model: any) => model.modelType==="gemini")
                 .map((model: any) => model.enumValue)
               setModels(enumValues)
+              // Set default model from API response
+              if (data.defaultModel) {
+                setDefaultModel(data.defaultModel)
+              }
               setModelsLoaded(true)
             }
           } else {
