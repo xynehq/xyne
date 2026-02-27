@@ -329,6 +329,7 @@ import {
   updateWorkflowStepExecutionSchema,
   formSubmissionSchema,
   listWorkflowExecutionsQuerySchema,
+  GetModelEnumsApi,
 } from "@/api/workflow"
 import {
   workflowTool,
@@ -1545,6 +1546,7 @@ export const AppRoutes = app
   .post("/workflow/qa/process", ProcessQAQuestionsApi)
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
   .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
+  .get("/workflow/models", GetModelEnumsApi)
 
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
