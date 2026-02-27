@@ -196,6 +196,8 @@ export async function getMessageFeedbackStats({
       totalDislikes: 0,
       totalCost: 0,
       totalTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
       feedbackByChat: {},
       feedbackMessages: [],
     }
@@ -209,6 +211,8 @@ export async function getMessageFeedbackStats({
       dislikes: sql<number>`SUM(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 ELSE 0 END)::int`,
       totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
       totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
+      inputTokens: sql<number>`COALESCE(SUM(${messages.inputTokens}), 0)::bigint`,
+      outputTokens: sql<number>`COALESCE(SUM(${messages.outputTokens}), 0)::bigint`,
     })
     .from(messages)
     .where(
@@ -244,6 +248,8 @@ export async function getMessageFeedbackStats({
   let totalDislikes = 0
   let totalCost = 0
   let totalTokens = 0
+  let inputTokens = 0
+  let outputTokens = 0
   const feedbackByChat: Record<
     string,
     { likes: number; dislikes: number; cost: number; tokens: number }
@@ -264,6 +270,8 @@ export async function getMessageFeedbackStats({
     totalDislikes += row.dislikes
     totalCost += Number(row.totalCost) || 0 // numeric → string at runtime
     totalTokens += Number(row.totalTokens) || 0 // bigint → string at runtime
+    inputTokens += Number(row.inputTokens) || 0 // bigint → string at runtime
+    outputTokens += Number(row.outputTokens) || 0 // bigint → string at runtime
   })
 
   // Process detailed feedback messages
@@ -285,6 +293,8 @@ export async function getMessageFeedbackStats({
     totalDislikes,
     totalCost,
     totalTokens,
+    inputTokens,
+    outputTokens,
     feedbackByChat,
     feedbackMessages: processedFeedbackMessages,
   }

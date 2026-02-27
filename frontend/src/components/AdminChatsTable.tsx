@@ -43,6 +43,8 @@ export interface AdminChat {
   messageCount: number
   totalCost: number
   totalTokens: number
+  inputTokens: number
+  outputTokens: number
   likes: number
   dislikes: number
   isBookmarked: boolean
@@ -62,6 +64,8 @@ export interface AdminUser {
   dislikes: number
   totalCost: number
   totalTokens: number
+  inputTokens: number
+  outputTokens: number
 }
 
 // The API returns a simple array of strings (user message content)
@@ -616,7 +620,10 @@ export const AdminChatsTable = ({
                             {chat.totalTokens.toLocaleString()}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            tokens
+                            total tokens
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            ({(chat.inputTokens || 0).toLocaleString()} in / {(chat.outputTokens || 0).toLocaleString()} out)
                           </span>
                         </div>
                         <div className="flex items-center gap-2 text-xs">
