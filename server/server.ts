@@ -1,3 +1,4 @@
+
 import { type Context, Hono, type Next } from "hono"
 import {
   AnswerApi,
@@ -222,6 +223,14 @@ import {
   GetAgentsForDataSourceApi,
   GetDataSourceFile,
 } from "@/api/dataSource"
+import {
+  TriggerDatabaseSyncApi,
+  GetDatabaseSyncStateApi,
+  CreateDatabaseConnectorApi,
+  DeleteDatabaseConnectorApi,
+  SyncDatabaseTableApi,
+  UpdateDatabaseConnectorApi,
+} from "@/api/databaseConnector"
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -1450,6 +1459,12 @@ export const AppRoutes = app
   .get("/datasources/:docId", GetDataSourceFile)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
   .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
+  .post("/connectors/database/create", CreateDatabaseConnectorApi)
+  .post("/connectors/database/update", UpdateDatabaseConnectorApi)
+  .post("/connectors/database/sync", TriggerDatabaseSyncApi)
+  .post("/connectors/database/sync-table", SyncDatabaseTableApi)
+  .post("/connectors/database/delete", DeleteDatabaseConnectorApi)
+  .get("/connectors/database/:connectorId/sync-state", GetDatabaseSyncStateApi)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post(

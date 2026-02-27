@@ -17,7 +17,7 @@ import type {
   TxnOrClient,
 } from "@/types" // ConnectorType removed
 import { Subsystem } from "@/types"
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types" // ConnectorType added
 import { Google, MicrosoftEntraId } from "arctic"
 import config from "@/config"
@@ -34,6 +34,7 @@ import { IsGoogleApp, IsMicrosoftApp } from "@/utils"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import { getErrorMessage } from "@/utils"
 import { syncJobs, syncHistory } from "@/db/schema"
+import { createCollection } from "@/db/knowledgeBase"
 import { scopes } from "@/integrations/microsoft/config"
 import { CustomServiceAuthProvider } from "@/integrations/microsoft/utils"
 import { date } from "zod"
@@ -645,3 +646,101 @@ export async function saveConnectorState<T extends IngestionStateUnion>(
 
   Logger.debug(`State saved for connector ${connectorId}`)
 }
+
+/**
+ * Get a database connector by id or externalId for a given user/workspace.
+ * connectorId can be the numeric id (e.g. "5") or the externalId (e.g. nanoid).
+ * Returns null if not found or not owned by that user in that workspace.
+ */
+export async function getDatabaseConnectorForUser(
+  trx: TxnOrClient,
+  connectorId: string,
+  userId: number,
+  workspaceId: number,
+) {
+  const byNumericId = /^\d+$/.test(connectorId)
+  const rows = await trx
+    .select()
+    .from(connectors)
+    .where(
+      and(
+        byNumericId
+          ? eq(connectors.id, Number(connectorId))
+          : eq(connectors.externalId, connectorId),
+        eq(connectors.userId, userId),
+        eq(connectors.workspaceId, workspaceId),
+      ),
+    )
+    .limit(1)
+  return rows[0] ?? null
+}
+
+/**
+ * Get or create the KB collection id linked to this database connector (state.kbCollectionId).
+ * Creates the collection and updates connector state if not set.
+ */
+export async function getOrCreateDatabaseConnectorKbCollectionId(
+  connectorId: string,
+): Promise<string> {
+  const [conn] = await db
+    .select({
+      id: connectors.id,
+      state: connectors.state,
+      name: connectors.name,
+      workspaceId: connectors.workspaceId,
+      userId: connectors.userId,
+    })
+    .from(connectors)
+    .where(eq(connectors.id, Number(connectorId)))
+    .limit(1)
+  if (!conn) throw new Error("Connector not found")
+  const state = (conn.state as Record<string, unknown>) || {}
+  if (typeof state.kbCollectionId === "string") return state.kbCollectionId
+  const collection = await db.transaction(async (tx) => {
+    const coll = await createCollection(tx, {
+      workspaceId: conn.workspaceId,
+      ownerId: conn.userId,
+      name: `Database: ${conn.name}`,
+      isPrivate: true,
+    })
+    await tx
+      .update(connectors)
+      .set({
+        state: { ...state, kbCollectionId: coll.id } as Record<string, unknown>,
+        updatedAt: new Date(),
+      })
+      .where(eq(connectors.id, Number(connectorId)))
+    return coll
+  })
+  return collection.id
+}
+
+  /**
+   * Clear kbCollectionId from any database connector that has this collection linked.
+   * Call when a KB collection (or an item in it) is deleted so the next sync creates a new collection.
+   */
+  export const clearDatabaseConnectorKbCollectionId = async (
+    trx: TxnOrClient,
+    collectionId: string,
+  ): Promise<void> => {
+    const rows = await trx
+      .select({ id: connectors.id, state: connectors.state })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.app, Apps.Database),
+          sql`${connectors.state}->>'kbCollectionId' = ${collectionId}`,
+        ),
+      )
+    for (const row of rows) {
+      const state = (row.state as Record<string, unknown>) || {}
+      const { kbCollectionId: _removed, ...rest } = state
+      await trx
+        .update(connectors)
+        .set({
+          state: rest as (typeof connectors.$inferInsert)["state"],
+          updatedAt: new Date(),
+        })
+        .where(eq(connectors.id, row.id))
+    }
+  }

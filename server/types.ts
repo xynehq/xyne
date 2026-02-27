@@ -18,6 +18,7 @@ import type {
   MailEntity,
   PeopleEntity,
 } from "@xyne/vespa-ts/types"
+import { DatabaseEngine } from "@/integrations/database/types"
 
 export enum ProcessingJobType {
   FILE = "file",
@@ -274,6 +275,25 @@ export const createZohoDeskConnectorSchema = z.object({
 
 export type CreateZohoDeskConnector = z.infer<
   typeof createZohoDeskConnectorSchema
+>
+
+export const createDatabaseConnectorSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  engine: z.nativeEnum(DatabaseEngine),
+  host: z.string().min(1, "Host is required"),
+  port: z.number().int().positive().default(5432),
+  database: z.string().min(1, "Database is required"),
+  schema: z.string().optional(),
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+  tablesInclude: z.string().optional(), // comma-separated
+  tablesIgnore: z.string().optional(), // comma-separated
+  watermarkColumn: z.string().optional(),
+  batchSize: z.number().int().positive().default(1000),
+})
+
+export type CreateDatabaseConnector = z.infer<
+  typeof createDatabaseConnectorSchema
 >
 
 export const updateConnectorStatusSchema = z.object({
