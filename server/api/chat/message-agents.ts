@@ -90,6 +90,7 @@ import {
 import { searchCollectionRAG, SearchEmailThreads, searchVespaInFiles } from "@/search/vespa"
 import {
   Apps,
+  AttachmentEntity,
   KnowledgeBaseEntity,
   SearchModes,
   type VespaSearchResult,
@@ -4078,8 +4079,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 docId: fileId,
                 title: `Attachment image ${index + 1}`,
                 url: "",
-                app: Apps.KnowledgeBase,
-                entity: KnowledgeBaseEntity.File,
+                app: Apps.Attachment,
+                entity: AttachmentEntity.Image,
               } as Citation,
               confidence: 0.9,
               images: [

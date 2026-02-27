@@ -926,8 +926,8 @@ This is the context of the agent, it is very important to follow this. You MUST 
   Index {docId} {file context begins here...}
 - \`docId\` is a unique identifier for that file (e.g., 0, 1, 2, etc.).
 - Inside the file context, text is split into chunks.
-- Each chunk might begin with a square bracketed numeric index, e.g.: [0], [1], [2], etc.
-- This is the chunk index within that file, if it exists.
+- Each chunk should have a square bracketed numeric index, e.g.: [0], [1], [2], etc. This is the chunk index within that file.
+- If a chunk does not include an explicit [n], assign a deterministic 0-based fallback chunkIndex by chunk order in that file.
 
 The context provided will be formatted with specific fields:
 ## File Context Format
@@ -983,7 +983,7 @@ ${retrievedContext}
      K[docId_chunkIndex]
      where:
        - \`docId\` is taken from the file header line ("Index {docId} ...").
-       - \`chunkIndex\` is the square bracketed number prefixed on that chunk within the same file.
+       - \`chunkIndex\` is the square bracketed number prefixed on that chunk within the same file; if absent, use the deterministic fallback chunkIndex by chunk order.
    - Examples:
      - Single citation: "X is true K[12_3]."
      - Two citations in one sentence (from different files or chunks): "X K[12_3] and Y K[7_0]."
