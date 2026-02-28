@@ -168,6 +168,24 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     return filename.toLowerCase().split(".").pop() || ""
   }
 
+  const getDefaultMimeType = (extension: string): string => {
+    switch (extension) {
+      case "pdf":
+        return "application/pdf"
+      case "docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      case "doc":
+        return "application/msword"
+      case "md":
+      case "markdown":
+        return "text/markdown"
+      case "txt":
+        return "text/plain"
+      default:
+        return "application/octet-stream"
+    }
+  }
+
   const viewerElement = useMemo(() => {
     if (!documentContent || !citation) return null
 
@@ -294,24 +312,6 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
         )
     }
   }, [citation, documentContent])
-
-  const getDefaultMimeType = (extension: string): string => {
-    switch (extension) {
-      case "pdf":
-        return "application/pdf"
-      case "docx":
-        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-      case "doc":
-        return "application/msword"
-      case "md":
-      case "markdown":
-        return "text/markdown"
-      case "txt":
-        return "text/plain"
-      default:
-        return "application/octet-stream"
-    }
-  }
 
   // Notify parent when document is loaded and ready
   useEffect(() => {
