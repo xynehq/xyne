@@ -711,7 +711,7 @@ const StepNode: React.FC<NodeProps> = ({
                 // Fallback to existing logic
                 return step.description ||
                   qaConfig?.description ||
-                  `Q&A agent to process Excel questions using ${qaConfig?.model || "vertex-gemini-2-5-flash"}.`
+                  `Q&A agent to process Excel questions using ${qaConfig?.model || "default-model"}.`
               })()}
             </p>
           </div>

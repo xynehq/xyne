@@ -45,7 +45,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   const [agentConfig, setAgentConfig] = useState<AIAgentConfig>({
     name: "AI Agent",
     description: "some agent description",
-    model: "vertex-gemini-2-5-flash",
+    model: "default-model", // Will be set from API default
     inputPrompt: "$json.input",
     systemPrompt: "",
     knowledgeBase: "",
@@ -95,38 +95,43 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
 
-  const [models, setModels] = useState<string[]>(["vertex-gemini-2-5-flash"])
+  const [models, setModels] = useState<string[]>([])
   const [isLoadingModels, setIsLoadingModels] = useState(false)
   const [modelsLoaded, setModelsLoaded] = useState(false)
+  const [defaultModel, setDefaultModel] = useState<string>("")
 
   
   React.useEffect(() => {
     if (isVisible && !modelsLoaded) {
-      const fetchGeminiModels = async () => {
+      const fetchModels = async () => {
         setIsLoadingModels(true)
         try {
-          const response = await api.workflow.models.gemini.$get()
+          const response = await api.workflow.models.$get()
           
           if (response.ok) {
             const data = await response.json()
             if (data.success && data.data && Array.isArray(data.data)) {
               const enumValues = data.data
-                .filter((model: any) => model.modelType==="gemini")
+                // .filter((model: any) => model.modelType==="gemini")
                 .map((model: any) => model.enumValue)
               setModels(enumValues)
+              // Set default model from API response
+              if (data.defaultModel) {
+                setDefaultModel(data.defaultModel)
+              }
               setModelsLoaded(true)
             }
           } else {
-            console.warn('Failed to fetch Gemini models from API, using defaults')
+            console.warn('Failed to fetch models from API, using defaults')
           }
         } catch (error) {
-          console.warn('Error fetching Gemini models:', error)
+          console.warn('Error fetching models:', error)
         } finally {
           setIsLoadingModels(false)
         }
       }
 
-      fetchGeminiModels()
+      fetchModels()
     }
   }, [isVisible, modelsLoaded])
   
@@ -135,7 +140,14 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   
   
   const getValidModelId = (modelId: string | undefined): string => {
-    return models.includes(modelId || "") ? (modelId as string) : (models[0] || "vertex-gemini-2-5-flash")
+    // Prefer the provided modelId if valid, then defaultModel from API, then first model in list
+    if (modelId && models.includes(modelId)) {
+      return modelId
+    }
+    if (defaultModel && models.includes(defaultModel)) {
+      return defaultModel
+    }
+    return models[0] || ""
   }
 
   
