@@ -117,7 +117,7 @@ export enum ConnectorType {
 // @ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 import { z } from "zod"
-import type { DatabaseEngine } from "@/integrations/database/types"
+import type { DatabaseEngine } from "../integrations/database/types"
 
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
