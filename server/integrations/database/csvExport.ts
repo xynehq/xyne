@@ -41,3 +41,22 @@ export function tableRowsToCsvBuffer(
 export function getColumnNames(columns: ColumnInfo[]): string[] {
   return columns.map((c) => c.name)
 }
+
+/**
+ * Returns the CSV header line (column names escaped). Use for streaming write.
+ */
+export function csvHeader(columnNames: string[]): string {
+  return columnNames.map(escapeCsvCell).join(",")
+}
+
+/**
+ * Returns CSV data lines for a batch of rows (no header). Ends with a newline if rows exist.
+ * Use for streaming: write header first, then call this per batch and write to stream.
+ */
+export function rowsToCsvLines(columnNames: string[], rows: DbRow[]): string {
+  if (rows.length === 0) return ""
+  const lines = rows.map((row) =>
+    columnNames.map((col) => escapeCsvCell(row[col])).join(","),
+  )
+  return lines.join("\n") + "\n"
+}

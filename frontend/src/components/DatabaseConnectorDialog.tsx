@@ -20,6 +20,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Loader2 } from "lucide-react"
 import { authFetch } from "@/utils/authFetch"
 import { getErrorMessage } from "@/lib/utils"
+import { DatabaseConnectorConfig } from "@/server/shared/types"
 
 interface DatabaseConnectorForm {
   name: string
@@ -110,7 +111,7 @@ interface DatabaseConnectorDialogProps {
   editingConnector?: {
     id: string
     name: string
-    config: any
+    config: DatabaseConnectorConfig
   } | null
 }
 

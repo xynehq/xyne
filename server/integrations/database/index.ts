@@ -4,14 +4,18 @@
  * same file processor used for sheets/CSVs (chunkSheetWithHeaders → kb_items).
  */
 
-import { mkdir, writeFile, unlink } from "node:fs/promises"
+import { createWriteStream } from "node:fs"
+import { mkdir, unlink, stat } from "node:fs/promises"
 import { dirname } from "node:path"
+import type { Writable } from "node:stream"
+import { finished } from "node:stream/promises"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { createClient } from "./client"
 import { getDefaultDatabaseConfig } from "./config"
-import type { DatabaseConnectorConfig, TableInfo, TableSyncState } from "./types"
-import { tableRowsToCsvBuffer, getColumnNames } from "./csvExport"
+import type { TableInfo, TableSyncState } from "./types"
+import type { DatabaseConnectorConfig } from "@/shared/types"
+import { csvHeader, getColumnNames, rowsToCsvLines } from "./csvExport"
 import {
   saveTableSyncState,
 } from "@/db/databaseSyncState"
@@ -139,19 +143,37 @@ export async function syncSingleTable(
   }
 }
 
+/** Write a chunk to a stream; resolves when the chunk is flushed (honors backpressure). */
+function writeChunk(stream: Writable, chunk: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.write(chunk, (err) => {
+      if (err) reject(err)
+      else resolve()
+    })
+  })
+}
+
 /**
- * Fetch all rows for a table (paginated) for full export.
+ * Stream a table to a CSV file: fetch batches and write to the file without loading the full result into memory.
  */
-async function fetchAllRows(
+async function streamTableToCsvFile(
   client: import("./client").DatabaseClient,
   tableName: string,
   batchSize: number,
-  watermarkColumn?: string,
-): Promise<import("./types").DbRow[]> {
-  const allRows: import("./types").DbRow[] = []
+  watermarkColumn: string | undefined,
+  pkColumns: string[],
+  columnNames: string[],
+  storagePath: string,
+): Promise<{ rowsSynced: number }> {
+  await mkdir(dirname(storagePath), { recursive: true })
+  const stream = createWriteStream(storagePath, { encoding: "utf-8" })
+
+  await writeChunk(stream, csvHeader(columnNames) + "\n")
+
   let state: TableSyncState = { table: tableName, rowsSynced: 0 }
-  let hasMore = true
-  while (hasMore) {
+  let rowsSynced = 0
+
+  while (true) {
     const rows = await client.fetchRows(
       tableName,
       state,
@@ -159,11 +181,27 @@ async function fetchAllRows(
       watermarkColumn,
     )
     if (rows.length === 0) break
-    allRows.push(...rows)
-    state = { ...state, rowsSynced: state.rowsSynced + rows.length }
-    if (rows.length < batchSize) hasMore = false
+
+    const chunk = rowsToCsvLines(columnNames, rows)
+    if (chunk) await writeChunk(stream, chunk)
+
+    rowsSynced += rows.length
+    state = { ...state, rowsSynced }
+
+    if (pkColumns.length > 0 && rows.length > 0) {
+      const lastRow = rows[rows.length - 1] as Record<string, unknown>
+      state = {
+        ...state,
+        lastPk: JSON.stringify(pkColumns.map((c) => lastRow[c])),
+      }
+    }
+
+    if (rows.length < batchSize) break
   }
-  return allRows
+
+  stream.end()
+  await finished(stream)
+  return { rowsSynced }
 }
 
 async function syncTableToKb(
@@ -183,16 +221,7 @@ async function syncTableToKb(
     return { rowsSynced: 0 }
   }
 
-  const allRows = await fetchAllRows(
-    client,
-    tableName,
-    batchSize,
-    config.watermarkColumn,
-  )
   const columnNames = getColumnNames(columns)
-  const csvBuffer = tableRowsToCsvBuffer(columnNames, allRows)
-  const rowsSynced = allRows.length
-
   const fileName = `${tableName}.csv`
   const storageKey = generateStorageKey()
   const vespaDocId = generateFileVespaDocId()
@@ -203,8 +232,18 @@ async function syncTableToKb(
     fileName,
   )
 
-  await mkdir(dirname(storagePath), { recursive: true })
-  await writeFile(storagePath, csvBuffer)
+  const { rowsSynced } = await streamTableToCsvFile(
+    client,
+    tableName,
+    batchSize,
+    config.watermarkColumn,
+    pkColumns,
+    columnNames,
+    storagePath,
+  )
+
+  const fileStats = await stat(storagePath)
+  const fileSize = fileStats.size
 
   const collection = await getCollectionById(db, collectionId)
   if (!collection) {
@@ -223,7 +262,7 @@ async function syncTableToKb(
         existing.id,
         {
           storagePath,
-          fileSize: csvBuffer.length,
+          fileSize,
           uploadStatus: UploadStatus.PENDING,
           statusMessage: "Database sync: queued for processing",
           updatedAt: new Date(),
@@ -242,7 +281,7 @@ async function syncTableToKb(
       storagePath,
       storageKey,
       "text/csv",
-      csvBuffer.length,
+      fileSize,
       null,
       {
         source: "database_connector",

@@ -653,12 +653,7 @@ export const UpdateCollectionApi = async (c: Context) => {
 
 export const deleteCollection = async (db: TxnOrClient, collectionId: string, userEmail: string): Promise<{ success: boolean, deletedCount: number, deletedFiles: number, deletedFolders: number }> => {
   if (!collectionId) {
-    return {
-      success: false,
-      deletedCount: 0,
-      deletedFiles: 0,
-      deletedFolders: 0,
-    }
+    throw new HTTPException(400, { message: "Collection ID is required" })
   }
   // Get user from database
   const users = await getUserByEmail(db, userEmail)

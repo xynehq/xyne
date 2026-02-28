@@ -5,11 +5,11 @@
 
 import type {
   ColumnInfo,
-  DatabaseConnectorConfig,
   DbRow,
   TableInfo,
   TableSyncState,
 } from "./types"
+import type { DatabaseConnectorConfig } from "@/shared/types"
 import { DatabaseEngine } from "./types"
 import { PostgresClient } from "./client-postgres"
 

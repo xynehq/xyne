@@ -245,8 +245,7 @@ function ConnectorRow({
   conn: {
     id: string
     name: string
-    connectorId?: number
-    cId?: number
+    internalId: number
     config?: any
   }
   isExpanded: boolean
@@ -258,9 +257,8 @@ function ConnectorRow({
   const [syncing, setSyncing] = useState(false)
   const [syncingTable, setSyncingTable] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const internalId =
-    conn.connectorId ?? conn.cId ?? (typeof conn.id === "number" ? conn.id : Number(conn.id))
-  const connectorIdStr = String(conn.id)
+  const internalId = conn.internalId
+  const connectorIdStr = conn.id
 
   const { data: syncState, refetch: refetchState } = useQuery({
     queryKey: ["database-sync-state", internalId],
@@ -334,11 +332,32 @@ function ConnectorRow({
     onEdit()
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+      e.preventDefault()
+      onToggle()
+    }
+  }
+
+  const formatDate = (date: string | Date) => {
+    return new Date(date).toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })
+  }
+
   return (
     <div className="border rounded-lg overflow-hidden">
       <div
         className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50 transition-colors"
         onClick={onToggle}
+        onKeyDown={handleKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
       >
         <div className="flex items-center gap-3">
           <div>
@@ -406,9 +425,7 @@ function ConnectorRow({
                     <TableCell>{t.tableName}</TableCell>
                     <TableCell>{t.rowsSynced ?? 0}</TableCell>
                     <TableCell>
-                      {t.updatedAt
-                        ? new Date(t.updatedAt).toLocaleString()
-                        : "—"}
+                      {t.updatedAt ? formatDate(t.updatedAt) : "—"}
                     </TableCell>
                     <TableCell>
                       <Button

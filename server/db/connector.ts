@@ -96,7 +96,7 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
   const res = await db
     .select({
       id: connectors.externalId,
-      cId: connectors.id,
+      internalId: connectors.id,
       name: connectors.name,
       app: connectors.app,
       authType: connectors.authType,
@@ -104,7 +104,6 @@ export const getConnectors = async (workspaceId: string, userId: number) => {
       status: connectors.status,
       createdAt: connectors.createdAt,
       config: connectors.config,
-      connectorId: connectors.id,
       state: connectors.state,
     })
     .from(connectors)

@@ -6,11 +6,11 @@
 import postgres, { type Sql } from "postgres"
 import type {
   ColumnInfo,
-  DatabaseConnectorConfig,
   DbRow,
   TableInfo,
   TableSyncState,
 } from "./types"
+import type { DatabaseConnectorConfig } from "@/shared/types"
 import { DatabaseEngine } from "./types"
 
 export class PostgresClient {
@@ -141,30 +141,52 @@ export class PostgresClient {
 
     if (watermarkColumn && state.lastUpdatedAt != null) {
       const quotedWatermark = PostgresClient.safeIdentifier(watermarkColumn)
-      const rows = await this.sql.unsafe(`
-        SELECT * FROM ${fromClause}
-        WHERE ${quotedWatermark} > ${state.lastUpdatedAt}
-        ORDER BY ${orderByClause}
-        LIMIT ${batchSize}
-      `) as DbRow[]
+      // Validate lastUpdatedAt is a safe number/date before use
+      const lastUpdatedAt = new Date(state.lastUpdatedAt).toISOString()
+      const rows = await this.sql.unsafe(
+        `SELECT * FROM ${fromClause}
+         WHERE ${quotedWatermark} > $1
+         ORDER BY ${orderByClause}
+         LIMIT $2`,
+        [lastUpdatedAt, batchSize]
+      ) as DbRow[]
       return rows
     }
 
-    if (state.lastPk && state.rowsSynced > 0) {
-      const offset = state.rowsSynced
-      const rows = await this.sql.unsafe(`
-        SELECT * FROM ${fromClause}
-        ORDER BY ${orderByClause}
-        LIMIT ${batchSize} OFFSET ${offset}
-      `) as DbRow[]
+    if (state.lastPk) {
+      let cursorValues: unknown[]
+      try {
+        cursorValues = JSON.parse(state.lastPk) as unknown[]
+      } catch {
+        throw new Error(`Invalid lastPk cursor for table ${schema}.${table}`)
+      }
+      if (cursorValues.length !== pkCols.length) {
+        throw new Error(
+          `lastPk cursor length does not match primary key columns for table ${schema}.${table}`,
+        )
+      }
+      const placeholders = cursorValues.map((_, i) => `$${i + 1}`).join(", ")
+      const params: (string | number | boolean | Date | null)[] = [
+        ...(cursorValues as (string | number | boolean | Date | null)[]),
+        batchSize,
+      ]
+      const limitParam = `$${params.length}`
+      const rows = await this.sql.unsafe(
+        `SELECT * FROM ${fromClause}
+         WHERE (${quotedPkCols.join(", ")}) > (${placeholders})
+         ORDER BY ${orderByClause}
+         LIMIT ${limitParam}`,
+        params
+      ) as DbRow[]
       return rows
     }
 
-    const rows = await this.sql.unsafe(`
-      SELECT * FROM ${fromClause}
-      ORDER BY ${orderByClause}
-      LIMIT ${batchSize}
-    `) as DbRow[]
+    const rows = await this.sql.unsafe(
+      `SELECT * FROM ${fromClause}
+       ORDER BY ${orderByClause}
+       LIMIT $1`,
+      [batchSize]
+    ) as DbRow[]
     return rows
   }
 }

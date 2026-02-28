@@ -11,10 +11,8 @@ import {
   syncSingleTable,
   type DatabaseSyncKbContext,
 } from "@/integrations/database"
-import type {
-  DatabaseConnectorConfig,
-  DatabaseCredentialsPayload,
-} from "@/integrations/database/types"
+import type { DatabaseCredentialsPayload } from "@/integrations/database/types"
+import type { DatabaseConnectorConfig } from "@/shared/types"
 import { DatabaseEngine } from "@/integrations/database/types"
 import {
   getDatabaseConnectorForUser,
@@ -115,7 +113,7 @@ export const TriggerDatabaseSyncApi = async (c: Context) => {
     } catch (err) {
       Logger.error({ err, connectorId }, "Database sync failed")
       throw new HTTPException(500, {
-        message: err instanceof Error ? err.message : "Database sync failed",
+        message: "Internal server error",
     })
   }
 }
@@ -205,7 +203,7 @@ export const CreateDatabaseConnectorApi = async (c: Context) => {
     } catch (err) {
       Logger.error({ err }, "Create database connector failed")
       throw new HTTPException(500, {
-        message: err instanceof Error ? err.message : "Failed to create connector",
+        message: "Internal server error",
       })
     }
   }
@@ -350,27 +348,39 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
     throw new HTTPException(400, { message: "Connector is not a database connector" })
   }
 
-  // Build the updated config
+  // Build the updated config - check for presence (undefined) not truthy to allow clearing filters
+  const hasTablesInclude = body.tablesInclude !== undefined
+  const hasTablesIgnore = body.tablesIgnore !== undefined
+
   const tables: DatabaseConnectorConfig["tables"] = {}
-  if (body.tablesInclude?.trim()) {
-    tables.include = body.tablesInclude.split(",").map((s) => s.trim()).filter(Boolean)
+  if (hasTablesInclude) {
+    tables.include = body.tablesInclude!.trim()
+      ? body.tablesInclude!.split(",").map((s) => s.trim()).filter(Boolean)
+      : []
   }
-  if (body.tablesIgnore?.trim()) {
-    tables.ignore = body.tablesIgnore.split(",").map((s) => s.trim()).filter(Boolean)
+  if (hasTablesIgnore) {
+    tables.ignore = body.tablesIgnore!.trim()
+      ? body.tablesIgnore!.split(",").map((s) => s.trim()).filter(Boolean)
+      : []
   }
 
   const existingConfig = connector.config as Record<string, unknown>
-  const schema = body.schema !== undefined ? (body.schema.trim() === "" ? undefined : body.schema.trim()) : undefined
+
+  // Only update tables if either tablesInclude or tablesIgnore was provided
+  const tablesConfig = (hasTablesInclude || hasTablesIgnore)
+    ? (Object.keys(tables).length ? tables : undefined)
+    : (undefined)
+
   const updatedConfig = {
     ...existingConfig,
     engine: body.engine as DatabaseEngine,
     host: body.host,
     port: body.port,
     database: body.database,
-    schema,
-    tables: Object.keys(tables).length ? tables : (existingConfig.tables as DatabaseConnectorConfig["tables"] | undefined),
+    schema: body.schema?.trim() || undefined,
+    tables: tablesConfig,
     batchSize: body.batchSize,
-    watermarkColumn: body.watermarkColumn !== undefined ? (body.watermarkColumn.trim() === "" ? undefined : body.watermarkColumn.trim()) : undefined,
+    watermarkColumn: body.watermarkColumn?.trim() || undefined,
   } as Omit<DatabaseConnectorConfig, "auth">
 
   // Handle credentials - if password is provided, update; otherwise keep existing
@@ -418,7 +428,7 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
   } catch (err) {
     Logger.error({ err }, "Update database connector failed")
     throw new HTTPException(500, {
-      message: err instanceof Error ? err.message : "Failed to update connector",
+      message: "Internal server error",
     })
   }
 }
@@ -472,7 +482,7 @@ export const SyncDatabaseTableApi = async (c: Context) => {
     }
     Logger.error({ err, connectorId, tableName }, "Database table sync failed")
     throw new HTTPException(500, {
-      message: err instanceof Error ? err.message : "Database table sync failed",
+      message: "Internal server error",
     })
   }
 }

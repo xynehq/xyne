@@ -9,22 +9,6 @@ export enum DatabaseEngine {
   MSSQL = "mssql",
 }
 
-export interface DatabaseConnectorConfig {
-  engine: DatabaseEngine
-  host: string
-  port: number
-  database: string
-  schema?: string
-  tables?: { include?: string[]; ignore?: string[] }
-  auth: { username: string; password: string } | { iamAuth: true }
-  batchSize: number
-  concurrency: number
-  /** Column name for watermark-based incremental sync (e.g. updated_at). Optional. */
-  watermarkColumn?: string
-  cdcEnabled: boolean
-  ssl?: { rejectUnauthorized: boolean; ca?: string }
-}
-
 /** Payload stored in connectors.credentials (encrypted at rest) for DB connectors. */
 export interface DatabaseCredentialsPayload {
   kind: "database"
