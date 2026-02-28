@@ -1,3 +1,10 @@
+# [3.38.0](https://github.com/xynehq/xyne/compare/v3.37.3...v3.38.0) (2026-02-28)
+
+
+### Features
+
+* attachments get cited in reponse ([#1257](https://github.com/xynehq/xyne/issues/1257)) ([1c080b8](https://github.com/xynehq/xyne/commit/1c080b80861cb29b395c4892606a68dd042a97d9))
+
 ## [3.37.3](https://github.com/xynehq/xyne/compare/v3.37.2...v3.37.3) (2026-02-27)
 
 
