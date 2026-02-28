@@ -34,9 +34,6 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
   const [imageError, setImageError] = useState(false)
 
   const isImage = attachment.isImage && !imageError
-  const thumbnailUrl = attachment.thumbnailPath
-    ? `/api/v1/attachments/${attachment.fileId}/thumbnail`
-    : null
 
   const handleImageView = () => {
     if (isImage) {
@@ -54,7 +51,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
     >
       {/* Thumbnail or Icon */}
       <div className="flex-shrink-0">
-        {isImage && thumbnailUrl ? (
+        {isImage && attachment.thumbnailUrl ? (
           <div
             className="w-12 h-12 rounded-md overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
             onClick={handleImageView}
@@ -63,7 +60,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
             aria-label={`Preview ${attachment.fileName}`}
           >
             <img
-              src={thumbnailUrl}
+              src={attachment.thumbnailUrl}
               alt={attachment.fileName}
               className="w-full h-full object-cover"
               onError={handleImageError}
@@ -112,7 +109,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
             </DialogHeader>
             <div className="px-6 pb-6">
               <img
-                src={`/api/v1/attachments/${attachment.fileId}`}
+                src={attachment.url}
                 alt={attachment.fileName}
                 className="w-full h-auto max-h-[70vh] object-contain rounded-lg"
                 onError={handleImageError}

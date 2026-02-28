@@ -430,6 +430,7 @@ const constructFileContext = (
   userTimezone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
+  allowChunkCitations?: boolean,
 ): string => {
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
@@ -456,7 +457,15 @@ const constructFileContext = (
   }
 
   let content = ""
-  if (isSelectedFiles && fields?.matchfeatures) {
+  if (allowChunkCitations && fields.chunks_pos_summary) {
+    content = chunks
+      .map((v) => {
+        const originalIndex = fields.chunks_pos_summary?.[v.index] ?? v.index
+        return `[${originalIndex}] ${v.chunk}`
+      })
+      .slice(0, maxSummaryChunks)
+      .join("\n")
+  } else if (isSelectedFiles && fields?.matchfeatures) {
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
@@ -471,6 +480,45 @@ const constructFileContext = (
       .join("\n")
   }
 
+  let imageChunks: ScoredChunk[] = []
+  const maxImageChunks =
+    fields.image_chunks_summary?.length &&
+    fields.image_chunks_summary?.length < 5
+      ? fields.image_chunks_summary?.length
+      : 5
+
+  if (fields.matchfeatures) {
+    const summaryStrings =
+      fields.image_chunks_summary?.map((c) =>
+        typeof c === "string" ? c : c.chunk,
+      ) || []
+
+    imageChunks = getSortedScoredImageChunks(
+      fields.matchfeatures,
+      fields.image_chunks_pos_summary as number[],
+      summaryStrings as string[],
+      fields.docId,
+    )
+  } else {
+    const imageChunksPos =
+      (fields.image_chunks_pos_summary as number[]) || []
+
+    imageChunks =
+      fields.image_chunks_summary?.map((chunk, idx) => {
+        const result = {
+          chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+          index: idx,
+          score: 0,
+        }
+        return result
+      }) || []
+  }
+
+  let imageContent = imageChunks
+    .slice(0, maxImageChunks)
+    .map((v) => v.chunk)
+    .join("\n")
+
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}
@@ -480,7 +528,8 @@ ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
 ${fields.metadata ? `parent FolderName: ${folderName}` : ""} 
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
-${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}`
+${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
+${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
 }
 
 // TODO: tell if workspace that this is an employee
@@ -851,7 +900,8 @@ const constructDataSourceFileContext = (
       fields.docId,
     )
   } else {
-    const imageChunksPos = fields.image_chunks_pos_summary as number[]
+    const imageChunksPos =
+      (fields.image_chunks_pos_summary as number[]) || []
     imageChunks =
       fields.image_chunks_summary?.map((chunk, idx) => ({
         chunk: `${fields.docId}_${imageChunksPos[idx]}`,
@@ -900,7 +950,7 @@ const constructCollectionFileContext = (
   fields: VespaKbFileSearch,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
-  isMsgWithKbItems?: boolean,
+  allowChunkCitations?: boolean,
 ): string => {
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
@@ -928,7 +978,7 @@ const constructCollectionFileContext = (
   }
 
   let content = ""
-  if (isMsgWithKbItems && fields.chunks_pos_summary) {
+  if (allowChunkCitations && fields.chunks_pos_summary) {
     content = chunks
       .map((v) => {
         const originalIndex = fields.chunks_pos_summary?.[v.index] ?? v.index
@@ -974,7 +1024,8 @@ const constructCollectionFileContext = (
       fields.docId,
     )
   } else {
-    const imageChunksPos = fields.image_chunks_pos_summary as number[]
+    const imageChunksPos =
+      (fields.image_chunks_pos_summary as number[]) || []
 
     imageChunks =
       fields.image_chunks_summary?.map((chunk, idx) => {
@@ -1047,7 +1098,7 @@ export const answerContextMap = async (
   userMetadata: UserMetadataType,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
-  isMsgWithKbItems?: boolean,
+  allowChunkCitations?: boolean,
   query?: string,
 ): Promise<AiContext> => {
   if (
@@ -1125,6 +1176,7 @@ export const answerContextMap = async (
       userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
+      allowChunkCitations,
     )
   } else if (searchResult.fields.sddocname === userSchema) {
     return constructUserContext(searchResult.fields)
@@ -1170,7 +1222,7 @@ export const answerContextMap = async (
       searchResult.fields as VespaKbFileSearch,
       maxSummaryChunks,
       isSelectedFiles,
-      isMsgWithKbItems,
+      allowChunkCitations,
     )
   } else if (searchResult.fields.sddocname === ticketSchema) {
     return constructTicketContext(searchResult.fields)
@@ -1194,7 +1246,7 @@ export const answerContextMapFromFragments = (
     .slice(0, maxSummaryChunks)
     .map((fragment, index) => {
       const citationIndex = index + 1
-      return `[index ${citationIndex}] ${fragment.content}`
+      return `Index ${citationIndex} \n ${fragment.content}`
     })
     .join("\n\n")
 }

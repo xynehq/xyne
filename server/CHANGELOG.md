@@ -1,3 +1,17 @@
+# [3.38.0](https://github.com/xynehq/xyne/compare/v3.37.3...v3.38.0) (2026-02-28)
+
+
+### Features
+
+* attachments get cited in reponse ([#1257](https://github.com/xynehq/xyne/issues/1257)) ([1c080b8](https://github.com/xynehq/xyne/commit/1c080b80861cb29b395c4892606a68dd042a97d9))
+
+## [3.37.3](https://github.com/xynehq/xyne/compare/v3.37.2...v3.37.3) (2026-02-27)
+
+
+### Bug Fixes
+
+* replaced vertex models with litellm models in workflow ([#1258](https://github.com/xynehq/xyne/issues/1258)) ([8d91137](https://github.com/xynehq/xyne/commit/8d911377148dab0cc4629a358f2b66349e189471))
+
 ## [3.37.2](https://github.com/xynehq/xyne/compare/v3.37.1...v3.37.2) (2026-02-20)
 
 

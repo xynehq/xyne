@@ -1274,7 +1274,7 @@ export const baselineRAGJsonStream = (
   retrievedCtx: string,
   params: ModelParams,
   specificFiles?: boolean,
-  isMsgWithKbItems?: boolean,
+  allowChunkCitations?: boolean,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
@@ -1289,7 +1289,7 @@ export const baselineRAGJsonStream = (
   if (specificFiles) {
     Logger.info("Using baselineFilesContextPromptJson")
     if (!isAgentPromptEmpty(params.agentPrompt)) {
-      if (isMsgWithKbItems) {
+      if (allowChunkCitations) {
         params.systemPrompt = agentBaselineKbContextPromptJson(
           userCtx,
           userMetadata.dateForAI,
@@ -1304,7 +1304,7 @@ export const baselineRAGJsonStream = (
         )
       }
     } else {
-      if (isMsgWithKbItems) {
+      if (allowChunkCitations) {
         params.systemPrompt = agentBaselineKbContextPromptJson(
           userCtx,
           userMetadata.dateForAI,

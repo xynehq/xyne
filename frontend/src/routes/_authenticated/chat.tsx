@@ -1206,13 +1206,17 @@ export const ChatPage = ({
   // Handle chunk index changes from CitationPreview
   const handleChunkIndexChange = useCallback(
     async (newChunkIndex: number | null, documentId: string, docId: string) => {
-      if (!documentId) {
-        console.error("handleChunkIndexChange called without documentId")
-        return
+      // Capture the expected citation identity BEFORE any async operations
+      // to prevent race conditions when selectedCitation changes during the fetch
+      const expectedCitationId = selectedCitation?.itemId ?? selectedCitation?.docId ?? null;
+      
+      if (expectedCitationId && !documentId) {
+        console.error("handleChunkIndexChange called without documentId");
+        return;
       }
 
-      if (selectedCitation?.itemId !== documentId) {
-        return
+      if (expectedCitationId && expectedCitationId !== documentId) {
+        return;
       }
 
       if (newChunkIndex === null) {
@@ -1243,8 +1247,11 @@ export const ChatPage = ({
 
           const chunkContent = await chunkContentResponse.json()
 
-          // Ensure we are still on the same document before mutating UI
-          if (selectedCitation?.itemId !== documentId) {
+          // After await: check if the citation is still the same one we started with
+          // by comparing the captured expectedCitationId with the current selectedCitation
+          const currentCitationId = selectedCitation?.itemId ?? selectedCitation?.docId ?? null;
+          if (currentCitationId !== expectedCitationId) {
+            // Citation changed during the async fetch, bail out to avoid highlighting stale data
             return
           }
 
@@ -1287,7 +1294,7 @@ export const ChatPage = ({
     if (selectedCitation && isDocumentLoaded) {
       handleChunkIndexChange(
         selectedChunkIndex,
-        selectedCitation?.itemId ?? "",
+        selectedCitation?.itemId || (selectedCitation?.docId ?? ""),
         selectedCitation?.docId ?? "",
       )
     }
@@ -1301,7 +1308,10 @@ export const ChatPage = ({
   // Handler for citation clicks - moved before conditional returns
   const handleCitationClick = useCallback(
     (citation: Citation, chunkIndex?: number, fromSources: boolean = false) => {
-      if (!citation || !citation.clId || !citation.itemId) {
+      const isRegularCitation = citation?.clId && citation?.itemId;
+      const isAttachment = citation?.app === 'attachment';
+
+      if (!citation || (!isRegularCitation && !isAttachment)) {
         // For citations without clId or itemId, open as regular link
         if (citation.url) {
           window.open(citation.url, "_blank", "noopener,noreferrer")

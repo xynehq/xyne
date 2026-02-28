@@ -90,6 +90,7 @@ import {
 import { searchCollectionRAG, SearchEmailThreads, searchVespaInFiles } from "@/search/vespa"
 import {
   Apps,
+  AttachmentEntity,
   KnowledgeBaseEntity,
   SearchModes,
   type VespaSearchResult,
@@ -1304,6 +1305,7 @@ async function vespaResultToAttachmentFragment(
   idx: number,
   userMetadata: UserMetadataType,
   query: string,
+  allowChunkCitations?: boolean,
   maxSummaryChunks?: number,
 ): Promise<MinimalAgentFragment> {
   const docId =
@@ -1317,7 +1319,7 @@ async function vespaResultToAttachmentFragment(
       userMetadata,
       maxSummaryChunks ? maxSummaryChunks : 0,
       true,
-      undefined,
+      allowChunkCitations ?? false,
       query
     ),
     source: searchToCitation(child as VespaSearchResults),
@@ -1331,6 +1333,7 @@ async function prepareInitialAttachmentContext(
   userMetadata: UserMetadataType,
   query: string,
   email: string,
+  allowChunkCitations?: boolean
 ): Promise<{ fragments: MinimalAgentFragment[]; summary: string } | null> {
   if (!fileIds?.length) {
     return null
@@ -1387,6 +1390,7 @@ async function prepareInitialAttachmentContext(
           }
         }
         if (collectionFileIds && collectionFileIds.length > 0) {
+          allowChunkCitations = true // for the case where kb files are in @
           results = await searchCollectionRAG(
             queryText,
             collectionFileIds,
@@ -1464,9 +1468,11 @@ async function prepareInitialAttachmentContext(
       combinedSearchResponse.map((child, idx) =>
         vespaResultToAttachmentFragment(
           child as VespaSearchResult,
-          idx < chunksPerDocument.length ? chunksPerDocument[idx] : 0,
+          idx,
           userMetadata,
-          query
+          query,
+          allowChunkCitations,
+          idx < chunksPerDocument.length ? chunksPerDocument[idx] : 0,
         )
       )
     )
@@ -3178,6 +3184,11 @@ function buildAttachmentDirective(context: AgentRunContext): string {
     initialAttachmentSummary ||
     "User provided attachment context for this opening turn."
 
+  // Include the actual fragment content, not just metadata
+  const fragmentsContent = context.allFragments.length > 0
+    ? answerContextMapFromFragments(context.allFragments, context.allFragments.length)
+    : "No attachment content available."
+
   return `
 # ATTACHMENT-FIRST TURN
 - ${summaryLine}
@@ -3185,6 +3196,42 @@ function buildAttachmentDirective(context: AgentRunContext): string {
 - If they fully answer the query, respond directly without calling tools.
 - If they are insufficient, explain what is missing, then call toDoWrite to plan additional research before invoking other tools.
 - Capture any useful facts from the attachments so they remain available in later turns.
+
+# ATTACHMENT CONTEXT FRAGMENTS
+${fragmentsContent}
+
+# Guidelines for Response
+1. Data Interpretation:
+   - Use ONLY the provided files and their chunks as your knowledge base.
+   - Treat every file header \`Index {docId} ...\` as the start of a new document.
+   - Treat every square bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
+2. Response Structure:
+   - Start with the most relevant facts from the chunks across files.
+   - Keep order chronological when it helps comprehension.
+   - Every factual statement MUST cite the exact chunk it came from using the format:
+     K[docId_chunkIndex]
+     where:
+       - \`docId\` is taken from the file header line ("Index {docId} ...").
+       - \`chunkIndex\` is the square bracketed number prefixed on that chunk within the same file.
+   - Examples:
+     - Single citation: "X is true K[3_12]."
+     - Two citations in one sentence (from different files or chunks): "X K[3_12] and Y K[1_0]."
+   - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
+3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
+   - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
+   - Don't change the format of the citation; it must be exactly K[docId_chunkIndex]. docId first then chunkIndex, separated by an underscore, all within square brackets and prefixed with K.
+   - Even if there is only one document index (e.g., Index 1), you must still include the document index in the citation (e.g., K[1_3]).
+   - Never cite only the document index or only the chunk index; both must be included in the citation.
+   - Place the citation immediately after the relevant claim.
+   - Do NOT group indices inside one set of brackets (WRONG: "K[3_12,1_7]").
+   - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[3_12] ... K[1_0]".
+   - Only cite information that appears verbatim or is directly inferable from the cited chunk.
+   - If you cannot ground a claim to a specific chunk, do not make the claim.
+
+4. Quality Assurance:
+   - Cross-check across multiple chunks/files when available and briefly note inconsistencies if they exist.
+   - Keep tone professional and concise.
+   - Acknowledge gaps if the provided chunks don't contain enough detail.
 `.trim()
 }
 
@@ -3524,6 +3571,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
     const imageAttachmentFileIds = Array.from(
       new Set(attachmentsForContext.filter((meta) => meta.isImage).map((meta) => meta.fileId))
     )
+    const isMstWithAttachments = attachmentMetadata.length > 0
 
     const userAndWorkspace: InternalUserWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -4010,6 +4058,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             userMetadata,
             message,
             email,
+            isMstWithAttachments,
           )
           if (initialAttachmentContext) {
             await streamReasoningStep(
@@ -4030,8 +4079,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 docId: fileId,
                 title: `Attachment image ${index + 1}`,
                 url: "",
-                app: Apps.KnowledgeBase,
-                entity: KnowledgeBaseEntity.File,
+                app: Apps.Attachment,
+                entity: AttachmentEntity.Image,
               } as Citation,
               confidence: 0.9,
               images: [
