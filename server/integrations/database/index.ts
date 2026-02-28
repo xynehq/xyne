@@ -155,6 +155,7 @@ function writeChunk(stream: Writable, chunk: string): Promise<void> {
 
 /**
  * Stream a table to a CSV file: fetch batches and write to the file without loading the full result into memory.
+ * Returns final sync state (including lastPk) so it can be persisted for incremental sync.
  */
 async function streamTableToCsvFile(
   client: import("./client").DatabaseClient,
@@ -164,7 +165,7 @@ async function streamTableToCsvFile(
   pkColumns: string[],
   columnNames: string[],
   storagePath: string,
-): Promise<{ rowsSynced: number }> {
+): Promise<{ rowsSynced: number; lastPk?: string }> {
   await mkdir(dirname(storagePath), { recursive: true })
   const stream = createWriteStream(storagePath, { encoding: "utf-8" })
 
@@ -201,7 +202,7 @@ async function streamTableToCsvFile(
 
   stream.end()
   await finished(stream)
-  return { rowsSynced }
+  return { rowsSynced, lastPk: state.lastPk }
 }
 
 async function syncTableToKb(
@@ -232,7 +233,7 @@ async function syncTableToKb(
     fileName,
   )
 
-  const { rowsSynced } = await streamTableToCsvFile(
+  const syncState = await streamTableToCsvFile(
     client,
     tableName,
     batchSize,
@@ -241,6 +242,7 @@ async function syncTableToKb(
     columnNames,
     storagePath,
   )
+  const { rowsSynced, lastPk } = syncState
 
   const fileStats = await stat(storagePath)
   const fileSize = fileStats.size
@@ -304,6 +306,7 @@ async function syncTableToKb(
   await saveTableSyncState(connectorId, tableName, {
     table: tableName,
     rowsSynced,
+    ...(lastPk !== undefined && { lastPk }),
   })
 
   Logger.info(

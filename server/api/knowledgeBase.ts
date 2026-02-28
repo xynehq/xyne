@@ -810,12 +810,7 @@ export const deleteCollection = async (db: TxnOrClient, collectionId: string, us
       error,
       `Failed to delete Collection: ${errMsg}`,
     )
-    return {
-      success: false,
-      deletedCount: 0,
-      deletedFiles: 0,
-      deletedFolders: 0,
-    }
+    throw new HTTPException(500, { message: errMsg })
   }
 }
 

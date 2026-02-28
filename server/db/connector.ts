@@ -677,25 +677,27 @@ export async function getDatabaseConnectorForUser(
 /**
  * Get or create the KB collection id linked to this database connector (state.kbCollectionId).
  * Creates the collection and updates connector state if not set.
+ * Uses SELECT FOR UPDATE inside a transaction to avoid a race where two callers both create a collection.
  */
 export async function getOrCreateDatabaseConnectorKbCollectionId(
   connectorId: string,
 ): Promise<string> {
-  const [conn] = await db
-    .select({
-      id: connectors.id,
-      state: connectors.state,
-      name: connectors.name,
-      workspaceId: connectors.workspaceId,
-      userId: connectors.userId,
-    })
-    .from(connectors)
-    .where(eq(connectors.id, Number(connectorId)))
-    .limit(1)
-  if (!conn) throw new Error("Connector not found")
-  const state = (conn.state as Record<string, unknown>) || {}
-  if (typeof state.kbCollectionId === "string") return state.kbCollectionId
-  const collection = await db.transaction(async (tx) => {
+  return await db.transaction(async (tx) => {
+    const [conn] = await tx
+      .select({
+        id: connectors.id,
+        state: connectors.state,
+        name: connectors.name,
+        workspaceId: connectors.workspaceId,
+        userId: connectors.userId,
+      })
+      .from(connectors)
+      .where(eq(connectors.id, Number(connectorId)))
+      .limit(1)
+      .for("update")
+    if (!conn) throw new Error("Connector not found")
+    const state = (conn.state as Record<string, unknown>) || {}
+    if (typeof state.kbCollectionId === "string") return state.kbCollectionId
     const coll = await createCollection(tx, {
       workspaceId: conn.workspaceId,
       ownerId: conn.userId,
@@ -709,9 +711,8 @@ export async function getOrCreateDatabaseConnectorKbCollectionId(
         updatedAt: new Date(),
       })
       .where(eq(connectors.id, Number(connectorId)))
-    return coll
+    return coll.id
   })
-  return collection.id
 }
 
   /**

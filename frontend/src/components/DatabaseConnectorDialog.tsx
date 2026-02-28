@@ -266,7 +266,7 @@ export function DatabaseConnectorDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="postgres">PostgreSQL</SelectItem>
-                  <SelectItem value="mysql">MySQL (coming soon)</SelectItem>
+                  <SelectItem value="mysql" disabled>MySQL (coming soon)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
