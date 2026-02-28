@@ -65,6 +65,7 @@ let LiteLLMApiKey = ""
 let LiteLLMModel = ""
 let LiteLLMBaseUrl = ""
 let LiteLLMModelInfoUrl = process.env.LITELLM_MODEL_INFO_URL
+let allowSonnet45 = process.env.ALLOW_SONNET_4_5 === "true"
 
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
@@ -301,6 +302,7 @@ export default {
   LiteLLMModel,
   LiteLLMBaseUrl,
   LiteLLMModelInfoUrl,
+  allowSonnet45,
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,

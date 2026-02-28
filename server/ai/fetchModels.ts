@@ -197,12 +197,15 @@ export const fetchModelConfigs = async (): Promise<Array<{
   for (const modelInfo of data) {
     // Only process models with litellm_provider === "hosted_vllm"
     // Check model_info.litellm_provider (from API response structure)
-    if (modelInfo.model_info?.litellm_provider !== "hosted_vllm") {
-      continue
-    }
-
     const modelId = modelInfo.model_name
     const actualName = modelInfo.litellm_params?.model || modelId
+    if (modelInfo.model_info?.litellm_provider !== "hosted_vllm") {
+      if (!config.allowSonnet45 || modelId !== Models.LiteLLM_Claude_Sonnet_4_5) {
+        continue
+      }
+      // Allowlist Claude Sonnet 4.5 even if litellm_provider is not set to "hosted_vllm"
+      Logger.info("Allowing Claude Sonnet 4.5 model despite litellm_provider not being 'hosted_vllm'")
+    }
 
     // Skip if we've already processed this model (deduplicate by model_name)
     if (seenModelIds.has(modelId)) {
