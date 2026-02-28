@@ -1,3 +1,10 @@
+# [3.39.0](https://github.com/xynehq/xyne/compare/v3.38.0...v3.39.0) (2026-02-28)
+
+
+### Features
+
+* allowing sonnet 4.5 in litellm through env ([#1260](https://github.com/xynehq/xyne/issues/1260)) ([faca1a9](https://github.com/xynehq/xyne/commit/faca1a92ea622098e2c42c704a438504534b81e3))
+
 # [3.38.0](https://github.com/xynehq/xyne/compare/v3.37.3...v3.38.0) (2026-02-28)
 
 
