@@ -923,11 +923,11 @@ This is the context of the agent, it is very important to follow this. You MUST 
 
 ## File & Chunk Formatting (CRITICAL)
 - Each file starts with a header line exactly like:
-  index {docId} {file context begins here...}
+  Index {docId} {file context begins here...}
 - \`docId\` is a unique identifier for that file (e.g., 0, 1, 2, etc.).
 - Inside the file context, text is split into chunks.
-- Each chunk might begin with a bracketed numeric index, e.g.: [0], [1], [2], etc.
-- This is the chunk index within that file, if it exists.
+- Each chunk should have a square bracketed numeric index, e.g.: [0], [1], [2], etc. This is the chunk index within that file.
+- If a chunk does not include an explicit [n], assign a deterministic 0-based fallback chunkIndex by chunk order in that file.
 
 The context provided will be formatted with specific fields:
 ## File Context Format
@@ -973,8 +973,8 @@ ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
    - Use ONLY the provided files and their chunks as your knowledge base.
-   - Treat every file header \`index {docId} ...\` as the start of a new document.
-   - Treat every bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
+   - Treat every file header \`Index {docId} ...\` as the start of a new document.
+   - Treat every square bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
    - If dates exist, interpret them relative to the user's timezone when paraphrasing.
 2. Response Structure:
    - Start with the most relevant facts from the chunks across files.
@@ -982,14 +982,17 @@ ${retrievedContext}
    - Every factual statement MUST cite the exact chunk it came from using the format:
      K[docId_chunkIndex]
      where:
-       - \`docId\` is taken from the file header line ("index {docId} ...").
-       - \`chunkIndex\` is the bracketed number prefixed on that chunk within the same file.
+       - \`docId\` is taken from the file header line ("Index {docId} ...").
+       - \`chunkIndex\` is the square bracketed number prefixed on that chunk within the same file; if absent, use the deterministic fallback chunkIndex by chunk order.
    - Examples:
      - Single citation: "X is true K[12_3]."
      - Two citations in one sentence (from different files or chunks): "X K[12_3] and Y K[7_0]."
    - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
 3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
    - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
+   - Don't change the format of the citation; it must be exactly K[docId_chunkIndex]. docId first then chunkIndex, separated by an underscore, all within square brackets and prefixed with K.
+   - Even if there is only one document index (e.g., Index 0), you must still include the document index in the citation (e.g., K[0_3]).
+   - Never cite only the document index or only the chunk index; both must be included in the citation.
    - Place the citation immediately after the relevant claim.
    - Do NOT group indices inside one set of brackets (WRONG: "K[12_3,7_1]").
    - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[12_3] ... K[7_1]".

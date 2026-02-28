@@ -5,7 +5,7 @@ export const generateUUID = () => crypto.randomUUID()
 
 export const textToCitationIndex = /\[(\d+)\]/g
 export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
-export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
+export const textToChunkCitationIndex = /K\[(\d+_\d+)\]/g
 
 // Function to clean citation numbers from response text
 export const cleanCitationsFromResponse = (text: string): string => {
@@ -13,7 +13,7 @@ export const cleanCitationsFromResponse = (text: string): string => {
   return text
     .replace(textToCitationIndex, "")
     .replace(textToImageCitationIndex, "")
-    .replace(textToKbItemCitationIndex, "")
+    .replace(textToChunkCitationIndex, "")
     .replace(/[ \t]+/g, " ")
     .trim()
 }
@@ -44,7 +44,7 @@ export const processMessage = (
   // Handle KB citations
   // Case 1: K[docId_chunkIndex] format (during streaming, before backend processing)
   // Case 2: [N_chunkIndex] format (after backend processing or from DB)
-  text = text.replace(textToKbItemCitationIndex, (_, citationKey) => {
+  text = text.replace(textToChunkCitationIndex, (_, citationKey) => {
     const parts = citationKey.split("_")
     const originalIndex = parseInt(parts[0], 10)
     const chunkIndex = parseInt(parts[1], 10)

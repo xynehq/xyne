@@ -1320,7 +1320,7 @@ const uploadQAResultsToVespa = async (
       fileType: mimeType,
       fileSize: excelBuffer.byteLength,
       isImage: false,
-      thumbnailPath: "",
+      thumbnailUrl: "",
       createdAt: new Date(),
       url: `/api/v1/attachments/${vespaId}`,
     }

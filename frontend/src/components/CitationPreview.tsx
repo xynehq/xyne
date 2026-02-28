@@ -91,7 +91,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   const { highlightText, clearHighlights, scrollToMatch } = useScopedFind(
     containerRef,
     {
-      documentId: citation?.itemId,
+      documentId: citation?.itemId ?? citation?.docId ?? "",
     },
   )
 
@@ -129,7 +129,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
 
   useEffect(() => {
     clearHighlights()
-  }, [citation?.itemId, clearHighlights])
+  }, [citation?.itemId, citation?.docId, clearHighlights])
 
   const getFileExtension = (mimeType: string, filename: string): string => {
     if (mimeType === "application/pdf") {

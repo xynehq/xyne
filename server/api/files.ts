@@ -1,6 +1,6 @@
 import type { Context } from "hono"
-import { mkdir, rm } from "node:fs/promises"
-import path, { join } from "node:path"
+import { mkdir, rm, writeFile } from "node:fs/promises"
+import path, { dirname, join } from "node:path"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import {
@@ -31,6 +31,9 @@ import { handleAttachmentDeleteSchema } from "./search"
 import { getErrorMessage } from "@/utils"
 import { expandSheetIds } from "@/search/utils"
 import { promises as fs } from "node:fs"
+import { generateStorageKey } from "@/db/knowledgeBase"
+import { getStoragePath } from "./knowledgeBase"
+import { KB_STORAGE_ROOT } from "@/integrations/ribbie"
 
 const { JwtPayloadKey } = config
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "newApps" })
@@ -207,6 +210,7 @@ export const handleAttachmentUpload = async (c: Context) => {
       )
       throw new NoUserFound({})
     }
+    const user = userRes[0]
 
     const formData = await c.req.formData()
     const files = formData.getAll("attachment") as File[]
@@ -233,8 +237,10 @@ export const handleAttachmentUpload = async (c: Context) => {
       const ext = file.name.split(".").pop()?.toLowerCase() || ""
       const fullFileName = `${0}.${ext}`
       const isImage = isImageFile(file.type)
-      let thumbnailPath: string | undefined
       let outputDir: string | undefined
+      let filePath: string | undefined
+      let attachmentApiUrl: string | undefined
+      let attachmentThumbnailUrl: string | undefined
 
       try {
         if (isImage) {
@@ -245,16 +251,19 @@ export const handleAttachmentUpload = async (c: Context) => {
           outputDir = path.join(baseDir, fileId)
 
           await mkdir(outputDir, { recursive: true })
-          const filePath = path.join(outputDir, fullFileName)
+          filePath = path.join(outputDir, fullFileName)
           await Bun.write(filePath, new Uint8Array(fileBuffer))
 
           // Generate thumbnail for images
-          thumbnailPath = getThumbnailPath(outputDir, fileId)
+          const thumbnailPath = getThumbnailPath(outputDir, fileId)
           await generateThumbnail(Buffer.from(fileBuffer), thumbnailPath)
 
+          // Use opaque fileId in URLs instead of absolute file paths
+          attachmentApiUrl = `/api/v1/attachments/${fileId}`
+          attachmentThumbnailUrl = `/api/v1/attachments/${fileId}/thumbnail`
           const vespaDoc = {
             title: file.name,
-            url: "",
+            url: attachmentApiUrl,
             app: Apps.Attachment,
             docId: fileId,
             parentId: null,
@@ -264,19 +273,42 @@ export const handleAttachmentUpload = async (c: Context) => {
             entity: attachmentFileTypeMap[getFileType({ type: file.type, name: file.name })],
             chunks: [],
             chunks_pos: [],
-            image_chunks: [],
-            image_chunks_pos: [],
+            image_chunks: [`${file.name}`],
+            image_chunks_pos: [0],
             chunks_map: [],
             image_chunks_map: [],
             permissions: [email],
             mimeType: getBaseMimeType(file.type),
-            metadata: filePath,
+            metadata: JSON.stringify({
+              thumbnailUrl: attachmentThumbnailUrl,
+              filePath: filePath,
+              thumbnailPath: thumbnailPath,
+            }),
             createdAt: Date.now(),
             updatedAt: Date.now(),
           }
 
           await insert(vespaDoc, fileSchema)
         } else {
+          // Save attachments to disk in a structured way:
+          // {cwd}/storage/kb_files/{workspaceExternalId}/{collectionId}/{year}/{month}/{storageKey}_{fileName}
+          // collectionId is derived from workspaceExternalId and userId to create a unique namespace per user
+          const collectionId = `attachments_${user.workspaceExternalId}_${user.id}`
+          const storageKey = generateStorageKey()
+          // Calculate storage path and assign to outer filePath variable
+          filePath = getStoragePath(
+            user.workspaceExternalId,
+            collectionId,
+            storageKey,
+            file.name,
+          )
+  
+          // Ensure directory exists
+          await mkdir(dirname(filePath), { recursive: true })
+  
+          // Write file to disk
+          await writeFile(filePath, new Uint8Array(fileBuffer))
+
           // For non-images: process through FileProcessorService and ingest into file schema
 
           // Process the file content using FileProcessorService
@@ -315,9 +347,11 @@ export const handleAttachmentUpload = async (c: Context) => {
             const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
               processingResult
 
+            // Use opaque fileId in URLs instead of absolute file paths
+            attachmentApiUrl = `/api/v1/attachments/${docId}`
             const vespaDoc = {
               title: file.name,
-              url: "",
+              url: attachmentApiUrl,
               app: Apps.Attachment,
               docId: docId,
               parentId: null,
@@ -340,6 +374,7 @@ export const handleAttachmentUpload = async (c: Context) => {
                 imageChunksCount: image_chunks.length,
                 processingMethod: getBaseMimeType(file.type || "text/plain"),
                 lastModified: Date.now(),
+                filePath: filePath,
                 ...(('sheetName' in processingResult) && {
                   sheetName: (processingResult as SheetProcessingResult).sheetName,
                   sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
@@ -355,18 +390,16 @@ export const handleAttachmentUpload = async (c: Context) => {
         }
 
         // Create attachment metadata
+        // Encode the storagePath so slashes in the absolute path don't break the URL
         const metadata: AttachmentMetadata = {
           fileId: vespaId,
           fileName: file.name,
           fileType: file.type,
           fileSize: file.size,
           isImage,
-          thumbnailPath:
-            thumbnailPath && outputDir
-              ? path.relative(outputDir, thumbnailPath)
-              : "",
+          thumbnailUrl: attachmentThumbnailUrl,
           createdAt: new Date(),
-          url: `/api/v1/attachments/${vespaId}`,
+          url: attachmentApiUrl,
         }
 
         attachmentMetadata.push(metadata)
@@ -386,6 +419,31 @@ export const handleAttachmentUpload = async (c: Context) => {
             loggerWithChild({ email }).error(
               cleanupError,
               `Failed to cleanup directory ${outputDir} after file write error`,
+            )
+          }
+        } else if (!isImage && filePath) {
+          // Cleanup non-image file if processing or DB insert fails
+          try {
+            await fs.unlink(filePath)
+            loggerWithChild({ email }).warn(
+              `Cleaned up file ${filePath} after failed processing`,
+            )
+            // Try to remove empty parent directories
+            let currentDir = dirname(filePath)
+            const storageBaseDir = path.resolve(KB_STORAGE_ROOT)
+            while (currentDir !== storageBaseDir && currentDir.length > storageBaseDir.length) {
+              const entries = await fs.readdir(currentDir).catch(() => null)
+              if (entries && entries.length === 0) {
+                await fs.rmdir(currentDir).catch(() => {})
+                currentDir = dirname(currentDir)
+              } else {
+                break
+              }
+            }
+          } catch (cleanupError) {
+            loggerWithChild({ email }).error(
+              cleanupError,
+              `Failed to cleanup file ${filePath} after processing error`,
             )
           }
         }
@@ -474,26 +532,82 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
     }
   }
 
-  // Delete non-image attachments from Vespa
+  // Delete non-image attachments from Vespa and disk
   if (nonImageAttachmentFileIds.length > 0) {
     loggerWithChild({ email: email }).info(
-      `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa`,
+      `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa and disk`,
     )
 
     for (const fileId of nonImageAttachmentFileIds) {
       try {
         const vespaIds = expandSheetIds(fileId)
         for (const vespaId of vespaIds) {
+          // Get the document to retrieve file path from metadata before deletion
+          let filePathToDelete: string | undefined
+          try {
+            const doc = await GetDocument(fileSchema, vespaId)
+            if (doc?.fields) {
+              const fields = doc.fields as any
+              const metadata = fields.metadata ? JSON.parse(fields.metadata as string) : {}
+              filePathToDelete = metadata.filePath
+            }
+          } catch (getErr) {
+            loggerWithChild({ email: email }).warn(
+              `Could not fetch document ${vespaId} for file path: ${getErrorMessage(getErr)}`,
+            )
+          }
+
           // Delete from Vespa kb_items or file schema
-          if(vespaId.startsWith("att_")) {
+          if (vespaId.startsWith("att_")) {
             await DeleteDocument(vespaId, KbItemsSchema)
           } else {
             await DeleteDocument(vespaId, fileSchema)
           }
           // Delete images from disk
           await DeleteImages(vespaId)
+
+          // Delete the file from disk
+          if (filePathToDelete) {
+            try {
+              const resolvedPath = path.resolve(filePathToDelete)
+              const storageBaseDir = path.resolve(KB_STORAGE_ROOT)
+              
+              // Security: ensure path is under allowed directory
+              if (resolvedPath.startsWith(storageBaseDir + path.sep) || resolvedPath.startsWith(storageBaseDir + "/")) {
+                await fs.unlink(resolvedPath)
+                loggerWithChild({ email: email }).info(
+                  `Deleted non-image attachment file from disk: ${resolvedPath}`,
+                )
+                
+                // Try to remove empty parent directories
+                let currentDir = dirname(resolvedPath)
+                while (currentDir !== storageBaseDir && currentDir.length > storageBaseDir.length) {
+                  const entries = await fs.readdir(currentDir).catch(() => null)
+                  if (entries && entries.length === 0) {
+                    await fs.rmdir(currentDir).catch(() => {})
+                    currentDir = dirname(currentDir)
+                  } else {
+                    break
+                  }
+                }
+              } else {
+                loggerWithChild({ email: email }).warn(
+                  `Skipping file deletion - path outside allowed directory: ${resolvedPath}`,
+                )
+              }
+            } catch (fileDeleteErr) {
+              const fileDeleteMsg = getErrorMessage(fileDeleteErr)
+              if (!fileDeleteMsg.includes("ENOENT") && !fileDeleteMsg.includes("no such file")) {
+                loggerWithChild({ email: email }).error(
+                  fileDeleteErr,
+                  `Failed to delete non-image attachment file from disk: ${filePathToDelete}`,
+                )
+              }
+            }
+          }
+
           loggerWithChild({ email: email }).info(
-            `Successfully deleted non-image attachment ${vespaId} from Vespa`,
+            `Successfully deleted non-image attachment ${vespaId} from Vespa and disk`,
           )
         }
       } catch (error) {
@@ -551,6 +665,8 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
 
 /**
  * Serve attachment file by fileId
+ * Resolves fileId to physical path via Vespa lookup to avoid exposing server internals.
+ * Security: the resolved path must be under one of the allowed base directories.
  */
 export const handleAttachmentServe = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
@@ -562,49 +678,71 @@ export const handleAttachmentServe = async (c: Context) => {
       throw new HTTPException(400, { message: "File ID is required" })
     }
 
-    // First, try the legacy path structure (for images)
-    const legacyBaseDir = path.resolve(
-      process.env.IMAGE_DIR || "downloads/xyne_images_db",
+    // Validate fileId to prevent path traversal
+    if (fileId.includes("..") || fileId.includes("/") || fileId.includes("\\")) {
+      throw new HTTPException(400, { message: "Invalid file ID" })
+    }
+
+    // Look up the attachment document in Vespa to get the file path
+    const attachmentDoc = await GetDocument(fileSchema, fileId)
+
+    if (!attachmentDoc || !attachmentDoc.fields) {
+      throw new HTTPException(404, { message: "Attachment not found" })
+    }
+
+    // Check permissions
+    const fields = attachmentDoc.fields as any
+    const permissions = Array.isArray(fields.permissions) ? (fields.permissions as string[]) : []
+    if (!permissions.includes(email)) {
+      throw new HTTPException(403, { message: "Access denied" })
+    }
+
+    // Get file path from metadata
+    let resolvedPath: string | undefined
+    const metadata = fields.metadata ? JSON.parse(fields.metadata as string) : {}
+    resolvedPath = metadata.filePath
+
+    if (!resolvedPath) {
+      throw new HTTPException(404, { message: "File path not found for attachment" })
+    }
+
+    // Security: resolve the path and ensure it is under one of the allowed base directories
+    resolvedPath = path.resolve(resolvedPath)
+
+    const allowedBaseDirs = [
+      path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db"),
+      path.resolve(KB_STORAGE_ROOT),
+    ]
+
+    const isAllowed = allowedBaseDirs.some((baseDir) =>
+      resolvedPath.startsWith(baseDir + path.sep) || resolvedPath.startsWith(baseDir + "/"),
     )
-    const legacyDir = path.join(legacyBaseDir, fileId)
 
-    // Check for files in legacy structure
-    let filePath: string | null = null
-    let fileName: string | null = null
-    let fileType: string | null = null
-
-    // Look for any file in the legacy directory
-    const possibleExtensions = ["jpg", "jpeg", "png", "gif", "webp"]
-    for (const ext of possibleExtensions) {
-      const testPath = path.join(legacyDir, `0.${ext}`)
-      const testFile = Bun.file(testPath)
-      if (await testFile.exists()) {
-        filePath = testPath
-        fileName = `${fileId}.${ext}`
-        fileType = testFile.type || `image/${ext}`
-        break
-      }
+    if (!isAllowed) {
+      loggerWithChild({ email }).error(
+        `Attempted to access file outside allowed directories: ${resolvedPath}`,
+      )
+      throw new HTTPException(403, { message: "Access denied" })
     }
 
-    // Check if file exists
-    const file = Bun.file(filePath || "")
+    // Check if file exists at the resolved path
+    const file = Bun.file(resolvedPath)
     if (!(await file.exists())) {
-      // File not found on disk - it might be a non-image file processed through Vespa
-      throw new HTTPException(404, {
-        message:
-          "File not found. Non-image files are processed through Vespa and not stored on disk.",
-      })
+      throw new HTTPException(404, { message: "File not found" })
     }
+
+    const fileName = fields.title || path.basename(resolvedPath)
+    const fileType = file.type || fields.mimeType || "application/octet-stream"
 
     loggerWithChild({ email }).info(
-      `Serving attachment ${fileId} (${fileName}) for user ${email}`,
+      `Serving attachment ${fileId} at ${resolvedPath} for user ${email}`,
     )
 
     // Set appropriate headers
-    c.header("Content-Type", fileType || "application/octet-stream")
+    c.header("Content-Type", fileType)
     c.header(
       "Content-Disposition",
-      `inline; filename*=UTF-8''${encodeURIComponent(fileName || "file")}`,
+      `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`,
     )
     c.header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
 
@@ -615,14 +753,16 @@ export const handleAttachmentServe = async (c: Context) => {
   } catch (error) {
     loggerWithChild({ email }).error(
       error,
-      `Error serving attachment ${c.req.param("fileId")}`,
+      `Error serving attachment`,
     )
     throw error
   }
 }
 
 /**
- * Serve thumbnail for attachment
+ * Serve thumbnail for attachment by fileId
+ * Resolves fileId to physical path via Vespa lookup to avoid exposing server internals.
+ * Security: the resolved path must be under one of the allowed base directories.
  */
 export const handleThumbnailServe = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
@@ -634,40 +774,71 @@ export const handleThumbnailServe = async (c: Context) => {
       throw new HTTPException(400, { message: "File ID is required" })
     }
 
-    // First, try the legacy path structure
-    const legacyBaseDir = path.resolve(
-      process.env.IMAGE_DIR || "downloads/xyne_images_db",
-    )
-    const legacyThumbnailPath = path.join(
-      legacyBaseDir,
-      fileId,
-      `${fileId}_thumbnail.jpeg`,
-    )
-
-    let thumbnailPath = legacyThumbnailPath
-    let thumbnailFile = Bun.file(thumbnailPath)
-
-    // Check if thumbnail exists
-    if (!(await thumbnailFile.exists())) {
-      throw new HTTPException(404, { message: "Thumbnail not found on disk" })
+    // Validate fileId to prevent path traversal
+    if (fileId.includes("..") || fileId.includes("/") || fileId.includes("\\")) {
+      throw new HTTPException(400, { message: "Invalid file ID" })
     }
 
-    loggerWithChild({ email }).info(
-      `Serving thumbnail for ${fileId} for user ${email}`,
+    // Look up the attachment document in Vespa to get the thumbnail path
+    const attachmentDoc = await GetDocument(fileSchema, fileId)
+
+    if (!attachmentDoc || !attachmentDoc.fields) {
+      throw new HTTPException(404, { message: "Attachment not found" })
+    }
+
+    // Check permissions
+    const fields = attachmentDoc.fields as any
+    const permissions = Array.isArray(fields.permissions) ? (fields.permissions as string[]) : []
+    if (!permissions.includes(email)) {
+      throw new HTTPException(403, { message: "Access denied" })
+    }
+
+    // Get thumbnail path from metadata
+    let resolvedPath: string | undefined
+    const metadata = fields.metadata ? JSON.parse(fields.metadata as string) : {}
+    resolvedPath = metadata.thumbnailPath
+
+    if (!resolvedPath) {
+      throw new HTTPException(404, { message: "Thumbnail not found for attachment" })
+    }
+
+    // Security: resolve the path and ensure it is under one of the allowed base directories
+    resolvedPath = path.resolve(resolvedPath)
+
+    const allowedBaseDirs = [
+      path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db"),
+      path.resolve(KB_STORAGE_ROOT),
+    ]
+
+    const isAllowed = allowedBaseDirs.some((baseDir) =>
+      resolvedPath.startsWith(baseDir + path.sep) || resolvedPath.startsWith(baseDir + "/"),
     )
+
+    if (!isAllowed) {
+      loggerWithChild({ email }).error(
+        `Attempted to access file outside allowed directories: ${resolvedPath}`,
+      )
+      throw new HTTPException(403, { message: "Access denied" })
+    }
+
+    // Check if file exists at the resolved path
+    const file = Bun.file(resolvedPath)
+    if (!(await file.exists())) {
+      throw new HTTPException(404, { message: "Thumbnail file not found" })
+    }
 
     // Set appropriate headers for thumbnail
     c.header("Content-Type", "image/jpeg")
     c.header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
 
     // Stream the thumbnail
-    return new Response(thumbnailFile.stream(), {
+    return new Response(file.stream(), {
       headers: c.res.headers,
     })
   } catch (error) {
     loggerWithChild({ email }).error(
       error,
-      `Error serving thumbnail ${c.req.param("fileId")}`,
+      `Error serving thumbnail for fileId ${c.req.param("fileId")}`,
     )
     throw error
   }

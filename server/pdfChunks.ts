@@ -802,6 +802,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           if (includeImageMarkersInText) {
                             text_chunks.push(`[[IMG#${globalSeq.value}]]`)
                             text_chunk_pos.push(globalSeq.value)
+                            text_chunks_map.push({
+                              chunk_index: globalSeq.value,
+                              page_numbers: [pageNum - 1],
+                              block_labels: ["image"],
+                            })
                           }
                           globalSeq.value++
                           imagesOnPage += 1
@@ -915,6 +920,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           if (includeImageMarkersInText) {
                             text_chunks.push(`[[IMG#${globalSeq.value}]]`)
                             text_chunk_pos.push(globalSeq.value)
+                            text_chunks_map.push({
+                              chunk_index: globalSeq.value,
+                              page_numbers: [pageNum - 1],
+                              block_labels: ["image"],
+                            })
                           }
                           globalSeq.value++
                           imagesOnPage += 1
@@ -1282,6 +1292,12 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     if (includeImageMarkersInText) {
                       text_chunks.push(`[[IMG#${globalSeq.value}]]`)
                       text_chunk_pos.push(globalSeq.value)
+                      // Add metadata for image marker in text stream
+                      text_chunks_map.push({
+                        chunk_index: globalSeq.value,
+                        page_numbers: [pageNum - 1],
+                        block_labels: ["image"],
+                      })
                     }
                     // Removed cross-image overlap placeholder handling
                     Logger.debug("Added image chunk at position", {
