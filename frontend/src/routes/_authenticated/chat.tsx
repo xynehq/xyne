@@ -1294,7 +1294,7 @@ export const ChatPage = ({
     if (selectedCitation && isDocumentLoaded) {
       handleChunkIndexChange(
         selectedChunkIndex,
-        selectedCitation?.itemId ?? ((selectedCitation?.app === "attachment") ? (selectedCitation?.docId ?? "") : ""),
+        selectedCitation?.itemId || (selectedCitation?.docId ?? ""),
         selectedCitation?.docId ?? "",
       )
     }

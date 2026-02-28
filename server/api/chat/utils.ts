@@ -1412,24 +1412,11 @@ export const checkAndYieldCitationsForAgent = async function* (
     let imageCitationsProcessed = 0
     let citationsYielded = 0
     let imageCitationsYielded = 0
-
-    while (true) {
-      // Reset all match variables at the start of each iteration to avoid stale state
-      // from previous iterations due to short-circuit evaluation in the while condition
-      match = null
-      imgMatch = null
-      chunkMatch = null
-
-      if ((match = textToCitationIndex.exec(text)) !== null) {
-        // process match below
-      } else if ((imgMatch = textToImageCitationIndex.exec(text)) !== null) {
-        // process imgMatch below
-      } else if ((chunkMatch = textToChunkCitationIndex.exec(text)) !== null) {
-        // process chunkMatch below
-      } else {
-        break
-      }
-
+    while (
+      (match = textToCitationIndex.exec(text)) !== null ||
+      (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
+      ((chunkMatch = textToChunkCitationIndex.exec(text)) !== null)
+    ) {
       if (match || chunkMatch) {
         citationsProcessed++
         let citationIndex = 0
