@@ -281,15 +281,21 @@ export const createDatabaseConnectorSchema = z.object({
   name: z.string().min(1, "Name is required"),
   engine: z.nativeEnum(DatabaseEngine),
   host: z.string().min(1, "Host is required"),
-  port: z.number().int().positive().default(5432),
+  port: z.number().int().min(1).max(65535).default(5432),
   database: z.string().min(1, "Database is required"),
   schema: z.string().optional(),
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
-  tablesInclude: z.string().optional(), // comma-separated
-  tablesIgnore: z.string().optional(), // comma-separated
+  tablesInclude: z.string().optional(), // comma-separated, converted to array in config
+  tablesIgnore: z.string().optional(), // comma-separated, converted to array in config
   watermarkColumn: z.string().optional(),
   batchSize: z.number().int().positive().default(1000),
+  concurrency: z.number().int().positive().default(2),
+  cdcEnabled: z.boolean().default(false),
+  ssl: z.object({
+    rejectUnauthorized: z.boolean(),
+    ca: z.string().optional(),
+  }).optional(),
 })
 
 export type CreateDatabaseConnector = z.infer<

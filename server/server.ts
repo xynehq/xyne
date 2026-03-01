@@ -230,6 +230,7 @@ import {
   DeleteDatabaseConnectorApi,
   SyncDatabaseTableApi,
   UpdateDatabaseConnectorApi,
+  RotateCredentialsApi,
 } from "@/api/databaseConnector"
 import {
   ChatBookmarkApi,
@@ -1462,6 +1463,7 @@ export const AppRoutes = app
   .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
   .post("/connectors/database/create", CreateDatabaseConnectorApi)
   .post("/connectors/database/update", UpdateDatabaseConnectorApi)
+  .post("/connectors/database/rotate-credentials", RotateCredentialsApi)
   .post("/connectors/database/sync", TriggerDatabaseSyncApi)
   .post("/connectors/database/sync-table", SyncDatabaseTableApi)
   .post("/connectors/database/delete", DeleteDatabaseConnectorApi)

@@ -113,7 +113,7 @@ export const TriggerDatabaseSyncApi = async (c: Context) => {
     } catch (err) {
       Logger.error({ err, connectorId }, "Database sync failed")
       throw new HTTPException(500, {
-        message: "Internal server error",
+        message: "Failed to sync database connector",
     })
   }
 }
@@ -203,7 +203,7 @@ export const CreateDatabaseConnectorApi = async (c: Context) => {
     } catch (err) {
       Logger.error({ err }, "Create database connector failed")
       throw new HTTPException(500, {
-        message: "Internal server error",
+        message: "Failed to create database connector",
       })
     }
   }
@@ -291,20 +291,38 @@ const syncTableSchema = z.object({
   tableName: z.string().min(1),
 })
 
+const validateCredentialsSchema = z.object({
+  connectorId: z.string().min(1),
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+})
+
+const changePasswordSchema = z.object({
+  connectorId: z.string().min(1),
+  currentUsername: z.string().min(1, "Current username is required"),
+  currentPassword: z.string().min(1, "Current password is required"),
+  newUsername: z.string().min(1, "New username is required"),
+  newPassword: z.string().min(1, "New password is required"),
+})
+
 const updateDatabaseConnectorSchema = z.object({
   connectorId: z.string().min(1),
   name: z.string().min(1, "Name is required"),
   engine: z.nativeEnum(DatabaseEngine),
   host: z.string().min(1, "Host is required"),
-  port: z.number().int().positive().default(5432),
+  port: z.number().int().min(1).max(65535).default(5432),
   database: z.string().min(1, "Database is required"),
   schema: z.string().optional(),
-  username: z.string().min(1, "Username is required"),
-  password: z.string().optional(), // Optional on update - if not provided, keep existing
   tablesInclude: z.string().optional(),
   tablesIgnore: z.string().optional(),
   watermarkColumn: z.string().optional(),
   batchSize: z.number().int().positive().default(1000),
+})
+
+const rotateCredentialsSchema = z.object({
+  connectorId: z.string().min(1),
+  newUsername: z.string().min(1, "New username is required"),
+  newPassword: z.string().min(1, "New password is required"),
 })
 
 export type UpdateDatabaseConnector = z.infer<
@@ -312,9 +330,8 @@ export type UpdateDatabaseConnector = z.infer<
 >
 
 /**
- * Update a database connector's configuration.
- * Allows updating connection details, credentials, and sync settings.
- * If password is not provided, the existing password is retained.
+ * Update a database connector's configuration (name, host, port, database, schema, tables, watermark, batch size).
+ * Credentials are not accepted here; use RotateCredentialsApi to change username/password.
  */
 export const UpdateDatabaseConnectorApi = async (c: Context) => {
   const { sub: email, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
@@ -383,39 +400,10 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
     watermarkColumn: body.watermarkColumn?.trim() || undefined,
   } as Omit<DatabaseConnectorConfig, "auth">
 
-  // Handle credentials - if password is provided, update; otherwise keep existing
-  let credentialsStr: string
-  if (body.password) {
-    const credentialsPayload: DatabaseCredentialsPayload = {
-      kind: "database",
-      username: body.username,
-      password: body.password,
-    }
-    credentialsStr = JSON.stringify(credentialsPayload)
-  } else {
-    // Keep existing credentials but update username if changed
-    if (!connector.credentials?.trim()) {
-      throw new HTTPException(400, { message: "Database connector missing credentials" })
-    }
-    let existingCreds: DatabaseCredentialsPayload
-    try {
-      existingCreds = JSON.parse(connector.credentials) as DatabaseCredentialsPayload
-    } catch {
-      throw new HTTPException(400, { message: "Invalid database connector credentials" })
-    }
-    const credentialsPayload: DatabaseCredentialsPayload = {
-      kind: "database",
-      username: body.username,
-      password: existingCreds.password,
-    }
-    credentialsStr = JSON.stringify(credentialsPayload)
-  }
-
   try {
     const updated = await updateConnector(db, connector.id, {
       name: body.name,
       config: updatedConfig as unknown as Record<string, unknown>,
-      credentials: credentialsStr,
     })
 
     Logger.info(`Updated database connector: ${body.connectorId}`)
@@ -428,7 +416,86 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
   } catch (err) {
     Logger.error({ err }, "Update database connector failed")
     throw new HTTPException(500, {
-      message: "Internal server error",
+      message: "Failed to update database connector",
+    })
+  }
+}
+
+/**
+ * Rotate database connector credentials.
+ * Validates new credentials by testing connection before updating.
+ */
+export const RotateCredentialsApi = async (c: Context) => {
+  const { sub: email, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
+  if (!email) throw new HTTPException(401, { message: "Unauthorized" })
+
+  const raw = await c.req.json()
+  const body = rotateCredentialsSchema.parse(raw)
+
+  const userWorkspace = await getUserAndWorkspaceByEmail(db, workspaceExternalId, email)
+  if (!userWorkspace) throw new HTTPException(404, { message: "User or workspace not found" })
+
+  const connector = await getDatabaseConnectorForUser(
+    db,
+    body.connectorId,
+    userWorkspace.user.id,
+    userWorkspace.workspace.id,
+  )
+  if (!connector) throw new HTTPException(404, { message: "Connector not found" })
+  if (connector.type !== ConnectorType.Database) {
+    throw new HTTPException(400, { message: "Connector is not a database connector" })
+  }
+
+  // Get connector config to test new credentials
+  const config = connector.config as Record<string, unknown>
+  
+  // Build test config with new credentials
+  const testConfig: DatabaseConnectorConfig = {
+    engine: config.engine as DatabaseEngine,
+    host: config.host as string,
+    port: config.port as number,
+    database: config.database as string,
+    schema: config.schema as string | undefined,
+    batchSize: config.batchSize as number ?? 1000,
+    concurrency: config.concurrency as number ?? 2,
+    cdcEnabled: config.cdcEnabled as boolean ?? false,
+    auth: { username: body.newUsername, password: body.newPassword },
+  }
+
+  // Test the new credentials by attempting to connect
+  const { createClient } = await import("@/integrations/database/client")
+  const client = createClient(testConfig)
+  
+  try {
+    await client.connect()
+    await client.disconnect()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new HTTPException(400, {
+      message: `Failed to connect with new credentials, please verify the username and password.`,
+    })
+  }
+
+  // Update credentials
+  const newCredentialsPayload: DatabaseCredentialsPayload = {
+    kind: "database",
+    username: body.newUsername,
+    password: body.newPassword,
+  }
+  const credentialsStr = JSON.stringify(newCredentialsPayload)
+
+  try {
+    await updateConnector(db, connector.id, {
+      credentials: credentialsStr,
+    })
+
+    Logger.info(`Rotated credentials for database connector: ${body.connectorId}`)
+
+    return c.json({ success: true })
+  } catch (err) {
+    Logger.error({ err }, "Rotate database credentials failed")
+    throw new HTTPException(500, {
+      message: "Failed to update credentials",
     })
   }
 }
@@ -482,7 +549,7 @@ export const SyncDatabaseTableApi = async (c: Context) => {
     }
     Logger.error({ err, connectorId, tableName }, "Database table sync failed")
     throw new HTTPException(500, {
-      message: "Internal server error",
+      message: "Failed to sync table",
     })
   }
 }
