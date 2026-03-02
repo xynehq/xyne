@@ -124,6 +124,14 @@ export class SQLValidator {
         return structureValidation;
       }
 
+      // Cardinality safety: reject uncontrolled cartesian products (multi-table FROM without JOIN)
+      if (this.options.allowedTableNames?.length) {
+        const cartesianValidation = this.validateNoUnsafeCartesian(ast);
+        if (!cartesianValidation.isValid) {
+          return cartesianValidation;
+        }
+      }
+
       Logger.debug(`SQL validation successful: ${sql}`);
       return {
         isValid: true,
@@ -302,6 +310,63 @@ export class SQLValidator {
     }
 
     return { isValid: true, warnings };
+  }
+
+  /**
+   * Reject uncontrolled cartesian products: multiple base tables in FROM without explicit JOIN.
+   * Allows: JOIN with ON; single table; FROM with only CTE names (safe 1-row cross when CTEs are aggregated).
+   */
+  private validateNoUnsafeCartesian(ast: any): SQLValidationResult {
+    const main = this.getMainSelect(ast);
+    if (!main?.from) return { isValid: true };
+
+    const fromItems = Array.isArray(main.from) ? main.from : [main.from];
+    const cteNames = this.getCTENames(ast);
+    const hasExplicitJoin = fromItems.some((item: any) => item.join);
+
+    const baseTableRefs = fromItems.filter(
+      (item: any) => !(item.expr && item.expr.type === "select"),
+    );
+    if (baseTableRefs.length < 2) return { isValid: true };
+    if (hasExplicitJoin) return { isValid: true };
+
+    const refNames = new Set<string>(
+      baseTableRefs
+        .map((item: any) => this.getFromItemTableName(item))
+        .filter((n: string | null): n is string => typeof n === "string"),
+    );
+    const allRefsAreCTEs =
+      cteNames.size > 0 && [...refNames].every((n) => cteNames.has(n));
+    if (allRefsAreCTEs) return { isValid: true };
+
+    return {
+      isValid: false,
+      error:
+        "Unsafe cartesian product: multiple base tables in FROM without explicit JOIN. Use JOIN with ON, or aggregate each table in a CTE to a single row then combine (e.g. WITH a AS (SELECT ...), b AS (SELECT ...) SELECT * FROM a, b).",
+    };
+  }
+
+  private getMainSelect(ast: any): any {
+    if (!ast) return null;
+    if (ast.type === "with" && ast.body) return ast.body;
+    return ast;
+  }
+
+  private getCTENames(ast: any): Set<string> {
+    const names = new Set<string>();
+    if (ast.type !== "with" || !Array.isArray(ast.with)) return names;
+    for (const cte of ast.with) {
+      const name = cte?.name ?? cte?.id;
+      if (typeof name === "string") names.add(name.toLowerCase());
+    }
+    return names;
+  }
+
+  private getFromItemTableName(item: any): string | null {
+    if (!item) return null;
+    const t = item.table ?? item.expr?.table ?? item.expr?.name;
+    if (typeof t === "string") return t.toLowerCase();
+    return null;
   }
 
   private hasSubqueries(ast: any): boolean {

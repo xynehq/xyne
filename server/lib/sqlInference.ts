@@ -185,6 +185,11 @@ If it IS answerable, generate a single Postgres SELECT statement.
 - You may use JOINs, WHERE, GROUP BY, ORDER BY, LIMIT, and CTEs (WITH ... SELECT ...).
 - Output must be a single-line minified JSON: {"sql": "SELECT ...", "notes": "brief reasoning"}
 
+MULTI-TABLE SAFETY (important):
+- Do NOT produce cartesian products over raw tables (e.g. FROM t1, t2 with no JOIN).
+- When combining related tables, use explicit JOIN with ON.
+- When comparing unrelated aggregates (e.g. "compare total revenue and average attendance"), first aggregate each table in a CTE to a single row, then combine: WITH a AS (SELECT SUM(...) AS x FROM t1), b AS (SELECT AVG(...) AS y FROM t2) SELECT a.x, b.y FROM a, b.
+
 User question: ${query}
 
 Schema (all tables in the same database):
