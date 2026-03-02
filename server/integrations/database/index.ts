@@ -269,6 +269,7 @@ async function syncTableToKbAsSchema(
 
   const schemaDoc = await client.getTableSchemaFull(tableName, connectorId, {
     includeRowCount: true,
+    includeColumnStats: true,
   })
   const fileName = `${tableName}.json`
   const storageKey = generateStorageKey()

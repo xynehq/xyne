@@ -37,6 +37,16 @@ export interface ColumnInfo {
 
 export type DbRow = Record<string, unknown>
 
+/** Describe-like stats per column (sample-based). Helps the LLM choose filters and aggregations. */
+export interface ColumnStats {
+  distinctCount?: number
+  nullCount?: number
+  min?: number | string
+  max?: number | string
+  avg?: number
+  stddev?: number
+}
+
 /** Schema-only document written to KB (no row data). Used for retrieval → generate SQL → execute on client DB. */
 export interface DatabaseTableSchemaDoc {
   source: "database_connector"
@@ -47,5 +57,7 @@ export interface DatabaseTableSchemaDoc {
   primaryKey: string[]
   foreignKeys?: { columns: string[]; referencedTable: string; referencedColumns: string[] }[]
   rowCount?: number
+  /** Per-column aggregates (min/max/avg/distinct etc.) from a sample; helps SQL generation. */
+  columnStats?: Record<string, ColumnStats>
   description: string
 }

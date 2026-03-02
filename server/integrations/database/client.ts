@@ -30,7 +30,7 @@ export interface DatabaseClient {
   getTableSchemaFull?(
     tableName: string,
     connectorId: string,
-    options?: { includeRowCount?: boolean },
+    options?: { includeRowCount?: boolean; includeColumnStats?: boolean },
   ): Promise<DatabaseTableSchemaDoc>
   /** Run a read-only SELECT (for schema-only retrieval). Caller must validate SQL. Optional. */
   executeReadOnlyQuery?(

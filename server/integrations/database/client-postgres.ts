@@ -6,6 +6,7 @@
 import postgres, { type Sql } from "postgres"
 import type {
   ColumnInfo,
+  ColumnStats,
   DbRow,
   TableInfo,
   TableSyncState,
@@ -144,11 +145,11 @@ export class PostgresClient {
     )
   }
 
-  /** Full schema for one table (columns, PK, FKs, optional row count). Used for schema-only sync. */
+  /** Full schema for one table (columns, PK, FKs, optional row count and column stats). Used for schema-only sync. */
   async getTableSchemaFull(
     tableName: string,
     connectorId: string,
-    options?: { includeRowCount?: boolean },
+    options?: { includeRowCount?: boolean; includeColumnStats?: boolean },
   ): Promise<DatabaseTableSchemaDoc> {
     const schema = this.getSchema()
     const columns = await this.getTableColumns(tableName)
@@ -174,6 +175,10 @@ export class PostgresClient {
       isPrimaryKey: pkSet.has(c.name),
     }))
     const description = `Table: ${schema}.${tableName} - ${columns.length} columns (${columns.map((c) => c.name).join(", ")})`
+    let columnStats: Record<string, ColumnStats> | undefined
+    if (options?.includeColumnStats && columns.length > 0) {
+      columnStats = await this.getTableColumnStats(tableName, columns)
+    }
     return {
       source: "database_connector",
       connectorId,
@@ -183,8 +188,87 @@ export class PostgresClient {
       primaryKey: pkColumns,
       foreignKeys: foreignKeys.length ? foreignKeys : undefined,
       rowCount,
+      columnStats,
       description,
     }
+  }
+
+  /** True if Postgres type supports MIN/MAX/AVG/STDDEV (numeric). */
+  private static isNumericType(dataType: string): boolean {
+    return /^(integer|bigint|smallint|numeric|decimal|real|double precision)$/i.test(dataType)
+  }
+
+  /** True if Postgres type supports MIN/MAX (date/time). */
+  private static isDateTimeType(dataType: string): boolean {
+    return /^(date|timestamp|time)/i.test(dataType)
+  }
+
+  /**
+   * Get describe-like aggregates per column from a sample of the table.
+   * Helps the LLM with SQL generation (value ranges, distinct counts).
+   */
+  async getTableColumnStats(
+    tableName: string,
+    columns: ColumnInfo[],
+    options?: { sampleRows?: number; timeoutMs?: number },
+  ): Promise<Record<string, ColumnStats>> {
+    if (!this.sql) throw new Error("Not connected")
+    const schema = this.getSchema()
+    const sampleRows = Math.min(Math.max(options?.sampleRows ?? 10_000, 1), 50_000)
+    const timeoutMs = options?.timeoutMs ?? 30_000
+    const quotedSchema = PostgresClient.safeIdentifier(schema)
+    const quotedTable = PostgresClient.safeIdentifier(tableName)
+
+    const selects: string[] = []
+    const colMeta: { name: string; type: string }[] = []
+    for (const c of columns) {
+      const q = PostgresClient.safeIdentifier(c.name)
+      const base = `(COUNT(*) - COUNT(${q}))::int AS _null_${c.name}, COUNT(DISTINCT ${q})::int AS _dist_${c.name}`
+      if (PostgresClient.isNumericType(c.type)) {
+        selects.push(
+          `${base}, MIN(${q}) AS _min_${c.name}, MAX(${q}) AS _max_${c.name}, AVG(${q}) AS _avg_${c.name}, STDDEV(${q}) AS _stddev_${c.name}`,
+        )
+      } else if (PostgresClient.isDateTimeType(c.type)) {
+        selects.push(`${base}, MIN(${q})::text AS _min_${c.name}, MAX(${q})::text AS _max_${c.name}`)
+      } else {
+        selects.push(base)
+      }
+      colMeta.push({ name: c.name, type: c.type })
+    }
+
+    const sql = `SELECT ${selects.join(", ")} FROM (SELECT * FROM ${quotedSchema}.${quotedTable} LIMIT ${sampleRows}) _t`
+    const rows = await this.sql.begin(async (tx) => {
+      await tx.unsafe(`SET LOCAL statement_timeout = '${timeoutMs}'`)
+      return (await tx.unsafe(sql)) as Record<string, unknown>[]
+    })
+    const row = rows[0]
+    if (!row || typeof row !== "object") return {}
+
+    const out: Record<string, ColumnStats> = {}
+    for (const { name, type } of colMeta) {
+      const stats: ColumnStats = {}
+      const nullVal = row[`_null_${name}`]
+      const distVal = row[`_dist_${name}`]
+      if (typeof nullVal === "number") stats.nullCount = nullVal
+      if (typeof distVal === "number") stats.distinctCount = distVal
+      if (PostgresClient.isNumericType(type)) {
+        const minVal = row[`_min_${name}`]
+        const maxVal = row[`_max_${name}`]
+        const avgVal = row[`_avg_${name}`]
+        const stdVal = row[`_stddev_${name}`]
+        if (minVal !== null && minVal !== undefined) stats.min = minVal as number
+        if (maxVal !== null && maxVal !== undefined) stats.max = maxVal as number
+        if (typeof avgVal === "number") stats.avg = avgVal
+        if (typeof stdVal === "number" && !Number.isNaN(stdVal)) stats.stddev = stdVal
+      } else if (PostgresClient.isDateTimeType(type)) {
+        const minVal = row[`_min_${name}`]
+        const maxVal = row[`_max_${name}`]
+        if (minVal != null) stats.min = String(minVal)
+        if (maxVal != null) stats.max = String(maxVal)
+      }
+      out[name] = stats
+    }
+    return out
   }
 
   /**

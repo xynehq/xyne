@@ -44,28 +44,18 @@ export const analyzeQueryAndGenerateSQL = async (
     return t.trim();
   };
 
-  const prompt = `You are a query analyzer and DuckDB SQL generator.
+  const prompt = `You are a DuckDB SQL generator.
 
-First, determine if the user is asking for metrics/statistics/numerical data.
-- Metric-related queries: count, counts, sums, averages, KPIs, financial figures, quantitative analysis
-- Non-metric queries: descriptive information, definitions, qualitative info, names, categories, context, text-only attributes
+If the question is NOT answerable with a SELECT over the given tables, respond with: {"sql": null, "notes": "Query is not answerable with the given schema"}
 
-If the query is NOT metric-related, respond with: {"isMetric": false, "sql": null, "notes": "Query is not metric-related"}
-
-If the query IS metric-related, generate DuckDB SQL following this schema:
-{
-  "isMetric": true,
-  "sql": "SELECT ...",
-  "notes": "brief reasoning in 1-2 lines"
-}
-
-Rules for SQL generation:
+If it IS answerable, generate a single DuckDB SELECT statement.
 - Target database: DuckDB (SQL dialect = DuckDB)
 - Use ONLY the provided schema and column names. Do NOT invent fields
 - Output a SINGLE statement. No CTEs with CREATE/INSERT/UPDATE/DELETE. SELECT-only
 - Disallow: INSTALL, LOAD, PRAGMA, COPY, EXPORT, ATTACH, DETACH, CALL, CREATE/ALTER/DROP, SET/RESET
 - Output must be a single-line minified JSON object. Do NOT include markdown, code fences, comments, or any prose
 - If ambiguous, choose the simplest interpretation and state the assumption in "notes"
+- Output must be a single-line minified JSON: {"sql": "SELECT ...", "notes": "brief reasoning"}
 
 IMPORTANT SQL IDENTIFIER RULES:
 - Column names MAY contain spaces, hyphens, or special characters
@@ -99,14 +89,13 @@ ${fewShotSamples}`;
       temperature: 0.1,
       max_new_tokens: 512,
       stream: false,
-      systemPrompt: "You are a helpful assistant that analyzes queries and generates SQL when appropriate."
+      systemPrompt: "You generate DuckDB SELECT statements only. Output valid JSON."
     }
 
     const response = await provider.converse(messages, modelParams);
     const responseText = response.text || "";
-    
     const cleaned = stripNoise(responseText);
-    let parsedResponse: { isMetric: boolean; sql: string | null; notes: string };
+    let parsedResponse: { sql: string | null; notes: string };
     
     try {
       parsedResponse = JSON.parse(cleaned);
@@ -115,13 +104,8 @@ ${fewShotSamples}`;
       throw e;
     }
 
-    if (!parsedResponse.isMetric) {
-      Logger.debug(`Query is not metric-related: ${parsedResponse.notes}`);
-      return null;
-    }
-
     if (!parsedResponse.sql) {
-      Logger.warn("LLM indicated metric query but provided no SQL");
+      Logger.warn("DuckDB SQL not generated", parsedResponse.notes);
       return null;
     }
 
@@ -132,7 +116,7 @@ ${fewShotSamples}`;
 
     return result;
   } catch (error) {
-    Logger.error("Failed to analyze query and generate SQL:", error);
+    Logger.error("Failed to generate DuckDB SQL:", error);
     return null;
   }
 }
@@ -168,25 +152,38 @@ export const generatePostgresSQL = async (
   }
 
   const schemaText = tableSchemas
-    .map(
-      (t) =>
-        `Table: ${t.schema}.${t.tableName} (${t.rowCount != null ? `~${t.rowCount} rows` : ""})
+    .map((t) => {
+      let block = `Table: ${t.schema}.${t.tableName} (${t.rowCount != null ? `~${t.rowCount} rows` : ""})
   Columns: ${t.columns.map((c) => `${c.name} (${c.type}${c.nullable ? ", nullable" : ""}${c.isPrimaryKey ? ", PK" : ""})`).join(", ")}
   Primary key: ${t.primaryKey.join(", ")}
-  ${t.foreignKeys?.length ? `Foreign keys: ${t.foreignKeys.map((fk) => `${fk.columns.join(", ")} -> ${fk.referencedTable}(${fk.referencedColumns.join(", ")})`).join("; ")}` : ""}`,
-    )
+  ${t.foreignKeys?.length ? `Foreign keys: ${t.foreignKeys.map((fk) => `${fk.columns.join(", ")} -> ${fk.referencedTable}(${fk.referencedColumns.join(", ")})`).join("; ")}` : ""}`
+      if (t.columnStats && Object.keys(t.columnStats).length > 0) {
+        const statsLines = Object.entries(t.columnStats).map(([col, s]) => {
+          const parts: string[] = []
+          if (s.distinctCount != null) parts.push(`distinct=${s.distinctCount}`)
+          if (s.nullCount != null) parts.push(`nulls=${s.nullCount}`)
+          if (s.min !== undefined) parts.push(`min=${s.min}`)
+          if (s.max !== undefined) parts.push(`max=${s.max}`)
+          if (s.avg !== undefined) parts.push(`avg≈${Number(s.avg).toFixed(2)}`)
+          if (s.stddev !== undefined) parts.push(`stddev≈${Number(s.stddev).toFixed(2)}`)
+          return `${col}: ${parts.join(", ")}`
+        })
+        block += `\n  Sample stats (describe-like): ${statsLines.join("; ")}`
+      }
+      return block
+    })
     .join("\n\n")
 
   const prompt = `You are a Postgres SQL generator. The user asked a question about their database.
 
-If the question is NOT answerable with a SELECT over the given tables, respond with: {"isMetric": false, "sql": null, "notes": "Query is not answerable with the given schema"}
+If the question is NOT answerable with a SELECT over the given tables, respond with: {"sql": null, "notes": "Query is not answerable with the given schema"}
 
 If it IS answerable, generate a single Postgres SELECT statement.
 - Use table names qualified with schema: ${defaultSchema}.table_name
 - Use ONLY columns that exist in the schema below. Do NOT invent columns.
 - Output a SINGLE SELECT. No CREATE/INSERT/UPDATE/DELETE. No multiple statements.
 - You may use JOINs, WHERE, GROUP BY, ORDER BY, LIMIT, and CTEs (WITH ... SELECT ...).
-- Output must be a single-line minified JSON: {"isMetric": true, "sql": "SELECT ...", "notes": "brief reasoning"}
+- Output must be a single-line minified JSON: {"sql": "SELECT ...", "notes": "brief reasoning"}
 
 User question: ${query}
 

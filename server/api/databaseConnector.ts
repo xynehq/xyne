@@ -399,7 +399,7 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
   const tablesConfig =
     hasTablesInclude || hasTablesIgnore || hasTablesEmbed
       ? (Object.keys(tables).length ? tables : undefined)
-      : existingConfig.tables
+      : []
 
   const updatedConfig = {
     ...existingConfig,
