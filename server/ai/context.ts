@@ -35,6 +35,7 @@ import {
 import type { ChunkMetadata, UserMetadataType } from "@/types"
 import { querySheetChunks } from "@/lib/duckdb"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
+import { MIME_DATABASE_SCHEMA } from "@/integrations/database"
 
 // Utility function to extract header from chunks and remove headers from each chunk
 const extractHeaderAndDataChunks = (
@@ -1100,6 +1101,7 @@ export const answerContextMap = async (
   isSelectedFiles?: boolean,
   allowChunkCitations?: boolean,
   query?: string,
+  precomputedDbContext?: Map<string, string>,
 ): Promise<AiContext> => {
   if (
     searchResult.fields.sddocname === fileSchema ||
@@ -1218,8 +1220,27 @@ export const answerContextMap = async (
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === KbItemsSchema) {
+    const kbFields = searchResult.fields as VespaKbFileSearch
+    if (
+      kbFields.mimeType === MIME_DATABASE_SCHEMA &&
+      precomputedDbContext?.size
+    ) {
+      let connectorId: string | undefined
+      try {
+        const meta = typeof kbFields.metadata === "string" ? JSON.parse(kbFields.metadata) : kbFields.metadata
+        connectorId = meta?.connectorId
+      } catch {
+        // ignore
+      }
+      if (connectorId) {
+        const precomputed = precomputedDbContext.get(connectorId)
+        if (precomputed) {
+          return `Source: Knowledge Base (database connector)\nFile: ${kbFields.fileName || "N/A"}\n${precomputed}`
+        }
+      }
+    }
     return constructCollectionFileContext(
-      searchResult.fields as VespaKbFileSearch,
+      kbFields,
       maxSummaryChunks,
       isSelectedFiles,
       allowChunkCitations,

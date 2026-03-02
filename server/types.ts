@@ -288,6 +288,7 @@ export const createDatabaseConnectorSchema = z.object({
   password: z.string().min(1, "Password is required"),
   tablesInclude: z.string().optional(), // comma-separated, converted to array in config
   tablesIgnore: z.string().optional(), // comma-separated, converted to array in config
+  tablesEmbed: z.string().optional(), // comma-separated table names to sync as full data (CSV); others sync as schema-only (JSON)
   watermarkColumn: z.string().optional(),
   batchSize: z.number().int().positive().default(1000),
   concurrency: z.number().int().positive().default(2),
@@ -691,6 +692,9 @@ export type AdminChatsPaginationResponse = z.infer<
 export const UserMetadata = z.object({
   userTimezone: z.string(),
   dateForAI: z.string(),
+  /** Optional; used for database connector schema-only retrieval (look up connector config). */
+  userId: z.number().optional(),
+  workspaceId: z.number().optional(),
 })
 
 export type UserMetadataType = z.infer<typeof UserMetadata>

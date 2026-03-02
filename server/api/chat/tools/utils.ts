@@ -21,6 +21,7 @@ import { getDateForAI } from "@/utils/index"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getLogger, Subsystem } from "@/logger"
 import config from "@/config"
+import { buildPrecomputedDbContext } from "@/lib/databaseContext"
 const Logger = getLogger(Subsystem.Chat)
 
 export const userMetadata: UserMetadataType = {
@@ -38,8 +39,11 @@ export async function formatSearchToolResponse(
     offset?: number
     limit?: number
     searchType?: string
+    /** When set with query, precomputed DB context (live SQL results) is built for schema-only KB docs. */
+    userId?: number | null
+    workspaceId?: number | null
   },
-  ): Promise<MinimalAgentFragment[]> {
+): Promise<MinimalAgentFragment[]> {
   const children = (searchResults?.root?.children || []).filter(
     (item): item is VespaSearchResults =>
       !!(item.fields && "sddocname" in item.fields),
@@ -47,6 +51,27 @@ export async function formatSearchToolResponse(
 
   if (children.length === 0) {
     return []
+  }
+
+  const builtUserQuery = searchContext.query?.trim() ?? ""
+  let precomputedDbContext: Map<string, string> = new Map()
+  if (
+    searchContext.userId != null &&
+    searchContext.workspaceId != null &&
+    builtUserQuery.length > 0
+  ) {
+    precomputedDbContext = await buildPrecomputedDbContext(
+      children,
+      builtUserQuery,
+      searchContext.userId,
+      searchContext.workspaceId,
+    )
+  }
+
+  const metadataForContext: UserMetadataType = {
+    ...userMetadata,
+    userId: searchContext.userId ?? undefined,
+    workspaceId: searchContext.workspaceId ?? undefined,
   }
 
   const fragments: MinimalAgentFragment[] = await Promise.all(
@@ -57,10 +82,12 @@ export async function formatSearchToolResponse(
         id: fragmentId,
         content: await answerContextMap(
           r,
-          userMetadata,
+          metadataForContext,
           config.maxDefaultSummary,
           undefined,
           r.fields?.sddocname === KbItemsSchema,
+          builtUserQuery || undefined,
+          precomputedDbContext,
         ),
         source: citation,
         confidence: r.relevance || 0.7,

@@ -10,6 +10,7 @@ import type {
   TableInfo,
   TableSyncState,
 } from "./types"
+import type { DatabaseTableSchemaDoc } from "./types"
 import type { DatabaseConnectorConfig } from "@/shared/types"
 import { DatabaseEngine } from "./types"
 
@@ -111,6 +112,101 @@ export class PostgresClient {
       ORDER BY array_position(i.indkey, a.attnum)
     `
     return (rows as unknown as { attname: string }[]).map((r) => r.attname)
+  }
+
+  /** Foreign keys for a table. Used for schema-only docs and SQL generation. */
+  async getForeignKeyColumns(table: string): Promise<
+    { columns: string[]; referencedTable: string; referencedColumns: string[] }[]
+  > {
+    if (!this.sql) throw new Error("Not connected")
+    const schema = this.getSchema()
+    const rows = await this.sql`
+      SELECT
+        array_agg(kcu.column_name ORDER BY kcu.ordinal_position) AS columns,
+        ccu.table_name AS referenced_table,
+        array_agg(ccu.column_name ORDER BY kcu.ordinal_position) AS referenced_columns
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.key_column_usage kcu
+        ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+      JOIN information_schema.constraint_column_usage ccu
+        ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+      WHERE tc.constraint_type = 'FOREIGN KEY'
+        AND tc.table_schema = ${schema}
+        AND tc.table_name = ${table}
+      GROUP BY tc.constraint_name, ccu.table_name
+    `
+    return (rows as unknown as { columns: string[]; referenced_table: string; referenced_columns: string[] }[]).map(
+      (r) => ({
+        columns: r.columns,
+        referencedTable: r.referenced_table,
+        referencedColumns: r.referenced_columns,
+      }),
+    )
+  }
+
+  /** Full schema for one table (columns, PK, FKs, optional row count). Used for schema-only sync. */
+  async getTableSchemaFull(
+    tableName: string,
+    connectorId: string,
+    options?: { includeRowCount?: boolean },
+  ): Promise<DatabaseTableSchemaDoc> {
+    const schema = this.getSchema()
+    const columns = await this.getTableColumns(tableName)
+    const pkColumns = await this.getPrimaryKeyColumns(tableName)
+    const pkSet = new Set(pkColumns)
+    const fkRows = await this.getForeignKeyColumns(tableName)
+    const foreignKeys = fkRows.map((r) => ({
+      columns: r.columns,
+      referencedTable: r.referencedTable,
+      referencedColumns: r.referencedColumns,
+    }))
+    let rowCount: number | undefined
+    if (options?.includeRowCount) {
+      const countRows = await this.sql!.unsafe(
+        `SELECT count(*)::int AS c FROM ${PostgresClient.safeIdentifier(schema)}.${PostgresClient.safeIdentifier(tableName)}`,
+      ) as { c: number }[]
+      rowCount = countRows[0]?.c
+    }
+    const columnList = columns.map((c) => ({
+      name: c.name,
+      type: c.type,
+      nullable: c.nullable,
+      isPrimaryKey: pkSet.has(c.name),
+    }))
+    const description = `Table: ${schema}.${tableName} - ${columns.length} columns (${columns.map((c) => c.name).join(", ")})`
+    return {
+      source: "database_connector",
+      connectorId,
+      tableName,
+      schema,
+      columns: columnList,
+      primaryKey: pkColumns,
+      foreignKeys: foreignKeys.length ? foreignKeys : undefined,
+      rowCount,
+      description,
+    }
+  }
+
+  /**
+   * Execute a read-only SELECT on the client DB. Uses statement_timeout and row limit.
+   * SET LOCAL is run inside a transaction so Postgres does not emit "SET LOCAL can only be used in transaction blocks".
+   * Caller must ensure SQL is validated as SELECT-only (e.g. via validatePostgresQuery).
+   */
+  async executeReadOnlyQuery(
+    sql: string,
+    options?: { timeoutMs?: number; rowLimit?: number },
+  ): Promise<DbRow[]> {
+    if (!this.sql) throw new Error("Not connected")
+    const timeoutMs = options?.timeoutMs ?? 30_000
+    const rowLimit = options?.rowLimit ?? 1000
+    const trimmed = sql.trimEnd().replace(/;\s*$/, "")
+    const hasLimit = /\bLIMIT\s+\d+/i.test(trimmed)
+    const limited = hasLimit ? trimmed : `${trimmed} LIMIT ${rowLimit}`
+    const rows = await this.sql.begin(async (tx) => {
+      await tx.unsafe(`SET LOCAL statement_timeout = '${timeoutMs}'`)
+      return (await tx.unsafe(limited)) as DbRow[]
+    })
+    return Array.isArray(rows) ? rows : []
   }
 
   /** Allow only safe SQL identifiers (table, schema, column names from info_schema). */

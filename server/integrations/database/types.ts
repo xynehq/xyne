@@ -36,3 +36,16 @@ export interface ColumnInfo {
 }
 
 export type DbRow = Record<string, unknown>
+
+/** Schema-only document written to KB (no row data). Used for retrieval → generate SQL → execute on client DB. */
+export interface DatabaseTableSchemaDoc {
+  source: "database_connector"
+  connectorId: string
+  tableName: string
+  schema: string
+  columns: { name: string; type: string; nullable: boolean; isPrimaryKey?: boolean }[]
+  primaryKey: string[]
+  foreignKeys?: { columns: string[]; referencedTable: string; referencedColumns: string[] }[]
+  rowCount?: number
+  description: string
+}

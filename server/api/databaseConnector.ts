@@ -42,7 +42,7 @@ const triggerSyncSchema = z.object({
  * Build full DatabaseConnectorConfig from connector row.
  * Credentials are read from connectors.credentials (decrypted by Drizzle); never log them.
  */
-function assertDatabaseConnectorConfig(connector: {
+export function assertDatabaseConnectorConfig(connector: {
   type: string
   config: unknown
   credentials: string | null
@@ -75,6 +75,26 @@ function assertDatabaseConnectorConfig(connector: {
     ...base,
     auth: { username: creds.username, password: creds.password },
   }
+}
+
+/** Returns DatabaseConnectorConfig from connector row or null if invalid. For use in non-API code (e.g. retrieval). */
+export function getDatabaseConnectorConfig(connector: {
+  type: string
+  config: unknown
+  credentials: string | null
+}): DatabaseConnectorConfig | null {
+  if (connector.type !== ConnectorType.Database) return null
+  const config = connector.config as Record<string, unknown>
+  if (!config?.engine || !config?.host || !config?.database || !connector.credentials?.trim()) return null
+  let creds: DatabaseCredentialsPayload
+  try {
+    creds = JSON.parse(connector.credentials) as DatabaseCredentialsPayload
+  } catch {
+    return null
+  }
+  if (creds.kind !== "database" || typeof creds.username !== "string" || typeof creds.password !== "string") return null
+  const base = config as Omit<DatabaseConnectorConfig, "auth">
+  return { ...base, auth: { username: creds.username, password: creds.password } }
 }
 
 export const TriggerDatabaseSyncApi = async (c: Context) => {
@@ -135,7 +155,10 @@ export const GetDatabaseSyncStateApi = async (c: Context) => {
   if (!connector) throw new HTTPException(404, { message: "Connector not found" })
 
   const tables = await getSyncStateRowsByConnectorId(String(connector.id))
-  return c.json({ tables })
+  const config = connector.config as Record<string, unknown>
+  const tablesConfig = config?.tables as { embed?: string[] } | undefined
+  const embedTables = tablesConfig?.embed ?? []
+  return c.json({ tables, embedTables })
 }
 
 export const CreateDatabaseConnectorApi = async (c: Context) => {
@@ -159,6 +182,9 @@ export const CreateDatabaseConnectorApi = async (c: Context) => {
     }
     if (body.tablesIgnore?.trim()) {
       tables.ignore = body.tablesIgnore.split(",").map((s) => s.trim()).filter(Boolean)
+    }
+    if (body.tablesEmbed?.trim()) {
+      tables.embed = body.tablesEmbed.split(",").map((s) => s.trim()).filter(Boolean)
     }
     const config = {
       engine: body.engine as DatabaseEngine,
@@ -291,20 +317,6 @@ const syncTableSchema = z.object({
   tableName: z.string().min(1),
 })
 
-const validateCredentialsSchema = z.object({
-  connectorId: z.string().min(1),
-  username: z.string().min(1, "Username is required"),
-  password: z.string().min(1, "Password is required"),
-})
-
-const changePasswordSchema = z.object({
-  connectorId: z.string().min(1),
-  currentUsername: z.string().min(1, "Current username is required"),
-  currentPassword: z.string().min(1, "Current password is required"),
-  newUsername: z.string().min(1, "New username is required"),
-  newPassword: z.string().min(1, "New password is required"),
-})
-
 const updateDatabaseConnectorSchema = z.object({
   connectorId: z.string().min(1),
   name: z.string().min(1, "Name is required"),
@@ -315,6 +327,7 @@ const updateDatabaseConnectorSchema = z.object({
   schema: z.string().optional(),
   tablesInclude: z.string().optional(),
   tablesIgnore: z.string().optional(),
+  tablesEmbed: z.string().optional(),
   watermarkColumn: z.string().optional(),
   batchSize: z.number().int().positive().default(1000),
 })
@@ -368,25 +381,25 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
   // Build the updated config - check for presence (undefined) not truthy to allow clearing filters
   const hasTablesInclude = body.tablesInclude !== undefined
   const hasTablesIgnore = body.tablesIgnore !== undefined
-
-  const tables: DatabaseConnectorConfig["tables"] = {}
-  if (hasTablesInclude) {
-    tables.include = body.tablesInclude!.trim()
-      ? body.tablesInclude!.split(",").map((s) => s.trim()).filter(Boolean)
-      : []
-  }
-  if (hasTablesIgnore) {
-    tables.ignore = body.tablesIgnore!.trim()
-      ? body.tablesIgnore!.split(",").map((s) => s.trim()).filter(Boolean)
-      : []
-  }
+  const hasTablesEmbed = body.tablesEmbed !== undefined
 
   const existingConfig = connector.config as Record<string, unknown>
 
-  // Only update tables if either tablesInclude or tablesIgnore was provided
-  const tablesConfig = (hasTablesInclude || hasTablesIgnore)
-    ? (Object.keys(tables).length ? tables : undefined)
-    : (undefined)
+  const tables: DatabaseConnectorConfig["tables"] = {}
+  tables.include = hasTablesInclude
+    ? (body.tablesInclude!.trim() ? body.tablesInclude!.split(",").map((s) => s.trim()).filter(Boolean) : [])
+    : []
+  tables.ignore = hasTablesIgnore
+    ? (body.tablesIgnore!.trim() ? body.tablesIgnore!.split(",").map((s) => s.trim()).filter(Boolean) : [])
+    : []
+  tables.embed = hasTablesEmbed
+    ? (body.tablesEmbed!.trim() ? body.tablesEmbed!.split(",").map((s) => s.trim()).filter(Boolean) : [])
+    : []
+
+  const tablesConfig =
+    hasTablesInclude || hasTablesIgnore || hasTablesEmbed
+      ? (Object.keys(tables).length ? tables : undefined)
+      : existingConfig.tables
 
   const updatedConfig = {
     ...existingConfig,

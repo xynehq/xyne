@@ -34,6 +34,7 @@ interface DatabaseConnectorForm {
   password: string
   tablesInclude: string
   tablesIgnore: string
+  tablesEmbed: string
   watermarkColumn: string
   batchSize: number
 }
@@ -49,6 +50,7 @@ const defaultForm: DatabaseConnectorForm = {
   password: "",
   tablesInclude: "",
   tablesIgnore: "",
+  tablesEmbed: "",
   watermarkColumn: "",
   batchSize: 1000,
 }
@@ -64,6 +66,7 @@ async function createDatabaseConnector(body: {
   password: string
   tablesInclude?: string
   tablesIgnore?: string
+  tablesEmbed?: string
   watermarkColumn?: string
   batchSize: number
 }) {
@@ -89,6 +92,7 @@ async function updateDatabaseConnector(body: {
   schema?: string
   tablesInclude?: string
   tablesIgnore?: string
+  tablesEmbed?: string
   watermarkColumn?: string
   batchSize: number
 }) {
@@ -280,6 +284,7 @@ export function DatabaseConnectorDialog({
         schema: editingConnector.config?.schema || "",
         tablesInclude: editingConnector.config?.tables?.include?.join(", ") || "",
         tablesIgnore: editingConnector.config?.tables?.ignore?.join(", ") || "",
+        tablesEmbed: editingConnector.config?.tables?.embed?.join(", ") || "",
         watermarkColumn: editingConnector.config?.watermarkColumn || "",
         batchSize: editingConnector.config?.batchSize || 1000,
       }
@@ -302,6 +307,7 @@ export function DatabaseConnectorDialog({
       password: formData.get("password") as string,
       tablesInclude: formData.get("tablesInclude") as string,
       tablesIgnore: formData.get("tablesIgnore") as string,
+      tablesEmbed: formData.get("tablesEmbed") as string,
       watermarkColumn: formData.get("watermarkColumn") as string,
       batchSize: parseInt(formData.get("batchSize") as string, 10) || 1000,
     }
@@ -317,6 +323,7 @@ export function DatabaseConnectorDialog({
       password: data.password,
       tablesInclude: data.tablesInclude || undefined,
       tablesIgnore: data.tablesIgnore || undefined,
+      tablesEmbed: data.tablesEmbed || undefined,
       watermarkColumn: data.watermarkColumn || undefined,
       batchSize: data.batchSize,
     })
@@ -336,6 +343,7 @@ export function DatabaseConnectorDialog({
       schema: formData.get("schema") as string,
       tablesInclude: formData.get("tablesInclude") as string,
       tablesIgnore: formData.get("tablesIgnore") as string,
+      tablesEmbed: formData.get("tablesEmbed") as string,
       watermarkColumn: formData.get("watermarkColumn") as string,
       batchSize: parseInt(formData.get("batchSize") as string, 10) || 1000,
     }
@@ -346,6 +354,7 @@ export function DatabaseConnectorDialog({
       schema: data.schema || undefined,
       tablesInclude: data.tablesInclude || undefined,
       tablesIgnore: data.tablesIgnore || undefined,
+      tablesEmbed: data.tablesEmbed || undefined,
       watermarkColumn: data.watermarkColumn || undefined,
     })
   }
@@ -500,6 +509,18 @@ export function DatabaseConnectorDialog({
                   placeholder="migrations,logs"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tablesEmbed">Tables to embed</Label>
+              <Input
+                id="tablesEmbed"
+                name="tablesEmbed"
+                defaultValue={form.tablesEmbed}
+                placeholder="users,messages"
+              />
+              <p className="text-xs text-muted-foreground">
+                Tables listed here are synced as full CSV data (queried via DuckDB). All other synced tables use schema-only (JSON); queries run live on your database.
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

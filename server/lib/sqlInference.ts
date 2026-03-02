@@ -1,10 +1,11 @@
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import type { DuckDBQuery } from "@/types";
+import type { DuckDBQuery } from "@/types"
 import { getProviderByModel } from "@/ai/provider"
 import type { Models } from "@/ai/types"
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import config from "@/config"
+import type { DatabaseTableSchemaDoc } from "@/integrations/database/types"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "sqlInference",
@@ -136,4 +137,89 @@ ${fewShotSamples}`;
   }
 }
 
+export interface PostgresQueryResult {
+  sql: string
+  notes: string
+}
 
+/**
+ * Generate Postgres-compatible SQL from a user question and multiple table schemas (e.g. from schema-only KB docs).
+ * Returns null if the query is not metric/data-related or generation fails.
+ */
+export const generatePostgresSQL = async (
+  query: string,
+  tableSchemas: DatabaseTableSchemaDoc[],
+  defaultSchema: string = "public",
+): Promise<PostgresQueryResult | null> => {
+  const model = config.sqlInferenceModel as Models
+  if (!model) {
+    Logger.warn("SQL inference model not set, returning null")
+    return null
+  }
+  if (!tableSchemas.length) return null
+
+  const stripNoise = (s: string) => {
+    let t = s.trim()
+    t = t.replace(/```(?:json)?/gi, "").replace(/```/g, "")
+    const start = t.indexOf("{")
+    const end = t.lastIndexOf("}")
+    if (start !== -1 && end !== -1 && end > start) t = t.slice(start, end + 1)
+    return t.trim()
+  }
+
+  const schemaText = tableSchemas
+    .map(
+      (t) =>
+        `Table: ${t.schema}.${t.tableName} (${t.rowCount != null ? `~${t.rowCount} rows` : ""})
+  Columns: ${t.columns.map((c) => `${c.name} (${c.type}${c.nullable ? ", nullable" : ""}${c.isPrimaryKey ? ", PK" : ""})`).join(", ")}
+  Primary key: ${t.primaryKey.join(", ")}
+  ${t.foreignKeys?.length ? `Foreign keys: ${t.foreignKeys.map((fk) => `${fk.columns.join(", ")} -> ${fk.referencedTable}(${fk.referencedColumns.join(", ")})`).join("; ")}` : ""}`,
+    )
+    .join("\n\n")
+
+  const prompt = `You are a Postgres SQL generator. The user asked a question about their database.
+
+If the question is NOT answerable with a SELECT over the given tables, respond with: {"isMetric": false, "sql": null, "notes": "Query is not answerable with the given schema"}
+
+If it IS answerable, generate a single Postgres SELECT statement.
+- Use table names qualified with schema: ${defaultSchema}.table_name
+- Use ONLY columns that exist in the schema below. Do NOT invent columns.
+- Output a SINGLE SELECT. No CREATE/INSERT/UPDATE/DELETE. No multiple statements.
+- You may use JOINs, WHERE, GROUP BY, ORDER BY, LIMIT, and CTEs (WITH ... SELECT ...).
+- Output must be a single-line minified JSON: {"isMetric": true, "sql": "SELECT ...", "notes": "brief reasoning"}
+
+User question: ${query}
+
+Schema (all tables in the same database):
+${schemaText}`
+
+  try {
+    const provider = getProviderByModel(model)
+    const messages: Message[] = [{ role: "user", content: [{ text: prompt }] }]
+    const modelParams = {
+      modelId: model,
+      temperature: 0.1,
+      max_new_tokens: 512,
+      stream: false,
+      systemPrompt: "You generate Postgres SELECT statements only. Output valid JSON.",
+    }
+    const response = await provider.converse(messages, modelParams)
+    const responseText = response.text || ""
+    const cleaned = stripNoise(responseText)
+    let parsed: { isMetric: boolean; sql: string | null; notes: string }
+    try {
+      parsed = JSON.parse(cleaned)
+    } catch (e) {
+      Logger.error("Failed to parse Postgres SQL response as JSON", { cleaned })
+      return null
+    }
+    if (!parsed.sql) {
+      Logger.debug("Postgres SQL not generated", parsed.notes)
+      return null
+    }
+    return { sql: parsed.sql, notes: parsed.notes }
+  } catch (error) {
+    Logger.error("Failed to generate Postgres SQL:", error)
+    return null
+  }
+}

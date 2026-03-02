@@ -9,6 +9,7 @@ import type {
   TableInfo,
   TableSyncState,
 } from "./types"
+import type { DatabaseTableSchemaDoc } from "./types"
 import type { DatabaseConnectorConfig } from "@/shared/types"
 import { DatabaseEngine } from "./types"
 import { PostgresClient } from "./client-postgres"
@@ -24,6 +25,17 @@ export interface DatabaseClient {
     state: TableSyncState,
     batchSize: number,
     watermarkColumn?: string,
+  ): Promise<DbRow[]>
+  /** Schema-only sync: full table metadata (columns, PK, FKs). Optional for engines that don't support it yet. */
+  getTableSchemaFull?(
+    tableName: string,
+    connectorId: string,
+    options?: { includeRowCount?: boolean },
+  ): Promise<DatabaseTableSchemaDoc>
+  /** Run a read-only SELECT (for schema-only retrieval). Caller must validate SQL. Optional. */
+  executeReadOnlyQuery?(
+    sql: string,
+    options?: { timeoutMs?: number; rowLimit?: number },
   ): Promise<DbRow[]>
 }
 

@@ -414,15 +414,22 @@ function ConnectorRow({
               <TableHeader>
                 <TableRow>
                   <TableHead>Table</TableHead>
+                  <TableHead>Mode</TableHead>
                   <TableHead>Rows synced</TableHead>
                   <TableHead>Last updated</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {syncState.tables.map((t: any) => (
+                {syncState.tables.map((t: any) => {
+                  const embedTables = syncState.embedTables ?? []
+                  const isEmbed = embedTables.some(
+                    (name: string) => name.toLowerCase() === t.tableName?.toLowerCase(),
+                  )
+                  return (
                   <TableRow key={t.tableName}>
                     <TableCell>{t.tableName}</TableCell>
+                    <TableCell>{isEmbed ? "Data" : "Schema"}</TableCell>
                     <TableCell>{t.rowsSynced ?? 0}</TableCell>
                     <TableCell>
                       {t.updatedAt ? formatDate(t.updatedAt) : "—"}
@@ -444,7 +451,8 @@ function ConnectorRow({
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           ) : (

@@ -11,6 +11,7 @@ import CsvViewer from "./CsvViewer"
 import { DocumentOperations } from "@/contexts/DocumentOperationsContext"
 import TxtViewer from "./TxtViewer"
 import { useScopedFind } from "@/hooks/useScopedFind"
+import JsonViewer from "./JsonViewer"
 
 interface CitationPreviewProps {
   citation: Citation | null
@@ -263,6 +264,17 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
         return (
           <div ref={containerRef} data-container-ref="true" className="h-full">
             <TxtViewer
+              key={citation.docId}
+              source={file}
+              className="h-full"
+              style={{ overflow: "visible" }}
+            />
+          </div>
+        )
+      case "json":
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <JsonViewer
               key={citation.docId}
               source={file}
               className="h-full"

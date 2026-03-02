@@ -14,7 +14,9 @@ export interface SQLValidationResult {
 }
 
 export interface SQLValidationOptions {
-  allowedViewName: string;
+  allowedViewName?: string;
+  /** For Postgres multi-table: allow only these table names (case-insensitive). Table can be "schema.name" or "name". */
+  allowedTableNames?: string[];
   allowSubqueries?: boolean;
   allowJoins?: boolean;
   allowWindowFunctions?: boolean;
@@ -122,13 +124,37 @@ export class SQLValidator {
     try {
       const tableList = this.parser.tableList(sql);
       Logger.debug("Raw table list:", tableList);
-      const allowedViewName = this.options.allowedViewName.toLowerCase();
-      
+
+      const allowedTableNames = this.options.allowedTableNames;
+      if (allowedTableNames?.length) {
+        const allowedSet = new Set(
+          allowedTableNames.map((t) => t.toLowerCase()),
+        );
+        for (const table of tableList) {
+          const tableName = this.extractTableNameFromString(table);
+          if (!tableName) continue;
+          const normalized = tableName.toLowerCase();
+          const shortName = normalized.includes(".")
+            ? normalized.split(".").pop() ?? normalized
+            : normalized;
+          if (!allowedSet.has(normalized) && !allowedSet.has(shortName)) {
+            return {
+              isValid: false,
+              error: `Access to table '${tableName}' is not allowed. Allowed: ${allowedTableNames.join(", ")}`,
+            };
+          }
+        }
+        return { isValid: true };
+      }
+
+      const allowedViewName = (this.options.allowedViewName ?? "").toLowerCase();
+      if (!allowedViewName) {
+        return { isValid: false, error: "allowedViewName or allowedTableNames is required" };
+      }
+
       for (const table of tableList) {
-        // Extract the actual table name from the complex string format
         const tableName = this.extractTableNameFromString(table);
         Logger.debug(`Extracted table name: "${tableName}" from "${table}"`);
-        
         if (tableName && tableName.toLowerCase() !== allowedViewName) {
           return {
             isValid: false,
@@ -303,17 +329,34 @@ export class SQLValidator {
 }
 
 /**
- * Convenience function to validate SQL with default options
+ * Convenience function to validate SQL with default options (single table / DuckDB view).
  */
 export function validateSQLQuery(
   sql: string,
   allowedViewName: string,
-  options?: Partial<SQLValidationOptions>
+  options?: Partial<SQLValidationOptions>,
 ): SQLValidationResult {
   const validator = new SQLValidator({
     allowedViewName,
     ...options,
   });
-  
+  return validator.validateSQL(sql);
+}
+
+/**
+ * Validate Postgres SELECT for multi-table queries. Allows only tables in the allowlist; allows JOINs and CTEs.
+ */
+export function validatePostgresQuery(
+  sql: string,
+  allowedTableNames: string[],
+  options?: Partial<Pick<SQLValidationOptions, "allowSubqueries" | "allowCTEs">>,
+): SQLValidationResult {
+  const validator = new SQLValidator({
+    allowedTableNames,
+    allowJoins: true,
+    allowSubqueries: options?.allowSubqueries ?? true,
+    allowCTEs: options?.allowCTEs ?? true,
+    allowWindowFunctions: true,
+  });
   return validator.validateSQL(sql);
 }

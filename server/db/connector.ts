@@ -715,6 +715,26 @@ export async function getOrCreateDatabaseConnectorKbCollectionId(
   })
 }
 
+/**
+ * Get database connector external id by the KB collection id it owns (state.kbCollectionId).
+ * Used when Vespa doc has mimeType application/x-database-schema but metadata was ingested without connectorId.
+ */
+export async function getDatabaseConnectorExternalIdByKbCollectionId(
+  collectionId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({ externalId: connectors.externalId })
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.app, Apps.Database),
+        sql`${connectors.state}->>'kbCollectionId' = ${collectionId}`,
+      ),
+    )
+    .limit(1)
+  return rows[0]?.externalId ?? null
+}
+
   /**
    * Clear kbCollectionId from any database connector that has this collection linked.
    * Call when a KB collection (or an item in it) is deleted so the next sync creates a new collection.

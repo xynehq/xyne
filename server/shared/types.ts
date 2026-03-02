@@ -847,7 +847,8 @@ export interface DatabaseConnectorConfig {
   port: number
   database: string
   schema?: string
-  tables?: { include?: string[]; ignore?: string[] }
+  /** include/ignore filter which tables to sync; embed = table names to sync as full data (CSV). Others sync as schema-only (JSON). */
+  tables?: { include?: string[]; ignore?: string[]; embed?: string[] }
   auth: { username: string; password: string }
   batchSize: number
   concurrency: number

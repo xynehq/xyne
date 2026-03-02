@@ -182,6 +182,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       uploadedById: collectionItems.uploadedById,
       retryCount: collectionItems.retryCount,
       collectionName: collections.name,
+      metadata: collectionItems.metadata,
     })
     .from(collectionItems)
     .innerJoin(collections, eq(collectionItems.collectionId, collections.id))
@@ -334,6 +335,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
             sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
             totalSheets: (processingResult as SheetProcessingResult).totalSheets,
           }),
+          ...(typeof file.metadata === "object" && file.metadata !== null && { ...file.metadata }),
         }),
         createdBy: file.uploadedByEmail || "system",
         duration: 0,

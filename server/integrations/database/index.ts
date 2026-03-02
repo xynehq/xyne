@@ -1,11 +1,11 @@
 /**
- * Database connector: sync database tables to Knowledge Base as CSV files.
- * Each table is exported to CSV, written to KB storage, and processed by the
- * same file processor used for sheets/CSVs (chunkSheetWithHeaders → kb_items).
+ * Database connector: sync database tables to Knowledge Base.
+ * - Tables in config.tables.embed are synced as full data (CSV) and queried via DuckDB.
+ * - Other tables are synced as schema-only (JSON); retrieval generates SQL and runs on client DB.
  */
 
 import { createWriteStream } from "node:fs"
-import { mkdir, unlink, stat } from "node:fs/promises"
+import { mkdir, unlink, stat, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { Writable } from "node:stream"
 import { finished } from "node:stream/promises"
@@ -16,6 +16,9 @@ import { getDefaultDatabaseConfig } from "./config"
 import type { TableInfo, TableSyncState } from "./types"
 import type { DatabaseConnectorConfig } from "@/shared/types"
 import { csvHeader, getColumnNames, rowsToCsvLines } from "./csvExport"
+
+/** Mime type for KB items that are database table schema (no row data). Triggers SQL generation + execute on client DB. */
+export const MIME_DATABASE_SCHEMA = "application/x-database-schema"
 import {
   saveTableSyncState,
 } from "@/db/databaseSyncState"
@@ -53,6 +56,17 @@ function filterTables(
     out = out.filter((t) => !set.has(t.name.toLowerCase()))
   }
   return out
+}
+
+/** True if this table should be synced as full data (CSV). Otherwise sync as schema-only (JSON). */
+function isTableEmbed(
+  config: DatabaseConnectorConfig["tables"],
+  tableName: string,
+): boolean {
+  const embed = config?.embed
+  if (!embed?.length) return false
+  const set = new Set(embed.map((t) => t.toLowerCase()))
+  return set.has(tableName.toLowerCase())
 }
 
 export interface DatabaseSyncKbContext {
@@ -215,6 +229,138 @@ async function syncTableToKb(
   batchSize: number,
 ): Promise<{ rowsSynced: number }> {
   const tableName = table.name
+  const embed = isTableEmbed(config.tables, tableName)
+
+  if (embed) {
+    return syncTableToKbAsCsv(
+      client,
+      tableName,
+      config,
+      connectorId,
+      collectionId,
+      kbContext,
+      batchSize,
+    )
+  }
+
+  return syncTableToKbAsSchema(
+    client,
+    tableName,
+    connectorId,
+    collectionId,
+    kbContext,
+  )
+}
+
+async function syncTableToKbAsSchema(
+  client: import("./client").DatabaseClient,
+  tableName: string,
+  connectorId: string,
+  collectionId: string,
+  kbContext: DatabaseSyncKbContext,
+): Promise<{ rowsSynced: number }> {
+  if (!client.getTableSchemaFull) {
+    Logger.warn(
+      { table: tableName },
+      "Schema-only sync not supported for this engine; skipping",
+    )
+    return { rowsSynced: 0 }
+  }
+
+  const schemaDoc = await client.getTableSchemaFull(tableName, connectorId, {
+    includeRowCount: true,
+  })
+  const fileName = `${tableName}.json`
+  const storageKey = generateStorageKey()
+  const vespaDocId = generateFileVespaDocId()
+  const storagePath = getStoragePath(
+    kbContext.workspaceExternalId,
+    collectionId,
+    storageKey,
+    fileName,
+  )
+
+  await mkdir(dirname(storagePath), { recursive: true })
+  await writeFile(storagePath, JSON.stringify(schemaDoc, null, 2), "utf-8")
+  const fileStats = await stat(storagePath)
+  const fileSize = fileStats.size
+
+  const collection = await getCollectionById(db, collectionId)
+  if (!collection) throw new Error("KB collection not found")
+
+  const existing = await getCollectionItemByPath(db, collectionId, "/", fileName)
+
+  const item = await db.transaction(async (tx) => {
+    if (existing) {
+      if (existing.storagePath && existing.storagePath !== storagePath) {
+        unlink(existing.storagePath).catch(() => {})
+      }
+      await updateCollectionItem(tx, existing.id, {
+        storagePath,
+        fileSize,
+        uploadStatus: UploadStatus.PENDING,
+        statusMessage: "Database sync (schema): queued for processing",
+        metadata: {
+          source: "database_connector",
+          connectorId,
+          tableName,
+        },
+        updatedAt: new Date(),
+      })
+      await markParentAsProcessing(tx, collectionId, true)
+      return existing
+    }
+    return await createFileItem(
+      tx,
+      collectionId,
+      null,
+      fileName,
+      vespaDocId,
+      fileName,
+      storagePath,
+      storageKey,
+      MIME_DATABASE_SCHEMA,
+      fileSize,
+      null,
+      {
+        source: "database_connector",
+        connectorId,
+        tableName,
+      },
+      kbContext.userId,
+      kbContext.userEmail,
+      "Database sync (schema): queued for processing",
+    )
+  })
+
+  const fileId = typeof item.id === "string" ? item.id : String(item.id)
+  await boss.send(
+    FileProcessingQueue,
+    { fileId, type: "file" as const },
+    { retryLimit: 3, expireInHours: 12 },
+  )
+
+  await saveTableSyncState(connectorId, tableName, {
+    table: tableName,
+    rowsSynced: 0,
+  })
+
+  Logger.info(
+    { connectorId, table: tableName, fileId: item.id },
+    "Database connector: table synced to KB as schema (JSON)",
+  )
+  return { rowsSynced: 0 }
+}
+
+async function syncTableToKbAsCsv(
+  client: import("./client").DatabaseClient,
+  tableName: string,
+  config: DatabaseConnectorConfig,
+  connectorId: string,
+  collectionId: string,
+  kbContext: DatabaseSyncKbContext,
+  batchSize: number,
+): Promise<{ rowsSynced: number }> {
   const columns = await client.getTableColumns(tableName)
   const pkColumns = await client.getPrimaryKeyColumns(tableName)
   if (pkColumns.length === 0) {
@@ -248,9 +394,7 @@ async function syncTableToKb(
   const fileSize = fileStats.size
 
   const collection = await getCollectionById(db, collectionId)
-  if (!collection) {
-    throw new Error("KB collection not found")
-  }
+  if (!collection) throw new Error("KB collection not found")
 
   const existing = await getCollectionItemByPath(db, collectionId, "/", fileName)
 
@@ -259,17 +403,18 @@ async function syncTableToKb(
       if (existing.storagePath && existing.storagePath !== storagePath) {
         unlink(existing.storagePath).catch(() => {})
       }
-      await updateCollectionItem(
-        tx,
-        existing.id,
-        {
-          storagePath,
-          fileSize,
-          uploadStatus: UploadStatus.PENDING,
-          statusMessage: "Database sync: queued for processing",
-          updatedAt: new Date(),
+      await updateCollectionItem(tx, existing.id, {
+        storagePath,
+        fileSize,
+        uploadStatus: UploadStatus.PENDING,
+        statusMessage: "Database sync: queued for processing",
+        metadata: {
+          source: "database_connector",
+          connectorId,
+          tableName,
         },
-      )
+        updatedAt: new Date(),
+      })
       await markParentAsProcessing(tx, collectionId, true)
       return existing
     }
