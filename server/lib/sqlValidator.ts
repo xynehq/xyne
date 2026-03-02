@@ -6,6 +6,41 @@ const Logger = getLogger(Subsystem.Integrations).child({
   module: "sqlValidator",
 });
 
+/** Postgres functions that must not be callable from LLM-generated SQL (DoS, file access, etc.). */
+const BLOCKED_POSTGRES_FUNCTIONS = new Set(
+  [
+    "pg_sleep",
+    "pg_sleep_until",
+    "lo_import",
+    "lo_export",
+    "lo_from_bytea",
+    "pg_read_file",
+    "pg_ls_dir",
+    "pg_read_binary_file",
+    "dblink",
+    "dblink_exec",
+    "dblink_connect",
+    "dblink_send_query",
+    "dblink_get_result",
+    "dblink_get_connections",
+    "dblink_disconnect",
+    "dblink_cancel_query",
+    "copy_from",
+    "current_setting",
+    "set_config",
+    "txid_current",
+    "pg_backend_pid",
+    "pg_trigger_depth",
+    "pg_advisory_lock",
+    "pg_advisory_unlock",
+    "pg_advisory_xact_lock",
+    "pg_advisory_xact_unlock",
+    "pg_notify",
+    "pg_export_snapshot",
+    "pg_create_restore_point",
+  ].map((s) => s.toLowerCase()),
+);
+
 export interface SQLValidationResult {
   isValid: boolean;
   sanitizedSQL?: string;
@@ -77,6 +112,12 @@ export class SQLValidator {
         return tableValidation;
       }
 
+      // Block dangerous function calls (LLM-generated SQL)
+      const functionValidation = this.validateNoBlockedFunctions(ast);
+      if (!functionValidation.isValid) {
+        return functionValidation;
+      }
+
       // Validate query structure
       const structureValidation = this.validateQueryStructure(ast);
       if (!structureValidation.isValid) {
@@ -105,6 +146,44 @@ export class SQLValidator {
       Logger.error("SQL parsing failed:", error);
       return null;
     }
+  }
+
+  private collectFunctionNames(ast: any, out: Set<string>): void {
+    if (!ast) return;
+    if (Array.isArray(ast)) {
+      ast.forEach((node: any) => this.collectFunctionNames(node, out));
+      return;
+    }
+    if (ast.type === "function") {
+      const name = ast.name;
+      if (typeof name === "string") {
+        out.add(name.toLowerCase());
+      } else if (name && typeof name === "object") {
+        const n = (name.name ?? name).toString().toLowerCase();
+        if (n) out.add(n);
+      }
+    }
+    for (const key of ["expr", "left", "right", "operand", "value", "condition", "then", "else", "query", "body"]) {
+      if (ast[key]) this.collectFunctionNames(ast[key], out);
+    }
+    for (const key of ["columns", "from", "where", "groupby", "having", "orderby", "with"]) {
+      const arr = ast[key];
+      if (Array.isArray(arr)) arr.forEach((node: any) => this.collectFunctionNames(node, out));
+    }
+  }
+
+  private validateNoBlockedFunctions(ast: any): SQLValidationResult {
+    const names = new Set<string>();
+    this.collectFunctionNames(ast, names);
+    for (const n of names) {
+      if (BLOCKED_POSTGRES_FUNCTIONS.has(n)) {
+        return {
+          isValid: false,
+          error: `Call to function '${n}' is not allowed for security reasons.`,
+        };
+      }
+    }
+    return { isValid: true };
   }
 
   private validateStatementType(ast: any): SQLValidationResult {

@@ -77,7 +77,10 @@ export function assertDatabaseConnectorConfig(connector: {
   }
 }
 
-/** Returns DatabaseConnectorConfig from connector row or null if invalid. For use in non-API code (e.g. retrieval). */
+/**
+ * Returns DatabaseConnectorConfig from connector row or null if invalid. For use in non-API code (e.g. retrieval).
+ * connector.credentials is decrypted at read by the schema's encryptedText type (db/schema/connectors.ts).
+ */
 export function getDatabaseConnectorConfig(connector: {
   type: string
   config: unknown

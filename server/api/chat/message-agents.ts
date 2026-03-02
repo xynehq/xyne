@@ -156,7 +156,7 @@ import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
 import { parseMessageText } from "./chat"
 import { getUserPersonalizationByEmail } from "@/db/personalization"
 import { getChunkCountPerDoc } from "./chunk-selection"
-import { buildPrecomputedDbContext } from "@/lib/databaseContext"
+import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 
 const {
   defaultBestModel,
@@ -1467,20 +1467,12 @@ async function prepareInitialAttachmentContext(
         threadSpan?.end()
       }
     
-    let precomputedDbContext = new Map<string, string>()
-    if (
-      userMetadata.userId != null &&
-      userMetadata.workspaceId != null &&
-      typeof query === "string" &&
-      query.trim()
-    ) {
-      precomputedDbContext = await buildPrecomputedDbContext(
-        combinedSearchResponse as VespaSearchResults[],
-        query,
-        userMetadata.userId,
-        userMetadata.workspaceId,
-      )
-    }
+    const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+      combinedSearchResponse as VespaSearchResults[],
+      query,
+      userMetadata.userId,
+      userMetadata.workspaceId,
+    )
     const fragments = await Promise.all(
       combinedSearchResponse.map((child, idx) =>
         vespaResultToAttachmentFragment(

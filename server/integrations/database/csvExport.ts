@@ -3,7 +3,11 @@
  * Uses RFC 4180-style escaping so FileProcessorService (sheet/CSV path) can chunk it.
  */
 
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
 import type { ColumnInfo, DbRow } from "./types"
+
+const Logger = getLogger(Subsystem.Integrations).child({ module: "csvExport" })
 
 function escapeCsvCell(value: unknown): string {
   if (value == null) return ""
@@ -18,14 +22,32 @@ function escapeCsvCell(value: unknown): string {
   return s
 }
 
+function getBinaryColumns(columnNames: string[], rows: DbRow[]): string[] {
+  const binary = new Set<string>()
+  for (const row of rows) {
+    for (const col of columnNames) {
+      if (Buffer.isBuffer(row[col])) binary.add(col)
+    }
+  }
+  return [...binary]
+}
+
 /**
  * Build a CSV buffer from column names and rows (header row + data rows).
  * Column order follows columnNames; row values are taken by key.
+ * Binary columns are replaced with "[binary]"; a log line is emitted listing those columns.
  */
 export function tableRowsToCsvBuffer(
   columnNames: string[],
   rows: DbRow[],
 ): Buffer {
+  const binaryCols = getBinaryColumns(columnNames, rows)
+  if (binaryCols.length > 0) {
+    Logger.info(
+      { columns: binaryCols },
+      "CSV export: binary columns replaced with [binary]",
+    )
+  }
   const header = columnNames.map(escapeCsvCell).join(",")
   const lines = [header]
   for (const row of rows) {
@@ -52,9 +74,17 @@ export function csvHeader(columnNames: string[]): string {
 /**
  * Returns CSV data lines for a batch of rows (no header). Ends with a newline if rows exist.
  * Use for streaming: write header first, then call this per batch and write to stream.
+ * Logs when binary columns in the batch are replaced with [binary].
  */
 export function rowsToCsvLines(columnNames: string[], rows: DbRow[]): string {
   if (rows.length === 0) return ""
+  const binaryCols = getBinaryColumns(columnNames, rows)
+  if (binaryCols.length > 0) {
+    Logger.info(
+      { columns: binaryCols },
+      "CSV export: binary columns replaced with [binary]",
+    )
+  }
   const lines = rows.map((row) =>
     columnNames.map((col) => escapeCsvCell(row[col])).join(","),
   )

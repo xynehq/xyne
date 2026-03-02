@@ -38,7 +38,11 @@ export class PostgresClient {
     const user = encodeURIComponent(username)
     const password = encodeURIComponent(pwd)
     const sslMode = ssl?.rejectUnauthorized === false ? "require" : "prefer"
-    return `postgres://${user}:${password}@${host}:${port}/${database}?sslmode=${sslMode}`
+    // URI-encode all components to prevent connection string manipulation (e.g. host="evil.com/foo?sslmode=disable")
+    const hostEnc = encodeURIComponent(String(host))
+    const portEnc = encodeURIComponent(String(port))
+    const dbEnc = encodeURIComponent(String(database))
+    return `postgres://${user}:${password}@${hostEnc}:${portEnc}/${dbEnc}?sslmode=${sslMode}`
   }
 
   async connect(): Promise<void> {
@@ -293,7 +297,10 @@ export class PostgresClient {
     return Array.isArray(rows) ? rows : []
   }
 
-  /** Allow only safe SQL identifiers (table, schema, column names from info_schema). */
+  /**
+   * Quote a SQL identifier. Security boundary is the regex: only [a-zA-Z_][a-zA-Z0-9_]* is allowed.
+   * Do not relax the regex (e.g. to allow hyphens or Unicode) without proper escaping.
+   */
   private static safeIdentifier(name: string): string {
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
       throw new Error(`Invalid identifier: ${name}`)
@@ -321,14 +328,27 @@ export class PostgresClient {
 
     if (watermarkColumn && state.lastUpdatedAt != null) {
       const quotedWatermark = PostgresClient.safeIdentifier(watermarkColumn)
-      // Validate lastUpdatedAt is a safe number/date before use
-      const lastUpdatedAt = new Date(state.lastUpdatedAt).toISOString()
+      const columns = await this.getTableColumns(table)
+      const watermarkCol = columns.find(
+        (c) => c.name.toLowerCase() === watermarkColumn.toLowerCase(),
+      )
+      const dataType = watermarkCol?.type?.toLowerCase() ?? ""
+      const isNumeric =
+        /^(integer|bigint|smallint|numeric|decimal|real|double precision)$/.test(
+          dataType,
+        )
+      const param: string | number =
+        isNumeric && typeof state.lastUpdatedAt === "number"
+          ? state.lastUpdatedAt
+          : isNumeric && typeof state.lastUpdatedAt === "string"
+            ? Number(state.lastUpdatedAt) || new Date(state.lastUpdatedAt).getTime()
+            : new Date(state.lastUpdatedAt).toISOString()
       const rows = await this.sql.unsafe(
         `SELECT * FROM ${fromClause}
          WHERE ${quotedWatermark} > $1
          ORDER BY ${orderByClause}
          LIMIT $2`,
-        [lastUpdatedAt, batchSize]
+        [param, batchSize],
       ) as DbRow[]
       return rows
     }

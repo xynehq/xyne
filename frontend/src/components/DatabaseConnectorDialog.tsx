@@ -519,7 +519,8 @@ export function DatabaseConnectorDialog({
                 placeholder="users,messages"
               />
               <p className="text-xs text-muted-foreground">
-                Tables listed here are synced as full CSV data (queried via DuckDB). All other synced tables use schema-only (JSON); queries run live on your database.
+                <strong>Embed:</strong> Full table data is copied into the Knowledge Base (uses storage; answers query it via DuckDB).{" "}
+                <strong>Schema-only:</strong> Only table structure is stored; when answering, live SQL runs on your database. List table names here to embed; all other synced tables are schema-only.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">

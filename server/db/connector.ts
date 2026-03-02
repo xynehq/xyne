@@ -678,10 +678,12 @@ export async function getDatabaseConnectorForUser(
  * Get or create the KB collection id linked to this database connector (state.kbCollectionId).
  * Creates the collection and updates connector state if not set.
  * Uses SELECT FOR UPDATE inside a transaction to avoid a race where two callers both create a collection.
+ * Accepts either numeric id (string) or externalId so callers can pass either.
  */
 export async function getOrCreateDatabaseConnectorKbCollectionId(
   connectorId: string,
 ): Promise<string> {
+  const byNumericId = /^\d+$/.test(connectorId)
   return await db.transaction(async (tx) => {
     const [conn] = await tx
       .select({
@@ -692,7 +694,9 @@ export async function getOrCreateDatabaseConnectorKbCollectionId(
         userId: connectors.userId,
       })
       .from(connectors)
-      .where(eq(connectors.id, Number(connectorId)))
+      .where(
+        byNumericId ? eq(connectors.id, Number(connectorId)) : eq(connectors.externalId, connectorId),
+      )
       .limit(1)
       .for("update")
     if (!conn) throw new Error("Connector not found")
@@ -710,7 +714,7 @@ export async function getOrCreateDatabaseConnectorKbCollectionId(
         state: { ...state, kbCollectionId: coll.id } as Record<string, unknown>,
         updatedAt: new Date(),
       })
-      .where(eq(connectors.id, Number(connectorId)))
+      .where(eq(connectors.id, conn.id))
     return coll.id
   })
 }

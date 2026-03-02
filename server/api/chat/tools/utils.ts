@@ -21,7 +21,7 @@ import { getDateForAI } from "@/utils/index"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getLogger, Subsystem } from "@/logger"
 import config from "@/config"
-import { buildPrecomputedDbContext } from "@/lib/databaseContext"
+import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 const Logger = getLogger(Subsystem.Chat)
 
 export const userMetadata: UserMetadataType = {
@@ -54,19 +54,12 @@ export async function formatSearchToolResponse(
   }
 
   const builtUserQuery = searchContext.query?.trim() ?? ""
-  let precomputedDbContext: Map<string, string> = new Map()
-  if (
-    searchContext.userId != null &&
-    searchContext.workspaceId != null &&
-    builtUserQuery.length > 0
-  ) {
-    precomputedDbContext = await buildPrecomputedDbContext(
-      children,
-      builtUserQuery,
-      searchContext.userId,
-      searchContext.workspaceId,
-    )
-  }
+  const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+    children,
+    builtUserQuery || undefined,
+    searchContext.userId,
+    searchContext.workspaceId,
+  )
 
   const metadataForContext: UserMetadataType = {
     ...userMetadata,

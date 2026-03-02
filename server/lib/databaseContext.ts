@@ -97,8 +97,59 @@ function extractSchemaFromChunks(chunks: unknown): DatabaseTableSchemaDoc | null
 }
 
 /**
+ * One-liner for the common pattern: only build precomputed DB context when userId, workspaceId, and query are present.
+ * Use this at call sites instead of repeating the null checks and buildPrecomputedDbContext call.
+ */
+export async function getPrecomputedDbContextIfNeeded(
+  searchResults: VespaSearchResults[] | undefined,
+  query: string | undefined,
+  userId: number | null | undefined,
+  workspaceId: number | null | undefined,
+): Promise<Map<string, string>> {
+  if (
+    userId == null ||
+    workspaceId == null ||
+    typeof query !== "string" ||
+    !query.trim()
+  ) {
+    return new Map()
+  }
+  return buildPrecomputedDbContext(searchResults, query, userId, workspaceId)
+}
+
+const PRECOMPUTED_DB_CACHE_TTL_MS = 60_000
+const PRECOMPUTED_DB_MAX_CONCURRENT = 5
+const PRECOMPUTED_DB_ORCHESTRATION_TIMEOUT_MS = 45_000
+
+let precomputedDbCache: {
+  key: string
+  value: Map<string, string>
+  expiresAt: number
+} | null = null
+let precomputedDbRunning = 0
+
+function acquirePrecomputedDbSlot(): Promise<void> {
+  return new Promise((resolve) => {
+    const tryAcquire = () => {
+      if (precomputedDbRunning < PRECOMPUTED_DB_MAX_CONCURRENT) {
+        precomputedDbRunning++
+        resolve()
+      } else {
+        setTimeout(tryAcquire, 20)
+      }
+    }
+    tryAcquire()
+  })
+}
+
+function releasePrecomputedDbSlot(): void {
+  precomputedDbRunning = Math.max(0, precomputedDbRunning - 1)
+}
+
+/**
  * Build a map of connectorId -> formatted context string for database schema-only docs in the search results.
  * Call this before mapping over search results so answerContextMap can use the precomputed context.
+ * Uses a short TTL cache, concurrency limit, and orchestration timeout to avoid latency spikes and pool exhaustion.
  */
 export async function buildPrecomputedDbContext(
   searchResults: VespaSearchResults[] | undefined,
@@ -135,6 +186,55 @@ export async function buildPrecomputedDbContext(
     }
   }
 
+  const cacheKey = `${query.trim()}\n${[...byConnector.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([id, schemas]) => `${id}:${schemas.map((s) => s.tableName).sort().join(",")}`)
+    .join(";")}`
+  const now = Date.now()
+  if (precomputedDbCache?.key === cacheKey && precomputedDbCache.expiresAt > now) {
+    return precomputedDbCache.value
+  }
+
+  const run = async (): Promise<Map<string, string>> => {
+    await acquirePrecomputedDbSlot()
+    try {
+      return await buildPrecomputedDbContextInner(byConnector, query, userId, workspaceId)
+    } finally {
+      releasePrecomputedDbSlot()
+    }
+  }
+
+  try {
+    const result = await Promise.race([
+      run(),
+      new Promise<Map<string, string>>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Precomputed DB context timeout")),
+          PRECOMPUTED_DB_ORCHESTRATION_TIMEOUT_MS,
+        ),
+      ),
+    ])
+    precomputedDbCache = {
+      key: cacheKey,
+      value: result,
+      expiresAt: now + PRECOMPUTED_DB_CACHE_TTL_MS,
+    }
+    return result
+  } catch (err) {
+    if (String(err).includes("timeout")) {
+      Logger.warn("Precomputed DB context skipped: orchestration timeout")
+    }
+    return map
+  }
+}
+
+async function buildPrecomputedDbContextInner(
+  byConnector: Map<string, DatabaseTableSchemaDoc[]>,
+  query: string,
+  userId: number,
+  workspaceId: number,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
   for (const [connectorId, schemas] of byConnector) {
     try {
       const connector = await getDatabaseConnectorForUser(db, connectorId, userId, workspaceId)

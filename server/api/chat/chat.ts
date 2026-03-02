@@ -230,7 +230,7 @@ import { getAuth, safeGet } from "../agent"
 import { getChunkCountPerDoc } from "./chunk-selection"
 import { handleAttachmentDelete } from "../files"
 import { expandSheetIds } from "@/search/utils"
-import { buildPrecomputedDbContext } from "@/lib/databaseContext"
+import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -1133,20 +1133,12 @@ export async function buildContext(
     (r: any) =>
       r.fields?.sddocname === "ticket" || r.fields?.platform === "zoho-desk",
   ).length
-  let precomputedDbContext: Map<string, string> = new Map()
-  if (
-    userMetadata.userId != null &&
-    userMetadata.workspaceId != null &&
-    typeof builtUserQuery === "string" &&
-    builtUserQuery.trim()
-  ) {
-    precomputedDbContext = await buildPrecomputedDbContext(
-      results as VespaSearchResults[],
-      builtUserQuery,
-      userMetadata.userId,
-      userMetadata.workspaceId,
-    )
-  }
+  const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+    results as VespaSearchResults[],
+    builtUserQuery,
+    userMetadata.userId,
+    userMetadata.workspaceId,
+  )
   // Use standard "Index N" format for all document types (including Zoho tickets)
   const contextPromises = results?.map(
     async (v, i) =>
@@ -2284,20 +2276,12 @@ async function* generateAnswerFromGivenContext(
   }
 
   const startIndex = isReasoning ? previousResultsLength : 0
-  let precomputedDbContext: Map<string, string> = new Map()
-  if (
-    userMetadata.userId != null &&
-    userMetadata.workspaceId != null &&
-    typeof builtUserQuery === "string" &&
-    builtUserQuery.trim()
-  ) {
-    precomputedDbContext = await buildPrecomputedDbContext(
-      combinedSearchResponse as VespaSearchResults[],
-      builtUserQuery,
-      userMetadata.userId,
-      userMetadata.workspaceId,
-    )
-  }
+  const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+    combinedSearchResponse as VespaSearchResults[],
+    builtUserQuery,
+    userMetadata.userId,
+    userMetadata.workspaceId,
+  )
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
     let content = await answerContextMap(
       v as VespaSearchResults,
@@ -2864,20 +2848,12 @@ export async function* generateAnswerFromDualRag(
     email,
     generateAnswerSpan,
   )
-  let precomputedDbContext: Map<string, string> = new Map()
-  if (
-    userMetadata.userId != null &&
-    userMetadata.workspaceId != null &&
-    typeof builtUserQuery === "string" &&
-    builtUserQuery.trim()
-  ) {
-    precomputedDbContext = await buildPrecomputedDbContext(
-      combinedSearchResponse as VespaSearchResults[],
-      builtUserQuery,
-      userMetadata.userId,
-      userMetadata.workspaceId,
-    )
-  }
+  const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+    combinedSearchResponse as VespaSearchResults[],
+    builtUserQuery,
+    userMetadata.userId,
+    userMetadata.workspaceId,
+  )
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
     let content = await answerContextMap(
       v as VespaSearchResults,

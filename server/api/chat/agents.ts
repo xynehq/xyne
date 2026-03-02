@@ -102,7 +102,7 @@ import {
 } from "./chat"
 import { getDateForAI } from "@/utils/index"
 import { getAuth, safeGet } from "../agent"
-import { buildPrecomputedDbContext } from "@/lib/databaseContext"
+import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 const {
   defaultBestModel,
   maxDefaultSummary,
@@ -591,20 +591,12 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chunksSpan.end()
             if (allChunks?.root?.children) {
               const startIndex = 0
-              let precomputedDbContext = new Map<string, string>()
-              if (
-                userMetadata.userId != null &&
-                userMetadata.workspaceId != null &&
-                typeof message === "string" &&
-                message.trim()
-              ) {
-                precomputedDbContext = await buildPrecomputedDbContext(
-                  allChunks.root.children as VespaSearchResults[],
-                  message,
-                  userMetadata.userId,
-                  userMetadata.workspaceId,
-                )
-              }
+              const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+                allChunks.root.children as VespaSearchResults[],
+                message,
+                userMetadata.userId,
+                userMetadata.workspaceId,
+              )
               fragments = await Promise.all(
                 allChunks.root.children.map(
                   async (child, idx) =>
@@ -884,20 +876,12 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         if (docIds.length > 0) {
           const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
           if (allChunks?.root?.children) {
-            let precomputedDbContext = new Map<string, string>()
-            if (
-              userMetadata.userId != null &&
-              userMetadata.workspaceId != null &&
-              typeof message === "string" &&
-              message.trim()
-            ) {
-              precomputedDbContext = await buildPrecomputedDbContext(
-                allChunks.root.children as VespaSearchResults[],
-                message,
-                userMetadata.userId,
-                userMetadata.workspaceId,
-              )
-            }
+            const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+              allChunks.root.children as VespaSearchResults[],
+              message,
+              userMetadata.userId,
+              userMetadata.workspaceId,
+            )
             fragments = await Promise.all(
               allChunks.root.children.map(
                 async (child, idx) =>
