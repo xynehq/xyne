@@ -2700,6 +2700,9 @@ If it IS answerable, generate a single Postgres SELECT statement.
 - You may use JOINs, WHERE, GROUP BY, ORDER BY, LIMIT, and CTEs (WITH ... SELECT ...).
 - Output must be a single-line minified JSON: {"sql": "SELECT ...", "notes": "brief reasoning"}
 
+ENTITY/NAME MATCHING (important):
+- For matching on entity names, company names, or any free-text field the user mentioned, ALWAYS use ILIKE with a pattern (e.g. column ILIKE '%value%') so that case and small spelling differences do not return no rows. Do NOT use exact = or IN ('value1','value2') for such fields unless the user explicitly asks for an exact match; exact match and IN fail if the user's wording or casing is slightly different.
+
 MULTI-TABLE SAFETY (important):
 - Do NOT produce cartesian products over raw tables (e.g. FROM t1, t2 with no JOIN).
 - When combining related tables, use explicit JOIN with ON.

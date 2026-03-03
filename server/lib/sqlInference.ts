@@ -78,7 +78,10 @@ export const analyzeQueryAndGenerateSQL = async (
     }
 
     if (!parsedResponse.sql) {
-      Logger.warn("DuckDB SQL not generated", parsedResponse.notes);
+      Logger.info(
+        { query, notes: parsedResponse?.notes ?? "no notes" },
+        "DuckDB SQL not generated (model returned sql: null)",
+      )
       return null;
     }
 
@@ -86,6 +89,9 @@ export const analyzeQueryAndGenerateSQL = async (
       sql: parsedResponse.sql,
       notes: parsedResponse.notes
     };
+
+    Logger.info({ sql: result.sql }, "DuckDB SQL generated")
+    Logger.info({ notes: result.notes }, "DuckDB SQL notes")
 
     return result;
   } catch (error) {
@@ -139,6 +145,16 @@ export const generatePostgresSQL = async (
           if (s.max !== undefined) parts.push(`max=${s.max}`)
           if (s.avg !== undefined) parts.push(`avg≈${Number(s.avg).toFixed(2)}`)
           if (s.stddev !== undefined) parts.push(`stddev≈${Number(s.stddev).toFixed(2)}`)
+          if (s.sampleValues?.length) {
+            const preview =
+              s.sampleValues.length <= 15
+                ? s.sampleValues.map((v) => (v === null ? "null" : String(v))).join(", ")
+                : s.sampleValues
+                    .slice(0, 12)
+                    .map((v) => (v === null ? "null" : String(v)))
+                    .join(", ") + ` (+${s.sampleValues.length - 12} more)`
+            parts.push(`sample values: ${preview}`)
+          }
           return `${col}: ${parts.join(", ")}`
         })
         block += `\n  Sample stats (describe-like): ${statsLines.join("; ")}`
@@ -170,9 +186,16 @@ export const generatePostgresSQL = async (
       return null
     }
     if (!parsed.sql) {
-      Logger.debug("Postgres SQL not generated", parsed.notes)
+      Logger.info(
+        { query, notes: parsed?.notes ?? "no notes" },
+        "Postgres SQL not generated (model returned sql: null)",
+      )
       return null
     }
+
+    Logger.info({ sql: parsed.sql }, "Postgres SQL generated")
+    Logger.info({ notes: parsed.notes }, "Postgres SQL notes")
+
     return { sql: parsed.sql, notes: parsed.notes }
   } catch (error) {
     Logger.error("Failed to generate Postgres SQL:", error)
