@@ -1,3 +1,10 @@
+## [3.40.2](https://github.com/xynehq/xyne/compare/v3.40.1...v3.40.2) (2026-03-03)
+
+
+### Bug Fixes
+
+* allowing opus with env ([#1262](https://github.com/xynehq/xyne/issues/1262)) ([a81ac8e](https://github.com/xynehq/xyne/commit/a81ac8ecd294eb1decd59f828c88064bf2092a14))
+
 ## [3.40.1](https://github.com/xynehq/xyne/compare/v3.40.0...v3.40.1) (2026-03-03)
 
 
