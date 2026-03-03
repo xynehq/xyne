@@ -195,15 +195,7 @@ function resolveAgenticModelId(
     ? (defaultBestModelAgenticMode as Models)
     : (defaultBestModel as Models)
   const normalized = (requestedModelId as Models) || fallback
-
-  if (
-    normalized === defaultBestModel ||
-    (hasAgenticOverride && normalized === defaultBestModelAgenticMode)
-  ) {
-    return normalized
-  }
-
-  return fallback
+  return normalized
 }
 
 const toToolParameters = (

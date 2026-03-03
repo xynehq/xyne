@@ -200,11 +200,28 @@ export const fetchModelConfigs = async (): Promise<Array<{
     const modelId = modelInfo.model_name
     const actualName = modelInfo.litellm_params?.model || modelId
     if (modelInfo.model_info?.litellm_provider !== "hosted_vllm") {
-      if (!config.allowSonnet45 || modelId !== Models.LiteLLM_Claude_Sonnet_4_5) {
-        continue
+      const allowlist = {
+        [Models.LiteLLM_Claude_Sonnet_4_5]: {
+          enabled: config.allowSonnet45,
+          name: "Claude Sonnet 4.5",
+        },
+        [Models.LiteLLM_Claude_Opus_4_5]: {
+          enabled: config.allowOpus45,
+          name: "Claude Opus 4.5",
+        },
+      };
+
+      const modelAllowlistInfo = allowlist[modelId as keyof typeof allowlist];
+
+      if (modelAllowlistInfo) {
+        if (modelAllowlistInfo.enabled) {
+          Logger.info(`Allowing ${modelAllowlistInfo.name} model despite litellm_provider not being 'hosted_vllm'`);
+        } else {
+          continue;
+        }
+      } else {
+        continue;
       }
-      // Allowlist Claude Sonnet 4.5 even if litellm_provider is not set to "hosted_vllm"
-      Logger.info("Allowing Claude Sonnet 4.5 model despite litellm_provider not being 'hosted_vllm'")
     }
 
     // Skip if we've already processed this model (deduplicate by model_name)
@@ -290,19 +307,34 @@ export const getAvailableModels = async (providerConfig: {
         // Use models fetched from API
         availableModels.push(...fetchedModels)
         } else {
-        // Fallback to static MODEL_CONFIGURATIONS if API call fails
-        Object.values(MODEL_CONFIGURATIONS)
-            .filter((model) => model.provider === AIProviders.LiteLLM)
-            .forEach((model) => {
-            availableModels.push({
-                actualName: model.actualName ?? "",
-                labelName: model.labelName,
-                provider: "LiteLLM",
-                reasoning: model.reasoning,
-                websearch: model.websearch,
-                deepResearch: model.deepResearch,
-                description: model.description,
+        // Fallback to static MODEL_CONFIGURATIONS if API call fails (with same allowlist gating as API path)
+        const isSonnet45 = (modelId: Models) => modelId === Models.LiteLLM_Claude_Sonnet_4_5
+        const isOpus45 = (modelId: Models) => modelId === Models.LiteLLM_Claude_Opus_4_5
+        Object.entries(MODEL_CONFIGURATIONS)
+            .filter(([, model]) => model.provider === AIProviders.LiteLLM)
+            .filter(([modelId, model]) => {
+                const id = modelId as Models
+                if (isSonnet45(id)) return config.allowSonnet45
+                if (isOpus45(id)) return config.allowOpus45
+                return true
             })
+            .forEach(([modelId, model]) => {
+                const id = modelId as Models
+                if (isSonnet45(id) && config.allowSonnet45) {
+                    Logger.info("Allowing Claude Sonnet 4.5 model despite litellm_provider not being 'hosted_vllm'")
+                }
+                if (isOpus45(id) && config.allowOpus45) {
+                    Logger.info("Allowing Claude Opus 4.5 model despite litellm_provider not being 'hosted_vllm'")
+                }
+                availableModels.push({
+                    actualName: model.actualName ?? "",
+                    labelName: model.labelName,
+                    provider: "LiteLLM",
+                    reasoning: model.reasoning,
+                    websearch: model.websearch,
+                    deepResearch: model.deepResearch,
+                    description: model.description,
+                })
             })
         }
     } else if (providerConfig.AwsAccessKey && providerConfig.AwsSecretKey) {
