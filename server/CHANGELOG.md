@@ -1,3 +1,10 @@
+## [3.40.1](https://github.com/xynehq/xyne/compare/v3.40.0...v3.40.1) (2026-03-03)
+
+
+### Bug Fixes
+
+* added new informatoin while ingesting schemas ([#1261](https://github.com/xynehq/xyne/issues/1261)) ([39d9a2b](https://github.com/xynehq/xyne/commit/39d9a2b96df76df11d1864521e21054d55132974))
+
 # [3.40.0](https://github.com/xynehq/xyne/compare/v3.39.0...v3.40.0) (2026-03-03)
 
 
