@@ -351,10 +351,40 @@ export class PostgresClient {
           : isNumeric && typeof state.lastUpdatedAt === "string"
             ? Number(state.lastUpdatedAt) || new Date(state.lastUpdatedAt).getTime()
             : new Date(state.lastUpdatedAt).toISOString()
+
+      if (state.lastPk) {
+        let cursorValues: unknown[]
+        try {
+          cursorValues = JSON.parse(state.lastPk) as unknown[]
+        } catch {
+          throw new Error(`Invalid lastPk cursor for table ${schema}.${table}`)
+        }
+        if (cursorValues.length !== pkCols.length) {
+          throw new Error(
+            `lastPk cursor length does not match primary key columns for table ${schema}.${table}`,
+          )
+        }
+        const pkPlaceholders = cursorValues.map((_, i) => `$${i + 2}`).join(", ")
+        const params: (string | number | boolean | Date | null)[] = [
+          param,
+          ...(cursorValues as (string | number | boolean | Date | null)[]),
+          batchSize,
+        ]
+        const limitParam = `$${params.length}`
+        const rows = await this.sql.unsafe(
+          `SELECT * FROM ${fromClause}
+           WHERE (${quotedWatermark} > $1) OR (${quotedWatermark} = $1 AND (${orderByClause}) > (${pkPlaceholders}))
+           ORDER BY ${quotedWatermark} ASC, ${orderByClause}
+           LIMIT ${limitParam}`,
+          params,
+        ) as DbRow[]
+        return rows
+      }
+
       const rows = await this.sql.unsafe(
         `SELECT * FROM ${fromClause}
          WHERE ${quotedWatermark} > $1
-         ORDER BY ${orderByClause}
+         ORDER BY ${quotedWatermark} ASC, ${orderByClause}
          LIMIT $2`,
         [param, batchSize],
       ) as DbRow[]

@@ -65,10 +65,10 @@ export function getColumnNames(columns: ColumnInfo[]): string[] {
 }
 
 /**
- * Returns the CSV header line (column names escaped). Use for streaming write.
+ * Returns the CSV header line with trailing newline (column names escaped).
  */
 export function csvHeader(columnNames: string[]): string {
-  return columnNames.map(escapeCsvCell).join(",")
+  return columnNames.map(escapeCsvCell).join(",") + "\n"
 }
 
 /**

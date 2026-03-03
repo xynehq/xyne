@@ -183,7 +183,7 @@ async function streamTableToCsvFile(
   pkColumns: string[],
   columnNames: string[],
   storagePath: string,
-): Promise<{ rowsSynced: number; lastPk?: string }> {
+): Promise<{ rowsSynced: number; lastPk?: string; lastUpdatedAt?: number }> {
   await mkdir(dirname(storagePath), { recursive: true })
   const stream = createWriteStream(storagePath, { encoding: "utf-8" })
 
@@ -213,6 +213,20 @@ async function streamTableToCsvFile(
         ...state,
         lastPk: JSON.stringify(pkColumns.map((c) => lastRow[c])),
       }
+      if (watermarkColumn != null) {
+        const w = lastRow[watermarkColumn]
+        const lastUpdatedAt =
+          w instanceof Date
+            ? w.getTime()
+            : typeof w === "number"
+              ? w
+              : typeof w === "string"
+                ? new Date(w).getTime()
+                : null
+        if (lastUpdatedAt != null && !Number.isNaN(lastUpdatedAt)) {
+          state = { ...state, lastUpdatedAt }
+        }
+      }
     }
 
     if (rows.length < batchSize) break
@@ -220,7 +234,7 @@ async function streamTableToCsvFile(
 
   stream.end()
   await finished(stream)
-  return { rowsSynced, lastPk: state.lastPk }
+  return { rowsSynced, lastPk: state.lastPk, lastUpdatedAt: state.lastUpdatedAt }
 }
 
 async function syncTableToKb(
@@ -393,7 +407,7 @@ async function syncTableToKbAsCsv(
     columnNames,
     storagePath,
   )
-  const { rowsSynced, lastPk } = syncState
+  const { rowsSynced, lastPk, lastUpdatedAt } = syncState
 
   const fileStats = await stat(storagePath)
   const fileSize = fileStats.size
@@ -457,6 +471,7 @@ async function syncTableToKbAsCsv(
     table: tableName,
     rowsSynced,
     ...(lastPk !== undefined && { lastPk }),
+    ...(lastUpdatedAt !== undefined && { lastUpdatedAt }),
   })
 
   Logger.info(
