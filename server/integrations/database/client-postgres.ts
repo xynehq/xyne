@@ -248,11 +248,11 @@ export class PostgresClient {
     }
 
     const sql = `SELECT ${selects.join(", ")} FROM (SELECT * FROM ${quotedSchema}.${quotedTable} LIMIT ${sampleRows}) _t`
-    const rows = await this.sql.begin(async (tx) => {
+    const aggRows = await this.sql.begin(async (tx) => {
       await tx.unsafe(`SET LOCAL statement_timeout = '${timeoutMs}'`)
       return (await tx.unsafe(sql)) as Record<string, unknown>[]
     })
-    const row = rows[0]
+    const row = aggRows[0]
     if (!row || typeof row !== "object") return {}
 
     const out: Record<string, ColumnStats> = {}
@@ -280,6 +280,54 @@ export class PostgresClient {
       }
       out[name] = stats
     }
+
+    /** Only store sample values for enum-like columns (low cardinality in sample). */
+    const maxDistinctForSampleValues = 50
+    const sampleStringMaxLen = 100
+
+    const enumLikeColumns = new Set(
+      colMeta
+        .filter((c) => {
+          const s = out[c.name]
+          return s?.distinctCount != null && s.distinctCount <= maxDistinctForSampleValues
+        })
+        .map((c) => c.name),
+    )
+    if (enumLikeColumns.size === 0) return out
+
+    const sampleSql = `SELECT * FROM ${quotedSchema}.${quotedTable} LIMIT ${sampleRows}`
+    const sampleRowsResult = await this.sql.begin(async (tx) => {
+      await tx.unsafe(`SET LOCAL statement_timeout = '${timeoutMs}'`)
+      return (await tx.unsafe(sampleSql)) as Record<string, unknown>[]
+    })
+    if (Array.isArray(sampleRowsResult) && sampleRowsResult.length > 0) {
+      for (const { name } of colMeta) {
+        if (!enumLikeColumns.has(name) || !out[name]) continue
+        const seen = new Set<string>()
+        const values: (string | number | boolean | null)[] = []
+        for (const r of sampleRowsResult) {
+          const v = (r as Record<string, unknown>)[name]
+          const key =
+            v === null || v === undefined
+              ? "__null__"
+              : typeof v === "object"
+                ? JSON.stringify(v)
+                : String(v)
+          if (seen.has(key)) continue
+          seen.add(key)
+          if (v === null || v === undefined) {
+            values.push(null)
+          } else if (typeof v === "number" || typeof v === "boolean") {
+            values.push(v)
+          } else {
+            const s = typeof v === "string" ? v : String(v)
+            values.push(s.length > sampleStringMaxLen ? s.slice(0, sampleStringMaxLen) + "…" : s)
+          }
+        }
+        if (values.length > 0) out[name].sampleValues = values
+      }
+    }
+
     return out
   }
 

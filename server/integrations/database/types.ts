@@ -45,6 +45,8 @@ export interface ColumnStats {
   max?: number | string
   avg?: number
   stddev?: number
+  /** Distinct values seen in the sample (capped); helps with entity/name matching and IN lists. */
+  sampleValues?: (string | number | boolean | null)[]
 }
 
 /** Schema-only document written to KB (no row data). Used for retrieval → generate SQL → execute on client DB. */

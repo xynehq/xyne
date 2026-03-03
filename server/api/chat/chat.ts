@@ -6760,7 +6760,12 @@ export const MessageRetryApi = async (c: Context) => {
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
     const dateForAI = getDateForAI({ userTimeZone: userTimezone })
-    const userMetadata = { userTimezone, dateForAI }
+    const userMetadata: UserMetadataType = {
+      userTimezone,
+      dateForAI,
+      userId: user.id,
+      workspaceId: workspace.id,
+    }
 
     // Extract sources from search parameters
     const kbItems = c.req.query("selectedKbItems")

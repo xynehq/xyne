@@ -57,6 +57,9 @@ export interface SQLValidationResult {
   warnings?: string[];
 }
 
+/** Database dialect for the parser. Default is MySQL; use Postgresql for ILIKE, :: casts, and other Postgres syntax. */
+export type SQLParserDatabase = "MySQL" | "Postgresql";
+
 export interface SQLValidationOptions {
   allowedViewName?: string;
   /** For Postgres multi-table: allow only these table names (case-insensitive). Table can be "schema.name" or "name". */
@@ -65,6 +68,8 @@ export interface SQLValidationOptions {
   allowJoins?: boolean;
   allowWindowFunctions?: boolean;
   allowCTEs?: boolean;
+  /** Parser dialect. Use "Postgresql" when validating Postgres SQL (e.g. ILIKE, schema.table). Default "MySQL". */
+  database?: SQLParserDatabase;
 }
 
 /**
@@ -156,9 +161,13 @@ export class SQLValidator {
     }
   }
 
+  private parserOpt(): { database: SQLParserDatabase } {
+    return { database: this.options.database ?? "MySQL" };
+  }
+
   private parseSQL(sql: string): any {
     try {
-      return this.parser.astify(sql);
+      return this.parser.astify(sql, this.parserOpt());
     } catch (error) {
       Logger.error("SQL parsing failed:", error);
       return null;
@@ -252,7 +261,7 @@ export class SQLValidator {
 
   private validateTableAccess(sql: string): SQLValidationResult {
     try {
-      const tableList = this.parser.tableList(sql);
+      const tableList = this.parser.tableList(sql, this.parserOpt());
       Logger.debug("Raw table list:", tableList);
 
       const allowedTableNames = this.options.allowedTableNames;
@@ -491,8 +500,7 @@ export class SQLValidator {
 
   private astToSQL(ast: any): string | null {
     try {
-      // Convert AST back to SQL without any modifications
-      return this.parser.sqlify(ast);
+      return this.parser.sqlify(ast, this.parserOpt());
     } catch (error) {
       Logger.error("Failed to convert AST to SQL:", error);
       return null;
@@ -548,6 +556,7 @@ export function validatePostgresQuery(
     allowSubqueries: options?.allowSubqueries ?? true,
     allowCTEs: options?.allowCTEs ?? true,
     allowWindowFunctions: true,
+    database: "Postgresql",
   });
   return validator.validateSQL(sql);
 }
