@@ -44,6 +44,7 @@ import { cleanUpAgentDb, getAgentByExternalId, getAgentCollections } from "@/db/
 import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
+import { clearDatabaseConnectorKbCollectionId } from "@/db/connector"
 import { DeleteDocument, GetDocument } from "@/search/vespa"
 import { ChunkMetadata, fileSchema, KbItemsSchema } from "@xyne/vespa-ts/types"
 import {
@@ -701,22 +702,10 @@ export const UpdateCollectionApi = async (c: Context) => {
   }
 }
 
-// Delete a Collection
-export const DeleteCollectionApi = async (c: Context) => {
-  const { email: userEmail, via_apiKey } = getAuth(c)
-
-  if (via_apiKey) {
-    const apiKeyScopes =
-      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
-    if (!apiKeyScopes.includes(ApiKeyScopes.DELETE_COLLECTION)) {
-      return c.json(
-        { message: "API key does not have scope to delete collections" },
-        403,
-      )
-    }
+export const deleteCollection = async (db: TxnOrClient, collectionId: string, userEmail: string): Promise<{ success: boolean, deletedCount: number, deletedFiles: number, deletedFolders: number }> => {
+  if (!collectionId) {
+    throw new HTTPException(400, { message: "Collection ID is required" })
   }
-  const collectionId = c.req.param("clId")
-
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
   if (!users || users.length === 0) {
@@ -784,6 +773,9 @@ export const DeleteCollectionApi = async (c: Context) => {
 
       // Soft delete the collection itself
       await softDeleteCollection(tx, collectionId)
+
+      // If this collection was linked to a database connector, clear kbCollectionId so next sync creates a new one
+      await clearDatabaseConnectorKbCollectionId(tx, collectionId)
 
       // Clean up agent references to deleted items
       if (deletedItemIds.length > 0) {
@@ -856,15 +848,59 @@ export const DeleteCollectionApi = async (c: Context) => {
       )
     }
 
-    loggerWithChild({ email: userEmail }).info(
-      `Deleted Collection: ${collectionId} (${collectionItemsToDelete.length} items deleted, ${deletedFilesCount} files and ${deletedFoldersCount} folders removed from Vespa and storage)`,
-    )
-
-    return c.json({
+    return {
       success: true,
       deletedCount: collectionItemsToDelete.length,
       deletedFiles: deletedFilesCount,
       deletedFolders: deletedFoldersCount,
+    }
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to delete Collection: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to delete Collection",
+    })
+  }
+}
+
+// Delete a Collection
+export const DeleteCollectionApi = async (c: Context) => {
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.DELETE_COLLECTION)) {
+      return c.json(
+        { message: "API key does not have scope to delete collections" },
+        403,
+      )
+    }
+  }
+  const collectionId = c.req.param("clId")
+
+  try {
+
+    const { success, deletedCount, deletedFiles, deletedFolders } = await deleteCollection(db, collectionId, userEmail)
+    if (!success) {
+      throw new HTTPException(500, {
+        message: "Failed to delete Collection",
+      })
+    }
+
+    loggerWithChild({ email: userEmail }).info(
+      `Deleted Collection: ${collectionId} (${deletedCount} items deleted, ${deletedFiles} files and ${deletedFolders} folders removed from Vespa and storage)`,
+    )
+
+    return c.json({
+      success: true,
+      deletedCount: deletedCount,
+      deletedFiles: deletedFiles,
+      deletedFolders: deletedFolders,
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error

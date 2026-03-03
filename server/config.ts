@@ -235,7 +235,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultBestModel = process.env["LITELLM_BEST_MODEL"]
     ? (process.env["LITELLM_BEST_MODEL"] as Models)
     : Models.OPEN_LARGE // Default best model
-  sqlInferenceModel = Models.OPEN_LARGE
+  sqlInferenceModel = Models.LiteLLM_Gemini_3_Flash
   if(defaultDeepResearchModel === "" as Models) {
     defaultDeepResearchModel = process.env["LITELLM_DEEP_RESEARCH_MODEL"] ? (process.env["LITELLM_DEEP_RESEARCH_MODEL"] as Models)
     : Models.OPEN_LARGE// Default deep research model

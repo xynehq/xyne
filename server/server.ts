@@ -1,3 +1,4 @@
+
 import { type Context, Hono, type Next } from "hono"
 import {
   AnswerApi,
@@ -53,6 +54,8 @@ import {
   UserRoleChangeSchema,
   chatIdParamSchema,
   createZohoDeskConnectorSchema,
+  createDatabaseConnectorSchema,
+  databaseConnectorIdParamSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -222,6 +225,20 @@ import {
   GetAgentsForDataSourceApi,
   GetDataSourceFile,
 } from "@/api/dataSource"
+import {
+  TriggerDatabaseSyncApi,
+  GetDatabaseSyncStateApi,
+  CreateDatabaseConnectorApi,
+  DeleteDatabaseConnectorApi,
+  SyncDatabaseTableApi,
+  UpdateDatabaseConnectorApi,
+  RotateCredentialsApi,
+  triggerSyncSchema,
+  deleteDatabaseConnectorSchema,
+  syncTableSchema,
+  updateDatabaseConnectorSchema,
+  rotateCredentialsSchema,
+} from "@/api/databaseConnector"
 import {
   ChatBookmarkApi,
   ChatDeleteApi,
@@ -1451,6 +1468,41 @@ export const AppRoutes = app
   .get("/datasources/:docId", GetDataSourceFile)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
   .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
+  .post(
+    "/connectors/database/create",
+    zValidator("json", createDatabaseConnectorSchema),
+    CreateDatabaseConnectorApi,
+  )
+  .post(
+    "/connectors/database/update",
+    zValidator("json", updateDatabaseConnectorSchema),
+    UpdateDatabaseConnectorApi,
+  )
+  .post(
+    "/connectors/database/rotate-credentials",
+    zValidator("json", rotateCredentialsSchema),
+    RotateCredentialsApi,
+  )
+  .post(
+    "/connectors/database/sync",
+    zValidator("json", triggerSyncSchema),
+    TriggerDatabaseSyncApi,
+  )
+  .post(
+    "/connectors/database/sync-table",
+    zValidator("json", syncTableSchema),
+    SyncDatabaseTableApi,
+  )
+  .post(
+    "/connectors/database/delete",
+    zValidator("json", deleteDatabaseConnectorSchema),
+    DeleteDatabaseConnectorApi,
+  )
+  .get(
+    "/connectors/database/:connectorId/sync-state",
+    zValidator("param", databaseConnectorIdParamSchema),
+    GetDatabaseSyncStateApi,
+  )
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post(

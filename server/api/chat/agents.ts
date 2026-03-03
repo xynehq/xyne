@@ -102,6 +102,7 @@ import {
 } from "./chat"
 import { getDateForAI } from "@/utils/index"
 import { getAuth, safeGet } from "../agent"
+import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 const {
   defaultBestModel,
   maxDefaultSummary,
@@ -186,6 +187,7 @@ const vespaResultToMinimalAgentFragment = async (
   idx: number,
   userMetadata: UserMetadataType,
   query: string,
+  precomputedDbContext?: Map<string, string>,
 ): Promise<MinimalAgentFragment> => ({
   id: `${(child.fields as any)?.docId || `Fragment_id_${idx}`}`,
   content: await answerContextMap(
@@ -195,6 +197,7 @@ const vespaResultToMinimalAgentFragment = async (
     true,
     undefined,
     query,
+    precomputedDbContext,
   ),
   source: searchToCitation(child as VespaSearchResults),
   confidence: 1.0,
@@ -435,7 +438,12 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
     const dateForAI = getDateForAI({ userTimeZone: userTimezone })
-    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
+    const userMetadata: UserMetadataType = {
+      userTimezone,
+      dateForAI,
+      userId: user.id,
+      workspaceId: workspace.id,
+    }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -583,6 +591,12 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chunksSpan.end()
             if (allChunks?.root?.children) {
               const startIndex = 0
+              const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+                allChunks.root.children as VespaSearchResults[],
+                message,
+                userMetadata.userId,
+                userMetadata.workspaceId,
+              )
               fragments = await Promise.all(
                 allChunks.root.children.map(
                   async (child, idx) =>
@@ -591,6 +605,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
                       idx,
                       userMetadata,
                       message,
+                      precomputedDbContext,
                     ),
                 ),
               )
@@ -861,6 +876,12 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         if (docIds.length > 0) {
           const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
           if (allChunks?.root?.children) {
+            const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+              allChunks.root.children as VespaSearchResults[],
+              message,
+              userMetadata.userId,
+              userMetadata.workspaceId,
+            )
             fragments = await Promise.all(
               allChunks.root.children.map(
                 async (child, idx) =>
@@ -869,6 +890,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
                     idx,
                     userMetadata,
                     message,
+                    precomputedDbContext,
                   ),
               ),
             )
@@ -1266,7 +1288,12 @@ export const AgentMessageApi = async (c: Context) => {
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
     const dateForAI = getDateForAI({ userTimeZone: userTimezone })
-    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
+    const userMetadata: UserMetadataType = {
+      userTimezone,
+      dateForAI,
+      userId: user.id,
+      workspaceId: workspace.id,
+    }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -2275,18 +2302,6 @@ export const AgentMessageApi = async (c: Context) => {
                 parsed.queryRewrite,
               )
               conversationSpan.end()
-              let classification: TemporalClassifier & QueryRouterResponse = {
-                direction: parsed.temporalDirection,
-                type: parsed.type as QueryType,
-                filterQuery: parsed.filter_query,
-                isFollowUp: parsed.isFollowUp,
-                filters: {
-                  ...(parsed?.filters ?? {}),
-                  apps: parsed.filters?.apps || [],
-                  entities: parsed.filters?.entities as any,
-                  mailParticipants: parsed.mailParticipants || {},
-                },
-              }
 
               if (parsed.answer === null || parsed.answer === "") {
                 const ragSpan = streamSpan.startSpan("rag_processing")

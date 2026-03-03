@@ -145,6 +145,8 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         collectionFileIds: agentSpecificCollectionFileIds,
         selectedItems: selectedItems,
         collectionSelections: kbSelections,
+        userId: context.user.numericId,
+        workspaceId: context.user.workspaceNumericId,
       })
 
       return ToolResponse.success(fragments)
@@ -241,6 +243,9 @@ interface UnifiedSearchOptions {
   collectionFolderIds?: string[]
   collectionFileIds?: string[]
   collectionSelections?: KnowledgeBaseSelection[]
+  /** When set with query, KB schema-only docs get precomputed DB context (live SQL results). */
+  userId?: number | null
+  workspaceId?: number | null
 }
 
 export async function executeVespaSearch(options: UnifiedSearchOptions): Promise<MinimalAgentFragment[]> {
@@ -267,6 +272,8 @@ export async function executeVespaSearch(options: UnifiedSearchOptions): Promise
     owner,
     eventStatus,
     eventAttendees,
+    userId,
+    workspaceId,
   } = options
 
   if (!query || query.trim() === "") {
@@ -363,6 +370,8 @@ export async function executeVespaSearch(options: UnifiedSearchOptions): Promise
     offset,
     limit,
     searchType: "Global search result",
+    userId: userId ?? undefined,
+    workspaceId: workspaceId ?? undefined,
   })
 
   return fragments

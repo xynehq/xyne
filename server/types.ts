@@ -18,6 +18,7 @@ import type {
   MailEntity,
   PeopleEntity,
 } from "@xyne/vespa-ts/types"
+import { DatabaseEngine } from "@/integrations/database/types"
 
 export enum ProcessingJobType {
   FILE = "file",
@@ -266,6 +267,10 @@ export const chatIdParamSchema = z.object({
   chatId: z.string().min(1, "Chat ID must be a non-empty string"),
 })
 
+export const databaseConnectorIdParamSchema = z.object({
+  connectorId: z.string().min(1, "Connector ID must be a non-empty string"),
+})
+
 export const createZohoDeskConnectorSchema = z.object({
   app: z.literal("zoho-desk" as const).optional(),
   authType: z.literal(AuthType.OAuth),
@@ -274,6 +279,26 @@ export const createZohoDeskConnectorSchema = z.object({
 
 export type CreateZohoDeskConnector = z.infer<
   typeof createZohoDeskConnectorSchema
+>
+
+export const createDatabaseConnectorSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  engine: z.nativeEnum(DatabaseEngine),
+  host: z.string().min(1, "Host is required"),
+  port: z.number().int().min(1).max(65535).default(5432),
+  database: z.string().min(1, "Database is required"),
+  schema: z.string().optional(),
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+  tablesInclude: z.string().optional(), // comma-separated, converted to array in config
+  tablesIgnore: z.string().optional(), // comma-separated, converted to array in config
+  tablesEmbed: z.string().optional(), // comma-separated table names to sync as full data (CSV); others sync as schema-only (JSON)
+  watermarkColumn: z.string().optional(),
+  batchSize: z.number().int().positive().default(1000),
+})
+
+export type CreateDatabaseConnector = z.infer<
+  typeof createDatabaseConnectorSchema
 >
 
 export const updateConnectorStatusSchema = z.object({
@@ -665,6 +690,9 @@ export type AdminChatsPaginationResponse = z.infer<
 export const UserMetadata = z.object({
   userTimezone: z.string(),
   dateForAI: z.string(),
+  /** Optional; used for database connector schema-only retrieval (look up connector config). */
+  userId: z.number().optional(),
+  workspaceId: z.number().optional(),
 })
 
 export type UserMetadataType = z.infer<typeof UserMetadata>

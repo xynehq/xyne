@@ -156,6 +156,7 @@ import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
 import { parseMessageText } from "./chat"
 import { getUserPersonalizationByEmail } from "@/db/personalization"
 import { getChunkCountPerDoc } from "./chunk-selection"
+import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 
 const {
   defaultBestModel,
@@ -1307,6 +1308,7 @@ async function vespaResultToAttachmentFragment(
   query: string,
   allowChunkCitations?: boolean,
   maxSummaryChunks?: number,
+  precomputedDbContext?: Map<string, string>,
 ): Promise<MinimalAgentFragment> {
   const docId =
     (child.fields as Record<string, unknown>)?.docId ||
@@ -1320,7 +1322,8 @@ async function vespaResultToAttachmentFragment(
       maxSummaryChunks ? maxSummaryChunks : 0,
       true,
       allowChunkCitations ?? false,
-      query
+      query,
+      precomputedDbContext,
     ),
     source: searchToCitation(child as VespaSearchResults),
     confidence: 1,
@@ -1463,7 +1466,13 @@ async function prepareInitialAttachmentContext(
     
         threadSpan?.end()
       }
-
+    
+    const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+      combinedSearchResponse as VespaSearchResults[],
+      query,
+      userMetadata.userId,
+      userMetadata.workspaceId,
+    )
     const fragments = await Promise.all(
       combinedSearchResponse.map((child, idx) =>
         vespaResultToAttachmentFragment(
@@ -1473,6 +1482,7 @@ async function prepareInitialAttachmentContext(
           query,
           allowChunkCitations,
           idx < chunksPerDocument.length ? chunksPerDocument[idx] : 0,
+          precomputedDbContext,
         )
       )
     )
@@ -3626,6 +3636,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
     const userMetadata: UserMetadataType = {
       userTimezone,
       dateForAI,
+      userId: user.id,
+      workspaceId: workspace.id,
     }
     const userCtxString = userContext(userAndWorkspace)
 

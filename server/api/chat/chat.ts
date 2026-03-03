@@ -230,6 +230,7 @@ import { getAuth, safeGet } from "../agent"
 import { getChunkCountPerDoc } from "./chunk-selection"
 import { handleAttachmentDelete } from "../files"
 import { expandSheetIds } from "@/search/utils"
+import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -1132,7 +1133,12 @@ export async function buildContext(
     (r: any) =>
       r.fields?.sddocname === "ticket" || r.fields?.platform === "zoho-desk",
   ).length
-
+  const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+    results as VespaSearchResults[],
+    builtUserQuery,
+    userMetadata.userId,
+    userMetadata.workspaceId,
+  )
   // Use standard "Index N" format for all document types (including Zoho tickets)
   const contextPromises = results?.map(
     async (v, i) =>
@@ -1143,6 +1149,7 @@ export async function buildContext(
         undefined,
         isMsgWithKbItems,
         builtUserQuery,
+        precomputedDbContext,
       )}`,
   )
   const contexts = await Promise.all(contextPromises || [])
@@ -2269,6 +2276,12 @@ async function* generateAnswerFromGivenContext(
   }
 
   const startIndex = isReasoning ? previousResultsLength : 0
+  const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+    combinedSearchResponse as VespaSearchResults[],
+    builtUserQuery,
+    userMetadata.userId,
+    userMetadata.workspaceId,
+  )
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
     let content = await answerContextMap(
       v as VespaSearchResults,
@@ -2276,7 +2289,8 @@ async function* generateAnswerFromGivenContext(
       i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
       allowChunkCitations,
-      message,
+      builtUserQuery,
+      precomputedDbContext,
     )
     if (
       v.fields &&
@@ -2834,6 +2848,12 @@ export async function* generateAnswerFromDualRag(
     email,
     generateAnswerSpan,
   )
+  const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+    combinedSearchResponse as VespaSearchResults[],
+    builtUserQuery,
+    userMetadata.userId,
+    userMetadata.workspaceId,
+  )
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
     let content = await answerContextMap(
       v as VespaSearchResults,
@@ -2841,7 +2861,8 @@ export async function* generateAnswerFromDualRag(
       i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
       allowChunkCitations,
-      message,
+      builtUserQuery,
+      precomputedDbContext,
     )
 
     // Special handling for Slack channels - add creator info
@@ -5156,7 +5177,12 @@ export const MessageApi = async (c: Context) => {
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
     const dateForAI = getDateForAI({ userTimeZone: userTimezone })
-    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
+    const userMetadata: UserMetadataType = {
+      userTimezone,
+      dateForAI,
+      userId: user.id,
+      workspaceId: workspace.id,
+    }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")

@@ -117,6 +117,7 @@ export enum ConnectorType {
 // @ts-ignore
 import type { AppRoutes, WsApp } from "@/server"
 import { z } from "zod"
+import type { DatabaseEngine } from "../integrations/database/types"
 
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
@@ -838,4 +839,18 @@ export enum UploadStatus {
   PROCESSING = "processing",
   COMPLETED = "completed",
   FAILED = "failed",
+}
+
+export interface DatabaseConnectorConfig {
+  engine: DatabaseEngine
+  host: string
+  port: number
+  database: string
+  schema?: string
+  /** include/ignore filter which tables to sync; embed = table names to sync as full data (CSV). Others sync as schema-only (JSON). */
+  tables?: { include?: string[]; ignore?: string[]; embed?: string[] }
+  auth: { username: string; password: string }
+  batchSize: number
+  /** Column name for watermark-based incremental sync (e.g. updated_at). Optional. */
+  watermarkColumn?: string
 }

@@ -63,6 +63,7 @@ import TxtViewer from "@/components/TxtViewer"
 import { useUploadProgress } from "@/store/useUploadProgressStore"
 import { DebugDocModal } from "@/components/DebugDocModal"
 import kbEmptyStateIcon from "@/assets/emptystateIcons/kb.png"
+import JsonViewer from "@/components/JsonViewer"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
@@ -210,6 +211,13 @@ const DocumentViewerContainer = memo(
               className="h-full"
               style={{ height: "100%", overflow: "auto" }}
             />
+          </div>
+        )
+      }
+      if (name.endsWith(".json")) {
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <JsonViewer source={selectedDocument.content} />
           </div>
         )
       }
@@ -1294,12 +1302,13 @@ function KnowledgeManagementContent() {
         !fileName.endsWith(".xls") &&
         !fileName.endsWith(".text") &&
         !fileName.endsWith(".txt") &&
-        !fileName.endsWith(".tsv"))
+        !fileName.endsWith(".tsv")) &&
+        !fileName.endsWith(".json")
     ) {
       toast.warning({
         title: "Preview Not Available",
         description:
-          "Preview is only available for .docx, .pdf, .csv, .xlsx, .xls,.txt,.tsv and .md files.",
+          "Preview is only available for .docx, .pdf, .csv, .xlsx, .xls, .txt, .json, .tsv and .md files.",
       })
       return
     }

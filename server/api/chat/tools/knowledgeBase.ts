@@ -115,6 +115,8 @@ export const searchKnowledgeBaseTool: Tool<
         excludedIds: params.excludedIds,
         collectionSelections,
         selectedItems,
+        userId: context.user.numericId ?? undefined,
+        workspaceId: context.user.workspaceNumericId ?? undefined,
       })
 
       if (!fragments.length) {

@@ -81,10 +81,13 @@ type MockStatusConfig = {
 
 function createMockFetch(config: MockStatusConfig) {
   let statusCallCount = 0
-  const originalFetch = globalThis.fetch
+  let savedOriginalFetch: typeof globalThis.fetch | undefined
 
   return {
     install: () => {
+      // Capture the current fetch at install time, not at creation time
+      savedOriginalFetch = globalThis.fetch
+      
       const mockFetch: typeof globalThis.fetch = Object.assign(
         async (input: RequestInfo | URL, init?: RequestInit) => {
           if (typeof input === "string" && input.includes("/instance_status")) {
@@ -121,14 +124,17 @@ function createMockFetch(config: MockStatusConfig) {
         },
         {
           // Preserve Bun's fetch.preconnect signature to satisfy the type.
-          preconnect: originalFetch.preconnect.bind(originalFetch),
+          // Use optional chaining in case preconnect doesn't exist (e.g., when other tests have replaced fetch)
+          preconnect: savedOriginalFetch?.preconnect?.bind(savedOriginalFetch),
         },
       )
 
       globalThis.fetch = mockFetch
     },
     restore: () => {
-      globalThis.fetch = originalFetch
+      if (savedOriginalFetch) {
+        globalThis.fetch = savedOriginalFetch
+      }
     },
     getCallCount: () => statusCallCount,
   }
