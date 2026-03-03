@@ -473,8 +473,6 @@ export const RotateCredentialsApi = async (c: Context) => {
     database: config.database as string,
     schema: config.schema as string | undefined,
     batchSize: config.batchSize as number ?? 1000,
-    concurrency: config.concurrency as number ?? 2,
-    cdcEnabled: config.cdcEnabled as boolean ?? false,
     auth: { username: body.newUsername, password: body.newPassword },
   }
 
@@ -557,13 +555,15 @@ export const SyncDatabaseTableApi = async (c: Context) => {
   } catch (err) {
     if (err instanceof HTTPException) throw err
     const msg = err instanceof Error ? err.message : String(err)
+    // Log the detailed error internally for diagnostics
+    Logger.error({ err, connectorId, tableName }, "Database table sync failed")
+    // Return generic client-facing messages to avoid leaking internal DB details
     if (msg.includes("not found")) {
-      throw new HTTPException(404, { message: msg })
+      throw new HTTPException(404, { message: "Resource not found" })
     }
     if (msg.includes("primary key")) {
-      throw new HTTPException(400, { message: msg })
+      throw new HTTPException(400, { message: "Invalid request" })
     }
-    Logger.error({ err, connectorId, tableName }, "Database table sync failed")
     throw new HTTPException(500, {
       message: "Failed to sync table",
     })

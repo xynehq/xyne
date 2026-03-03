@@ -143,6 +143,31 @@ function RequiredLabel({ children, htmlFor }: { children: React.ReactNode; htmlF
   )
 }
 
+// Validation constants
+const PORT_MIN = 1
+const PORT_MAX = 65535
+const BATCH_SIZE_MIN = 1
+const BATCH_SIZE_MAX = 100000
+
+// Parse and validate numeric form fields with proper bounds checking
+function parsePort(value: string | null, defaultValue: number = 5432): number {
+  if (!value) return defaultValue
+  const parsed = parseInt(value, 10)
+  if (Number.isNaN(parsed)) return defaultValue
+  if (parsed < PORT_MIN) return PORT_MIN
+  if (parsed > PORT_MAX) return PORT_MAX
+  return parsed
+}
+
+function parseBatchSize(value: string | null, defaultValue: number = 1000): number {
+  if (!value) return defaultValue
+  const parsed = parseInt(value, 10)
+  if (Number.isNaN(parsed)) return defaultValue
+  if (parsed < BATCH_SIZE_MIN) return BATCH_SIZE_MIN
+  if (parsed > BATCH_SIZE_MAX) return BATCH_SIZE_MAX
+  return parsed
+}
+
 // Rotate credentials dialog - separate from config editing
 function RotateCredentialsDialog({
   open,
@@ -300,7 +325,7 @@ export function DatabaseConnectorDialog({
       name: formData.get("name") as string,
       engine: formData.get("engine") as "postgres" | "mysql",
       host: formData.get("host") as string,
-      port: parseInt(formData.get("port") as string, 10) || 5432,
+      port: parsePort(formData.get("port") as string | null),
       database: formData.get("database") as string,
       schema: formData.get("schema") as string,
       username: formData.get("username") as string,
@@ -309,7 +334,7 @@ export function DatabaseConnectorDialog({
       tablesIgnore: formData.get("tablesIgnore") as string,
       tablesEmbed: formData.get("tablesEmbed") as string,
       watermarkColumn: formData.get("watermarkColumn") as string,
-      batchSize: parseInt(formData.get("batchSize") as string, 10) || 1000,
+      batchSize: parseBatchSize(formData.get("batchSize") as string | null),
     }
 
     createMutation.mutate({
@@ -338,14 +363,14 @@ export function DatabaseConnectorDialog({
       name: formData.get("name") as string,
       engine: formData.get("engine") as "postgres" | "mysql",
       host: formData.get("host") as string,
-      port: parseInt(formData.get("port") as string, 10) || 5432,
+      port: parsePort(formData.get("port") as string | null),
       database: formData.get("database") as string,
       schema: formData.get("schema") as string,
       tablesInclude: formData.get("tablesInclude") as string,
       tablesIgnore: formData.get("tablesIgnore") as string,
       tablesEmbed: formData.get("tablesEmbed") as string,
       watermarkColumn: formData.get("watermarkColumn") as string,
-      batchSize: parseInt(formData.get("batchSize") as string, 10) || 1000,
+      batchSize: parseBatchSize(formData.get("batchSize") as string | null),
     }
 
     updateMutation.mutate({
@@ -417,6 +442,8 @@ export function DatabaseConnectorDialog({
                   id="port"
                   name="port"
                   type="number"
+                  min={PORT_MIN}
+                  max={PORT_MAX}
                   defaultValue={form.port}
                 />
               </div>
@@ -539,6 +566,9 @@ export function DatabaseConnectorDialog({
                   id="batchSize"
                   name="batchSize"
                   type="number"
+                  min={BATCH_SIZE_MIN}
+                  max={BATCH_SIZE_MAX}
+                  step={1}
                   defaultValue={form.batchSize}
                 />
               </div>

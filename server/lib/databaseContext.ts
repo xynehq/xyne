@@ -181,7 +181,11 @@ export async function buildPrecomputedDbContext(
     const schema = extractSchemaFromChunks(f.chunks_summary)
     if (schema) {
       const list = byConnector.get(connectorId) ?? []
-      if (!list.some((s) => s.tableName === schema.tableName)) list.push(schema)
+      // Dedup by composite key (schema + tableName) to avoid collapsing distinct tables across schemas
+      const schemaName = schema.schema ?? "public"
+      if (!list.some((s) => (s.schema ?? "public") === schemaName && s.tableName === schema.tableName)) {
+        list.push(schema)
+      }
       byConnector.set(connectorId, list)
     }
   }
@@ -263,7 +267,6 @@ async function buildPrecomputedDbContextInner(
           timeoutMs: 30_000,
           rowLimit: 1000,
         })
-        await client.disconnect()
 
         const lines: string[] = [
           "Database query result (from connected database):",
@@ -281,6 +284,7 @@ async function buildPrecomputedDbContextInner(
         }
         map.set(connectorId, lines.join("\n"))
       } finally {
+        // Disconnect in finally block to ensure cleanup on both success and error paths
         await client.disconnect().catch(() => {})
       }
     } catch (err) {

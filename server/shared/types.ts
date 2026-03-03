@@ -851,9 +851,6 @@ export interface DatabaseConnectorConfig {
   tables?: { include?: string[]; ignore?: string[]; embed?: string[] }
   auth: { username: string; password: string }
   batchSize: number
-  concurrency: number
   /** Column name for watermark-based incremental sync (e.g. updated_at). Optional. */
   watermarkColumn?: string
-  cdcEnabled: boolean
-  ssl?: { rejectUnauthorized: boolean; ca?: string }
 }

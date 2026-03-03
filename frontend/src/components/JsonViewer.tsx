@@ -55,6 +55,8 @@ const JsonViewer: React.FC<JsonViewerProps> = memo(({ source, className, style }
   const loadFile = useCallback(async (): Promise<void> => {
     if (!source) {
       setError('No file source provided');
+      setLines([]);
+      setLoading(false);
       return;
     }
 

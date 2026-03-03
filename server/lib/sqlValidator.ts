@@ -267,7 +267,11 @@ export class SQLValidator {
           const shortName = normalized.includes(".")
             ? normalized.split(".").pop() ?? normalized
             : normalized;
-          if (!allowedSet.has(normalized) && !allowedSet.has(shortName)) {
+          const isQualifiedRef = normalized.includes(".");
+          const isAllowed = isQualifiedRef
+            ? allowedSet.has(normalized)
+            : allowedSet.has(normalized) || allowedSet.has(shortName);
+          if (!isAllowed) {
             return {
               isValid: false,
               error: `Access to table '${tableName}' is not allowed. Allowed: ${allowedTableNames.join(", ")}`,

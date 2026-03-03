@@ -14,11 +14,11 @@ function escapeCsvCell(value: unknown): string {
   if (Buffer.isBuffer(value)) return "[binary]"
   if (typeof value === "object") {
     const s = value instanceof Date ? value.toISOString() : JSON.stringify(value)
-    if (/[,\n"]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+    if (/[,\r\n"]/.test(s)) return `"${s.replace(/"/g, '""')}"`
     return s
   }
   const s = String(value)
-  if (/[,\n"]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  if (/[,\r\n"]/.test(s)) return `"${s.replace(/"/g, '""')}"`
   return s
 }
 

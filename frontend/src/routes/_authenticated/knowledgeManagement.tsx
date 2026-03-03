@@ -1308,7 +1308,7 @@ function KnowledgeManagementContent() {
       toast.warning({
         title: "Preview Not Available",
         description:
-          "Preview is only available for .docx, .pdf, .csv, .xlsx, .xls,.txt,.json,.tsv and .md files.",
+          "Preview is only available for .docx, .pdf, .csv, .xlsx, .xls, .txt, .json, .tsv and .md files.",
       })
       return
     }
