@@ -34,7 +34,7 @@ const { JwtPayloadKey } = config
 
 const Logger = getLogger(Subsystem.Api).child({ module: "databaseConnector" })
 
-const triggerSyncSchema = z.object({
+export const triggerSyncSchema = z.object({
   connectorId: z.string().min(1),
 })
 
@@ -237,7 +237,7 @@ export const CreateDatabaseConnectorApi = async (c: Context) => {
     }
   }
 
-const deleteConnectorSchema = z.object({
+export const deleteDatabaseConnectorSchema = z.object({
   connectorId: z.string().min(1),
 })
 
@@ -256,7 +256,7 @@ export const DeleteDatabaseConnectorApi = async (c: Context) => {
   }
 
   const rawBody = await c.req.json()
-  const { connectorId } = deleteConnectorSchema.parse(rawBody)
+  const { connectorId } = deleteDatabaseConnectorSchema.parse(rawBody)
   const userWorkspace = await getUserAndWorkspaceByEmail(db, workspaceExternalId, email)
   if (!userWorkspace) throw new HTTPException(404, { message: "User or workspace not found" })
 
@@ -315,12 +315,12 @@ export const DeleteDatabaseConnectorApi = async (c: Context) => {
   }
 }
 
-const syncTableSchema = z.object({
+export const syncTableSchema = z.object({
   connectorId: z.string().min(1),
   tableName: z.string().min(1),
 })
 
-const updateDatabaseConnectorSchema = z.object({
+export const updateDatabaseConnectorSchema = z.object({
   connectorId: z.string().min(1),
   name: z.string().min(1, "Name is required"),
   engine: z.nativeEnum(DatabaseEngine),
@@ -335,7 +335,7 @@ const updateDatabaseConnectorSchema = z.object({
   batchSize: z.number().int().positive().default(1000),
 })
 
-const rotateCredentialsSchema = z.object({
+export const rotateCredentialsSchema = z.object({
   connectorId: z.string().min(1),
   newUsername: z.string().min(1, "New username is required"),
   newPassword: z.string().min(1, "New password is required"),

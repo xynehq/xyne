@@ -208,7 +208,7 @@ ${schemaText}`
     const response = await provider.converse(messages, modelParams)
     const responseText = response.text || ""
     const cleaned = stripNoise(responseText)
-    let parsed: { isMetric: boolean; sql: string | null; notes: string }
+    let parsed: { sql: string | null; notes: string }
     try {
       parsed = JSON.parse(cleaned)
     } catch (e) {

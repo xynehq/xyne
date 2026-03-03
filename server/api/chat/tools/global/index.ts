@@ -145,6 +145,8 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         collectionFileIds: agentSpecificCollectionFileIds,
         selectedItems: selectedItems,
         collectionSelections: kbSelections,
+        userId: context.user.numericId,
+        workspaceId: context.user.workspaceNumericId,
       })
 
       return ToolResponse.success(fragments)

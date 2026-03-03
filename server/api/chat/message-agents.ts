@@ -3636,6 +3636,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
     const userMetadata: UserMetadataType = {
       userTimezone,
       dateForAI,
+      userId: user.id,
+      workspaceId: workspace.id,
     }
     const userCtxString = userContext(userAndWorkspace)
 

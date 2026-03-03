@@ -140,8 +140,12 @@ export async function syncSingleTable(
     const tables = await client.listTables()
     const table = tables.find((t) => t.name.toLowerCase() === tableName.toLowerCase())
     if (!table) throw new Error(`Table "${tableName}" not found in database`)
-    const pkColumns = await client.getPrimaryKeyColumns(table.name)
-    if (pkColumns.length === 0) throw new Error(`Table "${tableName}" has no primary key; cannot sync`)
+    if (isTableEmbed(config.tables, table.name)) {
+      const pkColumns = await client.getPrimaryKeyColumns(table.name)
+      if (pkColumns.length === 0) {
+        throw new Error(`Table "${tableName}" has no primary key; cannot sync`)
+      }
+    }
     const collectionId = await kbContext.getOrCreateKbCollection(connectorId)
     return await syncTableToKb(
       client,

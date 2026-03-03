@@ -390,7 +390,7 @@ export function DatabaseConnectorDialog({
               <div className="space-y-2">
                 <RequiredLabel htmlFor="engine">Engine</RequiredLabel>
                 <Select name="engine" defaultValue={form.engine}>
-                  <SelectTrigger>
+                  <SelectTrigger id="engine">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

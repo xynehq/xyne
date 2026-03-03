@@ -6,7 +6,7 @@ const Logger = getLogger(Subsystem.Integrations).child({
   module: "sqlValidator",
 });
 
-/** Postgres functions that must not be callable from LLM-generated SQL (DoS, file access, etc.). */
+/** Postgres functions that must not be callable from LLM-generated SQL (DoS, file access, info disclosure). */
 const BLOCKED_POSTGRES_FUNCTIONS = new Set(
   [
     "pg_sleep",
@@ -38,8 +38,17 @@ const BLOCKED_POSTGRES_FUNCTIONS = new Set(
     "pg_notify",
     "pg_export_snapshot",
     "pg_create_restore_point",
+    "current_user",
+    "session_user",
+    "inet_server_addr",
+    "inet_client_addr",
+    "inet_server_port",
+    "inet_client_port",
   ].map((s) => s.toLowerCase()),
 );
+
+/** Block any function whose name starts with this prefix (e.g. pg_stat_*). */
+const BLOCKED_FUNCTION_PREFIX = "pg_stat_";
 
 export interface SQLValidationResult {
   isValid: boolean;
@@ -170,8 +179,36 @@ export class SQLValidator {
         const n = (name.name ?? name).toString().toLowerCase();
         if (n) out.add(n);
       }
+      // Descend into function arguments so nested calls (e.g. coalesce(pg_sleep(1),1)) are discovered
+      const args = ast.args;
+      if (args !== undefined && args !== null) {
+        if (Array.isArray(args)) {
+          args.forEach((node: any) => this.collectFunctionNames(node, out));
+        } else if (typeof args === "object" && args.type === "expr_list") {
+          const list = args.value ?? args.values;
+          if (Array.isArray(list)) {
+            list.forEach((node: any) => this.collectFunctionNames(node, out));
+          } else if (list != null) {
+            this.collectFunctionNames(list, out);
+          }
+        } else {
+          this.collectFunctionNames(args, out);
+        }
+      }
     }
-    for (const key of ["expr", "left", "right", "operand", "value", "condition", "then", "else", "query", "body"]) {
+    for (const key of [
+      "expr",
+      "left",
+      "right",
+      "operand",
+      "value",
+      "condition",
+      "then",
+      "else",
+      "query",
+      "body",
+      "args",
+    ]) {
       if (ast[key]) this.collectFunctionNames(ast[key], out);
     }
     for (const key of ["columns", "from", "where", "groupby", "having", "orderby", "with"]) {
@@ -185,6 +222,12 @@ export class SQLValidator {
     this.collectFunctionNames(ast, names);
     for (const n of names) {
       if (BLOCKED_POSTGRES_FUNCTIONS.has(n)) {
+        return {
+          isValid: false,
+          error: `Call to function '${n}' is not allowed for security reasons.`,
+        };
+      }
+      if (n.startsWith(BLOCKED_FUNCTION_PREFIX)) {
         return {
           isValid: false,
           error: `Call to function '${n}' is not allowed for security reasons.`,

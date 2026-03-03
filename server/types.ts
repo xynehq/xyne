@@ -291,12 +291,6 @@ export const createDatabaseConnectorSchema = z.object({
   tablesEmbed: z.string().optional(), // comma-separated table names to sync as full data (CSV); others sync as schema-only (JSON)
   watermarkColumn: z.string().optional(),
   batchSize: z.number().int().positive().default(1000),
-  concurrency: z.number().int().positive().default(2),
-  cdcEnabled: z.boolean().default(false),
-  ssl: z.object({
-    rejectUnauthorized: z.boolean(),
-    ca: z.string().optional(),
-  }).optional(),
 })
 
 export type CreateDatabaseConnector = z.infer<

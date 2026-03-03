@@ -186,13 +186,13 @@ export async function buildPrecomputedDbContext(
     }
   }
 
-  const cacheKey = `${query.trim()}\n${[...byConnector.entries()]
+  const cacheKey = `${userId}:${workspaceId}:${query.trim()}\n${[...byConnector.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([id, schemas]) => `${id}:${schemas.map((s) => s.tableName).sort().join(",")}`)
     .join(";")}`
   const now = Date.now()
   if (precomputedDbCache?.key === cacheKey && precomputedDbCache.expiresAt > now) {
-    return precomputedDbCache.value
+    return new Map(precomputedDbCache.value)
   }
 
   const run = async (): Promise<Map<string, string>> => {
@@ -219,7 +219,7 @@ export async function buildPrecomputedDbContext(
       value: result,
       expiresAt: now + PRECOMPUTED_DB_CACHE_TTL_MS,
     }
-    return result
+    return new Map(result)
   } catch (err) {
     if (String(err).includes("timeout")) {
       Logger.warn("Precomputed DB context skipped: orchestration timeout")

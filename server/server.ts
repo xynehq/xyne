@@ -54,6 +54,7 @@ import {
   UserRoleChangeSchema,
   chatIdParamSchema,
   createZohoDeskConnectorSchema,
+  createDatabaseConnectorSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -231,6 +232,11 @@ import {
   SyncDatabaseTableApi,
   UpdateDatabaseConnectorApi,
   RotateCredentialsApi,
+  triggerSyncSchema,
+  deleteDatabaseConnectorSchema,
+  syncTableSchema,
+  updateDatabaseConnectorSchema,
+  rotateCredentialsSchema,
 } from "@/api/databaseConnector"
 import {
   ChatBookmarkApi,
@@ -1461,12 +1467,36 @@ export const AppRoutes = app
   .get("/datasources/:docId", GetDataSourceFile)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
   .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
-  .post("/connectors/database/create", CreateDatabaseConnectorApi)
-  .post("/connectors/database/update", UpdateDatabaseConnectorApi)
-  .post("/connectors/database/rotate-credentials", RotateCredentialsApi)
-  .post("/connectors/database/sync", TriggerDatabaseSyncApi)
-  .post("/connectors/database/sync-table", SyncDatabaseTableApi)
-  .post("/connectors/database/delete", DeleteDatabaseConnectorApi)
+  .post(
+    "/connectors/database/create",
+    zValidator("json", createDatabaseConnectorSchema),
+    CreateDatabaseConnectorApi,
+  )
+  .post(
+    "/connectors/database/update",
+    zValidator("json", updateDatabaseConnectorSchema),
+    UpdateDatabaseConnectorApi,
+  )
+  .post(
+    "/connectors/database/rotate-credentials",
+    zValidator("json", rotateCredentialsSchema),
+    RotateCredentialsApi,
+  )
+  .post(
+    "/connectors/database/sync",
+    zValidator("json", triggerSyncSchema),
+    TriggerDatabaseSyncApi,
+  )
+  .post(
+    "/connectors/database/sync-table",
+    zValidator("json", syncTableSchema),
+    SyncDatabaseTableApi,
+  )
+  .post(
+    "/connectors/database/delete",
+    zValidator("json", deleteDatabaseConnectorSchema),
+    DeleteDatabaseConnectorApi,
+  )
   .get("/connectors/database/:connectorId/sync-state", GetDatabaseSyncStateApi)
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)

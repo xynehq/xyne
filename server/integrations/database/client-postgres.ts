@@ -53,6 +53,13 @@ export class PostgresClient {
       idle_timeout: 20,
       connect_timeout: 10,
     })
+    try {
+      await this.sql`SELECT 1`
+    } catch (err) {
+      await this.sql.end().catch(() => {})
+      this.sql = null
+      throw err
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -225,15 +232,16 @@ export class PostgresClient {
 
     const selects: string[] = []
     const colMeta: { name: string; type: string }[] = []
-    for (const c of columns) {
+    for (let i = 0; i < columns.length; i++) {
+      const c = columns[i]
       const q = PostgresClient.safeIdentifier(c.name)
-      const base = `(COUNT(*) - COUNT(${q}))::int AS _null_${c.name}, COUNT(DISTINCT ${q})::int AS _dist_${c.name}`
+      const base = `(COUNT(*) - COUNT(${q}))::int AS _null_${i}, COUNT(DISTINCT ${q})::int AS _dist_${i}`
       if (PostgresClient.isNumericType(c.type)) {
         selects.push(
-          `${base}, MIN(${q}) AS _min_${c.name}, MAX(${q}) AS _max_${c.name}, AVG(${q}) AS _avg_${c.name}, STDDEV(${q}) AS _stddev_${c.name}`,
+          `${base}, MIN(${q}) AS _min_${i}, MAX(${q}) AS _max_${i}, AVG(${q}) AS _avg_${i}, STDDEV(${q}) AS _stddev_${i}`,
         )
       } else if (PostgresClient.isDateTimeType(c.type)) {
-        selects.push(`${base}, MIN(${q})::text AS _min_${c.name}, MAX(${q})::text AS _max_${c.name}`)
+        selects.push(`${base}, MIN(${q})::text AS _min_${i}, MAX(${q})::text AS _max_${i}`)
       } else {
         selects.push(base)
       }
@@ -249,24 +257,25 @@ export class PostgresClient {
     if (!row || typeof row !== "object") return {}
 
     const out: Record<string, ColumnStats> = {}
-    for (const { name, type } of colMeta) {
+    for (let i = 0; i < colMeta.length; i++) {
+      const { name, type } = colMeta[i]
       const stats: ColumnStats = {}
-      const nullVal = row[`_null_${name}`]
-      const distVal = row[`_dist_${name}`]
+      const nullVal = row[`_null_${i}`]
+      const distVal = row[`_dist_${i}`]
       if (typeof nullVal === "number") stats.nullCount = nullVal
       if (typeof distVal === "number") stats.distinctCount = distVal
       if (PostgresClient.isNumericType(type)) {
-        const minVal = row[`_min_${name}`]
-        const maxVal = row[`_max_${name}`]
-        const avgVal = row[`_avg_${name}`]
-        const stdVal = row[`_stddev_${name}`]
+        const minVal = row[`_min_${i}`]
+        const maxVal = row[`_max_${i}`]
+        const avgVal = row[`_avg_${i}`]
+        const stdVal = row[`_stddev_${i}`]
         if (minVal !== null && minVal !== undefined) stats.min = minVal as number
         if (maxVal !== null && maxVal !== undefined) stats.max = maxVal as number
         if (typeof avgVal === "number") stats.avg = avgVal
         if (typeof stdVal === "number" && !Number.isNaN(stdVal)) stats.stddev = stdVal
       } else if (PostgresClient.isDateTimeType(type)) {
-        const minVal = row[`_min_${name}`]
-        const maxVal = row[`_max_${name}`]
+        const minVal = row[`_min_${i}`]
+        const maxVal = row[`_max_${i}`]
         if (minVal != null) stats.min = String(minVal)
         if (maxVal != null) stats.max = String(maxVal)
       }
@@ -276,8 +285,8 @@ export class PostgresClient {
   }
 
   /**
-   * Execute a read-only SELECT on the client DB. Uses statement_timeout and row limit.
-   * SET LOCAL is run inside a transaction so Postgres does not emit "SET LOCAL can only be used in transaction blocks".
+   * Execute a read-only SELECT on the client DB. Uses a read-only transaction, statement_timeout, and row limit.
+   * SET TRANSACTION READ ONLY ensures the database rejects any write even if validation is bypassed.
    * Caller must ensure SQL is validated as SELECT-only (e.g. via validatePostgresQuery).
    */
   async executeReadOnlyQuery(
@@ -288,11 +297,11 @@ export class PostgresClient {
     const timeoutMs = options?.timeoutMs ?? 30_000
     const rowLimit = options?.rowLimit ?? 1000
     const trimmed = sql.trimEnd().replace(/;\s*$/, "")
-    const hasLimit = /\bLIMIT\s+\d+/i.test(trimmed)
-    const limited = hasLimit ? trimmed : `${trimmed} LIMIT ${rowLimit}`
+    const limited = `SELECT * FROM (${trimmed}) AS __xyne_limited LIMIT $1`
     const rows = await this.sql.begin(async (tx) => {
+      await tx.unsafe("SET TRANSACTION READ ONLY")
       await tx.unsafe(`SET LOCAL statement_timeout = '${timeoutMs}'`)
-      return (await tx.unsafe(limited)) as DbRow[]
+      return (await tx.unsafe(limited, [rowLimit])) as DbRow[]
     })
     return Array.isArray(rows) ? rows : []
   }
