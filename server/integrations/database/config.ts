@@ -5,12 +5,10 @@
 import { DatabaseEngine } from "./types"
 
 export const DEFAULT_BATCH_SIZE = 1000
-export const DEFAULT_CONCURRENCY = 2
 
 export function getDefaultDatabaseConfig(engine: DatabaseEngine): {
   port: number
   batchSize: number
-  concurrency: number
 } {
   // Get engine-specific default port
   const defaultPort =
@@ -37,16 +35,8 @@ export function getDefaultDatabaseConfig(engine: DatabaseEngine): {
   )
   const batchSize = Number.isNaN(parsedBatchSize) || parsedBatchSize <= 0 ? DEFAULT_BATCH_SIZE : parsedBatchSize
 
-  // Parse concurrency with NaN validation
-  const parsedConcurrency = parseInt(
-    process.env.DATABASE_CONNECTOR_CONCURRENCY || String(DEFAULT_CONCURRENCY),
-    10,
-  )
-  const concurrency = Number.isNaN(parsedConcurrency) || parsedConcurrency <= 0 ? DEFAULT_CONCURRENCY : parsedConcurrency
-
   return {
     port,
     batchSize,
-    concurrency,
   }
 }

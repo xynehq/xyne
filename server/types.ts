@@ -267,6 +267,10 @@ export const chatIdParamSchema = z.object({
   chatId: z.string().min(1, "Chat ID must be a non-empty string"),
 })
 
+export const databaseConnectorIdParamSchema = z.object({
+  connectorId: z.string().min(1, "Connector ID must be a non-empty string"),
+})
+
 export const createZohoDeskConnectorSchema = z.object({
   app: z.literal("zoho-desk" as const).optional(),
   authType: z.literal(AuthType.OAuth),

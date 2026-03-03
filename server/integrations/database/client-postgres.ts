@@ -27,7 +27,7 @@ export class PostgresClient {
   }
 
   private getConnectionString(): string {
-    const { host, port, database, auth, ssl } = this.config
+    const { host, port, database, auth } = this.config
     if ("iamAuth" in auth && auth.iamAuth) {
       throw new Error("IAM auth not supported for Postgres in this connector")
     }
@@ -37,12 +37,11 @@ export class PostgresClient {
     }
     const user = encodeURIComponent(username)
     const password = encodeURIComponent(pwd)
-    const sslMode = ssl?.rejectUnauthorized === false ? "require" : "prefer"
     // URI-encode all components to prevent connection string manipulation (e.g. host="evil.com/foo?sslmode=disable")
     const hostEnc = encodeURIComponent(String(host))
     const portEnc = encodeURIComponent(String(port))
     const dbEnc = encodeURIComponent(String(database))
-    return `postgres://${user}:${password}@${hostEnc}:${portEnc}/${dbEnc}?sslmode=${sslMode}`
+    return `postgres://${user}:${password}@${hostEnc}:${portEnc}/${dbEnc}`
   }
 
   async connect(): Promise<void> {

@@ -55,6 +55,7 @@ import {
   chatIdParamSchema,
   createZohoDeskConnectorSchema,
   createDatabaseConnectorSchema,
+  databaseConnectorIdParamSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -1497,7 +1498,11 @@ export const AppRoutes = app
     zValidator("json", deleteDatabaseConnectorSchema),
     DeleteDatabaseConnectorApi,
   )
-  .get("/connectors/database/:connectorId/sync-state", GetDatabaseSyncStateApi)
+  .get(
+    "/connectors/database/:connectorId/sync-state",
+    zValidator("param", databaseConnectorIdParamSchema),
+    GetDatabaseSyncStateApi,
+  )
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post(
