@@ -1,3 +1,10 @@
+# [3.40.0](https://github.com/xynehq/xyne/compare/v3.39.0...v3.40.0) (2026-03-03)
+
+
+### Features
+
+* added database connector (postgres only) ([#1259](https://github.com/xynehq/xyne/issues/1259)) ([f9cf54b](https://github.com/xynehq/xyne/commit/f9cf54be0e1df3df475fcbedcc0f599dead85d92))
+
 # [3.39.0](https://github.com/xynehq/xyne/compare/v3.38.0...v3.39.0) (2026-02-28)
 
 
