@@ -6,6 +6,7 @@ import type { Models } from "@/ai/types"
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import config from "@/config"
 import type { DatabaseTableSchemaDoc } from "@/integrations/database/types"
+import { duckdbSqlGeneratorPrompt, postgresSqlGeneratorPrompt } from "@/ai/prompts"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "sqlInference",
@@ -44,35 +45,7 @@ export const analyzeQueryAndGenerateSQL = async (
     return t.trim();
   };
 
-  const prompt = `You are a DuckDB SQL generator.
-
-If the question is NOT answerable with a SELECT over the given tables, respond with: {"sql": null, "notes": "Query is not answerable with the given schema"}
-
-If it IS answerable, generate a single DuckDB SELECT statement.
-- Target database: DuckDB (SQL dialect = DuckDB)
-- Use ONLY the provided schema and column names. Do NOT invent fields
-- Output a SINGLE statement. No CTEs with CREATE/INSERT/UPDATE/DELETE. SELECT-only
-- Disallow: INSTALL, LOAD, PRAGMA, COPY, EXPORT, ATTACH, DETACH, CALL, CREATE/ALTER/DROP, SET/RESET
-- Output must be a single-line minified JSON object. Do NOT include markdown, code fences, comments, or any prose
-- If ambiguous, choose the simplest interpretation and state the assumption in "notes"
-- Output must be a single-line minified JSON: {"sql": "SELECT ...", "notes": "brief reasoning"}
-
-IMPORTANT SQL IDENTIFIER RULES:
-- Column names MAY contain spaces, hyphens, or special characters
-- ALWAYS wrap EVERY column name and table name in DOUBLE QUOTES ("")
-- Do NOT remove, shorten, normalize, or rewrite column names
-- Use column names EXACTLY as provided in the schema, character-for-character
-- Example:
-  Correct:  SELECT "Merchant Integration" FROM "my_table"
-  Incorrect: SELECT Merchant Integration FROM my_table
-
-Context:
-- User question: ${query}
-- Available tables and columns with types and short descriptions:
-table name: ${tableName} is generated from a sheet named: "${sheetName}"
-schema: ${schema}
-- Example rows (up to 5 per table; strings truncated):
-${fewShotSamples}`;
+  const prompt = duckdbSqlGeneratorPrompt(query, tableName, sheetName, schema, fewShotSamples);
 
   try {
     const provider = getProviderByModel(model);
@@ -174,26 +147,7 @@ export const generatePostgresSQL = async (
     })
     .join("\n\n")
 
-  const prompt = `You are a Postgres SQL generator. The user asked a question about their database.
-
-If the question is NOT answerable with a SELECT over the given tables, respond with: {"sql": null, "notes": "Query is not answerable with the given schema"}
-
-If it IS answerable, generate a single Postgres SELECT statement.
-- Use table names qualified with schema: ${defaultSchema}.table_name
-- Use ONLY columns that exist in the schema below. Do NOT invent columns.
-- Output a SINGLE SELECT. No CREATE/INSERT/UPDATE/DELETE. No multiple statements.
-- You may use JOINs, WHERE, GROUP BY, ORDER BY, LIMIT, and CTEs (WITH ... SELECT ...).
-- Output must be a single-line minified JSON: {"sql": "SELECT ...", "notes": "brief reasoning"}
-
-MULTI-TABLE SAFETY (important):
-- Do NOT produce cartesian products over raw tables (e.g. FROM t1, t2 with no JOIN).
-- When combining related tables, use explicit JOIN with ON.
-- When comparing unrelated aggregates (e.g. "compare total revenue and average attendance"), first aggregate each table in a CTE to a single row, then combine: WITH a AS (SELECT SUM(...) AS x FROM t1), b AS (SELECT AVG(...) AS y FROM t2) SELECT a.x, b.y FROM a, b.
-
-User question: ${query}
-
-Schema (all tables in the same database):
-${schemaText}`
+  const prompt = postgresSqlGeneratorPrompt(query, schemaText, defaultSchema);
 
   try {
     const provider = getProviderByModel(model)

@@ -117,7 +117,7 @@ export async function getPrecomputedDbContextIfNeeded(
   return buildPrecomputedDbContext(searchResults, query, userId, workspaceId)
 }
 
-const PRECOMPUTED_DB_CACHE_TTL_MS = 60_000
+const PRECOMPUTED_DB_CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes; shared across users for same query + connector set
 const PRECOMPUTED_DB_MAX_CONCURRENT = 5
 const PRECOMPUTED_DB_ORCHESTRATION_TIMEOUT_MS = 45_000
 
@@ -149,7 +149,7 @@ function releasePrecomputedDbSlot(): void {
 /**
  * Build a map of connectorId -> formatted context string for database schema-only docs in the search results.
  * Call this before mapping over search results so answerContextMap can use the precomputed context.
- * Uses a short TTL cache, concurrency limit, and orchestration timeout to avoid latency spikes and pool exhaustion.
+ * Uses a TTL cache keyed by query + connector/schema set (shared across users), concurrency limit, and orchestration timeout.
  */
 export async function buildPrecomputedDbContext(
   searchResults: VespaSearchResults[] | undefined,
@@ -190,7 +190,7 @@ export async function buildPrecomputedDbContext(
     }
   }
 
-  const cacheKey = `${userId}:${workspaceId}:${query.trim()}\n${[...byConnector.entries()]
+  const cacheKey = `${query.trim()}\n${[...byConnector.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([id, schemas]) => `${id}:${schemas.map((s) => s.tableName).sort().join(",")}`)
     .join(";")}`
