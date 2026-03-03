@@ -118,14 +118,15 @@ export async function getPrecomputedDbContextIfNeeded(
 }
 
 const PRECOMPUTED_DB_CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes; shared across users for same query + connector set
+const PRECOMPUTED_DB_CACHE_MAX_ENTRIES = 50
 const PRECOMPUTED_DB_MAX_CONCURRENT = 5
 const PRECOMPUTED_DB_ORCHESTRATION_TIMEOUT_MS = 45_000
 
-let precomputedDbCache: {
-  key: string
-  value: Map<string, string>
-  expiresAt: number
-} | null = null
+/** Multi-entry TTL cache: cacheKey -> { value, expiresAt }. Evicts expired and oldest when at capacity. */
+const precomputedDbCache = new Map<
+  string,
+  { value: Map<string, string>; expiresAt: number }
+>()
 let precomputedDbRunning = 0
 
 function acquirePrecomputedDbSlot(): Promise<void> {
@@ -190,13 +191,15 @@ export async function buildPrecomputedDbContext(
     }
   }
 
+  // TODO: improve caching logic later for large scale use cases
   const cacheKey = `${query.trim()}\n${[...byConnector.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([id, schemas]) => `${id}:${schemas.map((s) => s.tableName).sort().join(",")}`)
     .join(";")}`
   const now = Date.now()
-  if (precomputedDbCache?.key === cacheKey && precomputedDbCache.expiresAt > now) {
-    return new Map(precomputedDbCache.value)
+  const cached = precomputedDbCache.get(cacheKey)
+  if (cached && cached.expiresAt > now) {
+    return new Map(cached.value)
   }
 
   const run = async (): Promise<Map<string, string>> => {
@@ -218,10 +221,20 @@ export async function buildPrecomputedDbContext(
         ),
       ),
     ])
-    precomputedDbCache = {
-      key: cacheKey,
-      value: result,
-      expiresAt: now + PRECOMPUTED_DB_CACHE_TTL_MS,
+    const expiresAt = now + PRECOMPUTED_DB_CACHE_TTL_MS
+    precomputedDbCache.set(cacheKey, { value: result, expiresAt })
+    if (precomputedDbCache.size > PRECOMPUTED_DB_CACHE_MAX_ENTRIES) {
+      const keysToDelete: string[] = []
+      for (const [k, v] of precomputedDbCache) {
+        if (v.expiresAt <= now) keysToDelete.push(k)
+      }
+      keysToDelete.forEach((k) => precomputedDbCache.delete(k))
+      while (precomputedDbCache.size > PRECOMPUTED_DB_CACHE_MAX_ENTRIES) {
+        const oldest = [...precomputedDbCache.entries()].sort(
+          (a, b) => a[1].expiresAt - b[1].expiresAt,
+        )[0]
+        if (oldest) precomputedDbCache.delete(oldest[0])
+      }
     }
     return new Map(result)
   } catch (err) {
