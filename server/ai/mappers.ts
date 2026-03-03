@@ -472,6 +472,15 @@ export const modelDetailsMap: Record<
       }
     }
   },
+  [getActualModelName(Models.LiteLLM_Claude_Opus_4_5)]:{
+    name:"claude-opus-4-5",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.005,
+        pricePerThousandOutputTokens:0.025,
+      }
+    }
+  },
   // [getActualModelName(Models.LiteLLM_Gemini_3_Pro)]:{
   //   name:"gemini-3-pro-preview",
   //   cost:{
@@ -559,6 +568,7 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.Vertex_Gemini_1_5_Pro_Exp_0827]: AIProviders.VertexAI,
   // [Models.GLM_4_5]: AIProviders.LiteLLM,
   [Models.LiteLLM_Claude_Sonnet_4_5]: AIProviders.LiteLLM,
+  [Models.LiteLLM_Claude_Opus_4_5]: AIProviders.LiteLLM,
   // [Models.LiteLLM_Gemini_3_Pro]: AIProviders.LiteLLM,
   [Models.LiteLLM_Gemini_3_Flash]: AIProviders.LiteLLM,
   [Models.KIMI_LATEST]: AIProviders.LiteLLM,

@@ -200,11 +200,19 @@ export const fetchModelConfigs = async (): Promise<Array<{
     const modelId = modelInfo.model_name
     const actualName = modelInfo.litellm_params?.model || modelId
     if (modelInfo.model_info?.litellm_provider !== "hosted_vllm") {
-      if (!config.allowSonnet45 || modelId !== Models.LiteLLM_Claude_Sonnet_4_5) {
+      const isSonnet45 = modelId === Models.LiteLLM_Claude_Sonnet_4_5
+      const isOpus45 = modelId === Models.LiteLLM_Claude_Opus_4_5
+      const allowedByAllowlist =
+        (isSonnet45 && config.allowSonnet45) || (isOpus45 && config.allowOpus45)
+      if (!allowedByAllowlist) {
         continue
       }
-      // Allowlist Claude Sonnet 4.5 even if litellm_provider is not set to "hosted_vllm"
-      Logger.info("Allowing Claude Sonnet 4.5 model despite litellm_provider not being 'hosted_vllm'")
+      if (isSonnet45 && config.allowSonnet45) {
+        Logger.info("Allowing Claude Sonnet 4.5 model despite litellm_provider not being 'hosted_vllm'")
+      }
+      if (isOpus45 && config.allowOpus45) {
+        Logger.info("Allowing Claude Opus 4.5 model despite litellm_provider not being 'hosted_vllm'")
+      }
     }
 
     // Skip if we've already processed this model (deduplicate by model_name)

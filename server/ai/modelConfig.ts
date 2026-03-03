@@ -536,6 +536,15 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     deepResearch: true,
     description: "Balanced for reasoning, long context windows.",
   },
+  [Models.LiteLLM_Claude_Opus_4_5]: {
+    actualName: "claude-opus-4-5",
+    labelName: ModelDisplayNames.LITELLM_CLAUDE_OPUS_4_5,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
+    description: "The most intelligent, high-capability frontier model, optimized for complex reasoning, advanced coding, and autonomous agentic workflows.",
+  },
   // [Models.LiteLLM_Gemini_3_Pro]: {
   //   actualName: "gemini-3-pro-preview",
   //   labelName: ModelDisplayNames.LITELLM_GEMINI_3_PRO,
