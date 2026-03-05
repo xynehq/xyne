@@ -1,3 +1,10 @@
+## [3.40.4](https://github.com/xynehq/xyne/compare/v3.40.3...v3.40.4) (2026-03-05)
+
+
+### Bug Fixes
+
+* fixed scrolling of tables in response ([#1265](https://github.com/xynehq/xyne/issues/1265)) ([43edecd](https://github.com/xynehq/xyne/commit/43edecd558c9fe338c6a060f929c1e9806f4ac84))
+
 ## [3.40.3](https://github.com/xynehq/xyne/compare/v3.40.2...v3.40.3) (2026-03-05)
 
 
