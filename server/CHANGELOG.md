@@ -1,3 +1,10 @@
+## [3.40.3](https://github.com/xynehq/xyne/compare/v3.40.2...v3.40.3) (2026-03-05)
+
+
+### Bug Fixes
+
+* fixed initial highlight timing issue ([#1263](https://github.com/xynehq/xyne/issues/1263)) ([dbe94c7](https://github.com/xynehq/xyne/commit/dbe94c711862097ceeece58fe65cd64a6d3fc0ae))
+
 ## [3.40.2](https://github.com/xynehq/xyne/compare/v3.40.1...v3.40.2) (2026-03-03)
 
 
