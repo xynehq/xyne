@@ -1,4 +1,4 @@
-import { useRef, useLayoutEffect } from "react"
+import { useRef, useLayoutEffect, useState, useCallback } from "react"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 
 // Helper function to generate UUID
@@ -180,11 +180,8 @@ export const createTableComponents = (options?: TableScrollPersist) => {
     typeof options.saveTableScroll === "function" &&
     typeof options.restoreTableScroll === "function"
       ? function TableWithScrollPersist({ node, ...props }: any) {
-          const tableIndexRef = useRef<number | null>(null)
-          if (tableIndexRef.current === null) {
-            tableIndexRef.current = options.getNextTableIndex()
-          }
-          const scrollKey = `${options.messageId}-${tableIndexRef.current}`
+          const [tableIndex] = useState(() => options.getNextTableIndex())
+          const scrollKey = `${options.messageId}-${tableIndex}`
           const divRef = useRef<HTMLDivElement>(null)
 
           useLayoutEffect(() => {
@@ -192,12 +189,12 @@ export const createTableComponents = (options?: TableScrollPersist) => {
             if (!el) return
             const saved = options.restoreTableScroll(scrollKey)
             if (saved > 0) el.scrollLeft = saved
-          }, [scrollKey])
+          }, [scrollKey, options.restoreTableScroll])
 
-          const handleScroll = () => {
+          const handleScroll = useCallback(() => {
             const el = divRef.current
             if (el) options.saveTableScroll(scrollKey, el.scrollLeft)
-          }
+          }, [scrollKey, options.saveTableScroll])
 
           return (
             <div
