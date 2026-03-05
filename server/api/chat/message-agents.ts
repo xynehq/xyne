@@ -1977,7 +1977,7 @@ export async function afterToolExecutionHook(
             userMessage,
             contextStrings
           )
-          loggerWithChild({ email: context.user.email }).info(
+          loggerWithChild({ email: context.user.email }).debug(
             {
               toolName,
               modelId: rankingModelId,

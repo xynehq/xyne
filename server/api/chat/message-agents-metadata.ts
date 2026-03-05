@@ -443,7 +443,7 @@ export function enforceMetadataConstraintsOnSelection(
     return compliantSelected
   }
   if (compliantSelected.length > 0) {
-    return selected
+    return compliantSelected
   }
   const compliantFallback = rankedCandidates
     .filter((candidate) => candidate.compliant)
