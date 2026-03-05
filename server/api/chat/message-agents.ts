@@ -4967,11 +4967,16 @@ export async function MessageAgents(c: Context): Promise<Response> {
             expectedResults.push(...(expectationHistory.get(t) || []))
           }
 
+          const expectedResults: ToolExpectationAssignment[] = []
+          for (let t = startTurn; t <= turn; t++) {
+            expectedResults.push(...(expectationHistory.get(t) || []))
+          }
+
           return {
             reviewInput: {
               focus: "turn_end",
               turnNumber: turn,
-              toolCallHistory: toolHistory,
+              toolCallHistory: effectiveHistory,
               plan: agentContext.plan,
               expectedResults,
             },
@@ -6522,11 +6527,16 @@ async function runDelegatedAgentWithMessageAgents(
         expectedResults.push(...(expectationHistory.get(t) || []))
       }
 
+      const expectedResults: ToolExpectationAssignment[] = []
+      for (let t = startTurn; t <= turn; t++) {
+        expectedResults.push(...(expectationHistory.get(t) || []))
+      }
+
       return {
         reviewInput: {
           focus: "turn_end",
           turnNumber: turn,
-          toolCallHistory: toolHistory,
+          toolCallHistory: effectiveHistory,
           plan: agentContext.plan,
           expectedResults,
         },
