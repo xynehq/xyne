@@ -305,8 +305,8 @@ export class PostgresClient {
       out[name] = stats
     }
 
-    /** Only store sample values for enum-like columns (low cardinality in sample). */
     const maxDistinctForSampleValues = 300
+    const maxSampleRows = 50
     const sampleStringMaxLen = 100
 
     const enumLikeColumns = new Set(
@@ -330,6 +330,7 @@ export class PostgresClient {
         const seen = new Set<string>()
         const values: (string | number | boolean | null)[] = []
         for (const r of sampleRowsResult) {
+          if (values.length >= maxSampleRows) break
           const v = (r as Record<string, unknown>)[name]
           const key =
             v === null || v === undefined

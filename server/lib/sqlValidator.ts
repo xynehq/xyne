@@ -114,13 +114,13 @@ export class SQLValidator {
             error: "Multiple statements not allowed",
           };
         }
-        if (ast.length === 0) {
+        ast = ast[0];
+        if (!ast) {
           return {
             isValid: false,
             error: "Failed to parse SQL syntax",
           };
         }
-        ast = ast[0];
       }
 
       // Validate statement type
