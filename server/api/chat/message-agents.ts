@@ -2392,9 +2392,13 @@ export function buildReviewPromptFromContext(
   const workspaceSection = context.userContext?.trim()
     ? `Workspace Context:\n${context.userContext.trim()}`
     : ""
-  const useMultiTurnHistory = context.toolCallHistory.length > 0
+  const useMultiTurnHistory =
+    context.toolCallHistory.length > 0 || options?.focus === "turn_end"
   const toolOutputsSection = useMultiTurnHistory
     ? (() => {
+        if (context.toolCallHistory.length === 0) {
+          return `Tool calls:\n${formatToolCallHistoryByTurn(context.toolCallHistory)}`
+        }
         const turns = context.toolCallHistory.map((r) => r.turnNumber)
         const minTurn = Math.min(...turns)
         const maxTurn = Math.max(...turns)
@@ -4324,7 +4328,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const buildTurnReviewInput = (
           turn: number,
           reviewFreq: number
-        ): { reviewInput: AutoReviewInput; fallbackUsed: boolean } => {
+        ): { reviewInput: AutoReviewInput } => {
           const startTurn = Math.max(
             MIN_TURN_NUMBER,
             turn - reviewFreq + 1
@@ -4333,20 +4337,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
             (record) =>
               record.turnNumber >= startTurn && record.turnNumber <= turn
           )
-          let fallbackUsed = false
-          let effectiveHistory = toolHistory
-
-          if (
-            effectiveHistory.length === 0 &&
-            agentContext.toolCallHistory.length > 0
-          ) {
-            fallbackUsed = true
-            effectiveHistory = [
-              agentContext.toolCallHistory[
-                agentContext.toolCallHistory.length - 1
-              ],
-            ]
-          }
 
           const expectedResults: ToolExpectationAssignment[] = []
           for (let t = startTurn; t <= turn; t++) {
@@ -4357,11 +4347,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
             reviewInput: {
               focus: "turn_end",
               turnNumber: turn,
-              toolCallHistory: effectiveHistory,
+              toolCallHistory: toolHistory,
               plan: agentContext.plan,
               expectedResults,
             },
-            fallbackUsed,
           }
         }
 
@@ -4392,24 +4381,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               const runReviewThisTurn =
                 turn === MIN_TURN_NUMBER || turn % reviewFreq === 0
               if (runReviewThisTurn) {
-                const { reviewInput, fallbackUsed } = buildTurnReviewInput(
-                  turn,
-                  reviewFreq
-                )
-                if (
-                  fallbackUsed &&
-                  agentContext.toolCallHistory.length > 0
-                ) {
-                  Logger.warn(
-                    {
-                      turn,
-                      fallbackUsed,
-                      toolHistoryCount: agentContext.toolCallHistory.length,
-                      chatId: agentContext.chat.externalId,
-                    },
-                    "[MessageAgents] No per-turn tool records; defaulting to last tool call."
-                  )
-                }
+                const { reviewInput } = buildTurnReviewInput(turn, reviewFreq)
                 await runAndBroadcastReview(agentContext, reviewInput, turn)
               } else {
                 Logger.debug(
@@ -5801,26 +5773,12 @@ async function runDelegatedAgentWithMessageAgents(
     const buildTurnReviewInput = (
       turn: number,
       reviewFreq: number
-    ): { reviewInput: AutoReviewInput; fallbackUsed: boolean } => {
+    ): { reviewInput: AutoReviewInput } => {
       const startTurn = Math.max(MIN_TURN_NUMBER, turn - reviewFreq + 1)
       const toolHistory = agentContext.toolCallHistory.filter(
         (record) =>
           record.turnNumber >= startTurn && record.turnNumber <= turn
       )
-      let fallbackUsed = false
-      let effectiveHistory = toolHistory
-
-      if (
-        effectiveHistory.length === 0 &&
-        agentContext.toolCallHistory.length > 0
-      ) {
-        fallbackUsed = true
-        effectiveHistory = [
-          agentContext.toolCallHistory[
-            agentContext.toolCallHistory.length - 1
-          ],
-        ]
-      }
 
       const expectedResults: ToolExpectationAssignment[] = []
       for (let t = startTurn; t <= turn; t++) {
@@ -5831,11 +5789,10 @@ async function runDelegatedAgentWithMessageAgents(
         reviewInput: {
           focus: "turn_end",
           turnNumber: turn,
-          toolCallHistory: effectiveHistory,
+          toolCallHistory: toolHistory,
           plan: agentContext.plan,
           expectedResults,
         },
-        fallbackUsed,
       }
     }
 
@@ -5866,24 +5823,7 @@ async function runDelegatedAgentWithMessageAgents(
           const runReviewThisTurn =
             turn === MIN_TURN_NUMBER || turn % reviewFreq === 0
           if (runReviewThisTurn) {
-            const { reviewInput, fallbackUsed } = buildTurnReviewInput(
-              turn,
-              reviewFreq
-            )
-            if (
-              fallbackUsed &&
-              agentContext.toolCallHistory.length > 0
-            ) {
-              Logger.warn(
-                {
-                  turn,
-                  fallbackUsed,
-                  toolHistoryCount: agentContext.toolCallHistory.length,
-                  chatId: agentContext.chat.externalId,
-                },
-                "[DelegatedAgenticRun] No per-turn tool records; defaulting to last tool call."
-              )
-            }
+            const { reviewInput } = buildTurnReviewInput(turn, reviewFreq)
             await runAndBroadcastReview(agentContext, reviewInput, turn)
           } else {
             Logger.debug(
