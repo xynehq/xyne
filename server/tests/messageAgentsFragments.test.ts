@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentRunContext } from "@/api/chat/agent-schemas"
 import {
+  __messageAgentsHistoryInternals,
   __messageAgentsMetadataInternals,
   afterToolExecutionHook,
   buildDelegatedAgentFragments,
@@ -259,6 +260,48 @@ describe("message-agents context tracking", () => {
     expect(fragments).toHaveLength(1)
     expect(fragments[0].source.app).toBe(Apps.Xyne)
     expect(fragments[0].content).toContain("Delegate")
+  })
+
+  test("buildConversationHistoryForAgentRun normalizes context JSON and filters invalid turns", () => {
+    const { buildConversationHistoryForAgentRun } =
+      __messageAgentsHistoryInternals
+
+    const history = [
+      {
+        messageRole: "user",
+        message: '[{"type":"text","value":"Summarize"},{"type":"pill","value":{"title":"Q4 Plan"}}]',
+        fileIds: ["clf-1"],
+        errorMessage: "",
+      },
+      {
+        messageRole: "assistant",
+        message: "Sure, sharing summary.",
+        fileIds: [],
+        errorMessage: "",
+      },
+      {
+        messageRole: "assistant",
+        message: "",
+        fileIds: [],
+        errorMessage: "",
+      },
+      {
+        messageRole: "user",
+        message: "bad turn",
+        fileIds: [],
+        errorMessage: "timeout",
+      },
+    ] as any
+
+    const { jafHistory, llmHistory } = buildConversationHistoryForAgentRun(history)
+
+    expect(jafHistory).toHaveLength(2)
+    expect(jafHistory[0].role).toBe("user")
+    expect(jafHistory[0].content).toContain('User referred a file with title "Q4 Plan"')
+    expect(jafHistory[1].role).toBe("assistant")
+    expect(llmHistory).toHaveLength(2)
+    expect((llmHistory[0] as any).role).toBe("user")
+    expect((llmHistory[1] as any).role).toBe("assistant")
   })
 
   test("getRecentImagesFromContext prioritizes attachments and last two turns", () => {

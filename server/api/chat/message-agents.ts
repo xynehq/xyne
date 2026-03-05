@@ -103,7 +103,7 @@ import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { db } from "@/db/client"
 import { insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
-import { insertMessage } from "@/db/message"
+import { getChatMessagesWithAuth, insertMessage } from "@/db/message"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import {
   ChatType,
@@ -318,6 +318,76 @@ async function streamReasoningStep(
 function truncateValue(value: string, maxLength = 160): string {
   if (value.length <= maxLength) return value
   return `${value.slice(0, maxLength - 1)}…`
+}
+
+function normalizeUserMessageForHistory(message: SelectMessage): string {
+  const fileIds = Array.isArray(message?.fileIds) ? message.fileIds : []
+  if (
+    message.messageRole !== MessageRole.User ||
+    !fileIds.length ||
+    !message.message.startsWith("[{")
+  ) {
+    return message.message
+  }
+
+  try {
+    const parsed = JSON.parse(message.message)
+    if (!Array.isArray(parsed)) {
+      return message.message
+    }
+    return parsed
+      .map((item) => {
+        if (item?.type === "text") {
+          return `${item?.value ?? ""} `
+        }
+        if (item?.type === "pill") {
+          const title = item?.value?.title ?? "Unknown file"
+          return `<User referred a file with title "${title}" here> `
+        }
+        if (item?.type === "link") {
+          return "<User added a link with url here, this url's content is already available to you in the prompt> "
+        }
+        return ""
+      })
+      .join("")
+      .trim()
+  } catch {
+    return message.message
+  }
+}
+
+function buildConversationHistoryForAgentRun(
+  history: SelectMessage[],
+): {
+  jafHistory: JAFMessage[]
+  llmHistory: Message[]
+} {
+  const filtered = history
+    .filter((msg) => !msg?.errorMessage)
+    .filter(
+      (msg) => !(msg.messageRole === MessageRole.Assistant && !msg.message),
+    )
+    .filter(
+      (msg) =>
+        msg.messageRole === MessageRole.User ||
+        msg.messageRole === MessageRole.Assistant,
+    )
+
+  const toText = (msg: SelectMessage) => normalizeUserMessageForHistory(msg)
+
+  return {
+    jafHistory: filtered.map((msg) => ({
+      role: msg.messageRole === MessageRole.Assistant ? "assistant" : "user",
+      content: toText(msg),
+    })),
+    llmHistory: filtered.map((msg) => ({
+      role:
+        msg.messageRole === MessageRole.Assistant
+          ? ConversationRole.ASSISTANT
+          : ConversationRole.USER,
+      content: [{ text: toText(msg) }],
+    })),
+  }
 }
 
 const METADATA_VALUE_MAX_LENGTH = 220
@@ -779,6 +849,11 @@ export const __messageAgentsMetadataInternals = {
   formatFragmentsWithMetadata,
   extractMetadataConstraintsFromUserMessage,
   rankFragmentsByMetadataConstraints,
+}
+
+export const __messageAgentsHistoryInternals = {
+  normalizeUserMessageForHistory,
+  buildConversationHistoryForAgentRun,
 }
 
 const RECENT_IMAGE_WINDOW = 2
@@ -1290,6 +1365,7 @@ export function buildFinalSynthesisPayload(
 - Describe evidence gaps plainly before concluding; never guess.
 - Extract actionable details from provided images and cite them via their fragment indices.
 - Respect user-imposed constraints using fragment metadata (any metadata field). If compliant evidence is missing, state that clearly.
+- If "This is the system prompt of agent:" is present, analyse for instructions relevant for answering and strictly bind by them .
 
 ### Response Construction
 - Lead with the conclusion, then stack proof underneath.
@@ -1677,6 +1753,7 @@ type ChatBootstrapParams = {
 type ChatBootstrapResult = {
   chat: SelectChat
   userMessage: SelectMessage
+  conversationHistory: SelectMessage[]
   attachmentError?: Error
 }
 
@@ -1729,7 +1806,12 @@ async function ensureChatAndPersistUserMessage(
         }
       }
 
-      return { chat, userMessage, attachmentError: attachmentError ?? undefined }
+      return {
+        chat,
+        userMessage,
+        conversationHistory: [],
+        attachmentError: attachmentError ?? undefined,
+      }
     }
 
     const chat = await updateChatByExternalIdWithAuth(
@@ -1737,6 +1819,11 @@ async function ensureChatAndPersistUserMessage(
       String(incomingChatId),
       String(params.email),
       {}
+    )
+    const conversationHistory = await getChatMessagesWithAuth(
+      tx,
+      String(incomingChatId),
+      String(params.email),
     )
 
     const messageInsert = {
@@ -1765,7 +1852,12 @@ async function ensureChatAndPersistUserMessage(
       }
     }
 
-    return { chat, userMessage, attachmentError: attachmentError ?? undefined }
+    return {
+      chat,
+      userMessage,
+      conversationHistory,
+      attachmentError: attachmentError ?? undefined,
+    }
   })
 }
 
@@ -2216,7 +2308,7 @@ export async function afterToolExecutionHook(
   }
 
   // LOG: Context extraction results
-  loggerWithChild({ email: context.user.email }).debug(
+  loggerWithChild({ email: context.user.email }).info(
     {
       toolName,
       totalContextsExtracted: contexts.length,
@@ -2231,7 +2323,7 @@ export async function afterToolExecutionHook(
     )
 
     // LOG: Filtering results
-    loggerWithChild({ email: context.user.email }).debug(
+    loggerWithChild({ email: context.user.email }).info(
       {
         toolName,
         totalContexts: contexts.length,
@@ -2336,7 +2428,7 @@ export async function afterToolExecutionHook(
             userMessage,
             contextStrings
           )
-          loggerWithChild({ email: context.user.email }).debug(
+          loggerWithChild({ email: context.user.email }).info(
             {
               toolName,
               modelId: rankingModelId,
@@ -4332,6 +4424,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
     let lastPersistedMessageId = 0
     let lastPersistedMessageExternalId = ""
     let attachmentStorageError: Error | null = null
+    let previousConversationHistory: SelectMessage[] = []
 
     try {
       const bootstrap = await ensureChatAndPersistUserMessage({
@@ -4349,6 +4442,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
       lastPersistedMessageId = bootstrap.userMessage.id as number
       lastPersistedMessageExternalId = String(bootstrap.userMessage.externalId)
       attachmentStorageError = bootstrap.attachmentError ?? null
+      previousConversationHistory = bootstrap.conversationHistory ?? []
       const chatAgentId = chatRecord.agentId
         ? String(chatRecord.agentId)
         : undefined
@@ -4376,6 +4470,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
       })
     }
     rootSpan.setAttribute("chatId", String(chatRecord.externalId))
+    rootSpan.setAttribute(
+      "conversation_history_count",
+      previousConversationHistory.length,
+    )
 
     if (
       resolvedAgentId &&
@@ -4861,10 +4959,14 @@ export async function MessageAgents(c: Context): Promise<Response> {
         // Initialize run state
         const runId = generateRunId()
         const traceId = generateTraceId()
+        const { jafHistory, llmHistory } = buildConversationHistoryForAgentRun(
+          previousConversationHistory
+        )
         const initialMessages: JAFMessage[] = [
+          ...jafHistory,
           {
             role: "user",
-            content: message, // Use actual user message
+            content: message,
           },
           ...initialSyntheticMessages,
         ]
@@ -4881,6 +4983,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
         jafStreamingSpan.setAttribute("chat_external_id", chatRecord.externalId)
         jafStreamingSpan.setAttribute("run_id", runId)
         jafStreamingSpan.setAttribute("trace_id", traceId)
+        jafStreamingSpan.setAttribute("history_message_count", jafHistory.length)
+        jafStreamingSpan.setAttribute("history_seeded", jafHistory.length > 0)
         let turnSpan: Span | undefined
         const endTurnSpan = () => {
           if (turnSpan) {
@@ -4898,6 +5002,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
 
         const messagesWithNoErrResponse: Message[] = [
+          ...llmHistory,
           {
             role: ConversationRole.USER,
             content: [{ text: message }],
