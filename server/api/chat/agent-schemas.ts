@@ -164,6 +164,7 @@ export interface AgentRunContext {
   currentSubTask: string | null // Active substep ID
   userContext: string
   agentPrompt?: string
+  dedicatedAgentSystemPrompt?: string
 
   // Clarification tracking
   clarifications: Clarification[]
