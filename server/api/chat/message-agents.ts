@@ -178,6 +178,18 @@ const MIN_TURN_NUMBER = 0
  */
 const USE_AGENT_SELF_REVIEW = config.useAgentSelfReview || false
 
+const DEFAULT_REVIEW_FREQUENCY = 5
+const MIN_REVIEW_FREQUENCY = 1
+const MAX_REVIEW_FREQUENCY = 50
+
+function normalizeReviewFrequency(value: unknown): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < MIN_REVIEW_FREQUENCY) {
+    return DEFAULT_REVIEW_FREQUENCY
+  }
+  return Math.min(MAX_REVIEW_FREQUENCY, Math.floor(n))
+}
+
 const mutableAgentContext = (
   context: Readonly<AgentRunContext>
 ): AgentRunContext => context as AgentRunContext
@@ -3403,15 +3415,25 @@ function buildAgentInstructions(
       : "- Call toDoWrite at the start of a turn when the plan is new, when review requested changes, or when you need to add or close tasks; otherwise you may proceed without calling toDoWrite to avoid unnecessary iterations.",
     "- Terminate the active plan the moment you have enough evidence to cater to the complete requirement of the user; immediately drop any remaining subtasks when the goal is satisfied.",
     "- Scale the number of subtasks to the query’s true complexity , however quality of the final answer and complete execution and satisfaction of user's query outranks task count, you must always prioritize quality",
-    "- If the review reports `planChangeNeeded=true`, rewrite the plan around the provided `planChangeReason` before running any new tools, even if older tasks were mid-flight.",
-    "- Mirror every `toolFeedback.followUp` and `unmetExpectations` item with a dedicated sub-task (or reopened task) and list the tools that will satisfy it.",
-    "- Track each `clarificationQuestions` entry as its own sub-task or outbound user question until the ambiguity is resolved inside <last_review_result>.",
+    ...(USE_AGENT_SELF_REVIEW
+      ? [
+          "- If your self-review finds that the plan no longer fits (e.g. evidence complete or a new approach needed), rewrite the plan accordingly before running new tools.",
+          "- Mirror every follow-up or unmet goal from your self-review with a dedicated sub-task (or reopened task) and list the tools that will satisfy it.",
+          "- Track each clarification question as its own sub-task or outbound user question until resolved.",
+          "- If your self-review demands a brand-new approach, rebuild the plan; otherwise refine the existing tasks.",
+          "- If no plan change is needed, explicitly mark the tasks `in_progress` or `completed` so the plan reflects momentum.",
+        ]
+      : [
+          "- If the review reports `planChangeNeeded=true`, rewrite the plan around the provided `planChangeReason` before running any new tools, even if older tasks were mid-flight.",
+          "- Mirror every `toolFeedback.followUp` and `unmetExpectations` item with a dedicated sub-task (or reopened task) and list the tools that will satisfy it.",
+          "- Track each `clarificationQuestions` entry as its own sub-task or outbound user question until the ambiguity is resolved inside <last_review_result>.",
+          "- If review feedback demands a brand-new approach, rebuild the plan; otherwise refine the existing tasks.",
+          "- If no plan change is needed, explicitly mark the tasks `in_progress` or `completed` so the reviewer sees momentum.",
+        ]),
     "- Maintain one sub-task per concrete goal; list only the tools truly needed for that sub-task.",
     "- Only chain subtasks when real dependencies exist—for example, “fetch the people who messaged me today → gather the emails received from them → summarize the combined thread” keeps later steps paused until earlier outputs arrive.",
     "- After every tool run, immediately update the active sub-task’s status, result, and any newly required tasks so the plan mirrors reality.",
-    "- If review feedback demands a brand-new approach, rebuild the plan; otherwise refine the existing tasks.",
     "- Never finish a turn after only calling toDoWrite—run at least one execution tool that advances the active task.",
-    "- If no plan change is needed, explicitly mark the tasks “in_progress” or “completed” so the reviewer sees momentum.",
     "# EXECUTION STRATEGY",
     "- Work tasks sequentially; complete the current task before starting the next.",
     "- Call tools with precise parameters tied to the sub-task goal; reuse stored fragments instead of re-fetching data.",
@@ -4377,7 +4399,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
               return
             }
             if (!USE_AGENT_SELF_REVIEW) {
-              const reviewFreq = agentContext.review.reviewFrequency ?? 5
+              const reviewFreq = normalizeReviewFrequency(
+                agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY
+              )
               const runReviewThisTurn =
                 turn === MIN_TURN_NUMBER || turn % reviewFreq === 0
               if (runReviewThisTurn) {
@@ -5829,7 +5853,9 @@ async function runDelegatedAgentWithMessageAgents(
           return
         }
         if (!USE_AGENT_SELF_REVIEW) {
-          const reviewFreq = agentContext.review.reviewFrequency ?? 5
+          const reviewFreq = normalizeReviewFrequency(
+            agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY
+          )
           const runReviewThisTurn =
             turn === MIN_TURN_NUMBER || turn % reviewFreq === 0
           if (runReviewThisTurn) {
