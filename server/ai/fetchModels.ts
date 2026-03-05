@@ -201,12 +201,12 @@ export const fetchModelConfigs = async (): Promise<Array<{
     const actualName = modelInfo.litellm_params?.model || modelId
     if (modelInfo.model_info?.litellm_provider !== "hosted_vllm") {
       const allowlist = {
-        [Models.LiteLLM_Claude_Sonnet_4_5]: {
-          enabled: config.allowSonnet45,
+        [Models.LiteLLM_Claude_Sonnet_4_6]: {
+          enabled: config.allowSonnet46,
           name: "Claude Sonnet 4.5",
         },
-        [Models.LiteLLM_Claude_Opus_4_5]: {
-          enabled: config.allowOpus45,
+        [Models.LiteLLM_Claude_Opus_4_6]: {
+          enabled: config.allowOpus46,
           name: "Claude Opus 4.5",
         },
       };
@@ -308,22 +308,22 @@ export const getAvailableModels = async (providerConfig: {
         availableModels.push(...fetchedModels)
         } else {
         // Fallback to static MODEL_CONFIGURATIONS if API call fails (with same allowlist gating as API path)
-        const isSonnet45 = (modelId: Models) => modelId === Models.LiteLLM_Claude_Sonnet_4_5
-        const isOpus45 = (modelId: Models) => modelId === Models.LiteLLM_Claude_Opus_4_5
+        const isSonnet46 = (modelId: Models) => modelId === Models.LiteLLM_Claude_Sonnet_4_6
+        const isOpus46 = (modelId: Models) => modelId === Models.LiteLLM_Claude_Opus_4_6
         Object.entries(MODEL_CONFIGURATIONS)
             .filter(([, model]) => model.provider === AIProviders.LiteLLM)
             .filter(([modelId, model]) => {
                 const id = modelId as Models
-                if (isSonnet45(id)) return config.allowSonnet45
-                if (isOpus45(id)) return config.allowOpus45
+                if (isSonnet46(id)) return config.allowSonnet46
+                if (isOpus46(id)) return config.allowOpus46
                 return true
             })
             .forEach(([modelId, model]) => {
                 const id = modelId as Models
-                if (isSonnet45(id) && config.allowSonnet45) {
+                if (isSonnet46(id) && config.allowSonnet46) {
                     Logger.info("Allowing Claude Sonnet 4.5 model despite litellm_provider not being 'hosted_vllm'")
                 }
-                if (isOpus45(id) && config.allowOpus45) {
+                if (isOpus46(id) && config.allowOpus46) {
                     Logger.info("Allowing Claude Opus 4.5 model despite litellm_provider not being 'hosted_vllm'")
                 }
                 availableModels.push({
