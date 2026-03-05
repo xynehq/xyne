@@ -98,7 +98,7 @@ export class SQLValidator {
       Logger.debug(`Validating SQL: ${sql}`);
 
       // Parse SQL into AST
-      const ast = this.parseSQL(sql);
+      let ast = this.parseSQL(sql);
       if (!ast) {
         return {
           isValid: false,
@@ -106,12 +106,21 @@ export class SQLValidator {
         };
       }
 
-      // Check for multiple statements
+      // Parser may return a single-element array when input has a trailing semicolon (e.g. "SELECT 1;")
       if (Array.isArray(ast)) {
-        return {
-          isValid: false,
-          error: "Multiple statements not allowed",
-        };
+        if (ast.length > 1) {
+          return {
+            isValid: false,
+            error: "Multiple statements not allowed",
+          };
+        }
+        if (ast.length === 0) {
+          return {
+            isValid: false,
+            error: "Failed to parse SQL syntax",
+          };
+        }
+        ast = ast[0];
       }
 
       // Validate statement type

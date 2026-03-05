@@ -14,6 +14,10 @@ import type {
 import type { DatabaseTableSchemaDoc } from "./types"
 import type { DatabaseConnectorConfig } from "@/shared/types"
 import { DatabaseEngine } from "./types"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+
+const Logger = getLogger(Subsystem.Integrations).child({ module: "postgres-client" })
 
 export class PostgresClient {
   private sql: Sql<{}> | null = null
@@ -46,6 +50,12 @@ export class PostgresClient {
 
   async connect(): Promise<void> {
     if (this.sql) return
+    const { host, port, database } = this.config
+    const schema = this.getSchema()
+    Logger.info(
+      { host, port, database, schema },
+      "PostgresClient: connecting",
+    )
     const url = this.getConnectionString()
     this.sql = postgres(url, {
       max: 2,
@@ -54,7 +64,15 @@ export class PostgresClient {
     })
     try {
       await this.sql`SELECT 1`
+      Logger.info(
+        { host, port, database, schema },
+        "PostgresClient: connected successfully",
+      )
     } catch (err) {
+      Logger.error(
+        { err, host, port, database, schema },
+        "PostgresClient: connection failed",
+      )
       await this.sql.end().catch(() => {})
       this.sql = null
       throw err
@@ -75,6 +93,7 @@ export class PostgresClient {
   async listTables(): Promise<TableInfo[]> {
     if (!this.sql) throw new Error("Not connected")
     const schema = this.getSchema()
+    Logger.debug({ schema }, "PostgresClient: listTables querying information_schema")
     const rows = await this.sql`
       SELECT table_name
       FROM information_schema.tables
@@ -82,10 +101,15 @@ export class PostgresClient {
         AND table_type = 'BASE TABLE'
       ORDER BY table_name
     `
-    return (rows as unknown as { table_name: string }[]).map((r) => ({
+    const tables = (rows as unknown as { table_name: string }[]).map((r) => ({
       name: r.table_name,
       schema,
     }))
+    Logger.info(
+      { schema, tableCount: tables.length, tableNames: tables.map((t) => t.name) },
+      "PostgresClient: listTables result",
+    )
+    return tables
   }
 
   async getTableColumns(table: string): Promise<ColumnInfo[]> {
@@ -282,7 +306,7 @@ export class PostgresClient {
     }
 
     /** Only store sample values for enum-like columns (low cardinality in sample). */
-    const maxDistinctForSampleValues = 50
+    const maxDistinctForSampleValues = 300
     const sampleStringMaxLen = 100
 
     const enumLikeColumns = new Set(
@@ -345,12 +369,31 @@ export class PostgresClient {
     const rowLimit = options?.rowLimit ?? 1000
     const trimmed = sql.trimEnd().replace(/;\s*$/, "")
     const limited = `SELECT * FROM (${trimmed}) AS __xyne_limited LIMIT $1`
-    const rows = await this.sql.begin(async (tx) => {
-      await tx.unsafe("SET TRANSACTION READ ONLY")
-      await tx.unsafe(`SET LOCAL statement_timeout = '${timeoutMs}'`)
-      return (await tx.unsafe(limited, [rowLimit])) as DbRow[]
-    })
-    return Array.isArray(rows) ? rows : []
+    const sqlPreview = trimmed.length > 200 ? trimmed.slice(0, 200) + "…" : trimmed
+    Logger.info(
+      { sqlPreview, timeoutMs, rowLimit },
+      "PostgresClient: executeReadOnlyQuery start",
+    )
+    let rows: DbRow[]
+    try {
+      rows = await this.sql.begin(async (tx) => {
+        await tx.unsafe("SET TRANSACTION READ ONLY")
+        await tx.unsafe(`SET LOCAL statement_timeout = '${timeoutMs}'`)
+        return (await tx.unsafe(limited, [rowLimit])) as DbRow[]
+      })
+    } catch (err) {
+      Logger.error(
+        { err, sqlPreview, timeoutMs, rowLimit },
+        "PostgresClient: executeReadOnlyQuery failed",
+      )
+      throw err
+    }
+    const result = Array.isArray(rows) ? rows : []
+    Logger.info(
+      { rowCount: result.length, rowLimit, sqlPreview },
+      "PostgresClient: executeReadOnlyQuery result",
+    )
+    return result
   }
 
   /**
