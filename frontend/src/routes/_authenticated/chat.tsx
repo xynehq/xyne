@@ -2314,6 +2314,13 @@ const VirtualizedMessages = React.forwardRef<
   ) => {
     const parentRef = useRef<HTMLDivElement>(null)
     const lastScrollTop = useRef(0)
+    const tableScrollPositionsRef = useRef<Map<string, number>>(new Map())
+    const saveTableScroll = useCallback((key: string, scrollLeft: number) => {
+      tableScrollPositionsRef.current.set(key, scrollLeft)
+    }, [])
+    const restoreTableScroll = useCallback((key: string) => {
+      return tableScrollPositionsRef.current.get(key) ?? 0
+    }, [])
 
     // Create items array including messages and current response
     const allItems = useMemo(() => {
@@ -2497,6 +2504,8 @@ const VirtualizedMessages = React.forwardRef<
                           ? dots
                           : ""
                       }
+                      saveTableScroll={saveTableScroll}
+                      restoreTableScroll={restoreTableScroll}
                       onToggleSources={() => {
                         if (
                           showSources &&
@@ -2563,6 +2572,8 @@ const VirtualizedMessages = React.forwardRef<
                         citationMap={message.citationMap}
                         isRetrying={message.isRetrying}
                         dots={message.isRetrying ? dots : ""}
+                        saveTableScroll={saveTableScroll}
+                        restoreTableScroll={restoreTableScroll}
                         onToggleSources={() => {
                           if (
                             showSources &&
@@ -2666,6 +2677,8 @@ export const ChatMessage = ({
   clarificationRequest,
   waitingForClarification,
   provideClarification,
+  saveTableScroll,
+  restoreTableScroll,
 }: {
   message: string
   thinking: string
@@ -2699,10 +2712,30 @@ export const ChatMessage = ({
     selectedOptionLabel: string,
     customInput?: string,
   ) => void
+  saveTableScroll?: (key: string, scrollLeft: number) => void
+  restoreTableScroll?: (key: string) => number
 }) => {
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
+  const tableIndexRef = useRef(0)
+  const getNextTableIndex = useCallback(() => tableIndexRef.current++, [])
+  const tableComponents = useMemo(
+    () =>
+      createTableComponents(
+        messageId && saveTableScroll && restoreTableScroll
+          ? {
+              messageId,
+              getNextTableIndex,
+              saveTableScroll,
+              restoreTableScroll,
+            }
+          : undefined,
+      ),
+    [messageId, saveTableScroll, restoreTableScroll, getNextTableIndex],
+  )
+  // Reset so each render assigns table indices 0,1,2,... consistently for this message
+  tableIndexRef.current = 0
 
   return (
     <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">
@@ -2808,7 +2841,7 @@ export const ChatMessage = ({
                         // Regular image handling
                         return <img src={src} alt={alt} {...props} />
                       },
-                      ...createTableComponents(), // Use extracted table components
+                      ...tableComponents,
                       h1: ({ node, ...props }) => (
                         <h1
                           style={{ fontSize: "1.6em" }}

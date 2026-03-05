@@ -1,3 +1,4 @@
+import { useRef, useLayoutEffect } from "react"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 
 // Helper function to generate UUID
@@ -161,59 +162,118 @@ export class PersistentMap {
   }
 }
 
-// Shared table components for consistent rendering across chat interfaces
-export const createTableComponents = () => ({
-  table: ({ node, ...props }: any) => (
-    <div className="overflow-x-auto max-w-full my-2">
-      <table
+export type TableScrollPersist = {
+  messageId: string
+  getNextTableIndex: () => number
+  saveTableScroll: (key: string, scrollLeft: number) => void
+  restoreTableScroll: (key: string) => number
+}
+
+// Shared table components for consistent rendering across chat interfaces.
+// When options (messageId + scroll callbacks) are provided, horizontal scroll
+// position is persisted and restored so it survives virtual list unmount/remount.
+export const createTableComponents = (options?: TableScrollPersist) => {
+  const table =
+    options &&
+    typeof options.messageId === "string" &&
+    typeof options.getNextTableIndex === "function" &&
+    typeof options.saveTableScroll === "function" &&
+    typeof options.restoreTableScroll === "function"
+      ? function TableWithScrollPersist({ node, ...props }: any) {
+          const tableIndexRef = useRef<number | null>(null)
+          if (tableIndexRef.current === null) {
+            tableIndexRef.current = options.getNextTableIndex()
+          }
+          const scrollKey = `${options.messageId}-${tableIndexRef.current}`
+          const divRef = useRef<HTMLDivElement>(null)
+
+          useLayoutEffect(() => {
+            const el = divRef.current
+            if (!el) return
+            const saved = options.restoreTableScroll(scrollKey)
+            if (saved > 0) el.scrollLeft = saved
+          }, [scrollKey])
+
+          const handleScroll = () => {
+            const el = divRef.current
+            if (el) options.saveTableScroll(scrollKey, el.scrollLeft)
+          }
+
+          return (
+            <div
+              ref={divRef}
+              className="overflow-x-auto max-w-full my-2"
+              onScroll={handleScroll}
+            >
+              <table
+                style={{
+                  borderCollapse: "collapse",
+                  borderStyle: "hidden",
+                  tableLayout: "auto",
+                  minWidth: "100%",
+                  maxWidth: "none",
+                }}
+                className="w-auto dark:bg-slate-800"
+                {...props}
+              />
+            </div>
+          )
+        }
+      : ({ node, ...props }: any) => (
+          <div className="overflow-x-auto max-w-full my-2">
+            <table
+              style={{
+                borderCollapse: "collapse",
+                borderStyle: "hidden",
+                tableLayout: "auto",
+                minWidth: "100%",
+                maxWidth: "none",
+              }}
+              className="w-auto dark:bg-slate-800"
+              {...props}
+            />
+          </div>
+        )
+
+  return {
+    table,
+    th: ({ node, ...props }: any) => (
+      <th
         style={{
-          borderCollapse: "collapse",
-          borderStyle: "hidden",
-          tableLayout: "auto",
-          minWidth: "100%",
-          maxWidth: "none",
+          border: "none",
+          padding: "8px 12px",
+          textAlign: "left",
+          overflowWrap: "break-word",
+          wordBreak: "break-word",
+          maxWidth: "300px",
+          minWidth: "100px",
+          whiteSpace: "normal",
         }}
-        className="w-auto dark:bg-slate-800"
+        className="dark:text-white font-semibold"
         {...props}
       />
-    </div>
-  ),
-  th: ({ node, ...props }: any) => (
-    <th
-      style={{
-        border: "none",
-        padding: "8px 12px",
-        textAlign: "left",
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        maxWidth: "300px",
-        minWidth: "100px",
-        whiteSpace: "normal",
-      }}
-      className="dark:text-white font-semibold"
-      {...props}
-    />
-  ),
-  td: ({ node, ...props }: any) => (
-    <td
-      style={{
-        border: "none",
-        padding: "8px 12px",
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        maxWidth: "300px",
-        minWidth: "100px",
-        whiteSpace: "normal",
-      }}
-      className="border-t border-gray-100 dark:border-gray-800 dark:text-white"
-      {...props}
-    />
-  ),
-  tr: ({ node, ...props }: any) => (
-    <tr
-      style={{ border: "none" }}
-      className="bg-white dark:bg-[#1E1E1E]"
-      {...props}
-    />
-  ),
-})
+    ),
+    td: ({ node, ...props }: any) => (
+      <td
+        style={{
+          border: "none",
+          padding: "8px 12px",
+          overflowWrap: "break-word",
+          wordBreak: "break-word",
+          maxWidth: "300px",
+          minWidth: "100px",
+          whiteSpace: "normal",
+        }}
+        className="border-t border-gray-100 dark:border-gray-800 dark:text-white"
+        {...props}
+      />
+    ),
+    tr: ({ node, ...props }: any) => (
+      <tr
+        style={{ border: "none" }}
+        className="bg-white dark:bg-[#1E1E1E]"
+        {...props}
+      />
+    ),
+  }
+}
