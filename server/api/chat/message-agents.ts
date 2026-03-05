@@ -4393,6 +4393,16 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   "[MessageAgents] Review skipped (runs every N turns)."
                 )
               }
+            } else {
+              await handleReviewOutcome(
+                agentContext,
+                buildDefaultReviewPayload(
+                  "Self-review mode; no external review. State updated for continuity."
+                ),
+                turn,
+                "turn_end",
+                emitReasoningStep
+              )
             }
           } catch (error) {
             Logger.error(
@@ -5835,6 +5845,16 @@ async function runDelegatedAgentWithMessageAgents(
               "[DelegatedAgenticRun] Review skipped (runs every N turns)."
             )
           }
+        } else {
+          await handleReviewOutcome(
+            agentContext,
+            buildDefaultReviewPayload(
+              "Self-review mode; no external review. State updated for continuity."
+            ),
+            turn,
+            "turn_end",
+            emitReasoningStep
+          )
         }
       } catch (error) {
         Logger.error({
