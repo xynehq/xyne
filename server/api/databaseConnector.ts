@@ -27,6 +27,7 @@ import { getUserAndWorkspaceByEmail } from "@/db/user"
 import config from "@/config"
 import { createDatabaseConnectorSchema } from "@/types"
 import { deleteCollection } from "@/api/knowledgeBase"
+import { updateCollection } from "@/db/knowledgeBase"
 import { getErrorMessage } from "@/utils"
 
 const { JwtPayloadKey } = config
@@ -421,6 +422,19 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
       name: body.name,
       config: updatedConfig as unknown as Record<string, unknown>,
     })
+
+    // When connector name changes, rename the linked KB collection to match (same pattern as creation: "Database: <name>")
+    const state = (connector.state as Record<string, unknown>) || {}
+    const kbCollectionId = typeof state.kbCollectionId === "string" ? state.kbCollectionId : null
+    if (body.name !== connector.name && kbCollectionId) {
+      try {
+        await updateCollection(db, kbCollectionId, {
+          name: `Database: ${body.name}`,
+        })
+      } catch (kbErr) {
+        Logger.warn({ err: kbErr, kbCollectionId }, "KB collection rename failed after connector update; connector update succeeded")
+      }
+    }
 
     Logger.info(`Updated database connector: ${body.connectorId}`)
 

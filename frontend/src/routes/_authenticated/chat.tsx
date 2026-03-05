@@ -2314,6 +2314,53 @@ const VirtualizedMessages = React.forwardRef<
   ) => {
     const parentRef = useRef<HTMLDivElement>(null)
     const lastScrollTop = useRef(0)
+    const tableScrollPositionsRef = useRef<Map<string, number>>(new Map())
+    const migrateTableScroll = useCallback((oldKey: string, newKey: string) => {
+      const val = tableScrollPositionsRef.current.get(oldKey)
+      if (val !== undefined) {
+        tableScrollPositionsRef.current.set(newKey, val)
+        tableScrollPositionsRef.current.delete(oldKey)
+      }
+    }, [])
+    const saveTableScroll = useCallback((key: string, scrollLeft: number) => {
+      tableScrollPositionsRef.current.set(key, scrollLeft)
+    }, [])
+    const restoreTableScroll = useCallback((key: string) => {
+      const map = tableScrollPositionsRef.current
+      const val = map.get(key)
+      if (val !== undefined) return val
+      // Fallback: stream may have used "current-resp" before messageId was assigned
+      const dashIdx = key.indexOf("-")
+      if (dashIdx === -1) return 0
+      const tempKey = `current-resp-${key.slice(dashIdx + 1)}`
+      const fallback = map.get(tempKey)
+      if (fallback !== undefined) {
+        map.set(key, fallback)
+        map.delete(tempKey)
+        return fallback
+      }
+      return 0
+    }, [])
+
+    // When stream ends, migrate table scroll keys from "current-resp-N" to "{finalMessageId}-N"
+    const prevCurrentRespRef = useRef<typeof currentResp>(currentResp)
+    useEffect(() => {
+      const hadStream = prevCurrentRespRef.current != null
+      prevCurrentRespRef.current = currentResp
+      if (hadStream && currentResp == null && messages.length > 0) {
+        const lastMsg = messages[messages.length - 1]
+        const newId = lastMsg?.externalId
+        if (newId && typeof newId === "string") {
+          const map = tableScrollPositionsRef.current
+          for (const oldKey of Array.from(map.keys())) {
+            if (oldKey.startsWith("current-resp-")) {
+              const suffix = oldKey.slice("current-resp-".length)
+              migrateTableScroll(oldKey, `${newId}-${suffix}`)
+            }
+          }
+        }
+      }
+    }, [currentResp, messages.length, messages, migrateTableScroll])
 
     // Create items array including messages and current response
     const allItems = useMemo(() => {
@@ -2497,6 +2544,8 @@ const VirtualizedMessages = React.forwardRef<
                           ? dots
                           : ""
                       }
+                      saveTableScroll={saveTableScroll}
+                      restoreTableScroll={restoreTableScroll}
                       onToggleSources={() => {
                         if (
                           showSources &&
@@ -2563,6 +2612,8 @@ const VirtualizedMessages = React.forwardRef<
                         citationMap={message.citationMap}
                         isRetrying={message.isRetrying}
                         dots={message.isRetrying ? dots : ""}
+                        saveTableScroll={saveTableScroll}
+                        restoreTableScroll={restoreTableScroll}
                         onToggleSources={() => {
                           if (
                             showSources &&
@@ -2666,6 +2717,8 @@ export const ChatMessage = ({
   clarificationRequest,
   waitingForClarification,
   provideClarification,
+  saveTableScroll,
+  restoreTableScroll,
 }: {
   message: string
   thinking: string
@@ -2699,10 +2752,28 @@ export const ChatMessage = ({
     selectedOptionLabel: string,
     customInput?: string,
   ) => void
+  saveTableScroll?: (key: string, scrollLeft: number) => void
+  restoreTableScroll?: (key: string) => number
 }) => {
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
+  const tableIndexRef = useRef(0)
+  const getNextTableIndex = useCallback(() => tableIndexRef.current++, [])
+  const tableComponents = useMemo(
+    () =>
+      createTableComponents(
+        messageId && saveTableScroll && restoreTableScroll
+          ? {
+              messageId,
+              getNextTableIndex,
+              saveTableScroll,
+              restoreTableScroll,
+            }
+          : undefined,
+      ),
+    [messageId, saveTableScroll, restoreTableScroll, getNextTableIndex],
+  )
 
   return (
     <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">
@@ -2808,7 +2879,7 @@ export const ChatMessage = ({
                         // Regular image handling
                         return <img src={src} alt={alt} {...props} />
                       },
-                      ...createTableComponents(), // Use extracted table components
+                      ...tableComponents,
                       h1: ({ node, ...props }) => (
                         <h1
                           style={{ fontSize: "1.6em" }}
