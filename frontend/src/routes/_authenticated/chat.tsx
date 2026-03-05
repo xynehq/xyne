@@ -2315,12 +2315,52 @@ const VirtualizedMessages = React.forwardRef<
     const parentRef = useRef<HTMLDivElement>(null)
     const lastScrollTop = useRef(0)
     const tableScrollPositionsRef = useRef<Map<string, number>>(new Map())
+    const migrateTableScroll = useCallback((oldKey: string, newKey: string) => {
+      const val = tableScrollPositionsRef.current.get(oldKey)
+      if (val !== undefined) {
+        tableScrollPositionsRef.current.set(newKey, val)
+        tableScrollPositionsRef.current.delete(oldKey)
+      }
+    }, [])
     const saveTableScroll = useCallback((key: string, scrollLeft: number) => {
       tableScrollPositionsRef.current.set(key, scrollLeft)
     }, [])
     const restoreTableScroll = useCallback((key: string) => {
-      return tableScrollPositionsRef.current.get(key) ?? 0
+      const map = tableScrollPositionsRef.current
+      const val = map.get(key)
+      if (val !== undefined) return val
+      // Fallback: stream may have used "current-resp" before messageId was assigned
+      const dashIdx = key.indexOf("-")
+      if (dashIdx === -1) return 0
+      const tempKey = `current-resp-${key.slice(dashIdx + 1)}`
+      const fallback = map.get(tempKey)
+      if (fallback !== undefined) {
+        map.set(key, fallback)
+        map.delete(tempKey)
+        return fallback
+      }
+      return 0
     }, [])
+
+    // When stream ends, migrate table scroll keys from "current-resp-N" to "{finalMessageId}-N"
+    const prevCurrentRespRef = useRef<typeof currentResp>(currentResp)
+    useEffect(() => {
+      const hadStream = prevCurrentRespRef.current != null
+      prevCurrentRespRef.current = currentResp
+      if (hadStream && currentResp == null && messages.length > 0) {
+        const lastMsg = messages[messages.length - 1]
+        const newId = lastMsg?.externalId
+        if (newId && typeof newId === "string") {
+          const map = tableScrollPositionsRef.current
+          for (const oldKey of Array.from(map.keys())) {
+            if (oldKey.startsWith("current-resp-")) {
+              const suffix = oldKey.slice("current-resp-".length)
+              migrateTableScroll(oldKey, `${newId}-${suffix}`)
+            }
+          }
+        }
+      }
+    }, [currentResp, messages.length, messages, migrateTableScroll])
 
     // Create items array including messages and current response
     const allItems = useMemo(() => {
@@ -2734,8 +2774,6 @@ export const ChatMessage = ({
       ),
     [messageId, saveTableScroll, restoreTableScroll, getNextTableIndex],
   )
-  // Reset so each render assigns table indices 0,1,2,... consistently for this message
-  tableIndexRef.current = 0
 
   return (
     <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">

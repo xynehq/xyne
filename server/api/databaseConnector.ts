@@ -427,9 +427,13 @@ export const UpdateDatabaseConnectorApi = async (c: Context) => {
     const state = (connector.state as Record<string, unknown>) || {}
     const kbCollectionId = typeof state.kbCollectionId === "string" ? state.kbCollectionId : null
     if (body.name !== connector.name && kbCollectionId) {
-      await updateCollection(db, kbCollectionId, {
-        name: `Database: ${body.name}`,
-      })
+      try {
+        await updateCollection(db, kbCollectionId, {
+          name: `Database: ${body.name}`,
+        })
+      } catch (kbErr) {
+        Logger.warn({ err: kbErr, kbCollectionId }, "KB collection rename failed after connector update; connector update succeeded")
+      }
     }
 
     Logger.info(`Updated database connector: ${body.connectorId}`)
