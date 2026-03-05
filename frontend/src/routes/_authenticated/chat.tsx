@@ -440,6 +440,8 @@ export const ChatPage = ({
     chunkContent: string
     pageIndex: number
   } | null>(null)
+  /** Token to invalidate in-flight prefetch/chunk handlers so a slower call cannot overwrite newer citation state. */
+  const latestPrefetchTokenRef = useRef<symbol>(Symbol())
   const [cameFromSources, setCameFromSources] = useState(false)
   const [isDocumentLoaded, setIsDocumentLoaded] = useState(false)
 
@@ -1230,6 +1232,9 @@ export const ChatPage = ({
       }
 
       if (newChunkIndex !== null) {
+        const chunkToken = Symbol()
+        latestPrefetchTokenRef.current = chunkToken
+
         try {
           let chunkContent: string
           let pageIndex: number
@@ -1250,6 +1255,8 @@ export const ChatPage = ({
               param: { cId: newChunkIndex.toString(), docId: docId },
             })
 
+            if (latestPrefetchTokenRef.current !== chunkToken) return
+
             if (!chunkContentResponse.ok) {
               console.error(
                 "Failed to fetch chunk content:",
@@ -1264,10 +1271,13 @@ export const ChatPage = ({
             }
 
             const data = await chunkContentResponse.json()
+            if (latestPrefetchTokenRef.current !== chunkToken) return
             chunkContent = data?.chunkContent ?? ""
             pageIndex =
               typeof data?.pageIndex === "number" ? data.pageIndex : -1
           }
+
+          if (latestPrefetchTokenRef.current !== chunkToken) return
 
           // After await: check if the citation is still the same one we started with
           const currentCitationId = selectedCitation?.docId ?? null
@@ -1295,6 +1305,7 @@ export const ChatPage = ({
                   error,
                 )
               }
+              if (latestPrefetchTokenRef.current !== chunkToken) return
             }
           }
         } catch (error) {
@@ -1357,7 +1368,10 @@ export const ChatPage = ({
         }
         return
       }
-      
+
+      const prefetchToken = Symbol()
+      latestPrefetchTokenRef.current = prefetchToken
+
       // Need to open or switch document: get page index for initial open when we have a chunk
       let pageIndex: number | null = null
       const docId = citation.docId
@@ -1370,8 +1384,10 @@ export const ChatPage = ({
           const res = await api.chunk[":cId"].files[":docId"].content.$get({
             param: { cId: String(chunkIndex), docId },
           })
+          if (latestPrefetchTokenRef.current !== prefetchToken) return
           if (res.ok) {
             const data = await res.json()
+            if (latestPrefetchTokenRef.current !== prefetchToken) return
             const content = data?.chunkContent ?? ""
             pageIndex =
               typeof data.pageIndex === "number" ? data.pageIndex : null
@@ -1386,6 +1402,8 @@ export const ChatPage = ({
           // use pageIndex null, viewer will open at first page
         }
       }
+
+      if (latestPrefetchTokenRef.current !== prefetchToken) return
 
       setCitationInitialPageIndex(pageIndex)
       setSelectedChunkIndex(chunkIndex ?? null)
