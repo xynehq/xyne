@@ -4611,6 +4611,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const yieldedCitations = new Set<number>()
         const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
+        let runCompletedAndPersisted = false
 
         const streamAnswerText = async (text: string) => {
           if (!text) return
@@ -4908,6 +4909,101 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   { iteration: evt.data.turn }
                 )
               }
+
+              if (
+                agentContext.finalSynthesis.requested &&
+                agentContext.finalSynthesis.completed
+              ) {
+                const finalTurnNumber = evt.data.turn
+                const lastReviewTurn = agentContext.review.lastReviewTurn
+                const skipRunEndReview =
+                  USE_AGENT_SELF_REVIEW ||
+                  (lastReviewTurn != null && lastReviewTurn === finalTurnNumber)
+                if (!skipRunEndReview) {
+                  await runAndBroadcastReview(
+                    agentContext,
+                    {
+                      focus: "run_end",
+                      turnNumber: finalTurnNumber,
+                      toolCallHistory: agentContext.toolCallHistory,
+                      plan: agentContext.plan,
+                      expectedResults:
+                        expectationHistory.get(finalTurnNumber) || [],
+                    },
+                    finalTurnNumber
+                  )
+                } else {
+                  Logger.debug(
+                    {
+                      finalTurnNumber,
+                      lastReviewTurn,
+                      useSelfReview: USE_AGENT_SELF_REVIEW,
+                      chatId: agentContext.chat.externalId,
+                    },
+                    "[MessageAgents] Skipping run_end review (last turn = synthesis turn)."
+                  )
+                }
+                loggerWithChild({ email }).info("Storing assistant response in database")
+                Logger.debug(
+                  {
+                    chatId: agentContext.chat.externalId,
+                    turn: finalTurnNumber,
+                    answerPreview: truncateValue(answer, 500),
+                    citationsCount: citations.length,
+                    imageCitationsCount: imageCitations.length,
+                    citationSample: citations.slice(0, 3),
+                  },
+                  "[MessageAgents][FinalSynthesis] LLM output preview"
+                )
+                const totalCost = agentContext.totalCost
+                const totalTokens =
+                  agentContext.tokenUsage.input + agentContext.tokenUsage.output
+                try {
+                  const assistantInsert = {
+                    chatId: chatRecord.id,
+                    userId: user.id,
+                    workspaceExternalId: String(workspace.externalId),
+                    chatExternalId: String(chatRecord.externalId),
+                    messageRole: MessageRole.Assistant,
+                    email: String(user.email),
+                    sources: citations,
+                    imageCitations,
+                    message: processMessage(answer, citationMap),
+                    thinking: thinkingLog,
+                    modelId: agenticModelId,
+                    cost: totalCost.toString(),
+                    tokensUsed: totalTokens,
+                  } as unknown as Omit<InsertMessage, "externalId">
+                  const msg = await insertMessage(db, assistantInsert)
+                  assistantMessageId = String(msg.externalId)
+                  lastPersistedMessageId = msg.id as number
+                  lastPersistedMessageExternalId = assistantMessageId
+                  await persistTrace(msg.id as number, msg.externalId)
+                } catch (error) {
+                  loggerWithChild({ email }).error(
+                    error,
+                    "Failed to persist assistant response"
+                  )
+                }
+                loggerWithChild({ email }).debug({
+                  answer,
+                  citations: citations.length,
+                  cost: totalCost,
+                  tokens: totalTokens,
+                }, "Response generated successfully")
+                await stream.writeSSE({
+                  event: ChatSSEvents.ResponseMetadata,
+                  data: JSON.stringify({
+                    chatId: agentContext.chat.externalId,
+                    messageId: assistantMessageId || "temp-message-id",
+                  }),
+                })
+                await stream.writeSSE({
+                  event: ChatSSEvents.End,
+                  data: "",
+                })
+                runCompletedAndPersisted = true
+              }
               break
             }
 
@@ -5107,15 +5203,18 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 outcome?.status ?? "unknown"
               )
               if (outcome?.status === "completed") {
-                const finalTurnNumber = Math.max(
-                  agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
-                  MIN_TURN_NUMBER
-                )
-                const lastReviewTurn = agentContext.review.lastReviewTurn
-                const skipRunEndReview =
-                  USE_AGENT_SELF_REVIEW ||
-                  (lastReviewTurn != null && lastReviewTurn === finalTurnNumber)
-                if (!skipRunEndReview) {
+                if (runCompletedAndPersisted) {
+                  runEndSpan.setAttribute("total_cost", agentContext.totalCost)
+                  runEndSpan.setAttribute(
+                    "total_tokens",
+                    agentContext.tokenUsage.input + agentContext.tokenUsage.output
+                  )
+                  runEndSpan.setAttribute("citations_count", citations.length)
+                } else {
+                  const finalTurnNumber = Math.max(
+                    agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
+                    MIN_TURN_NUMBER
+                  )
                   await runAndBroadcastReview(
                     agentContext,
                     {
@@ -5128,89 +5227,69 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     },
                     finalTurnNumber
                   )
-                } else {
+                  loggerWithChild({ email }).info("Storing assistant response in database")
                   Logger.debug(
                     {
-                      finalTurnNumber,
-                      lastReviewTurn,
-                      useSelfReview: USE_AGENT_SELF_REVIEW,
                       chatId: agentContext.chat.externalId,
+                      turn: finalTurnNumber,
+                      answerPreview: truncateValue(answer, 500),
+                      citationsCount: citations.length,
+                      imageCitationsCount: imageCitations.length,
+                      citationSample: citations.slice(0, 3),
                     },
-                    "[MessageAgents] Skipping run_end review."
+                    "[MessageAgents][FinalSynthesis] LLM output preview"
                   )
+                  const totalCost = agentContext.totalCost
+                  const totalTokens =
+                    agentContext.tokenUsage.input + agentContext.tokenUsage.output
+                  try {
+                    const assistantInsert = {
+                      chatId: chatRecord.id,
+                      userId: user.id,
+                      workspaceExternalId: String(workspace.externalId),
+                      chatExternalId: String(chatRecord.externalId),
+                      messageRole: MessageRole.Assistant,
+                      email: String(user.email),
+                      sources: citations,
+                      imageCitations,
+                      message: processMessage(answer, citationMap),
+                      thinking: thinkingLog,
+                      modelId: agenticModelId,
+                      cost: totalCost.toString(),
+                      tokensUsed: totalTokens,
+                    } as unknown as Omit<InsertMessage, "externalId">
+                    const msg = await insertMessage(db, assistantInsert)
+                    assistantMessageId = String(msg.externalId)
+                    lastPersistedMessageId = msg.id as number
+                    lastPersistedMessageExternalId = assistantMessageId
+                    await persistTrace(msg.id as number, msg.externalId)
+                  } catch (error) {
+                    loggerWithChild({ email }).error(
+                      error,
+                      "Failed to persist assistant response"
+                    )
+                  }
+                  loggerWithChild({ email }).debug({
+                    answer,
+                    citations: citations.length,
+                    cost: totalCost,
+                    tokens: totalTokens,
+                  }, "Response generated successfully")
+                  runEndSpan.setAttribute("total_cost", totalCost)
+                  runEndSpan.setAttribute("total_tokens", totalTokens)
+                  runEndSpan.setAttribute("citations_count", citations.length)
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseMetadata,
+                    data: JSON.stringify({
+                      chatId: agentContext.chat.externalId,
+                      messageId: assistantMessageId || "temp-message-id",
+                    }),
+                  })
+                  await stream.writeSSE({
+                    event: ChatSSEvents.End,
+                    data: "",
+                  })
                 }
-                // Store the response in database to prevent vanishing
-                // TODO: Implement full DB integration similar to the previous legacy controller
-                // For now, store basic message data
-                loggerWithChild({ email }).info("Storing assistant response in database")
-                Logger.debug(
-                  {
-                    chatId: agentContext.chat.externalId,
-                    turn: finalTurnNumber,
-                    answerPreview: truncateValue(answer, 500),
-                    citationsCount: citations.length,
-                    imageCitationsCount: imageCitations.length,
-                    citationSample: citations.slice(0, 3),
-                  },
-                  "[MessageAgents][FinalSynthesis] LLM output preview"
-                )
-
-                // Calculate costs and tokens
-                const totalCost = agentContext.totalCost
-                const totalTokens =
-                  agentContext.tokenUsage.input + agentContext.tokenUsage.output
-
-                try {
-                  const assistantInsert = {
-                    chatId: chatRecord.id,
-                    userId: user.id,
-                    workspaceExternalId: String(workspace.externalId),
-                    chatExternalId: String(chatRecord.externalId),
-                    messageRole: MessageRole.Assistant,
-                    email: String(user.email),
-                    sources: citations,
-                    imageCitations,
-                    message: processMessage(answer, citationMap),
-                    thinking: thinkingLog,
-                    modelId: agenticModelId,
-                    cost: totalCost.toString(),
-                    tokensUsed: totalTokens,
-                  } as unknown as Omit<InsertMessage, "externalId">
-                  const msg = await insertMessage(db, assistantInsert)
-                  assistantMessageId = String(msg.externalId)
-                  lastPersistedMessageId = msg.id as number
-                  lastPersistedMessageExternalId = assistantMessageId
-                  await persistTrace(msg.id as number, msg.externalId)
-                } catch (error) {
-                  loggerWithChild({ email }).error(
-                    error,
-                    "Failed to persist assistant response"
-                  )
-                }
-
-                loggerWithChild({ email }).debug({
-                  answer,
-                  citations: citations.length,
-                  cost: totalCost,
-                  tokens: totalTokens,
-                }, "Response generated successfully")
-                runEndSpan.setAttribute("total_cost", totalCost)
-                runEndSpan.setAttribute("total_tokens", totalTokens)
-                runEndSpan.setAttribute("citations_count", citations.length)
-
-                // Send final metadata with messageId
-                await stream.writeSSE({
-                  event: ChatSSEvents.ResponseMetadata,
-                  data: JSON.stringify({
-                    chatId: agentContext.chat.externalId,
-                    messageId: assistantMessageId || "temp-message-id",
-                  }),
-                })
-
-                await stream.writeSSE({
-                  event: ChatSSEvents.End,
-                  data: "",
-                })
               } else if (outcome?.status === "error") {
                 if (stopController.signal.aborted) {
                   await persistTraceForLastMessage()
