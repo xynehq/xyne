@@ -2057,8 +2057,27 @@ export const GetChunkContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Chunk index not found" })
     }
 
-    // Get the chunk content from Vespa response
-    let chunkContent = resp.fields.chunks[index]
+    // Get the chunk content from Vespa response by combining adjacent chunks
+    // Build chunk content with bounds checking
+    const chunksArray = resp.fields.chunks as string[]
+    const chunkParts: string[] = []
+    
+    // Add previous chunk if it exists (for context)
+    if (index > 0 && chunksArray[index - 1]) {
+      chunkParts.push(chunksArray[index - 1])
+    }
+    
+    // Add the main chunk (always required)
+    if (chunksArray[index]) {
+      chunkParts.push(chunksArray[index])
+    }
+    
+    // Add next chunk if it exists (for context)
+    if (index < chunksArray.length - 1 && chunksArray[index + 1]) {
+      chunkParts.push(chunksArray[index + 1])
+    }
+    
+    let chunkContent = chunkParts.join("")
     let pageIndex: number | undefined
 
     const isSheetFile =

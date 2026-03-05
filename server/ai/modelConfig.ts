@@ -527,18 +527,18 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   deepResearch: false,
   //   description: "Tailored for reasoning, coding, and agentic abilities",
   // },
-  [Models.LiteLLM_Claude_Sonnet_4_5]: {
+  [Models.LiteLLM_Claude_Sonnet_4_6]: {
     actualName: "claude-sonnet-4-5",
-    labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_5,
+    labelName: ModelDisplayNames.LITELLM_CLAUDE_SONNET_4_6,
     provider: AIProviders.LiteLLM,
     reasoning: true,
     websearch: true,
     deepResearch: true,
     description: "Balanced for reasoning, long context windows.",
   },
-  [Models.LiteLLM_Claude_Opus_4_5]: {
+  [Models.LiteLLM_Claude_Opus_4_6]: {
     actualName: "claude-opus-4-5",
-    labelName: ModelDisplayNames.LITELLM_CLAUDE_OPUS_4_5,
+    labelName: ModelDisplayNames.LITELLM_CLAUDE_OPUS_4_6,
     provider: AIProviders.LiteLLM,
     reasoning: true,
     websearch: true,

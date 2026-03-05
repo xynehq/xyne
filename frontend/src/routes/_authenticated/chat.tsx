@@ -429,6 +429,19 @@ export const ChatPage = ({
   const [selectedChunkIndex, setSelectedChunkIndex] = useState<number | null>(
     null,
   )
+  /** 0-based page/sheet index for initial open (from chunk API). Set when opening so CitationPreview opens at correct page without re-fetching. */
+  const [citationInitialPageIndex, setCitationInitialPageIndex] = useState<
+    number | null
+  >(null)
+  /** Chunk data prefetched in handleCitationClick so handleChunkIndexChange can skip the duplicate API call on initial load. */
+  const prefetchedChunkRef = useRef<{
+    documentId: string
+    chunkIndex: number
+    chunkContent: string
+    pageIndex: number
+  } | null>(null)
+  /** Token to invalidate in-flight prefetch/chunk handlers so a slower call cannot overwrite newer citation state. */
+  const latestPrefetchTokenRef = useRef<symbol>(Symbol())
   const [cameFromSources, setCameFromSources] = useState(false)
   const [isDocumentLoaded, setIsDocumentLoaded] = useState(false)
 
@@ -1205,17 +1218,11 @@ export const ChatPage = ({
 
   // Handle chunk index changes from CitationPreview
   const handleChunkIndexChange = useCallback(
-    async (newChunkIndex: number | null, documentId: string, docId: string) => {
-      // Capture the expected citation identity BEFORE any async operations
-      // to prevent race conditions when selectedCitation changes during the fetch
-      const expectedCitationId = selectedCitation?.itemId ?? selectedCitation?.docId ?? null;
+    async (newChunkIndex: number | null, docId: string) => {
       
-      if (expectedCitationId && !documentId) {
-        console.error("handleChunkIndexChange called without documentId");
-        return;
-      }
-
-      if (expectedCitationId && expectedCitationId !== documentId) {
+      const expectedCitationId = selectedCitation?.docId ?? null
+      if (!expectedCitationId) {
+        console.error("handleChunkIndexChange called without expectedCitationId");
         return;
       }
 
@@ -1225,37 +1232,60 @@ export const ChatPage = ({
       }
 
       if (newChunkIndex !== null) {
-        try {
-          const chunkContentResponse = await api.chunk[":cId"].files[
-            ":docId"
-          ].content.$get({
-            param: { cId: newChunkIndex.toString(), docId: docId },
-          })
+        const chunkToken = Symbol()
+        latestPrefetchTokenRef.current = chunkToken
 
-          if (!chunkContentResponse.ok) {
-            console.error(
-              "Failed to fetch chunk content:",
-              chunkContentResponse.status,
-            )
-            toast({
-              title: "Error",
-              description: "Failed to load chunk content",
-              variant: "destructive",
+        try {
+          let chunkContent: string
+          let pageIndex: number
+
+          const prefetched = prefetchedChunkRef.current
+          if (
+            prefetched &&
+            prefetched.documentId === docId &&
+            prefetched.chunkIndex === newChunkIndex
+          ) {
+            chunkContent = prefetched.chunkContent
+            pageIndex = prefetched.pageIndex
+            prefetchedChunkRef.current = null
+          } else {
+            const chunkContentResponse = await api.chunk[":cId"].files[
+              ":docId"
+            ].content.$get({
+              param: { cId: newChunkIndex.toString(), docId: docId },
             })
-            return
+
+            if (latestPrefetchTokenRef.current !== chunkToken) return
+
+            if (!chunkContentResponse.ok) {
+              console.error(
+                "Failed to fetch chunk content:",
+                chunkContentResponse.status,
+              )
+              toast({
+                title: "Error",
+                description: "Failed to load chunk content",
+                variant: "destructive",
+              })
+              return
+            }
+
+            const data = await chunkContentResponse.json()
+            if (latestPrefetchTokenRef.current !== chunkToken) return
+            chunkContent = data?.chunkContent ?? ""
+            pageIndex =
+              typeof data?.pageIndex === "number" ? data.pageIndex : -1
           }
 
-          const chunkContent = await chunkContentResponse.json()
+          if (latestPrefetchTokenRef.current !== chunkToken) return
 
           // After await: check if the citation is still the same one we started with
-          // by comparing the captured expectedCitationId with the current selectedCitation
-          const currentCitationId = selectedCitation?.itemId ?? selectedCitation?.docId ?? null;
+          const currentCitationId = selectedCitation?.docId ?? null
           if (currentCitationId !== expectedCitationId) {
-            // Citation changed during the async fetch, bail out to avoid highlighting stale data
             return
           }
 
-          if (chunkContent && chunkContent.chunkContent) {
+          if (chunkContent) {
             if (documentOperationsRef?.current?.clearHighlights) {
               documentOperationsRef.current.clearHighlights()
             }
@@ -1263,18 +1293,19 @@ export const ChatPage = ({
             if (documentOperationsRef?.current?.highlightText) {
               try {
                 await documentOperationsRef.current.highlightText(
-                  chunkContent.chunkContent,
+                  chunkContent,
                   newChunkIndex,
-                  chunkContent.pageIndex,
+                  pageIndex,
                   true,
                 )
               } catch (error) {
                 console.error(
                   "Error highlighting chunk text:",
-                  chunkContent.chunkContent,
+                  chunkContent,
                   error,
                 )
               }
+              if (latestPrefetchTokenRef.current !== chunkToken) return
             }
           }
         } catch (error) {
@@ -1294,7 +1325,6 @@ export const ChatPage = ({
     if (selectedCitation && isDocumentLoaded) {
       handleChunkIndexChange(
         selectedChunkIndex,
-        selectedCitation?.itemId || (selectedCitation?.docId ?? ""),
         selectedCitation?.docId ?? "",
       )
     }
@@ -1307,42 +1337,95 @@ export const ChatPage = ({
 
   // Handler for citation clicks - moved before conditional returns
   const handleCitationClick = useCallback(
-    (citation: Citation, chunkIndex?: number, fromSources: boolean = false) => {
-      const isRegularCitation = citation?.clId && citation?.itemId;
-      const isAttachment = citation?.app === 'attachment';
+    async (
+      citation: Citation,
+      chunkIndex?: number,
+      fromSources: boolean = false,
+    ) => {
+      const isRegularCitation = citation?.clId && citation?.itemId
+      const isAttachment = citation?.app === "attachment"
 
       if (!citation || (!isRegularCitation && !isAttachment)) {
-        // For citations without clId or itemId, open as regular link
-        if (citation.url) {
+        if (citation?.url) {
           window.open(citation.url, "_blank", "noopener,noreferrer")
         }
         return
       }
+
+      const sameDoc =
+      selectedCitation &&
+      citation &&
+      selectedCitation.docId === citation.docId
+      const previewAlreadyOpenWithSameDoc = isCitationPreviewOpen && sameDoc
+      
+      // Same document already open: only change chunk; handleChunkIndexChange will fetch and goToPage (no full reload)
+      if (previewAlreadyOpenWithSameDoc) {
+        setSelectedChunkIndex(chunkIndex ?? null)
+        setShowSources(false)
+        if (!fromSources) {
+          setCurrentCitations([])
+          setCurrentMessageId(null)
+        }
+        return
+      }
+
+      const prefetchToken = Symbol()
+      latestPrefetchTokenRef.current = prefetchToken
+
+      // Need to open or switch document: get page index for initial open when we have a chunk
+      let pageIndex: number | null = null
+      const docId = citation.docId
+      if (
+        chunkIndex != null &&
+        docId &&
+        (citation.app === "KnowledgeBase" || citation.app === "attachment")
+      ) {
+        try {
+          const res = await api.chunk[":cId"].files[":docId"].content.$get({
+            param: { cId: String(chunkIndex), docId },
+          })
+          if (latestPrefetchTokenRef.current !== prefetchToken) return
+          if (res.ok) {
+            const data = await res.json()
+            if (latestPrefetchTokenRef.current !== prefetchToken) return
+            const content = data?.chunkContent ?? ""
+            pageIndex =
+              typeof data.pageIndex === "number" ? data.pageIndex : null
+            prefetchedChunkRef.current = {
+              documentId: docId,
+              chunkIndex,
+              chunkContent: content,
+              pageIndex: pageIndex ?? -1,
+            }
+          }
+        } catch {
+          // use pageIndex null, viewer will open at first page
+        }
+      }
+
+      if (latestPrefetchTokenRef.current !== prefetchToken) return
+
+      setCitationInitialPageIndex(pageIndex)
+      setSelectedChunkIndex(chunkIndex ?? null)
       setSelectedCitation(citation)
       setIsCitationPreviewOpen(true)
       setCameFromSources(fromSources)
-      // Only close sources panel when opening citation preview, but preserve state for back navigation
       setShowSources(false)
       if (!fromSources) {
-        // Clear sources state when coming from inline citations
         setCurrentCitations([])
         setCurrentMessageId(null)
       }
-      // Handle chunk index change if provided
-      setSelectedChunkIndex(null)
-      setTimeout(() => {
-        setSelectedChunkIndex(chunkIndex ?? null)
-      }, 0)
     },
-    [],
+    [isCitationPreviewOpen, selectedCitation],
   )
 
   // Memoized callback for closing citation preview - moved before conditional returns
   const handleCloseCitationPreview = useCallback(() => {
     setIsCitationPreviewOpen(false)
     setSelectedCitation(null)
-    setCameFromSources(false)
     setSelectedChunkIndex(null)
+    setCitationInitialPageIndex(null)
+    setCameFromSources(false)
     setIsDocumentLoaded(false)
   }, [])
 
@@ -1358,8 +1441,9 @@ export const ChatPage = ({
   useEffect(() => {
     setIsCitationPreviewOpen(false)
     setSelectedCitation(null)
-    setCameFromSources(false)
     setSelectedChunkIndex(null)
+    setCitationInitialPageIndex(null)
+    setCameFromSources(false)
     setIsDocumentLoaded(false)
   }, [chatId])
 
@@ -1370,8 +1454,9 @@ export const ChatPage = ({
       setShowSources(true)
       setIsCitationPreviewOpen(false)
       setSelectedCitation(null)
-      setCameFromSources(false)
       setSelectedChunkIndex(null)
+      setCitationInitialPageIndex(null)
+      setCameFromSources(false)
     }
   }, [currentCitations, currentMessageId])
 
@@ -1778,6 +1863,7 @@ export const ChatPage = ({
         onBackToSources={handleBackToSources}
         documentOperationsRef={documentOperationsRef}
         onDocumentLoaded={handleDocumentLoaded}
+        initialPageIndex={citationInitialPageIndex}
       />
     </div>
   )

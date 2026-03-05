@@ -463,8 +463,8 @@ export const modelDetailsMap: Record<
       }
     }
   },
-  [getActualModelName(Models.LiteLLM_Claude_Sonnet_4_5)]:{
-    name:"claude-sonnet-4-5",
+  [getActualModelName(Models.LiteLLM_Claude_Sonnet_4_6)]:{
+    name:"claude-sonnet-4-6",
     cost:{
       onDemand:{
         pricePerThousandInputTokens:0.003,
@@ -472,8 +472,8 @@ export const modelDetailsMap: Record<
       }
     }
   },
-  [getActualModelName(Models.LiteLLM_Claude_Opus_4_5)]:{
-    name:"claude-opus-4-5",
+  [getActualModelName(Models.LiteLLM_Claude_Opus_4_6)]:{
+    name:"claude-opus-4-6",
     cost:{
       onDemand:{
         pricePerThousandInputTokens:0.005,
@@ -567,8 +567,8 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.Vertex_Gemini_1_5_Pro_002]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_1_5_Pro_Exp_0827]: AIProviders.VertexAI,
   // [Models.GLM_4_5]: AIProviders.LiteLLM,
-  [Models.LiteLLM_Claude_Sonnet_4_5]: AIProviders.LiteLLM,
-  [Models.LiteLLM_Claude_Opus_4_5]: AIProviders.LiteLLM,
+  [Models.LiteLLM_Claude_Sonnet_4_6]: AIProviders.LiteLLM,
+  [Models.LiteLLM_Claude_Opus_4_6]: AIProviders.LiteLLM,
   // [Models.LiteLLM_Gemini_3_Pro]: AIProviders.LiteLLM,
   [Models.LiteLLM_Gemini_3_Flash]: AIProviders.LiteLLM,
   [Models.KIMI_LATEST]: AIProviders.LiteLLM,
