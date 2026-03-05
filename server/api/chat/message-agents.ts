@@ -171,6 +171,13 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
 const MIN_TURN_NUMBER = 0
 
+/**
+ * When true, the agent performs review as part of its system prompt (self-review)
+ * and no separate review LLM is called. Saves cost and latency; review behavior
+ * is incorporated into the main agent instructions.
+ */
+const USE_AGENT_SELF_REVIEW = config.useAgentSelfReview || false
+
 const mutableAgentContext = (
   context: Readonly<AgentRunContext>
 ): AgentRunContext => context as AgentRunContext
@@ -2323,6 +2330,33 @@ function formatToolOutputsForReview(
     .join("\n\n")
 }
 
+/** Format ToolExecutionRecord[] for review prompt, grouped by turn (for last-N-turns context). */
+function formatToolCallHistoryByTurn(
+  records: ToolExecutionRecord[]
+): string {
+  if (!records || records.length === 0) {
+    return "No tool calls in this window."
+  }
+  const byTurn = new Map<number, ToolExecutionRecord[]>()
+  for (const r of records) {
+    const list = byTurn.get(r.turnNumber) ?? []
+    list.push(r)
+    byTurn.set(r.turnNumber, list)
+  }
+  const turns = Array.from(byTurn.keys()).sort((a, b) => a - b)
+  return turns
+    .map((turnNum) => {
+      const turnRecords = byTurn.get(turnNum)!
+      const lines = turnRecords.map((r, idx) => {
+        const argsSummary = formatToolArgumentsForReasoning(r.arguments || {})
+        const err = r.error ? ` Error: ${r.error.message}` : ""
+        return `  ${idx + 1}. ${r.toolName} [${r.status}]${err}\n     Args: ${argsSummary}`
+      })
+      return `Turn ${turnNum}:\n${lines.join("\n")}`
+    })
+    .join("\n\n")
+}
+
 function buildDefaultReviewPayload(notes?: string): ReviewResult {
   return {
     status: "ok",
@@ -2358,9 +2392,19 @@ export function buildReviewPromptFromContext(
   const workspaceSection = context.userContext?.trim()
     ? `Workspace Context:\n${context.userContext.trim()}`
     : ""
-  const toolOutputsSection = formatToolOutputsForReview(
-    context.currentTurnArtifacts.toolOutputs
-  )
+  const useMultiTurnHistory = context.toolCallHistory.length > 0
+  const toolOutputsSection = useMultiTurnHistory
+    ? (() => {
+        const turns = context.toolCallHistory.map((r) => r.turnNumber)
+        const minTurn = Math.min(...turns)
+        const maxTurn = Math.max(...turns)
+        const label =
+          minTurn === maxTurn
+            ? `Tool calls (turn ${maxTurn}):`
+            : `Tool calls (turns ${minTurn}–${maxTurn}, last ${maxTurn - minTurn + 1} turns):`
+        return `${label}\n${formatToolCallHistoryByTurn(context.toolCallHistory)}`
+      })()
+    : formatToolOutputsForReview(context.currentTurnArtifacts.toolOutputs)
   const expectationsSection = formatExpectationsForReview(turnExpectations)
   const fragmentsSection = answerContextMapFromFragments(
     context.allFragments,
@@ -2482,7 +2526,7 @@ async function runReviewLLM(
     temperature: 0,
     max_new_tokens: 800,
     systemPrompt: `You are a senior reviewer ensuring each agentic turn honors the agreed plan and tool expectations.
-- Inspect every tool call from this turn, compare the outputs with the expected results, and decide whether each tool met or missed expectations.
+- The tool call section may cover a single turn or multiple turns (e.g. "last N turns"). Inspect every tool call in that section, compare the outputs with the expected results, and decide whether each tool met or missed expectations.
 - Evaluate the current plan to see if it still fits the evidence gathered from the tool calls; suggest plan changes when necessary.
 - Detect anomalies (unexpected behaviors, contradictory data, missing outputs, or unresolved ambiguities) and call them out explicitly. If intent remains unclear, set ambiguityResolved=false and include the ambiguity notes inside the anomalies array.
 ${delegationNote}
@@ -3251,14 +3295,15 @@ function buildAgentInstructions(
   const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
   const attachmentDirective = buildAttachmentDirective(context)
   const promptAddendum = buildAgentPromptAddendum()
-  const reviewResultBlock = context.review.lastReviewResult
-    ? [
-        "<last_review_result>",
-        JSON.stringify(context.review.lastReviewResult, null, 2),
-        "</last_review_result>",
-        "",
-      ].join("\n")
-    : ""
+  const reviewResultBlock =
+    !USE_AGENT_SELF_REVIEW && context.review.lastReviewResult
+      ? [
+          "<last_review_result>",
+          JSON.stringify(context.review.lastReviewResult, null, 2),
+          "</last_review_result>",
+          "",
+        ].join("\n")
+      : ""
 
   let planSection = "\n<plan>\n"
   if (context.plan) {
@@ -3315,16 +3360,43 @@ function buildAgentInstructions(
     instructionLines.push("", reviewResultBlock.trim(), "")
   }
 
+  if (USE_AGENT_SELF_REVIEW) {
+    instructionLines.push(
+      "",
+      "# SELF-REVIEW (mandatory at the start of each turn)",
+      "- You have full context: the conversation history and all tool results from previous turns are in the message thread. Use them to self-review.",
+      "- At the start of each turn, before calling tools, briefly self-review the previous turn:",
+      "  - Did each tool run meet its goal? Compare outputs to the expectations you set in <expected_results>.",
+      "  - Any anomalies (unexpected results, missing evidence, contradictions)? Note them and add corrective sub-tasks if needed.",
+      "  - Does the current plan still fit the evidence? If evidence is complete and satisfies the user's ask, pivot to final synthesis; if something is missing, plan the next tools (gather_more).",
+      "  - If intent is unclear or data is ambiguous, add a clarification question (as a sub-task or surface to the user) and do not progress until resolved.",
+      "- Update the plan (toDoWrite) when your self-review finds: missed expectations, anomalies, need for replan, or readiness for final synthesis.",
+      "- You do not receive an external <last_review_result>; your self-review replaces it. Act on your own assessment in the same turn.",
+      "",
+      "# REVIEW FEEDBACK (self-review)",
+      "- Treat your self-review findings as mandatory: fix missed expectations, address anomalies, and resolve clarifications before progressing.",
+      "- Log every required fix in the plan. Capture corrective sub-tasks and close them before moving forward.",
+      "- Surface clarification questions to the user when intent is ambiguous.",
+      ""
+    )
+  } else {
+    instructionLines.push(
+      "# REVIEW FEEDBACK",
+      "- Inspect the <last_review_result> block above; treat every instruction, anomaly, and clarification inside it as mandatory.",
+      "- Example: if the review notes “Tool X lacked evidence,” reopen that sub-task, add a step to fetch the missing evidence, and mark status accordingly before launching tools.",
+      "- Log every required fix directly in the plan so auditors can see alignment with the review.",
+      "- When the review lists anomalies or ambiguity, capture each as a corrective sub-task (e.g., “Validate source for claim [2]”) and close it before moving forward.",
+      "- Answer outstanding clarification questions immediately; if the user must respond, surface the exact question back to them.",
+      ""
+    )
+  }
+
+
   instructionLines.push(
-    "# REVIEW FEEDBACK",
-    "- Inspect the <last_review_result> block above; treat every instruction, anomaly, and clarification inside it as mandatory.",
-    "- Example: if the review notes “Tool X lacked evidence,” reopen that sub-task, add a step to fetch the missing evidence, and mark status accordingly before launching tools.",
-    "- Log every required fix directly in the plan so auditors can see alignment with the review.",
-    "- When the review lists anomalies or ambiguity, capture each as a corrective sub-task (e.g., “Validate source for claim [2]”) and close it before moving forward.",
-    "- Answer outstanding clarification questions immediately; if the user must respond, surface the exact question back to them.",
-    "",
     "# PLANNING",
-    "- Always call toDoWrite at the start of a turn to update the plan with review findings, new context, and clarifications.",
+    USE_AGENT_SELF_REVIEW
+      ? "- Call toDoWrite at the start of a turn when the plan is new, when self-review finds issues, or when you need to add or close tasks; otherwise you may proceed without calling toDoWrite to avoid unnecessary iterations."
+      : "- Call toDoWrite at the start of a turn when the plan is new, when review requested changes, or when you need to add or close tasks; otherwise you may proceed without calling toDoWrite to avoid unnecessary iterations.",
     "- Terminate the active plan the moment you have enough evidence to cater to the complete requirement of the user; immediately drop any remaining subtasks when the goal is satisfied.",
     "- Scale the number of subtasks to the query’s true complexity , however quality of the final answer and complete execution and satisfaction of user's query outranks task count, you must always prioritize quality",
     "- If the review reports `planChangeNeeded=true`, rewrite the plan around the provided `planChangeReason` before running any new tools, even if older tasks were mid-flight.",
@@ -4250,32 +4322,44 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
 
         const buildTurnReviewInput = (
-          turn: number
+          turn: number,
+          reviewFreq: number
         ): { reviewInput: AutoReviewInput; fallbackUsed: boolean } => {
-          let toolHistory = agentContext.toolCallHistory.filter(
-            (record) => record.turnNumber === turn
+          const startTurn = Math.max(
+            MIN_TURN_NUMBER,
+            turn - reviewFreq + 1
+          )
+          const toolHistory = agentContext.toolCallHistory.filter(
+            (record) =>
+              record.turnNumber >= startTurn && record.turnNumber <= turn
           )
           let fallbackUsed = false
+          let effectiveHistory = toolHistory
 
           if (
-            toolHistory.length === 0 &&
+            effectiveHistory.length === 0 &&
             agentContext.toolCallHistory.length > 0
           ) {
             fallbackUsed = true
-            toolHistory = [
+            effectiveHistory = [
               agentContext.toolCallHistory[
                 agentContext.toolCallHistory.length - 1
               ],
             ]
           }
 
+          const expectedResults: ToolExpectationAssignment[] = []
+          for (let t = startTurn; t <= turn; t++) {
+            expectedResults.push(...(expectationHistory.get(t) || []))
+          }
+
           return {
             reviewInput: {
               focus: "turn_end",
               turnNumber: turn,
-              toolCallHistory: toolHistory,
+              toolCallHistory: effectiveHistory,
               plan: agentContext.plan,
-              expectedResults: expectationHistory.get(turn) || [],
+              expectedResults,
             },
             fallbackUsed,
           }
@@ -4303,22 +4387,41 @@ export async function MessageAgents(c: Context): Promise<Response> {
               )
               return
             }
-            const { reviewInput, fallbackUsed } = buildTurnReviewInput(turn)
-            if (
-              fallbackUsed &&
-              agentContext.toolCallHistory.length > 0
-            ) {
-              Logger.warn(
-                {
+            if (!USE_AGENT_SELF_REVIEW) {
+              const reviewFreq = agentContext.review.reviewFrequency ?? 5
+              const runReviewThisTurn =
+                turn === MIN_TURN_NUMBER || turn % reviewFreq === 0
+              if (runReviewThisTurn) {
+                const { reviewInput, fallbackUsed } = buildTurnReviewInput(
                   turn,
-                  fallbackUsed,
-                  toolHistoryCount: agentContext.toolCallHistory.length,
-                  chatId: agentContext.chat.externalId,
-                },
-                "[MessageAgents] No per-turn tool records; defaulting to last tool call."
-              )
+                  reviewFreq
+                )
+                if (
+                  fallbackUsed &&
+                  agentContext.toolCallHistory.length > 0
+                ) {
+                  Logger.warn(
+                    {
+                      turn,
+                      fallbackUsed,
+                      toolHistoryCount: agentContext.toolCallHistory.length,
+                      chatId: agentContext.chat.externalId,
+                    },
+                    "[MessageAgents] No per-turn tool records; defaulting to last tool call."
+                  )
+                }
+                await runAndBroadcastReview(agentContext, reviewInput, turn)
+              } else {
+                Logger.debug(
+                  {
+                    turn,
+                    reviewFrequency: reviewFreq,
+                    chatId: agentContext.chat.externalId,
+                  },
+                  "[MessageAgents] Review skipped (runs every N turns)."
+                )
+              }
             }
-            await runAndBroadcastReview(agentContext, reviewInput, turn)
           } catch (error) {
             Logger.error(
               {
@@ -4742,7 +4845,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 const newCount =
                   (consecutiveToolErrors.get(evt.data.toolName) ?? 0) + 1
                 consecutiveToolErrors.set(evt.data.toolName, newCount)
-                if (newCount >= 2) {
+                if (newCount >= 2 && !USE_AGENT_SELF_REVIEW) {
                   const recentHistory = agentContext.toolCallHistory
                     .filter((record) => record.toolName === evt.data.toolName)
                     .slice(-newCount)
@@ -5002,18 +5105,34 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
                   MIN_TURN_NUMBER
                 )
-                await runAndBroadcastReview(
-                  agentContext,
-                  {
-                    focus: "run_end",
-                    turnNumber: finalTurnNumber,
-                    toolCallHistory: agentContext.toolCallHistory,
-                    plan: agentContext.plan,
-                    expectedResults:
-                      expectationHistory.get(finalTurnNumber) || [],
-                  },
-                  finalTurnNumber
-                )
+                const lastReviewTurn = agentContext.review.lastReviewTurn
+                const skipRunEndReview =
+                  USE_AGENT_SELF_REVIEW ||
+                  (lastReviewTurn != null && lastReviewTurn === finalTurnNumber)
+                if (!skipRunEndReview) {
+                  await runAndBroadcastReview(
+                    agentContext,
+                    {
+                      focus: "run_end",
+                      turnNumber: finalTurnNumber,
+                      toolCallHistory: agentContext.toolCallHistory,
+                      plan: agentContext.plan,
+                      expectedResults:
+                        expectationHistory.get(finalTurnNumber) || [],
+                    },
+                    finalTurnNumber
+                  )
+                } else {
+                  Logger.debug(
+                    {
+                      finalTurnNumber,
+                      lastReviewTurn,
+                      useSelfReview: USE_AGENT_SELF_REVIEW,
+                      chatId: agentContext.chat.externalId,
+                    },
+                    "[MessageAgents] Skipping run_end review."
+                  )
+                }
                 // Store the response in database to prevent vanishing
                 // TODO: Implement full DB integration similar to the previous legacy controller
                 // For now, store basic message data
@@ -5680,32 +5799,41 @@ async function runDelegatedAgentWithMessageAgents(
     }
 
     const buildTurnReviewInput = (
-      turn: number
+      turn: number,
+      reviewFreq: number
     ): { reviewInput: AutoReviewInput; fallbackUsed: boolean } => {
-      let toolHistory = agentContext.toolCallHistory.filter(
-        (record) => record.turnNumber === turn
+      const startTurn = Math.max(MIN_TURN_NUMBER, turn - reviewFreq + 1)
+      const toolHistory = agentContext.toolCallHistory.filter(
+        (record) =>
+          record.turnNumber >= startTurn && record.turnNumber <= turn
       )
       let fallbackUsed = false
+      let effectiveHistory = toolHistory
 
       if (
-        toolHistory.length === 0 &&
+        effectiveHistory.length === 0 &&
         agentContext.toolCallHistory.length > 0
       ) {
         fallbackUsed = true
-        toolHistory = [
+        effectiveHistory = [
           agentContext.toolCallHistory[
             agentContext.toolCallHistory.length - 1
           ],
         ]
       }
 
+      const expectedResults: ToolExpectationAssignment[] = []
+      for (let t = startTurn; t <= turn; t++) {
+        expectedResults.push(...(expectationHistory.get(t) || []))
+      }
+
       return {
         reviewInput: {
           focus: "turn_end",
           turnNumber: turn,
-          toolCallHistory: toolHistory,
+          toolCallHistory: effectiveHistory,
           plan: agentContext.plan,
-          expectedResults: expectationHistory.get(turn) || [],
+          expectedResults,
         },
         fallbackUsed,
       }
@@ -5733,22 +5861,41 @@ async function runDelegatedAgentWithMessageAgents(
           )
           return
         }
-        const { reviewInput, fallbackUsed } = buildTurnReviewInput(turn)
-        if (
-          fallbackUsed &&
-          agentContext.toolCallHistory.length > 0
-        ) {
-          Logger.warn(
-            {
+        if (!USE_AGENT_SELF_REVIEW) {
+          const reviewFreq = agentContext.review.reviewFrequency ?? 5
+          const runReviewThisTurn =
+            turn === MIN_TURN_NUMBER || turn % reviewFreq === 0
+          if (runReviewThisTurn) {
+            const { reviewInput, fallbackUsed } = buildTurnReviewInput(
               turn,
-              fallbackUsed,
-              toolHistoryCount: agentContext.toolCallHistory.length,
-              chatId: agentContext.chat.externalId,
-            },
-            "[DelegatedAgenticRun] No per-turn tool records; defaulting to last tool call."
-          )
+              reviewFreq
+            )
+            if (
+              fallbackUsed &&
+              agentContext.toolCallHistory.length > 0
+            ) {
+              Logger.warn(
+                {
+                  turn,
+                  fallbackUsed,
+                  toolHistoryCount: agentContext.toolCallHistory.length,
+                  chatId: agentContext.chat.externalId,
+                },
+                "[DelegatedAgenticRun] No per-turn tool records; defaulting to last tool call."
+              )
+            }
+            await runAndBroadcastReview(agentContext, reviewInput, turn)
+          } else {
+            Logger.debug(
+              {
+                turn,
+                reviewFrequency: reviewFreq,
+                chatId: agentContext.chat.externalId,
+              },
+              "[DelegatedAgenticRun] Review skipped (runs every N turns)."
+            )
+          }
         }
-        await runAndBroadcastReview(agentContext, reviewInput, turn)
       } catch (error) {
         Logger.error({
           turn,
@@ -5972,7 +6119,7 @@ async function runDelegatedAgentWithMessageAgents(
               const newCount =
                 (consecutiveToolErrors.get(evt.data.toolName) ?? 0) + 1
               consecutiveToolErrors.set(evt.data.toolName, newCount)
-              if (newCount >= 2) {
+              if (newCount >= 2 && !USE_AGENT_SELF_REVIEW) {
                 const recentHistory = agentContext.toolCallHistory
                   .filter((record) => record.toolName === evt.data.toolName)
                   .slice(-newCount)
@@ -6107,18 +6254,34 @@ async function runDelegatedAgentWithMessageAgents(
                 agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
                 MIN_TURN_NUMBER
               )
-              await runAndBroadcastReview(
-                agentContext,
-                {
-                  focus: "run_end",
-                  turnNumber: finalTurnNumber,
-                  toolCallHistory: agentContext.toolCallHistory,
-                  plan: agentContext.plan,
-                  expectedResults:
-                    expectationHistory.get(finalTurnNumber) || [],
-                },
-                finalTurnNumber
-              )
+              const lastReviewTurn = agentContext.review.lastReviewTurn
+              const skipRunEndReview =
+                USE_AGENT_SELF_REVIEW ||
+                (lastReviewTurn != null && lastReviewTurn === finalTurnNumber)
+              if (!skipRunEndReview) {
+                await runAndBroadcastReview(
+                  agentContext,
+                  {
+                    focus: "run_end",
+                    turnNumber: finalTurnNumber,
+                    toolCallHistory: agentContext.toolCallHistory,
+                    plan: agentContext.plan,
+                    expectedResults:
+                      expectationHistory.get(finalTurnNumber) || [],
+                  },
+                  finalTurnNumber
+                )
+              } else {
+                Logger.debug(
+                  {
+                    finalTurnNumber,
+                    lastReviewTurn,
+                    useSelfReview: USE_AGENT_SELF_REVIEW,
+                    chatId: agentContext.chat.externalId,
+                  },
+                  "[DelegatedAgenticRun] Skipping run_end review."
+                )
+              }
               runCompleted = true
               break
             }
