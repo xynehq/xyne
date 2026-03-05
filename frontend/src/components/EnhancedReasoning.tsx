@@ -339,7 +339,7 @@ const ReasoningStepComponent: React.FC<{
     // Get the display text - show actual message for step 1, summaries for steps 2 and 3
     const getDisplayText = () => {
       if (isIteration) {
-        return `Attempt ${step.iterationNumber}`
+        return `Turn ${step.iterationNumber}`
       }
 
       // For initial messages, always show full content

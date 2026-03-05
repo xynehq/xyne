@@ -65,6 +65,7 @@ import {
   getProviderByModel,
   jsonParseLLMOutput,
 } from "@/ai/provider"
+import { extractBestDocumentsPrompt } from "@/ai/prompts"
 import { answerContextMap, answerContextMapFromFragments, userContext } from "@/ai/context"
 import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
@@ -102,7 +103,7 @@ import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { db } from "@/db/client"
 import { insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
-import { insertMessage } from "@/db/message"
+import { getChatMessagesWithAuth, insertMessage } from "@/db/message"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import {
   ChatType,
@@ -157,6 +158,18 @@ import { parseMessageText } from "./chat"
 import { getUserPersonalizationByEmail } from "@/db/personalization"
 import { getChunkCountPerDoc } from "./chunk-selection"
 import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
+import {
+  buildAgentSystemPromptContextBlock,
+  enforceMetadataConstraintsOnSelection,
+  extractMetadataConstraintsFromUserMessage,
+  formatFragmentWithMetadata,
+  formatFragmentsWithMetadata,
+  rankFragmentsByMetadataConstraints,
+  sanitizeAgentSystemPromptSnapshot,
+  withAgentSystemPromptMessage,
+} from "./message-agents-metadata"
+
+export { __messageAgentsMetadataInternals } from "./message-agents-metadata"
 
 const {
   defaultBestModel,
@@ -317,6 +330,81 @@ async function streamReasoningStep(
 function truncateValue(value: string, maxLength = 160): string {
   if (value.length <= maxLength) return value
   return `${value.slice(0, maxLength - 1)}…`
+}
+
+function normalizeUserMessageForHistory(message: SelectMessage): string {
+  const fileIds = Array.isArray(message?.fileIds) ? message.fileIds : []
+  if (
+    message.messageRole !== MessageRole.User ||
+    !fileIds.length ||
+    !message.message.startsWith("[{")
+  ) {
+    return message.message
+  }
+
+  try {
+    const parsed = JSON.parse(message.message)
+    if (!Array.isArray(parsed)) {
+      return message.message
+    }
+    return parsed
+      .map((item) => {
+        if (item?.type === "text") {
+          return `${item?.value ?? ""} `
+        }
+        if (item?.type === "pill") {
+          const title = item?.value?.title ?? "Unknown file"
+          return `<User referred a file with title "${title}" here> `
+        }
+        if (item?.type === "link") {
+          return "<User added a link with url here, this url's content is already available to you in the prompt> "
+        }
+        return ""
+      })
+      .join("")
+      .trim()
+  } catch {
+    return message.message
+  }
+}
+
+function buildConversationHistoryForAgentRun(
+  history: SelectMessage[],
+): {
+  jafHistory: JAFMessage[]
+  llmHistory: Message[]
+} {
+  const filtered = history
+    .filter((msg) => !msg?.errorMessage)
+    .filter(
+      (msg) => !(msg.messageRole === MessageRole.Assistant && !msg.message),
+    )
+    .filter(
+      (msg) =>
+        msg.messageRole === MessageRole.User ||
+        msg.messageRole === MessageRole.Assistant,
+    )
+
+  const toText = (msg: SelectMessage) => normalizeUserMessageForHistory(msg)
+
+  return {
+    jafHistory: filtered.map((msg) => ({
+      role: msg.messageRole === MessageRole.Assistant ? "assistant" : "user",
+      content: toText(msg),
+    })),
+    llmHistory: filtered.map((msg) => ({
+      role:
+        msg.messageRole === MessageRole.Assistant
+          ? ConversationRole.ASSISTANT
+          : ConversationRole.USER,
+      content: [{ text: toText(msg) }],
+    })),
+  }
+}
+
+export const __messageAgentsHistoryInternals = {
+  normalizeUserMessageForHistory,
+  buildConversationHistoryForAgentRun,
 }
 
 const RECENT_IMAGE_WINDOW = 2
@@ -785,12 +873,21 @@ function formatClarificationsForPrompt(
   return formatted
 }
 
-function buildFinalSynthesisPayload(
+export function buildFinalSynthesisPayload(
   context: AgentRunContext,
   fragmentsLimit = Math.max(12, context.allFragments.length || 1)
 ): { systemPrompt: string; userMessage: string } {
   const fragments = context.allFragments
-  const fragmentsSection = answerContextMapFromFragments(fragments, fragmentsLimit)
+  const agentSystemPromptBlock = buildAgentSystemPromptContextBlock(
+    context.dedicatedAgentSystemPrompt
+  )
+  const agentSystemPromptSection = agentSystemPromptBlock
+    ? `Agent System Prompt Context:\n${agentSystemPromptBlock}`
+    : ""
+  const formattedFragments = formatFragmentsWithMetadata(fragments, fragmentsLimit)
+  const fragmentsSection = formattedFragments
+    ? `Context Fragments:\n${formattedFragments}`
+    : ""
   const planSection = formatPlanForPrompt(context.plan)
   const clarificationSection = formatClarificationsForPrompt(context.clarifications)
   const workspaceSection = context.userContext?.trim()
@@ -799,6 +896,7 @@ function buildFinalSynthesisPayload(
 
   const parts = [
     `User Question:\n${context.message.text}`,
+    agentSystemPromptSection,
     planSection ? `Execution Plan Snapshot:\n${planSection}` : "",
     clarificationSection ? `Clarifications Resolved:\n${clarificationSection}` : "",
     workspaceSection,
@@ -817,6 +915,8 @@ function buildFinalSynthesisPayload(
 - Treat delegated-agent outputs as citeable fragments; reference them like any other context entry.
 - Describe evidence gaps plainly before concluding; never guess.
 - Extract actionable details from provided images and cite them via their fragment indices.
+- Respect user-imposed constraints using fragment metadata (any metadata field). If compliant evidence is missing, state that clearly.
+- If "This is the system prompt of agent:" is present, analyse for instructions relevant for answering and strictly bind by them .
 
 ### Response Construction
 - Lead with the conclusion, then stack proof underneath.
@@ -964,6 +1064,7 @@ function initializeAgentContext(
   options?: {
     userContext?: string
     agentPrompt?: string
+    dedicatedAgentSystemPrompt?: string
     workspaceNumericId?: number
     chatId?: number
     stopController?: AbortController
@@ -1003,6 +1104,7 @@ function initializeAgentContext(
     currentSubTask: null,
     userContext: options?.userContext ?? "",
     agentPrompt: options?.agentPrompt,
+    dedicatedAgentSystemPrompt: options?.dedicatedAgentSystemPrompt,
     clarifications: [],
     ambiguityResolved: false,
     toolCallHistory: [],
@@ -1202,6 +1304,7 @@ type ChatBootstrapParams = {
 type ChatBootstrapResult = {
   chat: SelectChat
   userMessage: SelectMessage
+  conversationHistory: SelectMessage[]
   attachmentError?: Error
 }
 
@@ -1254,7 +1357,12 @@ async function ensureChatAndPersistUserMessage(
         }
       }
 
-      return { chat, userMessage, attachmentError: attachmentError ?? undefined }
+      return {
+        chat,
+        userMessage,
+        conversationHistory: [],
+        attachmentError: attachmentError ?? undefined,
+      }
     }
 
     const chat = await updateChatByExternalIdWithAuth(
@@ -1262,6 +1370,11 @@ async function ensureChatAndPersistUserMessage(
       String(incomingChatId),
       String(params.email),
       {}
+    )
+    const conversationHistory = await getChatMessagesWithAuth(
+      tx,
+      String(incomingChatId),
+      String(params.email),
     )
 
     const messageInsert = {
@@ -1290,7 +1403,12 @@ async function ensureChatAndPersistUserMessage(
       }
     }
 
-    return { chat, userMessage, attachmentError: attachmentError ?? undefined }
+    return {
+      chat,
+      userMessage,
+      conversationHistory,
+      attachmentError: attachmentError ?? undefined,
+    }
   })
 }
 
@@ -1741,7 +1859,7 @@ export async function afterToolExecutionHook(
   }
 
   // LOG: Context extraction results
-  loggerWithChild({ email: context.user.email }).debug(
+  loggerWithChild({ email: context.user.email }).info(
     {
       toolName,
       totalContextsExtracted: contexts.length,
@@ -1756,7 +1874,7 @@ export async function afterToolExecutionHook(
     )
 
     // LOG: Filtering results
-    loggerWithChild({ email: context.user.email }).debug(
+    loggerWithChild({ email: context.user.email }).info(
       {
         toolName,
         totalContexts: contexts.length,
@@ -1775,14 +1893,21 @@ export async function afterToolExecutionHook(
         { toolName }
       )
 
-      const contextStrings = filteredContexts.map(
-        (v: MinimalAgentFragment) => {
-          context.seenDocuments.add(v.id)
-          return `
-            title: ${v.source.title}\n
-            content: ${v.content}\n
-          `
-        }
+      const metadataConstraints = extractMetadataConstraintsFromUserMessage(userMessage)
+      const {
+        rankedCandidates,
+        hasConstraints: hasMetadataConstraints,
+        hasCompliantCandidates,
+      } = rankFragmentsByMetadataConstraints(filteredContexts, metadataConstraints)
+      const rankingCandidates = rankedCandidates.map((candidate) => candidate.fragment)
+      const strictNoCompliantCandidates =
+        hasMetadataConstraints &&
+        metadataConstraints.strict &&
+        !hasCompliantCandidates
+
+      const contextStrings = rankingCandidates.map(
+        (fragment: MinimalAgentFragment, index: number) =>
+          formatFragmentWithMetadata(fragment, index)
       )
 
       // LOG: Prepared context strings for ranking
@@ -1791,10 +1916,39 @@ export async function afterToolExecutionHook(
           toolName,
           contextStringsCount: contextStrings.length,
           userMessage: userMessage.slice(0, 200),
+          hasMetadataConstraints,
+          metadataIncludeTerms: metadataConstraints.includeTerms,
+          metadataExcludeTerms: metadataConstraints.excludeTerms,
+          metadataStrict: metadataConstraints.strict,
+          compliantCandidateCount: rankedCandidates.filter((v) => v.compliant).length,
           contextStringsSample: contextStrings.slice(0, 2).map(s => s.slice(0, 150)),
         },
         "[afterToolExecutionHook] Prepared context strings for select_best_documents"
       )
+
+      if (hasMetadataConstraints) {
+        await streamReasoningStep(
+          reasoningEmitter,
+          strictNoCompliantCandidates
+            ? "Strict metadata constraints detected and no compliant documents were found."
+            : hasCompliantCandidates
+            ? "Applied metadata constraints from the user request before ranking."
+            : "Detected metadata constraints in the user request but found no clearly compliant metadata matches.",
+          {
+            toolName,
+            detail: [
+              metadataConstraints.includeTerms.length
+                ? `include=${metadataConstraints.includeTerms.join("|")}`
+                : "",
+              metadataConstraints.excludeTerms.length
+                ? `exclude=${metadataConstraints.excludeTerms.join("|")}`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+          }
+        )
+      }
 
       try {
         // LOG: Calling extractBestDocumentIndexes
@@ -1815,6 +1969,29 @@ export async function afterToolExecutionHook(
         selectionSpan.setAttribute("context_count", contextStrings.length)
         let bestDocIndexes: number[] = []
         try {
+          const rankingMessages = withAgentSystemPromptMessage(
+            messagesWithNoErrResponse,
+            context.dedicatedAgentSystemPrompt
+          )
+          const rankingSystemPrompt = extractBestDocumentsPrompt(
+            userMessage,
+            contextStrings
+          )
+          loggerWithChild({ email: context.user.email }).debug(
+            {
+              toolName,
+              modelId: rankingModelId,
+              rankingSystemPrompt,
+              rankingMessages,
+            },
+            "[afterToolExecutionHook][select_best_documents] FINAL LLM PAYLOAD"
+          )
+          selectionSpan.setAttribute(
+            "has_agent_system_prompt_snapshot",
+            !!sanitizeAgentSystemPromptSnapshot(
+              context.dedicatedAgentSystemPrompt
+            )
+          )
           bestDocIndexes = await extractBestDocumentIndexes(
             userMessage,
             contextStrings,
@@ -1823,7 +2000,7 @@ export async function afterToolExecutionHook(
               json: false,
               stream: false,
             },
-            messagesWithNoErrResponse
+            rankingMessages
           )
           selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
         } catch (error) {
@@ -1846,117 +2023,168 @@ export async function afterToolExecutionHook(
         )
 
         if (bestDocIndexes.length > 0) {
-          const selectedDocs: MinimalAgentFragment[] = []
+          let selectedDocs: MinimalAgentFragment[] = []
 
           bestDocIndexes.forEach((idx) => {
-            if (idx >= 1 && idx <= filteredContexts.length) {
-              const doc: MinimalAgentFragment = filteredContexts[idx - 1]
+            if (idx >= 1 && idx <= rankingCandidates.length) {
+              const doc: MinimalAgentFragment = rankingCandidates[idx - 1]
               selectedDocs.push(doc)
             }
           })
 
-          // LOG: Document selection results
-          loggerWithChild({ email: context.user.email }).debug(
-            {
-              toolName,
-              selectedDocsCount: selectedDocs.length,
-              selectedDocIds: selectedDocs.map(d => d.id),
-              selectedDocTitles: selectedDocs.map(d => d.source.title || "untitled"),
-            },
-            "[afterToolExecutionHook][select_best_documents] Selected documents after filtering"
+          selectedDocs = enforceMetadataConstraintsOnSelection(
+            selectedDocs,
+            rankedCandidates,
+            metadataConstraints
           )
 
-          await streamReasoningStep(
-            reasoningEmitter,
-            `Filtered down to ${selectedDocs.length} best document${
-              selectedDocs.length === 1 ? "" : "s"
-            } for analysis.`,
-            { toolName, detail: selectedDocs.map((doc) => doc.source.title || doc.id).join(", ") }
-          )
-
-          let fragmentsForResult = selectedDocs
-
-          if (IMAGE_CONTEXT_CONFIG.enabled && selectedDocs.length > 0) {
-            const vespaLikeResults = selectedDocs.map((doc, idx) => ({
-              id: doc.id,
-              relevance: 0,
-              fields: { docId: doc.source.docId },
-            })) as unknown as VespaSearchResult[]
-
-            const combinedContext = selectedDocs
-              .map((doc) => doc.content)
-              .join("\n")
-
-            const { imageFileNames: extractedImages } = extractImageFileNames(
-              combinedContext,
-              vespaLikeResults
+          if (selectedDocs.length === 0) {
+            const fallbackWhenSelectionEmpty =
+              strictNoCompliantCandidates
+                ? []
+                : hasMetadataConstraints &&
+                    metadataConstraints.strict &&
+                    hasCompliantCandidates
+                ? rankedCandidates
+                    .filter((candidate) => candidate.compliant)
+                    .map((candidate) => candidate.fragment)
+                : rankingCandidates
+            loggerWithChild({ email: context.user.email }).debug(
+              {
+                toolName,
+                fallbackContextsCount: fallbackWhenSelectionEmpty.length,
+              },
+              "[afterToolExecutionHook] No contexts survived selection enforcement; using metadata-aware fallback"
+            )
+            addToolFragments(fallbackWhenSelectionEmpty)
+          } else {
+            // LOG: Document selection results
+            loggerWithChild({ email: context.user.email }).debug(
+              {
+                toolName,
+                selectedDocsCount: selectedDocs.length,
+                selectedDocIds: selectedDocs.map((d) => d.id),
+                selectedDocTitles: selectedDocs.map(
+                  (d) => d.source.title || "untitled"
+                ),
+              },
+              "[afterToolExecutionHook][select_best_documents] Selected documents after filtering"
             )
 
-            if (extractedImages.length > 0) {
-              const turnForImages = Math.max(
-                context.turnCount ?? MIN_TURN_NUMBER,
-                MIN_TURN_NUMBER
-              )
-              const imageSpan = getTracer("chat").startSpan(
-                "tool_image_extraction"
-              )
-              imageSpan.setAttribute("tool_name", toolName)
-              imageSpan.setAttribute("turn_number", turnForImages)
-              imageSpan.setAttribute("extracted_count", extractedImages.length)
-              imageSpan.setAttribute(
-                "image_names_preview",
-                extractedImages.slice(0, 5).join(",")
+            await streamReasoningStep(
+              reasoningEmitter,
+              `Filtered down to ${selectedDocs.length} best document${
+                selectedDocs.length === 1 ? "" : "s"
+              } for analysis.`,
+              {
+                toolName,
+                detail: selectedDocs
+                  .map((doc) => doc.source.title || doc.id)
+                  .join(", "),
+              }
+            )
+
+            let fragmentsForResult = selectedDocs
+
+            if (IMAGE_CONTEXT_CONFIG.enabled && selectedDocs.length > 0) {
+              const vespaLikeResults = selectedDocs.map((doc, idx) => ({
+                id: doc.id,
+                relevance: 0,
+                fields: { docId: doc.source.docId },
+              })) as unknown as VespaSearchResult[]
+
+              const combinedContext = selectedDocs
+                .map((doc) => doc.content)
+                .join("\n")
+
+              const { imageFileNames: extractedImages } = extractImageFileNames(
+                combinedContext,
+                vespaLikeResults
               )
 
-              // LOG: Before attaching images
-              loggerWithChild({ email: context.user.email }).debug(
-                {
-                  toolName,
-                  extractedImagesCount: extractedImages.length,
+              if (extractedImages.length > 0) {
+                const turnForImages = Math.max(
+                  context.turnCount ?? MIN_TURN_NUMBER,
+                  MIN_TURN_NUMBER
+                )
+                const imageSpan = getTracer("chat").startSpan(
+                  "tool_image_extraction"
+                )
+                imageSpan.setAttribute("tool_name", toolName)
+                imageSpan.setAttribute("turn_number", turnForImages)
+                imageSpan.setAttribute("extracted_count", extractedImages.length)
+                imageSpan.setAttribute(
+                  "image_names_preview",
+                  extractedImages.slice(0, 5).join(",")
+                )
+
+                // LOG: Before attaching images
+                loggerWithChild({ email: context.user.email }).debug(
+                  {
+                    toolName,
+                    extractedImagesCount: extractedImages.length,
+                    extractedImages,
+                    turnForImages,
+                    selectedDocsCount: selectedDocs.length,
+                  },
+                  "[afterToolExecutionHook] Extracted images from fragments - preparing to attach"
+                )
+
+                fragmentsForResult = attachImagesToFragments(
+                  selectedDocs,
                   extractedImages,
-                  turnForImages,
-                  selectedDocsCount: selectedDocs.length,
-                },
-                "[afterToolExecutionHook] Extracted images from fragments - preparing to attach"
-              )
+                  {
+                    turnNumber: turnForImages,
+                    sourceToolName: toolName,
+                    isUserAttachment: false,
+                  }
+                )
+                imageSpan.setAttribute(
+                  "fragments_with_images",
+                  fragmentsForResult.filter(
+                    (fragment) => fragment.images && fragment.images.length > 0
+                  ).length
+                )
+                imageSpan.end()
 
-              fragmentsForResult = attachImagesToFragments(selectedDocs, extractedImages, {
-                turnNumber: turnForImages,
-                sourceToolName: toolName,
-                isUserAttachment: false,
-              })
-              imageSpan.setAttribute(
-                "fragments_with_images",
-                fragmentsForResult.filter(
-                  (fragment) => fragment.images && fragment.images.length > 0
-                ).length
-              )
-              imageSpan.end()
-
-              // LOG: After attaching images
-              loggerWithChild({ email: context.user.email }).debug(
-                {
-                  toolName,
-                  attachedImagesCount: extractedImages.length,
-                  fragmentsWithImages: fragmentsForResult.filter(f => f.images && f.images.length > 0).length,
-                },
-                `[afterToolExecutionHook] Tracked ${extractedImages.length} image reference${
-                  extractedImages.length === 1 ? "" : "s"
-                } from ${toolName} on turn ${turnForImages}`
-              )
+                // LOG: After attaching images
+                loggerWithChild({ email: context.user.email }).debug(
+                  {
+                    toolName,
+                    attachedImagesCount: extractedImages.length,
+                    fragmentsWithImages: fragmentsForResult.filter(
+                      (f) => f.images && f.images.length > 0
+                    ).length,
+                  },
+                  `[afterToolExecutionHook] Tracked ${extractedImages.length} image reference${
+                    extractedImages.length === 1 ? "" : "s"
+                  } from ${toolName} on turn ${turnForImages}`
+                )
+              }
             }
-          }
 
-          addToolFragments(fragmentsForResult)
+            addToolFragments(fragmentsForResult)
+          }
         } else {
+          const metadataFilteredFallback =
+            strictNoCompliantCandidates
+              ? []
+              : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
+              ? rankedCandidates
+                  .filter((candidate) => candidate.compliant)
+                  .map((candidate) => candidate.fragment)
+              : rankingCandidates
           loggerWithChild({ email: context.user.email }).debug(
             {
               toolName,
               filteredContextsCount: filteredContexts.length,
+              fallbackContextsCount: metadataFilteredFallback.length,
             },
-            "[afterToolExecutionHook] Document ranking returned no results; retaining all filtered contexts"
+            strictNoCompliantCandidates
+              ? "[afterToolExecutionHook] Document ranking returned no results and strict metadata constraints had no compliant contexts"
+              : "[afterToolExecutionHook] Document ranking returned no results; retaining all filtered contexts"
           )
-          addToolFragments(filteredContexts)
+          addToolFragments(metadataFilteredFallback)
         }
       } catch (error) {
         // LOG: Error in document ranking
@@ -1970,10 +2198,20 @@ export async function afterToolExecutionHook(
         )
         await streamReasoningStep(
           reasoningEmitter,
-          "Context ranking failed, retaining all retrieved documents.",
+          strictNoCompliantCandidates
+            ? "Context ranking failed and strict metadata constraints had no compliant documents; returning no contexts."
+            : "Context ranking failed, retaining all retrieved documents.",
           { toolName }
         )
-        addToolFragments(filteredContexts)
+        const fallbackContexts =
+          strictNoCompliantCandidates
+            ? []
+            : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
+            ? rankedCandidates
+                .filter((candidate) => candidate.compliant)
+                .map((candidate) => candidate.fragment)
+            : rankingCandidates
+        addToolFragments(fallbackContexts)
       }
     }
   }
@@ -3735,6 +3973,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
     let lastPersistedMessageId = 0
     let lastPersistedMessageExternalId = ""
     let attachmentStorageError: Error | null = null
+    let previousConversationHistory: SelectMessage[] = []
 
     try {
       const bootstrap = await ensureChatAndPersistUserMessage({
@@ -3752,6 +3991,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
       lastPersistedMessageId = bootstrap.userMessage.id as number
       lastPersistedMessageExternalId = String(bootstrap.userMessage.externalId)
       attachmentStorageError = bootstrap.attachmentError ?? null
+      previousConversationHistory = bootstrap.conversationHistory ?? []
       const chatAgentId = chatRecord.agentId
         ? String(chatRecord.agentId)
         : undefined
@@ -3779,6 +4019,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
       })
     }
     rootSpan.setAttribute("chatId", String(chatRecord.externalId))
+    rootSpan.setAttribute(
+      "conversation_history_count",
+      previousConversationHistory.length,
+    )
 
     if (
       resolvedAgentId &&
@@ -3803,6 +4047,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
     }
 
     const hasExplicitAgent = Boolean(resolvedAgentId && agentPromptForLLM)
+    const dedicatedAgentSystemPrompt =
+      typeof agentRecord?.prompt === "string" && agentRecord.prompt.trim().length > 0
+        ? agentRecord.prompt.trim()
+        : undefined
     const delegationEnabled = !hasExplicitAgent
 
     return streamSSE(c, async (stream) => {
@@ -3879,6 +4127,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             userContext: userCtxString,
             workspaceNumericId: workspace.id,
             agentPrompt: agentPromptForLLM,
+            dedicatedAgentSystemPrompt,
             chatId: chatRecord.id as number,
             stopController,
             modelId: agenticModelId,
@@ -4259,10 +4508,14 @@ export async function MessageAgents(c: Context): Promise<Response> {
         // Initialize run state
         const runId = generateRunId()
         const traceId = generateTraceId()
+        const { jafHistory, llmHistory } = buildConversationHistoryForAgentRun(
+          previousConversationHistory
+        )
         const initialMessages: JAFMessage[] = [
+          ...jafHistory,
           {
             role: "user",
-            content: message, // Use actual user message
+            content: message,
           },
           ...initialSyntheticMessages,
         ]
@@ -4279,6 +4532,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
         jafStreamingSpan.setAttribute("chat_external_id", chatRecord.externalId)
         jafStreamingSpan.setAttribute("run_id", runId)
         jafStreamingSpan.setAttribute("trace_id", traceId)
+        jafStreamingSpan.setAttribute("history_message_count", jafHistory.length)
+        jafStreamingSpan.setAttribute("history_seeded", jafHistory.length > 0)
         let turnSpan: Span | undefined
         const endTurnSpan = () => {
           if (turnSpan) {
@@ -4296,6 +4551,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
 
         const messagesWithNoErrResponse: Message[] = [
+          ...llmHistory,
           {
             role: ConversationRole.USER,
             content: [{ text: message }],
@@ -5736,6 +5992,10 @@ async function runDelegatedAgentWithMessageAgents(
     }
 
     const agentPromptForLLM = JSON.stringify(agentRecord)
+    const dedicatedAgentSystemPrompt =
+      typeof agentRecord.prompt === "string" && agentRecord.prompt.trim().length > 0
+        ? agentRecord.prompt.trim()
+        : undefined
     const userCtxString = userContext(userAndWorkspace)
     const userTimezone = user.timeZone || "Asia/Kolkata"
     const dateForAI = getDateForAI({ userTimeZone: userTimezone })
@@ -5762,6 +6022,7 @@ async function runDelegatedAgentWithMessageAgents(
       {
         userContext: userCtxString,
         agentPrompt: agentPromptForLLM,
+        dedicatedAgentSystemPrompt,
         workspaceNumericId: workspace.id,
         stopSignal: params.stopSignal,
         modelId: delegateModelId,
@@ -5808,14 +6069,15 @@ async function runDelegatedAgentWithMessageAgents(
 
     const gatheredFragmentsKeys = new Set<string>()
 
-    const instructions = () =>
-      buildAgentInstructions(
+    const instructions = () => {
+      return buildAgentInstructions(
         agentContext,
         allTools.map((tool) => tool.schema.name),
         dateForAI,
         agentPromptForLLM,
         false
       )
+    }
 
     const jafAgent: JAFAgent<AgentRunContext, string> = {
       name: "xyne-delegate",

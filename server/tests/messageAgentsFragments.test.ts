@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentRunContext } from "@/api/chat/agent-schemas"
 import {
+  __messageAgentsHistoryInternals,
+  __messageAgentsMetadataInternals,
   afterToolExecutionHook,
   buildDelegatedAgentFragments,
+  buildFinalSynthesisPayload,
   buildReviewPromptFromContext,
 } from "@/api/chat/message-agents"
 import { getRecentImagesFromContext } from "@/api/chat/runContextUtils"
@@ -43,6 +46,7 @@ const createMockContext = (): AgentRunContext => ({
   currentSubTask: null,
   userContext: "",
   agentPrompt: undefined,
+  dedicatedAgentSystemPrompt: undefined,
   clarifications: [],
   ambiguityResolved: true,
   toolCallHistory: [],
@@ -146,6 +150,53 @@ describe("message-agents context tracking", () => {
     )
   })
 
+  test("afterToolExecutionHook enforces strict metadata constraints when no compliant docs exist", async () => {
+    const context = createMockContext()
+    const nonCompliantFragment: MinimalAgentFragment = {
+      ...baseFragment,
+      source: {
+        ...baseFragment.source,
+        title: "General Notes",
+      },
+    }
+
+    await afterToolExecutionHook(
+      "searchGlobal",
+      {
+        status: "success",
+        metadata: {
+          contexts: [nonCompliantFragment],
+        },
+        data: {
+          result: "Found documents.",
+        },
+      },
+      {
+        toolCall: { id: "call-2" } as any,
+        args: { query: "notes" },
+        state: {
+          context,
+          messages: [],
+          runId: createRunId("run-2"),
+          traceId: createTraceId("trace-2"),
+          currentAgentName: "xyne-agent",
+          turnCount: 1,
+        },
+        agentName: "xyne-agent",
+        executionTime: 10,
+        status: "success",
+      },
+      'Answer only from source "Q4 Planning".',
+      [],
+      new Set<string>(),
+      undefined,
+      context.turnCount
+    )
+
+    expect(context.allFragments).toHaveLength(0)
+    expect(context.currentTurnArtifacts.fragments).toHaveLength(0)
+  })
+
   test("buildReviewPromptFromContext includes plan, expectations, and image metadata", () => {
     const context = createMockContext()
     context.plan = {
@@ -211,6 +262,48 @@ describe("message-agents context tracking", () => {
     expect(fragments[0].content).toContain("Delegate")
   })
 
+  test("buildConversationHistoryForAgentRun normalizes context JSON and filters invalid turns", () => {
+    const { buildConversationHistoryForAgentRun } =
+      __messageAgentsHistoryInternals
+
+    const history = [
+      {
+        messageRole: "user",
+        message: '[{"type":"text","value":"Summarize"},{"type":"pill","value":{"title":"Q4 Plan"}}]',
+        fileIds: ["clf-1"],
+        errorMessage: "",
+      },
+      {
+        messageRole: "assistant",
+        message: "Sure, sharing summary.",
+        fileIds: [],
+        errorMessage: "",
+      },
+      {
+        messageRole: "assistant",
+        message: "",
+        fileIds: [],
+        errorMessage: "",
+      },
+      {
+        messageRole: "user",
+        message: "bad turn",
+        fileIds: [],
+        errorMessage: "timeout",
+      },
+    ] as any
+
+    const { jafHistory, llmHistory } = buildConversationHistoryForAgentRun(history)
+
+    expect(jafHistory).toHaveLength(2)
+    expect(jafHistory[0].role).toBe("user")
+    expect(jafHistory[0].content).toContain('User referred a file with title "Q4 Plan"')
+    expect(jafHistory[1].role).toBe("assistant")
+    expect(llmHistory).toHaveLength(2)
+    expect((llmHistory[0] as any).role).toBe("user")
+    expect((llmHistory[1] as any).role).toBe("assistant")
+  })
+
   test("getRecentImagesFromContext prioritizes attachments and last two turns", () => {
     const context = createMockContext()
     context.currentTurnArtifacts.images.push({
@@ -265,5 +358,75 @@ describe("message-agents context tracking", () => {
     expect(contexts).toHaveLength(1)
     expect(contexts[0].source.title).toContain("Connector 123")
     expect(contexts[0].content).toContain("MCP response text")
+  })
+
+  test("metadata constraints are inferred and ranked generically from user request", () => {
+    const constraints =
+      __messageAgentsMetadataInternals.extractMetadataConstraintsFromUserMessage(
+        'Answer only from source "Q4 Planning" and exclude "Legacy Notes".'
+      )
+
+    expect(constraints.strict).toBe(true)
+    expect(constraints.includeTerms).toContain("q4 planning")
+    expect(constraints.excludeTerms).toContain("legacy notes")
+
+    const matchingFragment: MinimalAgentFragment = {
+      ...baseFragment,
+      id: "doc-2",
+      source: {
+        ...baseFragment.source,
+        title: "Q4 Planning",
+      },
+    }
+    const excludedFragment: MinimalAgentFragment = {
+      ...baseFragment,
+      id: "doc-3",
+      source: {
+        ...baseFragment.source,
+        title: "Legacy Notes",
+      },
+    }
+
+    const ranked = __messageAgentsMetadataInternals.rankFragmentsByMetadataConstraints(
+      [excludedFragment, matchingFragment],
+      constraints
+    )
+    expect(ranked.hasConstraints).toBe(true)
+    expect(ranked.hasCompliantCandidates).toBe(true)
+    expect(ranked.rankedCandidates[0].fragment.id).toBe("doc-2")
+  })
+
+  test("final synthesis payload includes metadata-enriched fragment context", () => {
+    const context = createMockContext()
+    context.dedicatedAgentSystemPrompt =
+      "You are an enterprise agent. Always use verified workspace evidence."
+    context.allFragments = [
+      {
+        ...baseFragment,
+        source: {
+          ...baseFragment.source,
+          page_title: "Quarterly Planning Sheet",
+          status: "Open",
+        },
+      },
+    ]
+
+    const payload = buildFinalSynthesisPayload(context)
+    expect(payload.userMessage).toContain("Agent System Prompt Context:")
+    expect(payload.userMessage).toContain("This is the system prompt of agent:")
+    expect(payload.userMessage).toContain("<system prompt>")
+    expect(payload.userMessage).toContain(
+      "You are an enterprise agent. Always use verified workspace evidence."
+    )
+    expect(payload.userMessage).not.toContain(
+      "You are Xyne, an enterprise search assistant with agentic capabilities."
+    )
+    expect(payload.userMessage).toContain("</system prompt>")
+    expect(payload.userMessage).toContain("Context Fragments:")
+    expect(payload.userMessage).toContain("index 1 {file context begins here...}")
+    expect(payload.userMessage).toContain("- title: ARR Summary")
+    expect(payload.userMessage).toContain("- page_title: Quarterly Planning Sheet")
+    expect(payload.userMessage).toContain("Content:")
+    expect(payload.userMessage).toContain("Quarterly ARR grew 12%")
   })
 })

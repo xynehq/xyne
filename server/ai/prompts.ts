@@ -2616,6 +2616,7 @@ Your goal is to capture not only directly matching documents but also those that
    - Offer **related background**, **context**, **examples**, or **clarifying information**.
 4. **Prioritize quality** — prefer documents that are specific, factual, and contribute distinct value.
 5. **Output** — Return only the indexes of the most relevant and complementary contexts.
+6. **Honor agent prompt** — if you see "This is the system prompt of agent:", analyse it for instructions related to selection, ranking and filtering of source documents and  treat it as binding and follow it strictly while selecting.
 
 ### Input
 - Query: "${query}"
