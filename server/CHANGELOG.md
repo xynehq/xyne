@@ -1,3 +1,10 @@
+## [3.40.5](https://github.com/xynehq/xyne/compare/v3.40.4...v3.40.5) (2026-03-05)
+
+
+### Bug Fixes
+
+* optimized agentic iterations ([#1264](https://github.com/xynehq/xyne/issues/1264)) ([05766a9](https://github.com/xynehq/xyne/commit/05766a9a79066420c930dd83d108be045857b563))
+
 ## [3.40.4](https://github.com/xynehq/xyne/compare/v3.40.3...v3.40.4) (2026-03-05)
 
 
