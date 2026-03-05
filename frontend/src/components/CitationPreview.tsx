@@ -21,6 +21,8 @@ interface CitationPreviewProps {
   showBackButton?: boolean
   documentOperationsRef?: React.RefObject<DocumentOperations>
   onDocumentLoaded?: () => void
+  /** 0-based page/sheet index to open at (from chunk API). PDF uses as initialPage (1-based), Excel as initial sheet. */
+  initialPageIndex?: number | null
 }
 
 // Inner component that has access to DocumentOperations context
@@ -32,6 +34,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   showBackButton = false,
   documentOperationsRef,
   onDocumentLoaded,
+  initialPageIndex,
 }) => {
   const [documentContent, setDocumentContent] = useState<Blob | null>(null)
   const [loading, setLoading] = useState(false)
@@ -198,6 +201,11 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
       type: documentContent.type || getDefaultMimeType(extension),
     })
 
+    const initialPageOrSheetIndex =
+      initialPageIndex != null && initialPageIndex >= 0
+        ? initialPageIndex
+        : 0
+
     switch (extension) {
       case "pdf":
         return (
@@ -211,6 +219,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
               showNavigation={true}
               displayMode="continuous"
               documentOperationsRef={documentOperationsRef}
+              initialPage={initialPageOrSheetIndex}
             />
           </div>
         )
@@ -262,6 +271,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
               className="h-full"
               style={{ overflow: "visible" }}
               documentOperationsRef={documentOperationsRef}
+              initialSheetIndex={initialPageOrSheetIndex}
             />
           </div>
         )
@@ -323,7 +333,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
           </div>
         )
     }
-  }, [citation, documentContent])
+  }, [citation, documentContent, initialPageIndex])
 
   // Notify parent when document is loaded and ready
   useEffect(() => {

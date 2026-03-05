@@ -8,9 +8,11 @@ interface ExcelViewerProps {
   style?: React.CSSProperties;
   documentOperationsRef?: React.RefObject<DocumentOperations>;
   onSheetChange?: (sheetIndex: number) => void;
+  /** 0-based sheet index to open at initially (e.g. from citation chunk). */
+  initialSheetIndex?: number;
 }
 
-const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOperationsRef, onSheetChange }) => {
+const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOperationsRef, onSheetChange, initialSheetIndex }) => {
   const [sheets, setSheets] = useState<{ name: string; data: any[][] }[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
 
@@ -47,11 +49,17 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOp
       });
 
       setSheets(parsedSheets);
-      setActiveSheet(0);
+      const initialSheet =
+        initialSheetIndex != null &&
+        initialSheetIndex >= 0 &&
+        initialSheetIndex < parsedSheets.length
+          ? initialSheetIndex
+          : 0;
+      setActiveSheet(initialSheet);
     };
 
     reader.readAsArrayBuffer(source);
-  }, [source]);
+  }, [source, initialSheetIndex]);
 
   // Register the goToPage function with the DocumentOperations ref
   useEffect(() => {
