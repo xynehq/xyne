@@ -5215,18 +5215,34 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
                     MIN_TURN_NUMBER
                   )
-                  await runAndBroadcastReview(
-                    agentContext,
-                    {
-                      focus: "run_end",
-                      turnNumber: finalTurnNumber,
-                      toolCallHistory: agentContext.toolCallHistory,
-                      plan: agentContext.plan,
-                      expectedResults:
-                        expectationHistory.get(finalTurnNumber) || [],
-                    },
-                    finalTurnNumber
-                  )
+                  const lastReviewTurn = agentContext.review.lastReviewTurn
+                  const skipRunEndReview =
+                    USE_AGENT_SELF_REVIEW ||
+                    (lastReviewTurn != null && lastReviewTurn === finalTurnNumber)
+                  if (!skipRunEndReview) {
+                    await runAndBroadcastReview(
+                      agentContext,
+                      {
+                        focus: "run_end",
+                        turnNumber: finalTurnNumber,
+                        toolCallHistory: agentContext.toolCallHistory,
+                        plan: agentContext.plan,
+                        expectedResults:
+                          expectationHistory.get(finalTurnNumber) || [],
+                      },
+                      finalTurnNumber
+                    )
+                  } else {
+                    Logger.debug(
+                      {
+                        finalTurnNumber,
+                        lastReviewTurn,
+                        useSelfReview: USE_AGENT_SELF_REVIEW,
+                        chatId: agentContext.chat.externalId,
+                      },
+                      "[MessageAgents] Skipping run_end review (self-review or already reviewed)."
+                    )
+                  }
                   loggerWithChild({ email }).info("Storing assistant response in database")
                   Logger.debug(
                     {
