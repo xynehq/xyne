@@ -1,3 +1,10 @@
+## [3.40.6](https://github.com/xynehq/xyne/compare/v3.40.5...v3.40.6) (2026-03-06)
+
+
+### Bug Fixes
+
+* udjusted prompt to get proper sqls ([#1267](https://github.com/xynehq/xyne/issues/1267)) ([20df5bd](https://github.com/xynehq/xyne/commit/20df5bdc2d87bd2b66c94ace4dd9f7f36de76eec))
+
 ## [3.40.5](https://github.com/xynehq/xyne/compare/v3.40.4...v3.40.5) (2026-03-05)
 
 
