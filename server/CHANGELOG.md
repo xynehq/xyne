@@ -1,3 +1,10 @@
+## [3.40.7](https://github.com/xynehq/xyne/compare/v3.40.6...v3.40.7) (2026-03-06)
+
+
+### Bug Fixes
+
+* fixed shcema ingestion in metadata ([#1268](https://github.com/xynehq/xyne/issues/1268)) ([f2a5267](https://github.com/xynehq/xyne/commit/f2a52672951e5d6029ac18f03cb2ec67db75cd5e))
+
 ## [3.40.6](https://github.com/xynehq/xyne/compare/v3.40.5...v3.40.6) (2026-03-06)
 
 
