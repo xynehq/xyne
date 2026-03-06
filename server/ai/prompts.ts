@@ -2697,6 +2697,17 @@ If the question is NOT answerable with a SELECT over the given tables, respond w
 If it IS answerable, generate a single Postgres SELECT statement.
 - Use table names qualified with schema: ${defaultSchema}.table_name
 - Use ONLY columns that exist in the schema below. Do NOT invent columns.
+- NEVER use SELECT *.
+- Always explicitly select only the minimal set of columns required to answer the question.
+- Prefer selecting 2-6 relevant columns instead of returning full rows.
+- Only include columns that are directly needed for filtering, aggregation, grouping, ordering, or display in the result.
+- Always include LIMIT 100 unless the user explicitly asks for more rows (e.g. "show all", "list everything"). This prevents accidental full-table scans.
+- When LIMIT is used and the query refers to recency (latest, recent, newest), include ORDER BY on a timestamp column if available (e.g. ORDER BY created_at DESC).
+- Prefer aggregated results over raw rows when the question asks for counts, summaries, or comparisons. Use COUNT(*), SUM(...), AVG(...), MIN/MAX, or GROUP BY instead of returning many rows (e.g. "How many complaints?" → SELECT COUNT(*) AS complaint_count FROM ...; not SELECT complaint_id, ...).
+- When selecting non-aggregated columns together with aggregates (COUNT, SUM, AVG), include the appropriate GROUP BY clause (e.g. SELECT entity_type, COUNT(*) ... GROUP BY entity_type).
+- Do not wrap timestamp columns in functions when filtering (e.g. avoid DATE(created_at)); compare directly (e.g. created_at >= '2023-01-01').
+- Use DISTINCT only when listing unique values; for "how many distinct X" use COUNT(DISTINCT x), not SELECT DISTINCT x.
+- Prefer simple queries over nested subqueries unless required.
 - Output a SINGLE SELECT. No CREATE/INSERT/UPDATE/DELETE. No multiple statements.
 - You may use JOINs, WHERE, GROUP BY, ORDER BY, LIMIT, and CTEs (WITH ... SELECT ...).
 - Output must be a single-line minified JSON: {"sql": "SELECT ...", "notes": "brief reasoning"}
@@ -2705,9 +2716,16 @@ ENTITY/NAME MATCHING (important):
 - For matching on entity names, company names, or any free-text field the user mentioned, ALWAYS use ILIKE with a pattern (e.g. column ILIKE '%value%') so that case and small spelling differences do not return no rows. Do NOT use exact = or IN ('value1','value2') for such fields unless the user explicitly asks for an exact match; exact match and IN fail if the user's wording or casing is slightly different.
 
 MULTI-TABLE SAFETY (important):
+- Use the minimum number of tables required to answer the question. Do NOT join tables unless information from both tables is required.
 - Do NOT produce cartesian products over raw tables (e.g. FROM t1, t2 with no JOIN).
 - When combining related tables, use explicit JOIN with ON.
 - When comparing unrelated aggregates (e.g. "compare total revenue and average attendance"), first aggregate each table in a CTE to a single row, then combine: WITH a AS (SELECT SUM(...) AS x FROM t1), b AS (SELECT AVG(...) AS y FROM t2) SELECT a.x, b.y FROM a, b.
+
+UNION SAFETY (important):
+- Do NOT use UNION or UNION ALL unless each SELECT returns the exact same number of columns in the exact same order and compatible types. Postgres will error: "each UNION query must have the same number of columns".
+- Do NOT use SELECT * with UNION/UNION ALL when tables have different schemas (e.g. complaints vs enforcement_orders). Use explicit column lists that match across both sides.
+- Prefer querying a single table when possible. If combining two tables with UNION, explicitly select the same columns from each (e.g. SELECT id, entity_type, created_at FROM t1 ... UNION ALL SELECT id, entity_type, created_at FROM t2 ...).
+- If tables have incompatible schemas or you cannot align columns safely, respond with: {"sql": null, "notes": "Tables have incompatible schemas for UNION"}.
 
 User question: ${query}
 
