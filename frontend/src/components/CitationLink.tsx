@@ -14,6 +14,7 @@ export interface Citation {
   docId: string
   app: string
   itemId?: string
+  entitty?: string
   clId?: string
 }
 
@@ -80,7 +81,7 @@ export const createCitationLink =
                   e.preventDefault()
                   e.stopPropagation()
                   if (onCitationClick) {
-                    onCitationClick(citation, chunkIndex)
+                    onCitationClick(citation, citation.title.startsWith('Database:')? undefined: chunkIndex)
                   }
                   setIsTooltipOpen(false)
                 }}
@@ -104,7 +105,7 @@ export const createCitationLink =
                     e.preventDefault()
                     e.stopPropagation()
                     if (onCitationClick) {
-                      onCitationClick(citation, chunkIndex)
+                      onCitationClick(citation, citation.title.startsWith('Database:')? undefined: chunkIndex)
                     }
                     setIsTooltipOpen(false)
                   }}
