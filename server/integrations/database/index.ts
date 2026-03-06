@@ -323,6 +323,7 @@ async function syncTableToKbAsSchema(
           source: "database_connector",
           connectorId,
           tableName,
+          schema: schemaDoc,
         },
         updatedAt: new Date(),
       })
@@ -345,6 +346,7 @@ async function syncTableToKbAsSchema(
         source: "database_connector",
         connectorId,
         tableName,
+        schema: schemaDoc,
       },
       kbContext.userId,
       kbContext.userEmail,

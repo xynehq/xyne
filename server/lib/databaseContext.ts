@@ -41,6 +41,31 @@ function parseMetadata(meta: unknown): { source?: string; connectorId?: string; 
   }
 }
 
+/**
+ * Prefer schema from Vespa metadata when present (set by file processor for application/x-database-schema).
+ * Metadata is not chunked, so this is reliable. Older docs may only have chunks.
+ */
+function extractSchemaFromMetadata(meta: unknown): DatabaseTableSchemaDoc | null {
+  if (meta == null) return null
+  const str = typeof meta === "string" ? meta : undefined
+  if (!str) return null
+  try {
+    const o = JSON.parse(str) as Record<string, unknown>
+    const schema = o?.schema
+    if (
+      schema &&
+      typeof schema === "object" &&
+      (schema as DatabaseTableSchemaDoc).source === "database_connector" &&
+      Array.isArray((schema as DatabaseTableSchemaDoc).columns)
+    ) {
+      return sanitizeSchemaDoc(schema as DatabaseTableSchemaDoc)
+    }
+  } catch {
+    // ignore
+  }
+  return null
+}
+
 function sanitizeSchemaDoc(doc: DatabaseTableSchemaDoc): DatabaseTableSchemaDoc {
   return {
     ...doc,
@@ -59,12 +84,18 @@ function sanitizeSchemaDoc(doc: DatabaseTableSchemaDoc): DatabaseTableSchemaDoc 
   }
 }
 
+/** Fallback for legacy docs: reassemble schema from chunks (metadata may not have schema). */
 function extractSchemaFromChunks(chunks: unknown): DatabaseTableSchemaDoc | null {
   if (!Array.isArray(chunks) || chunks.length === 0) return null
-  const text = chunks
-    .map((c) => (typeof c === "string" ? c : (c as { chunk?: string }).chunk))
-    .filter(Boolean)
-    .join("\n")
+  const withIndex = chunks
+    .map((c) => ({
+      text: typeof c === "string" ? c : (c as { chunk?: string }).chunk,
+      index: typeof (c as { index?: number }).index === "number" ? (c as { index: number }).index : -1,
+    }))
+    .filter((x): x is { text: string; index: number } => typeof x.text === "string" && x.text.length > 0)
+  if (withIndex.length === 0) return null
+  withIndex.sort((a, b) => a.index - b.index)
+  const text = withIndex.map((x) => x.text).join("")
   try {
     const parsed = JSON.parse(text) as unknown
     if (
@@ -84,7 +115,8 @@ function extractSchemaFromChunks(chunks: unknown): DatabaseTableSchemaDoc | null
         if (
           parsed &&
           typeof parsed === "object" &&
-          (parsed as DatabaseTableSchemaDoc).source === "database_connector"
+          (parsed as DatabaseTableSchemaDoc).source === "database_connector" &&
+          Array.isArray((parsed as DatabaseTableSchemaDoc).columns)
         ) {
           return sanitizeSchemaDoc(parsed as DatabaseTableSchemaDoc)
         }
@@ -112,6 +144,10 @@ export async function getPrecomputedDbContextIfNeeded(
     typeof query !== "string" ||
     !query.trim()
   ) {
+    Logger.warn(
+      { hasUserId: userId != null, hasWorkspaceId: workspaceId != null, hasQuery: typeof query === "string" && !!query?.trim() },
+      "DatabaseContext: skipped building precomputed DB context (missing userId, workspaceId, or query)",
+    )
     return new Map()
   }
   return buildPrecomputedDbContext(searchResults, query, userId, workspaceId)
@@ -159,7 +195,13 @@ export async function buildPrecomputedDbContext(
   workspaceId: number,
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>()
-  if (!searchResults?.length || !query?.trim()) return map
+  if (!searchResults?.length || !query?.trim()) {
+    Logger.warn(
+      { resultsCount: searchResults?.length ?? 0, queryLength: query?.trim()?.length ?? 0 },
+      "DatabaseContext: no search results or empty query, skipping precomputed DB context",
+    )
+    return map
+  }
 
   const schemaDocs = searchResults.filter((r) => {
     const f = r.fields as Record<string, unknown>
@@ -168,7 +210,13 @@ export async function buildPrecomputedDbContext(
     return mime === MIME_DATABASE_SCHEMA
   })
 
-  if (schemaDocs.length === 0) return map
+  if (schemaDocs.length === 0) {
+    Logger.info(
+      { totalResults: searchResults.length },
+      "DatabaseContext: no DB schema docs in search results (mimeType not application/x-database-schema)",
+    )
+    return map
+  }
 
   const byConnector = new Map<string, DatabaseTableSchemaDoc[]>()
   for (const r of schemaDocs) {
@@ -178,8 +226,21 @@ export async function buildPrecomputedDbContext(
     if (!connectorId && typeof f.clId === "string") {
       connectorId = (await getDatabaseConnectorExternalIdByKbCollectionId(f.clId)) ?? undefined
     }
-    if (!connectorId) continue
-    const schema = extractSchemaFromChunks(f.chunks_summary)
+    if (!connectorId) {
+      Logger.warn(
+        { tableName: meta.tableName, clId: f.clId },
+        "DatabaseContext: DB schema doc surfaced but skipped (no connectorId in metadata and clId lookup returned null)",
+      )
+      continue
+    }
+    const schema = extractSchemaFromMetadata(f.metadata) ?? extractSchemaFromChunks(f.chunks_summary)
+    if (!schema) {
+      Logger.warn(
+        { connectorId, tableName: meta.tableName },
+        "DatabaseContext: DB schema doc surfaced but skipped (schema extraction failed from metadata and chunks)",
+      )
+      continue
+    }
     if (schema) {
       const list = byConnector.get(connectorId) ?? []
       // Dedup by composite key (schema + tableName) to avoid collapsing distinct tables across schemas
@@ -189,6 +250,14 @@ export async function buildPrecomputedDbContext(
       }
       byConnector.set(connectorId, list)
     }
+  }
+
+  if (byConnector.size === 0) {
+    Logger.warn(
+      { schemaDocsCount: schemaDocs.length },
+      "DatabaseContext: DB schema docs surfaced but none had valid connectorId + schema; precomputed DB context will be empty",
+    )
+    return map
   }
 
   // TODO: improve caching logic later for large scale use cases
@@ -239,7 +308,12 @@ export async function buildPrecomputedDbContext(
     return new Map(result)
   } catch (err) {
     if (String(err).includes("timeout")) {
-      Logger.warn("Precomputed DB context skipped: orchestration timeout")
+      Logger.warn(
+        { timeoutMs: PRECOMPUTED_DB_ORCHESTRATION_TIMEOUT_MS },
+        "DatabaseContext: precomputed DB context skipped (orchestration timeout)",
+      )
+    } else {
+      Logger.warn({ err }, "DatabaseContext: precomputed DB context failed with error")
     }
     return map
   }
@@ -255,27 +329,54 @@ async function buildPrecomputedDbContextInner(
   for (const [connectorId, schemas] of byConnector) {
     try {
       const connector = await getDatabaseConnectorForUser(db, connectorId, userId, workspaceId)
-      if (!connector) continue
+      if (!connector) {
+        Logger.warn(
+          { connectorId, userId, workspaceId, tableNames: schemas.map((s) => s.tableName) },
+          "DatabaseContext: connector not found for user/workspace; skipping query",
+        )
+        continue
+      }
       const config = getDatabaseConnectorConfig(connector)
-      if (!config) continue
+      if (!config) {
+        Logger.warn(
+          { connectorId, tableNames: schemas.map((s) => s.tableName) },
+          "DatabaseContext: connector config invalid or missing (engine/host/database/credentials); skipping query",
+        )
+        continue
+      }
       const pgResult = await generatePostgresSQL(
         query,
         schemas,
         config.schema ?? "public",
       )
-      if (!pgResult?.sql) continue
+      if (!pgResult?.sql) {
+        Logger.warn(
+          { connectorId, tableNames: schemas.map((s) => s.tableName) },
+          "DatabaseContext: SQL not generated (model unset, LLM returned sql:null, or parse error); skipping query",
+        )
+        continue
+      }
 
       const allowedTableNames = schemas.map((s) => s.tableName)
       const validation = validatePostgresQuery(pgResult.sql, allowedTableNames)
       if (!validation.isValid) {
-        Logger.warn({ connectorId, error: validation.error }, "Postgres SQL validation failed")
+        Logger.warn(
+          { connectorId, error: validation.error, tableNames: allowedTableNames },
+          "DatabaseContext: Postgres SQL validation failed; skipping query",
+        )
         continue
       }
 
       const client = createClient(config)
       await client.connect()
       try {
-        if (!client.executeReadOnlyQuery) continue
+        if (!client.executeReadOnlyQuery) {
+          Logger.warn(
+            { connectorId },
+            "DatabaseContext: client has no executeReadOnlyQuery; skipping query",
+          )
+          continue
+        }
         const rows = await client.executeReadOnlyQuery(validation.sanitizedSQL ?? pgResult.sql, {
           timeoutMs: 30_000,
           rowLimit: 1000,
@@ -301,7 +402,10 @@ async function buildPrecomputedDbContextInner(
         await client.disconnect().catch(() => {})
       }
     } catch (err) {
-      Logger.warn({ err, connectorId }, "Precompute DB context failed for connector")
+      Logger.warn(
+        { err, connectorId, tableNames: schemas.map((s) => s.tableName) },
+        "DatabaseContext: precompute failed for connector (connect or executeReadOnlyQuery threw)",
+      )
     }
   }
 
