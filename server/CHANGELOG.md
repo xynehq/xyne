@@ -1,3 +1,10 @@
+## [3.40.8](https://github.com/xynehq/xyne/compare/v3.40.7...v3.40.8) (2026-03-06)
+
+
+### Bug Fixes
+
+* disabled highlight for database citation ([#1269](https://github.com/xynehq/xyne/issues/1269)) ([e6e174b](https://github.com/xynehq/xyne/commit/e6e174b3dcd927eef67166efed6e68f55cb92eb5))
+
 ## [3.40.7](https://github.com/xynehq/xyne/compare/v3.40.6...v3.40.7) (2026-03-06)
 
 
