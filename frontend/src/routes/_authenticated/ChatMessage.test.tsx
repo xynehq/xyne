@@ -41,17 +41,23 @@ vi.mock("@/assets/retry.svg", () => ({
 }))
 
 // Mock lucide-react icons
-vi.mock("lucide-react", () => ({
-  Copy: (props: any) => <svg data-testid="copy-icon" {...props} />,
-  Pencil: (props: any) => <svg data-testid="pencil-icon" {...props} />,
-  Bookmark: (props: any) => <svg data-testid="bookmark-icon" {...props} />,
-  Ellipsis: (props: any) => <svg data-testid="ellipsis-icon" {...props} />,
-  ChevronDown: (props: any) => (
-    <svg data-testid="chevron-down-icon" {...props} />
-  ),
-  ThumbsUp: (props: any) => <svg data-testid="thumbs-up-icon" {...props} />,
-  ThumbsDown: (props: any) => <svg data-testid="thumbs-down-icon" {...props} />,
-}))
+vi.mock("lucide-react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("lucide-react")>()
+  return {
+    ...actual,
+    Copy: (props: any) => <svg data-testid="copy-icon" {...props} />,
+    Pencil: (props: any) => <svg data-testid="pencil-icon" {...props} />,
+    Bookmark: (props: any) => <svg data-testid="bookmark-icon" {...props} />,
+    Ellipsis: (props: any) => <svg data-testid="ellipsis-icon" {...props} />,
+    ChevronDown: (props: any) => (
+      <svg data-testid="chevron-down-icon" {...props} />
+    ),
+    ThumbsUp: (props: any) => <svg data-testid="thumbs-up-icon" {...props} />,
+    ThumbsDown: (props: any) => (
+      <svg data-testid="thumbs-down-icon" {...props} />
+    ),
+  }
+})
 
 const baseProps = {
   message: "",
