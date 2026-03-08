@@ -83,6 +83,8 @@ import { getTracer } from "@/tracer"
 import { getDateForAI } from "@/utils/index"
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
+const isSebi = config.isSebi
+
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
   config
 
@@ -290,7 +292,7 @@ export const AutocompleteApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("json")
     const { query } = body
-    let results = await autocomplete(query, email, 5)
+    let results = await autocomplete(query, email, 5, isSebi)
     if (!results) {
       return c.json({ children: [] })
     }
@@ -520,6 +522,7 @@ export const SearchApi = async (c: Context) => {
         isCalendarConnected,
         isDriveConnected,
         timestampRange,
+        isSebi, // includeKnowledgeBaseInSearch
       ),
       searchVespa(decodedQuery, email, app, entity, {
         alpha: userAlpha,
@@ -527,6 +530,7 @@ export const SearchApi = async (c: Context) => {
         requestDebug: debug,
         offset,
         timestampRange,
+        includeKnowledgeBaseInSearch: isSebi,
       }),
     ]
     // ensure only update when query is typed
@@ -542,6 +546,7 @@ export const SearchApi = async (c: Context) => {
       offset,
       timestampRange,
       rankProfile: SearchModes.BoostTitle,
+      includeKnowledgeBaseInSearch: isSebi,
     })
   }
 

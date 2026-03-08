@@ -609,6 +609,28 @@ schema ticket {
     }
   }
 
+  rank-profile title_boosted_hybrid inherits initial {
+    #nativeRank(chunk) just to balance the vector score
+    first-phase {
+      expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (5 * nativeRank(subject)+0.2*nativeRank(description)))
+    }
+    
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) * (5 * nativeRank(subject) + 0.2*nativeRank(description)))
+        ) * doc_recency
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+    nativeRank(subject) 
+    nativeRank(description)
+    }
+  }
+
   ##########################################
   # 12. Summaries (for API/UI responses)
   ##########################################

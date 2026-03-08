@@ -49,6 +49,7 @@ import {
   FileType,
   ModelConfiguration,
   UploadStatus,
+  KnowledgeBaseEntity,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -163,6 +164,7 @@ interface SearchResult {
   name?: string
   title?: string
   filename?: string
+  fileName?: string
   mailId?: string
   from?: string
   timestamp?: number
@@ -1840,6 +1842,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           resultUrl = `https://${result.domain}.slack.com/archives/${result.channelId}/p${slackTs(result.createdAt)}`
         }
       }
+      if (
+        result.app === Apps.KnowledgeBase &&
+        result.entity === KnowledgeBaseEntity.File &&
+        result.docId
+      ) {
+        resultUrl = `/knowledgeBase/${result.docId}`
+      }
 
       const displayTitle =
         result.text ||
@@ -1847,6 +1856,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         result.subject ||
         result.title ||
         result.filename ||
+        result.fileName ||
         (result.type === "user" && result.email) ||
         "Untitled"
       const refId =
@@ -2471,6 +2481,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         result.subject ||
                         result.title ||
                         result.filename ||
+                        result.fileName ||
                         (result.type === "user" && result.email) ||
                         "Untitled"
                       return (

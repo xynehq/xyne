@@ -1868,10 +1868,10 @@ export async function afterToolExecutionHook(
   )
 
   if (Array.isArray(contexts) && contexts.length > 0) {
-    const filteredContexts = contexts.filter(
-      (c: MinimalAgentFragment) => !gatheredFragmentsKeys.has(c.id)
-    )
-
+    const filteredContexts = contexts.filter((c: MinimalAgentFragment) => {
+      const key = getFragmentDedupKey(c)
+      return !key || !gatheredFragmentsKeys.has(key)
+    })
     // LOG: Filtering results
     loggerWithChild({ email: context.user.email }).info(
       {
@@ -5007,8 +5007,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
         agentContext.runtime = {
           streamAnswerText,
-          emitReasoning: async (payload) =>
-            emitReasoningStep(payload as ReasoningEventPayload),
+          emitReasoning: async (payload) => {
+              await emitReasoningEvent(
+                emitReasoningStep,
+                payload as ReasoningEventPayload
+              )
+            },
         }
         const traceEventHandler = async (event: TraceEvent) => {
           if (event.type === "before_tool_execution") {

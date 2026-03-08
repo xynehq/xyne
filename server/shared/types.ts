@@ -341,6 +341,17 @@ export const AutocompleteChatContainerSchema = z
   })
   .strip()
 
+export const AutocompleteKbFileSchema = z
+  .object({
+    type: z.literal(KbItemsSchema),
+    relevance: z.number(),
+    title: z.string(),
+    app: z.literal(Apps.KnowledgeBase),
+    entity: KnowledgeBaseEntitySchema,
+    docId: z.string(),
+  })
+  .strip()
+
 const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteFileSchema,
   AutocompleteUserSchema,
@@ -350,6 +361,7 @@ const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteMailAttachmentSchema,
   AutocompleteChatUserSchema,
   AutocompleteChatContainerSchema,
+  AutocompleteKbFileSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({
@@ -375,6 +387,7 @@ export type EventAutocomplete = z.infer<typeof AutocompleteEventSchema>
 export type UserQueryHAutocomplete = z.infer<
   typeof AutocompleteUserQueryHSchema
 >
+export type KbFileAutocomplete = z.infer<typeof AutocompleteKbFileSchema>
 export type Autocomplete = z.infer<typeof AutocompleteSchema>
 
 // search result

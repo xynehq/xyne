@@ -145,6 +145,14 @@ export const getIcon = (
         stroke="#384049"
       />
     )
+  } else if (app === Apps.KnowledgeBase && entity === "file") {
+    return (
+      <BookOpen
+        size={size?.w || 12}
+        className={`${classNameVal} dark:stroke-[#F1F3F4]`}
+        stroke="#384049"
+      />
+    )
   } else if (
     (app === Apps.Github && entity === ConnectorType.MCP) ||
     entity === SystemEntity.SystemInfo
