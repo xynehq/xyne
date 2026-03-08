@@ -155,7 +155,10 @@ export const searchVespaAgent = async (
 }
 
 export const searchVespaInFiles = vespa.searchVespaInFiles.bind(vespa)
+export const searchVespaKnowledgeBase = vespa.searchVespaKnowledgeBase.bind(vespa)
 export const groupVespaSearch = vespa.groupVespaSearch.bind(vespa)
+export const groupVespaSearchKnowledgeBase =
+  vespa.groupVespaSearchKnowledgeBase.bind(vespa)
 export const autocomplete = vespa.autocomplete.bind(vespa)
 export const deduplicateAutocomplete = vespa.deduplicateAutocomplete.bind(vespa)
 

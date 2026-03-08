@@ -6,7 +6,9 @@ import {
   autocomplete,
   deduplicateAutocomplete,
   groupVespaSearch,
+  groupVespaSearchKnowledgeBase,
   searchVespa,
+  searchVespaKnowledgeBase,
   searchUsersByNamesAndEmails,
   getTimestamp,
   insert,
@@ -83,13 +85,26 @@ import { getTracer } from "@/tracer"
 import { getDateForAI } from "@/utils/index"
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
-const isSebi = config.isSebi
-
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
   config
 
 export const autocompleteSchema = z.object({
   query: z.string().min(2),
+})
+
+/** Query schema for knowledge-base-only search API. Frontend calls this alongside main search and merges. */
+export const searchKnowledgeBaseFilesSchema = z.object({
+  query: z.string(),
+  page: z
+    .string()
+    .optional()
+    .transform((x) => (x ? parseInt(x, 10) : config.page))
+    .pipe(z.number()),
+  offset: z
+    .string()
+    .optional()
+    .transform((x) => (x ? parseInt(x, 10) : 0))
+    .pipe(z.number().min(0)),
 })
 
 export const userQueryHistorySchema = z.object({
@@ -292,7 +307,7 @@ export const AutocompleteApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("json")
     const { query } = body
-    let results = await autocomplete(query, email, 5, isSebi)
+    let results = await autocomplete(query, email, 5)
     if (!results) {
       return c.json({ children: [] })
     }
@@ -522,7 +537,6 @@ export const SearchApi = async (c: Context) => {
         isCalendarConnected,
         isDriveConnected,
         timestampRange,
-        isSebi, // includeKnowledgeBaseInSearch
       ),
       searchVespa(decodedQuery, email, app, entity, {
         alpha: userAlpha,
@@ -530,7 +544,6 @@ export const SearchApi = async (c: Context) => {
         requestDebug: debug,
         offset,
         timestampRange,
-        includeKnowledgeBaseInSearch: isSebi,
       }),
     ]
     // ensure only update when query is typed
@@ -546,7 +559,6 @@ export const SearchApi = async (c: Context) => {
       offset,
       timestampRange,
       rankProfile: SearchModes.BoostTitle,
-      includeKnowledgeBaseInSearch: isSebi,
     })
   }
 
@@ -557,6 +569,47 @@ export const SearchApi = async (c: Context) => {
     { chunkDocument: chunkDocument },
     email,
   )
+  newResults.groupCount = groupCount
+  return c.json(newResults)
+}
+
+/** Knowledge-base-only search. Frontend calls this and main search then merges results. Includes KB group counts. */
+export const SearchKnowledgeBaseFilesApi = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const parsed = searchKnowledgeBaseFilesSchema.parse({
+    query: c.req.query("query"),
+    page: c.req.query("page"),
+    offset: c.req.query("offset"),
+  })
+  const { query, page, offset } = parsed
+  let decodedQuery: string
+  try {
+    decodedQuery = decodeURIComponent(query)
+  } catch {
+    decodedQuery = query
+  }
+  const lastUpdated = c.req.query("lastUpdated")
+  const timestampRange =
+    lastUpdated && getTimestamp(lastUpdated)
+      ? { from: getTimestamp(lastUpdated)!, to: Date.now() }
+      : null
+  const [vespaResponse, groupCount] = await Promise.all([
+    searchVespaKnowledgeBase(decodedQuery, email, {
+      limit: page,
+      offset,
+      rankProfile: SearchModes.NativeRank,
+    }),
+    groupVespaSearchKnowledgeBase(
+      decodedQuery,
+      email,
+      page,
+      timestampRange,
+    ),
+  ])
+  const newResults = VespaSearchResponseToSearchResult(vespaResponse, {
+    chunkDocument: chunkDocument,
+  })
   newResults.groupCount = groupCount
   return c.json(newResults)
 }

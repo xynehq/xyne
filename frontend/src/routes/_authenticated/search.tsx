@@ -49,6 +49,40 @@ import { createAuthEventSource } from "@/hooks/useChatStream"
 
 const logger = console
 
+/** Merge two group-count objects (e.g. main search + KB search) by summing counts per app/entity. */
+function mergeGroupCounts(
+  main: Groups | null | undefined,
+  kb: Groups | null | undefined,
+): Groups {
+  const merged: Groups = main ? { ...main } : ({} as Groups)
+  if (!kb || typeof kb !== "object") return merged
+  for (const app of Object.keys(kb) as Array<keyof Groups>) {
+    const entityCounts = kb[app]
+    if (!entityCounts || typeof entityCounts !== "object") continue
+    merged[app] = { ...(merged[app] ?? {}) }
+    for (const entity of Object.keys(entityCounts) as Array<keyof typeof entityCounts>) {
+      const a = merged[app]?.[entity] ?? 0
+      const b = entityCounts[entity] ?? 0
+      ;(merged[app] as Record<string, number>)[entity] = a + b
+    }
+  }
+  return merged
+}
+
+/** Sum all counts in groups so "All" matches the sum of filter items. */
+function sumGroupCounts(groups: Groups | null | undefined): number {
+  if (!groups || typeof groups !== "object") return 0
+  let sum = 0
+  for (const app of Object.keys(groups)) {
+    const entityCounts = groups[app as keyof Groups]
+    if (!entityCounts || typeof entityCounts !== "object") continue
+    for (const entity of Object.keys(entityCounts)) {
+      sum += entityCounts[entity as keyof typeof entityCounts] ?? 0
+    }
+  }
+  return sum
+}
+
 export function SearchInfo({ info }: { info: string }) {
   return (
     <TooltipProvider>
@@ -347,17 +381,49 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         resetScroll: false, // Prevent scroll jump on pagination
       })
 
-      // Send a GET request to the backend with the search query
-      const response = await api.search.$get({
-        query: params,
-      })
+      // Call main search and knowledge-base search in parallel; merge results
+      const kbParams = {
+        query: params.query,
+        page: String(params.page ?? page),
+        offset: String(newOffset),
+      }
+      const [response, kbResponse] = await Promise.all([
+        api.search.$get({ query: params }),
+        api.search["knowledge-base"].$get({ query: kbParams }),
+      ])
       if (response.ok) {
         const data: SearchResponse = await response.json()
+        const kbData: SearchResponse = kbResponse.ok
+          ? await kbResponse.json()
+          : { results: [], count: 0 }
+
+        const mainResults = data.results ?? []
+        const kbResults = kbData.results ?? []
+        const byDocId = new Map<string, SearchResultDiscriminatedUnion>()
+        for (const r of mainResults) {
+          const id = r.docId ?? (r as { id?: string }).id
+          if (id) byDocId.set(id, r)
+        }
+        for (const r of kbResults) {
+          const id = r.docId ?? (r as { id?: string }).id
+          if (id) {
+            const existing = byDocId.get(id)
+            const rel = (r as { relevance?: number }).relevance ?? 0
+            const existingRel =
+              (existing as { relevance?: number } | undefined)?.relevance ?? 0
+            if (!existing || rel > existingRel) byDocId.set(id, r)
+          }
+        }
+        const merged = [...byDocId.values()].sort(
+          (a, b) =>
+            ((b as { relevance?: number }).relevance ?? 0) -
+            ((a as { relevance?: number }).relevance ?? 0),
+        )
 
         if (newOffset > 0) {
-          setResults((prevResults) => [...prevResults, ...data.results])
+          setResults((prevResults) => [...prevResults, ...merged])
         } else {
-          setResults(data.results)
+          setResults(merged)
         }
 
         setAutocompleteResults([])
@@ -386,10 +452,21 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         if (groupCount) {
           // TODO: temp solution until we resolve groupCount from
           // not always being true
+          const mergedGroups = mergeGroupCounts(
+            data.groupCount,
+            kbData?.groupCount,
+          )
+          setGroups(mergedGroups)
+          // So "All" matches the sum of filter items (e.g. Knowledge-Base + KB Files + ...)
           if (!filter.app && !filter.entity) {
-            setSearchMeta({ totalCount: data.count })
+            const totalFromGroups = sumGroupCounts(mergedGroups)
+            setSearchMeta({
+              totalCount:
+                totalFromGroups > 0
+                  ? totalFromGroups
+                  : (data.count ?? 0) + (kbData.count ?? 0),
+            })
           }
-          setGroups(data.groupCount)
           setTraceData(data.trace || null) // Store trace data from response
         }
 

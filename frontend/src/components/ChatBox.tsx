@@ -1538,10 +1538,19 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           params.agentId = persistedAgentId
         }
 
-        const response = await api.search.$get({
-          query: params,
-          credentials: "include",
-        })
+        const kbParams = {
+          query: searchTermForFetch,
+          page: limit.toString(),
+          offset: offset.toString(),
+        }
+
+        const [response, kbResponse] = await Promise.all([
+          api.search.$get({ query: params, credentials: "include" }),
+          api.search["knowledge-base"].$get({
+            query: kbParams,
+            credentials: "include",
+          }),
+        ])
 
         if (!response.ok) {
           const errorText = await response.text()
@@ -1551,11 +1560,33 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         }
 
         const data = await response.json()
+        const kbData = kbResponse.ok ? await kbResponse.json() : { results: [], count: 0 }
 
-        const fetchedTotalCount = data.count || 0
+        const mainResults: SearchResult[] = data.results || []
+        const kbResults: SearchResult[] = kbData.results || []
+        const byDocId = new Map<string, SearchResult>()
+        for (const r of mainResults) {
+          const id = r.docId ?? (r as { id?: string }).id
+          if (id) byDocId.set(id, r)
+        }
+        for (const r of kbResults) {
+          const id = r.docId ?? (r as { id?: string }).id
+          if (id) {
+            const existing = byDocId.get(id)
+            const rel = (r as { relevance?: number }).relevance ?? 0
+            const existingRel = (existing as { relevance?: number } | undefined)?.relevance ?? 0
+            if (!existing || rel > existingRel) byDocId.set(id, r)
+          }
+        }
+        const results: SearchResult[] = [...byDocId.values()].sort(
+          (a, b) =>
+            ((b as { relevance?: number }).relevance ?? 0) -
+            ((a as { relevance?: number }).relevance ?? 0),
+        )
+
+        const fetchedTotalCount = (data.count ?? 0) + (kbData.count ?? 0)
         setTotalCount(fetchedTotalCount)
 
-        const results: SearchResult[] = data.results || []
         setGlobalResults((prev) => {
           if (currentSearchTerm !== searchTermForFetch) {
             return append ? prev : []

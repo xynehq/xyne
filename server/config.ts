@@ -68,7 +68,6 @@ let LiteLLMModelInfoUrl = process.env.LITELLM_MODEL_INFO_URL
 let allowSonnet46 = process.env.ALLOW_SONNET_4_6 === "true"
 let allowOpus46 = process.env.ALLOW_OPUS_4_6 === "true"
 let useAgentSelfReview = process.env.USE_AGENT_SELF_REVIEW === "true"
-let isSebi = process.env.IS_SEBI === "true"
 
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
@@ -371,5 +370,4 @@ export default {
   ZohoClientSecret,
   ZohoOrgId,
   useAgentSelfReview,
-  isSebi,
 }
