@@ -5045,6 +5045,7 @@ export const MessageApi = async (c: Context) => {
           `Using model ID "${modelId}" directly as it exists in Models enum`,
         )
       } else {
+        actualModelId = modelId
         loggerWithChild({ email: email }).error(
           `Invalid model: ${modelId}. Model not found in label mappings or Models enum. Using default`,
         )

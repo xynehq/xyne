@@ -226,7 +226,9 @@ export const ChatPage = ({
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
   const [isAgenticMode, setIsAgenticMode] = useState(
-    Boolean(chatParams.agentic),
+    chatParams.agentic !== undefined
+      ? Boolean(chatParams.agentic)
+      : import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true",
   )
   const isEmbedded = chatParams.embedded ?? false
   const isWithChatId = !!(params as any).chatId
@@ -273,6 +275,7 @@ export const ChatPage = ({
     imageCitations,
     citationMap,
     isStreaming,
+    timeTakenMs: streamTimeTakenMs,
     messageId: streamInfoMessageId,
     startStream,
     stopStream,
@@ -1762,6 +1765,7 @@ export const ChatPage = ({
                 waitingForClarification={waitingForClarification}
                 provideClarification={provideClarification}
                 agentId={data?.chat?.agentId ?? null}
+                streamTimeTakenMs={streamTimeTakenMs}
               />
               {showRagTrace && chatId && selectedMessageId && (
                 <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
@@ -2262,6 +2266,8 @@ interface VirtualizedMessagesProps {
     customInput?: string,
   ) => void
   agentId?: string | null
+  /** timeTakenMs for the actively streaming response — from ResponseMetadata SSE event. */
+  streamTimeTakenMs?: number
 }
 
 const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
@@ -2309,6 +2315,7 @@ const VirtualizedMessages = React.forwardRef<
       waitingForClarification,
       provideClarification,
       agentId,
+      streamTimeTakenMs,
     },
     ref,
   ) => {
@@ -2591,6 +2598,11 @@ const VirtualizedMessages = React.forwardRef<
                           ? provideClarification
                           : undefined
                       }
+                      timeTakenMs={
+                        message.externalId === "current-resp"
+                          ? streamTimeTakenMs
+                          : message.timeTakenMs ?? undefined
+                      }
                     />
 
                     {userMessageWithErr && (
@@ -2717,6 +2729,7 @@ export const ChatMessage = ({
   clarificationRequest,
   waitingForClarification,
   provideClarification,
+  timeTakenMs,
   saveTableScroll,
   restoreTableScroll,
 }: {
@@ -2752,6 +2765,8 @@ export const ChatMessage = ({
     selectedOptionLabel: string,
     customInput?: string,
   ) => void
+  /** Wall-clock ms the backend took to generate this response — shown in the reasoning header. */
+  timeTakenMs?: number
   saveTableScroll?: (key: string, scrollLeft: number) => void
   restoreTableScroll?: (key: string) => number
 }) => {
@@ -2818,6 +2833,7 @@ export const ChatMessage = ({
                     <EnhancedReasoning
                       content={thinking || ""}
                       isStreaming={!responseDone}
+                      timeTakenMs={timeTakenMs}
                       className="mb-4"
                       citations={citations}
                       citationMap={citationMap}

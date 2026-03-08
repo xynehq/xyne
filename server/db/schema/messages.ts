@@ -9,6 +9,7 @@ import {
   pgEnum,
   index,
   numeric,
+  boolean,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -71,6 +72,8 @@ export const messages = pgTable(
     feedback: jsonb("feedback"), // Enhanced feedback data in JSON format (supports both legacy enum values and new structure)
     tokensUsed: integer("tokens_used").default(0), // Total tokens used for this message
     cost: numeric("cost", { precision: 10, scale: 6 }).notNull().default("0"), // Actual cost in dollars for this LLM call
+    isSummary: boolean("is_summary").notNull().default(false), // User message marking compaction/summary boundary; orchestrator uses messages after last such message
+    timeTakenMs: integer("time_taken_ms"), // Wall-clock ms from request receipt to final message save
   },
   (table) => ({
     chatIdIndex: index("chat_id_index").on(table.chatId),

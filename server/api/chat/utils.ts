@@ -45,9 +45,7 @@ import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
 import type { UserQuery, QueryRouterLLMResponse } from "@/ai/types"
 import {
-  AgentReasoningStepType,
   OpenAIError,
-  type AgentReasoningStep,
   type AttachmentMetadata,
 } from "@/shared/types"
 import type {
@@ -151,6 +149,56 @@ export function collectFollowupContext(
   ws.fileIds = Array.from(new Set(ws.fileIds)).slice(0, MAX_FILES)
 
   return ws
+}
+
+/**
+ * Gathers all file IDs from the given messages (attachments, fileIds, sources).
+ * Caller is responsible for passing the right slice (e.g. messages until compaction
+ * from getChatMessagesUntilCompaction). Dedupes and trims to maxFiles.
+ */
+export function collectReferencedFileIdsUntilCompaction(
+  messages: SelectMessage[],
+  maxFiles = MAX_FILES,
+): string[] {
+  const seen = new Set<string>()
+  const fileIds: string[] = []
+
+  for (const m of messages) {
+    // 1) attachments the user explicitly added
+    if (Array.isArray(m.attachments)) {
+      for (const a of m.attachments as AttachmentMetadata[]) {
+        if (a.fileId && !seen.has(`f:${a.fileId}`)) {
+          fileIds.push(a.fileId)
+          seen.add(`f:${a.fileId}`)
+          if (fileIds.length >= maxFiles) return Array.from(new Set(fileIds)).slice(0, maxFiles)
+        }
+      }
+    }
+
+    // 2) fileIds from user messages
+    if (Array.isArray(m.fileIds) && m.fileIds.length > 0 && fileIds.length < maxFiles) {
+      for (const fileId of m.fileIds) {
+        if (!seen.has(`f:${fileId}`)) {
+          fileIds.push(fileId)
+          seen.add(`f:${fileId}`)
+          if (fileIds.length >= maxFiles) return Array.from(new Set(fileIds)).slice(0, maxFiles)
+        }
+      }
+    }
+
+    // 3) sourceIds from assistant messages
+    if (Array.isArray(m.sources) && m.sources.length > 0 && fileIds.length < maxFiles) {
+      for (const source of m.sources) {
+        if (!seen.has(`f:${source.docId}`)) {
+          fileIds.push(source.docId)
+          seen.add(`f:${source.docId}`)
+          if (fileIds.length >= maxFiles) return Array.from(new Set(fileIds)).slice(0, maxFiles)
+        }
+      }
+    }
+  }
+
+  return Array.from(new Set(fileIds)).slice(0, maxFiles)
 }
 
 function slackTs(ts: string | number) {
@@ -958,51 +1006,6 @@ export const handleError = (error: any) => {
     errorMessage = "Input context is too large."
   }
   return errorMessage
-}
-
-export const convertReasoningStepToText = (
-  step: AgentReasoningStep,
-): string => {
-  switch (step.type) {
-    case AgentReasoningStepType.AnalyzingQuery:
-      return step.details
-    case AgentReasoningStepType.Iteration:
-      return `### Iteration ${step.iteration} \n`
-    case AgentReasoningStepType.Planning:
-      return step.details + "\n" // e.g., "Planning next step..."
-    case AgentReasoningStepType.ToolSelected:
-      return `Tool selected: ${step.toolName} \n`
-    case AgentReasoningStepType.ToolParameters:
-      const params = Object.entries(step.parameters)
-        .map(
-          ([key, value]) =>
-            `• ${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`,
-        )
-        .join("\n")
-      return `Parameters:\n${params} \n`
-    case AgentReasoningStepType.ToolExecuting:
-      return `Executing tool: ${step.toolName}...\n`
-    case AgentReasoningStepType.ToolResult:
-      let resultText = `Tool result (${step.toolName}): ${step.resultSummary}`
-      // Don't show item counts for fallback tool to keep it clean
-      if (step.itemsFound !== undefined && step.toolName !== "fall_back") {
-        resultText += ` (Found ${step.itemsFound} item(s))`
-      }
-      if (step.error) {
-        resultText += `\nError: ${step.error}\n`
-      }
-      return resultText + "\n"
-    case AgentReasoningStepType.Synthesis:
-      return step.details + "\n" // e.g., "Synthesizing answer from X fragments..."
-    case AgentReasoningStepType.ValidationError:
-      return `Validation Error: ${step.details} \n`
-    case AgentReasoningStepType.BroadeningSearch:
-      return `Broadening Search: ${step.details}\n`
-    case AgentReasoningStepType.LogMessage:
-      return step.message + "\n"
-    default:
-      return "Unknown reasoning step"
-  }
 }
 
 export const mimeTypeMap: Record<string, string> = {

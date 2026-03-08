@@ -68,9 +68,10 @@ export async function formatSearchToolResponse(
   }
 
   const fragments: MinimalAgentFragment[] = await Promise.all(
-    children.map(async (r, idx) => {
+    children.map(async (r) => {
       const citation = searchToCitation(r)
-      const fragmentId = buildChunkFragmentId(citation.docId, idx)
+      // One child = one document (Vespa returns docs with chunks scored); use docId as fragment id.
+      const fragmentId = citation.docId
       return {
         id: fragmentId,
         content: await answerContextMap(

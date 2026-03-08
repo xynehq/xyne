@@ -203,11 +203,11 @@ export const fetchModelConfigs = async (): Promise<Array<{
       const allowlist = {
         [Models.LiteLLM_Claude_Sonnet_4_6]: {
           enabled: config.allowSonnet46,
-          name: "Claude Sonnet 4.5",
+          name: "Claude Sonnet 4.6",
         },
         [Models.LiteLLM_Claude_Opus_4_6]: {
           enabled: config.allowOpus46,
-          name: "Claude Opus 4.5",
+          name: "Claude Opus 4.6",
         },
       };
 

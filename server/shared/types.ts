@@ -590,28 +590,6 @@ export enum MessageMode {
   Ask = "ask",
   Agentic = "agentic",
 }
-export enum AgentToolName {
-  MetadataRetrieval = "metadata_retrieval",
-  Search = "search",
-  FilteredSearch = "filtered_search",
-  TimeSearch = "time_search",
-  SynthesizeAnswer = "SYNTHESIZE_ANSWER", // For the explicit synthesis step
-  FallBack = "fall_back",
-}
-
-export enum AgentReasoningStepType {
-  Iteration = "iteration",
-  Planning = "planning",
-  ToolSelected = "tool_selected",
-  ToolParameters = "tool_parameters",
-  ToolExecuting = "tool_executing",
-  ToolResult = "tool_result",
-  Synthesis = "synthesis",
-  ValidationError = "validation_error", // For when single result validation fails
-  BroadeningSearch = "broadening_search", // When the agent decides to broaden the search
-  AnalyzingQuery = "analyzing_query", // Initial analysis step
-  LogMessage = "log_message", // For generic log messages from the agent
-}
 
 export enum ContextSysthesisState {
   Complete = "complete",
@@ -619,118 +597,135 @@ export enum ContextSysthesisState {
   NotFound = "information_not_found",
 }
 
-// Enhanced reasoning step interfaces with summary support
-export interface AgentReasoningStepEnhanced {
-  stepId?: string
-  stepSummary?: string
-  aiGeneratedSummary?: string
-  status?: "in_progress" | "completed" | "failed"
-  timestamp?: number
-  iteration?: number
-  isIterationSummary?: boolean
+// ─── Structured Reasoning Event System ────────────────────────────────────────
+// Replaces freeform text + regex matching with typed, structured events.
+// Each event has a discriminant `type`, pre-computed `displayText`, and a `stage`
+// for frontend icon/grouping. No regex needed on either end of the wire.
+
+export type ReasoningStage =
+  | "understanding"
+  | "gathering"
+  | "analyzing"
+  | "consulting"
+  | "preparing"
+
+export enum ReasoningEventType {
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
+  TurnStarted           = "turn_started",
+  TurnCompleted         = "turn_completed",
+  PlanCreated           = "plan_created",
+  SynthesisStarted      = "synthesis_started",
+  SynthesisCompleted    = "synthesis_completed",
+
+  // ── Tool lifecycle ─────────────────────────────────────────────────────────
+  ToolExecuting         = "tool_executing",
+  ToolCompleted         = "tool_completed",
+  ToolSkippedDuplicate  = "tool_skipped_duplicate",
+  ToolSkippedCooldown   = "tool_skipped_cooldown",
+  ToolValidationError   = "tool_validation_error",
+  ToolCooldownApplied   = "tool_cooldown_applied",
+  ToolRecovered         = "tool_recovered",
+
+  // ── Document pipeline ──────────────────────────────────────────────────────
+  DocumentsFound        = "documents_found",
+  DocumentsFiltered     = "documents_filtered",
+  DocumentsRanking      = "documents_ranking",
+  MetadataFilterApplied = "metadata_filter_applied",
+  MetadataNoMatch       = "metadata_no_match",
+  RankingFailed         = "ranking_failed",
+
+  // ── Agent delegation ───────────────────────────────────────────────────────
+  AgentSearching        = "agent_searching",
+  AgentsFound           = "agents_found",
+  AgentNoMatch          = "agent_no_match",
+  AgentDelegated        = "agent_delegated",
+  AgentCompleted        = "agent_completed",
+
+  // ── Attachments ────────────────────────────────────────────────────────────
+  AttachmentAnalyzing   = "attachment_analyzing",
+  AttachmentExtracted   = "attachment_extracted",
+
+  // ── Review ─────────────────────────────────────────────────────────────────
+  ReviewCompleted       = "review_completed",
+  AnomaliesDetected     = "anomalies_detected",
+
+  // ── Fallback / recovery ────────────────────────────────────────────────────
+  FallbackActivated     = "fallback_activated",
+  FallbackCompleted     = "fallback_completed",
+
+  // ── Generic (escape hatch — use sparingly) ─────────────────────────────────
+  LogMessage            = "log_message",
 }
 
-export interface AgentReasoningIteration extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.Iteration
-  iteration: number
-  app?: string
-  entity?: string
+/**
+ * The canonical shape sent over SSE for every reasoning event.
+ * `displayText` is pre-computed by the backend factory; the frontend renders it directly.
+ */
+/**
+ * Lightweight subtask shape sent over SSE inside plan_created events.
+ * Mirrors the server-side SubTask but only includes fields the frontend needs.
+ */
+export interface PlanSubTask {
+  id: string
+  description: string
+  status: "pending" | "in_progress" | "completed" | "blocked" | "failed"
 }
 
-export interface AgentReasoningPlanning extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.Planning
-  details: string // e.g., "Planning next step..."
-}
+export interface ReasoningEventPayload {
+  /** Discriminant — determines icon, grouping, and rendering on frontend */
+  type: ReasoningEventType
 
-export interface AgentReasoningToolSelected extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.ToolSelected
-  toolName: AgentToolName | string // string for flexibility if new tools are added without enum update
-}
+  /** Pre-computed, user-friendly sentence ready to display. No further transforms needed. */
+  displayText: string
 
-export interface AgentReasoningToolParameters
-  extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.ToolParameters
-  parameters: Record<string, any> // Parameters as an object
-}
+  /** UX stage for frontend icon/grouping */
+  stage: ReasoningStage
 
-export interface AgentReasoningToolExecuting
-  extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.ToolExecuting
-  toolName: AgentToolName | string
-}
+  // ── Optional structured fields (type-specific) ─────────────────────────────
+  toolName?: string  // plain string — tool names come from JAF at runtime
+  count?: number
+  agentName?: string
+  turnNumber?: number
+  detail?: string
+  /** The search/lookup query used in this tool call — shown in the UI beneath the step label. */
+  toolQuery?: string
 
-export interface AgentReasoningToolResult extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.ToolResult
-  toolName: AgentToolName | string
-  resultSummary: string
-  itemsFound?: number
-  error?: string // If the tool execution resulted in an error
-}
+  /** Present on plan_created events — the full goal + subtask list for the PlanCard. */
+  plan?: { goal: string; subTasks: PlanSubTask[] }
 
-export interface AgentReasoningSynthesis extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.Synthesis
-  details: string // e.g., "Synthesizing answer from X fragments..."
+  // ── Orchestration metadata ─────────────────────────────────────────────────
+  runId?: string
+  /** When set, this event belongs to a delegated sub-agent */
+  agent?: string
+  /** Unique per run_public_agent call; frontend groups by this so one container per tool call */
+  delegationRunId?: string
+  /** When set, identifies the orchestrator that delegated to `agent` */
+  parentAgent?: string
+  /**
+   * Unique per individual tool execution (generated at tool_requests time).
+   * Not set for runPublicAgent calls (those use delegationRunId instead).
+   * Frontend groups all events sharing this ID into a collapsible tool block.
+   */
+  toolExecutionId?: string
+  timestamp: number
 }
-
-export interface AgentReasoningValidationError
-  extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.ValidationError
-  details: string // e.g., "Single result validation failed (POOR_MATCH #X). Will continue searching."
-}
-
-export interface AgentReasoningBroadeningSearch
-  extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.BroadeningSearch
-  details: string // e.g., "Specific search failed validation X times. Attempting to broaden search."
-}
-
-export interface AgentReasoningAnalyzingQuery
-  extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.AnalyzingQuery
-  details: string // e.g., "Analyzing your question..."
-}
-
-export interface AgentReasoningLogMessage extends AgentReasoningStepEnhanced {
-  type: AgentReasoningStepType.LogMessage
-  message: string // Generic message from the agent's log
-}
-
-export type AgentReasoningStep =
-  | AgentReasoningIteration
-  | AgentReasoningPlanning
-  | AgentReasoningToolSelected
-  | AgentReasoningToolParameters
-  | AgentReasoningToolExecuting
-  | AgentReasoningToolResult
-  | AgentReasoningSynthesis
-  | AgentReasoningValidationError
-  | AgentReasoningBroadeningSearch
-  | AgentReasoningAnalyzingQuery
-  | AgentReasoningLogMessage
 
 export enum XyneTools {
-  // new tools
+  toDoWrite = "toDoWrite",
+  searchGlobal = "searchGlobal",
+  searchKnowledgeBase = "searchKnowledgeBase",
   searchGmail = "searchGmail",
   searchDriveFiles = "searchDriveFiles",
   searchCalendarEvents = "searchCalendarEvents",
   searchGoogleContacts = "searchGoogleContacts",
-  searchGlobal = "searchGlobal",
-  requestUserClarification = "request_user_clarification",
-
-  // old tools
-  GetUserInfo = "get_user_info",
+  getSlackMessages = "getSlackMessages",
+  getSlackThreads = "getSlackThreads",
+  getSlackUserProfile = "getSlackUserProfile",
+  listCustomAgents = "list_custom_agents",
+  runPublicAgent = "run_public_agent",
+  fallBack = "fall_back",
+  synthesizeFinalAnswer = "synthesize_final_answer",
   MetadataRetrieval = "metadata_retrieval",
-  Search = "search",
-  FilteredSearch = "filtered_search",
-  TimeSearch = "time_search",
-
-  // Conversational tool
-  Conversational = "conversational",
-
-  // slack tools
-  getSlackRelatedMessages = "get_slack_related_messages",
-  getSlackThreads = "get_slack_threads",
-  getUserSlackProfile = "get_user_slack_profile",
 }
 
 export enum IngestionType {

@@ -37,7 +37,8 @@ const Index = () => {
   const AGENTIC_STATE = "agenticState"
   const [isAgenticMode, setIsAgenticMode] = useState(() => {
     const storedValue = localStorage.getItem(AGENTIC_STATE)
-    return storedValue ? JSON.parse(storedValue) : false
+    if (storedValue) return JSON.parse(storedValue)
+    return import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true"
   })
   const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
   const [agent, setAgent] = useState<SelectPublicAgent | null>(null)

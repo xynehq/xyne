@@ -1156,7 +1156,7 @@ export const answerContextMap = async (
         } else {
           maxSummaryChunks = Math.min(
             searchResult.fields.chunks_summary?.length || 0,
-            100,
+            maxSummaryChunks ?? 10,
           )
         }
       }

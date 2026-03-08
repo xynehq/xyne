@@ -29,6 +29,7 @@ import type {
   ToolExecutionRecordWithResult,
 } from "./agent-schemas"
 import { ToolExpectationSchema, ReviewResultSchema } from "./agent-schemas"
+import { ToolCooldownManager } from "./tool-cooldown"
 import { getTracer, type Span } from "@/tracer"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
@@ -53,7 +54,12 @@ import {
 } from "@xynehq/jaf"
 import { makeXyneJAFProvider } from "./jaf-provider"
 import { getErrorMessage } from "@/utils"
-import { ChatSSEvents, AgentReasoningStepType } from "@/shared/types"
+import { ChatSSEvents, type ReasoningEventPayload } from "@/shared/types"
+import {
+  ReasoningSteps,
+  emitReasoningEvent,
+  type ReasoningEmitter as StructuredReasoningEmitter,
+} from "./reasoning-steps"
 import type {
   MinimalAgentFragment,
   Citation,
@@ -83,6 +89,7 @@ import {
   extractImageFileNames,
   processMessage,
   checkAndYieldCitationsForAgent,
+  collectReferencedFileIdsUntilCompaction,
   extractFileIdsFromMessage,
   isMessageWithContext,
   processThreadResults,
@@ -103,7 +110,10 @@ import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { db } from "@/db/client"
 import { insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
-import { getChatMessagesWithAuth, insertMessage } from "@/db/message"
+import {
+  getChatMessagesUntilCompaction,
+  insertMessage,
+} from "@/db/message"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import {
   ChatType,
@@ -121,7 +131,7 @@ import googleTools from "./tools/google"
 import { searchGlobalTool, fallbackTool } from "./tools/global"
 import { searchKnowledgeBaseTool } from "./tools/knowledgeBase"
 import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
-import type { AttachmentMetadata } from "@/shared/types"
+import { XyneTools, type AttachmentMetadata } from "@/shared/types"
 import {
   evaluateAgentResourceAccess,
   getUserConnectorState,
@@ -259,73 +269,13 @@ function fragmentsToToolContexts(
 
 type ToolCallReference = ToolCall | { id?: string | number | null }
 
-type ReasoningPayload = {
-  text: string
-  step?: {
-    type?: string
-    iteration?: number
-    toolName?: string
-    status?: string
-    stepSummary?: string
-    [key: string]: unknown
-  }
-  quickSummary?: string
-  aiSummary?: string
-  [key: string]: unknown
-}
+// ReasoningEmitter and helpers are now imported from ./reasoning-steps
+// The old ReasoningPayload / ReasoningEmitter / toUserFriendlyReasoningStep /
+// getToolIntentLabel / getToolResultLabel / streamReasoningStep are all removed.
+// Use emitReasoningEvent(emitter, ReasoningSteps.xxx(...)) instead.
 
-type ReasoningEmitter = (payload: ReasoningPayload) => Promise<void>
-
-async function streamReasoningStep(
-  emitter: ReasoningEmitter | undefined,
-  text: string,
-  extra?: {
-    type?: string
-    iteration?: number
-    toolName?: string
-    status?: string
-    detail?: string
-    [key: string]: unknown
-  }
-): Promise<void> {
-  if (!emitter) return
-  try {
-    // Build the step object to match agents.ts structure
-    const step: Record<string, unknown> = {}
-    
-    // Set type - infer from context if not provided
-    if (extra?.type) {
-      step.type = extra.type
-    } else if (extra?.iteration !== undefined && text.toLowerCase().includes('turn') && text.toLowerCase().includes('started')) {
-      step.type = AgentReasoningStepType.Iteration
-    } else {
-      step.type = AgentReasoningStepType.LogMessage
-    }
-    
-    if (extra?.iteration !== undefined) step.iteration = extra.iteration
-    if (extra?.toolName !== undefined) step.toolName = extra.toolName
-    if (extra?.status !== undefined) step.status = extra.status
-    if (extra?.detail !== undefined) step.detail = extra.detail
-    
-    // Include any other extra properties in step
-    Object.keys(extra || {}).forEach(key => {
-      if (!['type', 'iteration', 'toolName', 'status', 'detail'].includes(key)) {
-        step[key] = (extra as any)[key]
-      }
-    })
-    
-    await emitter({
-      text,
-      step: Object.keys(step).length > 0 ? step : undefined,
-      quickSummary: text, // Use text as fallback summary
-    })
-  } catch (error) {
-    Logger.warn(
-      { err: error instanceof Error ? error.message : String(error) },
-      "Failed to stream reasoning step"
-    )
-  }
-}
+/** Internal alias so the SSE-level emitter can still use the structured type */
+type ReasoningEmitter = StructuredReasoningEmitter
 
 function truncateValue(value: string, maxLength = 160): string {
   if (value.length <= maxLength) return value
@@ -409,6 +359,18 @@ export const __messageAgentsHistoryInternals = {
 
 const RECENT_IMAGE_WINDOW = 2
 
+/**
+ * Deduplication key for fragments: Vespa document id when present, otherwise fragment id.
+ * All dedupe (merge, seenDocuments, excludedIds) should rely on this so the same document
+ * is not stored or re-fetched under different synthetic ids (e.g. docA:0, agentX:docA:turn:0).
+ */
+function getFragmentDedupKey(fragment: MinimalAgentFragment): string {
+  if (!fragment?.id) return ""
+  const vespaDocId = fragment.source?.docId
+  if (vespaDocId != null && vespaDocId !== "") return vespaDocId
+  return fragment.id
+}
+
 function mergeFragmentLists(
   target: MinimalAgentFragment[],
   incoming: MinimalAgentFragment[]
@@ -417,15 +379,19 @@ function mergeFragmentLists(
     return target
   }
   const merged = [...target]
-  const indexById = new Map<string, number>()
-  merged.forEach((fragment, idx) => indexById.set(fragment.id, idx))
+  const indexByDedupKey = new Map<string, number>()
+  merged.forEach((fragment, idx) => {
+    const key = getFragmentDedupKey(fragment)
+    if (key) indexByDedupKey.set(key, idx)
+  })
   for (const fragment of incoming) {
-    if (!fragment?.id) continue
-    const existingIndex = indexById.get(fragment.id)
+    const key = getFragmentDedupKey(fragment)
+    if (!key) continue
+    const existingIndex = indexByDedupKey.get(key)
     if (existingIndex !== undefined) {
       merged[existingIndex] = fragment
     } else {
-      indexById.set(fragment.id, merged.length)
+      indexByDedupKey.set(key, merged.length)
       merged.push(fragment)
     }
   }
@@ -476,7 +442,12 @@ function recordFragmentsForContext(
   turnNumber: number
 ): void {
   if (!fragments.length) return
-  fragments.forEach((fragment) => context.seenDocuments.add(fragment.id))
+  fragments.forEach((fragment) => {
+    const vespaDocId = fragment.source?.docId
+    if (vespaDocId != null && vespaDocId !== "") {
+      context.seenDocuments.add(vespaDocId)
+    }
+  })
   context.currentTurnArtifacts.fragments = mergeFragmentLists(
     context.currentTurnArtifacts.fragments,
     fragments
@@ -813,6 +784,40 @@ function initializePlanState(plan: PlanState): string | null {
     break
   }
   return activeId ?? null
+}
+
+/**
+ * Extract a human-readable query string from tool arguments to surface in the
+ * reasoning UI alongside each tool call.  Returns undefined for tools that have
+ * no meaningful search term (e.g. synthesizeFinalAnswer, toDoWrite).
+ */
+function extractToolQuery(toolName: string, args: Record<string, unknown>): string | undefined {
+  switch (toolName) {
+    case XyneTools.searchGlobal:
+    case XyneTools.searchGmail:
+    case XyneTools.searchDriveFiles:
+    case XyneTools.searchCalendarEvents:
+    case XyneTools.searchGoogleContacts:
+    case XyneTools.searchKnowledgeBase:
+    case XyneTools.listCustomAgents:
+    case XyneTools.runPublicAgent:
+      return typeof args.query === "string" && args.query.trim() ? args.query.trim() : undefined
+    case XyneTools.getSlackMessages:
+    case XyneTools.getSlackThreads:
+      return typeof args.filter_query === "string" && args.filter_query.trim()
+        ? args.filter_query.trim()
+        : typeof args.channel_name === "string" && args.channel_name.trim()
+          ? `#${args.channel_name.trim()}`
+          : typeof args.user_email === "string" && args.user_email.trim()
+            ? args.user_email.trim()
+            : undefined
+    case XyneTools.getSlackUserProfile:
+      return typeof args.user_email === "string" && args.user_email.trim()
+        ? args.user_email.trim()
+        : undefined
+    default:
+      return undefined
+  }
 }
 
 function advancePlanAfterTool(
@@ -1234,25 +1239,20 @@ async function handleReviewOutcome(
       ? reviewResult.clarificationQuestions
       : []
 
-  await streamReasoningStep(
-    reasoningEmitter,
-    `Review (${focus}) complete. Recommendation: ${reviewResult.recommendation}. Plan change needed: ${reviewResult.planChangeNeeded ? "yes" : "no"}.`,
-    {
-      iteration,
-      status: reviewResult.status,
-      detail: reviewResult.notes,
-      anomaliesDetected: reviewResult.anomaliesDetected,
-      review: reviewResult,
-      ambiguityResolved: reviewResult.ambiguityResolved,
-      anomalies: reviewResult.anomalies,
-      focus,
-    }
-  )
+  const hasAnomalies =
+    reviewResult.anomaliesDetected || (reviewResult.anomalies?.length ?? 0) > 0
+  const recommendation = reviewResult.recommendation ?? "proceed"
 
-  if (
-    reviewResult.anomaliesDetected ||
-    (reviewResult.anomalies?.length ?? 0) > 0
-  ) {
+  // Only surface the review to the user if something interesting happened —
+  // a plain "proceed" with no anomalies is internal noise.
+  if (recommendation !== "proceed" || hasAnomalies) {
+    await emitReasoningEvent(
+      reasoningEmitter,
+      ReasoningSteps.reviewCompleted(recommendation, iteration)
+    )
+  }
+
+  if (hasAnomalies) {
     Logger.debug({
       turn: iteration,
       anomalies: reviewResult.anomalies,
@@ -1261,19 +1261,9 @@ async function handleReviewOutcome(
       chatId: context.chat.externalId,
       focus,
     }, "[MessageAgents][Anomalies]")
-    await streamReasoningStep(
+    await emitReasoningEvent(
       reasoningEmitter,
-      `Anomalies detected: ${
-        reviewResult.anomalies?.join("; ") || "unspecified"
-      }`,
-      {
-        iteration,
-        status: "needs_attention",
-        detail: reviewResult.anomalies?.join("; "),
-        ambiguityResolved: reviewResult.ambiguityResolved,
-        anomalies: reviewResult.anomalies,
-        focus,
-      }
+      ReasoningSteps.anomaliesDetected(reviewResult.anomalies ?? [])
     )
   }
 }
@@ -1371,7 +1361,7 @@ async function ensureChatAndPersistUserMessage(
       String(params.email),
       {}
     )
-    const conversationHistory = await getChatMessagesWithAuth(
+    const conversationHistory = await getChatMessagesUntilCompaction(
       tx,
       String(incomingChatId),
       String(params.email),
@@ -1492,7 +1482,7 @@ async function prepareInitialAttachmentContext(
   try {
       const combinedSearchResponse: VespaSearchResult[] = []
       let chunksPerDocument: number[] = []
-      const targetChunks = 120
+      const targetChunks = 200
     
       if (fileIds && fileIds.length > 0) {
         const fileSearchSpan = span.startSpan("file_search")
@@ -1515,6 +1505,7 @@ async function prepareInitialAttachmentContext(
             {
               limit: fileIds?.length,
               alpha: userAlpha,
+              rankProfile: SearchModes.GlobalSorted,
             },
           )
           if (results.root.children) {
@@ -1527,6 +1518,10 @@ async function prepareInitialAttachmentContext(
             queryText,
             collectionFileIds,
             undefined,
+            undefined,
+            undefined,
+            undefined,
+            SearchModes.GlobalSorted,
           )
           if (results.root.children) {
             combinedSearchResponse.push(...results.root.children)
@@ -1540,7 +1535,7 @@ async function prepareInitialAttachmentContext(
             {
               limit: fileIds?.length,
               alpha: userAlpha,
-              rankProfile: SearchModes.AttachmentRank,
+              rankProfile: SearchModes.GlobalSorted,
             },
           )
           if (results.root.children) {
@@ -1648,10 +1643,9 @@ export async function beforeToolExecutionHook(
   // 0. Validate input against schema
   const validation = validateToolInput(toolName, args)
   if (!validation.success) {
-    await streamReasoningStep(
+    await emitReasoningEvent(
       reasoningEmitter,
-      `⚠️ Invalid input for ${toolName}: ${validation.error.message}`,
-      { toolName }
+      ReasoningSteps.toolValidationError(toolName, validation.error.message)
     )
     Logger.warn(
       `Tool input validation failed for ${toolName}: ${validation.error.message}`
@@ -1669,23 +1663,24 @@ export async function beforeToolExecutionHook(
   )
 
   if (isDuplicate) {
-    await streamReasoningStep(
+    await emitReasoningEvent(
       reasoningEmitter,
-      `Skipping redundant tool call to '${toolName}'.`,
-      { toolName, status: "skipped" }
+      ReasoningSteps.toolSkippedDuplicate(toolName)
     )
     return null // Skip execution
   }
 
-  // 2. Failed tool budget check
-  const failureInfo = context.failedTools.get(toolName)
-  if (failureInfo && failureInfo.count >= 3) {
-    await streamReasoningStep(
+  // 2. Cooldown check — tool removed from LLM's tool list on turn_start,
+  //    but this is a safety net in case it's still called mid-turn.
+  const cooldownManager = new ToolCooldownManager(context.failedTools)
+  if (cooldownManager.isInCooldown(toolName, context.turnCount)) {
+    const info = cooldownManager.getCooldownInfo(toolName)!
+    const turnsLeft = info.cooldownUntilTurn - context.turnCount
+    await emitReasoningEvent(
       reasoningEmitter,
-      `Tool '${toolName}' has failed ${failureInfo.count} times and is now blocked.`,
-      { toolName, status: "blocked" }
+      ReasoningSteps.toolSkippedCooldown(toolName, turnsLeft)
     )
-    return null // Skip execution
+    return null // Skip execution — tool is also removed from tool list
   }
 
   // 3. Add excludedIds to prevent re-fetching seen documents
@@ -1788,14 +1783,15 @@ export async function afterToolExecutionHook(
       return
     }
     const deduped: MinimalAgentFragment[] = []
-    const skippedIds: string[] = []
+    const skippedKeys: string[] = []
     for (const fragment of fragments) {
-      if (!fragment?.id) continue
-      if (gatheredFragmentsKeys.has(fragment.id)) {
-        skippedIds.push(fragment.id)
+      const key = getFragmentDedupKey(fragment)
+      if (!key) continue
+      if (gatheredFragmentsKeys.has(key)) {
+        skippedKeys.push(key)
         continue
       }
-      gatheredFragmentsKeys.add(fragment.id)
+      gatheredFragmentsKeys.add(key)
       deduped.push(fragment)
     }
     if (deduped.length !== fragments.length) {
@@ -1804,9 +1800,9 @@ export async function afterToolExecutionHook(
           toolName,
           incoming: fragments.length,
           deduped: deduped.length,
-          skippedIds,
+          skippedKeys,
         },
-        "[afterToolExecutionHook] Deduplicated tool fragments",
+        "[afterToolExecutionHook] Deduplicated tool fragments (by Vespa docId / dedup key)",
       )
     }
     if (!deduped.length) {
@@ -1820,18 +1816,21 @@ export async function afterToolExecutionHook(
   context.totalLatency += executionTime
   context.totalCost += record.estimatedCostUsd
 
-  // 4. Track failures
+  // 4. Track failures with cooldown
   if (status !== "success") {
-    const existing = context.failedTools.get(toolName) || {
-      count: 0,
-      lastError: "",
-      lastAttempt: 0,
+    const cooldownMgr = new ToolCooldownManager(context.failedTools)
+    const enteredCooldown = cooldownMgr.recordFailure(
+      toolName,
+      record.error!.message,
+      context.turnCount
+    )
+    if (enteredCooldown) {
+      const info = cooldownMgr.getCooldownInfo(toolName)!
+      await emitReasoningEvent(
+        reasoningEmitter,
+        ReasoningSteps.toolCooldownApplied(toolName, info.count, info.cooldownUntilTurn - context.turnCount)
+      )
     }
-    context.failedTools.set(toolName, {
-      count: existing.count + 1,
-      lastError: record.error!.message,
-      lastAttempt: Date.now(),
-    })
   }
 
   advancePlanAfterTool(
@@ -1885,12 +1884,9 @@ export async function afterToolExecutionHook(
     )
 
     if (filteredContexts.length > 0) {
-      await streamReasoningStep(
+      await emitReasoningEvent(
         reasoningEmitter,
-        `Received ${filteredContexts.length} document${
-          filteredContexts.length === 1 ? "" : "s"
-        }. Now filtering and ranking the most relevant ones.`,
-        { toolName }
+        ReasoningSteps.documentsFound(filteredContexts.length, toolName)
       )
 
       const metadataConstraints = extractMetadataConstraintsFromUserMessage(userMessage)
@@ -1927,27 +1923,17 @@ export async function afterToolExecutionHook(
       )
 
       if (hasMetadataConstraints) {
-        await streamReasoningStep(
-          reasoningEmitter,
-          strictNoCompliantCandidates
-            ? "Strict metadata constraints detected and no compliant documents were found."
-            : hasCompliantCandidates
-            ? "Applied metadata constraints from the user request before ranking."
-            : "Detected metadata constraints in the user request but found no clearly compliant metadata matches.",
-          {
-            toolName,
-            detail: [
-              metadataConstraints.includeTerms.length
-                ? `include=${metadataConstraints.includeTerms.join("|")}`
-                : "",
-              metadataConstraints.excludeTerms.length
-                ? `exclude=${metadataConstraints.excludeTerms.join("|")}`
-                : "",
-            ]
-              .filter(Boolean)
-              .join(" "),
-          }
-        )
+        if (strictNoCompliantCandidates) {
+          await emitReasoningEvent(
+            reasoningEmitter,
+            ReasoningSteps.metadataNoMatch(toolName)
+          )
+        } else {
+          await emitReasoningEvent(
+            reasoningEmitter,
+            ReasoningSteps.metadataFilterApplied(hasCompliantCandidates, toolName)
+          )
+        }
       }
 
       try {
@@ -2071,17 +2057,9 @@ export async function afterToolExecutionHook(
               "[afterToolExecutionHook][select_best_documents] Selected documents after filtering"
             )
 
-            await streamReasoningStep(
+            await emitReasoningEvent(
               reasoningEmitter,
-              `Filtered down to ${selectedDocs.length} best document${
-                selectedDocs.length === 1 ? "" : "s"
-              } for analysis.`,
-              {
-                toolName,
-                detail: selectedDocs
-                  .map((doc) => doc.source.title || doc.id)
-                  .join(", "),
-              }
+              ReasoningSteps.documentsFiltered(selectedDocs.length, toolName)
             )
 
             let fragmentsForResult = selectedDocs
@@ -2196,12 +2174,9 @@ export async function afterToolExecutionHook(
           },
           "[afterToolExecutionHook][select_best_documents] ERROR in document ranking"
         )
-        await streamReasoningStep(
+        await emitReasoningEvent(
           reasoningEmitter,
-          strictNoCompliantCandidates
-            ? "Context ranking failed and strict metadata constraints had no compliant documents; returning no contexts."
-            : "Context ranking failed, retaining all retrieved documents.",
-          { toolName }
+          ReasoningSteps.rankingFailed(strictNoCompliantCandidates, toolName)
         )
         const fallbackContexts =
           strictNoCompliantCandidates
@@ -2227,41 +2202,58 @@ export async function afterToolExecutionHook(
   // }
 
   if (
-    toolName === "toDoWrite" &&
+    toolName === XyneTools.toDoWrite &&
     result &&
     typeof result === "object" &&
     result.status === "success"
   ) {
     const plan = result.data?.plan as PlanState | undefined
     if (plan) {
-      const nextStep = plan.subTasks?.[0]?.description || "No sub-tasks defined."
-      await streamReasoningStep(
+      await emitReasoningEvent(
         reasoningEmitter,
-        `Plan created: ${plan.goal || "Goal not specified"}. Next step: ${nextStep}`,
-        { toolName }
+        ReasoningSteps.planCreated(
+          plan.goal || "Goal not specified",
+          plan.subTasks.map((t) => ({ id: t.id, description: t.description, status: t.status })),
+        ),
       )
     }
   }
 
+  // After synthesizeFinalAnswer completes, advancePlanAfterTool (called above) marks
+  // the last subtask as "completed" in server memory, but no event is sent to the
+  // frontend — so the last todo step stays in loading state. Re-emit the plan with
+  // its updated (all-completed) subtask statuses so the frontend can reflect the change.
   if (
-    toolName === "list_custom_agents" &&
+    toolName === XyneTools.synthesizeFinalAnswer &&
+    status === "success" &&
+    context.plan
+  ) {
+    await emitReasoningEvent(
+      reasoningEmitter,
+      ReasoningSteps.planCreated(
+        context.plan.goal || "Goal not specified",
+        context.plan.subTasks.map((t) => ({ id: t.id, description: t.description, status: t.status })),
+      ),
+    )
+  }
+
+  if (
+    toolName === XyneTools.listCustomAgents &&
     result &&
     typeof result === "object" &&
     result.status === "success"
   ) {
     const agents = (result?.data as { agents?: ListCustomAgentsOutput["agents"] })?.agents
     const agentCount = Array.isArray(agents) ? agents.length : 0
-    await streamReasoningStep(
+    const agentNames = agentCount ? agents?.map((a) => a.agentName) : undefined
+    await emitReasoningEvent(
       reasoningEmitter,
-      agentCount
-        ? `Found ${agentCount} suitable agent${agentCount === 1 ? "" : "s"}. Evaluating options...`
-        : "No suitable custom agents found. Continuing with built-in tools.",
-      { toolName, detail: agentCount ? agents?.map((a) => a.agentName).join(", ") : undefined }
+      ReasoningSteps.agentsFound(agentCount, agentNames)
     )
   }
 
   if (
-    toolName === "run_public_agent" &&
+    toolName === XyneTools.runPublicAgent &&
     result &&
     typeof result === "object" &&
     result.status === "success"
@@ -2283,24 +2275,25 @@ export async function afterToolExecutionHook(
     if (delegationFragments.length > 0) {
       addToolFragments(delegationFragments)
     }
-    await streamReasoningStep(
+    // Read the delegation ID from the tool's return value — each parallel call
+    // returns its own ID, so no shared mutable state and no race condition.
+    const delegationRunId = (result?.data as { delegationRunId?: string })?.delegationRunId
+    await emitReasoningEvent(
       reasoningEmitter,
-      `Received response from '${agentName}' agent.`,
-      { toolName, detail: agentName }
+      ReasoningSteps.agentCompleted(agentName, delegationRunId)
     )
   }
 
   if (
-    toolName === "fall_back" &&
+    toolName === XyneTools.fallBack &&
     result &&
     typeof result === "object" &&
     result.status === "success" &&
     (result.data as { reasoning?: string } | undefined)?.reasoning
   ) {
-    await streamReasoningStep(
+    await emitReasoningEvent(
       reasoningEmitter,
-      "Fallback analysis completed.",
-      { toolName }
+      ReasoningSteps.fallbackCompleted()
     )
   }
 
@@ -2323,6 +2316,16 @@ export async function afterToolExecutionHook(
     },
     "[afterToolExecutionHook] EXIT - Tool processing completed"
   )
+
+  // Emit toolCompleted here so it uses the per-call scoped emitter passed in
+  // from onAfterToolExecution — this ensures correct toolExecutionId for parallel
+  // tool calls. runPublicAgent uses agentCompleted (emitted above) instead.
+  if (toolName !== XyneTools.runPublicAgent) {
+    await emitReasoningEvent(
+      reasoningEmitter,
+      ReasoningSteps.toolCompleted(toolName, hookContext.status === "error")
+    )
+  }
 
   if (toolFragments.length > 0) {
     return ToolResponse.success(toolFragments)
@@ -3028,7 +3031,7 @@ function filterToolsByAvailability(
 function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
   return {
     schema: {
-      name: "toDoWrite",
+      name: XyneTools.toDoWrite,
       description: TOOL_SCHEMAS.toDoWrite.description,
       parameters: toToolParameters(TOOL_SCHEMAS.toDoWrite.inputSchema),
     },
@@ -3041,7 +3044,7 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
         },
         "[toDoWrite] Execution started"
       )
-      const validation = validateToolInput<PlanState>("toDoWrite", args)
+      const validation = validateToolInput<PlanState>(XyneTools.toDoWrite, args)
       if (!validation.success) {
         return ToolResponse.error(
           "INVALID_INPUT",
@@ -3098,7 +3101,7 @@ function buildCustomAgentTools(): Array<Tool<unknown, AgentRunContext>> {
 function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
   return {
     schema: {
-      name: "list_custom_agents",
+      name: XyneTools.listCustomAgents,
       description: TOOL_SCHEMAS.list_custom_agents.description,
       parameters: toToolParameters(TOOL_SCHEMAS.list_custom_agents.inputSchema),
     },
@@ -3108,7 +3111,7 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
         query: string
         requiredCapabilities?: string[]
         maxAgents?: number
-      }>("list_custom_agents", args)
+      }>(XyneTools.listCustomAgents, args)
 
       if (!validation.success) {
         return ToolResponse.error(
@@ -3149,7 +3152,7 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
 function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
   return {
     schema: {
-      name: "run_public_agent",
+      name: XyneTools.runPublicAgent,
       description: TOOL_SCHEMAS.run_public_agent.description,
       parameters: toToolParameters(TOOL_SCHEMAS.run_public_agent.inputSchema),
     },
@@ -3159,7 +3162,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         query: string
         context?: string
         maxTokens?: number
-      }>("run_public_agent", args)
+      }>(XyneTools.runPublicAgent, args)
 
       if (!validation.success) {
         return ToolResponse.error(
@@ -3211,6 +3214,22 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         )
       }
 
+      const delegatedAgentName =
+        context.availableAgents.find((a) => a.agentId === validation.data.agentId)?.agentName ||
+        validation.data.agentId
+
+      // Generate the delegation ID here, inside this isolated execute() scope.
+      // Each parallel run_public_agent call runs its own execute(), so there is
+      // no shared mutable state and no overwrite race regardless of parallelism.
+      const delegationRunId = generateRunId()
+
+      // Emit agentDelegated now — later than tool_requests but race-free.
+      if (context.runtime?.emitReasoning) {
+        await context.runtime.emitReasoning(
+          ReasoningSteps.agentDelegated(delegatedAgentName, delegationRunId) as ReasoningEventPayload
+        )
+      }
+
       const toolOutput = await executeCustomAgent({
         agentId: validation.data.agentId,
         query: buildDelegatedAgentQuery(validation.data.query, context),
@@ -3221,6 +3240,18 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         mcpAgents: context.mcpAgents,
         parentTurn: Math.max(context.turnCount ?? MIN_TURN_NUMBER, MIN_TURN_NUMBER),
         stopSignal: context.stopSignal,
+        delegationRunId,
+        reasoningEmitter: context.runtime?.emitReasoning
+          ? (async (payload: ReasoningEventPayload) => {
+              const withAgent: ReasoningEventPayload = {
+                ...payload,
+                agent: delegatedAgentName,
+                delegationRunId,
+                parentAgent: "Main",
+              }
+              await context.runtime!.emitReasoning!(withAgent)
+            })
+          : undefined,
       })
       Logger.debug(
         { params: validation.data, email: context.user.email },
@@ -3270,6 +3301,9 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         result: toolOutput.result,
         fragments,
         agentId: validation.data.agentId,
+        // Pass back so afterToolExecutionHook can tag agentCompleted with the
+        // same ID — no shared mutable context needed.
+        delegationRunId,
         citations: (metadata as any).citations || [],
         imageCitations: (metadata as any).imageCitations || [],
       })
@@ -3280,7 +3314,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
 function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
   return {
     schema: {
-      name: "synthesize_final_answer",
+      name: XyneTools.synthesizeFinalAnswer,
       description: TOOL_SCHEMAS.synthesize_final_answer.description,
       parameters: toToolParameters(TOOL_SCHEMAS.synthesize_final_answer.inputSchema),
     },
@@ -3345,10 +3379,9 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
       mutableContext.finalSynthesis.completed = false
       mutableContext.finalSynthesis.streamedText = ""
 
-      await mutableContext.runtime?.emitReasoning?.({
-        text: `Initiating final synthesis with ${fragmentsCount} context fragments and ${selected.length}/${total} images (${userAttachmentCount} user attachments).`,
-        step: { type: AgentReasoningStepType.LogMessage },
-      })
+      await mutableContext.runtime?.emitReasoning?.(
+        ReasoningSteps.synthesisStarted(fragmentsCount)
+      )
 
       const logger = loggerWithChild({ email: context.user.email })
       if (dropped.length > 0) {
@@ -3431,10 +3464,9 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           "[MessageAgents][FinalSynthesis] LLM call completed"
         )
 
-        await context.runtime?.emitReasoning?.({
-          text: "Final synthesis completed and streamed to the user.",
-          step: { type: AgentReasoningStepType.LogMessage },
-        })
+        await context.runtime?.emitReasoning?.(
+          ReasoningSteps.synthesisCompleted()
+        )
 
         return ToolResponse.success(
           {
@@ -3492,10 +3524,16 @@ function buildAttachmentDirective(context: AgentRunContext): string {
   return `
 # ATTACHMENT-FIRST TURN
 - ${summaryLine}
-- Attempt to answer using ONLY the attachment context fragments listed below.
-- If they fully answer the query, respond directly without calling tools.
-- If they are insufficient, explain what is missing, then call toDoWrite to plan additional research before invoking other tools.
-- Capture any useful facts from the attachments so they remain available in later turns.
+1. First inspect the attachment fragments below.
+2. If the attachments contain ALL information needed to fully answer the user's request, answer directly using citations.
+3. If the attachments are PARTIAL or INCOMPLETE:
+   - You MUST NOT stop with "insufficient information".
+   - You MUST call tools to gather additional context.
+   - First call toDoWrite to plan how to retrieve the missing information, then execute the required tools.
+4. Only state that information is unavailable if:
+   - The attachments do not contain the answer AND
+   - Available tools cannot retrieve it.
+Do NOT prematurely conclude that the attachments lack information. Always attempt further retrieval when tools are available.
 
 # ATTACHMENT CONTEXT FRAGMENTS
 ${fragmentsContent}
@@ -3542,9 +3580,29 @@ function buildAgentInstructions(
   agentPrompt?: string,
   delegationEnabled = true
 ): string {
-  const toolDescriptions = enabledToolNames.length > 0
-    ? generateToolDescriptions(enabledToolNames)
+  const availableToolNames = enabledToolNames.filter((tool) => context.enabledTools.has(tool))
+  const toolDescriptions = availableToolNames.length > 0
+    ? generateToolDescriptions(availableToolNames)
     : "No tools available yet. "
+
+  const cooldownMgr = new ToolCooldownManager(context.failedTools)
+  const toolsInCooldown = enabledToolNames
+    .filter((t) => !context.enabledTools.has(t) && cooldownMgr.isInCooldown(t, context.turnCount))
+    .map((name) => ({ name, info: cooldownMgr.getCooldownInfo(name)! }))
+  const cooldownBlock =
+    toolsInCooldown.length > 0
+      ? [
+          "",
+          "<tools_in_cooldown>",
+          "The following tools are temporarily disabled due to repeated failures. Do not call them; use other tools or data sources instead.",
+          ...toolsInCooldown.map(
+            ({ name, info }) =>
+              `- ${name}: failed ${info.count}x (last: ${info.lastError || "error"}), ${info.cooldownUntilTurn - context.turnCount} turn(s) remaining.`
+          ),
+          "</tools_in_cooldown>",
+          "",
+        ].join("\n")
+      : ""
 
   const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
   const attachmentDirective = buildAttachmentDirective(context)
@@ -3580,7 +3638,7 @@ function buildAgentInstructions(
 
   const delegationGuidance = delegationEnabled
     ? `- Before calling ANY search, calendar, Gmail, Drive, or other research tools, you MUST invoke \`list_custom_agents\` once per run. Treat the workflow as: plan -> list agents -> (maybe) run_public_agent -> other tools. If the selector returns \`null\`, explicitly log that no agent was suitable, then proceed with core tools.\n- Before calling \`run_public_agent\`, invoke \`list_custom_agents\`, compare every candidate, and respect a \`null\` result as "no delegate—continue with built-in tools."\n- Use \`run_custom_agent\` (the execution surface for selected specialists) immediately after choosing an agent from \`list_custom_agents\`; pass the specific agentId plus a rewritten query tailored to that agent.\n- When \`list_custom_agents\` returns high-confidence candidates, pause to assess the current sub-task and explicitly decide whether running one now accelerates the goal; document the rationale either way.\n- Only delegate when a specific agent's documented capabilities make it unquestionably suitable; otherwise keep iterating yourself.`
-    : "- Delegation to other agents is disabled for this run. Do not call list_custom_agents or run_public_agent; rely on the available tools directly."
+    : ""
 
   const instructionLines: string[] = [
     "You are Xyne, an enterprise search assistant with agentic capabilities.",
@@ -3595,7 +3653,7 @@ function buildAgentInstructions(
     "<available_tools>",
     toolDescriptions,
     "</available_tools>",
-    "",
+    cooldownBlock,
   ]
 
   if (agentSection.trim()) {
@@ -3674,11 +3732,22 @@ function buildAgentInstructions(
     "- Never finish a turn after only calling toDoWrite—run at least one execution tool that advances the active task.",
     "# EXECUTION STRATEGY",
     "- Work tasks sequentially; complete the current task before starting the next.",
-    "- Call tools with precise parameters tied to the sub-task goal; reuse stored fragments instead of re-fetching data.",
-    "- When delegation is enabled and justified, run list_custom_agents before run_public_agent; document why the selected agent accelerates the plan.",
-    "- Prefer list_custom_agents → run_public_agent before core tools when delegation is enabled and justified by the plan.",
-    "- Invoke list_custom_agents at the sub-task level whenever targeted delegation could unlock better results; multi-part queries may require multiple calls as the context evolves.",
-    "- Let earlier tool outputs reshape later sub-tasks (e.g., if getSlackRelatedMessages returns only Finance senders, rewrite the next list_custom_agents query with that Finance focus before proceeding).",
+    "- Call tools with precise parameters tied to the sub-task goal; reuse stored fragments instead of re-fetching data."
+  )
+
+  const hasDelegationTools =
+    enabledToolNames.includes(XyneTools.listCustomAgents) &&
+    enabledToolNames.includes(XyneTools.runPublicAgent)
+  if (delegationEnabled && hasDelegationTools) {
+    instructionLines.push(
+      "- When delegation is enabled and justified, run list_custom_agents before run_public_agent; document why the selected agent accelerates the plan.",
+      "- Prefer list_custom_agents → run_public_agent before core tools when delegation is enabled and justified by the plan.",
+      "- Invoke list_custom_agents at the sub-task level whenever targeted delegation could unlock better results; multi-part queries may require multiple calls as the context evolves.",
+      "- Let earlier tool outputs reshape later sub-tasks (e.g., if getSlackRelatedMessages returns only Finance senders, rewrite the next list_custom_agents query with that Finance focus before proceeding)."
+    )
+  }
+
+  instructionLines.push(
     "- Obey the `recommendation` flag: pause for clarifications when it reads `clarify_query`, keep collecting data for `gather_more`, and do not progress until a fresh plan is in place for `replan`.",
     "- If anomalies or notes in the latest review call out missing evidence, misalignments, or unresolved questions, fix those items before progressing and explain the remediation in the plan.",
     "",
@@ -3838,9 +3907,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
         loggerWithChild({ email }).error(
           `Invalid model: ${parsedModelId}. Model not found in label mappings or Models enum for MessageAgents.`,
         )
-        throw new HTTPException(400, {
-          message: `Invalid model: ${parsedModelId}`,
-        })
       }
     }
 
@@ -3906,6 +3972,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           .flatMap((meta) => expandSheetIds(meta.fileId))
       )
     )
+    let allReferencedFileIds = referencedFileIds
     const imageAttachmentFileIds = Array.from(
       new Set(attachmentsForContext.filter((meta) => meta.isImage).map((meta) => meta.fileId))
     )
@@ -3992,6 +4059,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
       lastPersistedMessageExternalId = String(bootstrap.userMessage.externalId)
       attachmentStorageError = bootstrap.attachmentError ?? null
       previousConversationHistory = bootstrap.conversationHistory ?? []
+      const historyFileIds = collectReferencedFileIdsUntilCompaction(previousConversationHistory)
+      allReferencedFileIds = Array.from(
+        new Set([
+          ...referencedFileIds,
+          ...historyFileIds.flatMap((id) => expandSheetIds(id)),
+        ])
+      )
       const chatAgentId = chatRecord.agentId
         ? String(chatRecord.agentId)
         : undefined
@@ -4053,7 +4127,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
         : undefined
     const delegationEnabled = !hasExplicitAgent
 
+    // Multi-agent streaming: only this callback owns the HTTP connection. All agents (main + delegated)
+    // emit reasoning via the shared ReasoningEmitter → same stream. Delegated agents must NOT open
+    // their own stream; they receive the parent emitter and only stream answer tokens from the main run.
     return streamSSE(c, async (stream) => {
+      const requestStartMs = Date.now()
       const stopController = new AbortController()
       const streamKey = String(chatRecord.externalId)
       let agentContextRef: AgentRunContext | null = null
@@ -4106,12 +4184,20 @@ export async function MessageAgents(c: Context): Promise<Response> {
       }
       try {
         let thinkingLog = ""
-        const emitReasoningStep: ReasoningEmitter = async (payload) => {
+        let mainRunIdRef: ReturnType<typeof generateRunId> | undefined
+        const emitReasoningStep: ReasoningEmitter = async (payload: ReasoningEventPayload) => {
           if (stream.closed) return
-          thinkingLog += `${JSON.stringify(payload)}\n`
+          // Attach orchestration metadata
+          const withMeta: ReasoningEventPayload = {
+            ...payload,
+            runId: mainRunIdRef != null ? String(mainRunIdRef) : undefined,
+            turnNumber: payload.turnNumber ?? agentContextRef?.turnCount,
+            parentAgent: payload.parentAgent ?? undefined,
+          }
+          thinkingLog += `${JSON.stringify(withMeta)}\n`
           await stream.writeSSE({
             event: ChatSSEvents.Reasoning,
-            data: JSON.stringify(payload),
+            data: JSON.stringify(withMeta),
           })
         }
 
@@ -4398,13 +4484,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
           summary: string
         } | null = null
 
-        if (referencedFileIds.length > 0) {
-          await streamReasoningStep(
+        if (allReferencedFileIds.length > 0) {
+          await emitReasoningEvent(
             emitReasoningStep,
-            "Analyzing user-provided attachments..."
+            ReasoningSteps.attachmentAnalyzing()
           )
           initialAttachmentContext = await prepareInitialAttachmentContext(
-            referencedFileIds,
+            allReferencedFileIds,
             threadIds,
             userMetadata,
             message,
@@ -4412,11 +4498,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
             isMstWithAttachments,
           )
           if (initialAttachmentContext) {
-            await streamReasoningStep(
+            await emitReasoningEvent(
               emitReasoningStep,
-              `Extracted ${initialAttachmentContext.fragments.length} context fragment${
-                initialAttachmentContext.fragments.length === 1 ? "" : "s"
-              } from attachments.`
+              ReasoningSteps.attachmentExtracted(initialAttachmentContext.fragments.length)
             )
           }
         }
@@ -4458,7 +4542,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
         if (initialAttachmentContext) {
           initialAttachmentContext.fragments.forEach((fragment) => {
-            gatheredFragmentsKeys.add(fragment.id)
+            const key = getFragmentDedupKey(fragment)
+            if (key) gatheredFragmentsKeys.add(key)
           })
           recordFragmentsForContext(
             agentContext,
@@ -4505,8 +4590,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
           [jafAgent.name, jafAgent],
         ])
 
-        // Initialize run state
-        const runId = generateRunId()
+        // Initialize run state (mainRunIdRef tags all reasoning on this single HTTP stream)
+        mainRunIdRef = generateRunId()
+        const runId = mainRunIdRef
         const traceId = generateTraceId()
         const { jafHistory, llmHistory } = buildConversationHistoryForAgentRun(
           previousConversationHistory
@@ -4812,6 +4898,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 currentTurn ??
                 MIN_TURN_NUMBER
             }
+            // Create a per-call scoped emitter that pre-stamps toolExecutionId.
+            // Each parallel onAfterToolExecution branch captures its own
+            // normalizedCallId in a closure — no shared scalar, no race.
+            // runPublicAgent is excluded because its events group by delegationRunId.
+            const toolScopedEmitter: ReasoningEmitter = (normalizedCallId && toolName !== XyneTools.runPublicAgent)
+              ? async (payload) => emitReasoningStep({ ...payload, toolExecutionId: normalizedCallId })
+              : emitReasoningStep
             const content = await afterToolExecutionHook(
               toolName,
               result,
@@ -4821,9 +4914,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
               gatheredFragmentsKeys,
               expectationForCall,
               turnForCall,
-              emitReasoningStep
+              toolScopedEmitter
             )
-            
             return content
           },
         }
@@ -4916,12 +5008,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
         agentContext.runtime = {
           streamAnswerText,
           emitReasoning: async (payload) =>
-            emitReasoningStep(payload as ReasoningPayload),
+            emitReasoningStep(payload as ReasoningEventPayload),
         }
         const traceEventHandler = async (event: TraceEvent) => {
           if (event.type === "before_tool_execution") {
             return beforeToolExecutionHook(
-              event.data.toolName,
+              event.data.toolName as XyneTools,
               event.data.args,
               agentContext,
               emitReasoningStep
@@ -4956,10 +5048,24 @@ export async function MessageAgents(c: Context): Promise<Response> {
               agentContext.turnCount = evt.data.turn
               currentTurn = evt.data.turn
               flushExpectationBufferToTurn(currentTurn)
-              await streamReasoningStep(
+
+              // Cooldown: recover expired tools, filter out cooled-down ones
+              const cooldown = new ToolCooldownManager(agentContext.failedTools)
+              const recovered = cooldown.recoverExpiredTools(currentTurn)
+              if (recovered.length > 0) {
+                await emitReasoningEvent(
+                  emitReasoningStep,
+                  ReasoningSteps.toolRecovered(recovered)
+                )
+              }
+              const activeTools = cooldown.getAvailableTools(allTools, currentTurn)
+              agentContext.enabledTools = new Set(
+                activeTools.map((t) => t.schema.name)
+              )
+
+              await emitReasoningEvent(
                 emitReasoningStep,
-                `Turn ${currentTurn} started`,
-                { iteration: currentTurn }
+                ReasoningSteps.turnStarted(currentTurn)
               )
               break
             }
@@ -5002,40 +5108,33 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   "args",
                   JSON.stringify(toolCall.args ?? {})
                 )
-                await streamReasoningStep(
-                  emitReasoningStep,
-                  `Tool selected: ${toolCall.name}`,
-                  { toolName: toolCall.name }
-                )
-
-                if (toolCall.name === "toDoWrite") {
-                  await streamReasoningStep(
+                // Emit a tool-specific intent message based on the tool being selected.
+                // toolExecutionId is inlined directly in each payload — no shared scalar,
+                // so parallel tool calls never overwrite each other's group key.
+                const toolQuery = extractToolQuery(toolCall.name, (toolCall.args ?? {}) as Record<string, unknown>)
+                if (toolCall.name === XyneTools.toDoWrite) {
+                  await emitReasoningEvent(
                     emitReasoningStep,
-                    "Formulating a step-by-step plan...",
-                    { toolName: toolCall.name }
+                    { ...ReasoningSteps.toolSelected(toolCall.name), toolExecutionId: normalizedCallId }
                   )
-                } else if (toolCall.name === "list_custom_agents") {
-                  await streamReasoningStep(
+                } else if (toolCall.name === XyneTools.listCustomAgents) {
+                  await emitReasoningEvent(
                     emitReasoningStep,
-                    "Searching for specialized agents that can help...",
-                    { toolName: toolCall.name }
+                    { ...ReasoningSteps.agentSearching(), toolExecutionId: normalizedCallId, toolName: XyneTools.listCustomAgents, ...(toolQuery ? { toolQuery } : {}) }
                   )
-                } else if (toolCall.name === "run_public_agent") {
-                  const agentId = (toolCall.args as { agentId?: string })?.agentId
-                  const agentName =
-                    agentContext.availableAgents.find(
-                      (agent) => agent.agentId === agentId
-                    )?.agentName || agentId || "selected agent"
-                  await streamReasoningStep(
+                } else if (toolCall.name === XyneTools.runPublicAgent) {
+                  // agentDelegated emission moved into createRunPublicAgentTool.execute()
+                  // so each parallel call generates its own ID in an isolated async scope,
+                  // eliminating the shared-scalar overwrite race condition.
+                } else if (toolCall.name === XyneTools.fallBack) {
+                  await emitReasoningEvent(
                     emitReasoningStep,
-                    `Delegating sub-task to the '${agentName}' agent...`,
-                    { toolName: toolCall.name, detail: agentName }
+                    { ...ReasoningSteps.fallbackActivated(), toolExecutionId: normalizedCallId, toolName: XyneTools.fallBack }
                   )
-                } else if (toolCall.name === "fall_back") {
-                  await streamReasoningStep(
+                } else {
+                  await emitReasoningEvent(
                     emitReasoningStep,
-                    "Initial strategy was unsuccessful. Activating fallback search to find an answer.",
-                    { toolName: toolCall.name }
+                    { ...ReasoningSteps.toolSelected(toolCall.name, toolQuery), toolExecutionId: normalizedCallId }
                   )
                 }
                 selectionSpan?.end()
@@ -5045,6 +5144,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             }
 
             case "tool_call_start": {
+              // Intent already emitted by tool_requests handler — no duplicate emit here.
               const toolStartSpan = turnSpan?.startSpan("tool_call_start")
               toolStartSpan?.setAttribute("tool_name", evt.data.toolName)
               toolStartSpan?.setAttribute(
@@ -5058,14 +5158,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 chatId: agentContext.chat.externalId,
                 turn: currentTurn,
               }, "[MessageAgents][Tool Start]")
-              await streamReasoningStep(
-                emitReasoningStep,
-                `Executing ${evt.data.toolName}...`,
-                {
-                  toolName: evt.data.toolName,
-                  detail: JSON.stringify(evt.data.args ?? {}),
-                }
-              )
               toolStartSpan?.end()
               break
             }
@@ -5091,19 +5183,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 chatId: agentContext.chat.externalId,
                 turn: currentTurn,
               }, "[MessageAgents][Tool End]")
-              await streamReasoningStep(
-                emitReasoningStep,
-                `Tool ${evt.data.toolName} completed`,
-                {
-                  toolName: evt.data.toolName,
-                  status: evt.data.error ? "error" : evt.data.status,
-                  detail: evt.data.error
-                    ? `Error: ${evt.data.error}`
-                    : `Result: ${typeof evt.data.result === "string"
-                        ? evt.data.result.slice(0, 800)
-                        : JSON.stringify(evt.data.result).slice(0, 800)}`,
-                }
-              )
+              // toolCompleted is now emitted at the end of afterToolExecutionHook,
+              // which runs inside onAfterToolExecution with a per-call scoped emitter.
               if (evt.data.error) {
                 const newCount =
                   (consecutiveToolErrors.get(evt.data.toolName) ?? 0) + 1
@@ -5137,39 +5218,23 @@ export async function MessageAgents(c: Context): Promise<Response> {
             case "turn_end": {
               const turnEndSpan = turnSpan?.startSpan("turn_end")
               turnEndSpan?.setAttribute("turn_number", evt.data.turn)
-              // DETERMINISTIC REVIEW: Run after every turn completes
-              await streamReasoningStep(
-                emitReasoningStep,
-                "Turn complete. Reviewing progress and results...",
-                { iteration: evt.data.turn }
-              )
 
-              const currentTurnToolHistory =
-                agentContext.toolCallHistory.filter(
-                  (record) => record.turnNumber === evt.data.turn
-                )
-
-              if (currentTurnToolHistory.length > 0) {
-                await streamReasoningStep(
-                  emitReasoningStep,
-                  buildTurnToolReasoningSummary(
-                    evt.data.turn,
-                    currentTurnToolHistory
-                  ),
-                  { iteration: evt.data.turn }
-                )
-              } else {
-                await streamReasoningStep(
-                  emitReasoningStep,
-                  `No tools were executed in turn ${evt.data.turn}.`,
-                  { iteration: evt.data.turn }
-                )
-              }
+              // turnToolSummary / turnNoTools both emit "Reviewing progress and results."
+              // which duplicates review_completed from handleReviewOutcome. The next
+              // turn_started event already signals progression, so nothing is emitted here.
 
               if (
                 agentContext.finalSynthesis.requested &&
                 agentContext.finalSynthesis.completed
               ) {
+                // Only persist/send once: run_end may have run first (event order) and already persisted
+                if (runCompletedAndPersisted) {
+                  Logger.debug(
+                    { chatId: agentContext.chat.externalId },
+                    "[MessageAgents] turn_end: assistant already persisted (run_end ran first), skipping"
+                  )
+                  break
+                }
                 const finalTurnNumber = evt.data.turn
                 const lastReviewTurn = agentContext.review.lastReviewTurn
                 const skipRunEndReview =
@@ -5215,6 +5280,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 const totalTokens =
                   agentContext.tokenUsage.input + agentContext.tokenUsage.output
                 try {
+                  const timeTakenMs = Date.now() - requestStartMs
                   const assistantInsert = {
                     chatId: chatRecord.id,
                     userId: user.id,
@@ -5229,6 +5295,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     modelId: agenticModelId,
                     cost: totalCost.toString(),
                     tokensUsed: totalTokens,
+                    timeTakenMs,
                   } as unknown as Omit<InsertMessage, "externalId">
                   const msg = await insertMessage(db, assistantInsert)
                   assistantMessageId = String(msg.externalId)
@@ -5252,6 +5319,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   data: JSON.stringify({
                     chatId: agentContext.chat.externalId,
                     messageId: assistantMessageId || "temp-message-id",
+                    timeTakenMs: Date.now() - requestStartMs,
                   }),
                 })
                 await stream.writeSSE({
@@ -5293,18 +5361,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   chatId: agentContext.chat.externalId,
                 }, "[DEBUG] Extracted expectations from assistant message")
                 if (extractedExpectations.length > 0) {
-                  await streamReasoningStep(
+                  await emitReasoningEvent(
                     emitReasoningStep,
-                    "Setting expectations for tool calls...",
-                    { iteration: currentTurn }
+                    ReasoningSteps.expectationsSet()
                   )
-                  for (const expectation of extractedExpectations) {
-                    await streamReasoningStep(
-                      emitReasoningStep,
-                      `Expectation for '${expectation.toolName}': ${expectation.expectation.goal}`,
-                      { toolName: expectation.toolName }
-                    )
-                  }
                   pendingExpectations.push(...extractedExpectations)
                   agentContext.currentTurnArtifacts.expectations.push(
                     ...extractedExpectations
@@ -5331,20 +5391,19 @@ export async function MessageAgents(c: Context): Promise<Response> {
               }
 
               if (hasToolCalls) {
-                await streamReasoningStep(
-                  emitReasoningStep,
-                  content || "Model planned tool usage."
-                )
+                // Tool intent is emitted by the tool_requests handler — no duplicate here.
                 assistantSpan?.end()
                 break
               }
 
               if (agentContext.finalSynthesis.suppressAssistantStreaming) {
-                if (content?.trim()) {
+                // Only emit synthesisCompleted here if the synthesizeFinalAnswer tool
+                // hasn't already done so (it sets .completed = true before emitting).
+                if (content?.trim() && !agentContext.finalSynthesis.completed) {
                   agentContext.finalSynthesis.ackReceived = true
-                  await streamReasoningStep(
+                  await emitReasoningEvent(
                     emitReasoningStep,
-                    "Final synthesis acknowledged. Closing out the run."
+                    ReasoningSteps.synthesisCompleted()
                   )
                 }
                 assistantSpan?.end()
@@ -5515,6 +5574,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   const totalTokens =
                     agentContext.tokenUsage.input + agentContext.tokenUsage.output
                   try {
+                    const timeTakenMs = Date.now() - requestStartMs
                     const assistantInsert = {
                       chatId: chatRecord.id,
                       userId: user.id,
@@ -5529,6 +5589,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                       modelId: agenticModelId,
                       cost: totalCost.toString(),
                       tokensUsed: totalTokens,
+                      timeTakenMs,
                     } as unknown as Omit<InsertMessage, "externalId">
                     const msg = await insertMessage(db, assistantInsert)
                     assistantMessageId = String(msg.externalId)
@@ -5555,12 +5616,14 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     data: JSON.stringify({
                       chatId: agentContext.chat.externalId,
                       messageId: assistantMessageId || "temp-message-id",
+                      timeTakenMs: Date.now() - requestStartMs,
                     }),
                   })
                   await stream.writeSSE({
                     event: ChatSSEvents.End,
                     data: "",
                   })
+                  runCompletedAndPersisted = true
                 }
               } else if (outcome?.status === "error") {
                 if (stopController.signal.aborted) {
@@ -5851,6 +5914,10 @@ export async function executeCustomAgent(
     parentTurn?: number
     mcpAgents?: MCPVirtualAgentRuntime[]
     stopSignal?: AbortSignal
+    /** When set, delegated agent reasoning is streamed to the parent's SSE (nested JAF streaming). */
+    reasoningEmitter?: ReasoningEmitter
+    /** Stable UUID for this specific delegation; forwarded to the inner emitter wrapper. */
+    delegationRunId?: string
   }
 ): Promise<ToolOutput> {
   const turnInfo =
@@ -5884,6 +5951,8 @@ export async function executeCustomAgent(
       parentTurn: params.parentTurn,
       mcpAgents: params.mcpAgents,
       stopSignal: params.stopSignal,
+      reasoningEmitter: params.reasoningEmitter,
+      delegationRunId: params.delegationRunId,
     })
   }
 
@@ -5950,6 +6019,15 @@ type DelegatedAgentRunParams = {
   parentTurn?: number
   mcpAgents?: MCPVirtualAgentRuntime[]
   stopSignal?: AbortSignal
+  /** When set, delegated run reuses parent's emitter so reasoning streams to the same SSE. */
+  reasoningEmitter?: ReasoningEmitter
+  /**
+   * Stable UUID generated at delegation time (in tool_requests handler).
+   * Passed through to the inner emitter wrapper so every reasoning event
+   * emitted by the delegated agent carries the same delegationRunId, giving
+   * the frontend one consistent group key per run_public_agent call.
+   */
+  delegationRunId?: string
 }
 
 async function runDelegatedAgentWithMessageAgents(
@@ -6259,9 +6337,26 @@ async function runDelegatedAgentWithMessageAgents(
       }
     }
 
-    const emitReasoningStep: ReasoningEmitter = async (_payload) => {
-      return
-    }
+    // Reuse parent's emitter when provided so nested agent reasoning streams to the same SSE.
+    // Tag every payload with agent name and delegationRunId so the frontend can:
+    // - Treat as delegated (swallow TurnStarted, group steps).
+    // - Group by delegationRunId = one container per run_public_agent call (multiple calls → multiple containers).
+    const delegatedAgentName =
+      (agentRecord as { name?: string }).name || params.agentId || "Delegated agent"
+    // Prefer the ID pre-generated at delegation time (tool_requests handler) so
+    // agentDelegated, all inner steps, and agentCompleted share the same key.
+    // Fall back to the internal runId only when called without a parent context.
+    const effectiveDelegationRunId = params.delegationRunId ?? runId
+    const emitReasoningStep: ReasoningEmitter = params.reasoningEmitter
+      ? async (payload) => {
+          await params.reasoningEmitter!({
+            ...payload,
+            agent: delegatedAgentName,
+            delegationRunId: effectiveDelegationRunId,
+            turnNumber: payload.turnNumber ?? currentTurn,
+          })
+        }
+      : async (_payload) => { return }
 
     const runAndBroadcastReview = async (
       context: AgentRunContext,
@@ -6348,7 +6443,12 @@ async function runDelegatedAgentWithMessageAgents(
             currentTurn ??
             MIN_TURN_NUMBER
         }
-        return afterToolExecutionHook(
+        // Per-call scoped emitter — same race-free pattern as the main run.
+        // runPublicAgent is excluded because its events group by delegationRunId.
+        const toolScopedEmitter: ReasoningEmitter = (normalizedCallId && toolName !== XyneTools.runPublicAgent)
+          ? async (payload) => emitReasoningStep({ ...payload, toolExecutionId: normalizedCallId })
+          : emitReasoningStep
+        const hookResult = await afterToolExecutionHook(
           toolName,
           result,
           hookContext,
@@ -6357,8 +6457,9 @@ async function runDelegatedAgentWithMessageAgents(
           gatheredFragmentsKeys,
           expectationForCall,
           turnForCall,
-          emitReasoningStep
+          toolScopedEmitter
         )
+        return hookResult
       },
     }
 
@@ -6381,7 +6482,7 @@ async function runDelegatedAgentWithMessageAgents(
     agentContext.runtime = {
       streamAnswerText,
       emitReasoning: async (payload) =>
-        emitReasoningStep(payload as ReasoningPayload),
+        emitReasoningStep(payload as ReasoningEventPayload),
     }
 
     let currentTurn = MIN_TURN_NUMBER
@@ -6396,16 +6497,31 @@ async function runDelegatedAgentWithMessageAgents(
       )) {
         throwIfStopRequested(params.stopSignal)
         switch (evt.type) {
-          case "turn_start":
+          case "turn_start": {
             agentContext.turnCount = evt.data.turn
             currentTurn = evt.data.turn
             flushExpectationBufferToTurn(currentTurn)
-            await streamReasoningStep(
+
+            // Cooldown: recover expired tools, filter out cooled-down ones
+            const dCooldown = new ToolCooldownManager(agentContext.failedTools)
+            const dRecovered = dCooldown.recoverExpiredTools(currentTurn)
+            if (dRecovered.length > 0) {
+              await emitReasoningEvent(
+                emitReasoningStep,
+                ReasoningSteps.toolRecovered(dRecovered)
+              )
+            }
+            const dActiveTools = dCooldown.getAvailableTools(allTools, currentTurn)
+            agentContext.enabledTools = new Set(
+              dActiveTools.map((t) => t.schema.name)
+            )
+
+            await emitReasoningEvent(
               emitReasoningStep,
-              `Turn ${currentTurn} started`,
-              { iteration: currentTurn }
+              ReasoningSteps.turnStarted(currentTurn)
             )
             break
+          }
 
           case "tool_requests":
             for (const [idx, toolCall] of evt.data.toolCalls.entries()) {
@@ -6425,39 +6541,22 @@ async function runDelegatedAgentWithMessageAgents(
                   assignedExpectation.expectation
                 )
               }
-              await streamReasoningStep(
+              const dToolQuery = extractToolQuery(toolCall.name, (toolCall.args ?? {}) as Record<string, unknown>)
+              // toolExecutionId inlined directly — no shared scalar, no race.
+              await emitReasoningEvent(
                 emitReasoningStep,
-                `Tool selected: ${toolCall.name}`,
-                { toolName: toolCall.name }
+                { ...ReasoningSteps.toolSelected(toolCall.name, dToolQuery), toolExecutionId: normalizedCallId }
               )
             }
             break
 
           case "tool_call_start":
-            await streamReasoningStep(
-              emitReasoningStep,
-              `Executing ${evt.data.toolName}...`,
-              {
-                toolName: evt.data.toolName,
-                detail: JSON.stringify(evt.data.args ?? {}),
-              }
-            )
+            // Intent already emitted by tool_requests handler — no duplicate emit here.
             break
 
           case "tool_call_end": {
-            await streamReasoningStep(
-              emitReasoningStep,
-              `Tool ${evt.data.toolName} completed`,
-              {
-                toolName: evt.data.toolName,
-                status: evt.data.error ? "error" : evt.data.status,
-                detail: evt.data.error
-                  ? `Error: ${evt.data.error}`
-                  : `Result: ${typeof evt.data.result === "string"
-                      ? evt.data.result.slice(0, 800)
-                      : JSON.stringify(evt.data.result).slice(0, 800)}`,
-              }
-            )
+            // toolCompleted is emitted at the end of afterToolExecutionHook
+            // via the per-call scoped emitter — no action needed here.
             if (evt.data.error) {
               const newCount =
                 (consecutiveToolErrors.get(evt.data.toolName) ?? 0) + 1
@@ -6487,54 +6586,19 @@ async function runDelegatedAgentWithMessageAgents(
             break
           }
 
-          case "turn_end": {
-            await streamReasoningStep(
-              emitReasoningStep,
-              "Turn complete. Reviewing progress and results...",
-              { iteration: evt.data.turn }
-            )
-
-            const currentTurnToolHistory =
-              agentContext.toolCallHistory.filter(
-                (record) => record.turnNumber === evt.data.turn
-              )
-
-            if (currentTurnToolHistory.length > 0) {
-              await streamReasoningStep(
-                emitReasoningStep,
-                buildTurnToolReasoningSummary(
-                  evt.data.turn,
-                  currentTurnToolHistory
-                ),
-                { iteration: evt.data.turn }
-              )
-            } else {
-                await streamReasoningStep(
-                  emitReasoningStep,
-                  `No tools were executed in turn ${evt.data.turn}.`,
-                  { iteration: evt.data.turn }
-                )
-              }
+          case "turn_end":
+            // turnToolSummary / turnNoTools duplicate review_completed; omitted here.
             break
-          }
 
           case "assistant_message": {
             const content = getTextContent(evt.data.message.content) || ""
             if (content) {
               const extractedExpectations = extractExpectedResults(content)
               if (extractedExpectations.length > 0) {
-                await streamReasoningStep(
+                await emitReasoningEvent(
                   emitReasoningStep,
-                  "Setting expectations for tool calls...",
-                  { iteration: currentTurn }
+                  ReasoningSteps.expectationsSet()
                 )
-                for (const expectation of extractedExpectations) {
-                  await streamReasoningStep(
-                    emitReasoningStep,
-                    `Expectation for '${expectation.toolName}': ${expectation.expectation.goal}`,
-                    { toolName: expectation.toolName }
-                  )
-                }
                 pendingExpectations.push(...extractedExpectations)
                 if (currentTurn > 0) {
                   recordExpectationsForTurn(
@@ -6552,19 +6616,18 @@ async function runDelegatedAgentWithMessageAgents(
               (evt.data.message.tool_calls?.length ?? 0) > 0
 
             if (hasToolCalls) {
-              await streamReasoningStep(
-                emitReasoningStep,
-                content || "Model planned tool usage."
-              )
+              // Tool intent is emitted by the tool_requests handler — no duplicate here.
               break
             }
 
             if (agentContext.finalSynthesis.suppressAssistantStreaming) {
-              if (content?.trim()) {
+              // Only emit synthesisCompleted here if the synthesizeFinalAnswer tool
+              // hasn't already done so (it sets .completed = true before emitting).
+              if (content?.trim() && !agentContext.finalSynthesis.completed) {
                 agentContext.finalSynthesis.ackReceived = true
-                await streamReasoningStep(
+                await emitReasoningEvent(
                   emitReasoningStep,
-                  "Final synthesis acknowledged. Closing out the run."
+                  ReasoningSteps.synthesisCompleted()
                 )
               }
               break

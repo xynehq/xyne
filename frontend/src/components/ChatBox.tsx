@@ -362,6 +362,9 @@ const getDefaultModel = (availableModels: ModelConfiguration[]): string => {
   return defaultModel.labelName
 }
 
+/** When true: agentic mode is default and MCP dropdown is hidden (env: VITE_AGENTIC_BY_DEFAULT) */
+const isAgenticByDefault = import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true"
+
 export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
   (props, ref) => {
     const {
@@ -377,7 +380,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       agentIdFromChatData, // Destructure new prop
       user, // Destructure user prop
       setIsAgenticMode,
-      isAgenticMode = false,
+      isAgenticMode = isAgenticByDefault,
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
       uploadStatus,
@@ -3097,8 +3100,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </div>
               </>
             )}
-            {/* Dropdown for All Connectors */}
-            {showAdvancedOptions &&
+            {/* Dropdown for All Connectors (hidden when VITE_AGENTIC_BY_DEFAULT=true) */}
+            {!isAgenticByDefault &&
+              showAdvancedOptions &&
               (role === UserRole.SuperAdmin || role === UserRole.Admin) && (
                 <DropdownMenu
                   open={isConnectorsMenuOpen && isAgenticMode}
@@ -3701,7 +3705,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {showAdvancedOptions &&
+            {!isAgenticByDefault && showAdvancedOptions &&
               (user?.role === UserRole.Admin ||
                 user?.role === UserRole.SuperAdmin) && (
                 <button
