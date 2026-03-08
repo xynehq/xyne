@@ -15,6 +15,16 @@ import { object } from "zod"
 export { Subsystem }
 
 const { JwtPayloadKey } = config
+const defaultLogLevel = "info"
+
+const isValidLogLevel = (level: string) => level in levels.values
+
+const getConfiguredLogLevel = () => {
+  const configuredLevel =
+    process.env.NODE_LOG_LEVEL ?? process.env.LOG_LEVEL ?? defaultLogLevel
+
+  return isValidLogLevel(configuredLevel) ? configuredLevel : defaultLogLevel
+}
 
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
@@ -35,6 +45,7 @@ const time = (start: number) => {
 
 export const getLogger = (loggerType: Subsystem) => {
   const isProduction = process.env.NODE_ENV === "production"
+  const level = getConfiguredLogLevel()
 
   if (isProduction) {
     const destination = pino.destination(1) // stdout
@@ -42,6 +53,7 @@ export const getLogger = (loggerType: Subsystem) => {
     return pino(
       {
         name: loggerType,
+        level,
         timestamp: false,
         formatters: {
           level: (label) => ({ level: label }),
@@ -75,6 +87,7 @@ export const getLogger = (loggerType: Subsystem) => {
   // Dev logger
   return pino({
     name: loggerType,
+    level,
     transport: {
       target: "pino-pretty",
       options: {
