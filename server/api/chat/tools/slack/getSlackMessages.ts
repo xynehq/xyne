@@ -41,15 +41,19 @@ const getSlackRelatedMessagesSchema = z.object({
   channelName: z
     .string()
     .optional()
-    .describe("Name of specific channel to search within"),
+    .describe(
+      "Optional Slack channel name string, such as `eng-launches`. Pass the human-facing channel name, not a Slack channel ID.",
+    ),
   user: z
     .string()
     .optional()
-    .describe("Name or Email of specific user whose messages to retrieve"),
+    .describe(
+      "Optional Slack user identifier string to restrict messages by author. Email is preferred; display name can also work.",
+    ),
   mentions: z
     .array(z.string())
     .describe(
-      "Filter messages that mention specific users. Provide usernames or email (e.g., '@john.doe' or john.d@domain.in)",
+      "Optional list of mentioned-user identifier strings, usually emails or usernames, to find messages that mention specific people.",
     )
     .optional(),
   ...baseToolParams,
@@ -66,7 +70,7 @@ export const getSlackRelatedMessagesTool: Tool<
   schema: {
     name: "getSlackRelatedMessages",
     description:
-      "Unified tool to retrieve Slack messages with flexible filtering options. Can search by channel, user, time range, thread, or any combination. Automatically includes thread messages when found. Use this single tool for all Slack message retrieval needs.",
+      "Search Slack messages with flexible filters for content, channel, author, mentions, and time range. Automatically includes thread replies when thread roots are found, and defaults to recent Slack history when no query or scope is provided.",
     parameters: toToolSchemaParameters<GetSlackRelatedMessagesParams>(
       getSlackRelatedMessagesSchema,
     ),
@@ -201,6 +205,14 @@ export const getSlackRelatedMessagesTool: Tool<
             `[getSlackRelatedMessages] Failed to fetch thread messages: ${getErrorMessage(error)}`,
           )
         }
+      }
+
+      const excludedDocIds = new Set(params.excludedIds || [])
+      if (excludedDocIds.size > 0) {
+        allItems = allItems.filter((item) => {
+          const citation = searchToCitation(item)
+          return !excludedDocIds.has(citation.docId)
+        })
       }
 
       const fragments: MinimalAgentFragment[] = await Promise.all(

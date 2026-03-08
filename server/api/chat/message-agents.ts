@@ -1,6 +1,6 @@
 /**
  * MessageAgents - JAF-Based Agentic Architecture Implementation
- * 
+ *
  * New agentic flow with:
  * - Single agent with toDoWrite for planning
  * - Automatic turn-end review
@@ -9,112 +9,32 @@
  * - Task-based sequential execution
  */
 
-import type { Context } from "hono"
-import { streamSSE } from "hono/streaming"
-import { HTTPException } from "hono/http-exception"
-import type {
-  AgentRunContext,
-  PlanState,
-  ToolExecutionRecord,
-  ReviewResult,
-  AutoReviewInput,
-  ToolFailureInfo,
-  ToolExpectation,
-  ToolExpectationAssignment,
-  FinalSynthesisState,
-  SubTask,
-  MCPVirtualAgentRuntime,
-  MCPToolDefinition,
-  CurrentTurnArtifacts,
-  ToolExecutionRecordWithResult,
-} from "./agent-schemas"
-import { ToolExpectationSchema, ReviewResultSchema } from "./agent-schemas"
-import { ToolCooldownManager } from "./tool-cooldown"
-import { getTracer, type Span } from "@/tracer"
-import { getLogger, getLoggerWithChild } from "@/logger"
-import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
-import config from "@/config"
-import { Models, type ModelParams } from "@/ai/types"
+import {
+  answerContextMap,
+  answerContextMapFromFragments,
+  userContext,
+} from "@/ai/context"
 import { getModelValueFromLabel } from "@/ai/modelConfig"
-import {
-  runStream,
-  generateRunId,
-  generateTraceId,
-  getTextContent,
-  ToolResponse,
-  ToolErrorCodes,
-  type Agent as JAFAgent,
-  type Message as JAFMessage,
-  type RunConfig as JAFRunConfig,
-  type RunState as JAFRunState,
-  type Tool,
-  type ToolCall,
-  type ToolResult, 
-  type TraceEvent,
-} from "@xynehq/jaf"
-import { makeXyneJAFProvider } from "./jaf-provider"
-import { getErrorMessage } from "@/utils"
-import { ChatSSEvents, type ReasoningEventPayload } from "@/shared/types"
-import {
-  ReasoningSteps,
-  emitReasoningEvent,
-  type ReasoningEmitter as StructuredReasoningEmitter,
-} from "./reasoning-steps"
-import type {
-  MinimalAgentFragment,
-  Citation,
-  ImageCitation,
-  FragmentImageReference,
-} from "./types"
+import { extractBestDocumentsPrompt } from "@/ai/prompts"
 import {
   extractBestDocumentIndexes,
   getProviderByModel,
   jsonParseLLMOutput,
 } from "@/ai/provider"
-import { extractBestDocumentsPrompt } from "@/ai/prompts"
-import { answerContextMap, answerContextMapFromFragments, userContext } from "@/ai/context"
-import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
-import type { Message } from "@aws-sdk/client-bedrock-runtime"
+import { type ModelParams, Models } from "@/ai/types"
+import { executeAgentForWorkflowWithRag } from "@/api/agent/workflowAgentUtils"
+import config from "@/config"
 import {
-  TOOL_SCHEMAS,
-  generateToolDescriptions,
-  validateToolInput,
-  ListCustomAgentsOutputSchema,
-  type ListCustomAgentsOutput,
-  type ToolOutput,
-  type ResourceAccessSummary,
-} from "./tool-schemas"
-import {
-  searchToCitation,
-  extractImageFileNames,
-  processMessage,
-  checkAndYieldCitationsForAgent,
-  collectReferencedFileIdsUntilCompaction,
-  extractFileIdsFromMessage,
-  isMessageWithContext,
-  processThreadResults,
-  safeDecodeURIComponent,
-} from "./utils"
-import { searchCollectionRAG, SearchEmailThreads, searchVespaInFiles } from "@/search/vespa"
-import {
-  Apps,
-  AttachmentEntity,
-  KnowledgeBaseEntity,
-  SearchModes,
-  type VespaSearchResult,
-  type VespaSearchResults,
-} from "@xyne/vespa-ts/types"
-import { expandSheetIds } from "@/search/utils"
-import type { ZodTypeAny } from "zod"
-import { parseAttachmentMetadata } from "@/utils/parseAttachment"
-import { db } from "@/db/client"
+  type SelectAgent,
+  getAgentByExternalIdWithPermissionCheck,
+} from "@/db/agent"
+import { storeAttachmentMetadata } from "@/db/attachment"
 import { insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
-import {
-  getChatMessagesUntilCompaction,
-  insertMessage,
-} from "@/db/message"
-import { storeAttachmentMetadata } from "@/db/attachment"
+import { db } from "@/db/client"
+import { getConnectorById } from "@/db/connector"
+import { getChatMessagesUntilCompaction, insertMessage } from "@/db/message"
+import { getUserPersonalizationByEmail } from "@/db/personalization"
 import {
   ChatType,
   type InsertChat,
@@ -123,51 +43,96 @@ import {
   type SelectChat,
   type SelectMessage,
 } from "@/db/schema"
+import { getToolsByConnectorId } from "@/db/tool"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getUserAccessibleAgents } from "@/db/userAgentPermission"
-import { executeAgentForWorkflowWithRag } from "@/api/agent/workflowAgentUtils"
+import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
+import { getLogger, getLoggerWithChild } from "@/logger"
+import { expandSheetIds } from "@/search/utils"
+import {
+  SearchEmailThreads,
+  searchCollectionRAG,
+  searchVespaInFiles,
+} from "@/search/vespa"
+import {
+  type AttachmentMetadata,
+  ChatSSEvents,
+  DEFAULT_TEST_AGENT_ID,
+  type ReasoningEventPayload,
+  ReasoningEventType,
+  type ReasoningStage,
+  XyneTools,
+} from "@/shared/types"
+import { type Span, getTracer } from "@/tracer"
+import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
+import { getErrorMessage } from "@/utils"
 import { getDateForAI } from "@/utils/index"
-import googleTools from "./tools/google"
-import { searchGlobalTool, fallbackTool } from "./tools/global"
-import { searchKnowledgeBaseTool } from "./tools/knowledgeBase"
-import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
-import { XyneTools, type AttachmentMetadata } from "@/shared/types"
-import {
-  evaluateAgentResourceAccess,
-  getUserConnectorState,
-  createEmptyConnectorState,
-  type UserConnectorState,
-} from "./resource-access"
-import {
-  getAgentByExternalIdWithPermissionCheck,
-  type SelectAgent,
-} from "@/db/agent"
-import { isCuid } from "@paralleldrive/cuid2"
-import { DEFAULT_TEST_AGENT_ID } from "@/shared/types"
-import { parseAgentAppIntegrations } from "./tools/utils"
-import { buildAgentPromptAddendum } from "./agentPromptCreation"
-import { getConnectorById } from "@/db/connector"
-import { getToolsByConnectorId } from "@/db/tool"
-import {
-  buildMCPJAFTools,
-  type FinalToolsList,
-} from "./jaf-adapter"
-import { activeStreams } from "./stream"
+import { parseAttachmentMetadata } from "@/utils/parseAttachment"
+import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
+import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import {
   SSEClientTransport,
   type SSEClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/sse.js"
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { isCuid } from "@paralleldrive/cuid2"
+import {
+  Apps,
+  AttachmentEntity,
+  KnowledgeBaseEntity,
+  SearchModes,
+  type VespaSearchResult,
+  type VespaSearchResults,
+} from "@xyne/vespa-ts/types"
+import {
+  type Agent as JAFAgent,
+  type Message as JAFMessage,
+  type RunConfig as JAFRunConfig,
+  type RunState as JAFRunState,
+  type Tool,
+  type ToolCall,
+  ToolErrorCodes,
+  ToolResponse,
+  type ToolResult,
+  type TraceEvent,
+  generateRunId,
+  generateTraceId,
+  getTextContent,
+  runStream,
+} from "@xynehq/jaf"
+import type { Context } from "hono"
+import { HTTPException } from "hono/http-exception"
+import { streamSSE } from "hono/streaming"
+import type { ZodTypeAny } from "zod"
+import type {
+  AgentRunContext,
+  AutoReviewInput,
+  CurrentTurnArtifacts,
+  FinalSynthesisState,
+  MCPToolDefinition,
+  MCPVirtualAgentRuntime,
+  PlanState,
+  ReviewResult,
+  SubTask,
+  ToolExecutionRecord,
+  ToolExecutionRecordWithResult,
+  ToolExpectation,
+  ToolExpectationAssignment,
+  ToolFailureInfo,
+} from "./agent-schemas"
+import { ReviewResultSchema, ToolExpectationSchema } from "./agent-schemas"
 import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
+import { buildAgentPromptAddendum } from "./agentPromptCreation"
 import { parseMessageText } from "./chat"
-import { getUserPersonalizationByEmail } from "@/db/personalization"
 import { getChunkCountPerDoc } from "./chunk-selection"
-import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
+import { type FinalToolsList, buildMCPJAFTools } from "./jaf-adapter"
+import { logJAFTraceEvent } from "./jaf-logging"
+import { makeXyneJAFProvider } from "./jaf-provider"
 import {
   buildAgentSystemPromptContextBlock,
   enforceMetadataConstraintsOnSelection,
@@ -178,6 +143,53 @@ import {
   sanitizeAgentSystemPromptSnapshot,
   withAgentSystemPromptMessage,
 } from "./message-agents-metadata"
+import {
+  ReasoningSteps,
+  type ReasoningEmitter as StructuredReasoningEmitter,
+  emitReasoningEvent,
+} from "./reasoning-steps"
+import {
+  type UserConnectorState,
+  createEmptyConnectorState,
+  evaluateAgentResourceAccess,
+  getUserConnectorState,
+} from "./resource-access"
+import { activeStreams } from "./stream"
+import { ToolCooldownManager } from "./tool-cooldown"
+import {
+  type ListCustomAgentsOutput,
+  ListCustomAgentsOutputSchema,
+  type ResourceAccessSummary,
+  TOOL_SCHEMAS,
+  type ToolOutput,
+  generateToolDescriptions,
+  validateToolInput,
+} from "./tool-schemas"
+import { fallbackTool, searchGlobalTool } from "./tools/global"
+import googleTools from "./tools/google"
+import {
+  lsKnowledgeBaseTool,
+  searchKnowledgeBaseTool,
+} from "./tools/knowledgeBaseFlow"
+import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
+import { parseAgentAppIntegrations } from "./tools/utils"
+import type {
+  Citation,
+  FragmentImageReference,
+  ImageCitation,
+  MinimalAgentFragment,
+} from "./types"
+import {
+  checkAndYieldCitationsForAgent,
+  collectReferencedFileIdsUntilCompaction,
+  extractFileIdsFromMessage,
+  extractImageFileNames,
+  isMessageWithContext,
+  processMessage,
+  processThreadResults,
+  safeDecodeURIComponent,
+  searchToCitation,
+} from "./utils"
 
 export { __messageAgentsMetadataInternals } from "./message-agents-metadata"
 
@@ -214,7 +226,7 @@ function normalizeReviewFrequency(value: unknown): number {
 }
 
 const mutableAgentContext = (
-  context: Readonly<AgentRunContext>
+  context: Readonly<AgentRunContext>,
 ): AgentRunContext => context as AgentRunContext
 
 const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
@@ -224,15 +236,13 @@ const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
   images: [],
 })
 
-
 const reviewsAllowed = (context: AgentRunContext): boolean =>
   !context.review.lockedByFinalSynthesis
 
-function resolveAgenticModelId(
-  requestedModelId?: string | Models
-): Models {
+function resolveAgenticModelId(requestedModelId?: string | Models): Models {
   const hasAgenticOverride =
-    defaultBestModelAgenticMode && defaultBestModelAgenticMode !== ("" as Models)
+    defaultBestModelAgenticMode &&
+    defaultBestModelAgenticMode !== ("" as Models)
   const fallback = hasAgenticOverride
     ? (defaultBestModelAgenticMode as Models)
     : (defaultBestModel as Models)
@@ -241,12 +251,12 @@ function resolveAgenticModelId(
 }
 
 const toToolParameters = (
-  schema: ZodTypeAny
+  schema: ZodTypeAny,
 ): Tool<unknown, AgentRunContext>["schema"]["parameters"] =>
   schema as unknown as Tool<unknown, AgentRunContext>["schema"]["parameters"]
 
 function fragmentsToToolContexts(
-  fragments: MinimalAgentFragment[] | undefined
+  fragments: MinimalAgentFragment[] | undefined,
 ): ToolOutput["contexts"] {
   if (!fragments?.length) {
     return undefined
@@ -318,9 +328,7 @@ function normalizeUserMessageForHistory(message: SelectMessage): string {
   }
 }
 
-function buildConversationHistoryForAgentRun(
-  history: SelectMessage[],
-): {
+function buildConversationHistoryForAgentRun(history: SelectMessage[]): {
   jafHistory: JAFMessage[]
   llmHistory: Message[]
 } {
@@ -359,6 +367,68 @@ export const __messageAgentsHistoryInternals = {
 
 const RECENT_IMAGE_WINDOW = 2
 
+function normalizeExcludedIdsForLogging(excludedIds: unknown): string[] {
+  if (Array.isArray(excludedIds)) {
+    return excludedIds
+      .map((value) =>
+        typeof value === "string"
+          ? value
+          : value === null || value === undefined
+            ? ""
+            : String(value),
+      )
+      .filter(Boolean)
+  }
+  if (excludedIds === null || excludedIds === undefined) {
+    return []
+  }
+  const normalized =
+    typeof excludedIds === "string" ? excludedIds : String(excludedIds)
+  return normalized ? [normalized] : []
+}
+
+function buildContextTraceSnapshot(
+  context: AgentRunContext,
+): Record<string, unknown> {
+  return {
+    chatId: context.chat.externalId,
+    turnCount: context.turnCount,
+    currentSubTask: context.currentSubTask,
+    seenDocumentsCount: context.seenDocuments.size,
+    seenDocumentsSample: Array.from(context.seenDocuments).slice(0, 10),
+    allFragmentsCount: context.allFragments.length,
+    allImagesCount: context.allImages.length,
+    recentImagesCount: context.recentImages.length,
+    currentTurnFragmentCount: context.currentTurnArtifacts.fragments.length,
+    currentTurnImageCount: context.currentTurnArtifacts.images.length,
+    currentTurnToolOutputCount: context.currentTurnArtifacts.toolOutputs.length,
+    currentTurnExpectationCount:
+      context.currentTurnArtifacts.expectations.length,
+    toolCallHistoryCount: context.toolCallHistory.length,
+    failedToolsCount: context.failedTools.size,
+    availableAgentsCount: context.availableAgents.length,
+    usedAgentsCount: context.usedAgents.length,
+    ambiguityResolved: context.ambiguityResolved,
+    finalSynthesisRequested: context.finalSynthesis.requested,
+    finalSynthesisCompleted: context.finalSynthesis.completed,
+    finalSynthesisAckReceived: context.finalSynthesis.ackReceived,
+  }
+}
+
+function logContextMutation(
+  context: AgentRunContext,
+  message: string,
+  details: Record<string, unknown> = {},
+): void {
+  loggerWithChild({ email: context.user.email }).info(
+    {
+      ...buildContextTraceSnapshot(context),
+      ...details,
+    },
+    message,
+  )
+}
+
 /**
  * Deduplication key for fragments: Vespa document id when present, otherwise fragment id.
  * All dedupe (merge, seenDocuments, excludedIds) should rely on this so the same document
@@ -373,7 +443,7 @@ function getFragmentDedupKey(fragment: MinimalAgentFragment): string {
 
 function mergeFragmentLists(
   target: MinimalAgentFragment[],
-  incoming: MinimalAgentFragment[]
+  incoming: MinimalAgentFragment[],
 ): MinimalAgentFragment[] {
   if (!incoming.length) {
     return target
@@ -400,7 +470,7 @@ function mergeFragmentLists(
 
 function mergeImageReferences(
   target: FragmentImageReference[],
-  incoming: FragmentImageReference[]
+  incoming: FragmentImageReference[],
 ): FragmentImageReference[] {
   if (!incoming.length) {
     return target
@@ -422,11 +492,12 @@ function mergeImageReferences(
 }
 
 function extractImagesFromFragments(
-  fragments: MinimalAgentFragment[]
+  fragments: MinimalAgentFragment[],
 ): FragmentImageReference[] {
   const references: FragmentImageReference[] = []
   for (const fragment of fragments) {
-    if (!Array.isArray(fragment.images) || fragment.images.length === 0) continue
+    if (!Array.isArray(fragment.images) || fragment.images.length === 0)
+      continue
     for (const image of fragment.images) {
       if (image?.fileName) {
         references.push(image)
@@ -439,57 +510,89 @@ function extractImagesFromFragments(
 function recordFragmentsForContext(
   context: AgentRunContext,
   fragments: MinimalAgentFragment[],
-  turnNumber: number
+  turnNumber: number,
 ): void {
   if (!fragments.length) return
+
+  const seenDocumentsBefore = context.seenDocuments.size
+  const addedSeenDocumentIds: string[] = []
+
   fragments.forEach((fragment) => {
     const vespaDocId = fragment.source?.docId
     if (vespaDocId != null && vespaDocId !== "") {
+      if (!context.seenDocuments.has(vespaDocId)) {
+        addedSeenDocumentIds.push(vespaDocId)
+      }
       context.seenDocuments.add(vespaDocId)
     }
   })
+
   context.currentTurnArtifacts.fragments = mergeFragmentLists(
     context.currentTurnArtifacts.fragments,
-    fragments
+    fragments,
   )
   context.allFragments = mergeFragmentLists(context.allFragments, fragments)
   const existingForTurn = context.turnFragments.get(turnNumber) ?? []
   context.turnFragments.set(
     turnNumber,
-    mergeFragmentLists(existingForTurn, fragments)
+    mergeFragmentLists(existingForTurn, fragments),
   )
+
+  logContextMutation(
+    context,
+    "[MessageAgents][Context] Recorded fragments and updated seenDocuments",
+    {
+      turnNumber,
+      fragmentCount: fragments.length,
+      fragmentIds: fragments.map((fragment) => fragment.id),
+      addedSeenDocumentIds,
+      seenDocumentsBefore,
+      seenDocumentsAfter: context.seenDocuments.size,
+      turnFragmentCount: (context.turnFragments.get(turnNumber) || []).length,
+    },
+  )
+
   const fragmentImages = extractImagesFromFragments(fragments)
   if (fragmentImages.length > 0) {
     context.currentTurnArtifacts.images = mergeImageReferences(
       context.currentTurnArtifacts.images,
-      fragmentImages
+      fragmentImages,
     )
-    loggerWithChild({ email: context.user.email }).debug(
+    logContextMutation(
+      context,
+      "[MessageAgents][Context] Updated current turn images from fragments",
       {
-        chatId: context.chat.externalId,
         turnNumber,
         fragmentCount: fragments.length,
         imageNames: fragmentImages.map((img) => img.fileName),
+        addedImageCount: fragmentImages.length,
       },
-      "[MessageAgents] Recorded new fragment images"
     )
   }
 }
 
 function resetCurrentTurnArtifacts(context: AgentRunContext): void {
+  const previousArtifacts = context.currentTurnArtifacts
   context.currentTurnArtifacts = createEmptyTurnArtifacts()
+  logContextMutation(
+    context,
+    "[MessageAgents][Context] Reset current turn artifacts",
+    {
+      clearedFragmentCount: previousArtifacts.fragments.length,
+      clearedImageCount: previousArtifacts.images.length,
+      clearedExpectationCount: previousArtifacts.expectations.length,
+      clearedToolOutputCount: previousArtifacts.toolOutputs.length,
+    },
+  )
 }
 
 function finalizeTurnImages(
   context: AgentRunContext,
-  turnNumber: number
+  turnNumber: number,
 ): void {
   const imagesForTurn = context.currentTurnArtifacts.images
   context.imagesByTurn.set(turnNumber, [...imagesForTurn])
-  context.allImages = mergeImageReferences(
-    context.allImages,
-    imagesForTurn
-  )
+  context.allImages = mergeImageReferences(context.allImages, imagesForTurn)
   const recentTurns = Array.from(context.imagesByTurn.keys())
     .sort((a, b) => a - b)
     .slice(-RECENT_IMAGE_WINDOW)
@@ -502,16 +605,16 @@ function finalizeTurnImages(
   }
   context.recentImages = mergeImageReferences([], flattened)
   context.currentTurnArtifacts.images = []
-  loggerWithChild({ email: context.user.email }).debug(
+  logContextMutation(
+    context,
+    "[MessageAgents][Context] Finalized turn images",
     {
-      chatId: context.chat.externalId,
       turnNumber,
       committedImages: imagesForTurn.map((img) => img.fileName),
       recentWindow: recentTurns,
       recentImages: context.recentImages.map((img) => img.fileName),
       allImagesCount: context.allImages.length,
     },
-    "[MessageAgents] Updated turn image buffers"
   )
 }
 
@@ -539,7 +642,7 @@ function summarizeToolResultPayload(result: any): string {
 }
 
 function formatToolArgumentsForReasoning(
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
 ): string {
   if (!args || typeof args !== "object") {
     return "{}"
@@ -573,7 +676,7 @@ function formatToolArgumentsForReasoning(
 
 function buildTurnToolReasoningSummary(
   turnNumber: number,
-  records: ToolExecutionRecord[]
+  records: ToolExecutionRecord[],
 ): string {
   const lines = records.map((record, idx) => {
     const argsSummary = formatToolArgumentsForReasoning(record.arguments)
@@ -591,7 +694,7 @@ type FragmentImageOptions = {
 function attachImagesToFragments(
   fragments: MinimalAgentFragment[],
   imageNames: string[],
-  options: FragmentImageOptions
+  options: FragmentImageOptions,
 ): MinimalAgentFragment[] {
   if (!Array.isArray(imageNames) || imageNames.length === 0) {
     return fragments
@@ -606,7 +709,7 @@ function attachImagesToFragments(
     const fragmentId = getFragmentIdFromImageName(
       imageName,
       fragmentIndexMap,
-      fragments[0]?.id || ""
+      fragments[0]?.id || "",
     )
     if (!fragmentId) continue
     const ref: FragmentImageReference = {
@@ -654,7 +757,7 @@ function attachImagesToFragments(
 function getFragmentIdFromImageName(
   imageName: string,
   fragmentIndexMap: Map<number, string>,
-  fallback = ""
+  fallback = "",
 ): string {
   const separatorIdx = imageName.indexOf("_")
   if (separatorIdx <= 0) return fallback
@@ -663,9 +766,7 @@ function getFragmentIdFromImageName(
   return fragmentIndexMap.get(docIndex) ?? fallback
 }
 
-function getMetadataLayers(
-  result: any
-): Record<string, unknown>[] {
+function getMetadataLayers(result: any): Record<string, unknown>[] {
   const layers: Record<string, unknown>[] = []
   const metadata = result?.metadata
   if (metadata && typeof metadata === "object") {
@@ -680,7 +781,7 @@ function getMetadataLayers(
 
 function getMetadataValue<T = unknown>(
   result: any,
-  key: string
+  key: string,
 ): T | undefined {
   if (result?.data && typeof result.data === "object" && key in result.data) {
     return (result.data as Record<string, unknown>)[key] as T
@@ -714,7 +815,9 @@ function formatPlanForPrompt(plan: PlanState | null): string {
       detailParts.push(`Tools: ${task.toolsRequired.join(", ")}`)
     }
     lines.push(
-      detailParts.length > 0 ? `${baseLine}\n   ${detailParts.join(" | ")}` : baseLine
+      detailParts.length > 0
+        ? `${baseLine}\n   ${detailParts.join(" | ")}`
+        : baseLine,
     )
   })
   return lines.join("\n")
@@ -731,7 +834,7 @@ function selectActiveSubTaskId(plan: PlanState | null): string | null {
   ]
   for (const status of priority) {
     const match = plan.subTasks.find(
-      (task) => task.status === status && task.id
+      (task) => task.status === status && task.id,
     )
     if (match?.id) {
       return match.id
@@ -774,10 +877,7 @@ function initializePlanState(plan: PlanState): string | null {
       activeId = selectActiveSubTaskId(plan)
       continue
     }
-    if (
-      activeTask.status === "pending" ||
-      activeTask.status === "blocked"
-    ) {
+    if (activeTask.status === "pending" || activeTask.status === "blocked") {
       activeTask.status = "in_progress"
       activeTask.error = undefined
     }
@@ -791,7 +891,10 @@ function initializePlanState(plan: PlanState): string | null {
  * reasoning UI alongside each tool call.  Returns undefined for tools that have
  * no meaningful search term (e.g. synthesizeFinalAnswer, toDoWrite).
  */
-function extractToolQuery(toolName: string, args: Record<string, unknown>): string | undefined {
+function extractToolQuery(
+  toolName: string,
+  args: Record<string, unknown>,
+): string | undefined {
   switch (toolName) {
     case XyneTools.searchGlobal:
     case XyneTools.searchGmail:
@@ -801,7 +904,9 @@ function extractToolQuery(toolName: string, args: Record<string, unknown>): stri
     case XyneTools.searchKnowledgeBase:
     case XyneTools.listCustomAgents:
     case XyneTools.runPublicAgent:
-      return typeof args.query === "string" && args.query.trim() ? args.query.trim() : undefined
+      return typeof args.query === "string" && args.query.trim()
+        ? args.query.trim()
+        : undefined
     case XyneTools.getSlackMessages:
     case XyneTools.getSlackThreads:
       return typeof args.filter_query === "string" && args.filter_query.trim()
@@ -824,11 +929,11 @@ function advancePlanAfterTool(
   context: AgentRunContext,
   toolName: string,
   wasSuccessful: boolean,
-  detail?: string
+  detail?: string,
 ): void {
   if (!context.plan || !context.currentSubTask) return
   const task = context.plan.subTasks.find(
-    (entry) => entry.id === context.currentSubTask
+    (entry) => entry.id === context.currentSubTask,
   )
   if (!task) return
   normalizeSubTask(task)
@@ -842,14 +947,13 @@ function advancePlanAfterTool(
     if (requiredTools.length === 0 || requiredTools.includes(toolName)) {
       task.status = "completed"
       task.completedAt = Date.now()
-      task.result =
-        detail || task.result || `Completed using ${toolName}`
+      task.result = detail || task.result || `Completed using ${toolName}`
       const previousTaskId = task.id
       const nextId = selectActiveSubTaskId(context.plan)
       if (nextId && nextId !== previousTaskId) {
         context.currentSubTask = nextId
         const nextTask = context.plan.subTasks.find(
-          (entry) => entry.id === nextId
+          (entry) => entry.id === nextId,
         )
         if (nextTask && nextTask.status === "pending") {
           nextTask.status = "in_progress"
@@ -866,13 +970,13 @@ function advancePlanAfterTool(
 }
 
 function formatClarificationsForPrompt(
-  clarifications: AgentRunContext["clarifications"]
+  clarifications: AgentRunContext["clarifications"],
 ): string {
   if (!clarifications?.length) return ""
   const formatted = clarifications
     .map(
       (clarification, idx) =>
-        `${idx + 1}. Q: ${clarification.question}\n   A: ${clarification.answer}`
+        `${idx + 1}. Q: ${clarification.question}\n   A: ${clarification.answer}`,
     )
     .join("\n")
   return formatted
@@ -880,21 +984,26 @@ function formatClarificationsForPrompt(
 
 export function buildFinalSynthesisPayload(
   context: AgentRunContext,
-  fragmentsLimit = Math.max(12, context.allFragments.length || 1)
+  fragmentsLimit = Math.max(12, context.allFragments.length || 1),
 ): { systemPrompt: string; userMessage: string } {
   const fragments = context.allFragments
   const agentSystemPromptBlock = buildAgentSystemPromptContextBlock(
-    context.dedicatedAgentSystemPrompt
+    context.dedicatedAgentSystemPrompt,
   )
   const agentSystemPromptSection = agentSystemPromptBlock
     ? `Agent System Prompt Context:\n${agentSystemPromptBlock}`
     : ""
-  const formattedFragments = formatFragmentsWithMetadata(fragments, fragmentsLimit)
+  const formattedFragments = formatFragmentsWithMetadata(
+    fragments,
+    fragmentsLimit,
+  )
   const fragmentsSection = formattedFragments
     ? `Context Fragments:\n${formattedFragments}`
     : ""
   const planSection = formatPlanForPrompt(context.plan)
-  const clarificationSection = formatClarificationsForPrompt(context.clarifications)
+  const clarificationSection = formatClarificationsForPrompt(
+    context.clarifications,
+  )
   const workspaceSection = context.userContext?.trim()
     ? `Workspace Context:\n${context.userContext}`
     : ""
@@ -903,7 +1012,9 @@ export function buildFinalSynthesisPayload(
     `User Question:\n${context.message.text}`,
     agentSystemPromptSection,
     planSection ? `Execution Plan Snapshot:\n${planSection}` : "",
-    clarificationSection ? `Clarifications Resolved:\n${clarificationSection}` : "",
+    clarificationSection
+      ? `Clarifications Resolved:\n${clarificationSection}`
+      : "",
     workspaceSection,
     fragmentsSection,
   ].filter(Boolean)
@@ -988,9 +1099,7 @@ export function buildFinalSynthesisPayload(
   return { systemPrompt, userMessage }
 }
 
-function selectImagesForFinalSynthesis(
-  context: AgentRunContext
-): {
+function selectImagesForFinalSynthesis(context: AgentRunContext): {
   selected: string[]
   total: number
   dropped: string[]
@@ -1041,7 +1150,7 @@ function selectImagesForFinalSynthesis(
 
 function buildAttachmentToolMessage(
   fragments: MinimalAgentFragment[],
-  summary: string
+  summary: string,
 ): JAFMessage {
   const resultPayload = ToolResponse.success({ summary, fragments })
   const envelope = {
@@ -1075,7 +1184,7 @@ function initializeAgentContext(
     stopController?: AbortController
     stopSignal?: AbortSignal
     modelId?: string
-  }
+  },
 ): AgentRunContext {
   const finalSynthesis: FinalSynthesisState = {
     requested: false,
@@ -1085,8 +1194,7 @@ function initializeAgentContext(
     ackReceived: false,
   }
   const currentTurnArtifacts = createEmptyTurnArtifacts()
-
-  return {
+  const context: AgentRunContext = {
     user: {
       email: userEmail,
       workspaceId,
@@ -1156,6 +1264,18 @@ function initializeAgentContext(
       options?.stopSignal?.aborted ??
       false,
   }
+  logContextMutation(
+    context,
+    "[MessageAgents][Context] Initialized agent context",
+    {
+      attachmentCount: attachments.length,
+      attachmentIds: attachments.map((attachment) => attachment.fileId),
+      hasAgentPrompt: !!options?.agentPrompt,
+      hasDedicatedAgentSystemPrompt: !!options?.dedicatedAgentSystemPrompt,
+      modelId: options?.modelId,
+    },
+  )
+  return context
 }
 
 /**
@@ -1164,7 +1284,7 @@ function initializeAgentContext(
  */
 async function performAutomaticReview(
   input: AutoReviewInput,
-  fullContext: AgentRunContext
+  fullContext: AgentRunContext,
 ): Promise<ReviewResult> {
   const reviewContext: AgentRunContext = {
     ...fullContext,
@@ -1176,7 +1296,7 @@ async function performAutomaticReview(
   tripReviewSpan.setAttribute("turn_number", input.turnNumber ?? -1)
   tripReviewSpan.setAttribute(
     "expected_results_count",
-    input.expectedResults?.length ?? 0
+    input.expectedResults?.length ?? 0,
   )
   let reviewResult: ReviewResult
   try {
@@ -1188,12 +1308,15 @@ async function performAutomaticReview(
         expectedResults: input.expectedResults,
         delegationEnabled: fullContext.delegationEnabled,
       },
-      fullContext.modelId
+      fullContext.modelId,
     )
   } catch (error) {
     tripReviewSpan.setAttribute("error", true)
     tripReviewSpan.setAttribute("error_message", getErrorMessage(error))
-    Logger.error(error, "Automatic review failed, falling back to default response")
+    Logger.error(
+      error,
+      "Automatic review failed, falling back to default response",
+    )
     reviewResult = {
       status: "needs_attention",
       notes: `Automatic review fallback for turn ${input.turnNumber}: ${getErrorMessage(error)}`,
@@ -1211,11 +1334,11 @@ async function performAutomaticReview(
   tripReviewSpan.setAttribute("review_status", reviewResult.status)
   tripReviewSpan.setAttribute(
     "recommendation",
-    reviewResult.recommendation ?? "unknown"
+    reviewResult.recommendation ?? "unknown",
   )
   tripReviewSpan.setAttribute(
     "anomalies_detected",
-    reviewResult.anomaliesDetected ?? false
+    reviewResult.anomaliesDetected ?? false,
   )
   tripReviewSpan.end()
 
@@ -1227,21 +1350,36 @@ async function handleReviewOutcome(
   reviewResult: ReviewResult,
   iteration: number,
   focus: AutoReviewInput["focus"],
-  reasoningEmitter?: ReasoningEmitter
+  reasoningEmitter?: ReasoningEmitter,
 ): Promise<void> {
   context.review.lastReviewResult = reviewResult
   context.review.lastReviewTurn = iteration
   context.ambiguityResolved = reviewResult.ambiguityResolved
-  context.review.outstandingAnomalies =
-    reviewResult.anomalies?.length ? reviewResult.anomalies : []
-  context.review.clarificationQuestions =
-    reviewResult.clarificationQuestions?.length
-      ? reviewResult.clarificationQuestions
-      : []
+  context.review.outstandingAnomalies = reviewResult.anomalies?.length
+    ? reviewResult.anomalies
+    : []
+  context.review.clarificationQuestions = reviewResult.clarificationQuestions
+    ?.length
+    ? reviewResult.clarificationQuestions
+    : []
 
   const hasAnomalies =
     reviewResult.anomaliesDetected || (reviewResult.anomalies?.length ?? 0) > 0
   const recommendation = reviewResult.recommendation ?? "proceed"
+  logContextMutation(
+    context,
+    "[MessageAgents][Context] Review outcome applied",
+    {
+      iteration,
+      focus,
+      recommendation: recommendation,
+      reviewStatus: reviewResult.status,
+      ambiguityResolved: reviewResult.ambiguityResolved,
+      anomaliesDetected: reviewResult.anomaliesDetected,
+      anomalies: context.review.outstandingAnomalies,
+      clarificationQuestions: context.review.clarificationQuestions,
+    },
+  )
 
   // Only surface the review to the user if something interesting happened —
   // a plain "proceed" with no anomalies is internal noise.
@@ -1252,15 +1390,21 @@ async function handleReviewOutcome(
     )
   }
 
-  if (hasAnomalies) {
-    Logger.debug({
-      turn: iteration,
-      anomalies: reviewResult.anomalies,
-      recommendation: reviewResult.recommendation,
-      planChangeNeeded: reviewResult.planChangeNeeded,
-      chatId: context.chat.externalId,
-      focus,
-    }, "[MessageAgents][Anomalies]")
+  if (
+    reviewResult.anomaliesDetected ||
+    (reviewResult.anomalies?.length ?? 0) > 0
+  ) {
+    Logger.debug(
+      {
+        turn: iteration,
+        anomalies: reviewResult.anomalies,
+        recommendation: reviewResult.recommendation,
+        planChangeNeeded: reviewResult.planChangeNeeded,
+        chatId: context.chat.externalId,
+        focus,
+      },
+      "[MessageAgents][Anomalies]",
+    )
     await emitReasoningEvent(
       reasoningEmitter,
       ReasoningSteps.anomaliesDetected(reviewResult.anomalies ?? [])
@@ -1274,7 +1418,7 @@ type AttachmentPhaseMetadata = {
 }
 
 function getAttachmentPhaseMetadata(
-  context: AgentRunContext
+  context: AgentRunContext,
 ): AttachmentPhaseMetadata {
   return (context.chat.metadata as AttachmentPhaseMetadata) || {}
 }
@@ -1299,7 +1443,7 @@ type ChatBootstrapResult = {
 }
 
 async function ensureChatAndPersistUserMessage(
-  params: ChatBootstrapParams
+  params: ChatBootstrapParams,
 ): Promise<ChatBootstrapResult> {
   const workspaceId = Number(params.workspace.id)
   const workspaceExternalId = String(params.workspace.externalId)
@@ -1340,7 +1484,7 @@ async function ensureChatAndPersistUserMessage(
           tx,
           userEmail,
           String(userMessage.externalId),
-          params.attachmentMetadata
+          params.attachmentMetadata,
         )
         if (storageErr) {
           attachmentError = storageErr
@@ -1359,7 +1503,7 @@ async function ensureChatAndPersistUserMessage(
       tx,
       String(incomingChatId),
       String(params.email),
-      {}
+      {},
     )
     const conversationHistory = await getChatMessagesUntilCompaction(
       tx,
@@ -1386,7 +1530,7 @@ async function ensureChatAndPersistUserMessage(
         tx,
         userEmail,
         String(userMessage.externalId),
-        params.attachmentMetadata
+        params.attachmentMetadata,
       )
       if (storageErr) {
         attachmentError = storageErr
@@ -1406,7 +1550,7 @@ async function storeAttachmentSafely(
   tx: Parameters<typeof storeAttachmentMetadata>[0],
   email: string,
   messageExternalId: string,
-  attachments: AttachmentMetadata[]
+  attachments: AttachmentMetadata[],
 ): Promise<Error | null> {
   try {
     await storeAttachmentMetadata(tx, messageExternalId, attachments, email)
@@ -1414,7 +1558,7 @@ async function storeAttachmentSafely(
   } catch (error) {
     loggerWithChild({ email }).error(
       error,
-      `Failed to store attachment metadata for message ${messageExternalId}`
+      `Failed to store attachment metadata for message ${messageExternalId}`,
     )
     return error as Error
   }
@@ -1455,7 +1599,7 @@ async function prepareInitialAttachmentContext(
   userMetadata: UserMetadataType,
   query: string,
   email: string,
-  allowChunkCitations?: boolean
+  allowChunkCitations?: boolean,
 ): Promise<{ fragments: MinimalAgentFragment[]; summary: string } | null> {
   if (!fileIds?.length) {
     return null
@@ -1480,117 +1624,117 @@ async function prepareInitialAttachmentContext(
   const span = tracer.startSpan("prepare_initial_attachment_context")
 
   try {
-      const combinedSearchResponse: VespaSearchResult[] = []
-      let chunksPerDocument: number[] = []
-      const targetChunks = 200
-    
-      if (fileIds && fileIds.length > 0) {
-        const fileSearchSpan = span.startSpan("file_search")
-        let results
-        // Split into 3 groups
-        // Search each group
-        // Push results to combinedSearchResponse
-        const collectionFileIds = fileIds.filter(
-          (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
-        )
-        const nonCollectionFileIds = fileIds.filter(
-          (fid) => !fid.startsWith("clf-") && !fid.startsWith("att"),
-        )
-        const attachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
-        if (nonCollectionFileIds && nonCollectionFileIds.length > 0) {
-          results = await searchVespaInFiles(
-            queryText,
-            email,
-            nonCollectionFileIds,
-            {
-              limit: fileIds?.length,
-              alpha: userAlpha,
-              rankProfile: SearchModes.GlobalSorted,
-            },
-          )
-          if (results.root.children) {
-            combinedSearchResponse.push(...results.root.children)
-          }
-        }
-        if (collectionFileIds && collectionFileIds.length > 0) {
-          allowChunkCitations = true // for the case where kb files are in @
-          results = await searchCollectionRAG(
-            queryText,
-            collectionFileIds,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            SearchModes.GlobalSorted,
-          )
-          if (results.root.children) {
-            combinedSearchResponse.push(...results.root.children)
-          }
-        }
-        if (attachmentFileIds && attachmentFileIds.length > 0) {
-          results = await searchVespaInFiles(
-            queryText,
-            email,
-            attachmentFileIds,
-            {
-              limit: fileIds?.length,
-              alpha: userAlpha,
-              rankProfile: SearchModes.GlobalSorted,
-            },
-          )
-          if (results.root.children) {
-            combinedSearchResponse.push(...results.root.children)
-          }
-        }
-    
-        // Apply intelligent chunk selection based on document relevance and chunk scores
-        chunksPerDocument = await getChunkCountPerDoc(
-          combinedSearchResponse,
-          targetChunks,
+    const combinedSearchResponse: VespaSearchResult[] = []
+    let chunksPerDocument: number[] = []
+    const targetChunks = 200
+
+    if (fileIds && fileIds.length > 0) {
+      const fileSearchSpan = span.startSpan("file_search")
+      let results
+      // Split into 3 groups
+      // Search each group
+      // Push results to combinedSearchResponse
+      const collectionFileIds = fileIds.filter(
+        (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
+      )
+      const nonCollectionFileIds = fileIds.filter(
+        (fid) => !fid.startsWith("clf-") && !fid.startsWith("att"),
+      )
+      const attachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
+      if (nonCollectionFileIds && nonCollectionFileIds.length > 0) {
+        results = await searchVespaInFiles(
+          queryText,
           email,
-          fileSearchSpan,
+          nonCollectionFileIds,
+          {
+            limit: fileIds?.length,
+            alpha: userAlpha,
+            rankProfile: SearchModes.GlobalSorted,
+          },
         )
-        fileSearchSpan?.end()
-      }
-    
-      if (threadIds && threadIds.length > 0) {
-        const threadSpan = span.startSpan("fetch_email_threads")
-        threadSpan.setAttribute("threadIds", JSON.stringify(threadIds))
-    
-        try {
-          const threadResults = await SearchEmailThreads(threadIds, email)
-          if (
-            threadResults.root.children &&
-            threadResults.root.children.length > 0
-          ) {
-            const existingDocIds = new Set(
-              combinedSearchResponse.map((child: any) => child.fields.docId),
-            )
-    
-            // Use the helper function to process thread results
-            const { addedCount, threadInfo } = processThreadResults(
-              threadResults.root.children,
-              existingDocIds,
-              combinedSearchResponse,
-            )
-            threadSpan.setAttribute("added_email_count", addedCount)
-            threadSpan.setAttribute(
-              "total_thread_emails_found",
-              threadResults.root.children.length,
-            )
-            threadSpan.setAttribute("thread_info", JSON.stringify(threadInfo))
-          }
-        } catch (error) {
-          loggerWithChild({ email: email }).error(
-            error,
-            `Error fetching email threads: ${getErrorMessage(error)}`,
-          )
-          threadSpan?.setAttribute("error", getErrorMessage(error))
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
         }
-    
-        threadSpan?.end()
       }
-    
+      if (collectionFileIds && collectionFileIds.length > 0) {
+        allowChunkCitations = true // for the case where kb files are in @
+        results = await searchCollectionRAG(
+          queryText,
+          collectionFileIds,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          SearchModes.GlobalSorted,
+        )
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
+      if (attachmentFileIds && attachmentFileIds.length > 0) {
+        results = await searchVespaInFiles(
+          queryText,
+          email,
+          attachmentFileIds,
+          {
+            limit: fileIds?.length,
+            alpha: userAlpha,
+            rankProfile: SearchModes.GlobalSorted,
+          },
+        )
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
+
+      // Apply intelligent chunk selection based on document relevance and chunk scores
+      chunksPerDocument = await getChunkCountPerDoc(
+        combinedSearchResponse,
+        targetChunks,
+        email,
+        fileSearchSpan,
+      )
+      fileSearchSpan?.end()
+    }
+
+    if (threadIds && threadIds.length > 0) {
+      const threadSpan = span.startSpan("fetch_email_threads")
+      threadSpan.setAttribute("threadIds", JSON.stringify(threadIds))
+
+      try {
+        const threadResults = await SearchEmailThreads(threadIds, email)
+        if (
+          threadResults.root.children &&
+          threadResults.root.children.length > 0
+        ) {
+          const existingDocIds = new Set(
+            combinedSearchResponse.map((child: any) => child.fields.docId),
+          )
+
+          // Use the helper function to process thread results
+          const { addedCount, threadInfo } = processThreadResults(
+            threadResults.root.children,
+            existingDocIds,
+            combinedSearchResponse,
+          )
+          threadSpan.setAttribute("added_email_count", addedCount)
+          threadSpan.setAttribute(
+            "total_thread_emails_found",
+            threadResults.root.children.length,
+          )
+          threadSpan.setAttribute("thread_info", JSON.stringify(threadInfo))
+        }
+      } catch (error) {
+        loggerWithChild({ email: email }).error(
+          error,
+          `Error fetching email threads: ${getErrorMessage(error)}`,
+        )
+        threadSpan?.setAttribute("error", getErrorMessage(error))
+      }
+
+      threadSpan?.end()
+    }
+
     const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
       combinedSearchResponse as VespaSearchResults[],
       query,
@@ -1607,8 +1751,8 @@ async function prepareInitialAttachmentContext(
           allowChunkCitations,
           idx < chunksPerDocument.length ? chunksPerDocument[idx] : 0,
           precomputedDbContext,
-        )
-      )
+        ),
+      ),
     )
 
     const summary = `User provided ${fragments.length} attachment fragment${
@@ -1638,8 +1782,15 @@ export async function beforeToolExecutionHook(
   toolName: string,
   args: any,
   context: AgentRunContext,
-  reasoningEmitter?: ReasoningEmitter
+  reasoningEmitter?: ReasoningEmitter,
 ): Promise<any | null> {
+  const incomingExcludedIds = normalizeExcludedIdsForLogging(args?.excludedIds)
+  logContextMutation(context, "[beforeToolExecutionHook] Received tool args", {
+    toolName,
+    args,
+    incomingExcludedIds,
+    incomingExcludedIdsCount: incomingExcludedIds.length,
+  })
   // 0. Validate input against schema
   const validation = validateToolInput(toolName, args)
   if (!validation.success) {
@@ -1648,7 +1799,7 @@ export async function beforeToolExecutionHook(
       ReasoningSteps.toolValidationError(toolName, validation.error.message)
     )
     Logger.warn(
-      `Tool input validation failed for ${toolName}: ${validation.error.message}`
+      `Tool input validation failed for ${toolName}: ${validation.error.message}`,
     )
     // Don't block - let tool handle invalid input, but log it
   }
@@ -1659,7 +1810,7 @@ export async function beforeToolExecutionHook(
       record.toolName === toolName &&
       JSON.stringify(record.arguments) === JSON.stringify(args) &&
       record.status === "success" &&
-      Date.now() - record.startedAt.getTime() < 60000 // 1 minute
+      Date.now() - record.startedAt.getTime() < 60000, // 1 minute
   )
 
   if (isDuplicate) {
@@ -1684,13 +1835,41 @@ export async function beforeToolExecutionHook(
   }
 
   // 3. Add excludedIds to prevent re-fetching seen documents
-  if (args.excludedIds !== undefined) {
-    const seenIds = Array.from(context.seenDocuments)
+  if (args?.excludedIds !== undefined) {
+    const providedExcludedIds = normalizeExcludedIdsForLogging(args.excludedIds)
+    const seenDocIds = Array.from(context.seenDocuments)
+    const mergedExcludedIds = [...providedExcludedIds, ...seenDocIds]
+
+    logContextMutation(
+      context,
+      "[beforeToolExecutionHook] Merged excludedIds with seenDocuments",
+      {
+        toolName,
+        args,
+        providedExcludedIds,
+        providedExcludedIdsCount: providedExcludedIds.length,
+        seenDocumentIds: seenDocIds,
+        seenDocumentCount: seenDocIds.length,
+        mergedExcludedIds,
+        mergedExcludedIdsCount: mergedExcludedIds.length,
+      },
+    )
+
     return {
       ...args,
-      excludedIds: [...(args.excludedIds || []), ...seenIds],
+      excludedIds: mergedExcludedIds,
     }
   }
+
+  logContextMutation(
+    context,
+    "[beforeToolExecutionHook] excludedIds not provided on tool args",
+    {
+      toolName,
+      args,
+      seenDocumentIds: Array.from(context.seenDocuments),
+    },
+  )
 
   return args
 }
@@ -1720,22 +1899,30 @@ export async function afterToolExecutionHook(
   gatheredFragmentsKeys: Set<string>,
   expectedResult: ToolExpectation | undefined,
   turnNumber: number,
-  reasoningEmitter?: ReasoningEmitter
+  reasoningEmitter?: ReasoningEmitter,
 ): Promise<string | ToolResult | null> {
   const { state, executionTime, status, args } = hookContext
   const context = state.context as AgentRunContext
 
-  // LOG: Hook entry point
-  loggerWithChild({ email: context.user.email }).debug(
+  logContextMutation(
+    context,
+    "[afterToolExecutionHook] Processing tool result",
     {
       toolName,
       turnNumber,
       status,
       executionTime,
+      args,
       hasResult: !!result,
       resultType: result ? typeof result : "null",
+      resultStatus: result?.status,
+      resultError: result?.error,
+      resultMetadata: result?.metadata,
+      resultExcludedIds: normalizeExcludedIdsForLogging(
+        result?.data?.excludedIds,
+      ),
+      seenDocumentIds: Array.from(context.seenDocuments),
     },
-    "[afterToolExecutionHook] ENTRY - Tool execution completed"
   )
 
   // 1. Create execution record
@@ -1749,7 +1936,7 @@ export async function afterToolExecutionHook(
         providedTurnNumber: turnNumber,
         fallbackTurnNumber: fallbackTurn,
       },
-      "Tool turnNumber below minimum; normalizing to MIN_TURN_NUMBER"
+      "Tool turnNumber below minimum; normalizing to MIN_TURN_NUMBER",
     )
     effectiveTurnNumber = MIN_TURN_NUMBER
   }
@@ -1774,8 +1961,19 @@ export async function afterToolExecutionHook(
         : undefined,
   }
 
-  // 2. Add to history
+  // 2. Add tool call to history
   context.toolCallHistory.push(record)
+  logContextMutation(
+    context,
+    "[afterToolExecutionHook] Added tool execution record to history",
+    {
+      toolName,
+      turnNumber: effectiveTurnNumber,
+      recordStatus: record.status,
+      recordError: record.error,
+      historyLength: context.toolCallHistory.length,
+    },
+  )
 
   const toolFragments: MinimalAgentFragment[] = []
   const addToolFragments = (fragments: MinimalAgentFragment[]) => {
@@ -1833,11 +2031,7 @@ export async function afterToolExecutionHook(
     }
   }
 
-  advancePlanAfterTool(
-    context,
-    toolName,
-    status === "success"
-  )
+  advancePlanAfterTool(context, toolName, status === "success")
 
   // 5. Extract and filter contexts
   const resultData = result?.data
@@ -1851,7 +2045,10 @@ export async function afterToolExecutionHook(
     }
   }
   if (!Array.isArray(contexts) || contexts.length === 0) {
-    const legacyContexts = getMetadataValue<MinimalAgentFragment[]>(result, "contexts")
+    const legacyContexts = getMetadataValue<MinimalAgentFragment[]>(
+      result,
+      "contexts",
+    )
     if (Array.isArray(legacyContexts)) {
       contexts = legacyContexts
     }
@@ -1864,14 +2061,14 @@ export async function afterToolExecutionHook(
       totalContextsExtracted: contexts.length,
       gatheredFragmentsKeysSize: gatheredFragmentsKeys.size,
     },
-    "[afterToolExecutionHook] Context extraction completed"
+    "[afterToolExecutionHook] Context extraction completed",
   )
 
   if (Array.isArray(contexts) && contexts.length > 0) {
-    const filteredContexts = contexts.filter((c: MinimalAgentFragment) => {
-      const key = getFragmentDedupKey(c)
-      return !key || !gatheredFragmentsKeys.has(key)
-    })
+    const filteredContexts = contexts.filter(
+      (c: MinimalAgentFragment) => !gatheredFragmentsKeys.has(c.id),
+    )
+
     // LOG: Filtering results
     loggerWithChild({ email: context.user.email }).info(
       {
@@ -1880,7 +2077,7 @@ export async function afterToolExecutionHook(
         filteredContextsCount: filteredContexts.length,
         duplicatesFiltered: contexts.length - filteredContexts.length,
       },
-      "[afterToolExecutionHook] Filtered out duplicate contexts"
+      "[afterToolExecutionHook] Filtered out duplicate contexts",
     )
 
     if (filteredContexts.length > 0) {
@@ -1889,13 +2086,19 @@ export async function afterToolExecutionHook(
         ReasoningSteps.documentsFound(filteredContexts.length, toolName)
       )
 
-      const metadataConstraints = extractMetadataConstraintsFromUserMessage(userMessage)
+      const metadataConstraints =
+        extractMetadataConstraintsFromUserMessage(userMessage)
       const {
         rankedCandidates,
         hasConstraints: hasMetadataConstraints,
         hasCompliantCandidates,
-      } = rankFragmentsByMetadataConstraints(filteredContexts, metadataConstraints)
-      const rankingCandidates = rankedCandidates.map((candidate) => candidate.fragment)
+      } = rankFragmentsByMetadataConstraints(
+        filteredContexts,
+        metadataConstraints,
+      )
+      const rankingCandidates = rankedCandidates.map(
+        (candidate) => candidate.fragment,
+      )
       const strictNoCompliantCandidates =
         hasMetadataConstraints &&
         metadataConstraints.strict &&
@@ -1903,7 +2106,7 @@ export async function afterToolExecutionHook(
 
       const contextStrings = rankingCandidates.map(
         (fragment: MinimalAgentFragment, index: number) =>
-          formatFragmentWithMetadata(fragment, index)
+          formatFragmentWithMetadata(fragment, index),
       )
 
       // LOG: Prepared context strings for ranking
@@ -1916,10 +2119,13 @@ export async function afterToolExecutionHook(
           metadataIncludeTerms: metadataConstraints.includeTerms,
           metadataExcludeTerms: metadataConstraints.excludeTerms,
           metadataStrict: metadataConstraints.strict,
-          compliantCandidateCount: rankedCandidates.filter((v) => v.compliant).length,
-          contextStringsSample: contextStrings.slice(0, 2).map(s => s.slice(0, 150)),
+          compliantCandidateCount: rankedCandidates.filter((v) => v.compliant)
+            .length,
+          contextStringsSample: contextStrings
+            .slice(0, 2)
+            .map((s) => s.slice(0, 150)),
         },
-        "[afterToolExecutionHook] Prepared context strings for select_best_documents"
+        "[afterToolExecutionHook] Prepared context strings for select_best_documents",
       )
 
       if (hasMetadataConstraints) {
@@ -1938,7 +2144,8 @@ export async function afterToolExecutionHook(
 
       try {
         // LOG: Calling extractBestDocumentIndexes
-        const rankingModelId = (context.modelId as Models) || config.defaultBestModel
+        const rankingModelId =
+          (context.modelId as Models) || config.defaultBestModel
         loggerWithChild({ email: context.user.email }).debug(
           {
             toolName,
@@ -1946,22 +2153,24 @@ export async function afterToolExecutionHook(
             contextStringsCount: contextStrings.length,
             modelId: rankingModelId,
           },
-          "[afterToolExecutionHook][select_best_documents] CALLING extractBestDocumentIndexes"
+          "[afterToolExecutionHook][select_best_documents] CALLING extractBestDocumentIndexes",
         )
 
         // Use extractBestDocumentIndexes to filter to best documents
-        const selectionSpan = getTracer("chat").startSpan("select_best_documents")
+        const selectionSpan = getTracer("chat").startSpan(
+          "select_best_documents",
+        )
         selectionSpan.setAttribute("tool_name", toolName)
         selectionSpan.setAttribute("context_count", contextStrings.length)
         let bestDocIndexes: number[] = []
         try {
           const rankingMessages = withAgentSystemPromptMessage(
             messagesWithNoErrResponse,
-            context.dedicatedAgentSystemPrompt
+            context.dedicatedAgentSystemPrompt,
           )
           const rankingSystemPrompt = extractBestDocumentsPrompt(
             userMessage,
-            contextStrings
+            contextStrings,
           )
           loggerWithChild({ email: context.user.email }).debug(
             {
@@ -1970,13 +2179,13 @@ export async function afterToolExecutionHook(
               rankingSystemPrompt,
               rankingMessages,
             },
-            "[afterToolExecutionHook][select_best_documents] FINAL LLM PAYLOAD"
+            "[afterToolExecutionHook][select_best_documents] FINAL LLM PAYLOAD",
           )
           selectionSpan.setAttribute(
             "has_agent_system_prompt_snapshot",
             !!sanitizeAgentSystemPromptSnapshot(
-              context.dedicatedAgentSystemPrompt
-            )
+              context.dedicatedAgentSystemPrompt,
+            ),
           )
           bestDocIndexes = await extractBestDocumentIndexes(
             userMessage,
@@ -1986,7 +2195,7 @@ export async function afterToolExecutionHook(
               json: false,
               stream: false,
             },
-            rankingMessages
+            rankingMessages,
           )
           selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
         } catch (error) {
@@ -2005,7 +2214,7 @@ export async function afterToolExecutionHook(
             bestDocIndexesType: typeof bestDocIndexes,
             isArray: Array.isArray(bestDocIndexes),
           },
-          "[afterToolExecutionHook][select_best_documents] RESPONSE from extractBestDocumentIndexes"
+          "[afterToolExecutionHook][select_best_documents] RESPONSE from extractBestDocumentIndexes",
         )
 
         if (bestDocIndexes.length > 0) {
@@ -2021,16 +2230,15 @@ export async function afterToolExecutionHook(
           selectedDocs = enforceMetadataConstraintsOnSelection(
             selectedDocs,
             rankedCandidates,
-            metadataConstraints
+            metadataConstraints,
           )
 
           if (selectedDocs.length === 0) {
-            const fallbackWhenSelectionEmpty =
-              strictNoCompliantCandidates
-                ? []
-                : hasMetadataConstraints &&
-                    metadataConstraints.strict &&
-                    hasCompliantCandidates
+            const fallbackWhenSelectionEmpty = strictNoCompliantCandidates
+              ? []
+              : hasMetadataConstraints &&
+                  metadataConstraints.strict &&
+                  hasCompliantCandidates
                 ? rankedCandidates
                     .filter((candidate) => candidate.compliant)
                     .map((candidate) => candidate.fragment)
@@ -2040,7 +2248,7 @@ export async function afterToolExecutionHook(
                 toolName,
                 fallbackContextsCount: fallbackWhenSelectionEmpty.length,
               },
-              "[afterToolExecutionHook] No contexts survived selection enforcement; using metadata-aware fallback"
+              "[afterToolExecutionHook] No contexts survived selection enforcement; using metadata-aware fallback",
             )
             addToolFragments(fallbackWhenSelectionEmpty)
           } else {
@@ -2051,10 +2259,10 @@ export async function afterToolExecutionHook(
                 selectedDocsCount: selectedDocs.length,
                 selectedDocIds: selectedDocs.map((d) => d.id),
                 selectedDocTitles: selectedDocs.map(
-                  (d) => d.source.title || "untitled"
+                  (d) => d.source.title || "untitled",
                 ),
               },
-              "[afterToolExecutionHook][select_best_documents] Selected documents after filtering"
+              "[afterToolExecutionHook][select_best_documents] Selected documents after filtering",
             )
 
             await emitReasoningEvent(
@@ -2077,23 +2285,26 @@ export async function afterToolExecutionHook(
 
               const { imageFileNames: extractedImages } = extractImageFileNames(
                 combinedContext,
-                vespaLikeResults
+                vespaLikeResults,
               )
 
               if (extractedImages.length > 0) {
                 const turnForImages = Math.max(
                   context.turnCount ?? MIN_TURN_NUMBER,
-                  MIN_TURN_NUMBER
+                  MIN_TURN_NUMBER,
                 )
                 const imageSpan = getTracer("chat").startSpan(
-                  "tool_image_extraction"
+                  "tool_image_extraction",
                 )
                 imageSpan.setAttribute("tool_name", toolName)
                 imageSpan.setAttribute("turn_number", turnForImages)
-                imageSpan.setAttribute("extracted_count", extractedImages.length)
+                imageSpan.setAttribute(
+                  "extracted_count",
+                  extractedImages.length,
+                )
                 imageSpan.setAttribute(
                   "image_names_preview",
-                  extractedImages.slice(0, 5).join(",")
+                  extractedImages.slice(0, 5).join(","),
                 )
 
                 // LOG: Before attaching images
@@ -2105,7 +2316,7 @@ export async function afterToolExecutionHook(
                     turnForImages,
                     selectedDocsCount: selectedDocs.length,
                   },
-                  "[afterToolExecutionHook] Extracted images from fragments - preparing to attach"
+                  "[afterToolExecutionHook] Extracted images from fragments - preparing to attach",
                 )
 
                 fragmentsForResult = attachImagesToFragments(
@@ -2115,13 +2326,13 @@ export async function afterToolExecutionHook(
                     turnNumber: turnForImages,
                     sourceToolName: toolName,
                     isUserAttachment: false,
-                  }
+                  },
                 )
                 imageSpan.setAttribute(
                   "fragments_with_images",
                   fragmentsForResult.filter(
-                    (fragment) => fragment.images && fragment.images.length > 0
-                  ).length
+                    (fragment) => fragment.images && fragment.images.length > 0,
+                  ).length,
                 )
                 imageSpan.end()
 
@@ -2131,12 +2342,12 @@ export async function afterToolExecutionHook(
                     toolName,
                     attachedImagesCount: extractedImages.length,
                     fragmentsWithImages: fragmentsForResult.filter(
-                      (f) => f.images && f.images.length > 0
+                      (f) => f.images && f.images.length > 0,
                     ).length,
                   },
                   `[afterToolExecutionHook] Tracked ${extractedImages.length} image reference${
                     extractedImages.length === 1 ? "" : "s"
-                  } from ${toolName} on turn ${turnForImages}`
+                  } from ${toolName} on turn ${turnForImages}`,
                 )
               }
             }
@@ -2144,10 +2355,11 @@ export async function afterToolExecutionHook(
             addToolFragments(fragmentsForResult)
           }
         } else {
-          const metadataFilteredFallback =
-            strictNoCompliantCandidates
-              ? []
-              : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
+          const metadataFilteredFallback = strictNoCompliantCandidates
+            ? []
+            : hasMetadataConstraints &&
+                metadataConstraints.strict &&
+                hasCompliantCandidates
               ? rankedCandidates
                   .filter((candidate) => candidate.compliant)
                   .map((candidate) => candidate.fragment)
@@ -2160,7 +2372,7 @@ export async function afterToolExecutionHook(
             },
             strictNoCompliantCandidates
               ? "[afterToolExecutionHook] Document ranking returned no results and strict metadata constraints had no compliant contexts"
-              : "[afterToolExecutionHook] Document ranking returned no results; retaining all filtered contexts"
+              : "[afterToolExecutionHook] Document ranking returned no results; retaining all filtered contexts",
           )
           addToolFragments(metadataFilteredFallback)
         }
@@ -2172,7 +2384,7 @@ export async function afterToolExecutionHook(
             error: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined,
           },
-          "[afterToolExecutionHook][select_best_documents] ERROR in document ranking"
+          "[afterToolExecutionHook][select_best_documents] ERROR in document ranking",
         )
         await emitReasoningEvent(
           reasoningEmitter,
@@ -2263,7 +2475,9 @@ export async function afterToolExecutionHook(
       (hookContext?.args as { agentId?: string })?.agentId
     const agentName =
       context.availableAgents.find((agent) => agent.agentId === agentId)
-        ?.agentName || agentId || "unknown agent"
+        ?.agentName ||
+      agentId ||
+      "unknown agent"
     const delegationFragments = buildDelegatedAgentFragments({
       result,
       gatheredFragmentsKeys,
@@ -2277,7 +2491,8 @@ export async function afterToolExecutionHook(
     }
     // Read the delegation ID from the tool's return value — each parallel call
     // returns its own ID, so no shared mutable state and no race condition.
-    const delegationRunId = (result?.data as { delegationRunId?: string })?.delegationRunId
+    const delegationRunId = (result?.data as { delegationRunId?: string })
+      ?.delegationRunId
     await emitReasoningEvent(
       reasoningEmitter,
       ReasoningSteps.agentCompleted(agentName, delegationRunId)
@@ -2304,17 +2519,16 @@ export async function afterToolExecutionHook(
     resultSummary: summarizeToolResultPayload(result),
     fragments: toolFragments,
   })
-
-  // LOG: Hook exit point
-  loggerWithChild({ email: context.user.email }).debug(
+  logContextMutation(
+    context,
+    "[afterToolExecutionHook] Recorded tool output for current turn",
     {
       toolName,
       turnNumber: effectiveTurnNumber,
       toolFragmentsCount: toolFragments.length,
-      totalCost: context.totalCost,
-      totalLatency: context.totalLatency,
+      toolFragmentIds: toolFragments.map((fragment) => fragment.id),
+      resultSummary: summarizeToolResultPayload(result),
     },
-    "[afterToolExecutionHook] EXIT - Tool processing completed"
   )
 
   // Emit toolCompleted here so it uses the per-call scoped emitter passed in
@@ -2334,7 +2548,6 @@ export async function afterToolExecutionHook(
   return null
 }
 
-
 export function buildDelegatedAgentFragments(opts: {
   result: any
   gatheredFragmentsKeys: Set<string>
@@ -2343,13 +2556,23 @@ export function buildDelegatedAgentFragments(opts: {
   turnNumber: number
   sourceToolName: string
 }): MinimalAgentFragment[] {
-  const { result, gatheredFragmentsKeys, agentId, agentName, turnNumber, sourceToolName } = opts
+  const {
+    result,
+    gatheredFragmentsKeys,
+    agentId,
+    agentName,
+    turnNumber,
+    sourceToolName,
+  } = opts
   const resultData = (result?.data as Record<string, unknown>) || {}
   const citations = resultData.citations as Citation[] | undefined
-  const imageCitations = resultData.imageCitations as ImageCitation[] | undefined
+  const imageCitations = resultData.imageCitations as
+    | ImageCitation[]
+    | undefined
   const agentFragments: MinimalAgentFragment[] = []
   const fragmentTurn = Math.max(turnNumber, MIN_TURN_NUMBER)
-  const normalizedAgentName = agentName || agentId || sourceToolName || "delegated_agent"
+  const normalizedAgentName =
+    agentName || agentId || sourceToolName || "delegated_agent"
   const normalizedAgentId = agentId || `agent:${sourceToolName}`
   const baseSource: Citation = {
     docId: normalizedAgentId,
@@ -2364,7 +2587,8 @@ export function buildDelegatedAgentFragments(opts: {
   const textResult =
     typeof resultData.result === "string"
       ? (resultData.result as string)
-      : typeof (resultData as { agentResult?: string })?.agentResult === "string"
+      : typeof (resultData as { agentResult?: string })?.agentResult ===
+          "string"
         ? ((resultData as { agentResult?: string }).agentResult as string)
         : typeof result?.result === "string"
           ? result.result
@@ -2422,7 +2646,7 @@ export function buildDelegatedAgentFragments(opts: {
     const fragmentByDoc = new Map(
       agentFragments
         .filter((fragment) => fragment.source?.docId)
-        .map((fragment) => [fragment.source.docId!, fragment])
+        .map((fragment) => [fragment.source.docId!, fragment]),
     )
 
     for (const imageCitation of imageCitations) {
@@ -2468,7 +2692,8 @@ export function extractExpectedResults(text: string): PendingExpectation[] {
 
     for (const entry of entries) {
       if (!entry || typeof entry !== "object") continue
-      const toolName = typeof entry.toolName === "string" ? entry.toolName.trim() : ""
+      const toolName =
+        typeof entry.toolName === "string" ? entry.toolName.trim() : ""
       if (!toolName) continue
 
       const expectationCandidate = {
@@ -2483,7 +2708,7 @@ export function extractExpectedResults(text: string): PendingExpectation[] {
       if (!validation.success) {
         Logger.warn(
           { toolName, error: validation.error.format() },
-          "Invalid expected_results entry emitted by agent"
+          "Invalid expected_results entry emitted by agent",
         )
         continue
       }
@@ -2497,11 +2722,11 @@ export function extractExpectedResults(text: string): PendingExpectation[] {
 
 function consumePendingExpectation(
   queue: PendingExpectation[],
-  toolName: string
+  toolName: string,
 ): PendingExpectation | undefined {
   if (!toolName) return undefined
   const idx = queue.findIndex(
-    (entry) => entry.toolName.toLowerCase() === toolName.toLowerCase()
+    (entry) => entry.toolName.toLowerCase() === toolName.toLowerCase(),
   )
   if (idx === -1) {
     return undefined
@@ -2520,10 +2745,7 @@ function safeJsonParse(text: string): unknown {
 function summarizePlan(plan: PlanState | null): string {
   Logger.debug({ plan }, "summarizePlan input")
   if (!plan) {
-    Logger.debug(
-      { summary: "No plan available." },
-      "summarizePlan output"
-    )
+    Logger.debug({ summary: "No plan available." }, "summarizePlan output")
     return "No plan available."
   }
   const steps = plan.subTasks
@@ -2533,26 +2755,23 @@ function summarizePlan(plan: PlanState | null): string {
           task.toolsRequired?.length
             ? ` (tools: ${task.toolsRequired.join(", ")})`
             : ""
-        }`
+        }`,
     )
     .join("\n")
   const summary = `Goal: ${plan.goal}\n${steps}`
   Logger.debug(
     { summary, subTaskCount: plan.subTasks.length },
-    "summarizePlan output"
+    "summarizePlan output",
   )
   return summary
 }
 
 function formatExpectationsForReview(
-  expectations?: ToolExpectationAssignment[]
+  expectations?: ToolExpectationAssignment[],
 ): string {
   Logger.debug({ expectations }, "formatExpectationsForReview input")
   if (!expectations || expectations.length === 0) {
-    Logger.debug(
-      { serialized: "[]" },
-      "formatExpectationsForReview output"
-    )
+    Logger.debug({ serialized: "[]" }, "formatExpectationsForReview output")
     return "[]"
   }
   const serialized = JSON.stringify(expectations, null, 2)
@@ -2561,20 +2780,22 @@ function formatExpectationsForReview(
       expectationCount: expectations.length,
       serializedLength: serialized.length,
     },
-    "formatExpectationsForReview output"
+    "formatExpectationsForReview output",
   )
   return serialized
 }
 
 function formatToolOutputsForReview(
-  outputs: ToolExecutionRecordWithResult[]
+  outputs: ToolExecutionRecordWithResult[],
 ): string {
   if (!outputs || outputs.length === 0) {
     return "No tools executed this turn."
   }
   return outputs
     .map((output, idx) => {
-      const argsSummary = formatToolArgumentsForReasoning(output.arguments || {})
+      const argsSummary = formatToolArgumentsForReasoning(
+        output.arguments || {},
+      )
       const fragmentSummary = output.fragments?.length
         ? `${output.fragments.length} fragment${output.fragments.length === 1 ? "" : "s"}`
         : "0 fragments"
@@ -2584,9 +2805,7 @@ function formatToolOutputsForReview(
 }
 
 /** Format ToolExecutionRecord[] for review prompt, grouped by turn (for last-N-turns context). */
-function formatToolCallHistoryByTurn(
-  records: ToolExecutionRecord[]
-): string {
+function formatToolCallHistoryByTurn(records: ToolExecutionRecord[]): string {
   if (!records || records.length === 0) {
     return "No tool calls in this window."
   }
@@ -2632,15 +2851,15 @@ export function buildReviewPromptFromContext(
     focus?: string
     turnNumber?: number
   },
-  fallbackExpectations?: ToolExpectationAssignment[]
+  fallbackExpectations?: ToolExpectationAssignment[],
 ): { prompt: string; imageFileNames: string[] } {
   const turnExpectations =
     context.currentTurnArtifacts.expectations.length > 0
       ? context.currentTurnArtifacts.expectations
-      : fallbackExpectations ?? []
+      : (fallbackExpectations ?? [])
   const planSection = formatPlanForPrompt(context.plan)
   const clarificationsSection = formatClarificationsForPrompt(
-    context.clarifications
+    context.clarifications,
   )
   const workspaceSection = context.userContext?.trim()
     ? `Workspace Context:\n${context.userContext.trim()}`
@@ -2665,14 +2884,14 @@ export function buildReviewPromptFromContext(
   const expectationsSection = formatExpectationsForReview(turnExpectations)
   const fragmentsSection = answerContextMapFromFragments(
     context.allFragments,
-    Math.max(12, context.allFragments.length || 1)
+    Math.max(12, context.allFragments.length || 1),
   )
   const currentImages = context.currentTurnArtifacts.images.map(
-    (image) => image.fileName
+    (image) => image.fileName,
   )
   const additionalImages = Math.max(
     context.allImages.length - currentImages.length,
-    0
+    0,
   )
   const imageSection = `Current turn attachments: ${currentImages.length}\nAdditional images available from prior turns: ${additionalImages}`
   const reviewFocus = `Review Focus: ${options?.focus ?? "turn_end"} (Turn ${
@@ -2682,9 +2901,7 @@ export function buildReviewPromptFromContext(
   const userPromptSections = [
     `User Question:\n${context.message.text}`,
     planSection ? `Execution Plan Snapshot:\n${planSection}` : "",
-    clarificationsSection
-      ? `Clarifications:\n${clarificationsSection}`
-      : "",
+    clarificationsSection ? `Clarifications:\n${clarificationsSection}` : "",
     workspaceSection,
     `Current Turn Tool Outputs:\n${toolOutputsSection}`,
     `Expectations:\n${expectationsSection}`,
@@ -2708,7 +2925,7 @@ async function runReviewLLM(
     expectedResults?: ToolExpectationAssignment[]
     delegationEnabled?: boolean
   },
-  modelOverride?: string
+  modelOverride?: string,
 ): Promise<ReviewResult> {
   const tracer = getTracer("chat")
   const reviewSpan = tracer.startSpan("review_llm_call")
@@ -2716,7 +2933,7 @@ async function runReviewLLM(
   reviewSpan.setAttribute("turn_number", options?.turnNumber ?? -1)
   reviewSpan.setAttribute(
     "expected_results_count",
-    options?.expectedResults?.length ?? 0
+    options?.expectedResults?.length ?? 0,
   )
   Logger.debug(
     {
@@ -2729,7 +2946,7 @@ async function runReviewLLM(
       email: context.user.email,
       chatId: context.chat.externalId,
     },
-    "[MessageAgents][runReviewLLM] invoked - FULL expectedResults"
+    "[MessageAgents][runReviewLLM] invoked - FULL expectedResults",
   )
   const modelId =
     (modelOverride as Models) ||
@@ -2740,14 +2957,8 @@ async function runReviewLLM(
       ? "- Delegation tools (list_custom_agents/run_public_agent) were disabled for this run; do not flag their absence."
       : "- If delegation tools are available, ensure list_custom_agents precedes run_public_agent when delegation is appropriate."
 
-  const {
-    prompt: userPrompt,
-    imageFileNames: currentImages,
-  } = buildReviewPromptFromContext(
-    context,
-    options,
-    options?.expectedResults
-  )
+  const { prompt: userPrompt, imageFileNames: currentImages } =
+    buildReviewPromptFromContext(context, options, options?.expectedResults)
   Logger.debug(
     {
       email: context.user.email,
@@ -2757,12 +2968,12 @@ async function runReviewLLM(
       reviewImages: currentImages,
       additionalImages: Math.max(
         context.allImages.length - currentImages.length,
-        0
+        0,
       ),
       fragmentsCount: context.allFragments.length,
       toolOutputsCount: context.currentTurnArtifacts.toolOutputs.length,
     },
-    "[MessageAgents][runReviewLLM] Context summary for review model"
+    "[MessageAgents][runReviewLLM] Context summary for review model",
   )
 
   Logger.debug(
@@ -2773,7 +2984,7 @@ async function runReviewLLM(
       turnNumber: options?.turnNumber,
       modelId,
     },
-    "[MessageAgents][runReviewLLM] Preparing review LLM call"
+    "[MessageAgents][runReviewLLM] Preparing review LLM call",
   )
 
   const params: ModelParams = {
@@ -2808,7 +3019,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
       anomaliesDetected: false,
       anomalies: ["Description of anomalies or ambiguities"],
       recommendation: "proceed",
-      ambiguityResolved: true
+      ambiguityResolved: true,
     })}
 - Use native JSON booleans (true/false) for every yes/no field.
 - Only emit keys defined in the schema; do not add prose outside the JSON object.`,
@@ -2817,17 +3028,17 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     params.imageFileNames = currentImages
   }
   Logger.debug(
-    { 
+    {
       email: context.user.email,
       chatId: context.chat.externalId,
-      modelId, 
+      modelId,
       params,
       temperature: params.temperature,
       maxTokens: params.max_new_tokens,
       json: params.json,
       stream: params.stream,
     },
-    "[MessageAgents][runReviewLLM] LLM params prepared"
+    "[MessageAgents][runReviewLLM] LLM params prepared",
   )
   Logger.debug(
     {
@@ -2835,16 +3046,16 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
       chatId: context.chat.externalId,
       userPrompt,
     },
-    "[MessageAgents][runReviewLLM] Review user prompt"
+    "[MessageAgents][runReviewLLM] Review user prompt",
   )
 
   Logger.debug(
-    { 
+    {
       email: context.user.email,
       chatId: context.chat.externalId,
       systemPrompt: params.systemPrompt,
     },
-    "[MessageAgents][runReviewLLM] System prompt"
+    "[MessageAgents][runReviewLLM] System prompt",
   )
 
   const messages: Message[] = [
@@ -2854,27 +3065,30 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     },
   ]
 
-  const { text } = await getProviderByModel(modelId).converse(
-    messages,
-    params
+  const { text } = await getProviderByModel(modelId).converse(messages, params)
+
+  Logger.debug(
+    {
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      text,
+    },
+    "[MessageAgents][runReviewLLM] Raw LLM response",
   )
-  
-  Logger.debug({ 
-    email: context.user.email,
-    chatId: context.chat.externalId,
-    text,
-  }, "[MessageAgents][runReviewLLM] Raw LLM response")
 
   if (!text) {
     throw new Error("LLM returned empty review response")
   }
 
   const parsed = jsonParseLLMOutput(text)
-  Logger.debug({ 
-    email: context.user.email,
-    chatId: context.chat.externalId,
-    parsed,
-  }, "[MessageAgents][runReviewLLM] Parsed LLM response")
+  Logger.debug(
+    {
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      parsed,
+    },
+    "[MessageAgents][runReviewLLM] Parsed LLM response",
+  )
 
   if (!parsed || typeof parsed !== "object") {
     Logger.error(
@@ -2883,36 +3097,36 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
         chatId: context.chat.externalId,
         raw: parsed,
       },
-      "[MessageAgents][runReviewLLM] Invalid review payload"
+      "[MessageAgents][runReviewLLM] Invalid review payload",
     )
     return buildDefaultReviewPayload(
-      `Review model returned invalid payload for turn ${options?.turnNumber ?? "unknown"}`
+      `Review model returned invalid payload for turn ${options?.turnNumber ?? "unknown"}`,
     )
   }
 
   const validation = ReviewResultSchema.safeParse(parsed)
   if (!validation.success) {
     Logger.error(
-      { 
+      {
         email: context.user.email,
         chatId: context.chat.externalId,
-        error: validation.error.format(), 
+        error: validation.error.format(),
         raw: parsed,
       },
-      "[MessageAgents][runReviewLLM] Review result does not match schema"
+      "[MessageAgents][runReviewLLM] Review result does not match schema",
     )
     return buildDefaultReviewPayload(
-      `Review model response failed validation for turn ${options?.turnNumber ?? "unknown"}`
+      `Review model response failed validation for turn ${options?.turnNumber ?? "unknown"}`,
     )
   }
 
   Logger.debug(
-    { 
+    {
       email: context.user.email,
       chatId: context.chat.externalId,
       reviewResult: validation.data,
     },
-    "[MessageAgents][runReviewLLM] Returning review result"
+    "[MessageAgents][runReviewLLM] Returning review result",
   )
   Logger.debug(
     {
@@ -2923,18 +3137,18 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
       imageFileCount: currentImages.length,
       toolOutputsEvaluated: context.currentTurnArtifacts.toolOutputs.length,
     },
-    "[MessageAgents][runReviewLLM] Review LLM call completed"
+    "[MessageAgents][runReviewLLM] Review LLM call completed",
   )
   reviewSpan.setAttribute("model_id", modelId)
   reviewSpan.setAttribute("review_status", validation.data.status)
   reviewSpan.setAttribute("recommendation", validation.data.recommendation)
   reviewSpan.setAttribute(
     "anomalies_detected",
-    validation.data.anomaliesDetected ?? false
+    validation.data.anomaliesDetected ?? false,
   )
   reviewSpan.setAttribute(
     "tool_feedback_count",
-    validation.data.toolFeedback.length
+    validation.data.toolFeedback.length,
   )
   reviewSpan.end()
   return validation.data
@@ -2944,6 +3158,7 @@ function buildInternalToolAdapters(): Tool<unknown, AgentRunContext>[] {
   const baseTools = [
     createToDoWriteTool(),
     searchGlobalTool,
+    lsKnowledgeBaseTool,
     searchKnowledgeBaseTool,
     ...googleTools,
     getSlackRelatedMessagesTool,
@@ -2969,6 +3184,7 @@ const TOOL_ACCESS_REQUIREMENTS: Record<string, ToolAccessRequirement> = {
     requiredApp: Apps.GoogleCalendar,
     connectorFlag: "googleCalendarSynced",
   },
+  ls: { requiredApp: Apps.KnowledgeBase },
   searchKnowledgeBase: { requiredApp: Apps.KnowledgeBase },
   searchGoogleContacts: {
     requiredApp: Apps.GoogleWorkspace,
@@ -3002,10 +3218,7 @@ function filterToolsByAvailability(
     const rule = TOOL_ACCESS_REQUIREMENTS[tool.schema.name]
     if (!rule) return true
 
-    if (
-      rule.connectorFlag &&
-      !params.connectorState[rule.connectorFlag]
-    ) {
+    if (rule.connectorFlag && !params.connectorState[rule.connectorFlag]) {
       loggerWithChild({ email: params.email, agentId: params.agentId }).info(
         `Disabling tool ${tool.schema.name}: connector '${rule.connectorFlag}' unavailable.`,
       )
@@ -3042,14 +3255,11 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
           email: context.user.email,
           args,
         },
-        "[toDoWrite] Execution started"
+        "[toDoWrite] Execution started",
       )
       const validation = validateToolInput<PlanState>(XyneTools.toDoWrite, args)
       if (!validation.success) {
-        return ToolResponse.error(
-          "INVALID_INPUT",
-          validation.error.message
-        )
+        return ToolResponse.error("INVALID_INPUT", validation.error.message)
       }
 
       const plan: PlanState = {
@@ -3067,7 +3277,7 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
           subTaskCount: plan.subTasks.length,
           activeSubTaskId,
         },
-        "[toDoWrite] Plan created"
+        "[toDoWrite] Plan created",
       )
 
       return ToolResponse.success({ plan })
@@ -3075,8 +3285,10 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
   }
 }
 
-
-function buildDelegatedAgentQuery(baseQuery: string, context: AgentRunContext): string {
+function buildDelegatedAgentQuery(
+  baseQuery: string,
+  context: AgentRunContext,
+): string {
   const parts = [baseQuery.trim()]
   if (context.currentSubTask) {
     parts.push(`Active sub-task: ${context.currentSubTask}`)
@@ -3091,12 +3303,8 @@ function buildDelegatedAgentQuery(baseQuery: string, context: AgentRunContext): 
 }
 
 function buildCustomAgentTools(): Array<Tool<unknown, AgentRunContext>> {
-  return [
-    createListCustomAgentsTool(),
-    createRunPublicAgentTool(),
-  ]
+  return [createListCustomAgentsTool(), createRunPublicAgentTool()]
 }
-
 
 function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
   return {
@@ -3114,10 +3322,7 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
       }>(XyneTools.listCustomAgents, args)
 
       if (!validation.success) {
-        return ToolResponse.error(
-          "INVALID_INPUT",
-          validation.error.message
-        )
+        return ToolResponse.error("INVALID_INPUT", validation.error.message)
       }
 
       const result = await listCustomAgentsSuitable({
@@ -3132,15 +3337,25 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
       })
       Logger.debug(
         { params: validation.data, email: context.user.email },
-        "[list_custom_agents] input params"
+        "[list_custom_agents] input params",
       )
       Logger.debug(
         { selection: result, email: context.user.email },
-        "[list_custom_agents] selection result"
+        "[list_custom_agents] selection result",
       )
 
       const normalizedAgents = Array.isArray(result.agents) ? result.agents : []
       mutableContext.availableAgents = normalizedAgents
+      logContextMutation(
+        mutableContext,
+        "[list_custom_agents] Updated availableAgents in context",
+        {
+          query: validation.data.query,
+          requiredCapabilities: validation.data.requiredCapabilities,
+          availableAgentIds: normalizedAgents.map((agent) => agent.agentId),
+          availableAgentNames: normalizedAgents.map((agent) => agent.agentName),
+        },
+      )
       return ToolResponse.success({
         agents: normalizedAgents.length ? normalizedAgents : null,
         totalEvaluated: result.totalEvaluated,
@@ -3165,10 +3380,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
       }>(XyneTools.runPublicAgent, args)
 
       if (!validation.success) {
-        return ToolResponse.error(
-          "INVALID_INPUT",
-          validation.error.message
-        )
+        return ToolResponse.error("INVALID_INPUT", validation.error.message)
       }
 
       if (!context.ambiguityResolved) {
@@ -3176,18 +3388,16 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
           ToolErrorCodes.INVALID_INPUT,
           `Resolve ambiguity before running a custom agent. Unresolved: ${
             context.clarifications.length
-              ? context.clarifications
-                  .map((c) => c.question)
-                  .join("; ")
+              ? context.clarifications.map((c) => c.question).join("; ")
               : "not specified"
-          }`
+          }`,
         )
       }
 
       if (!context.availableAgents.length) {
         return ToolResponse.error(
           ToolErrorCodes.RESOURCE_UNAVAILABLE,
-          "No agents available. Run list_custom_agents this turn and select an agentId from its results."
+          "No agents available. Run list_custom_agents this turn and select an agentId from its results.",
         )
       }
 
@@ -3199,24 +3409,25 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
             agentName: a.agentName,
           })),
         },
-        "[run_public_agent] Agent selection details"
+        "[run_public_agent] Agent selection details",
       )
 
       const agentCapability = context.availableAgents.find(
-        (agent) => agent.agentId === validation.data.agentId
+        (agent) => agent.agentId === validation.data.agentId,
       )
       if (!agentCapability) {
         return ToolResponse.error(
           ToolErrorCodes.NOT_FOUND,
           `Agent '${validation.data.agentId}' not found in availableAgents. Call list_custom_agents and use one of: ${context.availableAgents
             .map((a) => `${a.agentName} (${a.agentId})`)
-            .join("; ")}`
+            .join("; ")}`,
         )
       }
 
       const delegatedAgentName =
-        context.availableAgents.find((a) => a.agentId === validation.data.agentId)?.agentName ||
-        validation.data.agentId
+        context.availableAgents.find(
+          (a) => a.agentId === validation.data.agentId,
+        )?.agentName || validation.data.agentId
 
       // Generate the delegation ID here, inside this isolated execute() scope.
       // Each parallel run_public_agent call runs its own execute(), so there is
@@ -3226,7 +3437,10 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
       // Emit agentDelegated now — later than tool_requests but race-free.
       if (context.runtime?.emitReasoning) {
         await context.runtime.emitReasoning(
-          ReasoningSteps.agentDelegated(delegatedAgentName, delegationRunId) as ReasoningEventPayload
+          ReasoningSteps.agentDelegated(
+            delegatedAgentName,
+            delegationRunId,
+          ) as ReasoningEventPayload,
         )
       }
 
@@ -3238,11 +3452,14 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
         userEmail: context.user.email,
         workspaceExternalId: context.user.workspaceId,
         mcpAgents: context.mcpAgents,
-        parentTurn: Math.max(context.turnCount ?? MIN_TURN_NUMBER, MIN_TURN_NUMBER),
+        parentTurn: Math.max(
+          context.turnCount ?? MIN_TURN_NUMBER,
+          MIN_TURN_NUMBER,
+        ),
         stopSignal: context.stopSignal,
         delegationRunId,
         reasoningEmitter: context.runtime?.emitReasoning
-          ? (async (payload: ReasoningEventPayload) => {
+          ? async (payload: ReasoningEventPayload) => {
               const withAgent: ReasoningEventPayload = {
                 ...payload,
                 agent: delegatedAgentName,
@@ -3250,24 +3467,30 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
                 parentAgent: "Main",
               }
               await context.runtime!.emitReasoning!(withAgent)
-            })
+            }
           : undefined,
       })
       Logger.debug(
         { params: validation.data, email: context.user.email },
-        "[run_public_agent] input params"
+        "[run_public_agent] input params",
       )
       Logger.debug(
         { toolOutput, email: context.user.email },
-        "[run_public_agent] tool output"
+        "[run_public_agent] tool output",
       )
       context.usedAgents.push(agentCapability.agentId)
+      logContextMutation(
+        context,
+        "[run_public_agent] Added agent to usedAgents",
+        {
+          selectedAgentId: agentCapability.agentId,
+          selectedAgentName: agentCapability.agentName,
+          query: validation.data.query,
+        },
+      )
 
       if (toolOutput.error) {
-        return ToolResponse.error(
-          "EXECUTION_FAILED",
-          toolOutput.error
-        )
+        return ToolResponse.error("EXECUTION_FAILED", toolOutput.error)
       }
 
       const metadata = toolOutput.metadata || {}
@@ -3316,7 +3539,9 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
     schema: {
       name: XyneTools.synthesizeFinalAnswer,
       description: TOOL_SCHEMAS.synthesize_final_answer.description,
-      parameters: toToolParameters(TOOL_SCHEMAS.synthesize_final_answer.inputSchema),
+      parameters: toToolParameters(
+        TOOL_SCHEMAS.synthesize_final_answer.inputSchema,
+      ),
     },
     async execute(_args, context) {
       const mutableContext = mutableAgentContext(context)
@@ -3324,12 +3549,19 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         mutableContext.review.lockedByFinalSynthesis = true
         mutableContext.review.lockedAtTurn =
           mutableContext.turnCount ?? MIN_TURN_NUMBER
+        logContextMutation(
+          mutableContext,
+          "[MessageAgents][FinalSynthesis] Locked review state for synthesis",
+          {
+            lockedAtTurn: mutableContext.review.lockedAtTurn,
+          },
+        )
         loggerWithChild({ email: context.user.email }).info(
           {
             chatId: context.chat.externalId,
             turn: mutableContext.review.lockedAtTurn,
           },
-          "[MessageAgents][FinalSynthesis] Review lock activated after synthesis tool call."
+          "[MessageAgents][FinalSynthesis] Review lock activated after synthesis tool call.",
         )
       }
       if (
@@ -3338,7 +3570,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
       ) {
         return ToolResponse.error(
           "EXECUTION_FAILED",
-          "Final synthesis already completed for this run."
+          "Final synthesis already completed for this run.",
         )
       }
 
@@ -3346,7 +3578,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
       if (!streamAnswer) {
         return ToolResponse.error(
           "EXECUTION_FAILED",
-          "Streaming channel unavailable. Cannot deliver final answer."
+          "Streaming channel unavailable. Cannot deliver final answer.",
         )
       }
 
@@ -3360,7 +3592,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           droppedImages: dropped,
           userAttachmentCount,
         },
-        "[MessageAgents][FinalSynthesis] Image payload"
+        "[MessageAgents][FinalSynthesis] Image payload",
       )
 
       const { systemPrompt, userMessage } = buildFinalSynthesisPayload(context)
@@ -3371,16 +3603,26 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           finalSynthesisSystemPrompt: systemPrompt,
           finalSynthesisUserMessage: userMessage,
         },
-        "[MessageAgents][FinalSynthesis] Full context payload"
+        "[MessageAgents][FinalSynthesis] Full context payload",
       )
 
       mutableContext.finalSynthesis.requested = true
       mutableContext.finalSynthesis.suppressAssistantStreaming = true
       mutableContext.finalSynthesis.completed = false
       mutableContext.finalSynthesis.streamedText = ""
+      logContextMutation(
+        mutableContext,
+        "[MessageAgents][FinalSynthesis] Updated final synthesis state to requested",
+        {
+          fragmentsCount,
+          selectedImages: selected,
+          totalImages: total,
+          droppedImages: dropped,
+        },
+      )
 
       await mutableContext.runtime?.emitReasoning?.(
-        ReasoningSteps.synthesisStarted(fragmentsCount)
+        ReasoningSteps.synthesisStarted(fragmentsCount),
       )
 
       const logger = loggerWithChild({ email: context.user.email })
@@ -3391,12 +3633,14 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
             limit: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
             totalImages: total,
           },
-          "Final synthesis image limit enforced; dropped oldest references."
+          "Final synthesis image limit enforced; dropped oldest references.",
         )
       }
 
       const modelId =
-        (context.modelId as Models) || (defaultBestModel as Models) || Models.Gpt_4o
+        (context.modelId as Models) ||
+        (defaultBestModel as Models) ||
+        Models.Gpt_4o
       const modelParams: ModelParams = {
         modelId,
         systemPrompt,
@@ -3423,17 +3667,20 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           toolOutputsThisTurn: context.currentTurnArtifacts.toolOutputs.length,
           imageNames: selected,
         },
-        "[MessageAgents][FinalSynthesis] Context summary for synthesis call"
+        "[MessageAgents][FinalSynthesis] Context summary for synthesis call",
       )
 
-      Logger.debug({
-        email: context.user.email,
-        chatId: context.chat.externalId,
-        modelId,
-        systemPrompt,
-        messagesCount: messages.length,
-        imagesProvided: selected.length,
-      }, "[MessageAgents][FinalSynthesis] LLM call parameters")
+      Logger.debug(
+        {
+          email: context.user.email,
+          chatId: context.chat.externalId,
+          modelId,
+          systemPrompt,
+          messagesCount: messages.length,
+          imagesProvided: selected.length,
+        },
+        "[MessageAgents][FinalSynthesis] LLM call parameters",
+      )
 
       const provider = getProviderByModel(modelId)
       let streamedCharacters = 0
@@ -3454,6 +3701,15 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         }
 
         context.finalSynthesis.completed = true
+        logContextMutation(
+          context,
+          "[MessageAgents][FinalSynthesis] Marked final synthesis as completed",
+          {
+            streamedCharacters,
+            estimatedCostUsd,
+            imagesProvided: selected,
+          },
+        )
         loggerWithChild({ email: context.user.email }).debug(
           {
             chatId: context.chat.externalId,
@@ -3461,11 +3717,11 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
             estimatedCostUsd,
             imagesProvided: selected,
           },
-          "[MessageAgents][FinalSynthesis] LLM call completed"
+          "[MessageAgents][FinalSynthesis] LLM call completed",
         )
 
         await context.runtime?.emitReasoning?.(
-          ReasoningSteps.synthesisCompleted()
+          ReasoningSteps.synthesisCompleted(),
         )
 
         return ToolResponse.success(
@@ -3480,27 +3736,33 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           },
           {
             estimatedCostUsd,
-          }
+          },
         )
       } catch (error) {
         context.finalSynthesis.suppressAssistantStreaming = false
         context.finalSynthesis.requested = false
         context.finalSynthesis.completed = false
+        logContextMutation(
+          context,
+          "[MessageAgents][FinalSynthesis] Reset final synthesis state after failure",
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        )
         logger.error(
           { err: error instanceof Error ? error.message : String(error) },
-          "Final synthesis tool failed."
+          "Final synthesis tool failed.",
         )
         return ToolResponse.error(
           "EXECUTION_FAILED",
           `Failed to synthesize final answer: ${
             error instanceof Error ? error.message : String(error)
-          }`
+          }`,
         )
       }
     },
   }
 }
-
 
 /**
  * Build dynamic agent instructions including plan state and tool descriptions
@@ -3517,9 +3779,13 @@ function buildAttachmentDirective(context: AgentRunContext): string {
     "User provided attachment context for this opening turn."
 
   // Include the actual fragment content, not just metadata
-  const fragmentsContent = context.allFragments.length > 0
-    ? answerContextMapFromFragments(context.allFragments, context.allFragments.length)
-    : "No attachment content available."
+  const fragmentsContent =
+    context.allFragments.length > 0
+      ? answerContextMapFromFragments(
+          context.allFragments,
+          context.allFragments.length,
+        )
+      : "No attachment content available."
 
   return `
 # ATTACHMENT-FIRST TURN
@@ -3578,7 +3844,7 @@ function buildAgentInstructions(
   enabledToolNames: string[],
   dateForAI: string,
   agentPrompt?: string,
-  delegationEnabled = true
+  delegationEnabled = true,
 ): string {
   const availableToolNames = enabledToolNames.filter((tool) => context.enabledTools.has(tool))
   const toolDescriptions = availableToolNames.length > 0
@@ -3623,9 +3889,13 @@ function buildAgentInstructions(
     planSection += "Steps:\n"
     context.plan.subTasks.forEach((task, i) => {
       const status =
-        task.status === "completed" ? "✓" :
-        task.status === "in_progress" ? "→" :
-        task.status === "failed" ? "✗" : "○"
+        task.status === "completed"
+          ? "✓"
+          : task.status === "in_progress"
+            ? "→"
+            : task.status === "failed"
+              ? "✗"
+              : "○"
       planSection += `${i + 1}. [${status}] ${task.description}\n`
       if (task.toolsRequired && task.toolsRequired.length > 0) {
         planSection += `   Tools: ${task.toolsRequired.join(", ")}\n`
@@ -3689,7 +3959,7 @@ function buildAgentInstructions(
       "- Treat your self-review findings as mandatory: fix missed expectations, address anomalies, and resolve clarifications before progressing.",
       "- Log every required fix in the plan. Capture corrective sub-tasks and close them before moving forward.",
       "- Surface clarification questions to the user when intent is ambiguous.",
-      ""
+      "",
     )
   } else {
     instructionLines.push(
@@ -3699,10 +3969,9 @@ function buildAgentInstructions(
       "- Log every required fix directly in the plan so auditors can see alignment with the review.",
       "- When the review lists anomalies or ambiguity, capture each as a corrective sub-task (e.g., “Validate source for claim [2]”) and close it before moving forward.",
       "- Answer outstanding clarification questions immediately; if the user must respond, surface the exact question back to them.",
-      ""
+      "",
     )
   }
-
 
   instructionLines.push(
     "# PLANNING",
@@ -3732,7 +4001,7 @@ function buildAgentInstructions(
     "- Never finish a turn after only calling toDoWrite—run at least one execution tool that advances the active task.",
     "# EXECUTION STRATEGY",
     "- Work tasks sequentially; complete the current task before starting the next.",
-    "- Call tools with precise parameters tied to the sub-task goal; reuse stored fragments instead of re-fetching data."
+    "- Call tools with precise parameters tied to the sub-task goal; reuse stored fragments instead of re-fetching data.",
   )
 
   const hasDelegationTools =
@@ -3743,7 +4012,7 @@ function buildAgentInstructions(
       "- When delegation is enabled and justified, run list_custom_agents before run_public_agent; document why the selected agent accelerates the plan.",
       "- Prefer list_custom_agents → run_public_agent before core tools when delegation is enabled and justified by the plan.",
       "- Invoke list_custom_agents at the sub-task level whenever targeted delegation could unlock better results; multi-part queries may require multiple calls as the context evolves.",
-      "- Let earlier tool outputs reshape later sub-tasks (e.g., if getSlackRelatedMessages returns only Finance senders, rewrite the next list_custom_agents query with that Finance focus before proceeding)."
+      "- Let earlier tool outputs reshape later sub-tasks (e.g., if getSlackRelatedMessages returns only Finance senders, rewrite the next list_custom_agents query with that Finance focus before proceeding).",
     )
   }
 
@@ -3758,7 +4027,7 @@ function buildAgentInstructions(
     "- After you decide which tools to call, emit a standalone expected-results block summarizing what each tool should achieve:",
     "<expected_results>",
     "[",
-    '  {',
+    "  {",
     '    "toolName": "searchGlobal",',
     '    "goal": "Find Q4 ARR mentions",',
     '    "successCriteria": ["ARR keyword present", "Dated Q4"],',
@@ -3775,11 +4044,10 @@ function buildAgentInstructions(
     "",
     "# FINAL SYNTHESIS",
     "- When research is complete and evidence is locked, CALL `synthesize_final_answer` (no arguments). This tool composes and streams the response.",
-    "- Never output the final answer directly—always go through the tool and then acknowledge completion."
+    "- Never output the final answer directly—always go through the tool and then acknowledge completion.",
   )
 
   const finalInstructions = instructionLines.join("\n")
-
 
   // Logger.debug({
   //   email: context.user.email,
@@ -3812,7 +4080,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
   const rootSpan = tracer.startSpan("MessageAgents")
 
   const { sub: email, workspaceId } = c.get(JwtPayloadKey)
-  
+
   try {
     loggerWithChild({ email }).info("MessageAgents agentic flow starting")
     rootSpan.setAttribute("email", email)
@@ -3834,11 +4102,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
       toolsList?: Array<{ connectorId: string; tools: string[] }>
       selectedModelConfig?: string
     } = body
-    
+
     if (!message) {
       throw new HTTPException(400, { message: "Message is required" })
     }
-    
+
     message = safeDecodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     rootSpan.setAttribute("chatId", chatId || "new")
@@ -3865,15 +4133,17 @@ export async function MessageAgents(c: Context): Promise<Response> {
           if (Array.isArray(modelConfig.capabilities)) {
             isReasoningEnabled = modelConfig.capabilities.includes("reasoning")
             enableWebSearch = modelConfig.capabilities.includes("websearch")
-            isDeepResearchEnabled = modelConfig.capabilities.includes("deepResearch")
+            isDeepResearchEnabled =
+              modelConfig.capabilities.includes("deepResearch")
           } else if (typeof modelConfig.capabilities === "object") {
             isReasoningEnabled = modelConfig.capabilities.reasoning === true
             enableWebSearch = modelConfig.capabilities.websearch === true
-            isDeepResearchEnabled = modelConfig.capabilities.deepResearch === true
+            isDeepResearchEnabled =
+              modelConfig.capabilities.deepResearch === true
           }
         }
 
-        loggerWithChild({ email }).info(
+        loggerWithChild({ email }).debug(
           `Parsed model config for MessageAgents: model="${parsedModelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
         )
       } catch (error) {
@@ -3885,7 +4155,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
       }
     } else {
       parsedModelId = config.defaultBestModel
-      loggerWithChild({ email }).info(
+      loggerWithChild({ email }).debug(
         "No model config provided to MessageAgents, using default",
       )
     }
@@ -3895,12 +4165,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
       const convertedModelId = getModelValueFromLabel(parsedModelId)
       if (convertedModelId) {
         actualModelId = convertedModelId as string
-        loggerWithChild({ email }).info(
+        loggerWithChild({ email }).debug(
           `Converted model label "${parsedModelId}" to value "${actualModelId}" for MessageAgents`,
         )
       } else if (parsedModelId in Models) {
         actualModelId = parsedModelId
-        loggerWithChild({ email }).info(
+        loggerWithChild({ email }).debug(
           `Using model ID "${parsedModelId}" directly for MessageAgents`,
         )
       } else {
@@ -3954,42 +4224,44 @@ export async function MessageAgents(c: Context): Promise<Response> {
           fileIds: [],
           threadIds: [],
         }
-    let attachmentsForContext = 
+    let attachmentsForContext =
       extractedInfo?.fileIds.map((fileId) => ({
         fileId,
         isImage: false,
       })) || []
     const attachmentMetadata = parseAttachmentMetadata(c)
-    attachmentsForContext = attachmentsForContext.concat(attachmentMetadata.map((meta) => ({
-      fileId: meta.fileId,
-      isImage: meta.isImage,
-    })))
+    attachmentsForContext = attachmentsForContext.concat(
+      attachmentMetadata.map((meta) => ({
+        fileId: meta.fileId,
+        isImage: meta.isImage,
+      })),
+    )
     const threadIds = extractedInfo?.threadIds || []
     const referencedFileIds = Array.from(
       new Set(
         attachmentsForContext
           .filter((meta) => !meta.isImage)
-          .flatMap((meta) => expandSheetIds(meta.fileId))
-      )
+          .flatMap((meta) => expandSheetIds(meta.fileId)),
+      ),
     )
     let allReferencedFileIds = referencedFileIds
     const imageAttachmentFileIds = Array.from(
-      new Set(attachmentsForContext.filter((meta) => meta.isImage).map((meta) => meta.fileId))
+      new Set(
+        attachmentsForContext
+          .filter((meta) => meta.isImage)
+          .map((meta) => meta.fileId),
+      ),
     )
     const isMstWithAttachments = attachmentMetadata.length > 0
 
-    const userAndWorkspace: InternalUserWorkspace = await getUserAndWorkspaceByEmail(
-      db,
-      workspaceId,
-      email
-    )
+    const userAndWorkspace: InternalUserWorkspace =
+      await getUserAndWorkspaceByEmail(db, workspaceId, email)
     const rawUser = userAndWorkspace.user
     const rawWorkspace = userAndWorkspace.workspace
     const user = {
       id: Number(rawUser.id),
       email: String(rawUser.email),
-      timeZone:
-        typeof rawUser.timeZone === "string" ? rawUser.timeZone : "UTC",
+      timeZone: typeof rawUser.timeZone === "string" ? rawUser.timeZone : "UTC",
     }
     const workspace = {
       id: Number(rawWorkspace.id),
@@ -4014,11 +4286,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
         db,
         normalizedAgentId,
         workspace.id,
-        user.id
+        user.id,
       )
       if (!agentRecord) {
         throw new HTTPException(403, {
-          message: "Access denied: You do not have permission to use this agent",
+          message:
+            "Access denied: You do not have permission to use this agent",
         })
       }
       resolvedAgentId = String(agentRecord.externalId)
@@ -4059,12 +4332,14 @@ export async function MessageAgents(c: Context): Promise<Response> {
       lastPersistedMessageExternalId = String(bootstrap.userMessage.externalId)
       attachmentStorageError = bootstrap.attachmentError ?? null
       previousConversationHistory = bootstrap.conversationHistory ?? []
-      const historyFileIds = collectReferencedFileIdsUntilCompaction(previousConversationHistory)
+      const historyFileIds = collectReferencedFileIdsUntilCompaction(
+        previousConversationHistory,
+      )
       allReferencedFileIds = Array.from(
         new Set([
           ...referencedFileIds,
           ...historyFileIds.flatMap((id) => expandSheetIds(id)),
-        ])
+        ]),
       )
       const chatAgentId = chatRecord.agentId
         ? String(chatRecord.agentId)
@@ -4081,7 +4356,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
     } catch (error) {
       loggerWithChild({ email }).error(
         error,
-        "Failed to persist user turn for MessageAgents"
+        "Failed to persist user turn for MessageAgents",
       )
       const errMsg =
         error instanceof Error ? error.message : "Unknown persistence error"
@@ -4107,7 +4382,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         db,
         resolvedAgentId,
         workspace.id,
-        user.id
+        user.id,
       )
       if (!agentRecord) {
         throw new HTTPException(403, {
@@ -4122,7 +4397,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
     const hasExplicitAgent = Boolean(resolvedAgentId && agentPromptForLLM)
     const dedicatedAgentSystemPrompt =
-      typeof agentRecord?.prompt === "string" && agentRecord.prompt.trim().length > 0
+      typeof agentRecord?.prompt === "string" &&
+      agentRecord.prompt.trim().length > 0
         ? agentRecord.prompt.trim()
         : undefined
     const delegationEnabled = !hasExplicitAgent
@@ -4185,7 +4461,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
       try {
         let thinkingLog = ""
         let mainRunIdRef: ReturnType<typeof generateRunId> | undefined
-        const emitReasoningStep: ReasoningEmitter = async (payload: ReasoningEventPayload) => {
+        const emitReasoningStep: ReasoningEmitter = async (
+          payload: ReasoningEventPayload,
+        ) => {
           if (stream.closed) return
           // Attach orchestration metadata
           const withMeta: ReasoningEventPayload = {
@@ -4220,16 +4498,28 @@ export async function MessageAgents(c: Context): Promise<Response> {
             chatId: chatRecord.id as number,
             stopController,
             modelId: agenticModelId,
-          }
+          },
         )
         agentContextRef = agentContext
         agentContext.delegationEnabled = delegationEnabled
+        logContextMutation(
+          agentContext,
+          "[MessageAgents][Context] Updated delegationEnabled for primary run",
+          {
+            delegationEnabled,
+            hasExplicitAgent,
+            resolvedAgentId,
+          },
+        )
 
         // Build MCP connector tool map using the legacy agentic semantics
         const finalToolsMap: FinalToolsList = {}
         type FinalToolsEntry = FinalToolsList[string]
         type AdapterTool = FinalToolsEntry["tools"][number]
-        const connectorMetaById = new Map<string, { name?: string; description?: string }>()
+        const connectorMetaById = new Map<
+          string,
+          { name?: string; description?: string }
+        >()
 
         if (toolsList && Array.isArray(toolsList) && toolsList.length > 0) {
           for (const item of toolsList) {
@@ -4259,7 +4549,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
             const client = new Client({
               name: `connector-${connectorId}`,
-              version: (connector.config as { version?: string })?.version ?? "1.0",
+              version:
+                (connector.config as { version?: string })?.version ?? "1.0",
             })
             const connectorNumericId = Number(connector.id)
 
@@ -4277,27 +4568,34 @@ export async function MessageAgents(c: Context): Promise<Response> {
               const loadedMode = loadedConfig.mode || "sse"
 
               if (loadedUrl) {
-                loggerWithChild({ email }).info(
+                loggerWithChild({ email }).debug(
                   `Connecting to MCP client at ${loadedUrl} with mode: ${loadedMode}`,
                 )
 
                 if (loadedMode === "streamable-http") {
-                  const transportOptions: StreamableHTTPClientTransportOptions = {
-                    requestInit: { headers: loadedHeaders },
-                  }
+                  const transportOptions: StreamableHTTPClientTransportOptions =
+                    {
+                      requestInit: { headers: loadedHeaders },
+                    }
                   await client.connect(
-                    new StreamableHTTPClientTransport(new URL(loadedUrl), transportOptions),
+                    new StreamableHTTPClientTransport(
+                      new URL(loadedUrl),
+                      transportOptions,
+                    ),
                   )
                 } else {
                   const transportOptions: SSEClientTransportOptions = {
                     requestInit: { headers: loadedHeaders },
                   }
                   await client.connect(
-                    new SSEClientTransport(new URL(loadedUrl), transportOptions),
+                    new SSEClientTransport(
+                      new URL(loadedUrl),
+                      transportOptions,
+                    ),
                   )
                 }
               } else if (loadedConfig.command) {
-                loggerWithChild({ email }).info(
+                loggerWithChild({ email }).debug(
                   `Connecting to MCP Stdio client with command: ${loadedConfig.command}`,
                 )
                 await client.connect(
@@ -4322,7 +4620,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
             mcpClients.push(client)
             let tools = []
             try {
-              tools = await getToolsByConnectorId(db, workspace.id, connectorNumericId)
+              tools = await getToolsByConnectorId(
+                db,
+                workspace.id,
+                connectorNumericId,
+              )
             } catch (error) {
               loggerWithChild({ email }).error(
                 error,
@@ -4332,11 +4634,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
             }
             const filteredTools = tools.filter((tool) => {
               const toolExternalId =
-                typeof tool.externalId === "string" ? tool.externalId : undefined
+                typeof tool.externalId === "string"
+                  ? tool.externalId
+                  : undefined
               const isIncluded =
                 !!toolExternalId && requestedToolIds.includes(toolExternalId)
               if (!isIncluded) {
-                loggerWithChild({ email }).info(
+                loggerWithChild({ email }).debug(
                   `[MessageAgents][MCP] Tool ${toolExternalId}:${tool.toolName} not in requested toolExternalIds.`,
                 )
               }
@@ -4460,22 +4764,39 @@ export async function MessageAgents(c: Context): Promise<Response> {
           ...customTools,
         ]
         agentContext.enabledTools = new Set(
-          allTools.map((tool) => tool.schema.name)
+          allTools.map((tool) => tool.schema.name),
         )
         agentContext.mcpAgents = mcpAgentCandidates
-        loggerWithChild({ email }).info({
-          totalToolBudget,
-          internalTools: internalTools.length,
-          directMcpTools: directMcpTools.length,
-          mcpAgents: mcpAgentCandidates.map((a) => a.agentId),
-        }, "[MessageAgents][MCP] Tool budget applied")
-        Logger.debug({
-          enabledTools: Array.from(agentContext.enabledTools),
-          mcpAgentConnectors: Array.from(agentConnectorIds),
-          directMcpTools: directMcpTools.length,
-          email,
-          chatId: agentContext.chat.externalId,
-        }, "[MessageAgents] Tools exposed to LLM after filtering")
+        logContextMutation(
+          agentContext,
+          "[MessageAgents][Context] Updated enabled tools and MCP agents",
+          {
+            enabledTools: Array.from(agentContext.enabledTools),
+            mcpAgentIds: agentContext.mcpAgents.map((agent) => agent.agentId),
+            directMcpToolCount: directMcpTools.length,
+            internalToolCount: internalTools.length,
+            customToolCount: customTools.length,
+          },
+        )
+        loggerWithChild({ email }).debug(
+          {
+            totalToolBudget,
+            internalTools: internalTools.length,
+            directMcpTools: directMcpTools.length,
+            mcpAgents: mcpAgentCandidates.map((a) => a.agentId),
+          },
+          "[MessageAgents][MCP] Tool budget applied",
+        )
+        Logger.debug(
+          {
+            enabledTools: Array.from(agentContext.enabledTools),
+            mcpAgentConnectors: Array.from(agentConnectorIds),
+            directMcpTools: directMcpTools.length,
+            email,
+            chatId: agentContext.chat.externalId,
+          },
+          "[MessageAgents] Tools exposed to LLM after filtering",
+        )
 
         // Track gathered fragments
         const gatheredFragmentsKeys = new Set<string>()
@@ -4551,13 +4872,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
           recordFragmentsForContext(
             agentContext,
             initialAttachmentContext.fragments,
-            MIN_TURN_NUMBER
+            MIN_TURN_NUMBER,
           )
           initialSyntheticMessages.push(
             buildAttachmentToolMessage(
               initialAttachmentContext.fragments,
-              initialAttachmentContext.summary
-            )
+              initialAttachmentContext.summary,
+            ),
           )
           agentContext.chat.metadata = {
             ...agentContext.chat.metadata,
@@ -4573,7 +4894,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
             allTools.map((tool) => tool.schema.name),
             dateForAI,
             agentPromptForLLM,
-            delegationEnabled
+            delegationEnabled,
           )
         }
 
@@ -4589,15 +4910,16 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const modelProvider = makeXyneJAFProvider<AgentRunContext>()
 
         // Set up agent registry
-        const agentRegistry = new Map<string, JAFAgent<AgentRunContext, string>>([
-          [jafAgent.name, jafAgent],
-        ])
+        const agentRegistry = new Map<
+          string,
+          JAFAgent<AgentRunContext, string>
+        >([[jafAgent.name, jafAgent]])
 
         // Run state: mainRunIdRef was set above before any emitReasoningStep so all events (including attachmentAnalyzing/attachmentExtracted) share the same runId
         const runId = mainRunIdRef!
         const traceId = generateTraceId()
         const { jafHistory, llmHistory } = buildConversationHistoryForAgentRun(
-          previousConversationHistory
+          previousConversationHistory,
         )
         const initialMessages: JAFMessage[] = [
           ...jafHistory,
@@ -4620,7 +4942,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
         jafStreamingSpan.setAttribute("chat_external_id", chatRecord.externalId)
         jafStreamingSpan.setAttribute("run_id", runId)
         jafStreamingSpan.setAttribute("trace_id", traceId)
-        jafStreamingSpan.setAttribute("history_message_count", jafHistory.length)
+        jafStreamingSpan.setAttribute(
+          "history_message_count",
+          jafHistory.length,
+        )
         jafStreamingSpan.setAttribute("history_seeded", jafHistory.length > 0)
         let turnSpan: Span | undefined
         const endTurnSpan = () => {
@@ -4657,7 +4982,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
         const recordExpectationsForTurn = (
           turn: number,
-          expectations: PendingExpectation[]
+          expectations: PendingExpectation[],
         ) => {
           if (!expectations.length) {
             return
@@ -4676,7 +5001,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const ensureToolCallId = (
           toolCall: ToolCallReference,
           turn: number,
-          index: number
+          index: number,
         ): string => {
           const mapKey = toolCall as object
           if (toolCall.id !== undefined && toolCall.id !== null) {
@@ -4693,15 +5018,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
         const buildTurnReviewInput = (
           turn: number,
-          reviewFreq: number
+          reviewFreq: number,
         ): { reviewInput: AutoReviewInput } => {
-          const startTurn = Math.max(
-            MIN_TURN_NUMBER,
-            turn - reviewFreq + 1
-          )
+          const startTurn = Math.max(MIN_TURN_NUMBER, turn - reviewFreq + 1)
           const toolHistory = agentContext.toolCallHistory.filter(
             (record) =>
-              record.turnNumber >= startTurn && record.turnNumber <= turn
+              record.turnNumber >= startTurn && record.turnNumber <= turn,
           )
 
           const expectedResults: ToolExpectationAssignment[] = []
@@ -4721,14 +5043,17 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
 
         const runTurnEndReviewAndCleanup = async (
-          turn: number
+          turn: number,
         ): Promise<void> => {
-          Logger.debug({
-            turn,
-            expectationHistoryKeys: Array.from(expectationHistory.keys()),
-            expectationsForThisTurn: expectationHistory.get(turn),
-            chatId: agentContext.chat.externalId,
-          }, "[DEBUG] Expectation history state at turn_end")
+          Logger.debug(
+            {
+              turn,
+              expectationHistoryKeys: Array.from(expectationHistory.keys()),
+              expectationsForThisTurn: expectationHistory.get(turn),
+              chatId: agentContext.chat.externalId,
+            },
+            "[DEBUG] Expectation history state at turn_end",
+          )
 
           try {
             if (!reviewsAllowed(agentContext)) {
@@ -4738,13 +5063,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   chatId: agentContext.chat.externalId,
                   lockedAtTurn: agentContext.review.lockedAtTurn,
                 },
-                "[MessageAgents] Review skipped because final synthesis was already requested."
+                "[MessageAgents] Review skipped because final synthesis was already requested.",
               )
               return
             }
             if (!USE_AGENT_SELF_REVIEW) {
               const reviewFreq = normalizeReviewFrequency(
-                agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY
+                agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
               )
               const runReviewThisTurn =
                 turn === MIN_TURN_NUMBER || turn % reviewFreq === 0
@@ -4758,18 +5083,18 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     reviewFrequency: reviewFreq,
                     chatId: agentContext.chat.externalId,
                   },
-                  "[MessageAgents] Review skipped (runs every N turns)."
+                  "[MessageAgents] Review skipped (runs every N turns).",
                 )
               }
             } else {
               await handleReviewOutcome(
                 agentContext,
                 buildDefaultReviewPayload(
-                  "Self-review mode; no external review. State updated for continuity."
+                  "Self-review mode; no external review. State updated for continuity.",
                 ),
                 turn,
                 "turn_end",
-                emitReasoningStep
+                emitReasoningStep,
               )
             }
           } catch (error) {
@@ -4779,7 +5104,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 chatId: agentContext.chat.externalId,
                 error: getErrorMessage(error),
               },
-              "[MessageAgents] Turn-end review failed"
+              "[MessageAgents] Turn-end review failed",
             )
           } finally {
             const attachmentState = getAttachmentPhaseMetadata(agentContext)
@@ -4798,7 +5123,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const runAndBroadcastReview = async (
           context: AgentRunContext,
           reviewInput: AutoReviewInput,
-          iteration: number
+          iteration: number,
         ): Promise<ReviewResult | null> => {
           if (!reviewsAllowed(context)) {
             Logger.info(
@@ -4808,7 +5133,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 lockedAtTurn: context.review.lockedAtTurn,
                 focus: reviewInput.focus,
               },
-              `[MessageAgents] Review skipped for focus '${reviewInput.focus}' due to final synthesis lock.`
+              `[MessageAgents] Review skipped for focus '${reviewInput.focus}' due to final synthesis lock.`,
             )
             return null
           }
@@ -4819,7 +5144,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           ) {
             Logger.warn(
               { turn: iteration, focus: reviewInput.focus },
-              "[MessageAgents] No expected results recorded for review input."
+              "[MessageAgents] No expected results recorded for review input.",
             )
           }
 
@@ -4827,7 +5152,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           const pendingPromise = (async () => {
             const computedReview = await performAutomaticReview(
               reviewInput,
-              context
+              context,
             )
             reviewResult = computedReview
             await handleReviewOutcome(
@@ -4835,11 +5160,19 @@ export async function MessageAgents(c: Context): Promise<Response> {
               computedReview,
               iteration,
               reviewInput.focus,
-              emitReasoningStep
+              emitReasoningStep,
             )
           })()
 
           context.review.pendingReview = pendingPromise
+          logContextMutation(
+            context,
+            "[MessageAgents][Context] Registered pending review promise",
+            {
+              iteration,
+              focus: reviewInput.focus,
+            },
+          )
           try {
             await pendingPromise
             if (!reviewResult) {
@@ -4849,12 +5182,22 @@ export async function MessageAgents(c: Context): Promise<Response> {
           } finally {
             if (context.review.pendingReview === pendingPromise) {
               context.review.pendingReview = undefined
+              logContextMutation(
+                context,
+                "[MessageAgents][Context] Cleared pending review promise",
+                {
+                  iteration,
+                  focus: reviewInput.focus,
+                },
+              )
             }
           }
         }
 
         // Configure run with hooks
-        const runCfg: JAFRunConfig<AgentRunContext> = {
+        const runCfg: JAFRunConfig<AgentRunContext> & {
+          onEvent?: (event: TraceEvent) => void
+        } = {
           agentRegistry,
           modelProvider,
           maxTurns: 100,
@@ -4866,23 +5209,21 @@ export async function MessageAgents(c: Context): Promise<Response> {
           onAfterToolExecution: async (
             toolName: string,
             result: any,
-            hookContext: any
+            hookContext: any,
           ) => {
             const callIdRaw = hookContext?.toolCall?.id
-            const normalizedCallId =
-              hookContext?.toolCall
-                ? syntheticToolCallIds.get(hookContext.toolCall) ??
-                  (callIdRaw === undefined || callIdRaw === null
-                    ? undefined
-                    : String(callIdRaw))
-                : undefined
+            const normalizedCallId = hookContext?.toolCall
+              ? (syntheticToolCallIds.get(hookContext.toolCall) ??
+                (callIdRaw === undefined || callIdRaw === null
+                  ? undefined
+                  : String(callIdRaw)))
+              : undefined
             let expectationForCall: ToolExpectation | undefined
             if (
               normalizedCallId &&
               expectedResultsByCallId.has(normalizedCallId)
             ) {
-              expectationForCall =
-                expectedResultsByCallId.get(normalizedCallId)
+              expectationForCall = expectedResultsByCallId.get(normalizedCallId)
               expectedResultsByCallId.delete(normalizedCallId)
             }
             let turnForCall = normalizedCallId
@@ -4891,22 +5232,22 @@ export async function MessageAgents(c: Context): Promise<Response> {
             if (normalizedCallId) {
               toolCallTurnMap.delete(normalizedCallId)
             }
-            if (
-              turnForCall === undefined ||
-              turnForCall < MIN_TURN_NUMBER
-            ) {
+            if (turnForCall === undefined || turnForCall < MIN_TURN_NUMBER) {
               turnForCall =
-                agentContext.turnCount ??
-                currentTurn ??
-                MIN_TURN_NUMBER
+                agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER
             }
             // Create a per-call scoped emitter that pre-stamps toolExecutionId.
             // Each parallel onAfterToolExecution branch captures its own
             // normalizedCallId in a closure — no shared scalar, no race.
             // runPublicAgent is excluded because its events group by delegationRunId.
-            const toolScopedEmitter: ReasoningEmitter = (normalizedCallId && toolName !== XyneTools.runPublicAgent)
-              ? async (payload) => emitReasoningStep({ ...payload, toolExecutionId: normalizedCallId })
-              : emitReasoningStep
+            const toolScopedEmitter: ReasoningEmitter =
+              normalizedCallId && toolName !== XyneTools.runPublicAgent
+                ? async (payload) =>
+                    emitReasoningStep({
+                      ...payload,
+                      toolExecutionId: normalizedCallId,
+                    })
+                : emitReasoningStep
             const content = await afterToolExecutionHook(
               toolName,
               result,
@@ -4916,8 +5257,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
               gatheredFragmentsKeys,
               expectationForCall,
               turnForCall,
-              toolScopedEmitter
+              emitReasoningStep,
             )
+
             return content
           },
         }
@@ -4983,7 +5325,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
               fragmentsForCitations,
               yieldedImageCitations,
               email,
-
             )) {
               if (citationEvent.citation) {
                 const { index, item } = citationEvent.citation
@@ -5010,22 +5351,41 @@ export async function MessageAgents(c: Context): Promise<Response> {
         agentContext.runtime = {
           streamAnswerText,
           emitReasoning: async (payload) => {
-              await emitReasoningEvent(
-                emitReasoningStep,
-                payload as ReasoningEventPayload
-              )
-            },
+            await emitReasoningEvent(
+              emitReasoningStep,
+              payload as ReasoningEventPayload,
+            )
+          },
         }
+        logContextMutation(
+          agentContext,
+          "[MessageAgents][Context] Attached runtime callbacks",
+          {
+            hasStreamAnswerText: true,
+            hasEmitReasoning: true,
+          },
+        )
         const traceEventHandler = async (event: TraceEvent) => {
           if (event.type === "before_tool_execution") {
             return beforeToolExecutionHook(
               event.data.toolName as XyneTools,
               event.data.args,
               agentContext,
-              emitReasoningStep
+              emitReasoningStep,
             )
           }
           return undefined
+        }
+        runCfg.onEvent = (event) => {
+          logJAFTraceEvent(
+            {
+              chatId: agentContext.chat.externalId,
+              email,
+              flow: "MessageAgents",
+              runId,
+            },
+            event,
+          )
         }
 
         Logger.debug(
@@ -5035,13 +5395,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
             modelOverride: agenticModelId,
             email,
           },
-          "[MessageAgents] Starting assistant call"
+          "[MessageAgents] Starting assistant call",
         )
 
         for await (const evt of runStream<AgentRunContext, string>(
           runState,
           runCfg,
-          traceEventHandler
+          traceEventHandler,
         )) {
           if (stream.closed) break
 
@@ -5082,37 +5442,41 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 args: toolCall.args,
               }))
               const toolRequestsSpan = turnSpan?.startSpan("tool_requests")
-              toolRequestsSpan?.setAttribute("tool_calls_count", plannedTools.length)
+              toolRequestsSpan?.setAttribute(
+                "tool_calls_count",
+                plannedTools.length,
+              )
               Logger.debug(
                 {
                   turn: currentTurn,
                   plannedTools,
                   chatId: agentContext.chat.externalId,
                 },
-                "[MessageAgents] Tool plan for turn"
+                "[MessageAgents] Tool plan for turn",
               )
               for (const [idx, toolCall] of evt.data.toolCalls.entries()) {
                 const normalizedCallId = ensureToolCallId(
                   toolCall,
                   currentTurn,
-                  idx
+                  idx,
                 )
                 toolCallTurnMap.set(normalizedCallId, currentTurn)
                 const assignedExpectation = consumePendingExpectation(
                   pendingExpectations,
-                  toolCall.name
+                  toolCall.name,
                 )
                 if (assignedExpectation) {
                   expectedResultsByCallId.set(
                     normalizedCallId,
-                    assignedExpectation.expectation
+                    assignedExpectation.expectation,
                   )
                 }
-                const selectionSpan = toolRequestsSpan?.startSpan("tool_selection")
+                const selectionSpan =
+                  toolRequestsSpan?.startSpan("tool_selection")
                 selectionSpan?.setAttribute("tool_name", toolCall.name)
                 selectionSpan?.setAttribute(
                   "args",
-                  JSON.stringify(toolCall.args ?? {})
+                  JSON.stringify(toolCall.args ?? {}),
                 )
                 // Emit a tool-specific intent message based on the tool being selected.
                 // toolExecutionId is inlined directly in each payload — no shared scalar,
@@ -5155,15 +5519,18 @@ export async function MessageAgents(c: Context): Promise<Response> {
               toolStartSpan?.setAttribute("tool_name", evt.data.toolName)
               toolStartSpan?.setAttribute(
                 "args",
-                JSON.stringify(evt.data.args ?? {})
+                JSON.stringify(evt.data.args ?? {}),
               )
-              Logger.debug({
-                toolName: evt.data.toolName,
-                args: evt.data.args,
-                runId,
-                chatId: agentContext.chat.externalId,
-                turn: currentTurn,
-              }, "[MessageAgents][Tool Start]")
+              Logger.debug(
+                {
+                  toolName: evt.data.toolName,
+                  args: evt.data.args,
+                  runId,
+                  chatId: agentContext.chat.externalId,
+                  turn: currentTurn,
+                },
+                "[MessageAgents][Tool Start]",
+              )
               toolStartSpan?.end()
               break
             }
@@ -5173,22 +5540,25 @@ export async function MessageAgents(c: Context): Promise<Response> {
               toolEndSpan?.setAttribute("tool_name", evt.data.toolName)
               toolEndSpan?.setAttribute(
                 "status",
-                evt.data.error ? "error" : evt.data.status ?? "completed"
+                evt.data.error ? "error" : (evt.data.status ?? "completed"),
               )
               toolEndSpan?.setAttribute(
                 "execution_time_ms",
-                evt.data.executionTime ?? 0
+                evt.data.executionTime ?? 0,
               )
-              Logger.debug({
-                toolName: evt.data.toolName,
-                result: evt.data.result,
-                error: evt.data.error,
-                executionTime: evt.data.executionTime,
-                status: evt.data.error ? "error" : "success",
-                runId,
-                chatId: agentContext.chat.externalId,
-                turn: currentTurn,
-              }, "[MessageAgents][Tool End]")
+              Logger.debug(
+                {
+                  toolName: evt.data.toolName,
+                  result: evt.data.result,
+                  error: evt.data.error,
+                  executionTime: evt.data.executionTime,
+                  status: evt.data.error ? "error" : "success",
+                  runId,
+                  chatId: agentContext.chat.externalId,
+                  turn: currentTurn,
+                },
+                "[MessageAgents][Tool End]",
+              )
               // toolCompleted is now emitted at the end of afterToolExecutionHook,
               // which runs inside onAfterToolExecution with a per-call scoped emitter.
               if (evt.data.error) {
@@ -5210,7 +5580,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                         expectedResults:
                           expectationHistory.get(currentTurn) || [],
                       },
-                      currentTurn
+                      currentTurn,
                     )
                   }
                 }
@@ -5237,7 +5607,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 if (runCompletedAndPersisted) {
                   Logger.debug(
                     { chatId: agentContext.chat.externalId },
-                    "[MessageAgents] turn_end: assistant already persisted (run_end ran first), skipping"
+                    "[MessageAgents] turn_end: assistant already persisted (run_end ran first), skipping",
                   )
                   break
                 }
@@ -5257,7 +5627,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                       expectedResults:
                         expectationHistory.get(finalTurnNumber) || [],
                     },
-                    finalTurnNumber
+                    finalTurnNumber,
                   )
                 } else {
                   Logger.debug(
@@ -5267,10 +5637,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
                       useSelfReview: USE_AGENT_SELF_REVIEW,
                       chatId: agentContext.chat.externalId,
                     },
-                    "[MessageAgents] Skipping run_end review (last turn = synthesis turn)."
+                    "[MessageAgents] Skipping run_end review (last turn = synthesis turn).",
                   )
                 }
-                loggerWithChild({ email }).info("Storing assistant response in database")
+                loggerWithChild({ email }).debug(
+                  "Storing assistant response in database",
+                )
                 Logger.debug(
                   {
                     chatId: agentContext.chat.externalId,
@@ -5280,7 +5652,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     imageCitationsCount: imageCitations.length,
                     citationSample: citations.slice(0, 3),
                   },
-                  "[MessageAgents][FinalSynthesis] LLM output preview"
+                  "[MessageAgents][FinalSynthesis] LLM output preview",
                 )
                 const totalCost = agentContext.totalCost
                 const totalTokens =
@@ -5311,15 +5683,18 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 } catch (error) {
                   loggerWithChild({ email }).error(
                     error,
-                    "Failed to persist assistant response"
+                    "Failed to persist assistant response",
                   )
                 }
-                loggerWithChild({ email }).debug({
-                  answer,
-                  citations: citations.length,
-                  cost: totalCost,
-                  tokens: totalTokens,
-                }, "Response generated successfully")
+                loggerWithChild({ email }).debug(
+                  {
+                    answer,
+                    citations: citations.length,
+                    cost: totalCost,
+                    tokens: totalTokens,
+                  },
+                  "Response generated successfully",
+                )
                 await stream.writeSSE({
                   event: ChatSSEvents.ResponseMetadata,
                   data: JSON.stringify({
@@ -5345,11 +5720,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   hasToolCalls:
                     Array.isArray(evt.data.message?.tool_calls) &&
                     (evt.data.message.tool_calls?.length ?? 0) > 0,
-                  contentPreview: getTextContent(evt.data.message.content)
-                    ?.slice(0, 200) || "",
+                  contentPreview:
+                    getTextContent(evt.data.message.content)?.slice(0, 200) ||
+                    "",
                   chatId: agentContext.chat.externalId,
                 },
-                "[MessageAgents] Assistant output received"
+                "[MessageAgents] Assistant output received",
               )
               const content = getTextContent(evt.data.message.content) || ""
               const hasToolCalls =
@@ -5357,40 +5733,33 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 (evt.data.message.tool_calls?.length ?? 0) > 0
               assistantSpan?.setAttribute("content_length", content.length)
               assistantSpan?.setAttribute("has_tool_calls", hasToolCalls)
-              
+
               if (content) {
                 const extractedExpectations = extractExpectedResults(content)
-                Logger.debug({
-                  turn: currentTurn,
-                  extractedCount: extractedExpectations.length,
-                  extractedExpectations,
-                  chatId: agentContext.chat.externalId,
-                }, "[DEBUG] Extracted expectations from assistant message")
+                Logger.debug(
+                  {
+                    turn: currentTurn,
+                    extractedCount: extractedExpectations.length,
+                    extractedExpectations,
+                    chatId: agentContext.chat.externalId,
+                  },
+                  "[DEBUG] Extracted expectations from assistant message",
+                )
                 if (extractedExpectations.length > 0) {
                   await emitReasoningEvent(
                     emitReasoningStep,
-                    ReasoningSteps.expectationsSet()
+                    ReasoningSteps.expectationsSet(),
                   )
                   pendingExpectations.push(...extractedExpectations)
                   agentContext.currentTurnArtifacts.expectations.push(
                     ...extractedExpectations
                   )
                   if (currentTurn > 0) {
-                    Logger.debug({
-                      turn: currentTurn,
-                      expectationsCount: extractedExpectations.length,
-                      chatId: agentContext.chat.externalId,
-                    }, "[DEBUG] Recording expectations for current turn")
                     recordExpectationsForTurn(
                       currentTurn,
-                      extractedExpectations
+                      extractedExpectations,
                     )
                   } else {
-                    Logger.debug({
-                      turn: currentTurn,
-                      expectationsCount: extractedExpectations.length,
-                      chatId: agentContext.chat.externalId,
-                    }, "[DEBUG] Buffering expectations for future turn")
                     expectationBuffer.push(...extractedExpectations)
                   }
                 }
@@ -5428,7 +5797,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               tokenUsageSpan.setAttribute("prompt_tokens", evt.data.prompt ?? 0)
               tokenUsageSpan.setAttribute(
                 "completion_tokens",
-                evt.data.completion ?? 0
+                evt.data.completion ?? 0,
               )
               tokenUsageSpan.setAttribute("total_tokens", evt.data.total ?? 0)
               tokenUsageSpan.end()
@@ -5436,7 +5805,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
             }
 
             case "guardrail_violation": {
-              const guardrailSpan = jafStreamingSpan.startSpan("guardrail_violation")
+              const guardrailSpan = jafStreamingSpan.startSpan(
+                "guardrail_violation",
+              )
               guardrailSpan.setAttribute("stage", evt.data.stage)
               guardrailSpan.setAttribute("reason", evt.data.reason)
               guardrailSpan.end()
@@ -5447,7 +5818,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               const decodeSpan = jafStreamingSpan.startSpan("decode_error")
               decodeSpan.setAttribute(
                 "errors",
-                JSON.stringify(evt.data.errors ?? [])
+                JSON.stringify(evt.data.errors ?? []),
               )
               decodeSpan.end()
               break
@@ -5464,16 +5835,16 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
             case "clarification_requested": {
               const clarificationSpan = jafStreamingSpan.startSpan(
-                "clarification_requested"
+                "clarification_requested",
               )
               clarificationSpan.setAttribute(
                 "clarification_id",
-                evt.data.clarificationId
+                evt.data.clarificationId,
               )
               clarificationSpan.setAttribute("question", evt.data.question)
               clarificationSpan.setAttribute(
                 "options_count",
-                evt.data.options.length
+                evt.data.options.length,
               )
               clarificationSpan.end()
               break
@@ -5481,15 +5852,15 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
             case "clarification_provided": {
               const clarificationProvidedSpan = jafStreamingSpan.startSpan(
-                "clarification_provided"
+                "clarification_provided",
               )
               clarificationProvidedSpan.setAttribute(
                 "clarification_id",
-                evt.data.clarificationId
+                evt.data.clarificationId,
               )
               clarificationProvidedSpan.setAttribute(
                 "selected_id",
-                evt.data.selectedId
+                evt.data.selectedId,
               )
               clarificationProvidedSpan.end()
               break
@@ -5510,7 +5881,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               }
               finalOutputSpan.setAttribute(
                 "output_length",
-                typeof output === "string" ? output.length : 0
+                typeof output === "string" ? output.length : 0,
               )
               finalOutputSpan.end()
               break
@@ -5521,25 +5892,27 @@ export async function MessageAgents(c: Context): Promise<Response> {
               const outcome = evt.data.outcome
               runEndSpan.setAttribute(
                 "outcome_status",
-                outcome?.status ?? "unknown"
+                outcome?.status ?? "unknown",
               )
               if (outcome?.status === "completed") {
                 if (runCompletedAndPersisted) {
                   runEndSpan.setAttribute("total_cost", agentContext.totalCost)
                   runEndSpan.setAttribute(
                     "total_tokens",
-                    agentContext.tokenUsage.input + agentContext.tokenUsage.output
+                    agentContext.tokenUsage.input +
+                      agentContext.tokenUsage.output,
                   )
                   runEndSpan.setAttribute("citations_count", citations.length)
                 } else {
                   const finalTurnNumber = Math.max(
                     agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
-                    MIN_TURN_NUMBER
+                    MIN_TURN_NUMBER,
                   )
                   const lastReviewTurn = agentContext.review.lastReviewTurn
                   const skipRunEndReview =
                     USE_AGENT_SELF_REVIEW ||
-                    (lastReviewTurn != null && lastReviewTurn === finalTurnNumber)
+                    (lastReviewTurn != null &&
+                      lastReviewTurn === finalTurnNumber)
                   if (!skipRunEndReview) {
                     await runAndBroadcastReview(
                       agentContext,
@@ -5551,7 +5924,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                         expectedResults:
                           expectationHistory.get(finalTurnNumber) || [],
                       },
-                      finalTurnNumber
+                      finalTurnNumber,
                     )
                   } else {
                     Logger.debug(
@@ -5561,10 +5934,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
                         useSelfReview: USE_AGENT_SELF_REVIEW,
                         chatId: agentContext.chat.externalId,
                       },
-                      "[MessageAgents] Skipping run_end review (self-review or already reviewed)."
+                      "[MessageAgents] Skipping run_end review (self-review or already reviewed).",
                     )
                   }
-                  loggerWithChild({ email }).info("Storing assistant response in database")
+                  loggerWithChild({ email }).debug(
+                    "Storing assistant response in database",
+                  )
                   Logger.debug(
                     {
                       chatId: agentContext.chat.externalId,
@@ -5574,11 +5949,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
                       imageCitationsCount: imageCitations.length,
                       citationSample: citations.slice(0, 3),
                     },
-                    "[MessageAgents][FinalSynthesis] LLM output preview"
+                    "[MessageAgents][FinalSynthesis] LLM output preview",
                   )
                   const totalCost = agentContext.totalCost
                   const totalTokens =
-                    agentContext.tokenUsage.input + agentContext.tokenUsage.output
+                    agentContext.tokenUsage.input +
+                    agentContext.tokenUsage.output
                   try {
                     const timeTakenMs = Date.now() - requestStartMs
                     const assistantInsert = {
@@ -5605,15 +5981,18 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   } catch (error) {
                     loggerWithChild({ email }).error(
                       error,
-                      "Failed to persist assistant response"
+                      "Failed to persist assistant response",
                     )
                   }
-                  loggerWithChild({ email }).debug({
-                    answer,
-                    citations: citations.length,
-                    cost: totalCost,
-                    tokens: totalTokens,
-                  }, "Response generated successfully")
+                  loggerWithChild({ email }).debug(
+                    {
+                      answer,
+                      citations: citations.length,
+                      cost: totalCost,
+                      tokens: totalTokens,
+                    },
+                    "Response generated successfully",
+                  )
                   runEndSpan.setAttribute("total_cost", totalCost)
                   runEndSpan.setAttribute("total_tokens", totalTokens)
                   runEndSpan.setAttribute("citations_count", citations.length)
@@ -5739,7 +6118,7 @@ type ListAgentsParams = {
 }
 
 export async function listCustomAgentsSuitable(
-  params: ListAgentsParams
+  params: ListAgentsParams,
 ): Promise<ListCustomAgentsOutput> {
   const maxAgents = Math.min(Math.max(params.maxAgents ?? 5, 1), 10)
   let workspaceDbId = params.workspaceNumericId
@@ -5747,11 +6126,12 @@ export async function listCustomAgentsSuitable(
   const mcpAgentsFromContext = params.mcpAgents ?? []
 
   if (!workspaceDbId || !userDbId) {
-    const userAndWorkspace: InternalUserWorkspace = await getUserAndWorkspaceByEmail(
-      db,
-      params.workspaceExternalId,
-      params.userEmail
-    )
+    const userAndWorkspace: InternalUserWorkspace =
+      await getUserAndWorkspaceByEmail(
+        db,
+        params.workspaceExternalId,
+        params.userEmail,
+      )
     workspaceDbId = Number(userAndWorkspace.workspace.id)
     userDbId = Number(userAndWorkspace.user.id)
   }
@@ -5761,7 +6141,7 @@ export async function listCustomAgentsSuitable(
     userDbId!,
     workspaceDbId!,
     25,
-    0
+    0,
   )
 
   if (!accessibleAgents.length && mcpAgentsFromContext.length === 0) {
@@ -5825,7 +6205,7 @@ export async function listCustomAgentsSuitable(
     `Select up to ${maxAgents} agents.`,
     "If no agent is unquestionably suitable, set agents to null.",
     "Only include an agent when you can cite concrete capability matches; otherwise leave it out.",
-    "You may return multiple agents when several are clearly relevant—rank the strongest ones first."
+    "You may return multiple agents when several are clearly relevant—rank the strongest ones first.",
   ].join(" ")
 
   const payload = [
@@ -5837,8 +6217,7 @@ export async function listCustomAgentsSuitable(
     formatAgentBriefsForPrompt(combinedBriefs),
   ].join("\n\n")
 
-  const modelId =
-    (defaultFastModel as Models) || (defaultBestModel as Models)
+  const modelId = (defaultFastModel as Models) || (defaultBestModel as Models)
   const modelParams: ModelParams = {
     modelId,
     json: true,
@@ -5858,7 +6237,7 @@ export async function listCustomAgentsSuitable(
 
     const { text } = await getProviderByModel(modelId).converse(
       messages,
-      modelParams
+      modelParams,
     )
 
     const parsed = jsonParseLLMOutput(text || "")
@@ -5883,49 +6262,47 @@ export async function listCustomAgentsSuitable(
 
     loggerWithChild({ email: params.userEmail }).warn(
       { issue: validation.error.format() },
-      "LLM agent selection output invalid, falling back to heuristic scoring"
+      "LLM agent selection output invalid, falling back to heuristic scoring",
     )
   } catch (error) {
     loggerWithChild({ email: params.userEmail }).error(
       { err: error },
-      "LLM agent selection failed, falling back to heuristic scoring"
+      "LLM agent selection failed, falling back to heuristic scoring",
     )
   }
 
   loggerWithChild({ email: params.userEmail }).info(
-    { 
+    {
       query: params.query,
       totalAgents: combinedBriefs.length,
       maxAgents,
     },
-    "Using heuristic agent selection mechanism (LLM-based selection not available or failed)"
+    "Using heuristic agent selection mechanism (LLM-based selection not available or failed)",
   )
 
   return buildHeuristicAgentSelection(
     combinedBriefs,
     params.query,
     maxAgents,
-    totalEvaluated
+    totalEvaluated,
   )
 }
 
-export async function executeCustomAgent(
-  params: {
-    agentId: string
-    query: string
-    userEmail: string
-    workspaceExternalId: string
-    contextSnippet?: string
-    maxTokens?: number
-    parentTurn?: number
-    mcpAgents?: MCPVirtualAgentRuntime[]
-    stopSignal?: AbortSignal
-    /** When set, delegated agent reasoning is streamed to the parent's SSE (nested JAF streaming). */
+export async function executeCustomAgent(params: {
+  agentId: string
+  query: string
+  userEmail: string
+  workspaceExternalId: string
+  contextSnippet?: string
+  maxTokens?: number
+  parentTurn?: number
+  mcpAgents?: MCPVirtualAgentRuntime[]
+  stopSignal?: AbortSignal
+  /** When set, delegated agent reasoning is streamed to the parent's SSE (nested JAF streaming). */
     reasoningEmitter?: ReasoningEmitter
     /** Stable UUID for this specific delegation; forwarded to the inner emitter wrapper. */
     delegationRunId?: string
-  }
-): Promise<ToolOutput> {
+}): Promise<ToolOutput> {
   const turnInfo =
     typeof params.parentTurn === "number"
       ? `\n\nTurn info: Parent turn number is ${params.parentTurn}. Continue numbering from here.`
@@ -5999,10 +6376,7 @@ export async function executeCustomAgent(
       },
     }
   } catch (error) {
-    Logger.error(
-      { err: error },
-      "executeCustomAgent encountered an error"
-    )
+    Logger.error({ err: error }, "executeCustomAgent encountered an error")
     return {
       result: "Agent execution threw an exception",
       error: getErrorMessage(error),
@@ -6037,7 +6411,7 @@ type DelegatedAgentRunParams = {
 }
 
 async function runDelegatedAgentWithMessageAgents(
-  params: DelegatedAgentRunParams
+  params: DelegatedAgentRunParams,
 ): Promise<ToolOutput> {
   const logger = loggerWithChild({ email: params.userEmail })
   const delegateModelId = resolveAgenticModelId(defaultBestModel)
@@ -6046,7 +6420,7 @@ async function runDelegatedAgentWithMessageAgents(
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       params.workspaceExternalId,
-      params.userEmail
+      params.userEmail,
     )
     const rawUser = userAndWorkspace.user
     const rawWorkspace = userAndWorkspace.workspace
@@ -6054,7 +6428,9 @@ async function runDelegatedAgentWithMessageAgents(
       id: Number(rawUser.id),
       email: String(rawUser.email),
       timeZone:
-        typeof rawUser.timeZone === "string" ? rawUser.timeZone : "Asia/Kolkata",
+        typeof rawUser.timeZone === "string"
+          ? rawUser.timeZone
+          : "Asia/Kolkata",
     }
     const workspace = {
       id: Number(rawWorkspace.id),
@@ -6064,7 +6440,7 @@ async function runDelegatedAgentWithMessageAgents(
       db,
       params.agentId,
       workspace.id,
-      user.id
+      user.id,
     )
 
     if (!agentRecord) {
@@ -6077,13 +6453,15 @@ async function runDelegatedAgentWithMessageAgents(
 
     const agentPromptForLLM = JSON.stringify(agentRecord)
     const dedicatedAgentSystemPrompt =
-      typeof agentRecord.prompt === "string" && agentRecord.prompt.trim().length > 0
+      typeof agentRecord.prompt === "string" &&
+      agentRecord.prompt.trim().length > 0
         ? agentRecord.prompt.trim()
         : undefined
     const userCtxString = userContext(userAndWorkspace)
     const userTimezone = user.timeZone || "Asia/Kolkata"
     const dateForAI = getDateForAI({ userTimeZone: userTimezone })
-    const attachmentsForContext: Array<{ fileId: string; isImage: boolean }> = []
+    const attachmentsForContext: Array<{ fileId: string; isImage: boolean }> =
+      []
 
     let connectorState = createEmptyConnectorState()
     try {
@@ -6091,7 +6469,7 @@ async function runDelegatedAgentWithMessageAgents(
     } catch (error) {
       logger.warn(
         error,
-        "[DelegatedAgenticRun] Failed to load connector state; assuming no connectors"
+        "[DelegatedAgenticRun] Failed to load connector state; assuming no connectors",
       )
     }
 
@@ -6110,12 +6488,21 @@ async function runDelegatedAgentWithMessageAgents(
         workspaceNumericId: workspace.id,
         stopSignal: params.stopSignal,
         modelId: delegateModelId,
-      }
+      },
     )
     agentContext.delegationEnabled = false
     agentContext.ambiguityResolved = true
     agentContext.maxOutputTokens = params.maxTokens
     agentContext.mcpAgents = params.mcpAgents ?? []
+    logContextMutation(
+      agentContext,
+      "[DelegatedAgenticRun][Context] Updated delegated agent context defaults",
+      {
+        delegationEnabled: agentContext.delegationEnabled,
+        maxOutputTokens: agentContext.maxOutputTokens,
+        mcpAgentCount: agentContext.mcpAgents.length,
+      },
+    )
 
     const allowedAgentApps = deriveAllowedAgentApps(agentPromptForLLM)
     const baseInternalTools = buildInternalToolAdapters()
@@ -6148,7 +6535,16 @@ async function runDelegatedAgentWithMessageAgents(
       ...directMcpTools,
     ]
     agentContext.enabledTools = new Set(
-      allTools.map((tool) => tool.schema.name)
+      allTools.map((tool) => tool.schema.name),
+    )
+    logContextMutation(
+      agentContext,
+      "[DelegatedAgenticRun][Context] Updated enabled tools",
+      {
+        enabledTools: Array.from(agentContext.enabledTools),
+        directMcpToolCount: directMcpTools.length,
+        internalToolCount: internalTools.length,
+      },
     )
 
     const gatheredFragmentsKeys = new Set<string>()
@@ -6159,7 +6555,7 @@ async function runDelegatedAgentWithMessageAgents(
         allTools.map((tool) => tool.schema.name),
         dateForAI,
         agentPromptForLLM,
-        false
+        false,
       )
     }
 
@@ -6213,7 +6609,7 @@ async function runDelegatedAgentWithMessageAgents(
 
     const recordExpectationsForTurn = (
       turn: number,
-      expectations: PendingExpectation[]
+      expectations: PendingExpectation[],
     ) => {
       if (!expectations.length) return
       const existing = expectationHistory.get(turn) || []
@@ -6230,7 +6626,7 @@ async function runDelegatedAgentWithMessageAgents(
     const ensureToolCallId = (
       toolCall: ToolCallReference,
       turn: number,
-      index: number
+      index: number,
     ): string => {
       const mapKey = toolCall as object
       if (toolCall.id !== undefined && toolCall.id !== null) {
@@ -6247,12 +6643,11 @@ async function runDelegatedAgentWithMessageAgents(
 
     const buildTurnReviewInput = (
       turn: number,
-      reviewFreq: number
+      reviewFreq: number,
     ): { reviewInput: AutoReviewInput } => {
       const startTurn = Math.max(MIN_TURN_NUMBER, turn - reviewFreq + 1)
       const toolHistory = agentContext.toolCallHistory.filter(
-        (record) =>
-          record.turnNumber >= startTurn && record.turnNumber <= turn
+        (record) => record.turnNumber >= startTurn && record.turnNumber <= turn,
       )
 
       const expectedResults: ToolExpectationAssignment[] = []
@@ -6271,15 +6666,16 @@ async function runDelegatedAgentWithMessageAgents(
       }
     }
 
-    const runTurnEndReviewAndCleanup = async (
-      turn: number
-    ): Promise<void> => {
-      Logger.debug({
-        turn,
-        expectationHistoryKeys: Array.from(expectationHistory.keys()),
-        expectationsForThisTurn: expectationHistory.get(turn),
-        chatId: agentContext.chat.externalId,
-      }, "[DelegatedAgenticRun][DEBUG] Expectation history state at turn_end")
+    const runTurnEndReviewAndCleanup = async (turn: number): Promise<void> => {
+      Logger.debug(
+        {
+          turn,
+          expectationHistoryKeys: Array.from(expectationHistory.keys()),
+          expectationsForThisTurn: expectationHistory.get(turn),
+          chatId: agentContext.chat.externalId,
+        },
+        "[DelegatedAgenticRun][DEBUG] Expectation history state at turn_end",
+      )
 
       try {
         if (!reviewsAllowed(agentContext)) {
@@ -6289,13 +6685,13 @@ async function runDelegatedAgentWithMessageAgents(
               chatId: agentContext.chat.externalId,
               lockedAtTurn: agentContext.review.lockedAtTurn,
             },
-            "[DelegatedAgenticRun] Review skipped because final synthesis was already requested."
+            "[DelegatedAgenticRun] Review skipped because final synthesis was already requested.",
           )
           return
         }
         if (!USE_AGENT_SELF_REVIEW) {
           const reviewFreq = normalizeReviewFrequency(
-            agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY
+            agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
           )
           const runReviewThisTurn =
             turn === MIN_TURN_NUMBER || turn % reviewFreq === 0
@@ -6309,26 +6705,29 @@ async function runDelegatedAgentWithMessageAgents(
                 reviewFrequency: reviewFreq,
                 chatId: agentContext.chat.externalId,
               },
-              "[DelegatedAgenticRun] Review skipped (runs every N turns)."
+              "[DelegatedAgenticRun] Review skipped (runs every N turns).",
             )
           }
         } else {
           await handleReviewOutcome(
             agentContext,
             buildDefaultReviewPayload(
-              "Self-review mode; no external review. State updated for continuity."
+              "Self-review mode; no external review. State updated for continuity.",
             ),
             turn,
             "turn_end",
-            emitReasoningStep
+            emitReasoningStep,
           )
         }
       } catch (error) {
-        Logger.error({
-          turn,
-          chatId: agentContext.chat.externalId,
-          error: getErrorMessage(error),
-        }, "[DelegatedAgenticRun] Turn-end review failed")
+        Logger.error(
+          {
+            turn,
+            chatId: agentContext.chat.externalId,
+            error: getErrorMessage(error),
+          },
+          "[DelegatedAgenticRun] Turn-end review failed",
+        )
       } finally {
         const attachmentState = getAttachmentPhaseMetadata(agentContext)
         if (attachmentState.initialAttachmentPhase) {
@@ -6348,7 +6747,9 @@ async function runDelegatedAgentWithMessageAgents(
     // - Treat as delegated (swallow TurnStarted, group steps).
     // - Group by delegationRunId = one container per run_public_agent call (multiple calls → multiple containers).
     const delegatedAgentName =
-      (agentRecord as { name?: string }).name || params.agentId || "Delegated agent"
+      (agentRecord as { name?: string }).name ||
+      params.agentId ||
+      "Delegated agent"
     // Prefer the ID pre-generated at delegation time (tool_requests handler) so
     // agentDelegated, all inner steps, and agentCompleted share the same key.
     // Fall back to the internal runId only when called without a parent context.
@@ -6362,12 +6763,14 @@ async function runDelegatedAgentWithMessageAgents(
             turnNumber: payload.turnNumber ?? currentTurn,
           })
         }
-      : async (_payload) => { return }
+      : async (_payload) => {
+          return
+        }
 
     const runAndBroadcastReview = async (
       context: AgentRunContext,
       reviewInput: AutoReviewInput,
-      iteration: number
+      iteration: number,
     ): Promise<ReviewResult | null> => {
       if (!reviewsAllowed(context)) {
         Logger.info(
@@ -6377,7 +6780,7 @@ async function runDelegatedAgentWithMessageAgents(
             lockedAtTurn: context.review.lockedAtTurn,
             focus: reviewInput.focus,
           },
-          `[DelegatedAgenticRun] Review skipped for focus '${reviewInput.focus}' due to final synthesis lock.`
+          `[DelegatedAgenticRun] Review skipped for focus '${reviewInput.focus}' due to final synthesis lock.`,
         )
         return null
       }
@@ -6388,24 +6791,23 @@ async function runDelegatedAgentWithMessageAgents(
       ) {
         Logger.warn(
           { turn: iteration, focus: reviewInput.focus },
-          "[DelegatedAgenticRun] No expected results recorded for review input."
+          "[DelegatedAgenticRun] No expected results recorded for review input.",
         )
       }
-      const reviewResult = await performAutomaticReview(
-        reviewInput,
-        context
-      )
+      const reviewResult = await performAutomaticReview(reviewInput, context)
       await handleReviewOutcome(
         context,
         reviewResult,
         iteration,
         reviewInput.focus,
-        emitReasoningStep
+        emitReasoningStep,
       )
       return reviewResult
     }
 
-    const runCfg: JAFRunConfig<AgentRunContext> = {
+    const runCfg: JAFRunConfig<AgentRunContext> & {
+      onEvent?: (event: TraceEvent) => void
+    } = {
       agentRegistry,
       modelProvider,
       maxTurns: Math.min(DELEGATED_RUN_MAX_TURNS, 100),
@@ -6416,21 +6818,17 @@ async function runDelegatedAgentWithMessageAgents(
       onAfterToolExecution: async (
         toolName: string,
         result: any,
-        hookContext: any
+        hookContext: any,
       ) => {
         const callIdRaw = hookContext?.toolCall?.id
-        const normalizedCallId =
-          hookContext?.toolCall
-            ? syntheticToolCallIds.get(hookContext.toolCall) ??
-              (callIdRaw === undefined || callIdRaw === null
-                ? undefined
-                : String(callIdRaw))
-            : undefined
+        const normalizedCallId = hookContext?.toolCall
+          ? (syntheticToolCallIds.get(hookContext.toolCall) ??
+            (callIdRaw === undefined || callIdRaw === null
+              ? undefined
+              : String(callIdRaw)))
+          : undefined
         let expectationForCall: ToolExpectation | undefined
-        if (
-          normalizedCallId &&
-          expectedResultsByCallId.has(normalizedCallId)
-        ) {
+        if (normalizedCallId && expectedResultsByCallId.has(normalizedCallId)) {
           expectationForCall = expectedResultsByCallId.get(normalizedCallId)
           expectedResultsByCallId.delete(normalizedCallId)
         }
@@ -6440,20 +6838,19 @@ async function runDelegatedAgentWithMessageAgents(
         if (normalizedCallId) {
           toolCallTurnMap.delete(normalizedCallId)
         }
-        if (
-          turnForCall === undefined ||
-          turnForCall < MIN_TURN_NUMBER
-        ) {
-          turnForCall =
-            agentContext.turnCount ??
-            currentTurn ??
-            MIN_TURN_NUMBER
+        if (turnForCall === undefined || turnForCall < MIN_TURN_NUMBER) {
+          turnForCall = agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER
         }
         // Per-call scoped emitter — same race-free pattern as the main run.
         // runPublicAgent is excluded because its events group by delegationRunId.
-        const toolScopedEmitter: ReasoningEmitter = (normalizedCallId && toolName !== XyneTools.runPublicAgent)
-          ? async (payload) => emitReasoningStep({ ...payload, toolExecutionId: normalizedCallId })
-          : emitReasoningStep
+        const toolScopedEmitter: ReasoningEmitter =
+          normalizedCallId && toolName !== XyneTools.runPublicAgent
+            ? async (payload) =>
+                emitReasoningStep({
+                  ...payload,
+                  toolExecutionId: normalizedCallId,
+                })
+            : emitReasoningStep
         const hookResult = await afterToolExecutionHook(
           toolName,
           result,
@@ -6463,7 +6860,7 @@ async function runDelegatedAgentWithMessageAgents(
           gatheredFragmentsKeys,
           expectationForCall,
           turnForCall,
-          toolScopedEmitter
+          toolScopedEmitter,
         )
         return hookResult
       },
@@ -6475,7 +6872,18 @@ async function runDelegatedAgentWithMessageAgents(
         event.data.toolName,
         event.data.args,
         agentContext,
-        emitReasoningStep
+        emitReasoningStep,
+      )
+    }
+    runCfg.onEvent = (event) => {
+      logJAFTraceEvent(
+        {
+          chatId: agentContext.chat.externalId,
+          email: params.userEmail,
+          flow: "DelegatedAgenticRun",
+          runId,
+        },
+        event,
       )
     }
 
@@ -6490,6 +6898,14 @@ async function runDelegatedAgentWithMessageAgents(
       emitReasoning: async (payload) =>
         emitReasoningStep(payload as ReasoningEventPayload),
     }
+    logContextMutation(
+      agentContext,
+      "[DelegatedAgenticRun][Context] Attached runtime callbacks",
+      {
+        hasStreamAnswerText: true,
+        hasEmitReasoning: true,
+      },
+    )
 
     let currentTurn = MIN_TURN_NUMBER
     let runCompleted = false
@@ -6499,7 +6915,7 @@ async function runDelegatedAgentWithMessageAgents(
       for await (const evt of runStream<AgentRunContext, string>(
         runState,
         runCfg,
-        traceEventHandler
+        traceEventHandler,
       )) {
         throwIfStopRequested(params.stopSignal)
         switch (evt.type) {
@@ -6514,17 +6930,20 @@ async function runDelegatedAgentWithMessageAgents(
             if (dRecovered.length > 0) {
               await emitReasoningEvent(
                 emitReasoningStep,
-                ReasoningSteps.toolRecovered(dRecovered)
+                ReasoningSteps.toolRecovered(dRecovered),
               )
             }
-            const dActiveTools = dCooldown.getAvailableTools(allTools, currentTurn)
+            const dActiveTools = dCooldown.getAvailableTools(
+              allTools,
+              currentTurn,
+            )
             agentContext.enabledTools = new Set(
-              dActiveTools.map((t) => t.schema.name)
+              dActiveTools.map((t) => t.schema.name),
             )
 
             await emitReasoningEvent(
               emitReasoningStep,
-              ReasoningSteps.turnStarted(currentTurn)
+              ReasoningSteps.turnStarted(currentTurn),
             )
             break
           }
@@ -6534,25 +6953,27 @@ async function runDelegatedAgentWithMessageAgents(
               const normalizedCallId = ensureToolCallId(
                 toolCall,
                 currentTurn,
-                idx
+                idx,
               )
               toolCallTurnMap.set(normalizedCallId, currentTurn)
               const assignedExpectation = consumePendingExpectation(
                 pendingExpectations,
-                toolCall.name
+                toolCall.name,
               )
               if (assignedExpectation) {
                 expectedResultsByCallId.set(
                   normalizedCallId,
-                  assignedExpectation.expectation
+                  assignedExpectation.expectation,
                 )
               }
-              const dToolQuery = extractToolQuery(toolCall.name, (toolCall.args ?? {}) as Record<string, unknown>)
-              // toolExecutionId inlined directly — no shared scalar, no race.
-              await emitReasoningEvent(
-                emitReasoningStep,
-                { ...ReasoningSteps.toolSelected(toolCall.name, dToolQuery), toolExecutionId: normalizedCallId }
+              const dToolQuery = extractToolQuery(
+                toolCall.name,
+                (toolCall.args ?? {}) as Record<string, unknown>,
               )
+              await emitReasoningEvent(emitReasoningStep, {
+                ...ReasoningSteps.toolSelected(toolCall.name, dToolQuery),
+                toolExecutionId: normalizedCallId,
+              })
             }
             break
 
@@ -6582,7 +7003,7 @@ async function runDelegatedAgentWithMessageAgents(
                       expectedResults:
                         expectationHistory.get(currentTurn) || [],
                     },
-                    currentTurn
+                    currentTurn,
                   )
                 }
               }
@@ -6603,14 +7024,11 @@ async function runDelegatedAgentWithMessageAgents(
               if (extractedExpectations.length > 0) {
                 await emitReasoningEvent(
                   emitReasoningStep,
-                  ReasoningSteps.expectationsSet()
+                  ReasoningSteps.expectationsSet(),
                 )
                 pendingExpectations.push(...extractedExpectations)
                 if (currentTurn > 0) {
-                  recordExpectationsForTurn(
-                    currentTurn,
-                    extractedExpectations
-                  )
+                  recordExpectationsForTurn(currentTurn, extractedExpectations)
                 } else {
                   expectationBuffer.push(...extractedExpectations)
                 }
@@ -6633,7 +7051,7 @@ async function runDelegatedAgentWithMessageAgents(
                 agentContext.finalSynthesis.ackReceived = true
                 await emitReasoningEvent(
                   emitReasoningStep,
-                  ReasoningSteps.synthesisCompleted()
+                  ReasoningSteps.synthesisCompleted(),
                 )
               }
               break
@@ -6664,7 +7082,7 @@ async function runDelegatedAgentWithMessageAgents(
             if (outcome?.status === "completed") {
               const finalTurnNumber = Math.max(
                 agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
-                MIN_TURN_NUMBER
+                MIN_TURN_NUMBER,
               )
               const lastReviewTurn = agentContext.review.lastReviewTurn
               const skipRunEndReview =
@@ -6681,7 +7099,7 @@ async function runDelegatedAgentWithMessageAgents(
                     expectedResults:
                       expectationHistory.get(finalTurnNumber) || [],
                   },
-                  finalTurnNumber
+                  finalTurnNumber,
                 )
               } else {
                 Logger.debug(
@@ -6691,7 +7109,7 @@ async function runDelegatedAgentWithMessageAgents(
                     useSelfReview: USE_AGENT_SELF_REVIEW,
                     chatId: agentContext.chat.externalId,
                   },
-                  "[DelegatedAgenticRun] Skipping run_end review."
+                  "[DelegatedAgenticRun] Skipping run_end review.",
                 )
               }
               runCompleted = true
@@ -6757,7 +7175,7 @@ async function runDelegatedAgentWithMessageAgents(
         yieldedCitations,
         fragmentsForCitations,
         yieldedImageCitations,
-        params.userEmail
+        params.userEmail,
       )) {
         if (event.citation) {
           citations.push(event.citation.item)
@@ -6768,8 +7186,7 @@ async function runDelegatedAgentWithMessageAgents(
       }
     }
 
-    const finalAnswer =
-      answerForCitations || "Agent did not return any text."
+    const finalAnswer = answerForCitations || "Agent did not return any text."
 
     return {
       result: finalAnswer,
@@ -6810,11 +7227,11 @@ type ExecuteMcpAgentOptions = {
 async function executeMcpAgent(
   agentId: string,
   query: string,
-  options: ExecuteMcpAgentOptions
+  options: ExecuteMcpAgentOptions,
 ): Promise<ToolOutput> {
   const connectorId = agentId.replace(/^mcp:/, "")
   const mcpAgent = options.mcpAgents?.find(
-    (agent) => agent.agentId === agentId || agent.connectorId === connectorId
+    (agent) => agent.agentId === agentId || agent.connectorId === connectorId,
   )
   if (!mcpAgent) {
     return {
@@ -6835,7 +7252,7 @@ async function executeMcpAgent(
   const toolList = mcpAgent.tools
     .map(
       (tool, idx) =>
-        `${idx + 1}. ${tool.toolName} - ${tool.description ?? "No description provided"}`
+        `${idx + 1}. ${tool.toolName} - ${tool.description ?? "No description provided"}`,
     )
     .join("\n")
 
@@ -6859,9 +7276,11 @@ async function executeMcpAgent(
   let selectedToolName = mcpAgent.tools[0]?.toolName
   let selectedArgs: Record<string, unknown> = {}
   let selectionRationale = "Heuristic default selection."
-  let selectedToolsArray:
-    | Array<{ toolName: string; arguments?: Record<string, unknown>; rationale?: string }>
-    | null = null
+  let selectedToolsArray: Array<{
+    toolName: string
+    arguments?: Record<string, unknown>
+    rationale?: string
+  }> | null = null
 
   try {
     const provider = getProviderByModel(modelId)
@@ -6913,33 +7332,33 @@ async function executeMcpAgent(
       (selectionResponse as { toolCalls?: typeof selectionResponse.tool_calls })
         ?.toolCalls
     const calls = Array.isArray(responseToolCalls)
-        ? responseToolCalls.map((tc: any) => ({
-            toolName:
-              tc.name ??
-              tc.function?.name ??
-              (typeof tc.toolName === "string" ? tc.toolName : undefined),
-            arguments: (() => {
-              const rawArgs =
-                tc.arguments ??
-                tc.function?.arguments ??
-                (typeof tc.args === "string" ? tc.args : "{}")
-              if (typeof rawArgs === "object" && rawArgs !== null) {
-                return rawArgs as Record<string, unknown>
+      ? responseToolCalls.map((tc: any) => ({
+          toolName:
+            tc.name ??
+            tc.function?.name ??
+            (typeof tc.toolName === "string" ? tc.toolName : undefined),
+          arguments: (() => {
+            const rawArgs =
+              tc.arguments ??
+              tc.function?.arguments ??
+              (typeof tc.args === "string" ? tc.args : "{}")
+            if (typeof rawArgs === "object" && rawArgs !== null) {
+              return rawArgs as Record<string, unknown>
+            }
+            if (typeof rawArgs === "string") {
+              try {
+                return JSON.parse(rawArgs)
+              } catch {
+                return {}
               }
-              if (typeof rawArgs === "string") {
-                try {
-                  return JSON.parse(rawArgs)
-                } catch {
-                  return {}
-                }
-              }
-              return {}
-            })(),
-            rationale:
-              tc.rationale ??
-              (typeof tc.reason === "string" ? tc.reason : undefined),
-          }))
-        : null
+            }
+            return {}
+          })(),
+          rationale:
+            tc.rationale ??
+            (typeof tc.reason === "string" ? tc.reason : undefined),
+        }))
+      : null
 
     if (calls && calls.length > 0) {
       selectedToolsArray = calls
@@ -7081,7 +7500,7 @@ type AgentBrief = {
 
 function buildAgentBrief(
   agent: any,
-  resourceAccess?: ResourceAccessSummary[]
+  resourceAccess?: ResourceAccessSummary[],
 ): AgentBrief {
   const integrations = extractIntegrationKeys(agent.appIntegrations)
   const domains = deriveDomainsFromIntegrations(integrations)
@@ -7124,13 +7543,13 @@ Description: ${brief.description || "N/A"}
 Capabilities: ${brief.capabilities.join(", ") || "N/A"}
 Domains: ${brief.domains.join(", ")}
 Estimated cost: ${brief.estimatedCost}
-Resource readiness: ${summarizeResourceAccess(brief.resourceAccess)}`
+Resource readiness: ${summarizeResourceAccess(brief.resourceAccess)}`,
     )
     .join("\n\n")
 }
 
 function summarizeResourceAccess(
-  resourceAccess?: ResourceAccessSummary[]
+  resourceAccess?: ResourceAccessSummary[],
 ): string {
   if (!resourceAccess || resourceAccess.length === 0) {
     return "unknown"
@@ -7158,19 +7577,17 @@ function buildHeuristicAgentSelection(
   briefs: AgentBrief[],
   query: string,
   maxAgents: number,
-  totalEvaluated: number
+  totalEvaluated: number,
 ): ListCustomAgentsOutput {
   const tokens = query.toLowerCase().split(/\s+/)
   const scored = briefs.map((brief) => {
     const text =
       `${brief.agentName} ${brief.description} ${brief.capabilities.join(" ")}`.toLowerCase()
     const baseScore =
-      tokens.reduce(
-        (acc, token) => (text.includes(token) ? acc + 1 : acc),
-        0
-      ) / Math.max(tokens.length, 1)
+      tokens.reduce((acc, token) => (text.includes(token) ? acc + 1 : acc), 0) /
+      Math.max(tokens.length, 1)
     const penalty = brief.resourceAccess?.some(
-      (entry) => entry.status === "missing"
+      (entry) => entry.status === "missing",
     )
       ? 0.3
       : brief.resourceAccess?.some((entry) => entry.status === "partial")

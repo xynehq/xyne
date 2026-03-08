@@ -1,16 +1,19 @@
-import { z, type ZodType } from "zod"
-import type { Tool } from "@xynehq/jaf"
-import { ToolResponse } from "@xynehq/jaf"
-import type { MinimalAgentFragment, Citation } from "./types"
-import type { AgentRunContext } from "./agent-schemas"
 import { answerContextMapFromFragments } from "@/ai/context"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { Apps } from "@xyne/vespa-ts/types"
+import type { Tool } from "@xynehq/jaf"
+import { ToolResponse } from "@xynehq/jaf"
+import { type ZodType, z } from "zod"
+import type { AgentRunContext } from "./agent-schemas"
+import type { Citation, MinimalAgentFragment } from "./types"
 
 const Logger = getLogger(Subsystem.Chat).child({ module: "jaf-adapter" })
 
-type ToolSchemaParameters = Tool<unknown, AgentRunContext>["schema"]["parameters"]
+type ToolSchemaParameters = Tool<
+  unknown,
+  AgentRunContext
+>["schema"]["parameters"]
 
 const toToolSchemaParameters = (schema: ZodType): ToolSchemaParameters =>
   schema as unknown as ToolSchemaParameters
@@ -84,7 +87,7 @@ export function buildMCPJAFTools(
           )
         }
       }
-      Logger.info(
+      Logger.debug(
         { connectorId, toolName, descLen: (toolDescription || "").length },
         "[MCP] Registering tool for JAF agent",
       )

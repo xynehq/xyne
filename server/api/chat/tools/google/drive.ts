@@ -12,12 +12,17 @@ import { baseToolParams, createQuerySchema } from "../schemas"
 
 const driveSearchToolSchema = z.object({
   query: createQuerySchema(GoogleApps.Drive),
-  owner: z.string().describe("Filter files by owner").optional(),
+  owner: z
+    .string()
+    .describe(
+      "Optional Drive owner identifier string. Email is preferred; owner display name can also work.",
+    )
+    .optional(),
   ...baseToolParams,
   filetype: z
     .array(z.nativeEnum(DriveEntity))
     .describe(
-      `Filter files by type. Available types: ${Object.values(DriveEntity)
+      `Optional Drive file-type enum values. Valid values are ${Object.values(DriveEntity)
         .map((e) => `'${e}'`)
         .join(", ")}.`,
     )
@@ -37,7 +42,7 @@ export const searchDriveFilesTool: Tool<DriveSearchToolParams, Ctx> = {
   schema: {
     name: "searchDriveFiles",
     description:
-      "Access and search files in Google Drive. Find documents, spreadsheets, presentations, PDFs, and folders by name, content, owner, or file type. Essential for document management and collaboration.",
+      "Search Google Drive files by title/content with optional owner, file-type, and time filters. Use file types when the ask is constrained to PDFs, folders, spreadsheets, or other specific Drive entities.",
     parameters: toToolSchemaParameters(driveSearchToolSchema),
   },
   async execute(
