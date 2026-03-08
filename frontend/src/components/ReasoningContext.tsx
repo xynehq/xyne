@@ -404,7 +404,12 @@ export const getCurrentProgressState = (
   const lastTop = steps[steps.length - 1]
   let latestStage: ReasoningStage | undefined
   if (lastTop.type === ReasoningEventType.TurnStarted && lastTop.substeps?.length) {
-    latestStage = lastTop.substeps[lastTop.substeps.length - 1].stage
+    for (let i = lastTop.substeps.length - 1; i >= 0; i--) {
+      if (lastTop.substeps[i].stage) {
+        latestStage = lastTop.substeps[i].stage
+        break
+      }
+    }
   }
   latestStage ??= lastTop.stage
   if (!latestStage) {
@@ -577,9 +582,9 @@ export const ToolBlock: React.FC<{
   citationMap?: Record<number, number>
   getAppIcon: (stepType?: string, stepIndex?: number, toolName?: string) => JSX.Element | null
 }> = memo(({ toolName, steps, isStreaming, citations, citationMap, getAppIcon }) => {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(() => isStreaming)
   useEffect(() => {
-    if (!isStreaming) setExpanded(false)
+    setExpanded(isStreaming)
   }, [isStreaming])
   return (
     <div className="w-full">

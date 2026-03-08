@@ -2323,7 +2323,7 @@ export async function afterToolExecutionHook(
   if (toolName !== XyneTools.runPublicAgent) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolCompleted(toolName, hookContext.status === "error")
+      ReasoningSteps.toolCompleted(toolName, record.status === "error")
     )
   }
 

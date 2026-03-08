@@ -3059,8 +3059,7 @@ const chatParams = z.object({
   agentic: z
     .string()
     .transform((val) => val === "true")
-    .optional()
-    .default("false"),
+    .optional(),
   embedded: z.coerce.boolean().optional(),
   refs: z // Changed from docId to refs, expects a JSON string array
     .string()

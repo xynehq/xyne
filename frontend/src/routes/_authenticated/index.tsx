@@ -36,9 +36,17 @@ const Index = () => {
   const [query, setQuery] = useState("")
   const AGENTIC_STATE = "agenticState"
   const [isAgenticMode, setIsAgenticMode] = useState(() => {
+    const fallback = import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true"
     const storedValue = localStorage.getItem(AGENTIC_STATE)
-    if (storedValue) return JSON.parse(storedValue)
-    return import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true"
+    if (storedValue) {
+      try {
+        const parsed = JSON.parse(storedValue)
+        if (typeof parsed === "boolean") return parsed
+      } catch {
+        // malformed value — fall through to env default
+      }
+    }
+    return fallback
   })
   const [persistedAgentId, setPersistedAgentId] = useState<string | null>(null)
   const [agent, setAgent] = useState<SelectPublicAgent | null>(null)

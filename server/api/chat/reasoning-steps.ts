@@ -80,7 +80,7 @@ export const ReasoningSteps = {
   turnStarted(turnNumber: number): ReasoningEventPayload {
     return {
       type: ReasoningEventType.TurnStarted,
-      displayText: turnNumber === 1 ? "Starting research." : `Starting search pass ${turnNumber}.`,
+      displayText: turnNumber === 0 ? "Starting research." : `Starting search pass ${turnNumber + 1}.`,
       stage: "understanding",
       turnNumber,
       timestamp: Date.now(),
