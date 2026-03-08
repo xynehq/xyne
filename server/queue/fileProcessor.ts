@@ -17,6 +17,21 @@ import { updateParentStatus } from "@/db/knowledgeBase"
 
 const Logger = getLogger(Subsystem.Queue)
 
+export function mergeCollectionItemMetadata(
+  existingMetadata: unknown,
+  updates: Record<string, unknown>,
+): Record<string, unknown> {
+  const baseMetadata =
+    typeof existingMetadata === "object" && existingMetadata !== null
+      ? { ...(existingMetadata as Record<string, unknown>) }
+      : {}
+
+  return {
+    ...baseMetadata,
+    ...updates,
+  }
+}
+
 function extractMarkdownTitle(content: string): string {
   const lines = content.split("\n")
   let inFrontmatter = false
@@ -106,7 +121,11 @@ async function handleRetryFailure(
         .where(eq(collectionItems.id, entityId))
 
       // If it's a file that failed, trigger parent status update
-      if (entityType === ProcessingJobType.FILE && parentId !== undefined && collectionId) {
+      if (
+        entityType === ProcessingJobType.FILE &&
+        parentId !== undefined &&
+        collectionId
+      ) {
         if (parentId) {
           await updateParentStatus(db, parentId, false)
         } else {
@@ -249,7 +268,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     )
 
     // Extract title for markdown files
-    let pageTitle:string=""
+    let pageTitle: string = ""
     if (getBaseMimeType(file.mimeType || "") === "text/markdown") {
       try {
         const fileContent = fileBuffer.toString("utf-8")
@@ -272,7 +291,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
     let totalChunksCount = 0
     let newVespaDocId = ""
-    if(processingResults.length > 0 && 'totalSheets' in processingResults[0]) {
+    if (processingResults.length > 0 && "totalSheets" in processingResults[0]) {
       newVespaDocId = `${file.vespaDocId}_sheet_${(processingResults[0] as SheetProcessingResult).totalSheets}`
     } else {
       newVespaDocId = file.vespaDocId
@@ -280,24 +299,26 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     for (const [resultIndex, processingResult] of processingResults.entries()) {
       // Create Vespa document with proper fileName (matching original logic)
       const targetPath = file.path
-      
+
       // Reconstruct the original filePath (full path from collection root)
-      const reconstructedFilePath = targetPath === "/" 
-        ? file.fileName 
-        : targetPath.substring(1) + file.fileName // Remove leading "/" and add filename
-      
+      const reconstructedFilePath =
+        targetPath === "/"
+          ? file.fileName
+          : targetPath.substring(1) + file.fileName // Remove leading "/" and add filename
+
       let vespaFileName =
         targetPath === "/"
-          ? file.collectionName + targetPath + reconstructedFilePath    // Uses full path for root
-          : file.collectionName + targetPath + file.fileName            // Uses filename for nested
+          ? file.collectionName + targetPath + reconstructedFilePath // Uses full path for root
+          : file.collectionName + targetPath + file.fileName // Uses filename for nested
 
       // For sheet processing results, append sheet information to fileName
       let docId = file.vespaDocId
-      if ('sheetName' in processingResult) {
+      if ("sheetName" in processingResult) {
         const sheetResult = processingResult as SheetProcessingResult
-        vespaFileName = processingResults.length > 1 
-          ? `${vespaFileName} / ${sheetResult.sheetName}`
-          : vespaFileName
+        vespaFileName =
+          processingResults.length > 1
+            ? `${vespaFileName} / ${sheetResult.sheetName}`
+            : vespaFileName
         docId = sheetResult.docId
       } else if (processingResults.length > 1) {
         // For non-sheet files with multiple results, append index
@@ -320,22 +341,28 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         image_chunks_pos: processingResult.image_chunks_pos,
         chunks_map: processingResult.chunks_map,
         image_chunks_map: processingResult.image_chunks_map,
-        pageTitle : pageTitle,
+        pageTitle: pageTitle,
         metadata: JSON.stringify({
           originalFileName: file.originalName || file.fileName,
           uploadedBy: file.uploadedByEmail || "system",
-          chunksCount: processingResult.chunks.length + processingResult.image_chunks.length,
+          chunksCount:
+            processingResult.chunks.length +
+            processingResult.image_chunks.length,
           imageChunksCount: processingResult.image_chunks.length,
           processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
-          ...(processingResult.processingMethod && { pdfProcessingMethod: processingResult.processingMethod }),
+          ...(processingResult.processingMethod && {
+            pdfProcessingMethod: processingResult.processingMethod,
+          }),
           ...(pageTitle && { pageTitle }),
           lastModified: Date.now(),
-          ...(('sheetName' in processingResult) && {
+          ...("sheetName" in processingResult && {
             sheetName: (processingResult as SheetProcessingResult).sheetName,
             sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
-            totalSheets: (processingResult as SheetProcessingResult).totalSheets,
+            totalSheets: (processingResult as SheetProcessingResult)
+              .totalSheets,
           }),
-          ...(typeof file.metadata === "object" && file.metadata !== null && { ...file.metadata }),
+          ...(typeof file.metadata === "object" &&
+            file.metadata !== null && { ...file.metadata }),
         }),
         createdBy: file.uploadedByEmail || "system",
         duration: 0,
@@ -349,19 +376,25 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       // Insert into Vespa
       await insert(vespaDoc, KbItemsSchema)
 
-      totalChunksCount += processingResult.chunks.length + processingResult.image_chunks.length
+      totalChunksCount +=
+        processingResult.chunks.length + processingResult.image_chunks.length
     }
 
     // Update status to completed with processing method metadata
     const chunksCount = totalChunksCount
-    
+
     // Prepare metadata for database record - use last processing result for method info
     const lastResult = processingResults[processingResults.length - 1]
-    const dbMetadata = {
+    const dbMetadata = mergeCollectionItemMetadata(file.metadata, {
       chunksCount,
-      imageChunksCount: processingResults.reduce((sum, r) => sum + r.image_chunks.length, 0),
-      ...(lastResult.processingMethod && { pdfProcessingMethod: lastResult.processingMethod }),
-    }
+      imageChunksCount: processingResults.reduce(
+        (sum, r) => sum + r.image_chunks.length,
+        0,
+      ),
+      ...(lastResult.processingMethod && {
+        pdfProcessingMethod: lastResult.processingMethod,
+      }),
+    })
 
     await db
       .update(collectionItems)

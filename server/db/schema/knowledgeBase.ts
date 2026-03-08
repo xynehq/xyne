@@ -42,6 +42,9 @@ export const collections = pgTable(
     retryCount: integer("retry_count").default(0).notNull(), // Track processing retry attempts
     metadata: jsonb("metadata").default({}).notNull(),
     permissions: jsonb("permissions").default(sql`'[]'::jsonb`),
+    lsProjectionSourceUpdatedAt: timestamp("ls_projection_source_updated_at")
+      .defaultNow()
+      .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
@@ -49,9 +52,7 @@ export const collections = pgTable(
   },
   (table) => ({
     // Ensure unique names per owner (excluding soft-deleted items)
-    uniqueOwnerName: uniqueIndex(
-      "unique_owner_collection_name_not_deleted",
-    )
+    uniqueOwnerName: uniqueIndex("unique_owner_collection_name_not_deleted")
       .on(table.ownerId, table.name)
       .where(sql`${table.deletedAt} IS NULL`),
     // Index for finding collections by owner
@@ -105,7 +106,10 @@ export const collectionItems = pgTable(
 
     processingInfo: jsonb("processing_info").default({}).notNull(),
     processedAt: timestamp("processed_at"),
-    uploadStatus: varchar("upload_status", { length: 20 }).default(UploadStatus.PENDING).notNull().$type<UploadStatus>(),
+    uploadStatus: varchar("upload_status", { length: 20 })
+      .default(UploadStatus.PENDING)
+      .notNull()
+      .$type<UploadStatus>(),
     statusMessage: text("status_message"), // Stores error messages, processing details, or success info
     retryCount: integer("retry_count").default(0).notNull(), // Track processing retry attempts
     metadata: jsonb("metadata").default({}).notNull(),
@@ -143,9 +147,34 @@ export const collectionItems = pgTable(
   }),
 )
 
+export const collectionLsProjections = pgTable(
+  "collection_ls_projections",
+  {
+    collectionId: uuid("collection_id")
+      .primaryKey()
+      .references(() => collections.id, { onDelete: "cascade" }),
+    projection: jsonb("projection").notNull(),
+    builtFromSourceUpdatedAt: timestamp(
+      "built_from_source_updated_at",
+    ).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    lastError: text("last_error"),
+  },
+  (table) => ({
+    idxBuiltFromSourceUpdatedAt: index(
+      "idx_collection_ls_projection_built_from_source_updated_at",
+    ).on(table.builtFromSourceUpdatedAt),
+  }),
+)
+
 // Relations definitions using Drizzle ORM relations() function
 export const collectionsRelations = relations(collections, ({ many, one }) => ({
   items: many(collectionItems),
+  lsProjection: one(collectionLsProjections, {
+    fields: [collections.id],
+    references: [collectionLsProjections.collectionId],
+  }),
   owner: one(users, {
     fields: [collections.ownerId],
     references: [users.id],
@@ -194,11 +223,24 @@ export const collectionItemsRelations = relations(
   }),
 )
 
+export const collectionLsProjectionsRelations = relations(
+  collectionLsProjections,
+  ({ one }) => ({
+    collection: one(collections, {
+      fields: [collectionLsProjections.collectionId],
+      references: [collections.id],
+    }),
+  }),
+)
+
 // Type definitions for use in the application
 export type Collection = typeof collections.$inferSelect
 export type NewCollection = typeof collections.$inferInsert
 export type CollectionItem = typeof collectionItems.$inferSelect
 export type NewCollectionItem = typeof collectionItems.$inferInsert
+export type CollectionLsProjection = typeof collectionLsProjections.$inferSelect
+export type NewCollectionLsProjection =
+  typeof collectionLsProjections.$inferInsert
 
 // Helper types
 export type Folder = CollectionItem & { type: "folder" }

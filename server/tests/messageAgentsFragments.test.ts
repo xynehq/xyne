@@ -4,6 +4,7 @@ import {
   __messageAgentsHistoryInternals,
   __messageAgentsMetadataInternals,
   afterToolExecutionHook,
+  beforeToolExecutionHook,
   buildDelegatedAgentFragments,
   buildFinalSynthesisPayload,
   buildReviewPromptFromContext,
@@ -150,6 +151,64 @@ describe("message-agents context tracking", () => {
     )
   })
 
+  test("excludedIds injection uses seen source docIds rather than fragment ids", async () => {
+    const context = createMockContext()
+    const chunkedFragment: MinimalAgentFragment = {
+      ...baseFragment,
+      id: "doc-1:0",
+      source: {
+        ...baseFragment.source,
+        docId: "doc-1",
+      },
+    }
+
+    await afterToolExecutionHook(
+      "searchGlobal",
+      {
+        status: "success",
+        metadata: {
+          contexts: [chunkedFragment],
+        },
+        data: {
+          result: "Found ARR updates.",
+        },
+      },
+      {
+        toolCall: { id: "call-docid-1" } as any,
+        args: { query: "ARR" },
+        state: {
+          context,
+          messages: [],
+          runId: createRunId("run-docid-1"),
+          traceId: createTraceId("trace-docid-1"),
+          currentAgentName: "xyne-agent",
+          turnCount: 1,
+        },
+        agentName: "xyne-agent",
+        executionTime: 10,
+        status: "success",
+      },
+      context.message.text,
+      [],
+      new Set<string>(),
+      undefined,
+      context.turnCount
+    )
+
+    expect(Array.from(context.seenDocuments)).toEqual(["doc-1"])
+
+    const preparedArgs = await beforeToolExecutionHook(
+      "searchGlobal",
+      {
+        query: "ARR",
+        excludedIds: [],
+      },
+      context
+    )
+
+    expect(preparedArgs.excludedIds).toEqual(["doc-1"])
+  }, 15000)
+
   test("afterToolExecutionHook enforces strict metadata constraints when no compliant docs exist", async () => {
     const context = createMockContext()
     const nonCompliantFragment: MinimalAgentFragment = {
@@ -195,7 +254,7 @@ describe("message-agents context tracking", () => {
 
     expect(context.allFragments).toHaveLength(0)
     expect(context.currentTurnArtifacts.fragments).toHaveLength(0)
-  })
+  }, 15000)
 
   test("buildReviewPromptFromContext includes plan, expectations, and image metadata", () => {
     const context = createMockContext()

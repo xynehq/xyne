@@ -66,7 +66,7 @@ export const limitSchema = z
   .min(1)
   .max(100)
   .describe(
-    "Maximum number of results to return. Default behavior is to return 20 results.",
+    "Maximum number of results to return as an integer between 1 and 100. Default is 20. Keep this small for precision-first retrieval and page with `offset` when needed.",
   )
   .default(20)
 
@@ -74,13 +74,22 @@ export const offsetSchema = z
   .number()
   .min(0)
   .describe(
-    "Number of results to skip from the beginning, useful for pagination.",
+    "Pagination offset as a non-negative integer. Use it after reviewing the current page to continue from the next unseen results.",
   )
   .optional()
 
 export const sortBySchema = z
   .enum(["asc", "desc"])
-  .describe("Sort order of results. Accepts 'asc' or 'desc'.")
+  .describe(
+    "Sort direction. Valid values are `asc` and `desc`. Use `desc` for newest-first or most-recent-first ordering when supported.",
+  )
+  .optional()
+
+export const excludedIdsSchema = z
+  .array(z.string())
+  .describe(
+    "Previously seen result document `docId`s to suppress on follow-up searches. Prefer prior `fragment.source.docId` values. Do not pass collection, folder, file, path, or fragment IDs.",
+  )
   .optional()
 
 // Common time range schema
@@ -88,11 +97,17 @@ export const timeRangeSchema = z
   .object({
     startTime: z
       .string()
-      .describe(`Start time in ${config.llmTimeFormat} format`),
-    endTime: z.string().describe(`End time in ${config.llmTimeFormat} format`),
+      .describe(
+        `Inclusive start time as a string in ${config.llmTimeFormat} format.`,
+      ),
+    endTime: z
+      .string()
+      .describe(
+        `Inclusive end time as a string in ${config.llmTimeFormat} format.`,
+      ),
   })
   .describe(
-    `Filter within a specific time range. Example: { startTime: ${config.llmTimeFormat}, endTime: ${config.llmTimeFormat} }`,
+    `Optional time-range object with string fields \`{ startTime, endTime }\` in ${config.llmTimeFormat} format. Use it when the query is bounded by an explicit time window.`,
   )
   .optional()
 
@@ -121,4 +136,5 @@ export const baseToolParams = {
   offset: offsetSchema,
   sortBy: sortBySchema,
   timeRange: timeRangeSchema,
+  excludedIds: excludedIdsSchema,
 }

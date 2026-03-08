@@ -72,7 +72,7 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
   schema: {
     name: "searchGlobal",
     description:
-      "Search across all connected applications and data sources to find relevant information. This is the primary search tool that can look through emails, documents, messages, and other content.",
+      "Search across all connected applications and data sources when the likely source is unclear. Prefer a more specific tool when the query already points clearly to Gmail, Drive, Slack, Calendar, Contacts, or a known knowledge-base location.",
     parameters: toToolSchemaParameters(searchGlobalToolSchema),
   },
   async execute(params: WithExcludedIds<SearchGlobalToolParams>, context: Ctx) {

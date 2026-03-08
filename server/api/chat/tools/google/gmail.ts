@@ -12,12 +12,38 @@ import { baseToolParams, createQuerySchema } from "../schemas"
 
 export const participantsSchema = z
   .object({
-    from: z.array(z.string().describe("From email addresses")).optional(),
-    to: z.array(z.string().describe("To email addresses")).optional(),
-    cc: z.array(z.string().describe("CC email addresses")).optional(),
-    bcc: z.array(z.string().describe("BCC email addresses")).optional(),
+    from: z
+      .array(
+        z.string().describe(
+          "Sender identifier string. Email is preferred; full name or organization name can also work.",
+        ),
+      )
+      .optional(),
+    to: z
+      .array(
+        z.string().describe(
+          "Primary recipient identifier string. Email is preferred; full name or organization name can also work.",
+        ),
+      )
+      .optional(),
+    cc: z
+      .array(
+        z.string().describe(
+          "CC recipient identifier string. Email is preferred; full name or organization name can also work.",
+        ),
+      )
+      .optional(),
+    bcc: z
+      .array(
+        z.string().describe(
+          "BCC recipient identifier string. Email is preferred; full name or organization name can also work.",
+        ),
+      )
+      .optional(),
   })
-  .describe("Email participants filter")
+  .describe(
+    "Structured Gmail participant filter object with optional `from`, `to`, `cc`, and `bcc` string arrays.",
+  )
 
 const gmailSearchToolSchema = z.object({
   query: createQuerySchema(GoogleApps.Gmail),
@@ -25,7 +51,7 @@ const gmailSearchToolSchema = z.object({
   labels: z
     .array(z.string().describe("Gmail label"))
     .describe(
-      "Filter emails by Gmail labels. labels are 'IMPORTANT', 'STARRED', 'UNREAD', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS', 'DRAFT', 'SENT', 'INBOX', 'SPAM', 'TRASH'.",
+      "Optional Gmail label strings used to narrow the search. Common values include `IMPORTANT`, `STARRED`, `UNREAD`, `CATEGORY_PERSONAL`, `CATEGORY_SOCIAL`, `CATEGORY_PROMOTIONS`, `CATEGORY_UPDATES`, `CATEGORY_FORUMS`, `DRAFT`, `SENT`, `INBOX`, `SPAM`, and `TRASH`.",
     )
     .optional(),
   participants: participantsSchema
@@ -48,7 +74,7 @@ export const searchGmailTool: Tool<GmailSearchToolParams, Ctx> = {
   schema: {
     name: "searchGmail",
     description:
-      "Find and retrieve emails. Can search by keywords, filter by sender/recipient, time period, labels, or simply fetch recent emails when no query is provided.",
+      "Search Gmail messages by content with optional participant, label, and time filters. Omit the query when the sender/recipient/time constraints already define the request well enough.",
     parameters: toToolSchemaParameters(gmailSearchToolSchema),
   },
   async execute(params: WithExcludedIds<GmailSearchToolParams>, context: Ctx) {
