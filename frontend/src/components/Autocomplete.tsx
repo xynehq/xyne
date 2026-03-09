@@ -8,6 +8,7 @@ import type {
   UserAutocomplete,
   ChatUserAutocomplete,
   UserQueryHAutocomplete,
+  KbFileAutocomplete,
 } from "shared/types"
 import { ForwardedRef, forwardRef } from "react"
 import { History } from "lucide-react"
@@ -135,6 +136,14 @@ export const AutocompleteElement = forwardRef(
       content = <MailAttachmentAutocompleteElement result={result} />
     } else if (result.type === "chat_user") {
       content = <ChatUserAutocompleteElement result={result} />
+    } else if (result.type === "kb_items") {
+      const kbResult = result as KbFileAutocomplete
+      content = (
+        <div className="flex items-center">
+          {getIcon(kbResult.app, kbResult.entity)}
+          <p className="truncate">{kbResult.title}</p>
+        </div>
+      )
     } else {
       throw new Error("invalid type")
     }

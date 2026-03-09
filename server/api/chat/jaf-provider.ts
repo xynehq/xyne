@@ -196,7 +196,7 @@ export const makeXyneJAFProvider = <Ctx>(
       const actualModelId = modelConfig?.actualName ?? model
       
       // Check if this is a LiteLLM model - use OpenAI client directly like JAF does
-      const providerType = ModelToProviderMap[model as Models]
+      const providerType = ModelToProviderMap[model as Models] ?? AIProviders.LiteLLM
       const runContext = state.context as unknown as AgentRunContext
       const stopSignal =
         runContext?.stopSignal ?? runContext?.stopController?.signal

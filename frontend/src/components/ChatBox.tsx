@@ -49,6 +49,7 @@ import {
   FileType,
   ModelConfiguration,
   UploadStatus,
+  KnowledgeBaseEntity,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -163,6 +164,7 @@ interface SearchResult {
   name?: string
   title?: string
   filename?: string
+  fileName?: string
   mailId?: string
   from?: string
   timestamp?: number
@@ -362,6 +364,9 @@ const getDefaultModel = (availableModels: ModelConfiguration[]): string => {
   return defaultModel.labelName
 }
 
+/** When true: agentic mode is default and MCP dropdown is hidden (env: VITE_AGENTIC_BY_DEFAULT) */
+const isAgenticByDefault = import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true"
+
 export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
   (props, ref) => {
     const {
@@ -377,7 +382,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       agentIdFromChatData, // Destructure new prop
       user, // Destructure user prop
       setIsAgenticMode,
-      isAgenticMode = false,
+      isAgenticMode = isAgenticByDefault,
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
       uploadStatus,
@@ -1533,10 +1538,19 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           params.agentId = persistedAgentId
         }
 
-        const response = await api.search.$get({
-          query: params,
-          credentials: "include",
-        })
+        const kbParams = {
+          query: searchTermForFetch,
+          page: limit.toString(),
+          offset: offset.toString(),
+        }
+
+        const [response, kbResponse] = await Promise.all([
+          api.search.$get({ query: params, credentials: "include" }),
+          api.search["knowledge-base"].$get({
+            query: kbParams,
+            credentials: "include",
+          }),
+        ])
 
         if (!response.ok) {
           const errorText = await response.text()
@@ -1546,11 +1560,33 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         }
 
         const data = await response.json()
+        const kbData = kbResponse.ok ? await kbResponse.json() : { results: [], count: 0 }
 
-        const fetchedTotalCount = data.count || 0
+        const mainResults: SearchResult[] = data.results || []
+        const kbResults: SearchResult[] = kbData.results || []
+        const byDocId = new Map<string, SearchResult>()
+        for (const r of mainResults) {
+          const id = r.docId ?? (r as { id?: string }).id
+          if (id) byDocId.set(id, r)
+        }
+        for (const r of kbResults) {
+          const id = r.docId ?? (r as { id?: string }).id
+          if (id) {
+            const existing = byDocId.get(id)
+            const rel = (r as { relevance?: number }).relevance ?? 0
+            const existingRel = (existing as { relevance?: number } | undefined)?.relevance ?? 0
+            if (!existing || rel > existingRel) byDocId.set(id, r)
+          }
+        }
+        const results: SearchResult[] = [...byDocId.values()].sort(
+          (a, b) =>
+            ((b as { relevance?: number }).relevance ?? 0) -
+            ((a as { relevance?: number }).relevance ?? 0),
+        )
+
+        const fetchedTotalCount = (data.count ?? 0) + (kbData.count ?? 0)
         setTotalCount(fetchedTotalCount)
 
-        const results: SearchResult[] = data.results || []
         setGlobalResults((prev) => {
           if (currentSearchTerm !== searchTermForFetch) {
             return append ? prev : []
@@ -1837,6 +1873,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           resultUrl = `https://${result.domain}.slack.com/archives/${result.channelId}/p${slackTs(result.createdAt)}`
         }
       }
+      if (
+        result.app === Apps.KnowledgeBase &&
+        result.entity === KnowledgeBaseEntity.File &&
+        result.docId
+      ) {
+        resultUrl = `/knowledgeBase/${result.docId}`
+      }
 
       const displayTitle =
         result.text ||
@@ -1844,6 +1887,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         result.subject ||
         result.title ||
         result.filename ||
+        result.fileName ||
         (result.type === "user" && result.email) ||
         "Untitled"
       const refId =
@@ -2468,6 +2512,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         result.subject ||
                         result.title ||
                         result.filename ||
+                        result.fileName ||
                         (result.type === "user" && result.email) ||
                         "Untitled"
                       return (
@@ -3097,8 +3142,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </div>
               </>
             )}
-            {/* Dropdown for All Connectors */}
-            {showAdvancedOptions &&
+            {/* Dropdown for All Connectors (hidden when VITE_AGENTIC_BY_DEFAULT=true) */}
+            {!isAgenticByDefault &&
+              showAdvancedOptions &&
               (role === UserRole.SuperAdmin || role === UserRole.Admin) && (
                 <DropdownMenu
                   open={isConnectorsMenuOpen && isAgenticMode}
@@ -3701,7 +3747,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {showAdvancedOptions &&
+            {!isAgenticByDefault && showAdvancedOptions &&
               (user?.role === UserRole.Admin ||
                 user?.role === UserRole.SuperAdmin) && (
                 <button

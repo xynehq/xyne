@@ -914,7 +914,9 @@ function AgentComponent() {
   const [users, setUsers] = useState<User[]>([])
   const [selectedUsers, setSelectedUsers] = useState<User[]>([])
   const [selectedOwners, setSelectedOwners] = useState<User[]>([])
-  const [isAgenticMode, setIsAgenticMode] = useState(Boolean(false))
+  const [isAgenticMode, setIsAgenticMode] = useState(
+    import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true",
+  )
   const [listSearchQuery, setListSearchQuery] = useState("")
   const [testAgentIsRagOn, setTestAgentIsRagOn] = useState(true)
   const [activeTab, setActiveTab] = useState<

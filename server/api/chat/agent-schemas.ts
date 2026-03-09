@@ -11,6 +11,7 @@ import type {
   FragmentImageReference,
   MinimalAgentFragment,
 } from "./types"
+import type { ReasoningEventPayload } from "@/shared/types"
 
 export interface ToolExecutionRecordWithResult {
   toolName: string
@@ -62,12 +63,13 @@ export interface Clarification {
 }
 
 /**
- * Tool failure tracking for 3-strike removal
+ * Tool failure tracking for 3-strike removal with turn-based cooldown
  */
 export interface ToolFailureInfo {
   count: number
   lastError: string
   lastAttempt: number
+  cooldownUntilTurn: number
 }
 
 /**
@@ -106,7 +108,7 @@ export interface ReviewState {
 
 export interface AgentRuntimeCallbacks {
   streamAnswerText?: (text: string) => Promise<void>
-  emitReasoning?: (payload: Record<string, unknown>) => Promise<void>
+  emitReasoning?: (payload: ReasoningEventPayload) => Promise<void>
 }
 
 export type MCPToolDefinition = {
@@ -172,7 +174,7 @@ export interface AgentRunContext {
 
   // Execution history
   toolCallHistory: ToolExecutionRecord[]
-  seenDocuments: Set<string> // Prevent re-fetching
+  seenDocuments: Set<string> // Vespa doc ids already seen (fed into excludedIds to prevent re-fetch)
   allFragments: MinimalAgentFragment[]
   turnFragments: Map<number, MinimalAgentFragment[]>
   allImages: FragmentImageReference[]

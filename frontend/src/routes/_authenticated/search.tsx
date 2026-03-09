@@ -11,7 +11,7 @@ const page = 8
 import { Sidebar } from "@/components/Sidebar"
 import { useTheme } from "@/components/ThemeContext"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import {
   Tooltip,
@@ -29,7 +29,9 @@ import {
   SearchResponse,
   SearchResultDiscriminatedUnion,
 } from "shared/types"
+import type { Citation } from "shared/types"
 import { Filter, Groups } from "@/types"
+import CitationPreview from "@/components/CitationPreview"
 import { SearchResult } from "@/components/SearchResult"
 import answerSparkle from "@/assets/answerSparkle.svg"
 import { GroupFilter } from "@/components/GroupFilter"
@@ -46,8 +48,46 @@ import { PublicUser, PublicWorkspace } from "shared/types"
 import { errorComponent } from "@/components/error"
 import { LoaderContent } from "@/lib/common"
 import { createAuthEventSource } from "@/hooks/useChatStream"
+import {
+  DocumentOperationsProvider,
+  useDocumentOperations,
+} from "@/contexts/DocumentOperationsContext"
 
 const logger = console
+
+/** Merge two group-count objects (e.g. main search + KB search) by summing counts per app/entity. */
+function mergeGroupCounts(
+  main: Groups | null | undefined,
+  kb: Groups | null | undefined,
+): Groups {
+  const merged: Groups = main ? { ...main } : ({} as Groups)
+  if (!kb || typeof kb !== "object") return merged
+  for (const app of Object.keys(kb) as Array<keyof Groups>) {
+    const entityCounts = kb[app]
+    if (!entityCounts || typeof entityCounts !== "object") continue
+    merged[app] = { ...(merged[app] ?? {}) }
+    for (const entity of Object.keys(entityCounts) as Array<keyof typeof entityCounts>) {
+      const a = merged[app]?.[entity] ?? 0
+      const b = entityCounts[entity] ?? 0
+      ;(merged[app] as Record<string, number>)[entity] = a + b
+    }
+  }
+  return merged
+}
+
+/** Sum all counts in groups so "All" matches the sum of filter items. */
+function sumGroupCounts(groups: Groups | null | undefined): number {
+  if (!groups || typeof groups !== "object") return 0
+  let sum = 0
+  for (const app of Object.keys(groups)) {
+    const entityCounts = groups[app as keyof Groups]
+    if (!entityCounts || typeof entityCounts !== "object") continue
+    for (const entity of Object.keys(entityCounts)) {
+      sum += entityCounts[entity as keyof typeof entityCounts] ?? 0
+    }
+  }
+  return sum
+}
 
 export function SearchInfo({ info }: { info: string }) {
   return (
@@ -114,11 +154,23 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
     import.meta.env.VITE_SHOW_DEBUG_INFO === "true" || (search.debug ?? false),
   ) // State for debug info visibility, initialized from env var
   const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
+  const [previewCitation, setPreviewCitation] = useState<Citation | null>(null)
+  const [previewChunkIndex, setPreviewChunkIndex] = useState<number | null>(null)
+  const [previewPageIndex, setPreviewPageIndex] = useState<number | null>(null)
+  const { documentOperationsRef } = useDocumentOperations()
+  const prefetchedChunkRef = useRef<{
+    docId: string
+    chunkIndex: number
+    chunkContent: string
+    pageIndex: number
+  } | null>(null)
   // close autocomplete if clicked outside
   const autocompleteRef = useRef<HTMLDivElement | null>(null)
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
 
   const totalCount = searchMeta?.totalCount || 0
+  // With filter: cap at that group's count. No filter: totalCount = sum of all groups (main + KB).
+  // Global search merges two streams (main + KB), so each "page" adds page*2 results; scroll stops when results.length >= filterPageSize.
   const filterPageSize =
     filter.app && filter.entity
       ? groups
@@ -347,17 +399,52 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         resetScroll: false, // Prevent scroll jump on pagination
       })
 
-      // Send a GET request to the backend with the search query
-      const response = await api.search.$get({
-        query: params,
-      })
+      const shouldMergeKBResults = (!params.app && !params.entity) || params.app === Apps.KnowledgeBase
+      const kbParams = {
+        query: params.query,
+        page: String(params.page ?? page),
+        offset: String(newOffset),
+        ...(shouldMergeKBResults ? {} : { onlyGroupCount: "true" }),
+      }
+      const [response, kbResponse] = await Promise.all([
+        api.search.$get({ query: params }),
+        api.search["knowledge-base"].$get({ query: kbParams }),
+      ])
       if (response.ok) {
         const data: SearchResponse = await response.json()
+        const kbData: SearchResponse = kbResponse.ok
+          ? await kbResponse.json()
+          : { results: [], count: 0 }
+
+        const mainResults = data.results ?? []
+        const kbResults = kbData.results ?? []
+        const byDocId = new Map<string, SearchResultDiscriminatedUnion>()
+        for (const r of mainResults) {
+          const id = r.docId ?? (r as { id?: string }).id
+          if (id) byDocId.set(id, r)
+        }
+        if (shouldMergeKBResults) {
+          for (const r of kbResults) {
+            const id = r.docId ?? (r as { id?: string }).id
+            if (id) {
+              const existing = byDocId.get(id)
+              const rel = (r as { relevance?: number }).relevance ?? 0
+              const existingRel =
+                (existing as { relevance?: number } | undefined)?.relevance ?? 0
+              if (!existing || rel > existingRel) byDocId.set(id, r)
+            }
+          }
+        }
+        const merged = [...byDocId.values()].sort(
+          (a, b) =>
+            ((b as { relevance?: number }).relevance ?? 0) -
+            ((a as { relevance?: number }).relevance ?? 0),
+        )
 
         if (newOffset > 0) {
-          setResults((prevResults) => [...prevResults, ...data.results])
+          setResults((prevResults) => [...prevResults, ...merged])
         } else {
-          setResults(data.results)
+          setResults(merged)
         }
 
         setAutocompleteResults([])
@@ -386,10 +473,21 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         if (groupCount) {
           // TODO: temp solution until we resolve groupCount from
           // not always being true
+          const mergedGroups = mergeGroupCounts(
+            data.groupCount,
+            kbData?.groupCount,
+          )
+          setGroups(mergedGroups)
+          // So "All" matches the sum of filter items (e.g. Knowledge-Base + KB Files + ...)
           if (!filter.app && !filter.entity) {
-            setSearchMeta({ totalCount: data.count })
+            const totalFromGroups = sumGroupCounts(mergedGroups)
+            setSearchMeta({
+              totalCount:
+                totalFromGroups > 0
+                  ? totalFromGroups
+                  : (data.count ?? 0) + (kbData.count ?? 0),
+            })
           }
-          setGroups(data.groupCount)
           setTraceData(data.trace || null) // Store trace data from response
         }
 
@@ -414,6 +512,108 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
       setIsLoading(false) // Reset loading state on error
     }
   }
+
+  const handleKbFileClick = useCallback(
+    async (result: SearchResultDiscriminatedUnion) => {
+      if (result.type !== "kb_items") return
+      const kb = result as {
+        docId: string
+        fileName?: string
+        clId?: string
+        itemId?: string
+        entity?: string
+        chunks_summary?: Array<
+          { chunk: string; index: number; score: number } | string
+        >
+      }
+      if (!kb.clId || !kb.itemId) return
+      const citation: Citation = {
+        docId: kb.docId,
+        title: kb.fileName ?? kb.docId,
+        app: Apps.KnowledgeBase,
+        entity: (kb.entity as Citation["entity"]) ?? "file",
+        clId: kb.clId,
+        itemId: kb.itemId,
+      }
+      setPreviewCitation(citation)
+      prefetchedChunkRef.current = null
+      const firstChunk = kb.chunks_summary?.[0]
+      const chunkIndex =
+        typeof firstChunk === "object" &&
+        firstChunk !== null &&
+        "index" in firstChunk
+          ? (firstChunk as { index: number }).index
+          : null
+      setPreviewChunkIndex(chunkIndex)
+      if (chunkIndex != null && kb.docId) {
+        try {
+          const res = await api.chunk[":cId"].files[":docId"].content.$get({
+            param: { cId: String(chunkIndex), docId: kb.docId },
+          })
+          if (res.ok) {
+            const data = await res.json()
+            const chunkContent = data?.chunkContent ?? ""
+            const pageIndex =
+              typeof data?.pageIndex === "number" ? data.pageIndex : -1
+            prefetchedChunkRef.current = {
+              docId: kb.docId,
+              chunkIndex,
+              chunkContent,
+              pageIndex,
+            }
+            setPreviewPageIndex(pageIndex >= 0 ? pageIndex : null)
+          } else {
+            setPreviewPageIndex(null)
+          }
+        } catch {
+          setPreviewPageIndex(null)
+        }
+      } else {
+        setPreviewChunkIndex(null)
+        setPreviewPageIndex(null)
+      }
+    },
+    [],
+  )
+
+  const handleCitationPreviewDocumentLoaded = useCallback(() => {
+    const citation = previewCitation
+    const chunkIndex = previewChunkIndex
+    if (
+      chunkIndex == null ||
+      !citation?.docId ||
+      !documentOperationsRef?.current
+    )
+      return
+    const prefetched = prefetchedChunkRef.current
+    if (
+      prefetched &&
+      prefetched.docId === citation.docId &&
+      prefetched.chunkIndex === chunkIndex
+    ) {
+      documentOperationsRef.current.clearHighlights?.()
+      documentOperationsRef.current
+        .highlightText?.(
+          prefetched.chunkContent,
+          chunkIndex,
+          prefetched.pageIndex >= 0 ? prefetched.pageIndex : undefined,
+          true,
+        )
+        .catch((err) => logger.error("Highlight failed", err))
+      prefetchedChunkRef.current = null
+    }
+  }, [
+    previewCitation,
+    previewChunkIndex,
+    documentOperationsRef,
+  ])
+
+  const handleCloseCitationPreview = useCallback(() => {
+    setPreviewCitation(null)
+    setPreviewChunkIndex(null)
+    setPreviewPageIndex(null)
+    prefetchedChunkRef.current = null
+  }, [])
 
   const handleFilterChange = (appEntity: Filter) => {
     // Check if appEntity.app and appEntity.entity are defined
@@ -570,7 +770,8 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
                       key={index}
                       result={result}
                       index={index}
-                      showDebugInfo={showDebugInfo} // Pass state down
+                      showDebugInfo={showDebugInfo}
+                      onKbFileClick={handleKbFileClick}
                     />
                   ))}
                 </div>
@@ -598,6 +799,14 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
           )}
         </div>
       </div>
+      <CitationPreview
+        citation={previewCitation}
+        isOpen={!!previewCitation}
+        onClose={handleCloseCitationPreview}
+        documentOperationsRef={documentOperationsRef}
+        onDocumentLoaded={handleCitationPreviewDocumentLoaded}
+        initialPageIndex={previewPageIndex}
+      />
     </div>
   )
 }
@@ -622,17 +831,18 @@ const searchParams = z
 type XyneSearch = z.infer<typeof searchParams>
 
 export const Route = createFileRoute("/_authenticated/search")({
-  // component: Index,
   component: () => {
     const matches = useRouterState({ select: (s) => s.matches })
     const { user, workspace, agentWhiteList } =
       matches[matches.length - 1].context
     return (
-      <Search
-        user={user}
-        workspace={workspace}
-        agentWhiteList={agentWhiteList}
-      />
+      <DocumentOperationsProvider>
+        <Search
+          user={user}
+          workspace={workspace}
+          agentWhiteList={agentWhiteList}
+        />
+      </DocumentOperationsProvider>
     )
   },
   validateSearch: (search) => searchParams.parse(search),

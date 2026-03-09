@@ -16,6 +16,8 @@ import {
   messageRetrySchema,
   messageSchema,
   SearchApi,
+  SearchKnowledgeBaseFilesApi,
+  searchKnowledgeBaseFilesSchema,
   chatStopSchema,
   chatClarificationSchema,
   SearchSlackChannels,
@@ -1448,6 +1450,11 @@ export const AppRoutes = app
     EnhancedMessageFeedbackApi,
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
+  .get(
+    "/search/knowledge-base",
+    zValidator("query", searchKnowledgeBaseFilesSchema),
+    SearchKnowledgeBaseFilesApi,
+  )
   .get(
     "/search/slack-channels",
     zValidator("query", searchSchema),

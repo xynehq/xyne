@@ -58,6 +58,8 @@ interface StreamState {
   isRetrying?: boolean
   subscribers: Set<() => void>
   response?: string
+  /** Wall-clock ms from request receipt to final save — set from the ResponseMetadata SSE event. */
+  timeTakenMs?: number
 
   // Character animation display versions
   displayPartial: string
@@ -79,6 +81,8 @@ interface StreamInfo {
   chatId?: string
   isStreaming: boolean
   isRetrying?: boolean
+  /** Wall-clock ms from request receipt to final save — sourced from backend ResponseMetadata. */
+  timeTakenMs?: number
   // Character animation display versions
   displayPartial: string
   // HITL clarification state
@@ -223,15 +227,16 @@ const notifySubscribers = (streamId: string) => {
 const appendReasoningData = (streamState: StreamState, data: string) => {
   try {
     const stepData = JSON.parse(data)
-
-    // If this is a valid reasoning step, add it as a new line
-    if (stepData.step || stepData.text) {
+    // New structured format: { type, displayText, stage, ... }
+    // Legacy format:         { step, text, ... }
+    // Both are valid JSON reasoning events — always append with a newline so
+    // parseReasoningContent can split on "\n" correctly.
+    if (stepData.type || stepData.step || stepData.text) {
       streamState.thinking += data + "\n"
     } else {
-      // Fallback to simple text accumulation
       streamState.thinking += data
     }
-  } catch (e) {
+  } catch {
     // Not JSON, just add as text
     streamState.thinking += data
   }
@@ -588,9 +593,10 @@ export const startStream = async (
   })
 
   streamState.es.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
-    const { chatId: realId, messageId } = JSON.parse(event.data)
+    const { chatId: realId, messageId, timeTakenMs } = JSON.parse(event.data)
     streamState.messageId = messageId
     streamState.chatId = realId
+    if (typeof timeTakenMs === "number") streamState.timeTakenMs = timeTakenMs
 
     if (realId && streamKey !== realId && !streamKey.match(/^[a-z0-9]+$/)) {
       activeStreams.delete(streamKey)
@@ -735,6 +741,7 @@ export const startStream = async (
             deepResearchSteps: streamState.deepResearchSteps,
             isStreaming: false,
             attachments: [],
+            timeTakenMs: streamState.timeTakenMs,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           }
@@ -870,6 +877,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     messageId: stream.messageId,
     chatId: stream.chatId,
     isStreaming: stream.isStreaming,
+    timeTakenMs: stream.timeTakenMs,
     displayPartial: stream.displayPartial,
     clarificationRequest: stream.clarificationRequest,
     waitingForClarification: stream.waitingForClarification,
@@ -1322,8 +1330,9 @@ export const useChatStream = (
       )
 
       eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
-        const { messageId: newMessageId } = JSON.parse(event.data)
+        const { messageId: newMessageId, timeTakenMs } = JSON.parse(event.data)
         streamState.messageId = newMessageId
+        if (typeof timeTakenMs === "number") streamState.timeTakenMs = timeTakenMs
       })
 
       eventSource.addEventListener(ChatSSEvents.End, async () => {
@@ -1353,6 +1362,7 @@ export const useChatStream = (
                       imageCitations: streamState.imageCitations,
                       deepResearchSteps: streamState.deepResearchSteps,
                       isRetrying: false,
+                      timeTakenMs: streamState.timeTakenMs,
                     }
                   : m,
               ),

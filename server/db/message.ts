@@ -48,6 +48,48 @@ export const insertMessage = async (
   return parsedData.data
 }
 
+export const getChatMessagesUntilCompaction = async (
+  trx: TxnOrClient,
+  chatId: string,
+  email: string,
+): Promise<SelectMessage[]> => {
+  // 1️⃣ find the latest summary message timestamp
+  const lastSummary = await trx
+    .select({ createdAt: messages.createdAt })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.chatExternalId, chatId),
+        eq(messages.email, email),
+        eq(messages.isSummary, true),
+      ),
+    )
+    .orderBy(desc(messages.createdAt))
+    .limit(1)
+
+  // 2️⃣ if no summary exists → return all messages
+  if (lastSummary.length === 0) {
+    return getChatMessagesWithAuth(trx, chatId, email)
+  }
+
+  const cutoff = lastSummary[0].createdAt
+
+  // 3️⃣ fetch messages up to the cutoff
+  const messagesArr = await trx
+    .select()
+    .from(messages)
+    .where(
+      and(
+        eq(messages.chatExternalId, chatId),
+        eq(messages.email, email),
+        lte(messages.createdAt, cutoff),
+      ),
+    )
+    .orderBy(asc(messages.createdAt))
+
+  return z.array(selectMessageSchema).parse(messagesArr)
+}
+
 export const getChatMessagesWithAuth = async (
   trx: TxnOrClient,
   chatId: string,
@@ -56,7 +98,7 @@ export const getChatMessagesWithAuth = async (
   const messagesArr = await trx
     .select()
     .from(messages)
-    .where(and(eq(messages.chatExternalId, chatId), eq(messages.email, email)))
+    .where(and(eq(messages.chatExternalId, chatId), eq(messages.email, email), eq(messages.isSummary, false)))
     .orderBy(asc(messages.createdAt))
   return z.array(selectMessageSchema).parse(messagesArr)
 }
@@ -69,7 +111,7 @@ export const getChatMessagesBefore = async (
   const messagesArr = await trx
     .select()
     .from(messages)
-    .where(and(lt(messages.createdAt, createdAt), eq(messages.chatId, chatId)))
+    .where(and(lt(messages.createdAt, createdAt), eq(messages.chatId, chatId), eq(messages.isSummary, false)))
     .orderBy(asc(messages.createdAt))
   return z.array(selectMessageSchema).parse(messagesArr)
 }
@@ -142,7 +184,7 @@ export async function getMessageCountsByChats({
     .from(chats)
     .leftJoin(
       messages,
-      and(eq(chats.id, messages.chatId), isNull(messages.deletedAt)),
+      and(eq(chats.id, messages.chatId), isNull(messages.deletedAt), eq(messages.isSummary, false)),
     )
     .where(inArray(chats.externalId, chatExternalIds))
     .groupBy(chats.externalId)
@@ -217,6 +259,7 @@ export async function getMessageFeedbackStats({
         eq(messages.email, email),
         eq(messages.workspaceExternalId, workspaceExternalId),
         isNull(messages.deletedAt),
+        eq(messages.isSummary, false),
       ),
     )
     .groupBy(messages.chatExternalId)
@@ -235,6 +278,7 @@ export async function getMessageFeedbackStats({
         inArray(messages.chatExternalId, chatExternalIds),
         eq(messages.email, email),
         eq(messages.workspaceExternalId, workspaceExternalId),
+        eq(messages.isSummary, false),
         sql`${messages.feedback}->>'type' IN ('like', 'dislike')`,
       ),
     )
@@ -317,6 +361,7 @@ export const getMessagesWithAttachmentsByChatId = async (
       and(
         eq(messages.chatExternalId, chatExternalId),
         isNull(messages.deletedAt),
+        eq(messages.isSummary, false),
       ),
     )
     .orderBy(asc(messages.createdAt), asc(messages.id))
@@ -355,6 +400,7 @@ export const fetchUserQueriesForChat = async (
     eq(messages.chatExternalId, chatExternalId),
     eq(messages.messageRole, MessageRole.User),
     isNull(messages.deletedAt),
+    eq(messages.isSummary, false),
   ]
 
   // Add workspace validation if workspaceExternalId is provided
@@ -434,6 +480,7 @@ export const fetchAgentQueryResponsePairs = async (
 
   conditions.push(gte(messages.createdAt, from))
   conditions.push(lte(messages.createdAt, to))
+  conditions.push(eq(messages.isSummary, false))
 
   // Get all messages for the agent, ordered by creation time (newest first)
   const allMessages = await trx

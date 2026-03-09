@@ -6,7 +6,9 @@ import {
   autocomplete,
   deduplicateAutocomplete,
   groupVespaSearch,
+  groupVespaSearchKnowledgeBase,
   searchVespa,
+  searchVespaKnowledgeBase,
   searchUsersByNamesAndEmails,
   getTimestamp,
   insert,
@@ -88,6 +90,27 @@ const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
 
 export const autocompleteSchema = z.object({
   query: z.string().min(2),
+})
+
+/** Query schema for knowledge-base-only search API. Frontend calls this alongside main search and merges. */
+export const searchKnowledgeBaseFilesSchema = z.object({
+  query: z.string(),
+  page: z
+    .string()
+    .optional()
+    .transform((x) => (x ? parseInt(x, 10) : config.page))
+    .pipe(z.number()),
+  offset: z
+    .string()
+    .optional()
+    .transform((x) => (x ? parseInt(x, 10) : 0))
+    .pipe(z.number().min(0)),
+  /** When true, only run group count and return { groupCount }; no search (saves latency when filter is active). */
+  onlyGroupCount: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((x) => x === "true" || x === "1"),
 })
 
 export const userQueryHistorySchema = z.object({
@@ -552,6 +575,60 @@ export const SearchApi = async (c: Context) => {
     { chunkDocument: chunkDocument },
     email,
   )
+  newResults.groupCount = groupCount
+  return c.json(newResults)
+}
+
+/** Knowledge-base-only search. Frontend calls this and main search then merges results. Includes KB group counts. */
+export const SearchKnowledgeBaseFilesApi = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+  const parsed = searchKnowledgeBaseFilesSchema.parse({
+    query: c.req.query("query"),
+    page: c.req.query("page"),
+    offset: c.req.query("offset"),
+    onlyGroupCount: c.req.query("onlyGroupCount"),
+  })
+  const { query, page, offset, onlyGroupCount } = parsed
+  let decodedQuery: string
+  try {
+    decodedQuery = decodeURIComponent(query)
+  } catch {
+    decodedQuery = query
+  }
+  const lastUpdated = c.req.query("lastUpdated")
+  const timestampRange =
+    lastUpdated && getTimestamp(lastUpdated)
+      ? { from: getTimestamp(lastUpdated)!, to: Date.now() }
+      : null
+
+  if (onlyGroupCount) {
+    const groupCount = await groupVespaSearchKnowledgeBase(
+      decodedQuery,
+      email,
+      page,
+      timestampRange,
+    )
+    return c.json({ results: [], count: 0, groupCount })
+  }
+
+  const [vespaResponse, groupCount] = await Promise.all([
+    searchVespaKnowledgeBase(decodedQuery, email, {
+      limit: page,
+      offset,
+      rankProfile: SearchModes.NativeRank,
+      timestampRange,
+    }),
+    groupVespaSearchKnowledgeBase(
+      decodedQuery,
+      email,
+      page,
+      timestampRange,
+    ),
+  ])
+  const newResults = VespaSearchResponseToSearchResult(vespaResponse, {
+    chunkDocument: chunkDocument,
+  })
   newResults.groupCount = groupCount
   return c.json(newResults)
 }

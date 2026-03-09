@@ -18,6 +18,7 @@ import {
 } from "./agent-schemas"
 import type { Entity, MailParticipant } from "@xyne/vespa-ts/types"
 import { timeRangeSchema } from "./tools/schemas"
+import { XyneTools } from "@/shared/types"
 
 export type { ListCustomAgentsInput, RunPublicAgentInput } from "./agent-schemas"
 
@@ -398,7 +399,7 @@ export type FallbackToolOutput = z.infer<typeof FallbackToolOutputSchema>
 export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   // Planning Tools
   toDoWrite: {
-    name: "toDoWrite",
+    name: XyneTools.toDoWrite,
     description: "Create or update an execution plan with sequential tasks. MUST be called first before any other tool.",
     category: ToolCategory.Planning,
     inputSchema: ToDoWriteInputSchema,
@@ -440,7 +441,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
 
   // Search Tools
   searchGlobal: {
-    name: "searchGlobal",
+    name: XyneTools.searchGlobal,
     description: "Search across all accessible data sources. Use for broad searches when specific app is unknown.",
     category: ToolCategory.Search,
     inputSchema: SearchGlobalInputSchema,
@@ -448,7 +449,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   },
 
   searchKnowledgeBase: {
-    name: "searchKnowledgeBase",
+    name: XyneTools.searchKnowledgeBase,
     description: "Search the user's knowledge base collections and return relevant document fragments with citations.",
     category: ToolCategory.Search,
     inputSchema: SearchKnowledgeBaseInputSchema,
@@ -456,7 +457,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   },
 
   searchGmail: {
-    name: "searchGmail",
+    name: XyneTools.searchGmail,
     description: "Search Gmail messages with filters for participants, labels, and time range.",
     category: ToolCategory.Search,
     inputSchema: SearchGmailInputSchema,
@@ -464,7 +465,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   },
 
   searchDriveFiles: {
-    name: "searchDriveFiles",
+    name: XyneTools.searchDriveFiles,
     description: "Search Google Drive files with filters for owner, file type, and time range.",
     category: ToolCategory.Search,
     inputSchema: SearchDriveInputSchema,
@@ -472,7 +473,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   },
 
   searchCalendarEvents: {
-    name: "searchCalendarEvents",
+    name: XyneTools.searchCalendarEvents,
     description: "Search Google Calendar events with filters for attendees, status, and time range.",
     category: ToolCategory.Search,
     inputSchema: SearchCalendarInputSchema,
@@ -480,7 +481,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   },
 
   searchGoogleContacts: {
-    name: "searchGoogleContacts",
+    name: XyneTools.searchGoogleContacts,
     description: "Search Google Contacts by name, email, or phone. Use for disambiguating person names.",
     category: ToolCategory.Search,
     inputSchema: SearchGoogleContactsInputSchema,
@@ -489,7 +490,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   },
 
   getSlackMessages: {
-    name: "getSlackMessages",
+    name: XyneTools.getSlackMessages,
     description: "Search Slack messages with flexible filters for channel, user, time range.",
     category: ToolCategory.Search,
     inputSchema: GetSlackMessagesInputSchema,
@@ -497,7 +498,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   },
 
   getSlackUserProfile: {
-    name: "getSlackUserProfile",
+    name: XyneTools.getSlackUserProfile,
     description: "Get a user's Slack profile by email address.",
     category: ToolCategory.Metadata,
     inputSchema: GetSlackUserProfileInputSchema,
@@ -506,7 +507,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
 
   // Agent Tools
   list_custom_agents: {
-    name: "list_custom_agents",
+    name: XyneTools.listCustomAgents,
     description: [
       "Find relevant custom agents for a query.",
       "Parameters: query (user intent), requiredCapabilities (capabilities string[]), maxAgents (upper bound).",
@@ -570,7 +571,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   },
 
   run_public_agent: {
-    name: "run_public_agent",
+    name: XyneTools.runPublicAgent,
     description: [
       "Execute a vetted custom agent using a precise query.",
       "Arguments: agentId (from list_custom_agents), query (tailored instructions), optional context (extra grounding), optional maxTokens (cap output cost).",
@@ -619,7 +620,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
 
   // Fallback Tool
   fall_back: {
-    name: "fall_back",
+    name: XyneTools.fallBack,
     description: "Generate reasoning about why search failed when max iterations reached. Used automatically by system.",
     category: ToolCategory.Fallback,
     inputSchema: FallbackToolInputSchema,
@@ -628,7 +629,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
 
   // Finalization Tool
   synthesize_final_answer: {
-    name: "synthesize_final_answer",
+    name: XyneTools.synthesizeFinalAnswer,
     description: [
       "MANDATORY FINAL STEP.",
       "Call this tool exactly once when you have gathered all required context and are ready to deliver the final answer.",
@@ -654,7 +655,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
  * Get tool schema by name
  */
 export function getToolSchema(toolName: string): ToolSchema | undefined {
-  return TOOL_SCHEMAS[toolName]
+  return TOOL_SCHEMAS[toolName as XyneTools]
 }
 
 /**
@@ -681,7 +682,7 @@ export function validateToolInput<T>(
  * Validate tool output against schema
  */
 export function validateToolOutput<T>(
-  toolName: string,
+  toolName: XyneTools,
   output: unknown
 ): { success: true; data: T } | { success: false; error: z.ZodError } {
   const schema = getToolSchema(toolName)
