@@ -1,7 +1,9 @@
 import {
   collections,
+  collectionLsProjections,
   collectionItems,
   type Collection,
+  type CollectionLsProjection,
   type NewCollection,
   type CollectionItem,
   type NewCollectionItem,
@@ -14,6 +16,109 @@ import type { TxnOrClient } from "@/types"
 import { and, asc, desc, eq, isNull, sql, or, inArray } from "drizzle-orm"
 import { UploadStatus } from "@/shared/types"
 import { getUserByEmail } from "./user"
+
+export const touchCollectionLsProjectionSource = async (
+  trx: TxnOrClient,
+  collectionId: string,
+): Promise<void> => {
+  await trx
+    .update(collections)
+    .set({
+      lsProjectionSourceUpdatedAt: sql`NOW()`,
+      updatedAt: sql`NOW()`,
+    })
+    .where(eq(collections.id, collectionId))
+}
+
+export const touchCollectionLsProjectionSources = async (
+  trx: TxnOrClient,
+  collectionIds: string[],
+): Promise<void> => {
+  const uniqueCollectionIds = [...new Set(collectionIds.filter(Boolean))]
+  if (!uniqueCollectionIds.length) return
+
+  await trx
+    .update(collections)
+    .set({
+      lsProjectionSourceUpdatedAt: sql`NOW()`,
+      updatedAt: sql`NOW()`,
+    })
+    .where(inArray(collections.id, uniqueCollectionIds))
+}
+
+export const getCollectionLsProjection = async (
+  trx: TxnOrClient,
+  collectionId: string,
+): Promise<CollectionLsProjection | null> => {
+  const [result] = await trx
+    .select()
+    .from(collectionLsProjections)
+    .where(eq(collectionLsProjections.collectionId, collectionId))
+
+  return result || null
+}
+
+export const upsertCollectionLsProjection = async (
+  trx: TxnOrClient,
+  params: {
+    collectionId: string
+    projection: Record<string, unknown>
+    builtFromSourceUpdatedAt: Date
+    lastError?: string | null
+  },
+): Promise<CollectionLsProjection> => {
+  const [result] = await trx
+    .insert(collectionLsProjections)
+    .values({
+      collectionId: params.collectionId,
+      projection: params.projection,
+      builtFromSourceUpdatedAt: params.builtFromSourceUpdatedAt,
+      lastError: params.lastError ?? null,
+    })
+    .onConflictDoUpdate({
+      target: collectionLsProjections.collectionId,
+      set: {
+        projection: params.projection,
+        builtFromSourceUpdatedAt: params.builtFromSourceUpdatedAt,
+        lastError: params.lastError ?? null,
+        updatedAt: sql`NOW()`,
+      },
+    })
+    .returning()
+
+  if (!result) {
+    throw new Error("Failed to upsert collection ls projection")
+  }
+
+  return result
+}
+
+export const recordCollectionLsProjectionError = async (
+  trx: TxnOrClient,
+  collectionId: string,
+  lastError: string,
+): Promise<void> => {
+  await trx
+    .insert(collectionLsProjections)
+    .values({
+      collectionId,
+      projection: {
+        rootIds: [],
+        childrenByParentId: {},
+        nodesById: {},
+        nodeIdByPath: {},
+      },
+      builtFromSourceUpdatedAt: new Date(0),
+      lastError,
+    })
+    .onConflictDoUpdate({
+      target: collectionLsProjections.collectionId,
+      set: {
+        lastError,
+        updatedAt: sql`NOW()`,
+      },
+    })
+}
 
 // Collection CRUD operations
 export const createCollection = async (
@@ -114,6 +219,8 @@ export const softDeleteCollection = async (
   trx: TxnOrClient,
   collectionId: string,
 ): Promise<Collection> => {
+  await touchCollectionLsProjectionSource(trx, collectionId)
+
   const [result] = await trx
     .update(collections)
     .set({
@@ -224,6 +331,8 @@ export const softDeleteCollectionItem = async (
   if (!item) {
     throw new Error("Collection item not found")
   }
+
+  await touchCollectionLsProjectionSource(trx, item.collectionId)
 
   // If it's a folder, recursively delete all items inside it
   if (item.type === "folder") {
@@ -457,6 +566,8 @@ export const createFolder = async (
     metadata,
   })
 
+  await touchCollectionLsProjectionSource(trx, collectionId)
+
   // Update collection total count
   await updateCollectionTotalCount(trx, collectionId, 1)
 
@@ -540,6 +651,8 @@ export const createFileItem = async (
     statusMessage,
     metadata,
   })
+
+  await touchCollectionLsProjectionSource(trx, collectionId)
 
   // Update collection total count
   await updateCollectionTotalCount(trx, collectionId, 1)

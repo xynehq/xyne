@@ -110,17 +110,24 @@ export const searchVespaAgent = async (
   AgentApps: Apps[] | null,
   options: Partial<VespaQueryConfig> = {},
 ) => {
-
   Logger.info(
-    `[searchVespaAgent] options.collectionSelections: ${JSON.stringify(options.collectionSelections)}`,
-  )
-  Logger.info(
-    `[searchVespaAgent] options.selectedItem: ${JSON.stringify(options.selectedItem)}`,
+    {
+      query,
+      email,
+      app,
+      entity,
+      agentApps: AgentApps,
+      collectionSelections: options.collectionSelections ?? [],
+      selectedItem: options.selectedItem ?? {},
+    },
+    "[searchVespaAgent] Incoming agent search options",
   )
   const driveIds = await extractDriveIds(options, email)
   const processedCollectionSelections = await extractCollectionVespaIds(options)
-  Logger.debug(
+  Logger.info(
     {
+      driveIds,
+      processedCollectionSelections,
       hasCollectionIds: Boolean(
         processedCollectionSelections.collectionIds?.length,
       ),
@@ -130,8 +137,11 @@ export const searchVespaAgent = async (
       hasFileIds: Boolean(
         processedCollectionSelections.collectionFileIds?.length,
       ),
+      selectedItemApps: Object.keys(
+        (options.selectedItem ?? {}) as Record<string, unknown>,
+      ),
     },
-    "[searchVespaAgent] Processed selections summary",
+    "[searchVespaAgent] Prepared translated Vespa search inputs",
   )
 
   // Send permissionId if available, otherwise send email
