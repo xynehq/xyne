@@ -139,6 +139,11 @@ import { buildAgentPromptAddendum } from "./agentPromptCreation"
 import { getConnectorById } from "@/db/connector"
 import { getToolsByConnectorId } from "@/db/tool"
 import {
+  executeFinalSynthesis,
+  formatClarificationsForPrompt,
+  formatPlanForPrompt,
+} from "./final-answer-synthesis"
+import {
   buildMCPJAFTools,
   type FinalToolsList,
 } from "./jaf-adapter"
@@ -159,17 +164,16 @@ import { getUserPersonalizationByEmail } from "@/db/personalization"
 import { getChunkCountPerDoc } from "./chunk-selection"
 import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 import {
-  buildAgentSystemPromptContextBlock,
   enforceMetadataConstraintsOnSelection,
   extractMetadataConstraintsFromUserMessage,
   formatFragmentWithMetadata,
-  formatFragmentsWithMetadata,
   rankFragmentsByMetadataConstraints,
   sanitizeAgentSystemPromptSnapshot,
   withAgentSystemPromptMessage,
 } from "./message-agents-metadata"
 
 export { __messageAgentsMetadataInternals } from "./message-agents-metadata"
+export { buildFinalSynthesisPayload } from "./final-answer-synthesis"
 
 const {
   defaultBestModel,
@@ -722,33 +726,6 @@ function getMetadataValue<T = unknown>(
   return undefined
 }
 
-function formatPlanForPrompt(plan: PlanState | null): string {
-  if (!plan) return ""
-  const lines = [`Goal: ${plan.goal}`]
-  plan.subTasks.forEach((task, idx) => {
-    const icon =
-      task.status === "completed"
-        ? "✓"
-        : task.status === "in_progress"
-          ? "→"
-          : task.status === "failed"
-            ? "✗"
-            : task.status === "blocked"
-              ? "!"
-              : "○"
-    const baseLine = `${idx + 1}. [${icon}] ${task.description}`
-    const detailParts: string[] = []
-    if (task.result) detailParts.push(`Result: ${task.result}`)
-    if (task.toolsRequired?.length) {
-      detailParts.push(`Tools: ${task.toolsRequired.join(", ")}`)
-    }
-    lines.push(
-      detailParts.length > 0 ? `${baseLine}\n   ${detailParts.join(" | ")}` : baseLine
-    )
-  })
-  return lines.join("\n")
-}
-
 function selectActiveSubTaskId(plan: PlanState | null): string | null {
   if (!plan || !Array.isArray(plan.subTasks) || plan.subTasks.length === 0) {
     return null
@@ -857,180 +834,6 @@ function advancePlanAfterTool(
   } else if (task.status !== "completed") {
     task.status = "blocked"
     task.error = detail
-  }
-}
-
-function formatClarificationsForPrompt(
-  clarifications: AgentRunContext["clarifications"]
-): string {
-  if (!clarifications?.length) return ""
-  const formatted = clarifications
-    .map(
-      (clarification, idx) =>
-        `${idx + 1}. Q: ${clarification.question}\n   A: ${clarification.answer}`
-    )
-    .join("\n")
-  return formatted
-}
-
-export function buildFinalSynthesisPayload(
-  context: AgentRunContext,
-  fragmentsLimit = Math.max(12, context.allFragments.length || 1)
-): { systemPrompt: string; userMessage: string } {
-  const fragments = context.allFragments
-  const agentSystemPromptBlock = buildAgentSystemPromptContextBlock(
-    context.dedicatedAgentSystemPrompt
-  )
-  const agentSystemPromptSection = agentSystemPromptBlock
-    ? `Agent System Prompt Context:\n${agentSystemPromptBlock}`
-    : ""
-  const formattedFragments = formatFragmentsWithMetadata(fragments, fragmentsLimit)
-  const fragmentsSection = formattedFragments
-    ? `Context Fragments:\n${formattedFragments}`
-    : ""
-  const planSection = formatPlanForPrompt(context.plan)
-  const clarificationSection = formatClarificationsForPrompt(context.clarifications)
-  const workspaceSection = context.userContext?.trim()
-    ? `Workspace Context:\n${context.userContext}`
-    : ""
-
-  const parts = [
-    `User Question:\n${context.message.text}`,
-    agentSystemPromptSection,
-    planSection ? `Execution Plan Snapshot:\n${planSection}` : "",
-    clarificationSection ? `Clarifications Resolved:\n${clarificationSection}` : "",
-    workspaceSection,
-    fragmentsSection,
-  ].filter(Boolean)
-
-  const userMessage = parts.join("\n\n")
-
-  const systemPrompt = `
-### Mission
-- Deliver the user's final answer using the conversation, plan snapshot, clarifications, workspace context, context fragments, and supplied images; never plan or call tools.
-
-### Evidence Intake
-- Prioritize the highest-signal fragments, but pull any supporting fragment that improves accuracy.
-- Only draw on context that directly answers the user's question; ignore unrelated fragments even if they were retrieved earlier.
-- Treat delegated-agent outputs as citeable fragments; reference them like any other context entry.
-- Describe evidence gaps plainly before concluding; never guess.
-- Extract actionable details from provided images and cite them via their fragment indices.
-- Respect user-imposed constraints using fragment metadata (any metadata field). If compliant evidence is missing, state that clearly.
-- If "This is the system prompt of agent:" is present, analyse for instructions relevant for answering and strictly bind by them .
-
-### Response Construction
-- Lead with the conclusion, then stack proof underneath.
-- Organize output into tight sections (e.g., **Summary**, **Proof**, **Next Steps** when relevant); omit empty sections.
-- Never mention internal tooling, planning logs, or this synthesis process.
-
-### Constraint Handling
-- When the user asks for an action the system cannot execute (e.g., sending an email), deliver the closest actionable substitute (draft, checklist, explicit next steps) inside the answer.
-- Pair the substitute with a concise explanation of the limitation and the manual action the user must take.
-
-### File & Chunk Formatting (CRITICAL)
-- Each file starts with a header line exactly like:
-  index {docId} {file context begins here...}
-- \`docId\` is a unique identifier for that file (e.g., 0, 1, 2, etc.).
-- Inside the file context, text is split into chunks.
-- Each chunk might begin with a bracketed numeric index, e.g.: [0], [1], [2], etc.
-- This is the chunk index within that file, if it exists.
-
-### Guidelines for Response
-1. Data Interpretation:
-   - Use ONLY the provided files and their chunks as your knowledge base.
-   - Treat every file header \`index {docId} ...\` as the start of a new document.
-   - Treat every bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
-   - If dates exist, interpret them relative to the user's timezone when paraphrasing.
-2. Response Structure:
-   - Start with the most relevant facts from the chunks across files.
-   - Keep order chronological when it helps comprehension.
-   - Every factual statement MUST cite the exact chunk it came from using the format:
-     K[docId_chunkIndex]
-     where:
-       - \`docId\` is taken from the file header line ("index {docId} ...").
-       - \`chunkIndex\` is the bracketed number prefixed on that chunk within the same file.
-   - Examples:
-     - Single citation: "X is true K[12_3]."
-     - Two citations in one sentence (from different files or chunks): "X K[12_3] and Y K[7_0]."
-   - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
-3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
-   - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
-   - Every chunk level citation must start with the K prefix eg. K[12_3] K[7_0] correct, but K[12_3] [7_0] is incorrect.
-   - Place the citation immediately after the relevant claim.
-   - Do NOT group indices inside one set of brackets (WRONG: "K[12_3,7_1]").
-   - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[12_3] ... K[7_1]".
-   - Only cite information that appears verbatim or is directly inferable from the cited chunk.
-   - If you cannot ground a claim to a specific chunk, do not make the claim.
-4. Quality Assurance:
-   - Cross-check across multiple chunks/files when available and briefly note inconsistencies if they exist.
-   - Keep tone professional and concise.
-   - Acknowledge gaps if the provided chunks don't contain enough detail.
-
-### Tone & Delivery
-- Answer with confident, declarative, verb-first sentences that use concrete nouns.
-- Highlight key deliverables using **bold** labels or short lists; keep wording razor-concise.
-- Ask one targeted follow-up question only if missing info blocks action.
-
-### Tool Spotlighting
-- Reference critical tool outputs explicitly, e.g., "**Slack Search:** Ops escalated the RCA at 09:42 [2]."
-- Explain why each highlighted tool mattered so reviewers see coverage breadth.
-- When multiple tools contribute, show the sequence, e.g., "**Vespa Search:** context -> **Sheet Lookup:** metrics."
-
-### Finish
-- Close with a single sentence confirming completion or the next action you recommend.
-`.trim()
-
-  return { systemPrompt, userMessage }
-}
-
-function selectImagesForFinalSynthesis(
-  context: AgentRunContext
-): {
-  selected: string[]
-  total: number
-  dropped: string[]
-  userAttachmentCount: number
-} {
-  const images = context.allImages
-  const total = images.length
-  if (!IMAGE_CONTEXT_CONFIG.enabled || total === 0) {
-    return { selected: [], total, dropped: [], userAttachmentCount: 0 }
-  }
-
-  const attachments = images.filter((img) => img.isUserAttachment)
-  const nonAttachments = images
-    .filter((img) => !img.isUserAttachment)
-    .sort((a, b) => {
-      const ageA = context.turnCount - a.addedAtTurn
-      const ageB = context.turnCount - b.addedAtTurn
-      return ageA - ageB
-    })
-
-  const prioritized = [...attachments, ...nonAttachments]
-  const uniqueNames: string[] = []
-  const seen = new Set<string>()
-  for (const image of prioritized) {
-    if (seen.has(image.fileName)) continue
-    seen.add(image.fileName)
-    uniqueNames.push(image.fileName)
-  }
-
-  let selected = uniqueNames
-  let dropped: string[] = []
-
-  if (
-    IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0 &&
-    uniqueNames.length > IMAGE_CONTEXT_CONFIG.maxImagesPerCall
-  ) {
-    selected = uniqueNames.slice(0, IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
-    dropped = uniqueNames.slice(IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
-  }
-
-  return {
-    selected,
-    total,
-    dropped,
-    userAttachmentCount: attachments.length,
   }
 }
 
@@ -3308,37 +3111,14 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         )
       }
 
-      const streamAnswer = mutableContext.runtime?.streamAnswerText
-      if (!streamAnswer) {
+      if (!mutableContext.runtime?.streamAnswerText) {
         return ToolResponse.error(
           "EXECUTION_FAILED",
           "Streaming channel unavailable. Cannot deliver final answer."
         )
       }
 
-      const { selected, total, dropped, userAttachmentCount } =
-        selectImagesForFinalSynthesis(context)
-      loggerWithChild({ email: context.user.email }).debug(
-        {
-          chatId: context.chat.externalId,
-          selectedImages: selected,
-          totalImages: total,
-          droppedImages: dropped,
-          userAttachmentCount,
-        },
-        "[MessageAgents][FinalSynthesis] Image payload"
-      )
-
-      const { systemPrompt, userMessage } = buildFinalSynthesisPayload(context)
       const fragmentsCount = context.allFragments.length
-      loggerWithChild({ email: context.user.email }).debug(
-        {
-          chatId: context.chat.externalId,
-          finalSynthesisSystemPrompt: systemPrompt,
-          finalSynthesisUserMessage: userMessage,
-        },
-        "[MessageAgents][FinalSynthesis] Full context payload"
-      )
 
       mutableContext.finalSynthesis.requested = true
       mutableContext.finalSynthesis.suppressAssistantStreaming = true
@@ -3346,93 +3126,20 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
       mutableContext.finalSynthesis.streamedText = ""
 
       await mutableContext.runtime?.emitReasoning?.({
-        text: `Initiating final synthesis with ${fragmentsCount} context fragments and ${selected.length}/${total} images (${userAttachmentCount} user attachments).`,
+        text: `Initiating final synthesis with ${fragmentsCount} context fragments.`,
         step: { type: AgentReasoningStepType.LogMessage },
       })
 
-      const logger = loggerWithChild({ email: context.user.email })
-      if (dropped.length > 0) {
-        logger.info(
-          {
-            droppedCount: dropped.length,
-            limit: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
-            totalImages: total,
-          },
-          "Final synthesis image limit enforced; dropped oldest references."
-        )
-      }
-
-      const modelId =
-        (context.modelId as Models) || (defaultBestModel as Models) || Models.Gpt_4o
-      const modelParams: ModelParams = {
-        modelId,
-        systemPrompt,
-        stream: true,
-        temperature: 0.2,
-        max_new_tokens: context.maxOutputTokens ?? 1500,
-        imageFileNames: selected,
-      }
-
-      const finalUserPrompt = `${userMessage}\n\nSynthesize the final answer using the evidence above.`
-      const messages: Message[] = [
-        {
-          role: ConversationRole.USER,
-          content: [{ text: finalUserPrompt }],
-        },
-      ]
-      Logger.debug(
-        {
-          email: context.user.email,
-          chatId: context.chat.externalId,
-          fragmentsCount: context.allFragments.length,
-          planPresent: !!context.plan,
-          clarificationsCount: context.clarifications.length,
-          toolOutputsThisTurn: context.currentTurnArtifacts.toolOutputs.length,
-          imageNames: selected,
-        },
-        "[MessageAgents][FinalSynthesis] Context summary for synthesis call"
-      )
-
-      Logger.debug({
-        email: context.user.email,
-        chatId: context.chat.externalId,
-        modelId,
-        systemPrompt,
-        messagesCount: messages.length,
-        imagesProvided: selected.length,
-      }, "[MessageAgents][FinalSynthesis] LLM call parameters")
-
-      const provider = getProviderByModel(modelId)
-      let streamedCharacters = 0
-      let estimatedCostUsd = 0
-
       try {
-        const iterator = provider.converseStream(messages, modelParams)
-        for await (const chunk of iterator) {
-          if (chunk.text) {
-            streamedCharacters += chunk.text.length
-            context.finalSynthesis.streamedText += chunk.text
-            await streamAnswer(chunk.text)
-          }
-          const chunkCost = chunk.metadata?.cost
-          if (typeof chunkCost === "number" && !Number.isNaN(chunkCost)) {
-            estimatedCostUsd += chunkCost
-          }
-        }
-
+        const synthesisResult = await executeFinalSynthesis(mutableContext)
+        throwIfStopRequested(mutableContext.stopSignal)
         context.finalSynthesis.completed = true
-        loggerWithChild({ email: context.user.email }).debug(
-          {
-            chatId: context.chat.externalId,
-            streamedCharacters,
-            estimatedCostUsd,
-            imagesProvided: selected,
-          },
-          "[MessageAgents][FinalSynthesis] LLM call completed"
-        )
 
         await context.runtime?.emitReasoning?.({
-          text: "Final synthesis completed and streamed to the user.",
+          text:
+            synthesisResult.mode === "sectional"
+              ? "Sectional final synthesis completed and delivered to the user."
+              : "Final synthesis completed and streamed to the user.",
           step: { type: AgentReasoningStepType.LogMessage },
         })
 
@@ -3441,20 +3148,27 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
             result: "Final answer streamed to user.",
             streamed: true,
             metadata: {
-              textLength: streamedCharacters,
-              totalImagesAvailable: total,
-              imagesProvided: selected.length,
+              textLength: synthesisResult.textLength,
+              totalImagesAvailable: synthesisResult.totalImagesAvailable,
+              imagesProvided: synthesisResult.imagesProvided,
             },
           },
           {
-            estimatedCostUsd,
+            estimatedCostUsd: synthesisResult.estimatedCostUsd,
           }
         )
       } catch (error) {
+        if (isMessageAgentStopError(error)) {
+          context.finalSynthesis.suppressAssistantStreaming = false
+          context.finalSynthesis.requested = false
+          context.finalSynthesis.completed = false
+          throw error
+        }
+
         context.finalSynthesis.suppressAssistantStreaming = false
         context.finalSynthesis.requested = false
         context.finalSynthesis.completed = false
-        logger.error(
+        loggerWithChild({ email: context.user.email }).error(
           { err: error instanceof Error ? error.message : String(error) },
           "Final synthesis tool failed."
         )

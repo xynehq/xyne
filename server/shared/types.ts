@@ -827,6 +827,7 @@ export interface ModelConfiguration {
   websearch: boolean
   deepResearch: boolean
   description: string
+  maxInputTokens?: number
 }
 export const getDocumentSchema = z.object({
   docId: z.string().min(1),
