@@ -1,6 +1,6 @@
 import { getModelMaxInputTokens } from "@/ai/modelConfig"
 import { getProviderByModel, jsonParseLLMOutput } from "@/ai/provider"
-import { Models, type ModelParams } from "@/ai/types"
+import { Models, type ConverseResponse, type ModelParams } from "@/ai/types"
 import config from "@/config"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { AgentReasoningStepType } from "@/shared/types"
@@ -9,6 +9,11 @@ import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import { z } from "zod"
 import type { AgentRunContext, PlanState, SubTask } from "./agent-schemas"
+import {
+  isMessageAgentStopError,
+  raceWithStop,
+  throwIfStopRequested,
+} from "./agent-stop"
 import {
   buildAgentSystemPromptContextBlock,
   formatFragmentWithMetadata,
@@ -28,6 +33,7 @@ const PREVIEW_TEXT_LENGTH = 320
 const MAX_SECTION_COUNT = 5
 const MAPPER_CONCURRENCY = 4
 const SECTION_CONCURRENCY = 4
+const FINAL_SYNTHESIS_STREAM_CHUNK_SIZE = 200
 
 export type FinalSynthesisExecutionResult = {
   textLength: number
@@ -128,6 +134,145 @@ function estimatePromptTokens(
     estimateTextTokens(userMessage) +
     estimateImageTokens(imageCount)
   )
+}
+
+function getErrorStringProperty(
+  error: unknown,
+  key: "code" | "name" | "message",
+): string | undefined {
+  if (typeof error !== "object" || error === null || !(key in error)) {
+    return undefined
+  }
+
+  const value = (error as Record<string, unknown>)[key]
+  if (value === undefined || value === null) {
+    return undefined
+  }
+
+  return String(value)
+}
+
+function classifyPlannerFallbackError(error: unknown): {
+  errorCode?: string
+  errorName?: string
+  errorMessage: string
+  isContextLengthError: boolean
+  isTransportError: boolean
+} {
+  const errorCode = getErrorStringProperty(error, "code")
+  const errorName = getErrorStringProperty(error, "name")
+  const errorMessage =
+    getErrorStringProperty(error, "message") ??
+    (error instanceof Error ? error.message : String(error))
+  const normalized = `${errorName ?? ""} ${errorCode ?? ""} ${errorMessage}`.toLowerCase()
+
+  return {
+    errorCode,
+    errorName,
+    errorMessage,
+    isContextLengthError:
+      errorName === "ValidationException" ||
+      normalized.includes("input is too long") ||
+      normalized.includes("context length") ||
+      normalized.includes("context window") ||
+      normalized.includes("maximum context") ||
+      normalized.includes("prompt is too long") ||
+      normalized.includes("too many tokens"),
+    isTransportError:
+      errorName === "AbortError" ||
+      normalized.includes("timeout") ||
+      normalized.includes("timed out") ||
+      normalized.includes("transport") ||
+      normalized.includes("network") ||
+      normalized.includes("connection reset") ||
+      normalized.includes("econnreset") ||
+      normalized.includes("etimedout") ||
+      normalized.includes("econnaborted") ||
+      normalized.includes("eai_again") ||
+      normalized.includes("502") ||
+      normalized.includes("503") ||
+      normalized.includes("504"),
+  }
+}
+
+function buildStoppedFinalSynthesisResult(
+  mode: FinalSynthesisExecutionResult["mode"],
+  imageSelection: SelectedImagesResult,
+  estimatedCostUsd: number,
+  textLength: number,
+  imagesProvided: number,
+): FinalSynthesisExecutionResult {
+  return {
+    textLength,
+    totalImagesAvailable: imageSelection.total,
+    imagesProvided,
+    estimatedCostUsd,
+    mode,
+  }
+}
+
+function logFinalSynthesisStop(
+  context: AgentRunContext,
+  phase: string,
+  details: Record<string, unknown> = {},
+) {
+  Logger.info(
+    {
+      chatId: context.chat.externalId,
+      phase,
+      ...details,
+    },
+    "[FinalAnswerSynthesis] Stop requested; ending synthesis early.",
+  )
+}
+
+async function cancelConverseIterator(
+  iterator: AsyncIterableIterator<ConverseResponse>,
+) {
+  const cancelableIterator = iterator as AsyncIterableIterator<ConverseResponse> & {
+    cancel?: () => Promise<unknown> | unknown
+    close?: () => Promise<unknown> | unknown
+    return?: (
+      value?: unknown,
+    ) => Promise<IteratorResult<ConverseResponse>> | IteratorResult<ConverseResponse>
+  }
+
+  try {
+    if (typeof cancelableIterator.return === "function") {
+      await cancelableIterator.return(undefined)
+      return
+    }
+    if (typeof cancelableIterator.cancel === "function") {
+      await cancelableIterator.cancel()
+      return
+    }
+    if (typeof cancelableIterator.close === "function") {
+      await cancelableIterator.close()
+    }
+  } catch (error) {
+    Logger.warn(
+      {
+        err: error instanceof Error ? error.message : String(error),
+      },
+      "[FinalAnswerSynthesis] Failed to cancel provider stream iterator after stop request.",
+    )
+  }
+}
+
+async function streamFinalAnswerChunk(
+  context: AgentRunContext,
+  text: string,
+) {
+  if (!text) return
+
+  const streamAnswer = context.runtime?.streamAnswerText
+  if (!streamAnswer) {
+    throw new Error("Streaming channel unavailable. Cannot deliver final answer.")
+  }
+
+  throwIfStopRequested(context.stopSignal)
+  await raceWithStop(streamAnswer(text), context.stopSignal)
+  context.finalSynthesis.streamedText += text
 }
 
 function estimateSafeInputBudget(
@@ -676,24 +821,26 @@ function selectMappedEntriesWithinBudget(
   entries: FragmentAssignmentBatch[],
   baseTokens: number,
   budgetTokens: number,
-): { selected: FragmentAssignmentBatch[]; trimmedCount: number } {
+): {
+  selected: FragmentAssignmentBatch[]
+  trimmedCount: number
+  skippedForBudgetCount: number
+} {
   if (entries.length === 0) {
-    return { selected: [], trimmedCount: 0 }
+    return { selected: [], trimmedCount: 0, skippedForBudgetCount: 0 }
   }
 
   const selected: FragmentAssignmentBatch[] = []
   let usedTokens = baseTokens
+  let skippedForBudgetCount = 0
 
   for (const entry of entries) {
     const entryTokens = estimateTextTokens(
       `${formatFragmentWithMetadata(entry.fragment, entry.fragmentIndex - 1)}\n\n`,
     )
-    if (selected.length > 0 && usedTokens + entryTokens > budgetTokens) {
-      break
-    }
-    if (selected.length === 0 && usedTokens + entryTokens > budgetTokens) {
-      selected.push(entry)
-      break
+    if (usedTokens + entryTokens > budgetTokens) {
+      skippedForBudgetCount += 1
+      continue
     }
     selected.push(entry)
     usedTokens += entryTokens
@@ -702,6 +849,7 @@ function selectMappedEntriesWithinBudget(
   return {
     selected,
     trimmedCount: Math.max(entries.length - selected.length, 0),
+    skippedForBudgetCount,
   }
 }
 
@@ -776,6 +924,8 @@ async function planSections(
   providerModelId: Models,
   safeInputBudget: number,
 ): Promise<{ sections: FinalSection[]; estimatedCostUsd: number }> {
+  throwIfStopRequested(context.stopSignal)
+
   const previews = context.allFragments.map((fragment, index) =>
     buildFragmentPreviewRecord(fragment, index + 1),
   )
@@ -792,7 +942,22 @@ async function planSections(
       plannerUserIntro,
       0,
     ) + 256
-  const previewBudget = Math.max(512, safeInputBudget - baseTokens)
+  if (baseTokens >= safeInputBudget) {
+    Logger.warn(
+      {
+        baseTokens,
+        safeInputBudget,
+        chatId: context.chat.externalId,
+      },
+      "[FinalAnswerSynthesis] Planner base prompt exceeds safe budget; falling back to default section plan.",
+    )
+    return {
+      sections: buildDefaultSectionPlan(),
+      estimatedCostUsd: 0,
+    }
+  }
+
+  const previewBudget = safeInputBudget - baseTokens
   const { includedText, omittedSummary } = buildPreviewTextWithinBudget(
     previews,
     previewBudget,
@@ -801,23 +966,60 @@ async function planSections(
     .filter(Boolean)
     .join("\n\n")
 
-  const response = await getProviderByModel(providerModelId).converse(
-    [
-      {
-        role: ConversationRole.USER,
-        content: [{ text: userMessage }],
-      },
-    ],
-    {
-      modelId: providerModelId,
-      json: true,
-      stream: false,
-      temperature: 0,
-      max_new_tokens: 800,
-      systemPrompt: buildPlannerSystemPrompt(),
-    },
-  )
+  let response: ConverseResponse
+  throwIfStopRequested(context.stopSignal)
+  try {
+    response = await raceWithStop(
+      getProviderByModel(providerModelId).converse(
+        [
+          {
+            role: ConversationRole.USER,
+            content: [{ text: userMessage }],
+          },
+        ],
+        {
+          modelId: providerModelId,
+          json: true,
+          stream: false,
+          temperature: 0,
+          max_new_tokens: 800,
+          systemPrompt: buildPlannerSystemPrompt(),
+        },
+      ),
+      context.stopSignal,
+    )
+  } catch (error) {
+    if (isMessageAgentStopError(error)) {
+      throw error
+    }
 
+    const {
+      errorCode,
+      errorMessage,
+      errorName,
+      isContextLengthError,
+      isTransportError,
+    } = classifyPlannerFallbackError(error)
+    Logger.warn(
+      {
+        baseTokens,
+        previewBudget,
+        errorCode,
+        errorMessage,
+        errorName,
+        isContextLengthError,
+        isTransportError,
+        chatId: context.chat.externalId,
+      },
+      "[FinalAnswerSynthesis] Planner request failed; falling back to default section plan.",
+    )
+    return {
+      sections: buildDefaultSectionPlan(),
+      estimatedCostUsd: 0,
+    }
+  }
+
+  throwIfStopRequested(context.stopSignal)
   const parsed = SectionPlanSchema.safeParse(
     jsonParseLLMOutput(response.text ?? ""),
   )
@@ -849,6 +1051,8 @@ async function mapFragmentsToSections(
   providerModelId: Models,
   safeInputBudget: number,
 ): Promise<{ assignments: Map<number, number[]>; estimatedCostUsd: number }> {
+  throwIfStopRequested(context.stopSignal)
+
   const sharedContext = buildSharedFinalAnswerContext(context)
   const sectionOverview = formatSectionPlanOverview(sections)
   const batchIntro = [
@@ -873,66 +1077,79 @@ async function mapFragmentsToSections(
     return { assignments: new Map(), estimatedCostUsd: 0 }
   }
 
-  const batchResults = await runWithConcurrency(
-    batches,
-    MAPPER_CONCURRENCY,
-    async (batch) => {
-      const fragmentsText = formatSectionFragments(batch)
-      const userMessage = [batchIntro, fragmentsText].join("\n\n")
-      try {
-        const response = await getProviderByModel(providerModelId).converse(
-          [
-            {
-              role: ConversationRole.USER,
-              content: [{ text: userMessage }],
-            },
-          ],
-          {
-            modelId: providerModelId,
-            json: true,
-            stream: false,
-            temperature: 0,
-            max_new_tokens: 1_000,
-            systemPrompt: buildMapperSystemPrompt(),
-          },
-        )
+  const batchResults = await raceWithStop(
+    runWithConcurrency(
+      batches,
+      MAPPER_CONCURRENCY,
+      async (batch) => {
+        throwIfStopRequested(context.stopSignal)
 
-        const parsed = SectionMappingSchema.safeParse(
-          jsonParseLLMOutput(response.text ?? ""),
-        )
-        if (!parsed.success) {
+        const fragmentsText = formatSectionFragments(batch)
+        const userMessage = [batchIntro, fragmentsText].join("\n\n")
+        try {
+          const response = await raceWithStop(
+            getProviderByModel(providerModelId).converse(
+              [
+                {
+                  role: ConversationRole.USER,
+                  content: [{ text: userMessage }],
+                },
+              ],
+              {
+                modelId: providerModelId,
+                json: true,
+                stream: false,
+                temperature: 0,
+                max_new_tokens: 1_000,
+                systemPrompt: buildMapperSystemPrompt(),
+              },
+            ),
+            context.stopSignal,
+          )
+
+          throwIfStopRequested(context.stopSignal)
+          const parsed = SectionMappingSchema.safeParse(
+            jsonParseLLMOutput(response.text ?? ""),
+          )
+          if (!parsed.success) {
+            Logger.warn(
+              {
+                issues: parsed.error.issues,
+                response: response.text,
+                chatId: context.chat.externalId,
+              },
+              "[FinalAnswerSynthesis] Invalid mapper output for batch; skipping batch.",
+            )
+            return {
+              assignments: new Map<number, Set<number>>(),
+              estimatedCostUsd: response.cost ?? 0,
+            }
+          }
+
+          return {
+            assignments: normalizeSectionAssignments(parsed.data, sections),
+            estimatedCostUsd: response.cost ?? 0,
+          }
+        } catch (error) {
+          if (isMessageAgentStopError(error)) {
+            throw error
+          }
+
           Logger.warn(
             {
-              issues: parsed.error.issues,
-              response: response.text,
+              err: error instanceof Error ? error.message : String(error),
               chatId: context.chat.externalId,
             },
-            "[FinalAnswerSynthesis] Invalid mapper output for batch; skipping batch.",
+            "[FinalAnswerSynthesis] Mapper batch failed; skipping batch.",
           )
           return {
             assignments: new Map<number, Set<number>>(),
-            estimatedCostUsd: response.cost ?? 0,
+            estimatedCostUsd: 0,
           }
         }
-
-        return {
-          assignments: normalizeSectionAssignments(parsed.data, sections),
-          estimatedCostUsd: response.cost ?? 0,
-        }
-      } catch (error) {
-        Logger.warn(
-          {
-            err: error instanceof Error ? error.message : String(error),
-            chatId: context.chat.externalId,
-          },
-          "[FinalAnswerSynthesis] Mapper batch failed; skipping batch.",
-        )
-        return {
-          assignments: new Map<number, Set<number>>(),
-          estimatedCostUsd: 0,
-        }
-      }
-    },
+      },
+    ),
+    context.stopSignal,
   )
 
   return {
@@ -962,9 +1179,18 @@ async function synthesizeSingleAnswer(
   modelId: Models,
   imageSelection: SelectedImagesResult,
 ): Promise<FinalSynthesisExecutionResult> {
-  const streamAnswer = context.runtime?.streamAnswerText
-  if (!streamAnswer) {
+  if (!context.runtime?.streamAnswerText) {
     throw new Error("Streaming channel unavailable. Cannot deliver final answer.")
+  }
+  if (context.stopSignal?.aborted) {
+    logFinalSynthesisStop(context, "single:before-stream-start")
+    return buildStoppedFinalSynthesisResult(
+      "single",
+      imageSelection,
+      0,
+      context.finalSynthesis.streamedText.length,
+      0,
+    )
   }
 
   const { systemPrompt, userMessage } = buildFinalSynthesisPayload(context)
@@ -993,15 +1219,44 @@ async function synthesizeSingleAnswer(
     },
   )
 
-  for await (const chunk of iterator) {
-    if (chunk.text) {
-      streamedCharacters += chunk.text.length
-      context.finalSynthesis.streamedText += chunk.text
-      await streamAnswer(chunk.text)
+  let stopRequested = false
+  try {
+    throwIfStopRequested(context.stopSignal)
+    for await (const chunk of iterator) {
+      throwIfStopRequested(context.stopSignal)
+
+      if (chunk.text) {
+        await streamFinalAnswerChunk(context, chunk.text)
+        streamedCharacters += chunk.text.length
+        throwIfStopRequested(context.stopSignal)
+      }
+
+      const chunkCost = chunk.metadata?.cost
+      if (typeof chunkCost === "number" && !Number.isNaN(chunkCost)) {
+        estimatedCostUsd += chunkCost
+      }
     }
-    const chunkCost = chunk.metadata?.cost
-    if (typeof chunkCost === "number" && !Number.isNaN(chunkCost)) {
-      estimatedCostUsd += chunkCost
+    throwIfStopRequested(context.stopSignal)
+  } catch (error) {
+    if (!isMessageAgentStopError(error)) {
+      throw error
+    }
+
+    stopRequested = true
+    logFinalSynthesisStop(context, "single:streaming", {
+      estimatedCostUsd,
+      streamedCharacters,
+    })
+    return buildStoppedFinalSynthesisResult(
+      "single",
+      imageSelection,
+      estimatedCostUsd,
+      streamedCharacters,
+      imageSelection.selected.length,
+    )
+  } finally {
+    if (stopRequested || context.stopSignal?.aborted) {
+      await cancelConverseIterator(iterator)
     }
   }
 
@@ -1026,6 +1281,8 @@ async function synthesizeSection(
   estimatedCostUsd: number
   imageFileNames: string[]
 }> {
+  throwIfStopRequested(context.stopSignal)
+
   const orderedEntries = mappedIndexes
     .map((index) => ({
       fragmentIndex: index,
@@ -1037,37 +1294,79 @@ async function synthesizeSection(
     return { result: null, estimatedCostUsd: 0, imageFileNames: [] }
   }
 
-  const fragmentIds = new Set(orderedEntries.map((entry) => entry.fragment.id))
-  const imageSelection = selectImagesForFragmentIds(context, fragmentIds)
+  let emptyPayload = buildSectionAnswerPayload(
+    context,
+    sections,
+    section,
+    [],
+    [],
+  )
+  let baseTokens =
+    estimatePromptTokens(emptyPayload.systemPrompt, emptyPayload.userMessage, 0) +
+    128
+  let { selected, trimmedCount, skippedForBudgetCount } =
+    selectMappedEntriesWithinBudget(
+    orderedEntries,
+    baseTokens,
+    safeInputBudget,
+    )
+  let fragmentIds = new Set(selected.map((entry) => entry.fragment.id))
+  let imageSelection = selectImagesForFragmentIds(context, fragmentIds)
 
-  const emptyPayload = buildSectionAnswerPayload(
+  emptyPayload = buildSectionAnswerPayload(
     context,
     sections,
     section,
     [],
     imageSelection.selected,
   )
-  const baseTokens =
+  const imageAwareBaseTokens =
     estimatePromptTokens(
       emptyPayload.systemPrompt,
       emptyPayload.userMessage,
       imageSelection.selected.length,
     ) + 128
-  const { selected, trimmedCount } = selectMappedEntriesWithinBudget(
-    orderedEntries,
-    baseTokens,
-    safeInputBudget,
-  )
+
+  if (imageAwareBaseTokens > baseTokens) {
+    baseTokens = imageAwareBaseTokens
+    const imageAwareSelection = selectMappedEntriesWithinBudget(
+      orderedEntries,
+      baseTokens,
+      safeInputBudget,
+    )
+    selected = imageAwareSelection.selected
+    trimmedCount = imageAwareSelection.trimmedCount
+    skippedForBudgetCount = imageAwareSelection.skippedForBudgetCount
+    fragmentIds = new Set(selected.map((entry) => entry.fragment.id))
+    imageSelection = selectImagesForFragmentIds(context, fragmentIds)
+  }
 
   if (trimmedCount > 0) {
     loggerWithChild({ email: context.user.email }).info(
       {
         chatId: context.chat.externalId,
         sectionId: section.sectionId,
+        orderedEntryCount: orderedEntries.length,
+        selectedCount: selected.length,
         trimmedCount,
+        skippedForBudgetCount,
+        imageCount: imageSelection.selected.length,
       },
       "[FinalAnswerSynthesis] Trimmed mapped fragments to fit section input budget.",
     )
+  }
+
+  if (selected.length === 0) {
+    loggerWithChild({ email: context.user.email }).info(
+      {
+        chatId: context.chat.externalId,
+        sectionId: section.sectionId,
+        orderedEntryCount: orderedEntries.length,
+        skippedForBudgetCount,
+      },
+      "[FinalAnswerSynthesis] No mapped fragments fit within the section input budget; omitting section.",
+    )
+    return { result: null, estimatedCostUsd: 0, imageFileNames: [] }
   }
 
   const payload = buildSectionAnswerPayload(
@@ -1088,24 +1387,29 @@ async function synthesizeSection(
     ),
   )
 
+  throwIfStopRequested(context.stopSignal)
   try {
-    const response = await getProviderByModel(providerModelId).converse(
-      [
+    const response = await raceWithStop(
+      getProviderByModel(providerModelId).converse(
+        [
+          {
+            role: ConversationRole.USER,
+            content: [{ text: payload.userMessage }],
+          },
+        ],
         {
-          role: ConversationRole.USER,
-          content: [{ text: payload.userMessage }],
+          modelId: providerModelId,
+          stream: false,
+          temperature: 0.2,
+          max_new_tokens: sectionMaxTokens,
+          systemPrompt: payload.systemPrompt,
+          imageFileNames: payload.imageFileNames,
         },
-      ],
-      {
-        modelId: providerModelId,
-        stream: false,
-        temperature: 0.2,
-        max_new_tokens: sectionMaxTokens,
-        systemPrompt: payload.systemPrompt,
-        imageFileNames: payload.imageFileNames,
-      },
+      ),
+      context.stopSignal,
     )
 
+    throwIfStopRequested(context.stopSignal)
     const body = response.text?.trim() ?? ""
     return {
       result: body
@@ -1119,6 +1423,10 @@ async function synthesizeSection(
       imageFileNames: payload.imageFileNames,
     }
   } catch (error) {
+    if (isMessageAgentStopError(error)) {
+      throw error
+    }
+
     Logger.warn(
       {
         err: error instanceof Error ? error.message : String(error),
@@ -1150,99 +1458,154 @@ async function synthesizeSectionalAnswer(
   safeInputBudget: number,
 ): Promise<FinalSynthesisExecutionResult> {
   let estimatedCostUsd = 0
-
-  await context.runtime?.emitReasoning?.({
-    text: `Final synthesis exceeded the model input budget. Switching to sectional synthesis across ${context.allFragments.length} fragments.`,
-    step: { type: AgentReasoningStepType.LogMessage },
-  })
-
-  const planned = await planSections(context, modelId, safeInputBudget)
-  estimatedCostUsd += planned.estimatedCostUsd
-  let sections = planned.sections
-
-  const mapped = await mapFragmentsToSections(
-    context,
-    sections,
-    modelId,
-    safeInputBudget,
-  )
-  estimatedCostUsd += mapped.estimatedCostUsd
-
-  let assignments = mapped.assignments
-  const hasAssignments = Array.from(assignments.values()).some(
-    (indexes) => indexes.length > 0,
-  )
-
-  if (!hasAssignments) {
-    sections = buildDefaultSectionPlan()
-    assignments = buildDefaultAssignments(context, sections)
-  }
-
-  const sectionResults = await runWithConcurrency(
-    sections,
-    SECTION_CONCURRENCY,
-    async (section) =>
-      synthesizeSection(
-        context,
-        sections,
-        section,
-        assignments.get(section.sectionId) ?? [],
-        modelId,
-        safeInputBudget,
-      ),
-  )
-
-  estimatedCostUsd += sectionResults.reduce(
-    (sum, result) => sum + result.estimatedCostUsd,
-    0,
-  )
-
-  let assembledText = assembleSectionAnswers(
-    sectionResults
-      .map((result) => result.result)
-      .filter((result): result is SectionAnswerResult => !!result),
-  )
-
-  if (!assembledText) {
-    const fallbackSections = buildDefaultSectionPlan()
-    const fallbackAssignments = buildDefaultAssignments(context, fallbackSections)
-    const fallback = await synthesizeSection(
-      context,
-      fallbackSections,
-      fallbackSections[0],
-      fallbackAssignments.get(1) ?? [],
-      modelId,
-      safeInputBudget,
-    )
-    estimatedCostUsd += fallback.estimatedCostUsd
-    assembledText = assembleSectionAnswers(
-      fallback.result ? [fallback.result] : [],
-    )
-    if (fallback.result) {
-      sectionResults.push(fallback)
-    }
-  }
-
-  if (!assembledText) {
-    throw new Error("Sectional final synthesis produced no answer text.")
-  }
-
   const uniqueImagesProvided = new Set<string>()
-  for (const result of sectionResults) {
-    for (const imageName of result.imageFileNames) {
-      uniqueImagesProvided.add(imageName)
+
+  try {
+    throwIfStopRequested(context.stopSignal)
+
+    await raceWithStop(
+      context.runtime?.emitReasoning?.({
+        text: `Final synthesis exceeded the model input budget. Switching to sectional synthesis across ${context.allFragments.length} fragments.`,
+        step: { type: AgentReasoningStepType.LogMessage },
+      }) ?? Promise.resolve(),
+      context.stopSignal,
+    )
+
+    throwIfStopRequested(context.stopSignal)
+    const planned = await raceWithStop(
+      planSections(context, modelId, safeInputBudget),
+      context.stopSignal,
+    )
+    estimatedCostUsd += planned.estimatedCostUsd
+    let sections = planned.sections
+
+    throwIfStopRequested(context.stopSignal)
+    const mapped = await raceWithStop(
+      mapFragmentsToSections(context, sections, modelId, safeInputBudget),
+      context.stopSignal,
+    )
+    estimatedCostUsd += mapped.estimatedCostUsd
+
+    let assignments = mapped.assignments
+    const hasAssignments = Array.from(assignments.values()).some(
+      (indexes) => indexes.length > 0,
+    )
+
+    if (!hasAssignments) {
+      sections = buildDefaultSectionPlan()
+      assignments = buildDefaultAssignments(context, sections)
     }
-  }
 
-  context.finalSynthesis.streamedText = assembledText
-  await context.runtime?.streamAnswerText?.(assembledText)
+    throwIfStopRequested(context.stopSignal)
+    const sectionResults = await raceWithStop(
+      runWithConcurrency(
+        sections,
+        SECTION_CONCURRENCY,
+        async (section) =>
+          synthesizeSection(
+            context,
+            sections,
+            section,
+            assignments.get(section.sectionId) ?? [],
+            modelId,
+            safeInputBudget,
+          ),
+      ),
+      context.stopSignal,
+    )
 
-  return {
-    textLength: assembledText.length,
-    totalImagesAvailable: imageSelection.total,
-    imagesProvided: uniqueImagesProvided.size,
-    estimatedCostUsd,
-    mode: "sectional",
+    estimatedCostUsd += sectionResults.reduce(
+      (sum, result) => sum + result.estimatedCostUsd,
+      0,
+    )
+
+    for (const result of sectionResults) {
+      for (const imageName of result.imageFileNames) {
+        uniqueImagesProvided.add(imageName)
+      }
+    }
+
+    let assembledText = assembleSectionAnswers(
+      sectionResults
+        .map((result) => result.result)
+        .filter((result): result is SectionAnswerResult => !!result),
+    )
+
+    if (!assembledText) {
+      throwIfStopRequested(context.stopSignal)
+      const fallbackSections = buildDefaultSectionPlan()
+      const fallbackAssignments = buildDefaultAssignments(
+        context,
+        fallbackSections,
+      )
+      const fallback = await raceWithStop(
+        synthesizeSection(
+          context,
+          fallbackSections,
+          fallbackSections[0],
+          fallbackAssignments.get(1) ?? [],
+          modelId,
+          safeInputBudget,
+        ),
+        context.stopSignal,
+      )
+      estimatedCostUsd += fallback.estimatedCostUsd
+      assembledText = assembleSectionAnswers(
+        fallback.result ? [fallback.result] : [],
+      )
+      if (fallback.result) {
+        sectionResults.push(fallback)
+      }
+      for (const imageName of fallback.imageFileNames) {
+        uniqueImagesProvided.add(imageName)
+      }
+    }
+
+    throwIfStopRequested(context.stopSignal)
+    if (!assembledText) {
+      throw new Error("Sectional final synthesis produced no answer text.")
+    }
+
+    context.finalSynthesis.streamedText = ""
+    let streamedCharacters = 0
+    for (
+      let offset = 0;
+      offset < assembledText.length;
+      offset += FINAL_SYNTHESIS_STREAM_CHUNK_SIZE
+    ) {
+      throwIfStopRequested(context.stopSignal)
+      const chunk = assembledText.slice(
+        offset,
+        offset + FINAL_SYNTHESIS_STREAM_CHUNK_SIZE,
+      )
+      await streamFinalAnswerChunk(context, chunk)
+      streamedCharacters += chunk.length
+    }
+
+    return {
+      textLength: streamedCharacters,
+      totalImagesAvailable: imageSelection.total,
+      imagesProvided: uniqueImagesProvided.size,
+      estimatedCostUsd,
+      mode: "sectional",
+    }
+  } catch (error) {
+    if (!isMessageAgentStopError(error)) {
+      throw error
+    }
+
+    logFinalSynthesisStop(context, "sectional", {
+      estimatedCostUsd,
+      streamedCharacters: context.finalSynthesis.streamedText.length,
+      imagesProvided: uniqueImagesProvided.size,
+    })
+    return buildStoppedFinalSynthesisResult(
+      "sectional",
+      imageSelection,
+      estimatedCostUsd,
+      context.finalSynthesis.streamedText.length,
+      uniqueImagesProvided.size,
+    )
   }
 }
 
@@ -1283,6 +1646,17 @@ export async function executeFinalSynthesis(
     )
   }
 
+  if (context.stopSignal?.aborted) {
+    logFinalSynthesisStop(context, "execute:before-mode-branch")
+    return buildStoppedFinalSynthesisResult(
+      modeSelection.mode,
+      imageSelection,
+      0,
+      context.finalSynthesis.streamedText.length,
+      0,
+    )
+  }
+
   return modeSelection.mode === "single"
     ? synthesizeSingleAnswer(context, modelId, imageSelection)
     : synthesizeSectionalAnswer(
@@ -1298,4 +1672,6 @@ export const __finalAnswerSynthesisInternals = {
   buildSectionAnswerPayload,
   decideSynthesisMode,
   selectImagesForFragmentIds,
+  selectMappedEntriesWithinBudget,
+  synthesizeSection,
 }

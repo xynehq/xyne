@@ -88,6 +88,21 @@ const createMockContext = (): AgentRunContext => ({
   stopRequested: false,
 })
 
+const createFragment = (
+  id: string,
+  content: string,
+): MinimalAgentFragment => ({
+  ...baseFragment,
+  id,
+  content,
+  source: {
+    ...baseFragment.source,
+    docId: id,
+    title: `Title ${id}`,
+    url: `https://example.com/${id}`,
+  },
+})
+
 describe("final-answer-synthesis", () => {
   test("builds deterministic fragment previews from raw fragment content", () => {
     const preview = __finalAnswerSynthesisInternals.buildFragmentPreviewRecord(
@@ -179,5 +194,70 @@ describe("final-answer-synthesis", () => {
 
     expect(decision.mode).toBe("sectional")
     expect(decision.estimatedInputTokens).toBeGreaterThan(decision.safeInputBudget)
+  })
+
+  test("skips an oversize first mapped fragment and keeps later entries that fit", () => {
+    const selection = __finalAnswerSynthesisInternals.selectMappedEntriesWithinBudget(
+      [
+        { fragmentIndex: 1, fragment: createFragment("doc-large", "A".repeat(6_000)) },
+        { fragmentIndex: 2, fragment: createFragment("doc-small-1", "brief evidence") },
+        { fragmentIndex: 3, fragment: createFragment("doc-small-2", "more brief evidence") },
+      ],
+      100,
+      500,
+    )
+
+    expect(selection.selected.map((entry) => entry.fragmentIndex)).toEqual([2, 3])
+    expect(selection.trimmedCount).toBe(1)
+    expect(selection.skippedForBudgetCount).toBe(1)
+  })
+
+  test("skips an oversize middle mapped fragment without reordering selected entries", () => {
+    const selection = __finalAnswerSynthesisInternals.selectMappedEntriesWithinBudget(
+      [
+        { fragmentIndex: 1, fragment: createFragment("doc-small-1", "brief evidence") },
+        { fragmentIndex: 2, fragment: createFragment("doc-large", "B".repeat(6_000)) },
+        { fragmentIndex: 3, fragment: createFragment("doc-small-2", "more brief evidence") },
+      ],
+      100,
+      500,
+    )
+
+    expect(selection.selected.map((entry) => entry.fragmentIndex)).toEqual([1, 3])
+    expect(selection.trimmedCount).toBe(1)
+    expect(selection.skippedForBudgetCount).toBe(1)
+  })
+
+  test("omits section synthesis when no mapped fragment fits within the safe budget", async () => {
+    const context = createMockContext()
+    context.allFragments = [
+      createFragment("doc-large-1", "A".repeat(6_000)),
+      createFragment("doc-large-2", "B".repeat(6_000)),
+    ]
+
+    const result = await __finalAnswerSynthesisInternals.synthesizeSection(
+      context,
+      [
+        {
+          sectionId: 1,
+          title: "Answer",
+          objective: "Provide the best complete answer using the mapped evidence.",
+        },
+      ],
+      {
+        sectionId: 1,
+        title: "Answer",
+        objective: "Provide the best complete answer using the mapped evidence.",
+      },
+      [1, 2],
+      Models.Gpt_4,
+      500,
+    )
+
+    expect(result).toEqual({
+      result: null,
+      estimatedCostUsd: 0,
+      imageFileNames: [],
+    })
   })
 })

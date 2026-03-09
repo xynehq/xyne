@@ -3132,6 +3132,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
 
       try {
         const synthesisResult = await executeFinalSynthesis(mutableContext)
+        throwIfStopRequested(mutableContext.stopSignal)
         context.finalSynthesis.completed = true
 
         await context.runtime?.emitReasoning?.({
@@ -3157,6 +3158,13 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           }
         )
       } catch (error) {
+        if (isMessageAgentStopError(error)) {
+          context.finalSynthesis.suppressAssistantStreaming = false
+          context.finalSynthesis.requested = false
+          context.finalSynthesis.completed = false
+          throw error
+        }
+
         context.finalSynthesis.suppressAssistantStreaming = false
         context.finalSynthesis.requested = false
         context.finalSynthesis.completed = false
