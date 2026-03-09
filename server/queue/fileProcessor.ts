@@ -342,28 +342,29 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         chunks_map: processingResult.chunks_map,
         image_chunks_map: processingResult.image_chunks_map,
         pageTitle: pageTitle,
-        metadata: JSON.stringify({
-          originalFileName: file.originalName || file.fileName,
-          uploadedBy: file.uploadedByEmail || "system",
-          chunksCount:
-            processingResult.chunks.length +
-            processingResult.image_chunks.length,
-          imageChunksCount: processingResult.image_chunks.length,
-          processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
-          ...(processingResult.processingMethod && {
-            pdfProcessingMethod: processingResult.processingMethod,
+        metadata: JSON.stringify(
+          mergeCollectionItemMetadata(file.metadata, {
+            originalFileName: file.originalName || file.fileName,
+            uploadedBy: file.uploadedByEmail || "system",
+            chunksCount:
+              processingResult.chunks.length +
+              processingResult.image_chunks.length,
+            imageChunksCount: processingResult.image_chunks.length,
+            processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
+            ...(processingResult.processingMethod && {
+              pdfProcessingMethod: processingResult.processingMethod,
+            }),
+            ...(pageTitle && { pageTitle }),
+            lastModified: Date.now(),
+            ...("sheetName" in processingResult && {
+              sheetName: (processingResult as SheetProcessingResult).sheetName,
+              sheetIndex: (processingResult as SheetProcessingResult)
+                .sheetIndex,
+              totalSheets: (processingResult as SheetProcessingResult)
+                .totalSheets,
+            }),
           }),
-          ...(pageTitle && { pageTitle }),
-          lastModified: Date.now(),
-          ...("sheetName" in processingResult && {
-            sheetName: (processingResult as SheetProcessingResult).sheetName,
-            sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
-            totalSheets: (processingResult as SheetProcessingResult)
-              .totalSheets,
-          }),
-          ...(typeof file.metadata === "object" &&
-            file.metadata !== null && { ...file.metadata }),
-        }),
+        ),
         createdBy: file.uploadedByEmail || "system",
         duration: 0,
         mimeType: getBaseMimeType(file.mimeType || "text/plain"),

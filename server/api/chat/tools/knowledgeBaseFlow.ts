@@ -276,7 +276,7 @@ type KnowledgeBaseRepository = {
   upsertCollectionLsProjection?: (params: {
     collectionId: string
     projection: CollectionLsProjectionPayload
-    builtFromSourceUpdatedAt: Date
+    lsCollectionProjectionUpdatedAt: Date
     lastError?: string | null
   }) => Promise<CollectionLsProjection>
   recordCollectionLsProjectionError?: (
@@ -579,8 +579,8 @@ function isProjectionStale(
   if (!projection) return true
 
   return (
-    projection.builtFromSourceUpdatedAt.getTime() <
-    collection.lsProjectionSourceUpdatedAt.getTime()
+    projection.lsCollectionProjectionUpdatedAt.getTime() <
+    collection.collectionSourceUpdatedAt.getTime()
   )
 }
 
@@ -680,7 +680,7 @@ async function rebuildCollectionProjection(
     await repo.upsertCollectionLsProjection({
       collectionId: collection.id,
       projection,
-      builtFromSourceUpdatedAt: collection.lsProjectionSourceUpdatedAt,
+      lsCollectionProjectionUpdatedAt: collection.collectionSourceUpdatedAt,
       lastError: null,
     })
   }
@@ -784,6 +784,21 @@ function isResolvedTargetAllowed(
       ) ?? false
     )
   })
+}
+
+// Rejects collection-root/path targets that point at collections outside the caller scope
+// before we load or rebuild their navigation snapshot.
+function isTargetCollectionPreAuthorized(
+  target: KnowledgeBaseTarget,
+  scopedCollectionIds: Set<string>,
+): boolean {
+  switch (target.type) {
+    case "collection":
+    case "path":
+      return scopedCollectionIds.has(target.collectionId)
+    default:
+      return true
+  }
 }
 
 // Converts one resolved target into the search selection shape expected downstream.
@@ -946,6 +961,12 @@ async function buildSearchSelections(
   const selections: KnowledgeBaseSelection[] = []
 
   for (const target of params.filters.targets) {
+    if (!isTargetCollectionPreAuthorized(target, scopedCollectionIds)) {
+      throw new Error(
+        "Requested knowledge base target is outside the current KB scope",
+      )
+    }
+
     const resolvedTarget = await resolveKnowledgeBaseTarget(target, repo, cache)
     if (
       !isResolvedTargetAllowed(resolvedTarget, scopeState, scopedCollectionIds)
@@ -1228,10 +1249,20 @@ export async function executeLsKnowledgeBase(
       return ToolResponse.success(response)
     }
 
-    const cache = createNavigationCache()
     const scopedCollectionIds = new Set(
       collections.map((collection) => collection.id),
     )
+    if (
+      !isTargetCollectionPreAuthorized(params.target, scopedCollectionIds)
+    ) {
+      return ToolResponse.error(
+        ToolErrorCodes.PERMISSION_DENIED,
+        "Requested knowledge base target is outside the current KB scope",
+        { toolName: "ls" },
+      )
+    }
+
+    const cache = createNavigationCache()
     const resolvedTarget = await resolveKnowledgeBaseTarget(
       params.target,
       repo,

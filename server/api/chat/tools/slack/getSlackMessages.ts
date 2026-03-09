@@ -150,6 +150,7 @@ export const getSlackRelatedMessagesTool: Tool<
         offset: searchOptions.offset,
         timestampRange: normalizedTimestampRange,
         agentChannelIds: channelIds.length > 0 ? channelIds : undefined,
+        excludeDocIds: params.excludedIds || [],
         mentions:
           params.mentions && params.mentions.length > 0
             ? params.mentions
@@ -207,6 +208,8 @@ export const getSlackRelatedMessagesTool: Tool<
         }
       }
 
+      // Base-search exclusions are pushed down into Vespa. Keep this pass for
+      // appended thread items fetched separately from the main search.
       const excludedDocIds = new Set(params.excludedIds || [])
       if (excludedDocIds.size > 0) {
         allItems = allItems.filter((item) => {
