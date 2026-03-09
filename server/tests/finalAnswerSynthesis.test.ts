@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import type { AgentRunContext } from "@/api/chat/agent-schemas"
 import {
   __finalAnswerSynthesisInternals,
   buildFinalSynthesisPayload,
 } from "@/api/chat/final-answer-synthesis"
+import { __modelInfoInternals } from "@/ai/fetchModels"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { Models } from "@/ai/types"
 import { Apps } from "@xyne/vespa-ts/types"
@@ -104,6 +105,14 @@ const createFragment = (
 })
 
 describe("final-answer-synthesis", () => {
+  beforeEach(() => {
+    __modelInfoInternals.resetModelInfoCacheForTests()
+  })
+
+  afterEach(() => {
+    __modelInfoInternals.resetModelInfoCacheForTests()
+  })
+
   test("builds deterministic fragment previews from raw fragment content", () => {
     const preview = __finalAnswerSynthesisInternals.buildFragmentPreviewRecord(
       {
@@ -169,6 +178,19 @@ describe("final-answer-synthesis", () => {
   })
 
   test("switches to sectional mode when full final payload exceeds the model input budget", () => {
+    __modelInfoInternals.setModelInfoCacheForTests([
+      {
+        model_name: Models.Gpt_4,
+        litellm_params: {
+          model: "gpt-4",
+        },
+        model_info: {
+          max_input_tokens: 8_192,
+          max_output_tokens: 4_096,
+        },
+      },
+    ])
+
     const context = createMockContext()
     context.modelId = Models.Gpt_4
     context.allFragments = [

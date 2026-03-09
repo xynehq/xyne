@@ -7,45 +7,346 @@ import { modelDetailsMap } from "./mappers"
 
 const Logger = getLogger(Subsystem.AI)
 
-// Helper function to parse cost value (handles both numbers and scientific notation strings)
-function parseCostValue(value: any): number {
-  if (typeof value === "number") {
-    return value
-  }
-  if (typeof value === "string") {
-    // Handle scientific notation strings like "6e-07"
-    const parsed = parseFloat(value)
-    return isNaN(parsed) ? 0 : parsed
-  }
-  return 0
+const CACHE_TTL_MS = 5 * 60 * 1000
+const DEFAULT_MAX_INPUT_TOKENS = 128_000
+
+type NumericLike = number | string | null | undefined
+
+interface RawLiteLLMParams {
+  model?: string
+  input_cost_per_token?: NumericLike
+  output_cost_per_token?: NumericLike
+  custom_llm_provider?: string
 }
 
-// Cache for model info from API
+interface RawModelInfoDetails {
+  description?: string | null
+  deep_research?: boolean | null
+  id?: string
+  input_cost_per_token?: NumericLike
+  litellm_provider?: string | null
+  max_input_tokens?: number | null
+  max_output_tokens?: number | null
+  output_cost_per_token?: NumericLike
+  reasoning?: boolean | null
+  supports_function_calling?: boolean | null
+  supports_reasoning?: boolean | null
+  supports_web_search?: boolean | null
+  supports_vision?: boolean | null
+  websearch?: boolean | null
+}
+
+export interface RawModelInfoRecord {
+  model_name: string
+  litellm_params?: RawLiteLLMParams | null
+  model_info?: RawModelInfoDetails | null
+}
+
+export interface NormalizedModelMetadata {
+  actualName: string
+  customLLMProvider?: string
+  deepResearch: boolean
+  description: string
+  hasConflictingMaxInputTokens: boolean
+  hasConflictingMaxOutputTokens: boolean
+  inputCostPerToken?: number
+  litellmProvider?: string
+  maxInputTokens?: number
+  maxOutputTokens?: number
+  modelInfoId?: string
+  modelName: string
+  outputCostPerToken?: number
+  reasoning: boolean
+  sourceCount: number
+  supportsFunctionCalling: boolean
+  supportsVision: boolean
+  websearch: boolean
+}
+
 interface ModelInfoCache {
-  data: any[]
+  rawData: RawModelInfoRecord[]
+  normalizedByModelName: Map<string, NormalizedModelMetadata>
   timestamp: number
 }
 
 let modelInfoCache: ModelInfoCache | null = null
-const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
-// Shared function to fetch model info from API with caching
-export async function fetchModelInfoFromAPI(forceRefresh = false): Promise<any[]> {
-  // Return cached data if still valid
+const warnedMissingTokenLimitKeys = new Set<string>()
+
+function parseCostValue(value: NumericLike): number {
+  if (typeof value === "number") {
+    return value
+  }
+  if (typeof value === "string") {
+    const parsed = parseFloat(value)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+  return 0
+}
+
+function parseOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value
+  }
+  return undefined
+}
+
+function parseOptionalCost(value: NumericLike): number | undefined {
+  const parsed = parseCostValue(value)
+  return parsed > 0 ? parsed : undefined
+}
+
+function hasConflictingValues(values: number[]): boolean {
+  return new Set(values).size > 1
+}
+
+function resolveMinValue(values: Array<number | undefined>): {
+  value?: number
+  hasConflict: boolean
+} {
+  const presentValues = values.filter((value): value is number => value !== undefined)
+  if (presentValues.length === 0) {
+    return { value: undefined, hasConflict: false }
+  }
+
+  return {
+    value: Math.min(...presentValues),
+    hasConflict: hasConflictingValues(presentValues),
+  }
+}
+
+function firstNonEmpty(values: Array<string | null | undefined>): string | undefined {
+  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim()
+}
+
+function normalizeBoolean(value: unknown): boolean {
+  return value === true
+}
+
+function normalizeModelInfoRecords(
+  records: RawModelInfoRecord[],
+): Map<string, NormalizedModelMetadata> {
+  const groupedRecords = new Map<string, RawModelInfoRecord[]>()
+
+  for (const record of records) {
+    if (!record.model_name) continue
+    const existing = groupedRecords.get(record.model_name) ?? []
+    existing.push(record)
+    groupedRecords.set(record.model_name, existing)
+  }
+
+  const normalized = new Map<string, NormalizedModelMetadata>()
+
+  for (const [modelName, group] of groupedRecords.entries()) {
+    const actualName =
+      firstNonEmpty(group.map((record) => record.litellm_params?.model)) ?? modelName
+    const inputTokenResolution = resolveMinValue(
+      group.map((record) => parseOptionalNumber(record.model_info?.max_input_tokens)),
+    )
+    const outputTokenResolution = resolveMinValue(
+      group.map((record) => parseOptionalNumber(record.model_info?.max_output_tokens)),
+    )
+    const inputCost = resolveMinValue(
+      group.map((record) =>
+        parseOptionalCost(record.model_info?.input_cost_per_token) ??
+        parseOptionalCost(record.litellm_params?.input_cost_per_token),
+      ),
+    ).value
+    const outputCost = resolveMinValue(
+      group.map((record) =>
+        parseOptionalCost(record.model_info?.output_cost_per_token) ??
+        parseOptionalCost(record.litellm_params?.output_cost_per_token),
+      ),
+    ).value
+
+    const metadata: NormalizedModelMetadata = {
+      actualName,
+      customLLMProvider: firstNonEmpty(
+        group.map((record) => record.litellm_params?.custom_llm_provider),
+      ),
+      deepResearch: group.some(
+        (record) => normalizeBoolean(record.model_info?.deep_research),
+      ),
+      description: firstNonEmpty(
+        group.map((record) => record.model_info?.description),
+      ) ?? "",
+      hasConflictingMaxInputTokens: inputTokenResolution.hasConflict,
+      hasConflictingMaxOutputTokens: outputTokenResolution.hasConflict,
+      inputCostPerToken: inputCost,
+      litellmProvider: firstNonEmpty(
+        group.map((record) => record.model_info?.litellm_provider),
+      ),
+      maxInputTokens: inputTokenResolution.value,
+      maxOutputTokens: outputTokenResolution.value,
+      modelInfoId: firstNonEmpty(group.map((record) => record.model_info?.id)),
+      modelName,
+      outputCostPerToken: outputCost,
+      reasoning: group.some(
+        (record) =>
+          normalizeBoolean(record.model_info?.reasoning) ||
+          normalizeBoolean(record.model_info?.supports_reasoning),
+      ),
+      sourceCount: group.length,
+      supportsFunctionCalling: group.some(
+        (record) => normalizeBoolean(record.model_info?.supports_function_calling),
+      ),
+      supportsVision: group.some(
+        (record) => normalizeBoolean(record.model_info?.supports_vision),
+      ),
+      websearch: group.some(
+        (record) =>
+          normalizeBoolean(record.model_info?.websearch) ||
+          normalizeBoolean(record.model_info?.supports_web_search),
+      ),
+    }
+
+    normalized.set(modelName, metadata)
+  }
+
+  return normalized
+}
+
+function logNormalizationConflicts(
+  normalizedByModelName: Map<string, NormalizedModelMetadata>,
+) {
+  for (const metadata of normalizedByModelName.values()) {
+    if (
+      !metadata.hasConflictingMaxInputTokens &&
+      !metadata.hasConflictingMaxOutputTokens
+    ) {
+      continue
+    }
+
+    Logger.warn(
+      {
+        modelName: metadata.modelName,
+        actualName: metadata.actualName,
+        maxInputTokens: metadata.maxInputTokens,
+        maxOutputTokens: metadata.maxOutputTokens,
+        sourceCount: metadata.sourceCount,
+        hasConflictingMaxInputTokens: metadata.hasConflictingMaxInputTokens,
+        hasConflictingMaxOutputTokens: metadata.hasConflictingMaxOutputTokens,
+      },
+      "[ModelInfo] Resolved duplicate upstream model records conservatively.",
+    )
+  }
+}
+
+function updateModelInfoCache(records: RawModelInfoRecord[]) {
+  const normalizedByModelName = normalizeModelInfoRecords(records)
+  modelInfoCache = {
+    rawData: records,
+    normalizedByModelName,
+    timestamp: Date.now(),
+  }
+
+  logNormalizationConflicts(normalizedByModelName)
+}
+
+function getCachedNormalizedModelMetadata(): NormalizedModelMetadata[] {
+  return [...(modelInfoCache?.normalizedByModelName.values() ?? [])]
+}
+
+function matchesModelIdentifier(
+  metadata: NormalizedModelMetadata,
+  modelId: string,
+): boolean {
+  if (metadata.modelName === modelId) return true
+  if (metadata.actualName === modelId) return true
+  if (metadata.actualName.endsWith(`/${modelId}`)) return true
+  if (modelId.endsWith(`/${metadata.modelName}`)) return true
+  return false
+}
+
+function resolveModelMetadata(
+  modelId?: Models | string | null,
+): NormalizedModelMetadata | undefined {
+  if (!modelId) {
+    return undefined
+  }
+
+  const normalizedMetadata = getCachedNormalizedModelMetadata()
+  const requestedModelId = String(modelId)
+  const configuredActualName =
+    MODEL_CONFIGURATIONS[requestedModelId as Models]?.actualName
+
+  return normalizedMetadata.find((metadata) => {
+    if (matchesModelIdentifier(metadata, requestedModelId)) return true
+    if (configuredActualName && matchesModelIdentifier(metadata, configuredActualName)) {
+      return true
+    }
+    return false
+  })
+}
+
+function warnMissingTokenLimitOnce(
+  modelId: string,
+  tokenKind: "input" | "output" | "metadata",
+) {
+  const key = `${modelId}:${tokenKind}`
+  if (warnedMissingTokenLimitKeys.has(key)) {
+    return
+  }
+
+  warnedMissingTokenLimitKeys.add(key)
+  Logger.warn(
+    { modelId, tokenKind },
+    "[ModelInfo] Missing upstream token metadata for model in use.",
+  )
+}
+
+function isLiteLLMAllowlistedModel(modelName: string): boolean {
+  if (
+    modelName === Models.LiteLLM_Claude_Sonnet_4_6 &&
+    config.allowSonnet46
+  ) {
+    return true
+  }
+  if (modelName === Models.LiteLLM_Claude_Opus_4_6 && config.allowOpus46) {
+    return true
+  }
+  return false
+}
+
+function shouldIncludeLiteLLMModelForListing(
+  metadata: NormalizedModelMetadata,
+): boolean {
+  if (metadata.litellmProvider === "hosted_vllm") {
+    return true
+  }
+  return isLiteLLMAllowlistedModel(metadata.modelName)
+}
+
+type AvailableModel = {
+  actualName: string
+  labelName: string
+  provider: string
+  reasoning: boolean
+  websearch: boolean
+  deepResearch: boolean
+  description: string
+}
+
+export type ResolvedModelTokenLimits = {
+  maxInputTokens: number
+  maxOutputTokens?: number
+}
+
+export async function fetchModelInfoFromAPI(
+  forceRefresh = false,
+): Promise<RawModelInfoRecord[]> {
   if (!forceRefresh && modelInfoCache) {
     const age = Date.now() - modelInfoCache.timestamp
     if (age < CACHE_TTL_MS) {
-      return modelInfoCache.data
+      return modelInfoCache.rawData
     }
   }
 
-  // Use API key from config
   if (!config.LiteLLMApiKey) {
     Logger.warn("LiteLLM API key not configured, returning empty array")
-    return []
+    return modelInfoCache?.rawData ?? []
   }
 
-  // Set timeout of 5 seconds
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 5000)
 
@@ -54,57 +355,66 @@ export async function fetchModelInfoFromAPI(forceRefresh = false): Promise<any[]
     if (!apiUrl) {
       throw new Error("LiteLLM model info URL not configured")
     }
+
     const response = await fetch(apiUrl, {
       headers: {
         "x-litellm-api-key": config.LiteLLMApiKey,
-        "accept": "application/json",
+        accept: "application/json",
         "x-litellm-disable-logging": "true",
       },
       signal: controller.signal,
     })
     clearTimeout(timeoutId)
-    
+
     if (!response.ok) {
       throw new Error(`Failed to fetch model configs: ${response.statusText}`)
     }
+
     const responseData = await response.json()
-    
-    // API returns { data: [...] }, so extract the data array
-    const data = Array.isArray(responseData) ? responseData : (responseData.data || [])
+    const rawData = (
+      Array.isArray(responseData) ? responseData : responseData.data || []
+    ) as RawModelInfoRecord[]
 
-    // Update cache
-    modelInfoCache = {
-      data,
-      timestamp: Date.now(),
-    }
-
-    Logger.info(`Fetched ${data.length} models from API and cached`)
-    return data
+    updateModelInfoCache(rawData)
+    Logger.info(
+      { modelCount: rawData.length },
+      "[ModelInfo] Fetched upstream model metadata and refreshed cache.",
+    )
+    return rawData
   } catch (error) {
     clearTimeout(timeoutId)
+
     if (error instanceof Error && error.name === "AbortError") {
-      Logger.warn("Model info API call timed out, using cached data if available")
+      Logger.warn("[ModelInfo] Model info API call timed out; attempting stale cache fallback.")
     } else {
-      Logger.warn("Failed to fetch model info from API", {
-        error: error instanceof Error ? error.message : String(error),
-      })
+      Logger.warn(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "[ModelInfo] Failed to fetch model info from API.",
+      )
     }
-    
-    // Return cached data if available, even if stale
+
     if (modelInfoCache) {
-      Logger.info("Using stale cached model info")
-      return modelInfoCache.data
+      Logger.info("[ModelInfo] Using stale cached model metadata.")
+      return modelInfoCache.rawData
     }
-    
+
     return []
   }
 }
 
-// Function to pre-warm the cache at startup
+export async function fetchNormalizedModelMetadata(
+  forceRefresh = false,
+): Promise<NormalizedModelMetadata[]> {
+  await fetchModelInfoFromAPI(forceRefresh)
+  return getCachedNormalizedModelMetadata()
+}
+
 export const preloadModelInfoCache = async (): Promise<void> => {
   if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
     try {
-      await fetchModelInfoFromAPI(true) // Force refresh on startup
+      await fetchModelInfoFromAPI(true)
       Logger.info("Model info cache preloaded successfully")
     } catch (error) {
       Logger.warn("Failed to preload model info cache", {
@@ -114,137 +424,90 @@ export const preloadModelInfoCache = async (): Promise<void> => {
   }
 }
 
-// Export function to get cost config for a specific model (uses cached data)
+export const getModelTokenLimits = (
+  modelId?: Models | string | null,
+): ResolvedModelTokenLimits => {
+  if (!modelId) {
+    return { maxInputTokens: DEFAULT_MAX_INPUT_TOKENS }
+  }
+
+  const metadata = resolveModelMetadata(modelId)
+  const requestedModelId = String(modelId)
+
+  if (!metadata) {
+    warnMissingTokenLimitOnce(requestedModelId, "metadata")
+    return { maxInputTokens: DEFAULT_MAX_INPUT_TOKENS }
+  }
+
+  if (metadata.maxInputTokens === undefined) {
+    warnMissingTokenLimitOnce(requestedModelId, "input")
+  }
+
+  if (metadata.maxOutputTokens === undefined) {
+    warnMissingTokenLimitOnce(requestedModelId, "output")
+  }
+
+  return {
+    maxInputTokens: metadata.maxInputTokens ?? DEFAULT_MAX_INPUT_TOKENS,
+    maxOutputTokens: metadata.maxOutputTokens,
+  }
+}
+
+export const getEffectiveMaxOutputTokens = (
+  modelId: Models | string | null | undefined,
+  requestedMaxTokens?: number,
+): number | undefined => {
+  if (requestedMaxTokens === undefined) {
+    return undefined
+  }
+
+  const { maxOutputTokens } = getModelTokenLimits(modelId)
+  return maxOutputTokens !== undefined
+    ? Math.min(requestedMaxTokens, maxOutputTokens)
+    : requestedMaxTokens
+}
+
 export const getCostConfigForModel = async (
   modelId: string,
-): Promise<{ pricePerThousandInputTokens: number; pricePerThousandOutputTokens: number }> => {
-  const data = await fetchModelInfoFromAPI()
+): Promise<{
+  pricePerThousandInputTokens: number
+  pricePerThousandOutputTokens: number
+}> => {
+  await fetchModelInfoFromAPI()
+  const metadata = resolveModelMetadata(modelId)
 
-  // Find the model in the API response
-  // Match by model_name (enum value like "glm-latest") or by the actual model name in litellm_params.model
-  // Also handle cases where modelId might be the full path like "hosted_vllm/zai-org/GLM-4.7-dev"
-  const modelInfo = data.find(
-    (m: any) => {
-      // Direct match by model_name (enum value)
-      if (m.model_name === modelId) return true
-      
-      // Match by litellm_params.model (full path)
-      if (m.litellm_params?.model === modelId) return true
-      
-      // Match if modelId is at the end of the full path
-      if (m.litellm_params?.model?.endsWith(`/${modelId}`)) return true
-      
-      // Match if modelId contains the model_name
-      if (m.litellm_params?.model?.includes(`/${modelId}`)) return true
-      
-      return false
-    },
-  )
-
-  if (modelInfo) {
-    // Try to get costs from model_info first (as numbers), then from litellm_params (as strings)
-    const inputCost = modelInfo.model_info?.input_cost_per_token ?? 
-                     modelInfo.litellm_params?.input_cost_per_token
-    const outputCost = modelInfo.model_info?.output_cost_per_token ?? 
-                      modelInfo.litellm_params?.output_cost_per_token
-
-    if (inputCost !== undefined && inputCost !== null &&
-        outputCost !== undefined && outputCost !== null) {
-      const parsedInputCost = parseCostValue(inputCost)
-      const parsedOutputCost = parseCostValue(outputCost)
-      
-      if (parsedInputCost > 0 || parsedOutputCost > 0) {
-        return {
-          pricePerThousandInputTokens: parsedInputCost * 1000,
-          pricePerThousandOutputTokens: parsedOutputCost * 1000,
-        }
-      }
+  if (
+    metadata?.inputCostPerToken !== undefined &&
+    metadata?.outputCostPerToken !== undefined &&
+    (metadata.inputCostPerToken > 0 || metadata.outputCostPerToken > 0)
+  ) {
+    return {
+      pricePerThousandInputTokens: metadata.inputCostPerToken * 1000,
+      pricePerThousandOutputTokens: metadata.outputCostPerToken * 1000,
     }
   }
-  
-  // Fallback to default config from modelDetailsMap
+
   return modelDetailsMap[modelId]?.cost?.onDemand ?? {
     pricePerThousandInputTokens: 0,
     pricePerThousandOutputTokens: 0,
   }
 }
 
-export const fetchModelConfigs = async (): Promise<Array<{
-  actualName: string
-  labelName: string
-  provider: string
-  reasoning: boolean
-  websearch: boolean
-  deepResearch: boolean
-  description: string
-}>> => {
-  const data = await fetchModelInfoFromAPI()
+export const fetchModelConfigs = async (): Promise<AvailableModel[]> => {
+  const metadata = await fetchNormalizedModelMetadata()
+  const availableModels: AvailableModel[] = []
 
-  const availableModels: Array<{
-    actualName: string
-    labelName: string
-    provider: string
-    reasoning: boolean
-    websearch: boolean
-    deepResearch: boolean
-    description: string
-  }> = []
-
-  // Use Set to track seen model IDs to avoid duplicates
-  const seenModelIds = new Set<string>()
-
-  // Filter models with litellm_provider === "hosted_vllm" and return in expected format
-  for (const modelInfo of data) {
-    // Only process models with litellm_provider === "hosted_vllm"
-    // Check model_info.litellm_provider (from API response structure)
-    const modelId = modelInfo.model_name
-    const actualName = modelInfo.litellm_params?.model || modelId
-    if (modelInfo.model_info?.litellm_provider !== "hosted_vllm") {
-      const allowlist = {
-        [Models.LiteLLM_Claude_Sonnet_4_6]: {
-          enabled: config.allowSonnet46,
-          name: "Claude Sonnet 4.5",
-        },
-        [Models.LiteLLM_Claude_Opus_4_6]: {
-          enabled: config.allowOpus46,
-          name: "Claude Opus 4.5",
-        },
-      };
-
-      const modelAllowlistInfo = allowlist[modelId as keyof typeof allowlist];
-
-      if (modelAllowlistInfo) {
-        if (modelAllowlistInfo.enabled) {
-          Logger.info(`Allowing ${modelAllowlistInfo.name} model despite litellm_provider not being 'hosted_vllm'`);
-        } else {
-          continue;
-        }
-      } else {
-        continue;
-      }
-    }
-
-    // Skip if we've already processed this model (deduplicate by model_name)
-    if (seenModelIds.has(modelId)) {
+  for (const modelMetadata of metadata) {
+    if (!shouldIncludeLiteLLMModelForListing(modelMetadata)) {
       continue
     }
-    seenModelIds.add(modelId)
 
-    // Find the corresponding enum key in Models
-    const modelEnumKey = Object.keys(Models).find(
-      (key) => Models[key as keyof typeof Models] === modelId,
-    ) as keyof typeof Models | undefined
-
-    // Get the enum value from the key (MODEL_CONFIGURATIONS is indexed by enum values, not keys)
-    const modelEnumValue = modelEnumKey ? (Models[modelEnumKey] as Models) : undefined
-
-    // Get model configuration from MODEL_CONFIGURATIONS if it exists
-    const modelConfig = modelEnumValue ? MODEL_CONFIGURATIONS[modelEnumValue] : null
+    const modelConfig =
+      MODEL_CONFIGURATIONS[modelMetadata.modelName as Models] ?? null
 
     if (modelConfig) {
-      // Use configuration from MODEL_CONFIGURATIONS
       availableModels.push({
-        actualName: actualName,
+        actualName: modelMetadata.actualName,
         labelName: modelConfig.labelName,
         provider: "LiteLLM",
         reasoning: modelConfig.reasoning,
@@ -252,219 +515,231 @@ export const fetchModelConfigs = async (): Promise<Array<{
         deepResearch: modelConfig.deepResearch,
         description: modelConfig.description,
       })
-    } else {
-      // For models not in MODEL_CONFIGURATIONS, use defaults
-      availableModels.push({
-        actualName: actualName,
-        labelName: modelId, // Use model_name as fallback label
-        provider: "LiteLLM",
-        reasoning: false,
-        websearch: false,
-        deepResearch: false,
-        description: "",
-      })
+      continue
     }
+
+    availableModels.push({
+      actualName: modelMetadata.actualName,
+      labelName: modelMetadata.modelName,
+      provider: "LiteLLM",
+      reasoning: modelMetadata.reasoning,
+      websearch: modelMetadata.websearch,
+      deepResearch: modelMetadata.deepResearch,
+      description: modelMetadata.description,
+    })
   }
 
-  Logger.info(`Processed ${availableModels.length} hosted_vllm models from API`)
+  Logger.info(
+    { modelCount: availableModels.length },
+    "[ModelInfo] Processed LiteLLM models for availability listing.",
+  )
   return availableModels
 }
 
-// Main function to get available models - moved from config.ts for centralization
-export const getAvailableModels = async (providerConfig: {
-    AwsAccessKey?: string
-    AwsSecretKey?: string
-    OpenAIKey?: string
-    OllamaModel?: string
-    TogetherAIModel?: string
-    TogetherApiKey?: string
-    FireworksAIModel?: string
-    FireworksApiKey?: string
-    GeminiAIModel?: string
-    GeminiApiKey?: string
-    VertexAIModel?: string
-    VertexProjectId?: string
-    VertexRegion?: string
-    LiteLLMApiKey?: string
-    LiteLLMBaseUrl?: string
-}) => {
-    const availableModels: Array<{
-        actualName: string
-        labelName: string
-        provider: string
-        reasoning: boolean
-        websearch: boolean
-        deepResearch: boolean
-        description: string
-    }> = []
+export const getLiteLLMWorkflowModels = async (): Promise<
+  Array<{
+    enumValue: string
+    labelName: string
+    actualName: string
+    description: string
+    reasoning: boolean
+    websearch: boolean
+    deepResearch: boolean
+    modelType: string
+  }>
+> => {
+  const metadata = await fetchNormalizedModelMetadata()
+  const models = metadata
+    .filter(shouldIncludeLiteLLMModelForListing)
+    .map((modelMetadata) => {
+      const modelConfig =
+        MODEL_CONFIGURATIONS[modelMetadata.modelName as Models] ?? null
+      const labelName = modelConfig?.labelName ?? modelMetadata.modelName
+      const description = modelConfig?.description ?? modelMetadata.description
+      const reasoning = modelConfig?.reasoning ?? modelMetadata.reasoning
+      const websearch = modelConfig?.websearch ?? modelMetadata.websearch
+      const deepResearch =
+        modelConfig?.deepResearch ?? modelMetadata.deepResearch
+      const modelType = modelMetadata.modelName.includes("gemini")
+        ? "gemini"
+        : modelMetadata.modelName.includes("claude")
+          ? "claude"
+          : "other"
 
-    // Priority (LiteLLM > AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex)
-    // Using if-else logic to ensure only ONE provider is active at a time
-    if (providerConfig.LiteLLMApiKey && providerConfig.LiteLLMBaseUrl) {
-        // Fetch models from API (hosted_vllm only)
-        const fetchedModels = await fetchModelConfigs()
-        if (fetchedModels.length > 0) {
-        // Use models fetched from API
-        availableModels.push(...fetchedModels)
-        } else {
-        // Fallback to static MODEL_CONFIGURATIONS if API call fails (with same allowlist gating as API path)
-        const isSonnet46 = (modelId: Models) => modelId === Models.LiteLLM_Claude_Sonnet_4_6
-        const isOpus46 = (modelId: Models) => modelId === Models.LiteLLM_Claude_Opus_4_6
-        Object.entries(MODEL_CONFIGURATIONS)
-            .filter(([, model]) => model.provider === AIProviders.LiteLLM)
-            .filter(([modelId, model]) => {
-                const id = modelId as Models
-                if (isSonnet46(id)) return config.allowSonnet46
-                if (isOpus46(id)) return config.allowOpus46
-                return true
-            })
-            .forEach(([modelId, model]) => {
-                const id = modelId as Models
-                if (isSonnet46(id) && config.allowSonnet46) {
-                    Logger.info("Allowing Claude Sonnet 4.5 model despite litellm_provider not being 'hosted_vllm'")
-                }
-                if (isOpus46(id) && config.allowOpus46) {
-                    Logger.info("Allowing Claude Opus 4.5 model despite litellm_provider not being 'hosted_vllm'")
-                }
-                availableModels.push({
-                    actualName: model.actualName ?? "",
-                    labelName: model.labelName,
-                    provider: "LiteLLM",
-                    reasoning: model.reasoning,
-                    websearch: model.websearch,
-                    deepResearch: model.deepResearch,
-                    description: model.description,
-                })
-            })
-        }
-    } else if (providerConfig.AwsAccessKey && providerConfig.AwsSecretKey) {
-        // Add only AWS Bedrock models
-        Object.values(MODEL_CONFIGURATIONS)
-        .filter((model) => model.provider === AIProviders.AwsBedrock)
-        .forEach((model) => {
-            availableModels.push({
-            actualName: model.actualName ?? "",
-            labelName: model.labelName,
-            provider: "AWS Bedrock",
-            reasoning: model.reasoning,
-            websearch: model.websearch,
-            deepResearch: model.deepResearch,
-            description: model.description,
-            })
-        })
-    } else if (providerConfig.OpenAIKey) {
-        // Add only OpenAI models
-        Object.values(MODEL_CONFIGURATIONS)
-        .filter((model) => model.provider === AIProviders.OpenAI)
-        .forEach((model) => {
-            availableModels.push({
-            actualName: model.actualName ?? "",
-            labelName: model.labelName,
-            provider: "OpenAI",
-            reasoning: model.reasoning,
-            websearch: model.websearch,
-            deepResearch: model.deepResearch,
-            description: model.description,
-            })
-        })
-    } else if (providerConfig.OllamaModel) {
-        // Add only Ollama model
-        availableModels.push({
-        actualName: providerConfig.OllamaModel,
-        labelName: providerConfig.OllamaModel,
-        provider: "Ollama",
-        reasoning: false,
-        websearch: true,
-        deepResearch: false,
-        description: "",
-        })
-    } else if (providerConfig.TogetherAIModel && providerConfig.TogetherApiKey) {
-        // Add only Together AI model
-        availableModels.push({
-        actualName: providerConfig.TogetherAIModel,
-        labelName: providerConfig.TogetherAIModel,
-        provider: "Together AI",
-        reasoning: false,
-        websearch: true,
-        deepResearch: false,
-        description: "",
-        })
-    } else if (providerConfig.FireworksAIModel && providerConfig.FireworksApiKey) {
-        // Add only Fireworks AI model
-        availableModels.push({
-        actualName: providerConfig.FireworksAIModel,
-        labelName: providerConfig.FireworksAIModel,
-        provider: "Fireworks AI",
-        reasoning: false,
-        websearch: true,
-        deepResearch: false,
-        description: "",
-        })
-    } else if (providerConfig.GeminiAIModel && providerConfig.GeminiApiKey) {
-        // Add all Google AI models
-        Object.values(MODEL_CONFIGURATIONS)
-        .filter((model) => model.provider === AIProviders.GoogleAI)
-        .forEach((model) => {
-            availableModels.push({
-            actualName: model.actualName ?? "",
-            labelName: model.labelName,
-            provider: "Google AI",
-            reasoning: model.reasoning,
-            websearch: model.websearch,
-            deepResearch: model.deepResearch,
-            description: model.description,
-            })
-        })
-    } else if (providerConfig.VertexProjectId && providerConfig.VertexRegion) {
-        // Add all Vertex AI models - no longer dependent on VERTEX_AI_MODEL being set
-        Object.values(MODEL_CONFIGURATIONS)
-        .filter((model) => model.provider === AIProviders.VertexAI)
-        .forEach((model) => {
-            availableModels.push({
-            actualName: model.actualName ?? "",
-            labelName: model.labelName,
-            provider: "Vertex AI",
-            reasoning: model.reasoning,
-            websearch: model.websearch,
-            deepResearch: model.deepResearch,
-            description: model.description,
-            })
-        })
-    } 
+      return {
+        enumValue: modelMetadata.modelName,
+        labelName,
+        actualName: modelMetadata.actualName,
+        description,
+        reasoning,
+        websearch,
+        deepResearch,
+        modelType,
+      }
+    })
 
-    return availableModels
+  models.sort((a, b) => {
+    const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 }
+    const orderA = typeOrder[a.modelType] ?? 99
+    const orderB = typeOrder[b.modelType] ?? 99
+    if (orderA !== orderB) {
+      return orderA - orderB
+    }
+    return a.labelName.localeCompare(b.labelName)
+  })
+
+  return models
 }
 
-// Legacy function for backward compatibility (returns old format)
-export const getAvailableModelsLegacy = async (providerConfig: {
-    AwsAccessKey?: string
-    AwsSecretKey?: string
-    OpenAIKey?: string
-    OllamaModel?: string
-    TogetherAIModel?: string
-    TogetherApiKey?: string
-    FireworksAIModel?: string
-    FireworksApiKey?: string
-    GeminiAIModel?: string
-    GeminiApiKey?: string
-    VertexAIModel?: string
-    VertexProjectId?: string
-    VertexRegion?: string
-    LiteLLMApiKey?: string
-    LiteLLMBaseUrl?: string
+export const getAvailableModels = async (providerConfig: {
+  AwsAccessKey?: string
+  AwsSecretKey?: string
+  OpenAIKey?: string
+  OllamaModel?: string
+  TogetherAIModel?: string
+  TogetherApiKey?: string
+  FireworksAIModel?: string
+  FireworksApiKey?: string
+  GeminiAIModel?: string
+  GeminiApiKey?: string
+  VertexAIModel?: string
+  VertexProjectId?: string
+  VertexRegion?: string
+  LiteLLMApiKey?: string
+  LiteLLMBaseUrl?: string
 }) => {
-    const newModels = await getAvailableModels(providerConfig)
-    return newModels.map(
-        (model: {
-        actualName: string
-        labelName: string
-        provider: string
-        reasoning: boolean
-        websearch: boolean
-        deepResearch: boolean
-        }) => ({
-        label: model.labelName,
-        provider: model.provider,
-        }),
-    )
+  const availableModels: AvailableModel[] = []
+
+  if (providerConfig.LiteLLMApiKey && providerConfig.LiteLLMBaseUrl) {
+    const fetchedModels = await fetchModelConfigs()
+    if (fetchedModels.length > 0) {
+      availableModels.push(...fetchedModels)
+    } else {
+      Object.entries(MODEL_CONFIGURATIONS)
+        .filter(([, model]) => model.provider === AIProviders.LiteLLM)
+        .filter(([modelId]) => {
+          const id = modelId as Models
+          if (id === Models.LiteLLM_Claude_Sonnet_4_6) {
+            return config.allowSonnet46
+          }
+          if (id === Models.LiteLLM_Claude_Opus_4_6) {
+            return config.allowOpus46
+          }
+          return true
+        })
+        .forEach(([modelId, model]) => {
+          availableModels.push({
+            actualName: model.actualName ?? "",
+            labelName: model.labelName,
+            provider: "LiteLLM",
+            reasoning: model.reasoning,
+            websearch: model.websearch,
+            deepResearch: model.deepResearch,
+            description: model.description,
+          })
+        })
+    }
+  } else if (providerConfig.AwsAccessKey && providerConfig.AwsSecretKey) {
+    Object.values(MODEL_CONFIGURATIONS)
+      .filter((model) => model.provider === AIProviders.AwsBedrock)
+      .forEach((model) => {
+        availableModels.push({
+          actualName: model.actualName ?? "",
+          labelName: model.labelName,
+          provider: "AWS Bedrock",
+          reasoning: model.reasoning,
+          websearch: model.websearch,
+          deepResearch: model.deepResearch,
+          description: model.description,
+        })
+      })
+  } else if (providerConfig.OpenAIKey) {
+    Object.values(MODEL_CONFIGURATIONS)
+      .filter((model) => model.provider === AIProviders.OpenAI)
+      .forEach((model) => {
+        availableModels.push({
+          actualName: model.actualName ?? "",
+          labelName: model.labelName,
+          provider: "OpenAI",
+          reasoning: model.reasoning,
+          websearch: model.websearch,
+          deepResearch: model.deepResearch,
+          description: model.description,
+        })
+      })
+  } else if (providerConfig.OllamaModel) {
+    availableModels.push({
+      actualName: providerConfig.OllamaModel,
+      labelName: providerConfig.OllamaModel,
+      provider: "Ollama",
+      reasoning: false,
+      websearch: true,
+      deepResearch: false,
+      description: "",
+    })
+  } else if (providerConfig.TogetherAIModel && providerConfig.TogetherApiKey) {
+    availableModels.push({
+      actualName: providerConfig.TogetherAIModel,
+      labelName: providerConfig.TogetherAIModel,
+      provider: "Together AI",
+      reasoning: false,
+      websearch: true,
+      deepResearch: false,
+      description: "",
+    })
+  } else if (providerConfig.FireworksAIModel && providerConfig.FireworksApiKey) {
+    availableModels.push({
+      actualName: providerConfig.FireworksAIModel,
+      labelName: providerConfig.FireworksAIModel,
+      provider: "Fireworks AI",
+      reasoning: false,
+      websearch: true,
+      deepResearch: false,
+      description: "",
+    })
+  } else if (providerConfig.GeminiAIModel && providerConfig.GeminiApiKey) {
+    Object.values(MODEL_CONFIGURATIONS)
+      .filter((model) => model.provider === AIProviders.GoogleAI)
+      .forEach((model) => {
+        availableModels.push({
+          actualName: model.actualName ?? "",
+          labelName: model.labelName,
+          provider: "Google AI",
+          reasoning: model.reasoning,
+          websearch: model.websearch,
+          deepResearch: model.deepResearch,
+          description: model.description,
+        })
+      })
+  } else if (providerConfig.VertexProjectId && providerConfig.VertexRegion) {
+    Object.values(MODEL_CONFIGURATIONS)
+      .filter((model) => model.provider === AIProviders.VertexAI)
+      .forEach((model) => {
+        availableModels.push({
+          actualName: model.actualName ?? "",
+          labelName: model.labelName,
+          provider: "Vertex AI",
+          reasoning: model.reasoning,
+          websearch: model.websearch,
+          deepResearch: model.deepResearch,
+          description: model.description,
+        })
+      })
+  }
+
+  return availableModels
+}
+
+export const __modelInfoInternals = {
+  getCachedNormalizedModelMetadata,
+  normalizeModelInfoRecords,
+  resolveModelMetadata,
+  resetModelInfoCacheForTests: () => {
+    modelInfoCache = null
+    warnedMissingTokenLimitKeys.clear()
+  },
+  setModelInfoCacheForTests: (records: RawModelInfoRecord[]) => {
+    warnedMissingTokenLimitKeys.clear()
+    updateModelInfoCache(records)
+  },
 }

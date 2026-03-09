@@ -1,4 +1,7 @@
-import { getModelMaxInputTokens } from "@/ai/modelConfig"
+import {
+  getEffectiveMaxOutputTokens,
+  getModelTokenLimits,
+} from "@/ai/fetchModels"
 import { getProviderByModel, jsonParseLLMOutput } from "@/ai/provider"
 import { Models, type ConverseResponse, type ModelParams } from "@/ai/types"
 import config from "@/config"
@@ -279,10 +282,16 @@ function estimateSafeInputBudget(
   modelId: Models,
   maxOutputTokens?: number,
 ): { maxInputTokens: number; safeInputBudget: number } {
-  const maxInputTokens = getModelMaxInputTokens(modelId)
+  const { maxInputTokens } = getModelTokenLimits(modelId)
+  const effectiveMaxOutputTokens =
+    getEffectiveMaxOutputTokens(
+      modelId,
+      maxOutputTokens ?? FALLBACK_OUTPUT_TOKENS,
+    ) ??
+    maxOutputTokens ??
+    FALLBACK_OUTPUT_TOKENS
   const reservedOutputTokens = Math.ceil(
-    (maxOutputTokens ?? FALLBACK_OUTPUT_TOKENS) *
-      (1 + FINAL_OUTPUT_HEADROOM_RATIO),
+    effectiveMaxOutputTokens * (1 + FINAL_OUTPUT_HEADROOM_RATIO),
   )
   const safeInputBudget = Math.max(1_024, maxInputTokens - reservedOutputTokens)
   return { maxInputTokens, safeInputBudget }

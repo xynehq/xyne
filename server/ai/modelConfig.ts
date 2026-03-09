@@ -665,53 +665,6 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   },
 }
 
-const DEFAULT_MAX_INPUT_TOKENS = 128_000
-
-const MODEL_MAX_INPUT_TOKEN_OVERRIDES: Partial<Record<Models, number>> = {
-  [Models.Claude_3_5_Haiku]: 200_000,
-  [Models.Claude_3_5_Sonnet]: 200_000,
-  [Models.Claude_3_5_SonnetV2]: 200_000,
-  [Models.Claude_3_7_Sonnet]: 200_000,
-  [Models.Claude_Opus_4]: 200_000,
-  [Models.Claude_Sonnet_4]: 200_000,
-  [Models.Amazon_Nova_Micro]: 300_000,
-  [Models.Amazon_Nova_Lite]: 300_000,
-  [Models.Amazon_Nova_Pro]: 300_000,
-  [Models.Gpt_4]: 8_192,
-  [Models.Gpt_4o]: 128_000,
-  [Models.Gpt_4o_mini]: 128_000,
-  [Models.o3_Deep_Research]: 200_000,
-  [Models.o4_Mini_Deep_Research]: 200_000,
-  [Models.Gemini_2_5_Flash]: 1_000_000,
-  [Models.Gemini_2_0_Flash_Thinking]: 1_000_000,
-  [Models.Vertex_Claude_Sonnet_4]: 200_000,
-  [Models.Vertex_Gemini_2_5_Pro]: 1_000_000,
-  [Models.Vertex_Gemini_2_5_Flash]: 1_000_000,
-  [Models.Vertex_Gemini_3_Pro]: 1_000_000,
-  [Models.Vertex_Gemini_3_Flash]: 1_000_000,
-}
-
-for (const [model, maxInputTokens] of Object.entries(
-  MODEL_MAX_INPUT_TOKEN_OVERRIDES,
-)) {
-  const entry = MODEL_CONFIGURATIONS[model as Models]
-  if (entry) {
-    entry.maxInputTokens = maxInputTokens
-  }
-}
-
-export const getModelMaxInputTokens = (
-  modelId?: Models | string | null,
-): number => {
-  if (!modelId) {
-    return DEFAULT_MAX_INPUT_TOKENS
-  }
-  return (
-    MODEL_CONFIGURATIONS[modelId as Models]?.maxInputTokens ??
-    DEFAULT_MAX_INPUT_TOKENS
-  )
-}
-
 // Model display name mappings - using the new enum-based approach
 export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   // Build from ModelDisplayNames enum
