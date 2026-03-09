@@ -17,20 +17,20 @@ import { and, asc, desc, eq, isNull, sql, or, inArray } from "drizzle-orm"
 import { UploadStatus } from "@/shared/types"
 import { getUserByEmail } from "./user"
 
-export const touchCollectionLsProjectionSource = async (
+export const touchCollectionLsStructure = async (
   trx: TxnOrClient,
   collectionId: string,
 ): Promise<void> => {
   await trx
     .update(collections)
     .set({
-      lsProjectionSourceUpdatedAt: sql`NOW()`,
+      collectionSourceUpdatedAt: sql`NOW()`,
       updatedAt: sql`NOW()`,
     })
     .where(eq(collections.id, collectionId))
 }
 
-export const touchCollectionLsProjectionSources = async (
+export const touchCollectionLsStructures = async (
   trx: TxnOrClient,
   collectionIds: string[],
 ): Promise<void> => {
@@ -40,7 +40,7 @@ export const touchCollectionLsProjectionSources = async (
   await trx
     .update(collections)
     .set({
-      lsProjectionSourceUpdatedAt: sql`NOW()`,
+      collectionSourceUpdatedAt: sql`NOW()`,
       updatedAt: sql`NOW()`,
     })
     .where(inArray(collections.id, uniqueCollectionIds))
@@ -63,7 +63,7 @@ export const upsertCollectionLsProjection = async (
   params: {
     collectionId: string
     projection: Record<string, unknown>
-    builtFromSourceUpdatedAt: Date
+    lsCollectionProjectionUpdatedAt: Date
     lastError?: string | null
   },
 ): Promise<CollectionLsProjection> => {
@@ -72,14 +72,14 @@ export const upsertCollectionLsProjection = async (
     .values({
       collectionId: params.collectionId,
       projection: params.projection,
-      builtFromSourceUpdatedAt: params.builtFromSourceUpdatedAt,
+      lsCollectionProjectionUpdatedAt: params.lsCollectionProjectionUpdatedAt,
       lastError: params.lastError ?? null,
     })
     .onConflictDoUpdate({
       target: collectionLsProjections.collectionId,
       set: {
         projection: params.projection,
-        builtFromSourceUpdatedAt: params.builtFromSourceUpdatedAt,
+        lsCollectionProjectionUpdatedAt: params.lsCollectionProjectionUpdatedAt,
         lastError: params.lastError ?? null,
         updatedAt: sql`NOW()`,
       },
@@ -108,7 +108,7 @@ export const recordCollectionLsProjectionError = async (
         nodesById: {},
         nodeIdByPath: {},
       },
-      builtFromSourceUpdatedAt: new Date(0),
+      lsCollectionProjectionUpdatedAt: new Date(0),
       lastError,
     })
     .onConflictDoUpdate({
@@ -219,7 +219,7 @@ export const softDeleteCollection = async (
   trx: TxnOrClient,
   collectionId: string,
 ): Promise<Collection> => {
-  await touchCollectionLsProjectionSource(trx, collectionId)
+  await touchCollectionLsStructure(trx, collectionId)
 
   const [result] = await trx
     .update(collections)
@@ -332,7 +332,7 @@ export const softDeleteCollectionItem = async (
     throw new Error("Collection item not found")
   }
 
-  await touchCollectionLsProjectionSource(trx, item.collectionId)
+  await touchCollectionLsStructure(trx, item.collectionId)
 
   // If it's a folder, recursively delete all items inside it
   if (item.type === "folder") {
@@ -566,7 +566,7 @@ export const createFolder = async (
     metadata,
   })
 
-  await touchCollectionLsProjectionSource(trx, collectionId)
+  await touchCollectionLsStructure(trx, collectionId)
 
   // Update collection total count
   await updateCollectionTotalCount(trx, collectionId, 1)
@@ -652,7 +652,7 @@ export const createFileItem = async (
     metadata,
   })
 
-  await touchCollectionLsProjectionSource(trx, collectionId)
+  await touchCollectionLsStructure(trx, collectionId)
 
   // Update collection total count
   await updateCollectionTotalCount(trx, collectionId, 1)

@@ -42,7 +42,7 @@ export const collections = pgTable(
     retryCount: integer("retry_count").default(0).notNull(), // Track processing retry attempts
     metadata: jsonb("metadata").default({}).notNull(),
     permissions: jsonb("permissions").default(sql`'[]'::jsonb`),
-    lsProjectionSourceUpdatedAt: timestamp("ls_projection_source_updated_at")
+    collectionSourceUpdatedAt: timestamp("ls_projection_source_updated_at")
       .defaultNow()
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -154,7 +154,7 @@ export const collectionLsProjections = pgTable(
       .primaryKey()
       .references(() => collections.id, { onDelete: "cascade" }),
     projection: jsonb("projection").notNull(),
-    builtFromSourceUpdatedAt: timestamp(
+    lsCollectionProjectionUpdatedAt: timestamp(
       "built_from_source_updated_at",
     ).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -164,7 +164,7 @@ export const collectionLsProjections = pgTable(
   (table) => ({
     idxBuiltFromSourceUpdatedAt: index(
       "idx_collection_ls_projection_built_from_source_updated_at",
-    ).on(table.builtFromSourceUpdatedAt),
+    ).on(table.lsCollectionProjectionUpdatedAt),
   }),
 )
 

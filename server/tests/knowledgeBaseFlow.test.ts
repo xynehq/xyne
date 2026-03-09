@@ -36,7 +36,7 @@ const createCollection = (overrides: Partial<Collection>): Collection => ({
   retryCount: 0,
   metadata: {},
   permissions: [],
-  lsProjectionSourceUpdatedAt: new Date("2025-01-02T00:00:00.000Z"),
+  collectionSourceUpdatedAt: new Date("2025-01-02T00:00:00.000Z"),
   createdAt: new Date("2025-01-01T00:00:00.000Z"),
   updatedAt: new Date("2025-01-02T00:00:00.000Z"),
   deletedAt: null,
@@ -206,7 +206,7 @@ function buildFixtures() {
 
 function createEmptyProjectionRow(
   collectionId: string,
-  builtFromSourceUpdatedAt = new Date(0),
+  lsCollectionProjectionUpdatedAt = new Date(0),
 ): CollectionLsProjection {
   return {
     collectionId,
@@ -216,7 +216,7 @@ function createEmptyProjectionRow(
       nodesById: {},
       nodeIdByPath: {},
     },
-    builtFromSourceUpdatedAt,
+    lsCollectionProjectionUpdatedAt,
     createdAt: new Date("2025-01-01T00:00:00.000Z"),
     updatedAt: new Date("2025-01-01T00:00:00.000Z"),
     lastError: null,
@@ -284,7 +284,7 @@ function createRepo(options?: {
       const row: CollectionLsProjection = {
         collectionId: params.collectionId,
         projection: params.projection,
-        builtFromSourceUpdatedAt: params.builtFromSourceUpdatedAt,
+        lsCollectionProjectionUpdatedAt: params.lsCollectionProjectionUpdatedAt,
         createdAt:
           projectionRows.get(params.collectionId)?.createdAt ??
           new Date("2025-01-01T00:00:00.000Z"),
@@ -527,6 +527,45 @@ describe("lsKnowledgeBase", () => {
     ).toEqual([specFile.id])
   })
 
+  test("rejects out-of-scope collection and path targets before loading projections", async () => {
+    const collectionRepo = createRepo()
+    const collectionResult = await executeLsKnowledgeBase(
+      withLsDefaults({
+        target: { type: "collection", collectionId: collectionAlpha.id },
+        depth: 2,
+      }),
+      createContext([`cl-${collectionBeta.id}`]),
+      collectionRepo,
+    )
+
+    expect(collectionResult.status).toBe("error")
+    expect((collectionResult as any).error.message).toContain(
+      "outside the current KB scope",
+    )
+    expect(collectionRepo.counters.listCollectionItems).toBe(0)
+    expect(collectionRepo.counters.getCollectionLsProjection).toBe(0)
+
+    const pathRepo = createRepo()
+    const pathResult = await executeLsKnowledgeBase(
+      withLsDefaults({
+        target: {
+          type: "path",
+          collectionId: collectionAlpha.id,
+          path: "/Projects/API",
+        },
+      }),
+      createContext([`cl-${collectionBeta.id}`]),
+      pathRepo,
+    )
+
+    expect(pathResult.status).toBe("error")
+    expect((pathResult as any).error.message).toContain(
+      "outside the current KB scope",
+    )
+    expect(pathRepo.counters.listCollectionItems).toBe(0)
+    expect(pathRepo.counters.getCollectionLsProjection).toBe(0)
+  })
+
   test("projection build correctness and traversal match stage 1 output", async () => {
     const repo = createRepo()
     const alphaItems = repo.items.filter(
@@ -671,6 +710,71 @@ describe("searchKnowledgeBase", () => {
     expect(searchExecutor).not.toHaveBeenCalled()
   })
 
+  test("rejects out-of-scope collection and path search targets before resolving snapshots", async () => {
+    const collectionRepo = createRepo()
+    const collectionSearchExecutor = mock(
+      async (): Promise<MinimalAgentFragment[]> => [],
+    )
+    const collectionResult = await executeSearchKnowledgeBase(
+      {
+        query: "api",
+        filters: {
+          targets: [
+            {
+              type: "collection",
+              collectionId: collectionAlpha.id,
+            },
+          ],
+        },
+      },
+      createContext([`cl-${collectionBeta.id}`]),
+      {
+        repo: collectionRepo,
+        searchExecutor: collectionSearchExecutor,
+      },
+    )
+
+    expect(collectionResult.status).toBe("error")
+    expect((collectionResult as any).error.message).toContain(
+      "outside the current KB scope",
+    )
+    expect(collectionRepo.counters.listCollectionItems).toBe(0)
+    expect(collectionRepo.counters.getCollectionLsProjection).toBe(0)
+    expect(collectionSearchExecutor).not.toHaveBeenCalled()
+
+    const pathRepo = createRepo()
+    const pathSearchExecutor = mock(
+      async (): Promise<MinimalAgentFragment[]> => [],
+    )
+    const pathResult = await executeSearchKnowledgeBase(
+      {
+        query: "api",
+        filters: {
+          targets: [
+            {
+              type: "path",
+              collectionId: collectionAlpha.id,
+              path: "/Projects/API",
+            },
+          ],
+        },
+      },
+      createContext([`cl-${collectionBeta.id}`]),
+      {
+        repo: pathRepo,
+        searchExecutor: pathSearchExecutor,
+      },
+    )
+
+    expect(pathResult.status).toBe("error")
+    expect((pathResult as any).error.message).toContain(
+      "outside the current KB scope",
+    )
+    expect(pathRepo.counters.listCollectionItems).toBe(0)
+    expect(pathRepo.counters.getCollectionLsProjection).toBe(0)
+    expect(pathSearchExecutor).not.toHaveBeenCalled()
+  })
+
   test("maps filters.targets into the current KB search path and preserves citations", async () => {
     const repo = createRepo()
     const fragments: MinimalAgentFragment[] = [
@@ -754,6 +858,39 @@ describe("stage 3 metadata integrity", () => {
       chunksCount: 12,
       imageChunksCount: 2,
       pdfProcessingMethod: "ocr",
+    })
+  })
+
+  test("prefers computed processing metadata over stale upload-time values", () => {
+    expect(
+      mergeCollectionItemMetadata(
+        {
+          chunksCount: 1,
+          imageChunksCount: 0,
+          processingMethod: "application/pdf",
+          pageTitle: "Old Title",
+          sheetName: "Sheet 0",
+          sheetIndex: 0,
+          totalSheets: 1,
+        },
+        {
+          chunksCount: 12,
+          imageChunksCount: 2,
+          processingMethod: "text/plain",
+          pageTitle: "Fresh Title",
+          sheetName: "Sheet 1",
+          sheetIndex: 1,
+          totalSheets: 3,
+        },
+      ),
+    ).toEqual({
+      chunksCount: 12,
+      imageChunksCount: 2,
+      processingMethod: "text/plain",
+      pageTitle: "Fresh Title",
+      sheetName: "Sheet 1",
+      sheetIndex: 1,
+      totalSheets: 3,
     })
   })
 })

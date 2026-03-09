@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test"
-import { Apps, SearchModes } from "@xyne/vespa-ts/types"
+import { Apps, KnowledgeBaseEntity, SearchModes } from "@xyne/vespa-ts/types"
+import type { MinimalAgentFragment } from "@/api/chat/types"
 
 process.env.ENCRYPTION_KEY ??=
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
@@ -89,8 +90,8 @@ mock.module("@/db/user", () => ({
 }))
 
 mock.module("@/db/knowledgeBase", () => ({
-  touchCollectionLsProjectionSource: mock(async () => undefined),
-  touchCollectionLsProjectionSources: mock(async () => undefined),
+  touchCollectionLsStructure: mock(async () => undefined),
+  touchCollectionLsStructures: mock(async () => undefined),
   getCollectionById: mock(async () => null),
   getCollectionItemById: mock(async () => null),
   getCollectionLsProjection: mock(async () => null),
@@ -157,7 +158,7 @@ const collectionAlpha = {
   retryCount: 0,
   metadata: {},
   permissions: [],
-  lsProjectionSourceUpdatedAt: new Date("2025-01-02T00:00:00.000Z"),
+  collectionSourceUpdatedAt: new Date("2025-01-02T00:00:00.000Z"),
   createdAt: new Date("2025-01-01T00:00:00.000Z"),
   updatedAt: new Date("2025-01-02T00:00:00.000Z"),
   deletedAt: null,
@@ -288,7 +289,7 @@ function createRepo() {
       return {
         collectionId: params.collectionId,
         projection: params.projection,
-        builtFromSourceUpdatedAt: params.builtFromSourceUpdatedAt,
+        lsCollectionProjectionUpdatedAt: params.lsCollectionProjectionUpdatedAt,
         createdAt: new Date("2025-01-01T00:00:00.000Z"),
         updatedAt: new Date("2025-01-01T00:00:00.000Z"),
         lastError: null,
@@ -343,7 +344,7 @@ async function runSearchAndCapture(params: any) {
   let capturedProcessedSelections: any = null
   let capturedYql = ""
 
-  const searchExecutor = mock(async (options: any) => {
+  const searchExecutor = mock(async (options: any): Promise<MinimalAgentFragment[]> => {
     capturedSelections = options.collectionSelections
     capturedProcessedSelections = await extractCollectionVespaIds({
       collectionSelections: options.collectionSelections,
@@ -359,7 +360,7 @@ async function runSearchAndCapture(params: any) {
           title: "spec.md",
           url: "",
           app: Apps.KnowledgeBase,
-          entity: "file",
+          entity: KnowledgeBaseEntity.File,
         },
         confidence: 0.9,
       },
