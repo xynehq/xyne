@@ -467,7 +467,7 @@ export const PlanCard: React.FC<{ plan: PlanInfo; isStreaming: boolean; label?: 
           </span>
           <span className="text-gray-400 flex-shrink-0 tabular-nums">
             {completedCount}/{total}
-            {isStreaming && hasInProgress && (
+            {isStreaming && hasInProgress && !expanded && (
               <ArrowRight className="inline w-3 h-3 ml-1 text-blue-500" />
             )}
           </span>
