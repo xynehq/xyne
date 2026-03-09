@@ -4201,6 +4201,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
           })
         }
 
+        // Set runId before any emitReasoningStep so early events (e.g. attachmentAnalyzing, attachmentExtracted) carry a stable runId
+        mainRunIdRef = generateRunId()
+
         // Initialize context with actual data
         const agentContext = initializeAgentContext(
           email,
@@ -4590,9 +4593,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
           [jafAgent.name, jafAgent],
         ])
 
-        // Initialize run state (mainRunIdRef tags all reasoning on this single HTTP stream)
-        mainRunIdRef = generateRunId()
-        const runId = mainRunIdRef
+        // Run state: mainRunIdRef was set above before any emitReasoningStep so all events (including attachmentAnalyzing/attachmentExtracted) share the same runId
+        const runId = mainRunIdRef!
         const traceId = generateTraceId()
         const { jafHistory, llmHistory } = buildConversationHistoryForAgentRun(
           previousConversationHistory

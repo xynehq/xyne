@@ -599,6 +599,7 @@ export const SearchKnowledgeBaseFilesApi = async (c: Context) => {
       limit: page,
       offset,
       rankProfile: SearchModes.NativeRank,
+      timestampRange,
     }),
     groupVespaSearchKnowledgeBase(
       decodedQuery,
