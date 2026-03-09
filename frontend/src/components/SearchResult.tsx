@@ -106,10 +106,12 @@ export const SearchResult = ({
   result,
   index,
   showDebugInfo,
+  onKbFileClick,
 }: {
   result: SearchResultDiscriminatedUnion
   index: number
   showDebugInfo?: boolean
+  onKbFileClick?: (result: SearchResultDiscriminatedUnion) => void
 }) => {
   let content = <></>
   let commonClassVals = "pr-[60px]"
@@ -434,25 +436,33 @@ export const SearchResult = ({
         )}
       </div>
     )
-  } else if (
-    result.type === "kb_items"
-  ) {
-    const title =
-      (result as { fileName?: string }).fileName
+  } else if (result.type === "kb_items") {
+    const title = (result as { fileName?: string }).fileName
     const chunkText = (summary: string | { chunk?: string }) =>
       typeof summary === "string" ? summary : summary?.chunk ?? ""
+    const kbTitleContent = (
+      <>
+        {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
+        {title ?? result.docId}
+      </>
+    )
+    console.log(result.chunks_summary)
     content = (
       <div className={`flex flex-col mt-[28px] ${commonClassVals}`} key={index}>
         <div className="flex items-center justify-start space-x-2">
-          <a
-            href={(result as { url?: string }).url ?? "#"}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center text-blue-800 dark:text-blue-400 space-x-2"
-          >
-            {getIcon(result.app, result.entity, { w: 24, h: 24, mr: 20 })}
-            {title ?? result.docId}
-          </a>
+          {onKbFileClick ? (
+            <button
+              type="button"
+              onClick={() => onKbFileClick(result)}
+              className="flex items-center text-blue-800 dark:text-blue-400 space-x-2 cursor-pointer hover:underline text-left"
+            >
+              {kbTitleContent}
+            </button>
+          ) : (
+            <span className="flex items-center text-blue-800 dark:text-blue-400 space-x-2">
+              {kbTitleContent}
+            </span>
+          )}
         </div>
         <div className="flex flex-row items-center mt-1 ml-[44px]">
           <span className="text-sm text-gray-600 dark:text-gray-400 leading-5">

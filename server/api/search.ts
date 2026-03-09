@@ -105,6 +105,12 @@ export const searchKnowledgeBaseFilesSchema = z.object({
     .optional()
     .transform((x) => (x ? parseInt(x, 10) : 0))
     .pipe(z.number().min(0)),
+  /** When true, only run group count and return { groupCount }; no search (saves latency when filter is active). */
+  onlyGroupCount: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((x) => x === "true" || x === "1"),
 })
 
 export const userQueryHistorySchema = z.object({
@@ -581,8 +587,9 @@ export const SearchKnowledgeBaseFilesApi = async (c: Context) => {
     query: c.req.query("query"),
     page: c.req.query("page"),
     offset: c.req.query("offset"),
+    onlyGroupCount: c.req.query("onlyGroupCount"),
   })
-  const { query, page, offset } = parsed
+  const { query, page, offset, onlyGroupCount } = parsed
   let decodedQuery: string
   try {
     decodedQuery = decodeURIComponent(query)
@@ -594,6 +601,17 @@ export const SearchKnowledgeBaseFilesApi = async (c: Context) => {
     lastUpdated && getTimestamp(lastUpdated)
       ? { from: getTimestamp(lastUpdated)!, to: Date.now() }
       : null
+
+  if (onlyGroupCount) {
+    const groupCount = await groupVespaSearchKnowledgeBase(
+      decodedQuery,
+      email,
+      page,
+      timestampRange,
+    )
+    return c.json({ results: [], count: 0, groupCount })
+  }
+
   const [vespaResponse, groupCount] = await Promise.all([
     searchVespaKnowledgeBase(decodedQuery, email, {
       limit: page,
