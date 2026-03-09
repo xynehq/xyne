@@ -1,3 +1,10 @@
+## [3.40.9](https://github.com/xynehq/xyne/compare/v3.40.8...v3.40.9) (2026-03-09)
+
+
+### Bug Fixes
+
+* fixed some bugs and improved agent reasoning steps ([#1270](https://github.com/xynehq/xyne/issues/1270)) ([efbd23d](https://github.com/xynehq/xyne/commit/efbd23db8b7289304ac1c7fa7f774e40cfac26ef))
+
 ## [3.40.8](https://github.com/xynehq/xyne/compare/v3.40.7...v3.40.8) (2026-03-06)
 
 
