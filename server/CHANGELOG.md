@@ -1,3 +1,10 @@
+## [3.40.10](https://github.com/xynehq/xyne/compare/v3.40.9...v3.40.10) (2026-03-10)
+
+
+### Bug Fixes
+
+* fixed broken reasoning ([#1276](https://github.com/xynehq/xyne/issues/1276)) ([9bc3ae6](https://github.com/xynehq/xyne/commit/9bc3ae6bd52e9dce75041f578b1d110cf4c2661a))
+
 ## [3.40.9](https://github.com/xynehq/xyne/compare/v3.40.8...v3.40.9) (2026-03-09)
 
 
