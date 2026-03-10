@@ -566,6 +566,41 @@ describe("lsKnowledgeBase", () => {
     expect(pathRepo.counters.getCollectionLsProjection).toBe(0)
   })
 
+  test("rejects out-of-scope folder and file targets before loading projections", async () => {
+    const folderRepo = createRepo()
+    const folderResult = await executeLsKnowledgeBase(
+      withLsDefaults({
+        target: { type: "folder", folderId: projectsFolder.id },
+        depth: 2,
+      }),
+      createContext([`cl-${collectionBeta.id}`]),
+      folderRepo,
+    )
+
+    expect(folderResult.status).toBe("error")
+    expect((folderResult as any).error.message).toContain(
+      "outside the current KB scope",
+    )
+    expect(folderRepo.counters.listCollectionItems).toBe(0)
+    expect(folderRepo.counters.getCollectionLsProjection).toBe(0)
+
+    const fileRepo = createRepo()
+    const fileResult = await executeLsKnowledgeBase(
+      withLsDefaults({
+        target: { type: "file", fileId: specFile.id },
+      }),
+      createContext([`cl-${collectionBeta.id}`]),
+      fileRepo,
+    )
+
+    expect(fileResult.status).toBe("error")
+    expect((fileResult as any).error.message).toContain(
+      "outside the current KB scope",
+    )
+    expect(fileRepo.counters.listCollectionItems).toBe(0)
+    expect(fileRepo.counters.getCollectionLsProjection).toBe(0)
+  })
+
   test("projection build correctness and traversal match stage 1 output", async () => {
     const repo = createRepo()
     const alphaItems = repo.items.filter(
@@ -676,6 +711,43 @@ describe("lsKnowledgeBase", () => {
       "projection upsert failed",
     )
   })
+
+  test("falls back to direct-db traversal when a persisted projection is malformed", async () => {
+    const repo = createRepo({
+      initialProjections: {
+        [collectionAlpha.id]: {
+          ...createEmptyProjectionRow(
+            collectionAlpha.id,
+            collectionAlpha.collectionSourceUpdatedAt,
+          ),
+          projection: {
+            rootIds: "invalid",
+            childrenByParentId: {},
+            nodesById: {},
+            nodeIdByPath: {},
+          } as any,
+        },
+      },
+    })
+
+    const result = await executeLsKnowledgeBase(
+      withLsDefaults({
+        target: { type: "collection", collectionId: collectionAlpha.id },
+        depth: 2,
+      }),
+      createContext([`cl-${collectionAlpha.id}`]),
+      repo,
+    )
+
+    expect(result.status).toBe("success")
+    expect(repo.counters.getCollectionLsProjection).toBe(1)
+    expect(repo.counters.listCollectionItems).toBe(1)
+    expect(repo.counters.upsertCollectionLsProjection).toBe(0)
+    expect(repo.counters.recordCollectionLsProjectionError).toBe(1)
+    expect(repo.projectionRows.get(collectionAlpha.id)?.lastError).toContain(
+      "expected array, received string",
+    )
+  })
 })
 
 describe("searchKnowledgeBase", () => {
@@ -773,6 +845,70 @@ describe("searchKnowledgeBase", () => {
     expect(pathRepo.counters.listCollectionItems).toBe(0)
     expect(pathRepo.counters.getCollectionLsProjection).toBe(0)
     expect(pathSearchExecutor).not.toHaveBeenCalled()
+  })
+
+  test("rejects out-of-scope folder and file search targets before resolving snapshots", async () => {
+    const folderRepo = createRepo()
+    const folderSearchExecutor = mock(
+      async (): Promise<MinimalAgentFragment[]> => [],
+    )
+    const folderResult = await executeSearchKnowledgeBase(
+      {
+        query: "api",
+        filters: {
+          targets: [
+            {
+              type: "folder",
+              folderId: projectsFolder.id,
+            },
+          ],
+        },
+      },
+      createContext([`cl-${collectionBeta.id}`]),
+      {
+        repo: folderRepo,
+        searchExecutor: folderSearchExecutor,
+      },
+    )
+
+    expect(folderResult.status).toBe("error")
+    expect((folderResult as any).error.message).toContain(
+      "outside the current KB scope",
+    )
+    expect(folderRepo.counters.listCollectionItems).toBe(0)
+    expect(folderRepo.counters.getCollectionLsProjection).toBe(0)
+    expect(folderSearchExecutor).not.toHaveBeenCalled()
+
+    const fileRepo = createRepo()
+    const fileSearchExecutor = mock(
+      async (): Promise<MinimalAgentFragment[]> => [],
+    )
+    const fileResult = await executeSearchKnowledgeBase(
+      {
+        query: "api",
+        filters: {
+          targets: [
+            {
+              type: "file",
+              fileId: specFile.id,
+            },
+          ],
+        },
+      },
+      createContext([`cl-${collectionBeta.id}`]),
+      {
+        repo: fileRepo,
+        searchExecutor: fileSearchExecutor,
+      },
+    )
+
+    expect(fileResult.status).toBe("error")
+    expect((fileResult as any).error.message).toContain(
+      "outside the current KB scope",
+    )
+    expect(fileRepo.counters.listCollectionItems).toBe(0)
+    expect(fileRepo.counters.getCollectionLsProjection).toBe(0)
+    expect(fileSearchExecutor).not.toHaveBeenCalled()
   })
 
   test("maps filters.targets into the current KB search path and preserves citations", async () => {

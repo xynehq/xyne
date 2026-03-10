@@ -70,7 +70,7 @@ export const getSlackRelatedMessagesTool: Tool<
   schema: {
     name: "getSlackRelatedMessages",
     description:
-      "Search Slack messages with flexible filters for content, channel, author, mentions, and time range. Automatically includes thread replies when thread roots are found, and defaults to recent Slack history when no query or scope is provided.",
+      "Search Slack messages with flexible filters for content, channel, author, mentions, and time range. Automatically includes thread replies when thread roots are found, and defaults to recent Slack history only when no query and no Slack filter fields are supplied.",
     parameters: toToolSchemaParameters<GetSlackRelatedMessagesParams>(
       getSlackRelatedMessagesSchema,
     ),

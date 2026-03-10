@@ -739,7 +739,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   getSlackRelatedMessages: {
     name: XyneTools.getSlackRelatedMessages,
     description:
-      "Search Slack messages with flexible filters for content, channel, author, mentions, and time range. When neither query nor scope is provided, the live tool defaults to recent Slack history.",
+      "Search Slack messages with flexible filters for content, channel, author, mentions, and time range. When no query and no Slack filter fields are provided, the live tool defaults to recent Slack history.",
     category: ToolCategory.Search,
     inputSchema: GetSlackRelatedMessagesInputSchema,
     outputSchema: ToolOutputSchema,

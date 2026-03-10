@@ -309,6 +309,25 @@ export const updateCollectionItem = async (
   itemId: string,
   updates: Partial<NewCollectionItem>,
 ): Promise<CollectionItem> => {
+  const existing = await getCollectionItemById(trx, itemId)
+  if (!existing) {
+    throw new Error("Collection item not found")
+  }
+
+  const nameChanged =
+    Object.prototype.hasOwnProperty.call(updates, "name") &&
+    updates.name !== existing.name
+  const pathChanged =
+    Object.prototype.hasOwnProperty.call(updates, "path") &&
+    updates.path !== existing.path
+  const parentIdChanged =
+    Object.prototype.hasOwnProperty.call(updates, "parentId") &&
+    updates.parentId !== existing.parentId
+  const collectionChanged =
+    Object.prototype.hasOwnProperty.call(updates, "collectionId") &&
+    typeof updates.collectionId === "string" &&
+    updates.collectionId !== existing.collectionId
+
   const [result] = await trx
     .update(collectionItems)
     .set({
@@ -320,6 +339,19 @@ export const updateCollectionItem = async (
   if (!result) {
     throw new Error("Collection item not found")
   }
+
+  if (nameChanged || pathChanged || parentIdChanged || collectionChanged) {
+    const affectedCollectionIds = collectionChanged
+      ? [existing.collectionId, updates.collectionId as string]
+      : [existing.collectionId]
+
+    if (affectedCollectionIds.length === 1) {
+      await touchCollectionLsStructure(trx, affectedCollectionIds[0]!)
+    } else {
+      await touchCollectionLsStructures(trx, affectedCollectionIds)
+    }
+  }
+
   return result
 }
 

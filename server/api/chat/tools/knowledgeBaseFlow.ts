@@ -708,12 +708,30 @@ async function loadProjectionNavigationSnapshot(
 
   const existingProjection = await repo.getCollectionLsProjection(collectionId)
   if (!isProjectionStale(collection, existingProjection)) {
-    const snapshot = buildSnapshotFromProjection(
-      collection,
-      parseCollectionLsProjection(existingProjection?.projection),
-    )
-    cache.projection.set(collectionId, snapshot)
-    return snapshot
+    try {
+      const snapshot = buildSnapshotFromProjection(
+        collection,
+        parseCollectionLsProjection(existingProjection?.projection),
+      )
+      cache.projection.set(collectionId, snapshot)
+      return snapshot
+    } catch (error) {
+      Logger.error(
+        {
+          err: error,
+          collectionId,
+          projection: existingProjection?.projection,
+        },
+        "[KnowledgeBase] Failed to parse persisted ls projection; falling back to direct traversal",
+      )
+
+      const errorMessage = getErrorMessage(error)
+      try {
+        await repo.recordCollectionLsProjectionError?.(collectionId, errorMessage)
+      } catch {}
+
+      return loadDirectNavigationSnapshot(collectionId, repo, cache)
+    }
   }
 
   try {
@@ -786,18 +804,27 @@ function isResolvedTargetAllowed(
   })
 }
 
-// Rejects collection-root/path targets that point at collections outside the caller scope
-// before we load or rebuild their navigation snapshot.
-function isTargetCollectionPreAuthorized(
+// Rejects targets whose owning collection is outside the caller scope before we
+// load or rebuild navigation snapshots.
+async function isTargetCollectionPreAuthorized(
   target: KnowledgeBaseTarget,
   scopedCollectionIds: Set<string>,
-): boolean {
+  repo: KnowledgeBaseRepository,
+): Promise<boolean> {
   switch (target.type) {
     case "collection":
     case "path":
       return scopedCollectionIds.has(target.collectionId)
+    case "folder": {
+      const folder = await repo.getCollectionItemById(target.folderId)
+      return !!folder && scopedCollectionIds.has(folder.collectionId)
+    }
+    case "file": {
+      const file = await repo.getCollectionItemById(target.fileId)
+      return !!file && scopedCollectionIds.has(file.collectionId)
+    }
     default:
-      return true
+      return false
   }
 }
 
@@ -961,7 +988,13 @@ async function buildSearchSelections(
   const selections: KnowledgeBaseSelection[] = []
 
   for (const target of params.filters.targets) {
-    if (!isTargetCollectionPreAuthorized(target, scopedCollectionIds)) {
+    if (
+      !(await isTargetCollectionPreAuthorized(
+        target,
+        scopedCollectionIds,
+        repo,
+      ))
+    ) {
       throw new Error(
         "Requested knowledge base target is outside the current KB scope",
       )
@@ -1253,7 +1286,11 @@ export async function executeLsKnowledgeBase(
       collections.map((collection) => collection.id),
     )
     if (
-      !isTargetCollectionPreAuthorized(params.target, scopedCollectionIds)
+      !(await isTargetCollectionPreAuthorized(
+        params.target,
+        scopedCollectionIds,
+        repo,
+      ))
     ) {
       return ToolResponse.error(
         ToolErrorCodes.PERMISSION_DENIED,

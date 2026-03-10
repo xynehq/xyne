@@ -788,7 +788,7 @@ export const ReasoningProvider: React.FC<{
         return <GoogleCalendarIcon className="w-4 h-4" />
       case XyneTools.searchGoogleContacts:
         return <Users className="w-4 h-4" />
-      case XyneTools.getSlackMessages:
+      case XyneTools.getSlackRelatedMessages:
       case XyneTools.getSlackUserProfile:
       case XyneTools.getSlackThreads:
         return <SlackIcon className="w-4 h-4" />

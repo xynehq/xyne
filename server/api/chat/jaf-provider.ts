@@ -529,15 +529,6 @@ export const makeXyneJAFProvider = <Ctx>(
       // Sanitize prompt to avoid logging large file data buffers
       const sanitizedPrompt = sanitizePromptForLogging(callOptions.prompt)
 
-      Logger.debug(
-        {
-          email: userEmail,
-          turn: turnNumber,
-          model: actualModelId,
-          prompt: sanitizedPrompt,
-        },
-        "[JAF Provider] FULL PROMPT/MESSAGES ARRAY SENT TO LLM",
-      )
 
       throwIfStopRequested(stopSignal)
       const result = await raceWithStop(
