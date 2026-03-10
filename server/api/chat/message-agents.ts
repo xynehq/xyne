@@ -1390,10 +1390,7 @@ async function handleReviewOutcome(
     )
   }
 
-  if (
-    reviewResult.anomaliesDetected ||
-    (reviewResult.anomalies?.length ?? 0) > 0
-  ) {
+  if (hasAnomalies) {
     Logger.debug(
       {
         turn: iteration,
@@ -2065,10 +2062,10 @@ export async function afterToolExecutionHook(
   )
 
   if (Array.isArray(contexts) && contexts.length > 0) {
-    const filteredContexts = contexts.filter(
-      (c: MinimalAgentFragment) => !gatheredFragmentsKeys.has(c.id),
-    )
-
+    const filteredContexts = contexts.filter((c: MinimalAgentFragment) => {
+      const key = getFragmentDedupKey(c)
+      return !key || !gatheredFragmentsKeys.has(key)
+    })
     // LOG: Filtering results
     loggerWithChild({ email: context.user.email }).info(
       {
@@ -5257,7 +5254,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               gatheredFragmentsKeys,
               expectationForCall,
               turnForCall,
-              emitReasoningStep,
+              toolScopedEmitter,
             )
 
             return content
@@ -6299,9 +6296,9 @@ export async function executeCustomAgent(params: {
   mcpAgents?: MCPVirtualAgentRuntime[]
   stopSignal?: AbortSignal
   /** When set, delegated agent reasoning is streamed to the parent's SSE (nested JAF streaming). */
-    reasoningEmitter?: ReasoningEmitter
-    /** Stable UUID for this specific delegation; forwarded to the inner emitter wrapper. */
-    delegationRunId?: string
+  reasoningEmitter?: ReasoningEmitter
+  /** Stable UUID for this specific delegation; forwarded to the inner emitter wrapper. */
+  delegationRunId?: string
 }): Promise<ToolOutput> {
   const turnInfo =
     typeof params.parentTurn === "number"
