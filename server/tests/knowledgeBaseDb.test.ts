@@ -1,13 +1,27 @@
 import { describe, expect, test } from "bun:test"
-import type { CollectionItem, NewCollectionItem } from "@/db/schema"
+import type { CollectionItem, NewCollectionItem } from "../db/schema"
 
 process.env.ENCRYPTION_KEY ??=
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY ??=
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
-const { collections, collectionItems } = await import("@/db/schema")
-const { updateCollectionItem } = await import("@/db/knowledgeBase")
+const DRIZZLE_TABLE_NAME = Symbol.for("drizzle:Name")
+
+function getTableName(table: unknown): string | undefined {
+  if (!table || typeof table !== "object") {
+    return undefined
+  }
+
+  return (table as Record<symbol, string | undefined>)[DRIZZLE_TABLE_NAME]
+}
+
+async function loadUpdateCollectionItem() {
+  const module = await import(
+    `../db/knowledgeBase.ts?knowledgeBaseDbTest=${Date.now()}-${Math.random()}`
+  )
+  return module.updateCollectionItem
+}
 
 const createItem = (overrides: Partial<CollectionItem> = {}): CollectionItem => ({
   id: "item-1",
@@ -48,7 +62,7 @@ function createMockTrx(
   updateOverrides: Partial<CollectionItem> = {},
 ) {
   const updateCalls: Array<{
-    table: unknown
+    tableName?: string
     values?: Record<string, unknown>
   }> = []
 
@@ -63,8 +77,8 @@ function createMockTrx(
       }
     },
     update(table: unknown) {
-      const call: { table: unknown; values?: Record<string, unknown> } = {
-        table,
+      const call: { tableName?: string; values?: Record<string, unknown> } = {
+        tableName: getTableName(table),
       }
       updateCalls.push(call)
 
@@ -73,7 +87,7 @@ function createMockTrx(
           call.values = values
           return {
             where() {
-              if (table === collectionItems) {
+              if (call.tableName === "collection_items") {
                 return {
                   returning: async () => [
                     {
@@ -102,6 +116,7 @@ describe("updateCollectionItem", () => {
     const { trx, updateCalls } = createMockTrx(existingItem, {
       name: "Guide.md",
     })
+    const updateCollectionItem = await loadUpdateCollectionItem()
 
     const result = await updateCollectionItem(trx, existingItem.id, {
       name: "Guide.md",
@@ -110,7 +125,7 @@ describe("updateCollectionItem", () => {
     expect(result.name).toBe("Guide.md")
 
     const collectionTouchCalls = updateCalls.filter(
-      (call) => call.table === collections,
+      (call) => call.tableName === "collections",
     )
     expect(collectionTouchCalls).toHaveLength(1)
     expect(collectionTouchCalls[0]?.values).toHaveProperty(
@@ -124,6 +139,7 @@ describe("updateCollectionItem", () => {
     const { trx, updateCalls } = createMockTrx(existingItem, {
       statusMessage: "Queued",
     })
+    const updateCollectionItem = await loadUpdateCollectionItem()
 
     const result = await updateCollectionItem(trx, existingItem.id, {
       statusMessage: "Queued",
@@ -131,7 +147,7 @@ describe("updateCollectionItem", () => {
 
     expect(result.statusMessage).toBe("Queued")
     expect(
-      updateCalls.filter((call) => call.table === collections),
+      updateCalls.filter((call) => call.tableName === "collections"),
     ).toHaveLength(0)
   })
 
@@ -140,6 +156,7 @@ describe("updateCollectionItem", () => {
     const { trx, updateCalls } = createMockTrx(existingItem, {
       collectionId: "collection-beta",
     })
+    const updateCollectionItem = await loadUpdateCollectionItem()
 
     const result = await updateCollectionItem(trx, existingItem.id, {
       collectionId: "collection-beta",
@@ -148,7 +165,7 @@ describe("updateCollectionItem", () => {
     expect(result.collectionId).toBe("collection-beta")
 
     const collectionTouchCalls = updateCalls.filter(
-      (call) => call.table === collections,
+      (call) => call.tableName === "collections",
     )
     expect(collectionTouchCalls).toHaveLength(1)
     expect(collectionTouchCalls[0]?.values).toHaveProperty(
