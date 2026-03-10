@@ -27,7 +27,7 @@ export const searchGoogleContactsTool: Tool<ContactsSearchToolParams, Ctx> = {
   schema: {
     name: "searchGoogleContacts",
     description:
-      "Find people and contact information from Google Contacts. Search by name, email or organization. Useful for contact lookup, networking, and communication planning.",
+      "Search Google Contacts for people or organizations by name, email, phone number, title, or company. Use this to disambiguate identity before searching other apps.",
     parameters: toToolSchemaParameters(contactsSearchToolSchema),
   },
   async execute(

@@ -1,13 +1,11 @@
-import { getAISDKProviderByModel } from "@/ai/provider"
-import { MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
-import type {
-  ModelProvider as JAFModelProvider,
-  Message as JAFMessage,
-  Agent as JAFAgent,
-} from "@xynehq/jaf"
-import { getTextContent } from "@xynehq/jaf"
-import { Models, AIProviders } from "@/ai/types"
+import fs from "fs"
+import path from "path"
 import { ModelToProviderMap } from "@/ai/mappers"
+import { MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
+import { getAISDKProviderByModel } from "@/ai/provider"
+import { findImageByName, regex } from "@/ai/provider/base"
+import { AIProviders, Models } from "@/ai/types"
+import config from "@/config"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import type {
@@ -15,26 +13,28 @@ import type {
   JSONValue,
   LanguageModelV2CallOptions,
   LanguageModelV2Content,
+  LanguageModelV2FilePart,
   LanguageModelV2FunctionTool,
   LanguageModelV2Message,
+  LanguageModelV2ReasoningPart,
+  LanguageModelV2TextPart,
   LanguageModelV2ToolCall,
+  LanguageModelV2ToolCallPart,
   LanguageModelV2ToolChoice,
   LanguageModelV2ToolResultOutput,
-  LanguageModelV2TextPart,
-  LanguageModelV2FilePart,
-  LanguageModelV2ReasoningPart,
-  LanguageModelV2ToolCallPart,
   LanguageModelV2ToolResultPart,
 } from "@ai-sdk/provider"
+import type {
+  Agent as JAFAgent,
+  Message as JAFMessage,
+  ModelProvider as JAFModelProvider,
+} from "@xynehq/jaf"
+import { getTextContent } from "@xynehq/jaf"
 import OpenAI from "openai"
-import config from "@/config"
-import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
-import path from "path"
-import fs from "fs"
-import { regex, findImageByName } from "@/ai/provider/base"
 import type { AgentRunContext } from "./agent-schemas"
-import { getRecentImagesFromContext } from "./runContextUtils"
 import { raceWithStop, throwIfStopRequested } from "./agent-stop"
+import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
+import { getRecentImagesFromContext } from "./runContextUtils"
 const { IMAGE_CONTEXT_CONFIG } = config
 const IMAGE_BASE_DIR = path.resolve(
   process.env.IMAGE_DIR || "downloads/xyne_images_db",
@@ -48,8 +48,10 @@ const MIME_TYPE_MAP: Record<string, string> = {
   ".webp": "image/webp",
 }
 
-const Logger = getLogger(Subsystem.Chat)
-const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+const Logger = getLogger(Subsystem.Chat).child({ module: "jaf-provider" })
+const loggerWithChild = getLoggerWithChild(Subsystem.Chat, {
+  module: "jaf-provider",
+})
 const MIN_TURN_NUMBER = 1
 const normalizeTurnNumber = (turn?: number | null): number =>
   typeof turn === "number" && turn >= MIN_TURN_NUMBER ? turn : MIN_TURN_NUMBER
@@ -63,7 +65,6 @@ type ImagePromptPart = {
   label: string
   filePart: LanguageModelV2FilePart
 }
-
 
 const findLastUserMessageIndex = (
   messages: LanguageModelV2Message[],
@@ -81,17 +82,27 @@ const parseImageFileName = (
 ): { docIndex: string; docId: string; imageNumber: string } | null => {
   const match = imageName.match(regex)
   if (!match) {
-    console.warn(`[JAF Provider] Invalid image reference: ${imageName}`)
+    Logger.debug({ imageName }, "Invalid image reference")
     return null
   }
   const [, docIndex, docId, imageNumber] = match
   if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
-    console.warn(`[JAF Provider] Suspicious docId detected: ${docId}`)
+    Logger.warn(
+      { docId, imageName },
+      "Suspicious docId detected in image reference",
+    )
     return null
   }
-  if (imageNumber.includes("..") || imageNumber.includes("/") || imageNumber.includes("\\")) {
-   console.warn(`[JAF Provider] Suspicious imageNumber detected: ${imageNumber}`)
-   return null
+  if (
+    imageNumber.includes("..") ||
+    imageNumber.includes("/") ||
+    imageNumber.includes("\\")
+  ) {
+    Logger.warn(
+      { imageName, imageNumber },
+      "Suspicious imageNumber detected in image reference",
+    )
+    return null
   }
 
   return { docIndex, docId, imageNumber }
@@ -101,7 +112,7 @@ const buildLanguageModelImageParts = async (
   imageFileNames: string[],
 ): Promise<ImagePromptPart[]> => {
   const loadStats = { success: 0, failed: 0, totalBytes: 0 }
-  
+
   const parts = await Promise.all(
     imageFileNames.map(async (imageName): Promise<ImagePromptPart | null> => {
       const parsed = parseImageFileName(imageName)
@@ -114,8 +125,9 @@ const buildLanguageModelImageParts = async (
       const imageDir = path.join(IMAGE_BASE_DIR, docId)
       const resolvedPath = path.resolve(imageDir)
       if (!resolvedPath.startsWith(IMAGE_BASE_DIR)) {
-        console.warn(
-          `[JAF Provider] Rejecting image path outside base dir: ${imageDir}`,
+        Logger.warn(
+          { imageDir, imageName, resolvedPath },
+          "Rejecting image path outside base dir",
         )
         loadStats.failed++
         return null
@@ -127,8 +139,13 @@ const buildLanguageModelImageParts = async (
         const imageBytes = await fs.promises.readFile(absolutePath)
 
         if (imageBytes.length > MAX_IMAGE_BYTES) {
-          console.warn(
-            `[JAF Provider] Skipping image ${absolutePath} due to size ${(imageBytes.length / (1024 * 1024)).toFixed(2)}MB`,
+          Logger.debug(
+            {
+              absolutePath,
+              imageName,
+              sizeMb: (imageBytes.length / (1024 * 1024)).toFixed(2),
+            },
+            "Skipping oversized image",
           )
           loadStats.failed++
           return null
@@ -137,8 +154,9 @@ const buildLanguageModelImageParts = async (
         const extension = path.extname(absolutePath).toLowerCase()
         const mediaType = MIME_TYPE_MAP[extension]
         if (!mediaType) {
-          console.warn(
-            `[JAF Provider] Unsupported image format ${extension} for ${absolutePath}`,
+          Logger.debug(
+            { absolutePath, extension, imageName },
+            "Unsupported image format for prompt attachment",
           )
           loadStats.failed++
           return null
@@ -157,10 +175,12 @@ const buildLanguageModelImageParts = async (
           },
         }
       } catch (error) {
-        console.warn(
-          `[JAF Provider] Failed to load image ${imageName}: ${
-            error instanceof Error ? error.message : error
-          }`,
+        Logger.debug(
+          {
+            err: error,
+            imageName,
+          },
+          "Failed to load image for prompt attachment",
         )
         loadStats.failed++
         return null
@@ -169,16 +189,16 @@ const buildLanguageModelImageParts = async (
   )
 
   const filtered = parts.filter(
-    (part): part is ImagePromptPart => part !== null
+    (part): part is ImagePromptPart => part !== null,
   )
-  
+
   // console.debug('[IMAGE addition][JAF Provider] Image loading complete:', {
   //   requested: imageFileNames.length,
   //   loaded: loadStats.success,
   //   failed: loadStats.failed,
   //   totalMB: (loadStats.totalBytes / (1024 * 1024)).toFixed(2),
   // })
-  
+
   return filtered
 }
 
@@ -194,13 +214,13 @@ export const makeXyneJAFProvider = <Ctx>(
 
       const modelConfig = MODEL_CONFIGURATIONS[model as Models]
       const actualModelId = modelConfig?.actualName ?? model
-      
+
       // Check if this is a LiteLLM model - use OpenAI client directly like JAF does
       const providerType = ModelToProviderMap[model as Models] ?? AIProviders.LiteLLM
       const runContext = state.context as unknown as AgentRunContext
       const stopSignal =
         runContext?.stopSignal ?? runContext?.stopController?.signal
-      
+
       if (providerType === AIProviders.LiteLLM) {
         // Use OpenAI client directly for LiteLLM (same as JAF's makeLiteLLMProvider)
         const { LiteLLMBaseUrl, LiteLLMApiKey } = config
@@ -221,8 +241,9 @@ export const makeXyneJAFProvider = <Ctx>(
         })
 
         // Build messages in OpenAI format
-        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
-        
+        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+          []
+
         // Add system message
         messages.push({
           role: "system",
@@ -254,10 +275,13 @@ export const makeXyneJAFProvider = <Ctx>(
             messages.push({
               role: "assistant",
               content: text || null,
-              ...(toolCalls && toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+              ...(toolCalls && toolCalls.length > 0
+                ? { tool_calls: toolCalls }
+                : {}),
             })
           } else if (message.role === "tool") {
-            const toolCallId = (message as { tool_call_id?: string }).tool_call_id
+            const toolCallId = (message as { tool_call_id?: string })
+              .tool_call_id
             const content = getTextContent(message.content) || ""
             if (toolCallId) {
               messages.push({
@@ -291,19 +315,20 @@ export const makeXyneJAFProvider = <Ctx>(
         )?.advancedConfig?.run
 
         // Create completion request
-        const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
-          model: actualModelId,
-          messages: messages,
-          temperature: agent.modelConfig?.temperature,
-          max_tokens: agent.modelConfig?.maxTokens,
-          ...(tools.length > 0 ? { tools } : {}),
-          ...(tools.length > 0 && advRun?.toolChoice
-            ? { tool_choice: advRun.toolChoice }
-            : {}),
-          ...(tools.length > 0 && advRun?.parallelToolCalls !== undefined
-            ? { parallel_tool_calls: advRun.parallelToolCalls }
-            : {}),
-        }
+        const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming =
+          {
+            model: actualModelId,
+            messages: messages,
+            temperature: agent.modelConfig?.temperature,
+            max_tokens: agent.modelConfig?.maxTokens,
+            ...(tools.length > 0 ? { tools } : {}),
+            ...(tools.length > 0 && advRun?.toolChoice
+              ? { tool_choice: advRun.toolChoice }
+              : {}),
+            ...(tools.length > 0 && advRun?.parallelToolCalls !== undefined
+              ? { parallel_tool_calls: advRun.parallelToolCalls }
+              : {}),
+          }
 
         if (agent.outputCodec) {
           params.response_format = { type: "json_object" }
@@ -318,11 +343,14 @@ export const makeXyneJAFProvider = <Ctx>(
         // Return in JAF format (same as JAF's makeLiteLLMProvider)
         const choice = resp.choices[0]
         const message = choice?.message
-        
+
         const toolCalls = message?.tool_calls
           ?.filter((tc) => tc.type === "function" && "function" in tc)
           ?.map((tc) => {
-            const toolCall = tc as Extract<typeof tc, { type: "function"; function: any }>
+            const toolCall = tc as Extract<
+              typeof tc,
+              { type: "function"; function: any }
+            >
             return {
               id: toolCall.id || "",
               type: "function" as const,
@@ -335,11 +363,13 @@ export const makeXyneJAFProvider = <Ctx>(
               },
             }
           })
-        
+
         return {
           message: {
             content: message?.content || null,
-            ...(toolCalls && toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+            ...(toolCalls && toolCalls.length > 0
+              ? { tool_calls: toolCalls }
+              : {}),
           },
         }
       }
@@ -348,6 +378,9 @@ export const makeXyneJAFProvider = <Ctx>(
       const provider = getAISDKProviderByModel(model as Models)
       const languageModel = provider.languageModel(actualModelId)
       const pendingReview = runContext?.review?.pendingReview
+      const userEmail = runContext?.user?.email || "unknown"
+      const turnNumber = normalizeTurnNumber(runContext?.turnCount)
+      const providerLogger = loggerWithChild({ email: userEmail })
       if (pendingReview) {
         try {
           await pendingReview
@@ -358,7 +391,7 @@ export const makeXyneJAFProvider = <Ctx>(
               turn: normalizeTurnNumber(runContext?.turnCount),
               error: error instanceof Error ? error.message : String(error),
             },
-            "[JAF Provider] Pending review promise rejected; continuing LLM call"
+            "[JAF Provider] Pending review promise rejected; continuing LLM call",
           )
         }
         throwIfStopRequested(stopSignal)
@@ -387,17 +420,19 @@ export const makeXyneJAFProvider = <Ctx>(
           email: runContext?.user?.email,
           turn: normalizeTurnNumber(runContext?.turnCount),
           currentTurnImages: runContext?.currentTurnArtifacts?.images?.map(
-            (img) => img.fileName
+            (img) => img.fileName,
           ),
-          recentWindowImages: runContext?.recentImages?.map((img) => img.fileName),
+          recentWindowImages: runContext?.recentImages?.map(
+            (img) => img.fileName,
+          ),
           selectedImages,
         },
-        "[JAF Provider] Prepared image attachments for agent call"
+        "[JAF Provider] Prepared image attachments for agent call",
       )
-      
+
       if (selectedImages.length > 0) {
         const lastUserIndex = findLastUserMessageIndex(prompt)
-        
+
         if (lastUserIndex !== -1) {
           const imageParts = await buildLanguageModelImageParts(selectedImages)
           if (imageParts.length > 0) {
@@ -406,7 +441,10 @@ export const makeXyneJAFProvider = <Ctx>(
               const userContent = userMessage.content
               const contentBefore = userContent.length
               for (const { label, filePart } of imageParts) {
-                userContent.push({ type: "text", text: label } as LanguageModelV2TextPart)
+                userContent.push({
+                  type: "text",
+                  text: label,
+                } as LanguageModelV2TextPart)
                 userContent.push(filePart)
               }
               // console.debug('[IMAGE addition][JAF Provider] Attached images to prompt:', {
@@ -418,16 +456,26 @@ export const makeXyneJAFProvider = <Ctx>(
               //   userEmail: runContext.user?.email,
               // })
             } else {
-              console.warn(
-                "[JAF Provider] Expected last user index to point to a user message but found",
-                userMessage?.role ?? "unknown",
+              providerLogger.warn(
+                {
+                  messageRole: userMessage?.role ?? "unknown",
+                  selectedImagesCount: selectedImages.length,
+                  turn: turnNumber,
+                },
+                "Expected last user index to resolve to a user message",
               )
             }
           } else {
-            console.warn('[JAF Provider] No valid image parts built despite', selectedImages.length, 'selected')
+            providerLogger.debug(
+              { selectedImagesCount: selectedImages.length, turn: turnNumber },
+              "No valid image parts built for selected images",
+            )
           }
         } else {
-          console.warn('[JAF Provider] No user message found to attach', selectedImages.length, 'images to')
+          providerLogger.debug(
+            { selectedImagesCount: selectedImages.length, turn: turnNumber },
+            "No user message found to attach selected images to",
+          )
         }
       }
 
@@ -462,31 +510,25 @@ export const makeXyneJAFProvider = <Ctx>(
       }
 
       // Log the complete prompt and call options being sent to the LLM
-      const userEmail = runContext?.user?.email || "unknown"
-      const turnNumber = normalizeTurnNumber(runContext?.turnCount)
-      
-      Logger.debug({
-        email: userEmail,
-        turn: turnNumber,
-        model: actualModelId,
-        agentName: agent.name,
-        messagesCount: callOptions.prompt.length,
-        toolsCount: tools.length,
-        maxOutputTokens: callOptions.maxOutputTokens,
-        temperature: callOptions.temperature,
-        hasResponseFormat: !!callOptions.responseFormat,
-        toolChoice: callOptions.toolChoice,
-      }, "[JAF Provider] LLM call parameters")
+      Logger.debug(
+        {
+          email: userEmail,
+          turn: turnNumber,
+          model: actualModelId,
+          agentName: agent.name,
+          messagesCount: callOptions.prompt.length,
+          toolsCount: tools.length,
+          maxOutputTokens: callOptions.maxOutputTokens,
+          temperature: callOptions.temperature,
+          hasResponseFormat: !!callOptions.responseFormat,
+          toolChoice: callOptions.toolChoice,
+        },
+        "[JAF Provider] LLM call parameters",
+      )
 
       // Sanitize prompt to avoid logging large file data buffers
       const sanitizedPrompt = sanitizePromptForLogging(callOptions.prompt)
-      
-      Logger.debug({
-        email: userEmail,
-        turn: turnNumber,
-        model: actualModelId,
-        prompt: sanitizedPrompt,
-      }, "[JAF Provider] FULL PROMPT/MESSAGES ARRAY SENT TO LLM")
+
 
       throwIfStopRequested(stopSignal)
       const result = await raceWithStop(
@@ -514,7 +556,7 @@ export const makeXyneJAFProvider = <Ctx>(
           usage: result.usage,
           contentSummary,
         },
-        "[JAF Provider] Raw LLM response"
+        "[JAF Provider] Raw LLM response",
       )
 
       const message = convertResultToJAFMessage(result.content)
@@ -586,9 +628,12 @@ const buildFunctionTools = <Ctx, Out>(
         const convertedSchema = zodSchemaToJsonSchema(zodSchema) as JSONSchema7
         inputSchema = ensureObjectSchema(convertedSchema)
       } catch (error) {
-        console.warn(
-          `Failed to convert Zod schema to JSON for tool ${tool.schema.name}:`,
-          error,
+        Logger.warn(
+          {
+            err: error,
+            toolName: tool.schema.name,
+          },
+          "Failed to convert Zod schema to JSON for tool",
         )
         // Fallback to empty object schema
         inputSchema = { type: "object", properties: {} }
@@ -802,12 +847,12 @@ const sanitizePromptForLogging = (
     const sanitizedContent = message.content.map((part: any) => {
       if (part.type === "file") {
         const filePart = part as LanguageModelV2FilePart
-        const dataSize = Buffer.isBuffer(filePart.data) 
-          ? filePart.data.length 
-          : filePart.data instanceof Uint8Array
+        const dataSize = Buffer.isBuffer(filePart.data)
           ? filePart.data.length
-          : 0
-        
+          : filePart.data instanceof Uint8Array
+            ? filePart.data.length
+            : 0
+
         return {
           type: "file",
           filename: filePart.filename,

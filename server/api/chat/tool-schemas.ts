@@ -1,6 +1,6 @@
 /**
  * Universal Tool Schema System for JAF Agentic Architecture
- * 
+ *
  * Defines strict input/output schemas for ALL tools to ensure:
  * - LLM outputs conform to structured formats
  * - Type safety and validation
@@ -8,6 +8,7 @@
  * - Easy tool discovery and documentation
  */
 
+import type { JSONSchema7, JSONSchema7Definition } from "json-schema"
 import { z } from "zod"
 import { Apps } from "@xyne/vespa-ts/types"
 import {
@@ -17,10 +18,25 @@ import {
   SubTaskSchema,
 } from "./agent-schemas"
 import type { Entity, MailParticipant } from "@xyne/vespa-ts/types"
+import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
 import { timeRangeSchema } from "./tools/schemas"
 import { XyneTools } from "@/shared/types"
+import {
+  LsKnowledgeBaseInputSchema,
+  LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
+  SEARCH_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
+  SearchKnowledgeBaseInputSchema,
+} from "./tools/knowledgeBaseFlow"
 
-export type { ListCustomAgentsInput, RunPublicAgentInput } from "./agent-schemas"
+export type {
+  ListCustomAgentsInput,
+  RunPublicAgentInput,
+} from "./agent-schemas"
+export type {
+  KnowledgeBaseTarget,
+  LsKnowledgeBaseToolParams,
+  SearchKnowledgeBaseToolParams,
+} from "./tools/knowledgeBaseFlow"
 
 // ============================================================================
 // UNIVERSAL TOOL SCHEMA STRUCTURE
@@ -39,7 +55,7 @@ export interface ToolSchema<TInput = any, TOutput = any> {
 export enum ToolCategory {
   Planning = "planning",
   Search = "search",
-  Metadata = "metadata", 
+  Metadata = "metadata",
   Agent = "agent",
   Clarification = "clarification",
   Review = "review",
@@ -57,22 +73,72 @@ export interface ToolExample<TInput, TOutput> {
 // BASE SCHEMAS
 // ============================================================================
 
+const STANDARD_LIMIT_DESCRIPTION =
+  "Maximum number of results to return. Keep this small for precision-first retrieval and increase only when broader coverage is necessary."
+
+const STANDARD_OFFSET_DESCRIPTION =
+  "Pagination offset. Use it after reviewing the current page to continue from the next unseen results."
+
+const FOLLOW_UP_EXCLUDED_IDS_DESCRIPTION =
+  "Previously seen result document `docId`s to suppress on follow-up searches. Prefer prior `fragment.source.docId` values. Do not pass collection, folder, file, path, or fragment IDs."
+
 // Pagination schema
 export const PaginationSchema = z.object({
-  limit: z.number().min(1).max(100).optional().default(20).describe("Maximum number of results to return (1-100)"),
-  offset: z.number().min(0).optional().default(0).describe("Number of results to skip for pagination"),
+  limit: z
+    .number()
+    .min(1)
+    .max(100)
+    .optional()
+    .default(20)
+    .describe(STANDARD_LIMIT_DESCRIPTION),
+  offset: z
+    .number()
+    .min(0)
+    .optional()
+    .default(0)
+    .describe(STANDARD_OFFSET_DESCRIPTION),
 })
 
 // Sort direction schema
-export const SortDirectionSchema = z.enum(["asc", "desc"]).optional()
+export const SortDirectionSchema = z
+  .enum(["asc", "desc"])
+  .describe(
+    "Sort direction. Use `desc` for newest-first or highest-priority-first ordering when supported, and `asc` for oldest-first ordering.",
+  )
+  .optional()
 
 // Mail participant schema
-export const MailParticipantSchema = z.object({
-  from: z.array(z.string().email()).optional().describe("Sender email addresses"),
-  to: z.array(z.string().email()).optional().describe("Recipient email addresses"),
-  cc: z.array(z.string().email()).optional().describe("CC email addresses"),
-  bcc: z.array(z.string().email()).optional().describe("BCC email addresses"),
-}).optional()
+export const MailParticipantSchema = z
+  .object({
+    from: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Sender identifiers as strings. Email addresses are best; full names or organization names are also accepted when needed.",
+      ),
+    to: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Primary recipient identifiers as strings. Email addresses are best; full names or organization names are also accepted when needed.",
+      ),
+    cc: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "CC recipient identifiers as strings. Email addresses are best; full names or organization names are also accepted when needed.",
+      ),
+    bcc: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "BCC recipient identifiers as strings. Email addresses are best; full names or organization names are also accepted when needed.",
+      ),
+  })
+  .describe(
+    "Structured Gmail participant filter object with optional `from`, `to`, `cc`, and `bcc` string arrays. Use only the fields that are explicitly relevant to the query.",
+  )
+  .optional()
 
 // ============================================================================
 // TOOL OUTPUT SCHEMAS
@@ -80,25 +146,34 @@ export const MailParticipantSchema = z.object({
 
 // Standard tool output with contexts
 export const ToolOutputSchema = z.object({
-  result: z.string().describe("Human-readable summary of the tool execution result"),
-  contexts: z.array(z.object({
-    id: z.string(),
-    content: z.string(),
-    source: z.object({
-      docId: z.string(),
-      title: z.string(),
-      url: z.string().default(""),
-      app: z.string(),
-      entity: z.any().optional(),
-      // Preserve rich citation metadata for downstream consumers (KB, Slack threads, etc.)
-      itemId: z.string().optional(),
-      clId: z.string().optional(),
-      page_title: z.string().optional(),
-      threadId: z.string().optional(),
-      parentThreadId: z.string().optional(),
-    }).catchall(z.any()),
-    confidence: z.number().min(0).max(1),
-  })).optional().describe("Retrieved context fragments"),
+  result: z
+    .string()
+    .describe("Human-readable summary of the tool execution result"),
+  contexts: z
+    .array(
+      z.object({
+        id: z.string(),
+        content: z.string(),
+        source: z
+          .object({
+            docId: z.string(),
+            title: z.string(),
+            url: z.string().default(""),
+            app: z.string(),
+            entity: z.any().optional(),
+            // Preserve rich citation metadata for downstream consumers (KB, Slack threads, etc.)
+            itemId: z.string().optional(),
+            clId: z.string().optional(),
+            page_title: z.string().optional(),
+            threadId: z.string().optional(),
+            parentThreadId: z.string().optional(),
+          })
+          .catchall(z.any()),
+        confidence: z.number().min(0).max(1),
+      }),
+    )
+    .optional()
+    .describe("Retrieved context fragments"),
   error: z.string().optional().describe("Error message if execution failed"),
   metadata: z
     .record(z.string(), z.any())
@@ -111,7 +186,6 @@ export type ToolOutput = z.infer<typeof ToolOutputSchema>
 // ============================================================================
 // PLANNING TOOL SCHEMAS
 // ============================================================================
-
 
 // toDoWrite input schema
 export const ToDoWriteInputSchema = z.object({
@@ -134,33 +208,47 @@ export const ToDoWriteOutputSchema = z.object({
 
 export type ToDoWriteOutput = z.infer<typeof ToDoWriteOutputSchema>
 
-// ============================================================================ 
+// ============================================================================
 // FINAL SYNTHESIS TOOL SCHEMAS
 // ============================================================================
 
 export const SynthesizeFinalAnswerInputSchema = z
   .object({})
-  .describe("No arguments allowed. Invoke only when you are fully ready to deliver the final answer.")
+  .describe(
+    "No arguments allowed. Invoke only when you are fully ready to deliver the final answer.",
+  )
 
 export const SynthesizeFinalAnswerOutputSchema = z.object({
   result: z
     .string()
-    .describe("Confirmation that the final synthesis was executed (the actual answer is streamed to the user)."),
+    .describe(
+      "Confirmation that the final synthesis was executed (the actual answer is streamed to the user).",
+    ),
   streamed: z
     .boolean()
-    .describe("Indicates whether the answer was streamed to the user directly during tool execution."),
+    .describe(
+      "Indicates whether the answer was streamed to the user directly during tool execution.",
+    ),
   metadata: z
     .object({
       textLength: z.number().describe("Characters streamed to the user."),
-      totalImagesAvailable: z.number().describe("Total tracked images across the run."),
-      imagesProvided: z.number().describe("Images forwarded to the final synthesis call, post limit."),
+      totalImagesAvailable: z
+        .number()
+        .describe("Total tracked images across the run."),
+      imagesProvided: z
+        .number()
+        .describe("Images forwarded to the final synthesis call, post limit."),
     })
     .partial()
     .optional(),
 })
 
-export type SynthesizeFinalAnswerInput = z.infer<typeof SynthesizeFinalAnswerInputSchema>
-export type SynthesizeFinalAnswerOutput = z.infer<typeof SynthesizeFinalAnswerOutputSchema>
+export type SynthesizeFinalAnswerInput = z.infer<
+  typeof SynthesizeFinalAnswerInputSchema
+>
+export type SynthesizeFinalAnswerOutput = z.infer<
+  typeof SynthesizeFinalAnswerOutputSchema
+>
 
 // ============================================================================
 // SEARCH TOOL SCHEMAS
@@ -168,134 +256,184 @@ export type SynthesizeFinalAnswerOutput = z.infer<typeof SynthesizeFinalAnswerOu
 
 // Global search input
 export const SearchGlobalInputSchema = z.object({
-  query: z.string().optional().describe("Search query keywords"),
-  limit: z.number().optional(),
-  offset: z.number().optional(),
-  excludedIds: z.array(z.string()).optional().describe("Document IDs to exclude from results"),
+  query: z
+    .string()
+    .min(1)
+    .describe(
+      "Required broad retrieval query string for cross-app search when the right source is not yet known. Prefer app-specific tools when the likely source is already clear.",
+    ),
+  limit: z.number().optional().describe(STANDARD_LIMIT_DESCRIPTION),
+  offset: z.number().optional().describe(STANDARD_OFFSET_DESCRIPTION),
+  excludedIds: z
+    .array(z.string())
+    .optional()
+    .describe(FOLLOW_UP_EXCLUDED_IDS_DESCRIPTION),
 })
 
 export type SearchGlobalInput = z.infer<typeof SearchGlobalInputSchema>
 
 // Gmail search input
 export const SearchGmailInputSchema = z.object({
-  query: z.string().describe("Email search query"),
+  query: z
+    .string()
+    .optional()
+    .describe(
+      "Optional short email-content retrieval query string. Omit it when participant, label, or time filters already define the request well enough.",
+    ),
   participants: MailParticipantSchema,
-  labels: z.array(z.string()).optional().describe("Gmail labels to filter by"),
+  labels: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Optional Gmail label strings to narrow the search, for example `INBOX`, `UNREAD`, `IMPORTANT`, `SENT`, or category labels.",
+    ),
   timeRange: timeRangeSchema,
-  limit: z.number().optional(),
-  offset: z.number().optional(),
+  limit: z.number().optional().describe(STANDARD_LIMIT_DESCRIPTION),
+  offset: z.number().optional().describe(STANDARD_OFFSET_DESCRIPTION),
   sortBy: SortDirectionSchema,
-  excludedIds: z.array(z.string()).optional(),
+  excludedIds: z
+    .array(z.string())
+    .optional()
+    .describe(FOLLOW_UP_EXCLUDED_IDS_DESCRIPTION),
 })
 
 export type SearchGmailInput = z.infer<typeof SearchGmailInputSchema>
 
 // Drive search input
 export const SearchDriveInputSchema = z.object({
-  query: z.string().describe("Drive file search query"),
-  owner: z.string().email().optional().describe("Filter by file owner email"),
-  filetype: z.array(z.string()).optional().describe("File entity types (e.g., 'document', 'spreadsheet')"),
-  timeRange: timeRangeSchema,
-  limit: z.number().optional(),
-  offset: z.number().optional(),
-  sortBy: SortDirectionSchema,
-  excludedIds: z.array(z.string()).optional(),
-})
-
-export type SearchDriveInput = z.infer<typeof SearchDriveInputSchema>
-
-export type SearchKnowledgeBaseToolParams = {
-  query: string
-  limit?: number
-  offset?: number
-  collectionId?: string
-  folderId?: string
-  fileId?: string
-  excludedIds?: string[]
-}
-
-export const SearchKnowledgeBaseInputSchema: z.ZodType<SearchKnowledgeBaseToolParams> = z.object({
   query: z
     .string()
-    .min(1)
-    .describe("Keywords or phrases to search within the knowledge base"),
-  limit: z
-    .number()
-    .min(1)
-    .max(25)
     .optional()
-    .describe("Maximum number of KB results to return"),
-  offset: z
-    .number()
-    .min(0)
-    .optional()
-    .describe("Pagination offset for KB results"),
-  collectionId: z
+    .describe(
+      "Optional short content or title retrieval query string for Drive files. Omit it when owner, file-type, or time filters already define the request well enough.",
+    ),
+  owner: z
     .string()
     .optional()
-    .describe("Restrict search to a single knowledge base collection"),
-  folderId: z
-    .string()
+    .describe(
+      "Optional Drive owner identifier string. Email is preferred; owner display name can also work.",
+    ),
+  filetype: z
+    .array(z.string())
     .optional()
-    .describe("Restrict search to a collection folder"),
-  fileId: z
-    .string()
-    .optional()
-    .describe("Restrict search to a collection file"),
+    .describe(
+      "Optional Drive file-type strings. Valid values come from Drive entity types such as `docs`, `sheets`, `slides`, `presentation`, `pdf`, `folder`, `image`, `video`, `audio`, or `zip`.",
+    ),
+  timeRange: timeRangeSchema,
+  limit: z.number().optional().describe(STANDARD_LIMIT_DESCRIPTION),
+  offset: z.number().optional().describe(STANDARD_OFFSET_DESCRIPTION),
+  sortBy: SortDirectionSchema,
   excludedIds: z
     .array(z.string())
     .optional()
-    .describe("Document IDs to exclude"),
+    .describe(FOLLOW_UP_EXCLUDED_IDS_DESCRIPTION),
 })
 
+export type SearchDriveInput = z.infer<typeof SearchDriveInputSchema>
+//NOTE : Knowledgebase scehma is defined in knowledgeBaseFlow file since it has some specific types related to KB targets and projections.
 export type SearchKnowledgeBaseInput = z.infer<
   typeof SearchKnowledgeBaseInputSchema
 >
 
 // Calendar search input
 export const SearchCalendarInputSchema = z.object({
-  query: z.string().describe("Calendar event search query"),
-  attendees: z.array(z.string().email()).optional().describe("Filter by attendee emails"),
-  status: z.enum(["confirmed", "tentative", "cancelled"]).optional().describe("Event status"),
+  query: z.string().describe(
+    "Short meeting/topic retrieval query for calendar events. Put attendee, status, and time constraints in the dedicated filters.",
+  ),
+  attendees: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Optional attendee identifiers as strings. Email addresses are preferred; attendee display names can also work.",
+    ),
+  status: z
+    .enum(["confirmed", "tentative", "cancelled"])
+    .optional()
+    .describe("Optional event status filter."),
   timeRange: timeRangeSchema,
-  limit: z.number().optional(),
-  offset: z.number().optional(),
+  limit: z.number().optional().describe(STANDARD_LIMIT_DESCRIPTION),
+  offset: z.number().optional().describe(STANDARD_OFFSET_DESCRIPTION),
   sortBy: SortDirectionSchema,
-  excludedIds: z.array(z.string()).optional(),
+  excludedIds: z
+    .array(z.string())
+    .optional()
+    .describe(FOLLOW_UP_EXCLUDED_IDS_DESCRIPTION),
 })
 
 export type SearchCalendarInput = z.infer<typeof SearchCalendarInputSchema>
 
 // Google Contacts search input
 export const SearchGoogleContactsInputSchema = z.object({
-  query: z.string().describe("Contact search query (name, email, phone, etc.)"),
-  limit: z.number().optional(),
-  offset: z.number().optional(),
-  excludedIds: z.array(z.string()).optional(),
+  query: z
+    .string()
+    .describe(
+      "Person or company identifier such as a name, email, phone number, or title. Use this to disambiguate people before searching other sources.",
+    ),
+  limit: z.number().optional().describe(STANDARD_LIMIT_DESCRIPTION),
+  offset: z.number().optional().describe(STANDARD_OFFSET_DESCRIPTION),
+  excludedIds: z
+    .array(z.string())
+    .optional()
+    .describe(FOLLOW_UP_EXCLUDED_IDS_DESCRIPTION),
 })
 
-export type SearchGoogleContactsInput = z.infer<typeof SearchGoogleContactsInputSchema>
+export type SearchGoogleContactsInput = z.infer<
+  typeof SearchGoogleContactsInputSchema
+>
 
 // Slack messages input
-export const GetSlackMessagesInputSchema = z.object({
-  filter_query: z.string().optional().describe("Keywords to search within messages"),
-  channel_name: z.string().optional().describe("Specific channel name"),
-  user_email: z.string().email().optional().describe("Filter by user email"),
-  date_from: z.string().optional().describe("Start date (ISO 8601)"),
-  date_to: z.string().optional().describe("End date (ISO 8601)"),
-  limit: z.number().optional(),
-  offset: z.number().optional(),
-  order_direction: SortDirectionSchema,
+export const GetSlackRelatedMessagesInputSchema = z.object({
+  query: z
+    .string()
+    .optional()
+    .describe(
+      "Optional short Slack message-content query string. Omit it when channel, author, mentions, or time filters already define the request well enough.",
+    ),
+  channelName: z
+    .string()
+    .optional()
+    .describe(
+      "Optional Slack channel name string, such as `eng-launches`. Pass the human-facing channel name, not a Slack channel ID.",
+    ),
+  user: z
+    .string()
+    .optional()
+    .describe(
+      "Optional Slack user identifier string to restrict messages by author. Email is preferred; display name can also work.",
+    ),
+  mentions: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Optional list of mentioned-user identifier strings, usually emails or usernames, to find messages that mention specific people.",
+    ),
+  timeRange: timeRangeSchema,
+  limit: z.number().optional().describe(STANDARD_LIMIT_DESCRIPTION),
+  offset: z.number().optional().describe(STANDARD_OFFSET_DESCRIPTION),
+  sortBy: SortDirectionSchema,
+  excludedIds: z
+    .array(z.string())
+    .optional()
+    .describe(FOLLOW_UP_EXCLUDED_IDS_DESCRIPTION),
 })
 
-export type GetSlackMessagesInput = z.infer<typeof GetSlackMessagesInputSchema>
+export const GetSlackMessagesInputSchema = GetSlackRelatedMessagesInputSchema
+
+export type GetSlackMessagesInput = z.infer<
+  typeof GetSlackRelatedMessagesInputSchema
+>
 
 // Slack user profile input
 export const GetSlackUserProfileInputSchema = z.object({
-  user_email: z.string().email().describe("Email of user whose Slack profile to retrieve"),
+  user_email: z
+    .string()
+    .email()
+    .describe("Email of user whose Slack profile to retrieve"),
 })
 
-export type GetSlackUserProfileInput = z.infer<typeof GetSlackUserProfileInputSchema>
+export type GetSlackUserProfileInput = z.infer<
+  typeof GetSlackUserProfileInputSchema
+>
 
 // ============================================================================
 // AGENT TOOL SCHEMAS
@@ -318,24 +456,30 @@ const ResourceAccessSummarySchema = z.object({
 
 export const ListCustomAgentsOutputSchema = z.object({
   agents: z
-    .array(z.object({
-      agentId: z.string(),
-      agentName: z.string(),
-      description: z.string(),
-      capabilities: z.array(z.string()),
-      domains: z.array(z.string()),
-      suitabilityScore: z.number().min(0).max(1),
-      confidence: z.number().min(0).max(1),
-      estimatedCost: z.enum(["low", "medium", "high"]),
-      averageLatency: z.number(),
-      resourceAccess: z.array(ResourceAccessSummarySchema).optional(),
-    }))
+    .array(
+      z.object({
+        agentId: z.string(),
+        agentName: z.string(),
+        description: z.string(),
+        capabilities: z.array(z.string()),
+        domains: z.array(z.string()),
+        suitabilityScore: z.number().min(0).max(1),
+        confidence: z.number().min(0).max(1),
+        estimatedCost: z.enum(["low", "medium", "high"]),
+        averageLatency: z.number(),
+        resourceAccess: z.array(ResourceAccessSummarySchema).optional(),
+      }),
+    )
     .nullable()
-    .describe("Ordered list of best-fit agents. Return null when no agent is sufficiently certain."),
+    .describe(
+      "Ordered list of best-fit agents. Return null when no agent is sufficiently certain.",
+    ),
   totalEvaluated: z.number(),
 })
 
-export type ListCustomAgentsOutput = z.infer<typeof ListCustomAgentsOutputSchema>
+export type ListCustomAgentsOutput = z.infer<
+  typeof ListCustomAgentsOutputSchema
+>
 export type ResourceAccessItem = z.infer<typeof ResourceItemSchema>
 export type ResourceAccessSummary = z.infer<typeof ResourceAccessSummarySchema>
 
@@ -349,7 +493,9 @@ export const ReviewAgentOutputSchema = z.object({
   recommendation: z
     .enum(["proceed", "gather_more", "clarify_query", "replan"])
     .describe("Next action recommendation"),
-  metExpectations: z.boolean().describe("Whether tool expectations were satisfied"),
+  metExpectations: z
+    .boolean()
+    .describe("Whether tool expectations were satisfied"),
   unmetExpectations: z
     .array(z.string())
     .describe("List of expectation goals that remain unmet"),
@@ -363,12 +509,8 @@ export const ReviewAgentOutputSchema = z.object({
   toolFeedback: z
     .array(ToolReviewFindingSchema)
     .describe("Per-tool assessment for this turn"),
-  anomaliesDetected: z
-    .boolean()
-    .describe("Whether any anomalies were found"),
-  anomalies: z
-    .array(z.string())
-    .describe("Descriptions of detected anomalies"),
+  anomaliesDetected: z.boolean().describe("Whether any anomalies were found"),
+  anomalies: z.array(z.string()).describe("Descriptions of detected anomalies"),
 })
 
 export type ReviewAgentOutput = z.infer<typeof ReviewAgentOutputSchema>
@@ -404,26 +546,9 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
     category: ToolCategory.Planning,
     inputSchema: ToDoWriteInputSchema,
     outputSchema: ToDoWriteOutputSchema,
-    examples: [{
-      input: {
-        goal: "Find what Alex says about Q4",
-        subTasks: [
-          {
-            id: "task_1",
-            description: "Identify which Alex user is referring to",
-            status: "pending" as const,
-            toolsRequired: ["searchGoogleContacts"],
-          },
-          {
-            id: "task_2", 
-            description: "Search all of Alex's Q4 communications",
-            status: "pending" as const,
-            toolsRequired: ["searchGmail", "getSlackMessages", "searchDriveFiles"],
-          },
-        ],
-      },
-      output: {
-        plan: {
+    examples: [
+      {
+        input: {
           goal: "Find what Alex says about Q4",
           subTasks: [
             {
@@ -432,17 +557,41 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
               status: "pending" as const,
               toolsRequired: ["searchGoogleContacts"],
             },
+            {
+              id: "task_2",
+              description: "Search all of Alex's Q4 communications",
+              status: "pending" as const,
+              toolsRequired: [
+                "searchGmail",
+                "getSlackRelatedMessages",
+                "searchDriveFiles",
+              ],
+            },
           ],
         },
+        output: {
+          plan: {
+            goal: "Find what Alex says about Q4",
+            subTasks: [
+              {
+                id: "task_1",
+                description: "Identify which Alex user is referring to",
+                status: "pending" as const,
+                toolsRequired: ["searchGoogleContacts"],
+              },
+            ],
+          },
+        },
+        scenario: "Creating a task-based plan for ambiguous query",
       },
-      scenario: "Creating a task-based plan for ambiguous query",
-    }],
+    ],
   },
 
   // Search Tools
   searchGlobal: {
     name: XyneTools.searchGlobal,
-    description: "Search across all accessible data sources. Use for broad searches when specific app is unknown.",
+    description:
+      "Search across all accessible data sources when the likely source is unclear. Prefer a more specific tool when the query already points clearly to Gmail, Drive, Slack, Calendar, Contacts, or a known KB location.",
     category: ToolCategory.Search,
     inputSchema: SearchGlobalInputSchema,
     outputSchema: ToolOutputSchema,
@@ -450,15 +599,108 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
 
   searchKnowledgeBase: {
     name: XyneTools.searchKnowledgeBase,
-    description: "Search the user's knowledge base collections and return relevant document fragments with citations.",
+    description: SEARCH_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
     category: ToolCategory.Search,
     inputSchema: SearchKnowledgeBaseInputSchema,
     outputSchema: ToolOutputSchema,
+    examples: [
+      {
+        scenario: "Search a known KB folder directly without browsing first",
+        input: {
+          query: "security review exception policy",
+          filters: {
+            targets: [
+              {
+                type: "path" as const,
+                collectionId: "kb-collection-123",
+                path: "/Policies/Security",
+              },
+            ],
+          },
+          limit: 5,
+          excludedIds: ["doc-prev-1"],
+        },
+        output: {
+          result: "Found relevant policy fragments in the targeted KB folder.",
+          contexts: [],
+        },
+      },
+      {
+        scenario:
+          "Search only the PDF files identified from a prior ls call",
+        input: {
+          query: "vendor risk questionnaire requirements",
+          filters: {
+            targets: [
+              {
+                type: "file" as const,
+                fileId: "kb-file-pdf-1",
+              },
+              {
+                type: "file" as const,
+                fileId: "kb-file-pdf-2",
+              },
+            ],
+          },
+          limit: 5,
+        },
+        output: {
+          result: "Searched only the selected PDF documents from the folder.",
+          contexts: [],
+        },
+      },
+    ],
+  },
+
+  ls: {
+    name: "ls",
+    description: LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
+    category: ToolCategory.Metadata,
+    inputSchema: LsKnowledgeBaseInputSchema,
+    outputSchema: ToolOutputSchema,
+    examples: [
+      {
+        scenario: "Inspect a known collection root before deciding whether to search inside it",
+        input: {
+          target: {
+            type: "collection" as const,
+            collectionId: "kb-collection-123",
+          },
+          depth: 1,
+          limit: 20,
+          metadata: false,
+        },
+        output: {
+          result: "Listed the top-level folders and files in the collection.",
+          contexts: [],
+        },
+      },
+      {
+        scenario:
+          "Inspect a folder with metadata so you can keep only PDF files for a later KB search",
+        input: {
+          target: {
+            type: "path" as const,
+            collectionId: "kb-collection-123",
+            path: "/Policies/Security",
+          },
+          depth: 2,
+          limit: 50,
+          metadata: true,
+        },
+        output: {
+          result:
+            "Listed files with mime types and timestamps so PDF rows can be selected for targeted search.",
+          contexts: [],
+        },
+      },
+    ],
   },
 
   searchGmail: {
     name: XyneTools.searchGmail,
-    description: "Search Gmail messages with filters for participants, labels, and time range.",
+    description:
+      "Search Gmail messages by content, participants, labels, and time range. Use participant filters for people and organizations instead of stuffing them into the query.",
     category: ToolCategory.Search,
     inputSchema: SearchGmailInputSchema,
     outputSchema: ToolOutputSchema,
@@ -466,7 +708,8 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
 
   searchDriveFiles: {
     name: XyneTools.searchDriveFiles,
-    description: "Search Google Drive files with filters for owner, file type, and time range.",
+    description:
+      "Search Google Drive files by title/content with optional owner, file-type, and time filters.",
     category: ToolCategory.Search,
     inputSchema: SearchDriveInputSchema,
     outputSchema: ToolOutputSchema,
@@ -474,7 +717,8 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
 
   searchCalendarEvents: {
     name: XyneTools.searchCalendarEvents,
-    description: "Search Google Calendar events with filters for attendees, status, and time range.",
+    description:
+      "Search Google Calendar events by topic with optional attendee, status, and time filters.",
     category: ToolCategory.Search,
     inputSchema: SearchCalendarInputSchema,
     outputSchema: ToolOutputSchema,
@@ -482,24 +726,29 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
 
   searchGoogleContacts: {
     name: XyneTools.searchGoogleContacts,
-    description: "Search Google Contacts by name, email, or phone. Use for disambiguating person names.",
+    description:
+      "Search Google Contacts by name, email, phone, or title. Use this first when person identity is ambiguous.",
     category: ToolCategory.Search,
     inputSchema: SearchGoogleContactsInputSchema,
     outputSchema: ToolOutputSchema,
-    prerequisites: ["Must be used before contacting people with ambiguous names"],
+    prerequisites: [
+      "Must be used before contacting people with ambiguous names",
+    ],
   },
 
-  getSlackMessages: {
-    name: XyneTools.getSlackMessages,
-    description: "Search Slack messages with flexible filters for channel, user, time range.",
+  getSlackRelatedMessages: {
+    name: XyneTools.getSlackRelatedMessages,
+    description:
+      "Search Slack messages with flexible filters for content, channel, author, mentions, and time range. When no query and no Slack filter fields are provided, the live tool defaults to recent Slack history.",
     category: ToolCategory.Search,
-    inputSchema: GetSlackMessagesInputSchema,
+    inputSchema: GetSlackRelatedMessagesInputSchema,
     outputSchema: ToolOutputSchema,
   },
 
   getSlackUserProfile: {
     name: XyneTools.getSlackUserProfile,
-    description: "Get a user's Slack profile by email address.",
+    description:
+      "Get a user's Slack profile by email address. Use when you need identity, channel, or profile metadata before deeper Slack search.",
     category: ToolCategory.Metadata,
     inputSchema: GetSlackUserProfileInputSchema,
     outputSchema: ToolOutputSchema,
@@ -531,7 +780,8 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
             {
               agentId: "agent_renewal_nav",
               agentName: "Renewal Navigator",
-              description: "Summarizes customer renewals and risks across ACME accounts.",
+              description:
+                "Summarizes customer renewals and risks across ACME accounts.",
               capabilities: ["renewal_strategy", "deal_health"],
               domains: ["salesforce", "revops"],
               suitabilityScore: 0.93,
@@ -549,7 +799,8 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
             {
               agentId: "agent_revops_deepdive",
               agentName: "RevOps Deep Dive",
-              description: "Explains revenue risk drivers for enterprise deals.",
+              description:
+                "Explains revenue risk drivers for enterprise deals.",
               capabilities: ["renewal_strategy", "pipeline_insights"],
               domains: ["revops"],
               suitabilityScore: 0.81,
@@ -589,16 +840,20 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
         scenario: "Delegate Delta Airlines renewal recap to Renewal Navigator",
         input: {
           agentId: "agent_renewal_nav",
-          query: "Summarize Delta Airlines Q3 renewal blockers and list owners for each blocker.",
-          context: "Delta Airlines confirmed as DAL GTM account; timeframe Q3 FY25.",
+          query:
+            "Summarize Delta Airlines Q3 renewal blockers and list owners for each blocker.",
+          context:
+            "Delta Airlines confirmed as DAL GTM account; timeframe Q3 FY25.",
           maxTokens: 900,
         },
         output: {
-          result: "Renewal Navigator summarized Delta Airlines blockers with owners.",
+          result:
+            "Renewal Navigator summarized Delta Airlines blockers with owners.",
           contexts: [
             {
               id: "delta-renewal-summary",
-              content: "Risk stems from security review and pending legal redlines.",
+              content:
+                "Risk stems from security review and pending legal redlines.",
               source: {
                 docId: "drive-doc-123",
                 title: "Delta Renewal Brief",
@@ -621,7 +876,8 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   // Fallback Tool
   fall_back: {
     name: XyneTools.fallBack,
-    description: "Generate reasoning about why search failed when max iterations reached. Used automatically by system.",
+    description:
+      "Generate reasoning about why search failed when max iterations reached. Used automatically by system.",
     category: ToolCategory.Fallback,
     inputSchema: FallbackToolInputSchema,
     outputSchema: FallbackToolOutputSchema,
@@ -663,7 +919,7 @@ export function getToolSchema(toolName: string): ToolSchema | undefined {
  */
 export function validateToolInput<T>(
   toolName: string,
-  input: unknown
+  input: unknown,
 ): { success: true; data: T } | { success: false; error: z.ZodError } {
   const schema = getToolSchema(toolName)
   if (!schema) {
@@ -683,7 +939,7 @@ export function validateToolInput<T>(
  */
 export function validateToolOutput<T>(
   toolName: XyneTools,
-  output: unknown
+  output: unknown,
 ): { success: true; data: T } | { success: false; error: z.ZodError } {
   const schema = getToolSchema(toolName)
   if (!schema) {
@@ -696,6 +952,85 @@ export function validateToolOutput<T>(
   } else {
     return { success: false, error: result.error }
   }
+}
+
+function isJsonSchemaObject(
+  value: JSONSchema7Definition | undefined,
+): value is JSONSchema7 {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function formatJsonSchemaType(schema: JSONSchema7): string {
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+    return `enum(${schema.enum.map((value) => JSON.stringify(value)).join(", ")})`
+  }
+
+  if (schema.type === "array") {
+    const itemType = Array.isArray(schema.items)
+      ? Array.from(
+          new Set(
+            schema.items
+              .filter(isJsonSchemaObject)
+              .map((item) => formatJsonSchemaType(item)),
+          ),
+        ).join(" | ") || "value"
+      : isJsonSchemaObject(schema.items)
+        ? formatJsonSchemaType(schema.items)
+        : "value"
+    return `array<${itemType}>`
+  }
+
+  if (typeof schema.type === "string") {
+    return schema.type
+  }
+
+  if (Array.isArray(schema.type)) {
+    return schema.type.join(" | ")
+  }
+
+  if (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) {
+    const parts = schema.anyOf
+      .filter(isJsonSchemaObject)
+      .map((entry) => formatJsonSchemaType(entry))
+    return Array.from(new Set(parts)).join(" | ") || "value"
+  }
+
+  if (schema.properties) return "object"
+  if (schema.additionalProperties) return "record"
+
+  return "value"
+}
+
+function formatParameterLines(
+  schema: JSONSchema7,
+  pathPrefix = "",
+  depth = 0,
+): string[] {
+  const properties = schema.properties ?? {}
+  const required = new Set(schema.required ?? [])
+  const lines: string[] = []
+
+  for (const [name, definition] of Object.entries(properties)) {
+    if (!isJsonSchemaObject(definition)) continue
+
+    const fullPath = pathPrefix ? `${pathPrefix}.${name}` : name
+    const requiredLabel = required.has(name) ? "required" : "optional"
+    const description = definition.description
+      ? `: ${definition.description}`
+      : ""
+
+    lines.push(
+      `${"  ".repeat(depth)}- \`${fullPath}\` (${formatJsonSchemaType(definition)}, ${requiredLabel})${description}`,
+    )
+
+    if (depth >= 1) continue
+
+    if (definition.properties) {
+      lines.push(...formatParameterLines(definition, fullPath, depth + 1))
+    }
+  }
+
+  return lines
 }
 
 /**
@@ -713,21 +1048,30 @@ export function generateToolDescriptions(toolNames: string[]): string {
     desc += `**Description**: ${schema.description}\n\n`
 
     if (schema.prerequisites && schema.prerequisites.length > 0) {
-      desc += `**Prerequisites**:\n${schema.prerequisites.map(p => `- ${p}`).join('\n')}\n\n`
+      desc += `**Prerequisites**:\n${schema.prerequisites.map((p) => `- ${p}`).join("\n")}\n\n`
     }
 
-    desc += `**Input Schema**: Use the defined Zod schema for this tool\n\n`
+    const jsonSchema = zodSchemaToJsonSchema(schema.inputSchema)
+    const parameterLines = formatParameterLines(jsonSchema)
+
+    if (parameterLines.length > 0) {
+      desc += `**Parameters**:\n${parameterLines.join("\n")}\n\n`
+    } else {
+      desc += `**Parameters**: No arguments.\n\n`
+    }
 
     if (schema.examples && schema.examples.length > 0) {
-      desc += `**Example**:\n`
-      desc += `Scenario: ${schema.examples[0].scenario}\n`
-      desc += `\`\`\`json\n${JSON.stringify(schema.examples[0].input, null, 2)}\n\`\`\`\n\n`
+      desc += `**Examples**:\n`
+      for (const example of schema.examples.slice(0, 2)) {
+        desc += `Scenario: ${example.scenario}\n`
+        desc += `\`\`\`json\n${JSON.stringify(example.input, null, 2)}\n\`\`\`\n\n`
+      }
     }
 
     descriptions.push(desc)
   }
 
-  return descriptions.join('\n---\n\n')
+  return descriptions.join("\n---\n\n")
 }
 
 /**

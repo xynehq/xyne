@@ -14,12 +14,14 @@ const calendarSearchToolSchema = z.object({
   query: createQuerySchema(GoogleApps.Calendar, true),
   attendees: z
     .array(z.string())
-    .describe("Filter events by attendee  name or email addresses")
+    .describe(
+      "Optional attendee identifier strings. Email addresses are preferred; attendee display names can also work.",
+    )
     .optional(),
   status: z
     .enum(["confirmed", "tentative", "cancelled"])
     .describe(
-      "Filter events by status. Available statuses: 'confirmed', 'tentative', 'cancelled'",
+      "Optional event status enum. Valid values are `confirmed`, `tentative`, and `cancelled`.",
     )
     .optional(),
   ...baseToolParams,
@@ -38,7 +40,7 @@ export const searchCalendarEventsTool: Tool<CalendarSearchToolParams, Ctx> = {
   schema: {
     name: "searchCalendarEvents",
     description:
-      "Retrieve calendar events and meetings from Google Calendar. Search by event title, attendees, or time period. Ideal for scheduling analysis, meeting preparation, and availability checking.",
+      "Search Google Calendar events by meeting topic with optional attendee, status, and time filters. Use attendee and time fields for scheduling or meeting-history queries instead of overloading the query text.",
     parameters: toToolSchemaParameters(calendarSearchToolSchema),
   },
   async execute(
