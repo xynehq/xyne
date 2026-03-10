@@ -907,7 +907,7 @@ function extractToolQuery(
       return typeof args.query === "string" && args.query.trim()
         ? args.query.trim()
         : undefined
-    case XyneTools.getSlackMessages:
+    case XyneTools.getSlackRelatedMessages:
     case XyneTools.getSlackThreads:
       return typeof args.filter_query === "string" && args.filter_query.trim()
         ? args.filter_query.trim()

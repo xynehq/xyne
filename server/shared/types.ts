@@ -731,7 +731,7 @@ export enum XyneTools {
   searchDriveFiles = "searchDriveFiles",
   searchCalendarEvents = "searchCalendarEvents",
   searchGoogleContacts = "searchGoogleContacts",
-  getSlackMessages = "getSlackMessages",
+  getSlackRelatedMessages = "getSlackRelatedMessages",
   getSlackThreads = "getSlackThreads",
   getSlackUserProfile = "getSlackUserProfile",
   listCustomAgents = "list_custom_agents",

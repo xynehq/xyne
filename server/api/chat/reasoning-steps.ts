@@ -50,7 +50,7 @@ const TOOL_DISPLAY: Record<string, ToolDisplay> = {
   [XyneTools.searchDriveFiles]:    { executing: "Searching Google Drive.", completed: "Found relevant files." },
   [XyneTools.searchCalendarEvents]:{ executing: "Searching calendar.", completed: "Found calendar events." },
   [XyneTools.searchGoogleContacts]:{ executing: "Searching contacts.", completed: "Found contacts." },
-  [XyneTools.getSlackMessages]:    { executing: "Searching Slack conversations.", completed: "Found Slack messages." },
+  [XyneTools.getSlackRelatedMessages]: { executing: "Searching Slack conversations.", completed: "Found Slack messages." },
   [XyneTools.getSlackThreads]:     { executing: "Searching Slack threads.", completed: "Found Slack threads." },
   [XyneTools.getSlackUserProfile]: { executing: "Looking up Slack profile.", completed: "Found Slack profile." },
   [XyneTools.listCustomAgents]:    { executing: "Searching for specialized agents.", completed: "Agent search complete." },
