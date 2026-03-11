@@ -236,16 +236,17 @@ export async function runTurnEndPipeline(
 // HELPERS
 // ============================================================================
 
-const MIN_REVIEW_FREQUENCY = 2
-const MAX_REVIEW_FREQUENCY = 10
+const MIN_REVIEW_FREQUENCY = 1
+const MAX_REVIEW_FREQUENCY = 50
 const DEFAULT_REVIEW_FREQUENCY = 5
 
 function normalizeReviewFrequency(value: unknown): number {
   const n = Number(value)
-  if (!Number.isFinite(n) || n < MIN_REVIEW_FREQUENCY) {
+  if (!Number.isFinite(n)) {
     return DEFAULT_REVIEW_FREQUENCY
   }
-  return Math.min(MAX_REVIEW_FREQUENCY, Math.floor(n))
+  const floored = Math.floor(n)
+  return Math.max(MIN_REVIEW_FREQUENCY, Math.min(MAX_REVIEW_FREQUENCY, floored))
 }
 
 /**

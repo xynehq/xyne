@@ -184,10 +184,10 @@ export const SearchKnowledgeBaseInputSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(25)
+    .max(15)
     .optional()
     .describe(
-      "Maximum number of KB fragments to return (up to 25). Keep this tight for precision-first retrieval; raise it only when the user needs broader coverage.",
+      "Maximum number of KB fragments to return (up to 15). Keep this tight for precision-first retrieval; raise it only when the user needs broader coverage.",
     ),
   offset: z
     .number()

@@ -2763,9 +2763,13 @@ async function batchRankFragments(
       reasoningEmitter,
       ReasoningSteps.rankingFailed(strictNoCompliantCandidates)
     )
+    // Apply same metadata-based filtering as success-path fallback so strict mode
+    // does not reintroduce non-compliant fragments.
     selectedDocs = strictNoCompliantCandidates
       ? []
-      : rankingCandidates
+      : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
+        ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
+        : rankingCandidates
   }
   }
 

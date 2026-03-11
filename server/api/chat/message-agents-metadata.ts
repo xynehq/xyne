@@ -188,13 +188,6 @@ function buildFragmentMetadataSearchText(fragment: MinimalAgentFragment): string
   return `${metadataText}${confidenceText}`.toLowerCase()
 }
 
-/** Max content length sent to the ranking LLM. Ranking needs semantic signal, not full doc. */
-const RANKING_SNIPPET_MAX_CHARS = 1024
-
-export function rankingSnippet(text: string): string {
-  return text.slice(0, RANKING_SNIPPET_MAX_CHARS)
-}
-
 /**
  * Same as formatFragmentWithMetadata but with content truncated for ranking.
  * Ranking LLMs only need title + first 300–500 chars; full document adds noise.
@@ -214,14 +207,13 @@ export function formatFragmentWithMetadataForRanking(
     ? metadataEntries.map(([key, value]) => `- ${key}: ${value}`).join("\n")
     : "- unavailable"
   const rawContent = fragment.content?.trim() || "No content."
-  const content = rankingSnippet(rawContent)
   const toolContext =
     toolName ? `Retrieved by: ${toolName}${toolQuery ? ` | Query: "${toolQuery}"` : ""}\n` : ""
   return `index ${index + 1} {file context begins here...}
 ${toolContext}Metadata:
 ${metadataBlock}
 Content:
-${content}`
+${rawContent}`
 }
 
 export function formatFragmentWithMetadata(
