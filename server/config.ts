@@ -43,6 +43,12 @@ if (process.env.NODE_ENV !== "production") {
 let defaultFastModel: Models = "" as Models
 let defaultBestModel: Models = "" as Models
 let defaultBestModelAgenticMode: Models = "" as Models
+//Todo: GLM_FLASH fallback is correct for LiteLLM flow as this model is supported by LiteLLM. Non LiteLLM providers will fail set it's env value as the model ID which is suported by them modelProvider you choose.
+let consumerAgentDefaultModel: Models = Object.values(Models).includes(
+  process.env["CONSUMER_AGENT_DEFAULT_MODEL"] as Models,
+)
+  ? (process.env["CONSUMER_AGENT_DEFAULT_MODEL"] as Models)
+  : Models.GLM_FLASH
 let defaultDeepResearchModel: Models = Models.o3_Deep_Research
 let defaultWebSearchModel: Models = "" as Models
 let AwsAccessKey = ""
@@ -328,6 +334,7 @@ export default {
   userQueryUpdateInterval: 60 * 1000, // 1 minute
   defaultBestModel,
   defaultBestModelAgenticMode,
+  consumerAgentDefaultModel,
   defaultFastModel,
   defaultDeepResearchModel,
   defaultWebSearchModel,

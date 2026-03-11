@@ -379,11 +379,13 @@ export interface TemporalClassifier {
   filterQuery: string | null
 }
 
+export type RuntimeModelId = Models | string
+
 export interface ModelParams {
   max_new_tokens?: number
   top_p?: number
   temperature?: number
-  modelId: Models
+  modelId: RuntimeModelId
   systemPrompt?: string
   userCtx?: string
   stream: boolean
