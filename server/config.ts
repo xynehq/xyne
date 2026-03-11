@@ -43,6 +43,7 @@ if (process.env.NODE_ENV !== "production") {
 let defaultFastModel: Models = "" as Models
 let defaultBestModel: Models = "" as Models
 let defaultBestModelAgenticMode: Models = "" as Models
+//Todo: GLM_FLASH fallback is correct for LiteLLM flow as this model is supported by LiteLLM. Non LiteLLM providers will fail set it's env value as the model ID which is suported by them modelProvider you choose.
 let consumerAgentDefaultModel: Models = Object.values(Models).includes(
   process.env["CONSUMER_AGENT_DEFAULT_MODEL"] as Models,
 )

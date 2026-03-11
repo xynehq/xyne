@@ -1133,9 +1133,11 @@ export const AgentMessageApi = async (c: Context) => {
 
       if (modelId) {
         const convertedModelId = getModelValueFromLabel(modelId)
-        if (convertedModelId && isKnownModel(convertedModelId)) {
-          consumerSelectedModelId = convertedModelId
-          actualModelId = convertedModelId
+        if (convertedModelId) {
+          actualModelId = convertedModelId as string
+          if (isKnownModel(convertedModelId)) {
+            consumerSelectedModelId = convertedModelId
+          }
           isUsingUserPassedModel = true
           loggerWithChild({ email: email }).info(
             `[AgentMessageApi] Converted consumer model label "${modelId}" to value "${actualModelId}"`,
@@ -1232,14 +1234,15 @@ export const AgentMessageApi = async (c: Context) => {
         }
       }
     }
+    const resolvedConsumerModelId =
+      actualModelId ?? consumerSelectedModelId
     const consumerAnswerOrSearchModelId =
-      consumerSelectedModelId ||
+      resolvedConsumerModelId ||
       ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId
-    const consumerConversationClassifierModelId = config.defaultFastModel
     const consumerGivenContextModelId =
-      consumerSelectedModelId || config.defaultBestModel
+      resolvedConsumerModelId || config.defaultBestModel
     const consumerAssistantModelId =
-      consumerSelectedModelId ||
+      resolvedConsumerModelId ||
       ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId
 
     if (isUsingUserPassedModel) {
