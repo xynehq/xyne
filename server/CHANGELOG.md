@@ -1,3 +1,10 @@
+# [3.41.0](https://github.com/xynehq/xyne/compare/v3.40.10...v3.41.0) (2026-03-11)
+
+
+### Features
+
+* added chat memory and episodic memory for agent ([#1277](https://github.com/xynehq/xyne/issues/1277)) ([ef63160](https://github.com/xynehq/xyne/commit/ef63160afcbb96e7996f1a23e232b4ee50b92d98))
+
 ## [3.40.10](https://github.com/xynehq/xyne/compare/v3.40.9...v3.40.10) (2026-03-10)
 
 
