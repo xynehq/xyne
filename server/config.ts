@@ -43,6 +43,11 @@ if (process.env.NODE_ENV !== "production") {
 let defaultFastModel: Models = "" as Models
 let defaultBestModel: Models = "" as Models
 let defaultBestModelAgenticMode: Models = "" as Models
+let consumerAgentDefaultModel: Models = Object.values(Models).includes(
+  process.env["CONSUMER_AGENT_DEFAULT_MODEL"] as Models,
+)
+  ? (process.env["CONSUMER_AGENT_DEFAULT_MODEL"] as Models)
+  : Models.GLM_FLASH
 let defaultDeepResearchModel: Models = Models.o3_Deep_Research
 let defaultWebSearchModel: Models = "" as Models
 let AwsAccessKey = ""
@@ -315,6 +320,7 @@ export default {
   userQueryUpdateInterval: 60 * 1000, // 1 minute
   defaultBestModel,
   defaultBestModelAgenticMode,
+  consumerAgentDefaultModel,
   defaultFastModel,
   defaultDeepResearchModel,
   defaultWebSearchModel,

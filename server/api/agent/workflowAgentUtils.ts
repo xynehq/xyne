@@ -32,6 +32,7 @@ import { userAgentPermissions, users } from "@/db/schema"
 
 const {
   defaultBestModel,
+  defaultFastModel,
 } = config
 
 const Logger = getLogger(Subsystem.Server)
@@ -1004,7 +1005,7 @@ async function classifyUserQuery(
     userEmail,
     userMetadata,
     {
-      modelId: (modelId as Models) || defaultBestModel,
+      modelId: defaultFastModel,
       stream: true,
       json: true,
     },

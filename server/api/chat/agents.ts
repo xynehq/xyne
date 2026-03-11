@@ -1122,74 +1122,138 @@ export const AgentMessageApi = async (c: Context) => {
     let enableWebSearch = false
     let isDeepResearchEnabled = false
 
-    if (selectedModelConfig) {
-      try {
-        const config = JSON.parse(selectedModelConfig)
-        modelId = config.model
+    const isKnownModel = (candidate: string): candidate is Models =>
+      Object.values(Models).includes(candidate as Models)
 
-        // Handle new direct boolean format
-        isReasoningEnabled = config.reasoning === true
-        enableWebSearch = config.websearch === true
-        isDeepResearchEnabled = config.deepResearch === true
+    let actualModelId: string | undefined = undefined
+    let consumerSelectedModelId: Models | undefined = undefined
+    let isUsingUserPassedModel = false
+    if (via_apiKey) {
+      modelId = (body as { modelId?: string }).modelId
 
-        // Check capabilities - handle both array and object formats for backward compatibility
-        if (
-          config.capabilities &&
-          !isReasoningEnabled &&
-          !enableWebSearch &&
-          !isDeepResearchEnabled
-        ) {
-          if (Array.isArray(config.capabilities)) {
-            // Array format: ["reasoning", "websearch"]
-            isReasoningEnabled = config.capabilities.includes("reasoning")
-            enableWebSearch = config.capabilities.includes("websearch")
-            isDeepResearchEnabled = config.capabilities.includes("deepResearch")
-          } else if (typeof config.capabilities === "object") {
-            // Object format: { reasoning: true, websearch: false }
-            isReasoningEnabled = config.capabilities.reasoning === true
-            enableWebSearch = config.capabilities.websearch === true
-            isDeepResearchEnabled = config.capabilities.deepResearch === true
-          }
+      if (modelId) {
+        const convertedModelId = getModelValueFromLabel(modelId)
+        if (convertedModelId && isKnownModel(convertedModelId)) {
+          consumerSelectedModelId = convertedModelId
+          actualModelId = convertedModelId
+          isUsingUserPassedModel = true
+          loggerWithChild({ email: email }).info(
+            `[AgentMessageApi] Converted consumer model label "${modelId}" to value "${actualModelId}"`,
+          )
+        } else if (isKnownModel(modelId)) {
+          consumerSelectedModelId = modelId
+          actualModelId = modelId
+          isUsingUserPassedModel = true
+          loggerWithChild({ email: email }).info(
+            `Using consumer model ID "${modelId}" directly as it exists in Models enum`,
+          )
+        } else {
+          consumerSelectedModelId = config.consumerAgentDefaultModel
+          actualModelId = consumerSelectedModelId
+          loggerWithChild({ email: email }).warn(
+            `[AgentMessageApi] Invalid consumer model "${modelId}". Falling back to "${actualModelId}"`,
+          )
         }
-
+      } else {
+        consumerSelectedModelId = config.consumerAgentDefaultModel
+        actualModelId = consumerSelectedModelId
         loggerWithChild({ email: email }).info(
-          `[AgentMessageApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
+          `[AgentMessageApi] No consumer model provided, using "${actualModelId}"`,
         )
-      } catch (e) {
-        loggerWithChild({ email }).warn(
-          `[AgentMessageApi] Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`,
-        )
-        modelId = defaultBestModel as string // fallback
       }
     } else {
-      // Fallback if no model config provided
-      modelId = defaultBestModel as string
-      loggerWithChild({ email: email }).info(
-        "[AgentMessageApi] No model config provided, using default",
-      )
-    }
+      if (selectedModelConfig) {
+        try {
+          const config = JSON.parse(selectedModelConfig)
+          modelId = config.model
 
-    // Convert friendly model label to actual model value
-    let actualModelId: string | undefined = undefined
-    if (modelId) {
-      // Ensure we always have a string
-      const convertedModelId = getModelValueFromLabel(modelId)
-      if (convertedModelId) {
-        actualModelId = convertedModelId as string // Can be Models enum or string
-        loggerWithChild({ email: email }).info(
-          `[AgentMessageApi] Converted model label "${modelId}" to value "${actualModelId}"`,
-        )
-      } else if (Object.values(Models).includes(modelId as Models)) {
-        actualModelId = modelId // Use the raw model ID if it exists in Models enum
-        loggerWithChild({ email: email }).info(
-          `Using model ID "${modelId}" directly as it exists in Models enum`,
-        )
+          // Handle new direct boolean format
+          isReasoningEnabled = config.reasoning === true
+          enableWebSearch = config.websearch === true
+          isDeepResearchEnabled = config.deepResearch === true
+
+          // Check capabilities - handle both array and object formats for backward compatibility
+          if (
+            config.capabilities &&
+            !isReasoningEnabled &&
+            !enableWebSearch &&
+            !isDeepResearchEnabled
+          ) {
+            if (Array.isArray(config.capabilities)) {
+              // Array format: ["reasoning", "websearch"]
+              isReasoningEnabled = config.capabilities.includes("reasoning")
+              enableWebSearch = config.capabilities.includes("websearch")
+              isDeepResearchEnabled = config.capabilities.includes("deepResearch")
+            } else if (typeof config.capabilities === "object") {
+              // Object format: { reasoning: true, websearch: false }
+              isReasoningEnabled = config.capabilities.reasoning === true
+              enableWebSearch = config.capabilities.websearch === true
+              isDeepResearchEnabled = config.capabilities.deepResearch === true
+            }
+          }
+
+          loggerWithChild({ email: email }).info(
+            `[AgentMessageApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
+          )
+        } catch (e) {
+          loggerWithChild({ email }).warn(
+            `[AgentMessageApi] Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`,
+          )
+          modelId = defaultBestModel as string // fallback
+        }
       } else {
-        actualModelId = modelId
-        loggerWithChild({ email: email }).error(
-          `Invalid model: ${modelId}. Model not found in label mappings or Models enum. Using default`,
+        // Fallback if no model config provided
+        modelId = defaultBestModel as string
+        loggerWithChild({ email: email }).info(
+          "[AgentMessageApi] No model config provided, using default",
         )
       }
+
+      if (modelId) {
+        // Ensure we always have a string
+        const convertedModelId = getModelValueFromLabel(modelId)
+        if (convertedModelId) {
+          actualModelId = convertedModelId as string // Can be Models enum or string
+          isUsingUserPassedModel = true
+          loggerWithChild({ email: email }).info(
+            `[AgentMessageApi] Converted model label "${modelId}" to value "${actualModelId}"`,
+          )
+        } else if (Object.values(Models).includes(modelId as Models)) {
+          actualModelId = modelId // Use the raw model ID if it exists in Models enum
+          isUsingUserPassedModel = true
+          loggerWithChild({ email: email }).info(
+            `Using model ID "${modelId}" directly as it exists in Models enum`,
+          )
+        } else {
+          actualModelId = modelId
+          loggerWithChild({ email: email }).error(
+            `Invalid model: ${modelId}. Model not found in label mappings or Models enum. Using default`,
+          )
+        }
+      }
+    }
+    const consumerAnswerOrSearchModelId =
+      consumerSelectedModelId ||
+      ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId
+    const consumerConversationClassifierModelId = config.defaultFastModel
+    const consumerGivenContextModelId =
+      consumerSelectedModelId || config.defaultBestModel
+    const consumerAssistantModelId =
+      consumerSelectedModelId ||
+      ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId
+
+    if (isUsingUserPassedModel) {
+      loggerWithChild({
+        email,
+        agentId: agentId || "unknown",
+      }).info(
+        {
+          requestedModelId: modelId,
+          resolvedModelId: actualModelId,
+          viaApiKey: via_apiKey,
+        },
+        "[AgentMessageApi] Using user-passed model",
+      )
     }
 
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
@@ -1693,9 +1757,7 @@ export const AgentMessageApi = async (c: Context) => {
                   imageCitations: imageCitations,
                   message: processMessage(answer, citationMap),
                   thinking: thinking,
-                  modelId:
-                    ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
-                      .modelId,
+                  modelId: consumerAssistantModelId,
                   cost: totalCost.toString(),
                   tokensUsed: totalTokens,
                 })
@@ -1804,6 +1866,7 @@ export const AgentMessageApi = async (c: Context) => {
                 [],
                 agentPromptForLLM,
                 isMsgWithAttachments,
+                consumerGivenContextModelId,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -1936,9 +1999,7 @@ export const AgentMessageApi = async (c: Context) => {
                   imageCitations: imageCitations,
                   message: processMessage(answer, citationMap),
                   thinking: thinking,
-                  modelId:
-                    ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
-                      .modelId,
+                  modelId: consumerAssistantModelId,
                   cost: totalCost.toString(),
                   tokensUsed: totalTokens,
                 })
@@ -2090,9 +2151,7 @@ export const AgentMessageApi = async (c: Context) => {
                   message,
                   ctx,
                   {
-                    modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .modelId,
+                    modelId: consumerAnswerOrSearchModelId,
                     stream: true,
                     json: false,
                     agentPrompt: agentPromptForLLM,
@@ -2111,9 +2170,7 @@ export const AgentMessageApi = async (c: Context) => {
                     ctx,
                     userMetadata,
                     {
-                      modelId:
-                        ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                          .modelId,
+                      modelId: consumerAnswerOrSearchModelId,
                       stream: true,
                       json: true,
                       reasoning:
@@ -2137,6 +2194,7 @@ export const AgentMessageApi = async (c: Context) => {
               let citations: Citation[] = []
               let imageCitations: ImageCitation[] = []
               let citationMap: Record<number, number> = {}
+              let assistantResponseModelId: Models = consumerAssistantModelId
               let queryFilters = {
                 apps: [],
                 entities: [],
@@ -2519,6 +2577,7 @@ export const AgentMessageApi = async (c: Context) => {
                 ragSpan.end()
               } else if (parsed.answer) {
                 answer = parsed.answer
+                assistantResponseModelId = (actualModelId as Models) || config.defaultBestModel
               }
 
               if (answer || wasStreamClosedPrematurely) {
@@ -2547,9 +2606,7 @@ export const AgentMessageApi = async (c: Context) => {
                   imageCitations: imageCitations,
                   message: processMessage(answer, citationMap),
                   thinking: thinking,
-                  modelId:
-                    ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
-                      .modelId,
+                  modelId: assistantResponseModelId,
                   cost: totalCost.toString(),
                   tokensUsed: totalTokens,
                 })
@@ -2874,6 +2931,7 @@ export const AgentMessageApi = async (c: Context) => {
             [],
             agentPromptForLLM,
             isMsgWithAttachments,
+            consumerGivenContextModelId,
           )
 
           // Collect internal stream
