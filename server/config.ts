@@ -106,11 +106,11 @@ const AccessTokenCookie = "access-token"
 // Four-layer memory architecture (agentic RAG)
 export const MEMORY_CONFIG = {
   WORKING_MEMORY_MESSAGES: parseInt(
-    process.env.WORKING_MEMORY_MESSAGES || "5",
+    process.env.WORKING_MEMORY_MESSAGES || "6",
     10,
   ),
-  MAX_CHAT_MEMORY_CHUNKS: 5,
-  MAX_EPISODIC_MEMORIES: 5,
+  MAX_CHAT_MEMORY_CHUNKS: 6,
+  MAX_EPISODIC_MEMORIES: 6,
 }
 export const IMAGE_CONTEXT_CONFIG = {
   enabled: true, // Enable image context tracking by default

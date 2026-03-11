@@ -44,6 +44,12 @@ function isNoiseUserMessage(msg: string): boolean {
   return t.length < 10 || NOISE_USER_PATTERN.test(t)
 }
 
+/** True if the message has an error (errorMessage set). Exclude such messages from indexing and episodic extraction so we get correct user/assistant pairs and no error text. */
+function isErrorMessage(m: SelectMessage): boolean {
+  const err = m.errorMessage
+  return typeof err === "string" && err.trim().length > 0
+}
+
 /**
  * Index a single conversation turn to Vespa.
  * DocId uses the Postgres message PKs so IDs are globally unique across compactions.
@@ -187,8 +193,13 @@ export async function maybeCompactAndIndex(params: {
   const toArchive = allMessages.slice(0, -N)
   const workingWindow = allMessages.slice(-N)
 
-  // 1. Queue chat memory indexing for each archived turn (pass turn timestamp for recency ranking)
-  const turns = pairMessagesIntoTurns(toArchive)
+  // Exclude error messages so we only index valid user/assistant pairs and don't feed error text to episodic extraction
+  const toArchiveWithoutErrors = toArchive.filter((m) => !isErrorMessage(m))
+
+  // 1. Queue chat memory indexing for each archived turn (pass turn timestamp for recency ranking); skip turns where the user message has an error
+  const turns = pairMessagesIntoTurns(toArchive).filter(
+    (t) => !isErrorMessage(t.user),
+  )
   for (const { user, assistant } of turns) {
     const createdAt =
       assistant.createdAt instanceof Date
@@ -211,8 +222,8 @@ export async function maybeCompactAndIndex(params: {
     )
   }
 
-  // 2. Queue episodic memory extraction for the archived messages only (include thinking for assistants)
-  const messagesToProcess = toArchive
+  // 2. Queue episodic memory extraction for the archived messages only (include thinking for assistants); use messages without errors so we don't feed error text and pairs stay correct
+  const messagesToProcess = toArchiveWithoutErrors
     .filter(
       (m) =>
         m.messageRole === MessageRole.User ||

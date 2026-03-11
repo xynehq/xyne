@@ -59,7 +59,7 @@ const MAX_MEMORY_LENGTH = 300
 /** Cap conversation length so the model gets recent context and has room to output JSON. */
 const MAX_CONVERSATION_CHARS = 14_000
 const DUPLICATE_MEMORY_SEARCH_LIMIT = 3
-/** Treat as duplicate if vector_score or combined_bm25 from matchfeatures is at least this (close to 1). */
+/** Treat as duplicate if vector_score (from closeness) from matchfeatures is at least this (0–1). BM25 is unbounded and must not be compared to this threshold. */
 const DUPLICATE_SIMILARITY_THRESHOLD = 0.9
 
 const EXTRACTION_PROMPT = `Extract important long-term memories from this conversation.
@@ -140,18 +140,11 @@ async function isDuplicateMemory(params: {
     )
     const children = response.root?.children ?? []
     for (const c of children) {
-      const f = (c.fields ?? {}) as VespaEpisodicMemorySearch & {
-        matchfeatures?: { vector_score?: number; combined_bm25?: number }
-      }
+      const f = (c.fields ?? {}) as VespaEpisodicMemorySearch
       const mf = f.matchfeatures
       if (!mf) continue
       const vectorScore = typeof mf.vector_score === "number" ? mf.vector_score : 0
-      const combinedBm25 =
-        typeof mf.combined_bm25 === "number" ? mf.combined_bm25 : 0
-      if (
-        vectorScore >= DUPLICATE_SIMILARITY_THRESHOLD ||
-        combinedBm25 >= DUPLICATE_SIMILARITY_THRESHOLD
-      ) {
+      if (vectorScore >= DUPLICATE_SIMILARITY_THRESHOLD) {
         return true
       }
     }
