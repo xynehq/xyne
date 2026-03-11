@@ -48,6 +48,7 @@ import type {
   ModelParams,
   QueryRouterLLMResponse,
   QueryRouterResponse,
+  RuntimeModelId,
   TemporalClassifier,
 } from "@/ai/types"
 import {
@@ -386,15 +387,17 @@ const getProviderMap = (): Partial<Record<AIProviders, LLMProvider>> => {
   return providerMap
 }
 
-export const getProviderTypeByModel = (modelId: Models): AIProviders | null => {
-  return ModelToProviderMap[modelId]
+export const getProviderTypeByModel = (
+  modelId: RuntimeModelId,
+): AIProviders | null => {
+  return ModelToProviderMap[modelId as Models] ?? null
 }
 
-export const getProviderByModel = (modelId: Models): LLMProvider => {
+export const getProviderByModel = (modelId: RuntimeModelId): LLMProvider => {
   const ProviderMap = getProviderMap()
 
-  const providerType = ModelToProviderMap[modelId]
-    ? ModelToProviderMap[modelId]
+  const providerType = ModelToProviderMap[modelId as Models]
+    ? ModelToProviderMap[modelId as Models]
     : OllamaModel
       ? AIProviders.Ollama
       : TogetherAIModel
@@ -444,9 +447,11 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
   return provider
 }
 
-export const getAISDKProviderByModel = (modelId: Models): ProviderV2 => {
-  const providerType = ModelToProviderMap[modelId]
-    ? ModelToProviderMap[modelId]
+export const getAISDKProviderByModel = (
+  modelId: RuntimeModelId,
+): ProviderV2 => {
+  const providerType = ModelToProviderMap[modelId as Models]
+    ? ModelToProviderMap[modelId as Models]
     : OllamaModel
       ? AIProviders.Ollama
       : TogetherAIModel

@@ -2197,7 +2197,7 @@ export const AgentMessageApi = async (c: Context) => {
               let citations: Citation[] = []
               let imageCitations: ImageCitation[] = []
               let citationMap: Record<number, number> = {}
-              let assistantResponseModelId: Models = consumerAssistantModelId
+              let assistantResponseModelId: string = consumerAssistantModelId
               let queryFilters = {
                 apps: [],
                 entities: [],
