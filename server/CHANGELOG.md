@@ -1,3 +1,10 @@
+# [3.43.0](https://github.com/xynehq/xyne/compare/v3.42.0...v3.43.0) (2026-03-11)
+
+
+### Features
+
+* setting fastModel for convAnswerSearch and using userProvidedModel ([#1279](https://github.com/xynehq/xyne/issues/1279)) ([1eb4fae](https://github.com/xynehq/xyne/commit/1eb4faecd20c696d6ce3af38f837412a4ee07e15))
+
 # [3.42.0](https://github.com/xynehq/xyne/compare/v3.41.0...v3.42.0) (2026-03-11)
 
 
