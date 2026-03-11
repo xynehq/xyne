@@ -1,0 +1,105 @@
+schema chat_memory {
+  document chat_memory {
+    field docId type string {
+      indexing: attribute | summary
+    }
+    field chatId type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field workspaceId type string {
+      indexing: attribute | summary
+    }
+    field email type string {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field turnNumber type int {
+      indexing: attribute | summary
+    }
+    field userMessage type string {
+      indexing: summary
+    }
+    field assistantMessage type string {
+      indexing: summary
+    }
+    field thinking type string {
+      indexing: summary
+    }
+    field text type string {
+      indexing: index | summary | attribute
+      index { enable-bm25 }
+    }
+    field topics type array<string> {
+      indexing: attribute | summary
+    }
+    field toolsUsed type array<string> {
+      indexing: attribute | summary
+    }
+    field permissions type array<string> {
+      indexing: attribute | summary
+    }
+    field app type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+    field entity type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      match: exact
+    }
+    field createdAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+    field updatedAt type long {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+  }
+
+  field text_embeddings type tensor<bfloat16>(v[DIMS]) {
+    indexing: input text | embed | attribute | index
+    attribute { distance-metric: angular }
+  }
+
+  fieldset default {
+    fields: text
+  }
+
+  rank-profile initial {
+    inputs {
+      query(e) tensor<bfloat16>(v[DIMS])
+      query(alpha) double
+      query(recency_decay_rate) double
+    }
+    constants {
+      ONE_YEAR_IN_SECONDS: 31536000
+      MAX_DOC_DECAY: 0.5
+    }
+    function document_age() {
+      expression: max(0, (now() - (attribute(createdAt) / 1000)) / ONE_YEAR_IN_SECONDS)
+    }
+    function doc_recency() {
+      expression: max(1 / (1 + query(recency_decay_rate) * sqrt(document_age)), MAX_DOC_DECAY)
+    }
+    function vector_score() {
+      expression: closeness(field, text_embeddings)
+    }
+    function combined_bm25() {
+      expression: bm25(text)
+    }
+  }
+
+  rank-profile default_native inherits initial {
+    first-phase {
+      expression: ((query(alpha) * vector_score) + ((1 - query(alpha)) * combined_bm25)) * doc_recency
+    }
+    match-features {
+      vector_score
+      combined_bm25
+      doc_recency
+    }
+  }
+}

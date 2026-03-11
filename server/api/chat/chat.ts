@@ -2286,7 +2286,7 @@ async function* generateAnswerFromGivenContext(
     let content = await answerContextMap(
       v as VespaSearchResults,
       userMetadata,
-      i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
+      i < chunksPerDocument.length ? chunksPerDocument[i] : maxDefaultSummary,
       true,
       allowChunkCitations,
       builtUserQuery,
@@ -2858,7 +2858,7 @@ export async function* generateAnswerFromDualRag(
     let content = await answerContextMap(
       v as VespaSearchResults,
       userMetadata,
-      i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
+      i < chunksPerDocument.length ? chunksPerDocument[i] : maxDefaultSummary,
       true,
       allowChunkCitations,
       builtUserQuery,

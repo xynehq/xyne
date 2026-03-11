@@ -1,4 +1,5 @@
 import type { Context } from "hono"
+import { createHash } from "node:crypto"
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import path, { dirname, join } from "node:path"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -232,6 +233,9 @@ export const handleAttachmentUpload = async (c: Context) => {
     
     for (const file of files) {
       const fileBuffer = await file.arrayBuffer()
+      const fileHash = createHash("sha256")
+        .update(Buffer.from(fileBuffer))
+        .digest("hex")
       const fileId = `attf_${crypto.randomUUID()}`
       let vespaId = fileId
       const ext = file.name.split(".").pop()?.toLowerCase() || ""
@@ -286,6 +290,7 @@ export const handleAttachmentUpload = async (c: Context) => {
             }),
             createdAt: Date.now(),
             updatedAt: Date.now(),
+            fileHash,
           }
 
           await insert(vespaDoc, fileSchema)
@@ -383,6 +388,7 @@ export const handleAttachmentUpload = async (c: Context) => {
               }),
               createdAt: Date.now(),
               updatedAt: Date.now(),
+              fileHash,
             }
 
             await insert(vespaDoc, fileSchema)

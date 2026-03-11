@@ -256,3 +256,24 @@ export const getInactiveChats = async (
     .offset(offset)
   return inactiveChats
 }
+
+/**
+ * Returns external IDs of all chats belonging to the given agent (and optionally scoped by email).
+ * Used to scope episodic memory search to chats relevant to the current agent.
+ */
+export const getChatExternalIdsByAgentId = async (
+  trx: TxnOrClient,
+  agentId: string,
+  email: string,
+): Promise<string[]> => {
+  const conditions = [
+    eq(chats.agentId, agentId),
+    isNull(chats.deletedAt),
+    eq(chats.email, email),
+  ]
+  const rows = await trx
+    .select({ externalId: chats.externalId })
+    .from(chats)
+    .where(and(...conditions))
+  return rows.map((r) => r.externalId)
+}

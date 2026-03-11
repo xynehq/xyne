@@ -29,11 +29,11 @@ import {
   getAgentByExternalIdWithPermissionCheck,
 } from "@/db/agent"
 import { storeAttachmentMetadata } from "@/db/attachment"
-import { insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
+import { getChatExternalIdsByAgentId, insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
 import { db } from "@/db/client"
 import { getConnectorById } from "@/db/connector"
-import { getChatMessagesUntilCompaction, insertMessage } from "@/db/message"
+import { getChatMessagesWithAuth, insertMessage } from "@/db/message"
 import { getUserPersonalizationByEmail } from "@/db/personalization"
 import {
   ChatType,
@@ -190,6 +190,10 @@ import {
   safeDecodeURIComponent,
   searchToCitation,
 } from "./utils"
+import { retrieveEpisodicMemories } from "@/services/episodicMemoryRetriever"
+import { retrieveRelevantChatHistory } from "@/services/chatMemoryRetriever"
+import { searchChatHistoryTool } from "./tools/chatMemory"
+import { maybeCompactAndIndex } from "@/services/chatMemoryIndexer"
 
 export { __messageAgentsMetadataInternals } from "./message-agents-metadata"
 
@@ -1148,6 +1152,49 @@ function selectImagesForFinalSynthesis(context: AgentRunContext): {
   }
 }
 
+/** Synthetic tool name for initial memory context (episodic + chat memory). */
+const INITIAL_TOOL_MESSAGE = "initialToolMessage"
+/** Synthetic tool name for attachment fragments context. */
+const ATTACHMENT_TOOL_MESSAGE = "attachmentToolMessage"
+
+/**
+ * Builds a synthetic tool-result message for memory context (episodic + chat memory).
+ * Model receives this as low-privilege tool output, not system instructions.
+ */
+function buildInitialToolMessage(options: {
+  episodicMemoriesText?: string
+  chatMemoryText?: string
+}): JAFMessage | null {
+  const parts: string[] = []
+  if (options.episodicMemoriesText?.trim()) {
+    parts.push(
+      "## Relevant Past Experiences\n",
+      options.episodicMemoriesText.trim(),
+      "\nTo search within a past experience, use searchChatHistory with the chatId shown for that experience.\n",
+    )
+  }
+  if (options.chatMemoryText?.trim()) {
+    parts.push("## Earlier Conversation Context\n", options.chatMemoryText.trim(), "\n")
+  }
+  if (parts.length === 0) return null
+  const content = parts.join("")
+  const resultPayload = ToolResponse.success({ content })
+  const envelope = {
+    status: "executed",
+    result: JSON.stringify(resultPayload),
+    tool_name: INITIAL_TOOL_MESSAGE,
+    message: "Memory context prepared.",
+  }
+  return {
+    role: "tool",
+    content: JSON.stringify(envelope),
+  }
+}
+
+/**
+ * Builds a synthetic tool-result message for attachment fragments.
+ * Model receives this as low-privilege tool output, not system instructions.
+ */
 function buildAttachmentToolMessage(
   fragments: MinimalAgentFragment[],
   summary: string,
@@ -1156,7 +1203,7 @@ function buildAttachmentToolMessage(
   const envelope = {
     status: "executed",
     result: JSON.stringify(resultPayload),
-    tool_name: "user_attachment_context",
+    tool_name: ATTACHMENT_TOOL_MESSAGE,
     message: "Attachment context prepared.",
   }
   return {
@@ -1502,11 +1549,21 @@ async function ensureChatAndPersistUserMessage(
       String(params.email),
       {},
     )
-    const conversationHistory = await getChatMessagesUntilCompaction(
+    const allMessages = await getChatMessagesWithAuth(
       tx,
       String(incomingChatId),
       String(params.email),
     )
+    const conversationHistory = await maybeCompactAndIndex({
+      trx: tx,
+      chatId: String(incomingChatId),
+      email: String(params.email),
+      workspaceId: workspaceExternalId,
+      allMessages,
+      chatIdInternal: chat.id,
+      userId,
+      modelId: (params.modelId as Models) || defaultBestModel,
+    })
 
     const messageInsert = {
       chatId: chat.id,
@@ -1623,7 +1680,8 @@ async function prepareInitialAttachmentContext(
   try {
     const combinedSearchResponse: VespaSearchResult[] = []
     let chunksPerDocument: number[] = []
-    const targetChunks = 200
+    const targetChunks = config.maxChunksPerPage
+    const maxSummaryChunks = config.maxDefaultSummary
 
     if (fileIds && fileIds.length > 0) {
       const fileSearchSpan = span.startSpan("file_search")
@@ -1746,7 +1804,7 @@ async function prepareInitialAttachmentContext(
           userMetadata,
           query,
           allowChunkCitations,
-          idx < chunksPerDocument.length ? chunksPerDocument[idx] : 0,
+          idx < chunksPerDocument.length ? chunksPerDocument[idx] : maxSummaryChunks,
           precomputedDbContext,
         ),
       ),
@@ -3157,6 +3215,7 @@ function buildInternalToolAdapters(): Tool<unknown, AgentRunContext>[] {
     searchGlobalTool,
     lsKnowledgeBaseTool,
     searchKnowledgeBaseTool,
+    searchChatHistoryTool,
     ...googleTools,
     getSlackRelatedMessagesTool,
     fallbackTool,
@@ -3857,7 +3916,7 @@ function buildAgentInstructions(
       ? [
           "",
           "<tools_in_cooldown>",
-          "The following tools are temporarily disabled due to repeated failures. Do not call them; use other tools or data sources instead.",
+          "The following tools are temporarily disabled due to repeated failures. Use other tools or data sources instead.",
           ...toolsInCooldown.map(
             ({ name, info }) =>
               `- ${name}: failed ${info.count}x (last: ${info.lastError || "error"}), ${info.cooldownUntilTurn - context.turnCount} turn(s) remaining.`
@@ -3917,11 +3976,14 @@ function buildAgentInstructions(
     `Workspace: ${context.user.workspaceId}`,
     "</context>",
     "",
+  ]
+
+  instructionLines.push(
     "<available_tools>",
     toolDescriptions,
     "</available_tools>",
     cooldownBlock,
-  ]
+  )
 
   if (agentSection.trim()) {
     instructionLines.push(agentSection.trim(), "")
@@ -4509,6 +4571,62 @@ export async function MessageAgents(c: Context): Promise<Response> {
           },
         )
 
+        // Episodic: when inside an agent (!delegationEnabled), search within this agent's chats; when delegation (no agent), search globally.
+        // Chat memory: always search within current chat only (no chatId => empty from vespa-ts).
+        const episodicChatIds: string[] | undefined = delegationEnabled
+          ? undefined
+          : resolvedAgentId
+            ? await getChatExternalIdsByAgentId(db, resolvedAgentId, email)
+            : undefined
+
+        // Memory retrieval is best-effort; failures should not block message handling
+        let episodicMemories: Awaited<ReturnType<typeof retrieveEpisodicMemories>> = []
+        let chatMemoryChunks: Awaited<ReturnType<typeof retrieveRelevantChatHistory>> = []
+        try {
+          const [episodicResults, chatMemoryResults] = await Promise.all([
+            retrieveEpisodicMemories({
+              query: message,
+              email,
+              workspaceId: String(workspaceId),
+              chatIds: episodicChatIds,
+              limit: 5,
+            }),
+            retrieveRelevantChatHistory({
+              query: message,
+              chatId: String(chatRecord.externalId),
+              email,
+              workspaceId: String(workspaceId),
+              limit: 5,
+            }),
+          ])
+          episodicMemories = episodicResults
+          chatMemoryChunks = chatMemoryResults
+        } catch (memoryError) {
+          // Log error but continue processing without memory context
+          loggerWithChild({ email }).warn(
+            memoryError,
+            "[MessageAgents] Memory retrieval failed, continuing without memory context",
+          )
+        }
+        agentContext.episodicMemoriesText =
+          episodicMemories.length > 0
+            ? episodicMemories
+                .map(
+                  (m) =>
+                    `- [${m.memoryType}] ${m.memoryText} (chatId: ${m.sourceChatId})`,
+                )
+                .join("\n")
+            : undefined
+        agentContext.chatMemoryText =
+          chatMemoryChunks.length > 0
+            ? chatMemoryChunks
+                .map(
+                  (c) =>
+                    `User: ${c.userMessage}\nAssistant thinking: ${c.assistantThinking}\nAssistant: ${c.assistantMessage}`,
+                )
+                .join("\n\n")
+            : undefined
+
         // Build MCP connector tool map using the legacy agentic semantics
         const finalToolsMap: FinalToolsList = {}
         type FinalToolsEntry = FinalToolsList[string]
@@ -4871,17 +4989,28 @@ export async function MessageAgents(c: Context): Promise<Response> {
             initialAttachmentContext.fragments,
             MIN_TURN_NUMBER,
           )
+          agentContext.chat.metadata = {
+            ...agentContext.chat.metadata,
+            initialAttachmentPhase: true,
+            initialAttachmentSummary: initialAttachmentContext.summary,
+          }
+        }
+
+        // Pass memory then attachments as low-privilege synthetic tool results
+        const initialToolMsg = buildInitialToolMessage({
+          episodicMemoriesText: agentContext.episodicMemoriesText,
+          chatMemoryText: agentContext.chatMemoryText,
+        })
+        if (initialToolMsg) {
+          initialSyntheticMessages.push(initialToolMsg)
+        }
+        if (initialAttachmentContext) {
           initialSyntheticMessages.push(
             buildAttachmentToolMessage(
               initialAttachmentContext.fragments,
               initialAttachmentContext.summary,
             ),
           )
-          agentContext.chat.metadata = {
-            ...agentContext.chat.metadata,
-            initialAttachmentPhase: true,
-            initialAttachmentSummary: initialAttachmentContext.summary,
-          }
         }
 
         // Build dynamic instructions
@@ -6544,6 +6673,28 @@ async function runDelegatedAgentWithMessageAgents(
       },
     )
 
+    // Episodic memory for delegated agent initial turn (same as main agent: scope by this agent's chats)
+    const delegatedAgentChatIds = await getChatExternalIdsByAgentId(
+      db,
+      params.agentId,
+      params.userEmail,
+    )
+    const episodicMemoriesForDelegate = await retrieveEpisodicMemories({
+      query: params.query,
+      email: params.userEmail,
+      workspaceId: params.workspaceExternalId,
+      chatIds: delegatedAgentChatIds,
+      limit: 5,
+    })
+    if (episodicMemoriesForDelegate.length > 0) {
+      agentContext.episodicMemoriesText = episodicMemoriesForDelegate
+        .map(
+          (m) =>
+            `- [${m.memoryType}] ${m.memoryText} (chatId: ${m.sourceChatId})`,
+        )
+        .join("\n")
+    }
+
     const gatheredFragmentsKeys = new Set<string>()
 
     const instructions = () => {
@@ -6572,11 +6723,16 @@ async function runDelegatedAgentWithMessageAgents(
     const traceId = generateTraceId()
     const message = params.query
 
+    const delegatedInitialToolMsg = buildInitialToolMessage({
+      episodicMemoriesText: agentContext.episodicMemoriesText,
+      chatMemoryText: agentContext.chatMemoryText,
+    })
     const initialMessages: JAFMessage[] = [
       {
         role: "user",
         content: message,
       },
+      ...(delegatedInitialToolMsg ? [delegatedInitialToolMsg] : []),
     ]
 
     const runState: JAFRunState<AgentRunContext> = {

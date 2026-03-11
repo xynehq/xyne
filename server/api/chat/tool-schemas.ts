@@ -435,6 +435,13 @@ export type GetSlackUserProfileInput = z.infer<
   typeof GetSlackUserProfileInputSchema
 >
 
+export const SearchChatHistoryInputSchema = z.object({
+  query: z.string().describe("Search query to find relevant earlier messages in the conversation"),
+  chatId: z.string().optional().describe("Conversation to search. Use the chatId from 'Relevant Past Experiences' when searching a past conversation; omit to search the current conversation only. Without a valid chatId no results are returned."),
+  limit: z.number().min(1).max(10).optional().describe("Max number of conversation messages to return"),
+})
+export type SearchChatHistoryInput = z.infer<typeof SearchChatHistoryInputSchema>
+
 // ============================================================================
 // AGENT TOOL SCHEMAS
 // ============================================================================
@@ -751,6 +758,15 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
       "Get a user's Slack profile by email address. Use when you need identity, channel, or profile metadata before deeper Slack search.",
     category: ToolCategory.Metadata,
     inputSchema: GetSlackUserProfileInputSchema,
+    outputSchema: ToolOutputSchema,
+  },
+
+  searchChatHistory: {
+    name: XyneTools.searchChatHistory,
+    description:
+      "Search earlier parts of this conversation for relevant context. Use when you need to recall what was said or decided in prior messages.",
+    category: ToolCategory.Search,
+    inputSchema: SearchChatHistoryInputSchema,
     outputSchema: ToolOutputSchema,
   },
 
