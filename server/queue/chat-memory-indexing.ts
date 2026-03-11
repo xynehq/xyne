@@ -19,6 +19,8 @@ export interface ChatMemoryIndexingJob {
   /** Assistant reasoning/thinking for richer embedding. */
   assistantThinking?: string
   toolsUsed?: string[]
+  /** Turn timestamp (ms) for recency ranking; use assistant.createdAt, fallback user.createdAt. */
+  createdAt?: number
 }
 
 export async function queueChatMemoryIndexing(params: {
@@ -31,6 +33,8 @@ export async function queueChatMemoryIndexing(params: {
   assistantMessage: string
   assistantThinking?: string
   toolsUsed?: string[]
+  /** Turn timestamp (ms) for recency ranking; use assistant.createdAt, fallback user.createdAt. */
+  createdAt?: number
 }): Promise<void> {
   const job: ChatMemoryIndexingJob = {
     chatId: params.chatId,
@@ -42,6 +46,7 @@ export async function queueChatMemoryIndexing(params: {
     assistantMessage: params.assistantMessage,
     assistantThinking: params.assistantThinking,
     toolsUsed: params.toolsUsed,
+    createdAt: params.createdAt,
   }
   try {
     await boss.send(CHAT_MEMORY_INDEXING_QUEUE_NAME, job, {

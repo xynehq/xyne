@@ -16,13 +16,35 @@ import {
   type VespaEpisodicMemory,
   type VespaEpisodicMemorySearch,
 } from "@xyne/vespa-ts/types"
-import { createId } from "@paralleldrive/cuid2"
 import type { EpisodicMemoryMessage } from "@/queue/episodic-memory-extraction"
-import { Models } from "@/ai/types"
+import { createHash } from "crypto"
 
 const Logger = getLogger(Subsystem.AI).child({
   module: "episodic-memory-extractor",
 })
+
+/** Extract JSON string from fenced code blocks or return as-is. */
+function normalizeFencedJson(raw: string | undefined): string {
+  const s = (raw ?? "").trim()
+  if (!s) return ""
+  const codeBlock = /^```(?:json)?\s*([\s\S]*?)\s*```$/m
+  const m = s.match(codeBlock)
+  return m ? m[1].trim() : s
+}
+
+/** Normalize memory text for deterministic hashing: trim, lowercase, collapse whitespace. */
+function normalizeMemoryText(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+/** Generate deterministic docId from workspaceId, email, and memory text. */
+function generateEpisodicMemoryDocId(workspaceId: string, email: string, memoryText: string): string {
+  const normalized = normalizeMemoryText(memoryText)
+  const hash = createHash("sha256")
+    .update(`${workspaceId}:${email}:${normalized}`)
+    .digest("hex")
+  return `em_${hash.slice(0, 24)}`
+}
 
 const MEMORY_TYPES = [
   "preference",
@@ -95,10 +117,6 @@ function buildConversationText(messages: EpisodicMemoryMessage[]): string {
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => {
       const content = m.content.trim()
-      const thinking = m.thinking?.trim()
-      if (m.role === "assistant" && thinking && thinking.length > 0) {
-        return `assistant (thinking): ${thinking}\nassistant: ${content}`
-      }
       return `${m.role}: ${content}`
     })
     .join("\n\n")
@@ -184,11 +202,11 @@ export async function extractEpisodicMemories(params: {
 
   try {
     const { text: rawResponse } = await getProviderByModel(
-      Models.GLM_LATEST,
+      config.defaultBestModel,
     ).converse(
       [{ role: "user", content: [{ text: prompt }] }],
       {
-        modelId: Models.GLM_LATEST,
+        modelId: config.defaultBestModel,
         max_new_tokens: 1024,
         temperature: 0.2,
         stream: false,
@@ -199,13 +217,15 @@ export async function extractEpisodicMemories(params: {
     const items = parseEpisodicMemoriesResponse(rawResponse)
     if (items.length === 0) {
       try {
-        JSON.parse((rawResponse ?? "").trim())
+        // Use the same fenced-JSON normalization as parseEpisodicMemoriesResponse
+        const normalizedJson = normalizeFencedJson(rawResponse)
+        JSON.parse(normalizedJson)
       } catch {
+        // Log only length, not rawPreview (avoid emitting chat-derived sensitive text)
         Logger.warn(
           {
             chatId,
             rawLength: rawResponse?.length ?? 0,
-            rawPreview: rawResponse?.slice(0, 200),
           },
           "Episodic extraction: invalid JSON from model",
         )
@@ -214,14 +234,14 @@ export async function extractEpisodicMemories(params: {
     }
 
     if (items.length === 0) {
+      // Log only length, not rawPreview (avoid emitting chat-derived sensitive text)
       Logger.info(
         {
           chatId,
           conversationLength: conversationText.length,
           rawLength: rawResponse?.length ?? 0,
-          rawPreview: rawResponse?.slice(0, 500),
         },
-        "Episodic extraction: model returned no memories; logging raw response for debugging",
+        "Episodic extraction: model returned no memories",
       )
     }
 
@@ -282,7 +302,9 @@ export async function extractEpisodicMemories(params: {
           break
       }
 
-      const docId = createId()
+      // Use deterministic docId based on workspaceId + email + normalized memory text
+      // to make the operation idempotent and prevent duplicates on retries/overlaps
+      const docId = generateEpisodicMemoryDocId(workspaceId, email, memory)
       const document: VespaEpisodicMemory = {
         docId,
         workspaceId,

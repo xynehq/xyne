@@ -11,8 +11,6 @@ export const EPISODIC_MEMORY_QUEUE_NAME = "episodic-memory-extraction"
 export interface EpisodicMemoryMessage {
   role: string
   content: string
-  /** For assistant messages: reasoning/thinking for richer extraction. */
-  thinking?: string
 }
 
 export interface EpisodicMemoryExtractionJob {

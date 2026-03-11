@@ -23,8 +23,6 @@ export async function startEpisodicMemoryWorker() {
           const payload = job.data as EpisodicMemoryExtractionJob
           const { chatId, email, workspaceId, messagesToProcess } = payload
           try {
-            // Use the messages passed in the job — only the archived batch,
-            // not the entire conversation history.
             await extractEpisodicMemories({
               chatId,
               email,
@@ -40,10 +38,11 @@ export async function startEpisodicMemoryWorker() {
               {
                 error: error instanceof Error ? error.message : String(error),
                 chatId,
+                jobId: job.id,
               },
               "Episodic memory extraction job failed",
             )
-            throw error
+            // Do not rethrow: allow batch to resolve so other jobs are not requeued
           }
         }),
       )

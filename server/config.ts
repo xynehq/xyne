@@ -107,7 +107,7 @@ const AccessTokenCookie = "access-token"
 export const MEMORY_CONFIG = {
   WORKING_MEMORY_MESSAGES: parseInt(
     process.env.WORKING_MEMORY_MESSAGES || "5",
-    5,
+    10,
   ),
   MAX_CHAT_MEMORY_CHUNKS: 5,
   MAX_EPISODIC_MEMORIES: 5,

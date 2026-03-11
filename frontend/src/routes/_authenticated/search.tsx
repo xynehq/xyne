@@ -168,6 +168,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   const loadingRef = useRef(false)
 
   const tabJustSwitchedRef = useRef(false)
+  const requestIdRef = useRef(0)
   const handleTabChange = (tab: "all" | "kb") => {
     tabJustSwitchedRef.current = true
     setSearchTab(tab)
@@ -349,7 +350,12 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   const handleSearch = async (newOffset = offset, tabOverride?: "all" | "kb") => {
     if (!activeQuery) return
     setAutocompleteResults([])
-    const effectiveTab = tabOverride ?? searchTab
+    const effectiveTab =tabOverride ?? searchTab
+    
+    // Increment request ID to track this specific search request
+    requestIdRef.current += 1
+    const currentRequestId = requestIdRef.current
+    
     try {
       // TODO: figure out when lastUpdated changes and only
       // then make it true or when app,entity is not present
@@ -410,6 +416,12 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
 
       if (response.ok) {
         const data: SearchResponse = await response.json()
+        
+        // Only update state if this is still the most recent request
+        if (currentRequestId !== requestIdRef.current) {
+          return
+        }
+        
         const newResults = data.results ?? []
 
         if (newOffset > 0) {
@@ -419,8 +431,6 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         }
 
         setAutocompleteResults([])
-        setTimeout(() => setAutocompleteResults([]), 300)
-        setTimeout(() => setAutocompleteResults([]), 1000)
 
         navigate({
           to: "/search",

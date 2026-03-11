@@ -60,6 +60,8 @@ export async function indexConversationTurn(params: {
   /** Assistant reasoning/thinking included in text for embedding. */
   assistantThinking?: string
   toolsUsed?: string[]
+  /** Turn timestamp (ms) for recency ranking; use assistant.createdAt, fallback user.createdAt. */
+  createdAt?: number
 }): Promise<void> {
   const {
     chatId,
@@ -71,6 +73,7 @@ export async function indexConversationTurn(params: {
     assistantMessage,
     assistantThinking,
     toolsUsed = [],
+    createdAt: paramCreatedAt,
   } = params
 
   if (isNoiseUserMessage(userMessage)) {
@@ -89,7 +92,11 @@ export async function indexConversationTurn(params: {
     cleanedThinking && cleanedThinking.length > 0
       ? `User: ${cleanedUser}\nAssistant thinking: ${cleanedThinking}\nAssistant: ${cleanedAssistant}`
       : `User: ${cleanedUser}\nAssistant: ${cleanedAssistant}`
-  const now = Date.now()
+  // Use turn's actual timestamp for recency ranking; fallback to now only when not provided
+  const turnTs =
+    paramCreatedAt != null && Number.isFinite(paramCreatedAt)
+      ? paramCreatedAt
+      : Date.now()
   // Stable, globally-unique docId using both message PKs
   const docId = `${chatId}:u${userMessageId}:a${assistantMessageId}`
 
@@ -108,8 +115,8 @@ export async function indexConversationTurn(params: {
     permissions: [email],
     app: Apps.ChatMemory,
     entity: ChatMemoryEntity.ConversationTurn,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: turnTs,
+    updatedAt: turnTs,
   }
 
   await insertWithRetry(document, chatMemorySchema)
@@ -159,7 +166,6 @@ export async function maybeCompactAndIndex(params: {
   allMessages: SelectMessage[]
   chatIdInternal: number
   userId: number
-  workspaceExternalId: string
   modelId: string
 }): Promise<SelectMessage[]> {
   const {
@@ -170,7 +176,6 @@ export async function maybeCompactAndIndex(params: {
     allMessages,
     chatIdInternal,
     userId,
-    workspaceExternalId,
     modelId,
   } = params
 
@@ -182,9 +187,15 @@ export async function maybeCompactAndIndex(params: {
   const toArchive = allMessages.slice(0, -N)
   const workingWindow = allMessages.slice(-N)
 
-  // 1. Queue chat memory indexing for each archived turn
+  // 1. Queue chat memory indexing for each archived turn (pass turn timestamp for recency ranking)
   const turns = pairMessagesIntoTurns(toArchive)
   for (const { user, assistant } of turns) {
+    const createdAt =
+      assistant.createdAt instanceof Date
+        ? assistant.createdAt.getTime()
+        : user.createdAt instanceof Date
+          ? user.createdAt.getTime()
+          : undefined
     queueChatMemoryIndexing({
       chatId,
       workspaceId,
@@ -194,6 +205,7 @@ export async function maybeCompactAndIndex(params: {
       userMessage: user.message ?? "",
       assistantMessage: assistant.message ?? "",
       assistantThinking: assistant.thinking ?? undefined,
+      createdAt,
     }).catch((err) =>
       Logger.error(err, "Failed to queue chat memory indexing"),
     )
@@ -231,7 +243,7 @@ export async function maybeCompactAndIndex(params: {
   await insertMessage(trx, {
     chatId: chatIdInternal,
     userId,
-    workspaceExternalId,
+    workspaceExternalId: workspaceId,
     chatExternalId: chatId,
     messageRole: MessageRole.User,
     email,
