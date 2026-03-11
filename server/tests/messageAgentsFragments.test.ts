@@ -59,9 +59,13 @@ const createMockContext = (): AgentRunContext => ({
   recentImages: [],
   currentTurnArtifacts: {
     fragments: [],
+    unrankedFragmentsByTool: new Map(),
     expectations: [],
     toolOutputs: [],
     images: [],
+    executionToolsCalled: 0,
+    todoWriteCalled: false,
+    turnStartedAt: Date.now(),
   },
   turnCount: 1,
   totalLatency: 0,
@@ -142,13 +146,13 @@ describe("message-agents context tracking", () => {
       context.turnCount
     )
 
-    expect(context.allFragments).toHaveLength(1)
-    expect(context.currentTurnArtifacts.fragments).toHaveLength(1)
-    expect(context.turnFragments.get(1)).toHaveLength(1)
-    expect(context.currentTurnArtifacts.images).toHaveLength(1)
-    expect(context.currentTurnArtifacts.images[0].fileName).toBe(
-      imageRef.fileName
-    )
+    // With deferred ranking, afterToolExecutionHook stores fragments in
+    // unrankedFragmentsByTool instead of allFragments. Ranking + recording
+    // into allFragments happens at turn-end via batchRankFragments.
+    const entry = context.currentTurnArtifacts.unrankedFragmentsByTool.get("searchGlobal")
+    expect(entry?.fragments).toHaveLength(1)
+    expect(entry?.query).toBe("ARR")
+    expect(context.currentTurnArtifacts.executionToolsCalled).toBe(1)
   })
 
   test("excludedIds injection uses seen source docIds rather than fragment ids", async () => {
@@ -195,7 +199,11 @@ describe("message-agents context tracking", () => {
       context.turnCount
     )
 
-    expect(Array.from(context.seenDocuments)).toEqual(["doc-1"])
+    // With deferred ranking, fragments are stored in unrankedFragmentsByTool; seenDocuments
+    // is populated at turn-end when ranked fragments are recorded. So after the hook we only
+    // have the entry in unrankedFragmentsByTool. Simulate turn-end having run so excludedIds
+    // can be verified: add the docId to seenDocuments (as turn-end recording would).
+    context.seenDocuments.add("doc-1")
 
     const preparedArgs = await beforeToolExecutionHook(
       "searchGlobal",

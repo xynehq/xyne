@@ -124,6 +124,7 @@ import type {
   ToolExpectation,
   ToolExpectationAssignment,
   ToolFailureInfo,
+  UnrankedFragmentWithToolContext,
 } from "./agent-schemas"
 import { ReviewResultSchema, ToolExpectationSchema } from "./agent-schemas"
 import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
@@ -137,7 +138,7 @@ import {
   buildAgentSystemPromptContextBlock,
   enforceMetadataConstraintsOnSelection,
   extractMetadataConstraintsFromUserMessage,
-  formatFragmentWithMetadata,
+  formatFragmentWithMetadataForRanking,
   formatFragmentsWithMetadata,
   rankFragmentsByMetadataConstraints,
   sanitizeAgentSystemPromptSnapshot,
@@ -194,6 +195,7 @@ import { retrieveEpisodicMemories } from "@/services/episodicMemoryRetriever"
 import { retrieveRelevantChatHistory } from "@/services/chatMemoryRetriever"
 import { searchChatHistoryTool } from "./tools/chatMemory"
 import { maybeCompactAndIndex } from "@/services/chatMemoryIndexer"
+import { runTurnEndPipeline } from "./turn-lifecycle"
 
 export { __messageAgentsMetadataInternals } from "./message-agents-metadata"
 
@@ -210,12 +212,8 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
 const MIN_TURN_NUMBER = 0
 
-/**
- * When true, the agent performs review as part of its system prompt (self-review)
- * and no separate review LLM is called. Saves cost and latency; review behavior
- * is incorporated into the main agent instructions.
- */
-const USE_AGENT_SELF_REVIEW = config.useAgentSelfReview || false
+// when true we do fragments ranking and filtering with llm call
+const USE_AGENTIC_FILTERING = config.useAgenticFiltering || true
 
 const DEFAULT_REVIEW_FREQUENCY = 5
 const MIN_REVIEW_FREQUENCY = 1
@@ -235,9 +233,13 @@ const mutableAgentContext = (
 
 const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
   fragments: [],
+  unrankedFragmentsByTool: new Map(),
   expectations: [],
   toolOutputs: [],
   images: [],
+  executionToolsCalled: 0,
+  todoWriteCalled: false,
+  turnStartedAt: Date.now(),
 })
 
 const reviewsAllowed = (context: AgentRunContext): boolean =>
@@ -1428,14 +1430,11 @@ async function handleReviewOutcome(
     },
   )
 
-  // Only surface the review to the user if something interesting happened —
-  // a plain "proceed" with no anomalies is internal noise.
-  if (recommendation !== "proceed" || hasAnomalies) {
-    await emitReasoningEvent(
-      reasoningEmitter,
-      ReasoningSteps.reviewCompleted(recommendation, iteration)
-    )
-  }
+  // Always emit review complete so the user sees the time-taking step finished.
+  await emitReasoningEvent(
+    reasoningEmitter,
+    ReasoningSteps.reviewCompleted(recommendation, iteration),
+  )
 
   if (hasAnomalies) {
     Logger.debug(
@@ -2016,19 +2015,22 @@ export async function afterToolExecutionHook(
         : undefined,
   }
 
-  // 2. Add tool call to history
-  context.toolCallHistory.push(record)
-  logContextMutation(
-    context,
-    "[afterToolExecutionHook] Added tool execution record to history",
-    {
-      toolName,
-      turnNumber: effectiveTurnNumber,
-      recordStatus: record.status,
-      recordError: record.error,
-      historyLength: context.toolCallHistory.length,
-    },
-  )
+  // 2. Add to history (toDoWrite is plan bookkeeping, not execution)
+  if (toolName !== XyneTools.toDoWrite) {
+    logContextMutation(
+      context,
+      "[afterToolExecutionHook] Added tool execution record to history",
+      {
+        toolName,
+        turnNumber: effectiveTurnNumber,
+        recordStatus: record.status,
+        recordError: record.error,
+        historyLength: context.toolCallHistory.length,
+      },
+    )
+    context.toolCallHistory.push(record)
+    context.currentTurnArtifacts.executionToolsCalled++
+  }
 
   const toolFragments: MinimalAgentFragment[] = []
   const addToolFragments = (fragments: MinimalAgentFragment[]) => {
@@ -2119,12 +2121,17 @@ export async function afterToolExecutionHook(
     "[afterToolExecutionHook] Context extraction completed",
   )
 
+  // ── Fragment collection (deferred ranking) ──────────────────────────
+  // Instead of ranking per-tool (N LLM calls), we collect all unranked
+  // fragments here and defer ranking to a single batch call at turn-end
+  // via the turn-lifecycle pipeline. This eliminates N-1 redundant LLM
+  // calls and gives the ranker full cross-tool context.
   if (Array.isArray(contexts) && contexts.length > 0) {
     const filteredContexts = contexts.filter((c: MinimalAgentFragment) => {
       const key = getFragmentDedupKey(c)
       return !key || !gatheredFragmentsKeys.has(key)
     })
-    // LOG: Filtering results
+
     loggerWithChild({ email: context.user.email }).info(
       {
         toolName,
@@ -2136,325 +2143,37 @@ export async function afterToolExecutionHook(
     )
 
     if (filteredContexts.length > 0) {
+      // Mark dedup keys as seen
+      for (const c of filteredContexts) {
+        const key = getFragmentDedupKey(c)
+        if (key) gatheredFragmentsKeys.add(key)
+      }
+
       await emitReasoningEvent(
         reasoningEmitter,
         ReasoningSteps.documentsFound(filteredContexts.length, toolName)
       )
 
-      const metadataConstraints =
-        extractMetadataConstraintsFromUserMessage(userMessage)
-      const {
-        rankedCandidates,
-        hasConstraints: hasMetadataConstraints,
-        hasCompliantCandidates,
-      } = rankFragmentsByMetadataConstraints(
-        filteredContexts,
-        metadataConstraints,
+      // Store unranked fragments keyed by tool — ranking happens at turn-end (dedupe by key before adding)
+      const toolQuery = extractToolQuery(toolName, args as Record<string, unknown>) ?? ""
+      const existing = context.currentTurnArtifacts.unrankedFragmentsByTool.get(toolName)
+      const mergedFragments = mergeFragmentLists(
+        existing?.fragments ?? [],
+        filteredContexts
       )
-      const rankingCandidates = rankedCandidates.map(
-        (candidate) => candidate.fragment,
-      )
-      const strictNoCompliantCandidates =
-        hasMetadataConstraints &&
-        metadataConstraints.strict &&
-        !hasCompliantCandidates
+      context.currentTurnArtifacts.unrankedFragmentsByTool.set(toolName, {
+        query: existing?.query ?? toolQuery,
+        fragments: mergedFragments,
+      })
 
-      const contextStrings = rankingCandidates.map(
-        (fragment: MinimalAgentFragment, index: number) =>
-          formatFragmentWithMetadata(fragment, index),
-      )
-
-      // LOG: Prepared context strings for ranking
       loggerWithChild({ email: context.user.email }).debug(
         {
           toolName,
-          contextStringsCount: contextStrings.length,
-          userMessage: userMessage.slice(0, 200),
-          hasMetadataConstraints,
-          metadataIncludeTerms: metadataConstraints.includeTerms,
-          metadataExcludeTerms: metadataConstraints.excludeTerms,
-          metadataStrict: metadataConstraints.strict,
-          compliantCandidateCount: rankedCandidates.filter((v) => v.compliant)
-            .length,
-          contextStringsSample: contextStrings
-            .slice(0, 2)
-            .map((s) => s.slice(0, 150)),
+          deferredCount: filteredContexts.length,
+          totalDeferredForTool: (existing?.fragments?.length ?? 0) + filteredContexts.length,
         },
-        "[afterToolExecutionHook] Prepared context strings for select_best_documents",
+        "[afterToolExecutionHook] Fragments deferred to turn-end batch ranking"
       )
-
-      if (hasMetadataConstraints) {
-        if (strictNoCompliantCandidates) {
-          await emitReasoningEvent(
-            reasoningEmitter,
-            ReasoningSteps.metadataNoMatch(toolName)
-          )
-        } else {
-          await emitReasoningEvent(
-            reasoningEmitter,
-            ReasoningSteps.metadataFilterApplied(hasCompliantCandidates, toolName)
-          )
-        }
-      }
-
-      try {
-        // LOG: Calling extractBestDocumentIndexes
-        const rankingModelId =
-          (context.modelId as Models) || config.defaultBestModel
-        loggerWithChild({ email: context.user.email }).debug(
-          {
-            toolName,
-            userMessage,
-            contextStringsCount: contextStrings.length,
-            modelId: rankingModelId,
-          },
-          "[afterToolExecutionHook][select_best_documents] CALLING extractBestDocumentIndexes",
-        )
-
-        // Use extractBestDocumentIndexes to filter to best documents
-        const selectionSpan = getTracer("chat").startSpan(
-          "select_best_documents",
-        )
-        selectionSpan.setAttribute("tool_name", toolName)
-        selectionSpan.setAttribute("context_count", contextStrings.length)
-        let bestDocIndexes: number[] = []
-        try {
-          const rankingMessages = withAgentSystemPromptMessage(
-            messagesWithNoErrResponse,
-            context.dedicatedAgentSystemPrompt,
-          )
-          const rankingSystemPrompt = extractBestDocumentsPrompt(
-            userMessage,
-            contextStrings,
-          )
-          loggerWithChild({ email: context.user.email }).debug(
-            {
-              toolName,
-              modelId: rankingModelId,
-              rankingSystemPrompt,
-              rankingMessages,
-            },
-            "[afterToolExecutionHook][select_best_documents] FINAL LLM PAYLOAD",
-          )
-          selectionSpan.setAttribute(
-            "has_agent_system_prompt_snapshot",
-            !!sanitizeAgentSystemPromptSnapshot(
-              context.dedicatedAgentSystemPrompt,
-            ),
-          )
-          bestDocIndexes = await extractBestDocumentIndexes(
-            userMessage,
-            contextStrings,
-            {
-              modelId: rankingModelId,
-              json: false,
-              stream: false,
-            },
-            rankingMessages,
-          )
-          selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
-        } catch (error) {
-          selectionSpan.setAttribute("error", true)
-          selectionSpan.setAttribute("error_message", getErrorMessage(error))
-          throw error
-        } finally {
-          selectionSpan.end()
-        }
-        // LOG: extractBestDocumentIndexes response
-        loggerWithChild({ email: context.user.email }).debug(
-          {
-            toolName,
-            bestDocIndexes,
-            bestDocIndexesCount: bestDocIndexes.length,
-            bestDocIndexesType: typeof bestDocIndexes,
-            isArray: Array.isArray(bestDocIndexes),
-          },
-          "[afterToolExecutionHook][select_best_documents] RESPONSE from extractBestDocumentIndexes",
-        )
-
-        if (bestDocIndexes.length > 0) {
-          let selectedDocs: MinimalAgentFragment[] = []
-
-          bestDocIndexes.forEach((idx) => {
-            if (idx >= 1 && idx <= rankingCandidates.length) {
-              const doc: MinimalAgentFragment = rankingCandidates[idx - 1]
-              selectedDocs.push(doc)
-            }
-          })
-
-          selectedDocs = enforceMetadataConstraintsOnSelection(
-            selectedDocs,
-            rankedCandidates,
-            metadataConstraints,
-          )
-
-          if (selectedDocs.length === 0) {
-            const fallbackWhenSelectionEmpty = strictNoCompliantCandidates
-              ? []
-              : hasMetadataConstraints &&
-                  metadataConstraints.strict &&
-                  hasCompliantCandidates
-                ? rankedCandidates
-                    .filter((candidate) => candidate.compliant)
-                    .map((candidate) => candidate.fragment)
-                : rankingCandidates
-            loggerWithChild({ email: context.user.email }).debug(
-              {
-                toolName,
-                fallbackContextsCount: fallbackWhenSelectionEmpty.length,
-              },
-              "[afterToolExecutionHook] No contexts survived selection enforcement; using metadata-aware fallback",
-            )
-            addToolFragments(fallbackWhenSelectionEmpty)
-          } else {
-            // LOG: Document selection results
-            loggerWithChild({ email: context.user.email }).debug(
-              {
-                toolName,
-                selectedDocsCount: selectedDocs.length,
-                selectedDocIds: selectedDocs.map((d) => d.id),
-                selectedDocTitles: selectedDocs.map(
-                  (d) => d.source.title || "untitled",
-                ),
-              },
-              "[afterToolExecutionHook][select_best_documents] Selected documents after filtering",
-            )
-
-            await emitReasoningEvent(
-              reasoningEmitter,
-              ReasoningSteps.documentsFiltered(selectedDocs.length, toolName)
-            )
-
-            let fragmentsForResult = selectedDocs
-
-            if (IMAGE_CONTEXT_CONFIG.enabled && selectedDocs.length > 0) {
-              const vespaLikeResults = selectedDocs.map((doc, idx) => ({
-                id: doc.id,
-                relevance: 0,
-                fields: { docId: doc.source.docId },
-              })) as unknown as VespaSearchResult[]
-
-              const combinedContext = selectedDocs
-                .map((doc) => doc.content)
-                .join("\n")
-
-              const { imageFileNames: extractedImages } = extractImageFileNames(
-                combinedContext,
-                vespaLikeResults,
-              )
-
-              if (extractedImages.length > 0) {
-                const turnForImages = Math.max(
-                  context.turnCount ?? MIN_TURN_NUMBER,
-                  MIN_TURN_NUMBER,
-                )
-                const imageSpan = getTracer("chat").startSpan(
-                  "tool_image_extraction",
-                )
-                imageSpan.setAttribute("tool_name", toolName)
-                imageSpan.setAttribute("turn_number", turnForImages)
-                imageSpan.setAttribute(
-                  "extracted_count",
-                  extractedImages.length,
-                )
-                imageSpan.setAttribute(
-                  "image_names_preview",
-                  extractedImages.slice(0, 5).join(","),
-                )
-
-                // LOG: Before attaching images
-                loggerWithChild({ email: context.user.email }).debug(
-                  {
-                    toolName,
-                    extractedImagesCount: extractedImages.length,
-                    extractedImages,
-                    turnForImages,
-                    selectedDocsCount: selectedDocs.length,
-                  },
-                  "[afterToolExecutionHook] Extracted images from fragments - preparing to attach",
-                )
-
-                fragmentsForResult = attachImagesToFragments(
-                  selectedDocs,
-                  extractedImages,
-                  {
-                    turnNumber: turnForImages,
-                    sourceToolName: toolName,
-                    isUserAttachment: false,
-                  },
-                )
-                imageSpan.setAttribute(
-                  "fragments_with_images",
-                  fragmentsForResult.filter(
-                    (fragment) => fragment.images && fragment.images.length > 0,
-                  ).length,
-                )
-                imageSpan.end()
-
-                // LOG: After attaching images
-                loggerWithChild({ email: context.user.email }).debug(
-                  {
-                    toolName,
-                    attachedImagesCount: extractedImages.length,
-                    fragmentsWithImages: fragmentsForResult.filter(
-                      (f) => f.images && f.images.length > 0,
-                    ).length,
-                  },
-                  `[afterToolExecutionHook] Tracked ${extractedImages.length} image reference${
-                    extractedImages.length === 1 ? "" : "s"
-                  } from ${toolName} on turn ${turnForImages}`,
-                )
-              }
-            }
-
-            addToolFragments(fragmentsForResult)
-          }
-        } else {
-          const metadataFilteredFallback = strictNoCompliantCandidates
-            ? []
-            : hasMetadataConstraints &&
-                metadataConstraints.strict &&
-                hasCompliantCandidates
-              ? rankedCandidates
-                  .filter((candidate) => candidate.compliant)
-                  .map((candidate) => candidate.fragment)
-              : rankingCandidates
-          loggerWithChild({ email: context.user.email }).debug(
-            {
-              toolName,
-              filteredContextsCount: filteredContexts.length,
-              fallbackContextsCount: metadataFilteredFallback.length,
-            },
-            strictNoCompliantCandidates
-              ? "[afterToolExecutionHook] Document ranking returned no results and strict metadata constraints had no compliant contexts"
-              : "[afterToolExecutionHook] Document ranking returned no results; retaining all filtered contexts",
-          )
-          addToolFragments(metadataFilteredFallback)
-        }
-      } catch (error) {
-        // LOG: Error in document ranking
-        loggerWithChild({ email: context.user.email }).error(
-          {
-            toolName,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-          },
-          "[afterToolExecutionHook][select_best_documents] ERROR in document ranking",
-        )
-        await emitReasoningEvent(
-          reasoningEmitter,
-          ReasoningSteps.rankingFailed(strictNoCompliantCandidates, toolName)
-        )
-        const fallbackContexts =
-          strictNoCompliantCandidates
-            ? []
-            : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
-            ? rankedCandidates
-                .filter((candidate) => candidate.compliant)
-                .map((candidate) => candidate.fragment)
-            : rankingCandidates
-        addToolFragments(fallbackContexts)
-      }
     }
   }
 
@@ -2900,6 +2619,189 @@ function buildDefaultReviewPayload(notes?: string): ReviewResult {
   }
 }
 
+/**
+ * Batch fragment ranking — runs a SINGLE extractBestDocumentIndexes LLM call
+ * for ALL fragments collected across all tools in this turn.
+ *
+ * This replaces the old per-tool ranking (N LLM calls per turn → 1 LLM call).
+ * Called from the turn-lifecycle pipeline at turn-end.
+ */
+async function batchRankFragments(
+  context: AgentRunContext,
+  allUnrankedWithToolContext: UnrankedFragmentWithToolContext[],
+  userMessage: string,
+  messagesWithNoErrResponse: Message[],
+  turnNumber: number,
+  reasoningEmitter?: ReasoningEmitter
+): Promise<MinimalAgentFragment[]> {
+  if (allUnrankedWithToolContext.length === 0) return []
+
+  const allUnranked = allUnrankedWithToolContext.map((e) => e.fragment)
+  const fragmentKeyToToolContext = new Map<string, { toolName: string; toolQuery: string }>()
+  for (const { fragment, toolName, toolQuery } of allUnrankedWithToolContext) {
+    const key = getFragmentDedupKey(fragment) || fragment.id || ""
+    if (!fragmentKeyToToolContext.has(key)) {
+      fragmentKeyToToolContext.set(key, { toolName, toolQuery })
+    }
+  }
+
+  const metadataConstraints = extractMetadataConstraintsFromUserMessage(userMessage)
+  const {
+    rankedCandidates,
+    hasConstraints: hasMetadataConstraints,
+    hasCompliantCandidates,
+  } = rankFragmentsByMetadataConstraints(allUnranked, metadataConstraints)
+  const rankingCandidates = rankedCandidates.map((c) => c.fragment)
+  const strictNoCompliantCandidates =
+    hasMetadataConstraints && metadataConstraints.strict && !hasCompliantCandidates
+
+  /** Skip ranking LLM when fragments already fit context; use all and record. */
+  const RANKING_CONTEXT_WINDOW_CAPACITY = 8
+  const skipRankingLLM = rankingCandidates.length <= RANKING_CONTEXT_WINDOW_CAPACITY
+
+  if (!skipRankingLLM) {
+    await emitReasoningEvent(
+      reasoningEmitter,
+      ReasoningSteps.documentsFilteringStarted(),
+    )
+    if (hasMetadataConstraints) {
+      if (strictNoCompliantCandidates) {
+        await emitReasoningEvent(reasoningEmitter, ReasoningSteps.metadataNoMatch())
+      } else {
+        await emitReasoningEvent(
+          reasoningEmitter,
+          ReasoningSteps.metadataFilterApplied(hasCompliantCandidates)
+        )
+      }
+    }
+  }
+
+  let selectedDocs: MinimalAgentFragment[] = []
+
+  if (skipRankingLLM) {
+    selectedDocs = strictNoCompliantCandidates
+      ? []
+      : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
+        ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
+        : rankingCandidates
+  } else {
+    const contextStrings = rankingCandidates.map(
+      (fragment: MinimalAgentFragment, index: number) => {
+        const key = getFragmentDedupKey(fragment) || fragment.id || ""
+        const toolContext = fragmentKeyToToolContext.get(key)
+        return formatFragmentWithMetadataForRanking(
+          fragment,
+          index,
+          toolContext?.toolName,
+          toolContext?.toolQuery
+        )
+      }
+    )
+
+  try {
+    const rankingModelId = (context.modelId as Models) || config.defaultBestModel
+    const selectionSpan = getTracer("chat").startSpan("batch_select_best_documents")
+    selectionSpan.setAttribute("total_unranked", allUnrankedWithToolContext.length)
+    selectionSpan.setAttribute("context_count", contextStrings.length)
+
+    let bestDocIndexes: number[] = []
+    try {
+      const rankingMessages = withAgentSystemPromptMessage(
+        messagesWithNoErrResponse,
+        context.dedicatedAgentSystemPrompt
+      )
+      selectionSpan.setAttribute(
+        "has_agent_system_prompt_snapshot",
+        !!sanitizeAgentSystemPromptSnapshot(context.dedicatedAgentSystemPrompt)
+      )
+      bestDocIndexes = await extractBestDocumentIndexes(
+        userMessage,
+        contextStrings,
+        { modelId: rankingModelId, json: false, stream: false },
+        rankingMessages
+      )
+      selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
+    } catch (error) {
+      selectionSpan.setAttribute("error", true)
+      selectionSpan.setAttribute("error_message", getErrorMessage(error))
+      throw error
+    } finally {
+      selectionSpan.end()
+    }
+
+    if (bestDocIndexes.length > 0) {
+      bestDocIndexes.forEach((idx) => {
+        if (idx >= 1 && idx <= rankingCandidates.length) {
+          selectedDocs.push(rankingCandidates[idx - 1])
+        }
+      })
+      selectedDocs = enforceMetadataConstraintsOnSelection(
+        selectedDocs,
+        rankedCandidates,
+        metadataConstraints
+      )
+    }
+
+    if (selectedDocs.length === 0) {
+      // Fallback: use all candidates (or compliant-only if strict)
+      selectedDocs = strictNoCompliantCandidates
+        ? []
+        : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
+        ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
+        : rankingCandidates
+    }
+  } catch (error) {
+    loggerWithChild({ email: context.user.email }).error(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        totalUnranked: allUnranked.length,
+      },
+      "[batchRankFragments] Ranking failed — falling back to all candidates"
+    )
+    await emitReasoningEvent(
+      reasoningEmitter,
+      ReasoningSteps.rankingFailed(strictNoCompliantCandidates)
+    )
+    selectedDocs = strictNoCompliantCandidates
+      ? []
+      : rankingCandidates
+  }
+  }
+
+  if (selectedDocs.length > 0) {
+    await emitReasoningEvent(
+      reasoningEmitter,
+      ReasoningSteps.documentsFiltered(selectedDocs.length)
+    )
+
+    // Extract images from selected documents
+    if (IMAGE_CONTEXT_CONFIG.enabled) {
+      const vespaLikeResults = selectedDocs.map((doc) => ({
+        id: doc.id,
+        relevance: 0,
+        fields: { docId: doc.source.docId },
+      })) as unknown as VespaSearchResult[]
+      const combinedContext = selectedDocs.map((doc) => doc.content).join("\n")
+      const { imageFileNames: extractedImages } = extractImageFileNames(
+        combinedContext,
+        vespaLikeResults
+      )
+      if (extractedImages.length > 0) {
+        selectedDocs = attachImagesToFragments(selectedDocs, extractedImages, {
+          turnNumber,
+          sourceToolName: "batch_ranking",
+          isUserAttachment: false,
+        })
+      }
+    }
+
+    // Record into context
+    recordFragmentsForContext(context, selectedDocs, turnNumber)
+  }
+
+  return selectedDocs
+}
+
 export function buildReviewPromptFromContext(
   context: AgentRunContext,
   options?: {
@@ -3326,6 +3228,10 @@ function createToDoWriteTool(): Tool<unknown, AgentRunContext> {
       const activeSubTaskId = initializePlanState(plan)
       mutableContext.plan = plan
       mutableContext.currentSubTask = activeSubTaskId
+
+      // Track that toDoWrite was called this turn (for no-op detection)
+      mutableContext.currentTurnArtifacts.todoWriteCalled = true
+
       Logger.debug(
         {
           email: context.user.email,
@@ -3845,53 +3751,22 @@ function buildAttachmentDirective(context: AgentRunContext): string {
 
   return `
 # ATTACHMENT-FIRST TURN
-- ${summaryLine}
-1. First inspect the attachment fragments below.
-2. If the attachments contain ALL information needed to fully answer the user's request, answer directly using citations.
-3. If the attachments are PARTIAL or INCOMPLETE:
-   - You MUST NOT stop with "insufficient information".
-   - You MUST call tools to gather additional context.
-   - First call toDoWrite to plan how to retrieve the missing information, then execute the required tools.
-4. Only state that information is unavailable if:
-   - The attachments do not contain the answer AND
-   - Available tools cannot retrieve it.
-Do NOT prematurely conclude that the attachments lack information. Always attempt further retrieval when tools are available.
+${summaryLine}
+
+Attachment handling:
+1. Inspect the attachment fragments below.
+2. If the attachments fully answer the user's request → respond using citations (see format below).
+3. If the attachments are partial or incomplete → create a plan with toDoWrite and run the tools needed to fill the gaps in the same turn.
+4. State that information is unavailable only after the attachments and available tools have been used and the answer still cannot be found.
 
 # ATTACHMENT CONTEXT FRAGMENTS
 ${fragmentsContent}
 
-# Guidelines for Response
-1. Data Interpretation:
-   - Use ONLY the provided files and their chunks as your knowledge base.
-   - Treat every file header \`Index {docId} ...\` as the start of a new document.
-   - Treat every square bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
-2. Response Structure:
-   - Start with the most relevant facts from the chunks across files.
-   - Keep order chronological when it helps comprehension.
-   - Every factual statement MUST cite the exact chunk it came from using the format:
-     K[docId_chunkIndex]
-     where:
-       - \`docId\` is taken from the file header line ("Index {docId} ...").
-       - \`chunkIndex\` is the square bracketed number prefixed on that chunk within the same file.
-   - Examples:
-     - Single citation: "X is true K[3_12]."
-     - Two citations in one sentence (from different files or chunks): "X K[3_12] and Y K[1_0]."
-   - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
-3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
-   - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
-   - Don't change the format of the citation; it must be exactly K[docId_chunkIndex]. docId first then chunkIndex, separated by an underscore, all within square brackets and prefixed with K.
-   - Even if there is only one document index (e.g., Index 1), you must still include the document index in the citation (e.g., K[1_3]).
-   - Never cite only the document index or only the chunk index; both must be included in the citation.
-   - Place the citation immediately after the relevant claim.
-   - Do NOT group indices inside one set of brackets (WRONG: "K[3_12,1_7]").
-   - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[3_12] ... K[1_0]".
-   - Only cite information that appears verbatim or is directly inferable from the cited chunk.
-   - If you cannot ground a claim to a specific chunk, do not make the claim.
-
-4. Quality Assurance:
-   - Cross-check across multiple chunks/files when available and briefly note inconsistencies if they exist.
-   - Keep tone professional and concise.
-   - Acknowledge gaps if the provided chunks don't contain enough detail.
+# Response and citations
+- Use the provided files and chunks as your knowledge base. Treat \`Index {docId} ...\` as the start of a document and [0], [1], [2] as chunk indices within that document.
+- Cite every factual statement with the exact chunk: K[docId_chunkIndex] (docId from the file header, chunkIndex from the bracketed number). Example: "X is true K[3_12]." Use at most 1-2 citations per sentence; for two chunks use two citations: "... K[3_12] ... K[1_0]".
+- Place the citation immediately after the claim. Only cite information that appears in or is directly inferable from the cited chunk; if you cannot ground a claim, omit it.
+- Keep tone professional and concise; note inconsistencies across chunks when relevant and acknowledge gaps when the chunks lack detail.
 `.trim()
 }
 
@@ -3930,7 +3805,7 @@ function buildAgentInstructions(
   const attachmentDirective = buildAttachmentDirective(context)
   const promptAddendum = buildAgentPromptAddendum()
   const reviewResultBlock =
-    !USE_AGENT_SELF_REVIEW && context.review.lastReviewResult
+    context.review.lastReviewResult
       ? [
           "<last_review_result>",
           JSON.stringify(context.review.lastReviewResult, null, 2),
@@ -4001,26 +3876,7 @@ function buildAgentInstructions(
     instructionLines.push("", reviewResultBlock.trim(), "")
   }
 
-  if (USE_AGENT_SELF_REVIEW) {
-    instructionLines.push(
-      "",
-      "# SELF-REVIEW (mandatory at the start of each turn)",
-      "- You have full context: the conversation history and all tool results from previous turns are in the message thread. Use them to self-review.",
-      "- At the start of each turn, before calling tools, briefly self-review the previous turn:",
-      "  - Did each tool run meet its goal? Compare outputs to the expectations you set in <expected_results>.",
-      "  - Any anomalies (unexpected results, missing evidence, contradictions)? Note them and add corrective sub-tasks if needed.",
-      "  - Does the current plan still fit the evidence? If evidence is complete and satisfies the user's ask, pivot to final synthesis; if something is missing, plan the next tools (gather_more).",
-      "  - If intent is unclear or data is ambiguous, add a clarification question (as a sub-task or surface to the user) and do not progress until resolved.",
-      "- Update the plan (toDoWrite) when your self-review finds: missed expectations, anomalies, need for replan, or readiness for final synthesis.",
-      "- You do not receive an external <last_review_result>; your self-review replaces it. Act on your own assessment in the same turn.",
-      "",
-      "# REVIEW FEEDBACK (self-review)",
-      "- Treat your self-review findings as mandatory: fix missed expectations, address anomalies, and resolve clarifications before progressing.",
-      "- Log every required fix in the plan. Capture corrective sub-tasks and close them before moving forward.",
-      "- Surface clarification questions to the user when intent is ambiguous.",
-      "",
-    )
-  } else {
+  if (context.review.lastReviewResult) {
     instructionLines.push(
       "# REVIEW FEEDBACK",
       "- Inspect the <last_review_result> block above; treat every instruction, anomaly, and clarification inside it as mandatory.",
@@ -4034,26 +3890,17 @@ function buildAgentInstructions(
 
   instructionLines.push(
     "# PLANNING",
-    USE_AGENT_SELF_REVIEW
-      ? "- Call toDoWrite at the start of a turn when the plan is new, when self-review finds issues, or when you need to add or close tasks; otherwise you may proceed without calling toDoWrite to avoid unnecessary iterations."
-      : "- Call toDoWrite at the start of a turn when the plan is new, when review requested changes, or when you need to add or close tasks; otherwise you may proceed without calling toDoWrite to avoid unnecessary iterations.",
+    "- Call toDoWrite at the start of a turn when the plan is new, when review requested changes, or when you need to add or close tasks; otherwise you may proceed without calling toDoWrite to avoid unnecessary iterations.",
     "- Terminate the active plan the moment you have enough evidence to cater to the complete requirement of the user; immediately drop any remaining subtasks when the goal is satisfied.",
     "- Scale the number of subtasks to the query’s true complexity , however quality of the final answer and complete execution and satisfaction of user's query outranks task count, you must always prioritize quality",
-    ...(USE_AGENT_SELF_REVIEW
+    ...(context.review.lastReviewResult
       ? [
-          "- If your self-review finds that the plan no longer fits (e.g. evidence complete or a new approach needed), rewrite the plan accordingly before running new tools.",
-          "- Mirror every follow-up or unmet goal from your self-review with a dedicated sub-task (or reopened task) and list the tools that will satisfy it.",
-          "- Track each clarification question as its own sub-task or outbound user question until resolved.",
-          "- If your self-review demands a brand-new approach, rebuild the plan; otherwise refine the existing tasks.",
-          "- If no plan change is needed, explicitly mark the tasks `in_progress` or `completed` so the plan reflects momentum.",
-        ]
-      : [
           "- If the review reports `planChangeNeeded=true`, rewrite the plan around the provided `planChangeReason` before running any new tools, even if older tasks were mid-flight.",
           "- Mirror every `toolFeedback.followUp` and `unmetExpectations` item with a dedicated sub-task (or reopened task) and list the tools that will satisfy it.",
           "- Track each `clarificationQuestions` entry as its own sub-task or outbound user question until the ambiguity is resolved inside <last_review_result>.",
           "- If review feedback demands a brand-new approach, rebuild the plan; otherwise refine the existing tasks.",
           "- If no plan change is needed, explicitly mark the tasks `in_progress` or `completed` so the reviewer sees momentum.",
-        ]),
+        ] : []),
     "- Maintain one sub-task per concrete goal; list only the tools truly needed for that sub-task.",
     "- Only chain subtasks when real dependencies exist—for example, “fetch the people who messaged me today → gather the emails received from them → summarize the combined thread” keeps later steps paused until earlier outputs arrive.",
     "- After every tool run, immediately update the active sub-task’s status, result, and any newly required tasks so the plan mirrors reality.",
@@ -5168,82 +5015,69 @@ export async function MessageAgents(c: Context): Promise<Response> {
           }
         }
 
+        /**
+         * Turn-end processing via the turn-lifecycle pipeline.
+         *
+         * This is the SINGLE entry point for ALL post-turn work:
+         *   1. No-op turn detection (skip if only toDoWrite)
+         *   2. Batch fragment ranking (single LLM call for all tools)
+         *   3. Review (single LLM call, no duplicates)
+         *   4. Cleanup (finalize images, reset artifacts)
+         *
+         * The turn_end and run_end event handlers do NOT run reviews.
+         */
         const runTurnEndReviewAndCleanup = async (
           turn: number,
         ): Promise<void> => {
-          Logger.debug(
-            {
-              turn,
-              expectationHistoryKeys: Array.from(expectationHistory.keys()),
-              expectationsForThisTurn: expectationHistory.get(turn),
-              chatId: agentContext.chat.externalId,
-            },
-            "[DEBUG] Expectation history state at turn_end",
-          )
+          await runTurnEndPipeline(agentContext, {
+            turn,
+            useAgenticFiltering: USE_AGENTIC_FILTERING,
+            reviewFrequency: agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
+            minTurnNumber: MIN_TURN_NUMBER,
+            emitter: emitReasoningStep,
 
-          try {
-            if (!reviewsAllowed(agentContext)) {
-              Logger.info(
-                {
-                  turn,
-                  chatId: agentContext.chat.externalId,
-                  lockedAtTurn: agentContext.review.lockedAtTurn,
-                },
-                "[MessageAgents] Review skipped because final synthesis was already requested.",
+            // Wiring: review
+            runReview: async (ctx, input, t) => {
+              return runAndBroadcastReview(ctx, input, t)
+            },
+            handleReviewOutcome: async (ctx, result, t, focus, emitter) => {
+              await handleReviewOutcome(ctx, result, t, focus, emitter)
+            },
+            buildDefaultReview: buildDefaultReviewPayload,
+            buildReviewInput: (t, freq) => {
+              const { reviewInput } = buildTurnReviewInput(t, freq)
+              return reviewInput
+            },
+            getExpectationsForTurn: (t) => expectationHistory.get(t) || [],
+
+            // Wiring: batch fragment ranking
+            rankFragments: async (ctx, allUnrankedWithToolContext, t, emitter) => {
+              return await batchRankFragments(
+                ctx,
+                allUnrankedWithToolContext,
+                message,
+                messagesWithNoErrResponse,
+                t,
+                emitter
               )
-              return
-            }
-            if (!USE_AGENT_SELF_REVIEW) {
-              const reviewFreq = normalizeReviewFrequency(
-                agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
-              )
-              const runReviewThisTurn =
-                turn === MIN_TURN_NUMBER || turn % reviewFreq === 0
-              if (runReviewThisTurn) {
-                const { reviewInput } = buildTurnReviewInput(turn, reviewFreq)
-                await runAndBroadcastReview(agentContext, reviewInput, turn)
-              } else {
-                Logger.debug(
-                  {
-                    turn,
-                    reviewFrequency: reviewFreq,
-                    chatId: agentContext.chat.externalId,
-                  },
-                  "[MessageAgents] Review skipped (runs every N turns).",
-                )
+            },
+
+            // Wiring: cleanup
+            flushExpectations: () => {
+              pendingExpectations.length = 0
+            },
+            finalizeTurnImages,
+            resetTurnArtifacts: resetCurrentTurnArtifacts,
+            clearAttachmentPhase: (ctx) => {
+              const attachmentState = getAttachmentPhaseMetadata(ctx)
+              if (attachmentState.initialAttachmentPhase) {
+                ctx.chat.metadata = {
+                  ...ctx.chat.metadata,
+                  initialAttachmentPhase: false,
+                }
               }
-            } else {
-              await handleReviewOutcome(
-                agentContext,
-                buildDefaultReviewPayload(
-                  "Self-review mode; no external review. State updated for continuity.",
-                ),
-                turn,
-                "turn_end",
-                emitReasoningStep,
-              )
-            }
-          } catch (error) {
-            Logger.error(
-              {
-                turn,
-                chatId: agentContext.chat.externalId,
-                error: getErrorMessage(error),
-              },
-              "[MessageAgents] Turn-end review failed",
-            )
-          } finally {
-            const attachmentState = getAttachmentPhaseMetadata(agentContext)
-            if (attachmentState.initialAttachmentPhase) {
-              agentContext.chat.metadata = {
-                ...agentContext.chat.metadata,
-                initialAttachmentPhase: false,
-              }
-            }
-            pendingExpectations.length = 0
-            finalizeTurnImages(agentContext, turn)
-            resetCurrentTurnArtifacts(agentContext)
-          }
+            },
+          })
         }
 
         const runAndBroadcastReview = async (
@@ -5429,7 +5263,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const yieldedCitations = new Set<number>()
         const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
-        let runCompletedAndPersisted = false
 
         const streamAnswerText = async (text: string) => {
           if (!text) return
@@ -5685,100 +5518,37 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 },
                 "[MessageAgents][Tool End]",
               )
-              // toolCompleted is now emitted at the end of afterToolExecutionHook,
-              // which runs inside onAfterToolExecution with a per-call scoped emitter.
+              // Track consecutive errors for cooldown manager; review
+              // happens at turn-end via the pipeline (no per-tool review).
               if (evt.data.error) {
                 const newCount =
                   (consecutiveToolErrors.get(evt.data.toolName) ?? 0) + 1
                 consecutiveToolErrors.set(evt.data.toolName, newCount)
-                if (newCount >= 2 && !USE_AGENT_SELF_REVIEW) {
-                  const recentHistory = agentContext.toolCallHistory
-                    .filter((record) => record.toolName === evt.data.toolName)
-                    .slice(-newCount)
-                  if (recentHistory.length > 0) {
-                    await runAndBroadcastReview(
-                      agentContext,
-                      {
-                        focus: "tool_error",
-                        turnNumber: currentTurn,
-                        toolCallHistory: recentHistory,
-                        plan: agentContext.plan,
-                        expectedResults:
-                          expectationHistory.get(currentTurn) || [],
-                      },
-                      currentTurn,
-                    )
-                  }
-                }
               } else {
                 consecutiveToolErrors.delete(evt.data.toolName)
               }
-              toolEndSpan?.end()
-              break
-            }
 
-            case "turn_end": {
-              const turnEndSpan = turnSpan?.startSpan("turn_end")
-              turnEndSpan?.setAttribute("turn_number", evt.data.turn)
-
-              // turnToolSummary / turnNoTools both emit "Reviewing progress and results."
-              // which duplicates review_completed from handleReviewOutcome. The next
-              // turn_started event already signals progression, so nothing is emitted here.
-
+              // Emit stream End and persist immediately when synthesis completes,
+              // so the frontend can close/stop waiting instead of waiting for
+              // turn_end (which is delayed by onTurnEnd → runTurnEndPipeline).
               if (
+                evt.data.toolName === XyneTools.synthesizeFinalAnswer &&
+                !evt.data.error &&
                 agentContext.finalSynthesis.requested &&
                 agentContext.finalSynthesis.completed
               ) {
-                // Only persist/send once: run_end may have run first (event order) and already persisted
-                if (runCompletedAndPersisted) {
-                  Logger.debug(
-                    { chatId: agentContext.chat.externalId },
-                    "[MessageAgents] turn_end: assistant already persisted (run_end ran first), skipping",
-                  )
-                  break
-                }
-                const finalTurnNumber = evt.data.turn
-                const lastReviewTurn = agentContext.review.lastReviewTurn
-                const skipRunEndReview =
-                  USE_AGENT_SELF_REVIEW ||
-                  (lastReviewTurn != null && lastReviewTurn === finalTurnNumber)
-                if (!skipRunEndReview) {
-                  await runAndBroadcastReview(
-                    agentContext,
-                    {
-                      focus: "run_end",
-                      turnNumber: finalTurnNumber,
-                      toolCallHistory: agentContext.toolCallHistory,
-                      plan: agentContext.plan,
-                      expectedResults:
-                        expectationHistory.get(finalTurnNumber) || [],
-                    },
-                    finalTurnNumber,
-                  )
-                } else {
-                  Logger.debug(
-                    {
-                      finalTurnNumber,
-                      lastReviewTurn,
-                      useSelfReview: USE_AGENT_SELF_REVIEW,
-                      chatId: agentContext.chat.externalId,
-                    },
-                    "[MessageAgents] Skipping run_end review (last turn = synthesis turn).",
-                  )
-                }
-                loggerWithChild({ email }).debug(
-                  "Storing assistant response in database",
+                loggerWithChild({ email }).info(
+                  "Storing assistant response in database (after synthesis tool)",
                 )
                 Logger.debug(
                   {
                     chatId: agentContext.chat.externalId,
-                    turn: finalTurnNumber,
+                    turn: currentTurn,
                     answerPreview: truncateValue(answer, 500),
                     citationsCount: citations.length,
                     imageCitationsCount: imageCitations.length,
-                    citationSample: citations.slice(0, 3),
                   },
-                  "[MessageAgents][FinalSynthesis] LLM output preview",
+                  "[MessageAgents][FinalSynthesis] Persist + End at tool_call_end",
                 )
                 const totalCost = agentContext.totalCost
                 const totalTokens =
@@ -5809,18 +5579,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 } catch (error) {
                   loggerWithChild({ email }).error(
                     error,
-                    "Failed to persist assistant response",
+                    "Failed to persist assistant response (tool_call_end)",
                   )
                 }
-                loggerWithChild({ email }).debug(
-                  {
-                    answer,
-                    citations: citations.length,
-                    cost: totalCost,
-                    tokens: totalTokens,
-                  },
-                  "Response generated successfully",
-                )
                 await stream.writeSSE({
                   event: ChatSSEvents.ResponseMetadata,
                   data: JSON.stringify({
@@ -5833,8 +5594,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   event: ChatSSEvents.End,
                   data: "",
                 })
-                runCompletedAndPersisted = true
+                Logger.debug(
+                  { chatId: agentContext.chat.externalId },
+                  "[MessageAgents] stream end emitted (after synthesis tool_call_end)",
+                )
               }
+
+              toolEndSpan?.end()
               break
             }
 
@@ -6020,123 +5786,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 "outcome_status",
                 outcome?.status ?? "unknown",
               )
-              if (outcome?.status === "completed") {
-                if (runCompletedAndPersisted) {
-                  runEndSpan.setAttribute("total_cost", agentContext.totalCost)
-                  runEndSpan.setAttribute(
-                    "total_tokens",
-                    agentContext.tokenUsage.input +
-                      agentContext.tokenUsage.output,
-                  )
-                  runEndSpan.setAttribute("citations_count", citations.length)
-                } else {
-                  const finalTurnNumber = Math.max(
-                    agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
-                    MIN_TURN_NUMBER,
-                  )
-                  const lastReviewTurn = agentContext.review.lastReviewTurn
-                  const skipRunEndReview =
-                    USE_AGENT_SELF_REVIEW ||
-                    (lastReviewTurn != null &&
-                      lastReviewTurn === finalTurnNumber)
-                  if (!skipRunEndReview) {
-                    await runAndBroadcastReview(
-                      agentContext,
-                      {
-                        focus: "run_end",
-                        turnNumber: finalTurnNumber,
-                        toolCallHistory: agentContext.toolCallHistory,
-                        plan: agentContext.plan,
-                        expectedResults:
-                          expectationHistory.get(finalTurnNumber) || [],
-                      },
-                      finalTurnNumber,
-                    )
-                  } else {
-                    Logger.debug(
-                      {
-                        finalTurnNumber,
-                        lastReviewTurn,
-                        useSelfReview: USE_AGENT_SELF_REVIEW,
-                        chatId: agentContext.chat.externalId,
-                      },
-                      "[MessageAgents] Skipping run_end review (self-review or already reviewed).",
-                    )
-                  }
-                  loggerWithChild({ email }).debug(
-                    "Storing assistant response in database",
-                  )
-                  Logger.debug(
-                    {
-                      chatId: agentContext.chat.externalId,
-                      turn: finalTurnNumber,
-                      answerPreview: truncateValue(answer, 500),
-                      citationsCount: citations.length,
-                      imageCitationsCount: imageCitations.length,
-                      citationSample: citations.slice(0, 3),
-                    },
-                    "[MessageAgents][FinalSynthesis] LLM output preview",
-                  )
-                  const totalCost = agentContext.totalCost
-                  const totalTokens =
-                    agentContext.tokenUsage.input +
-                    agentContext.tokenUsage.output
-                  try {
-                    const timeTakenMs = Date.now() - requestStartMs
-                    const assistantInsert = {
-                      chatId: chatRecord.id,
-                      userId: user.id,
-                      workspaceExternalId: String(workspace.externalId),
-                      chatExternalId: String(chatRecord.externalId),
-                      messageRole: MessageRole.Assistant,
-                      email: String(user.email),
-                      sources: citations,
-                      imageCitations,
-                      message: processMessage(answer, citationMap),
-                      thinking: thinkingLog,
-                      modelId: agenticModelId,
-                      cost: totalCost.toString(),
-                      tokensUsed: totalTokens,
-                      timeTakenMs,
-                    } as unknown as Omit<InsertMessage, "externalId">
-                    const msg = await insertMessage(db, assistantInsert)
-                    assistantMessageId = String(msg.externalId)
-                    lastPersistedMessageId = msg.id as number
-                    lastPersistedMessageExternalId = assistantMessageId
-                    await persistTrace(msg.id as number, msg.externalId)
-                  } catch (error) {
-                    loggerWithChild({ email }).error(
-                      error,
-                      "Failed to persist assistant response",
-                    )
-                  }
-                  loggerWithChild({ email }).debug(
-                    {
-                      answer,
-                      citations: citations.length,
-                      cost: totalCost,
-                      tokens: totalTokens,
-                    },
-                    "Response generated successfully",
-                  )
-                  runEndSpan.setAttribute("total_cost", totalCost)
-                  runEndSpan.setAttribute("total_tokens", totalTokens)
-                  runEndSpan.setAttribute("citations_count", citations.length)
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseMetadata,
-                    data: JSON.stringify({
-                      chatId: agentContext.chat.externalId,
-                      messageId: assistantMessageId || "temp-message-id",
-                      timeTakenMs: Date.now() - requestStartMs,
-                    }),
-                  })
-                  await stream.writeSSE({
-                    event: ChatSSEvents.End,
-                    data: "",
-                  })
-                  runCompletedAndPersisted = true
-                }
-              } else if (outcome?.status === "error") {
+              if (outcome?.status === "error") {
                 if (stopController.signal.aborted) {
                   await persistTraceForLastMessage()
                   break
@@ -6819,80 +6469,55 @@ async function runDelegatedAgentWithMessageAgents(
       }
     }
 
-    const runTurnEndReviewAndCleanup = async (turn: number): Promise<void> => {
-      Logger.debug(
-        {
-          turn,
-          expectationHistoryKeys: Array.from(expectationHistory.keys()),
-          expectationsForThisTurn: expectationHistory.get(turn),
-          chatId: agentContext.chat.externalId,
-        },
-        "[DelegatedAgenticRun][DEBUG] Expectation history state at turn_end",
-      )
+    const runTurnEndReviewAndCleanup = async (
+      turn: number,
+    ): Promise<void> => {
+      await runTurnEndPipeline(agentContext, {
+        turn,
+        useAgenticFiltering: USE_AGENTIC_FILTERING,
+        reviewFrequency: agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
+        minTurnNumber: MIN_TURN_NUMBER,
+        emitter: emitReasoningStep,
 
-      try {
-        if (!reviewsAllowed(agentContext)) {
-          Logger.info(
-            {
-              turn,
-              chatId: agentContext.chat.externalId,
-              lockedAtTurn: agentContext.review.lockedAtTurn,
-            },
-            "[DelegatedAgenticRun] Review skipped because final synthesis was already requested.",
+        runReview: async (ctx, input, t) => {
+          return runAndBroadcastReview(ctx, input, t)
+        },
+        handleReviewOutcome: async (ctx, result, t, focus, emitter) => {
+          await handleReviewOutcome(ctx, result, t, focus, emitter)
+        },
+        buildDefaultReview: buildDefaultReviewPayload,
+        buildReviewInput: (t, freq) => {
+          const { reviewInput } = buildTurnReviewInput(t, freq)
+          return reviewInput
+        },
+        getExpectationsForTurn: (t) => expectationHistory.get(t) || [],
+
+        rankFragments: async (ctx, allUnrankedWithToolContext, t, emitter) => {
+          return await batchRankFragments(
+            ctx,
+            allUnrankedWithToolContext,
+            message,
+            messagesWithNoErrResponse,
+            t,
+            emitter
           )
-          return
-        }
-        if (!USE_AGENT_SELF_REVIEW) {
-          const reviewFreq = normalizeReviewFrequency(
-            agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
-          )
-          const runReviewThisTurn =
-            turn === MIN_TURN_NUMBER || turn % reviewFreq === 0
-          if (runReviewThisTurn) {
-            const { reviewInput } = buildTurnReviewInput(turn, reviewFreq)
-            await runAndBroadcastReview(agentContext, reviewInput, turn)
-          } else {
-            Logger.debug(
-              {
-                turn,
-                reviewFrequency: reviewFreq,
-                chatId: agentContext.chat.externalId,
-              },
-              "[DelegatedAgenticRun] Review skipped (runs every N turns).",
-            )
+        },
+
+        flushExpectations: () => {
+          pendingExpectations.length = 0
+        },
+        finalizeTurnImages,
+        resetTurnArtifacts: resetCurrentTurnArtifacts,
+        clearAttachmentPhase: (ctx) => {
+          const attachmentState = getAttachmentPhaseMetadata(ctx)
+          if (attachmentState.initialAttachmentPhase) {
+            ctx.chat.metadata = {
+              ...ctx.chat.metadata,
+              initialAttachmentPhase: false,
+            }
           }
-        } else {
-          await handleReviewOutcome(
-            agentContext,
-            buildDefaultReviewPayload(
-              "Self-review mode; no external review. State updated for continuity.",
-            ),
-            turn,
-            "turn_end",
-            emitReasoningStep,
-          )
-        }
-      } catch (error) {
-        Logger.error(
-          {
-            turn,
-            chatId: agentContext.chat.externalId,
-            error: getErrorMessage(error),
-          },
-          "[DelegatedAgenticRun] Turn-end review failed",
-        )
-      } finally {
-        const attachmentState = getAttachmentPhaseMetadata(agentContext)
-        if (attachmentState.initialAttachmentPhase) {
-          agentContext.chat.metadata = {
-            ...agentContext.chat.metadata,
-            initialAttachmentPhase: false,
-          }
-        }
-        pendingExpectations.length = 0
-        finalizeTurnImages(agentContext, turn)
-        resetCurrentTurnArtifacts(agentContext)
-      }
+        },
+      })
     }
 
     // Reuse parent's emitter when provided so nested agent reasoning streams to the same SSE.
@@ -7135,31 +6760,12 @@ async function runDelegatedAgentWithMessageAgents(
             break
 
           case "tool_call_end": {
-            // toolCompleted is emitted at the end of afterToolExecutionHook
-            // via the per-call scoped emitter — no action needed here.
+            // Track consecutive errors for cooldown manager; review
+            // happens at turn-end via the pipeline (no per-tool review).
             if (evt.data.error) {
               const newCount =
                 (consecutiveToolErrors.get(evt.data.toolName) ?? 0) + 1
               consecutiveToolErrors.set(evt.data.toolName, newCount)
-              if (newCount >= 2 && !USE_AGENT_SELF_REVIEW) {
-                const recentHistory = agentContext.toolCallHistory
-                  .filter((record) => record.toolName === evt.data.toolName)
-                  .slice(-newCount)
-                if (recentHistory.length > 0) {
-                  await runAndBroadcastReview(
-                    agentContext,
-                    {
-                      focus: "tool_error",
-                      turnNumber: currentTurn,
-                      toolCallHistory: recentHistory,
-                      plan: agentContext.plan,
-                      expectedResults:
-                        expectationHistory.get(currentTurn) || [],
-                    },
-                    currentTurn,
-                  )
-                }
-              }
             } else {
               consecutiveToolErrors.delete(evt.data.toolName)
             }
@@ -7233,38 +6839,8 @@ async function runDelegatedAgentWithMessageAgents(
           case "run_end":
             const outcome = evt.data.outcome
             if (outcome?.status === "completed") {
-              const finalTurnNumber = Math.max(
-                agentContext.turnCount ?? currentTurn ?? MIN_TURN_NUMBER,
-                MIN_TURN_NUMBER,
-              )
-              const lastReviewTurn = agentContext.review.lastReviewTurn
-              const skipRunEndReview =
-                USE_AGENT_SELF_REVIEW ||
-                (lastReviewTurn != null && lastReviewTurn === finalTurnNumber)
-              if (!skipRunEndReview) {
-                await runAndBroadcastReview(
-                  agentContext,
-                  {
-                    focus: "run_end",
-                    turnNumber: finalTurnNumber,
-                    toolCallHistory: agentContext.toolCallHistory,
-                    plan: agentContext.plan,
-                    expectedResults:
-                      expectationHistory.get(finalTurnNumber) || [],
-                  },
-                  finalTurnNumber,
-                )
-              } else {
-                Logger.debug(
-                  {
-                    finalTurnNumber,
-                    lastReviewTurn,
-                    useSelfReview: USE_AGENT_SELF_REVIEW,
-                    chatId: agentContext.chat.externalId,
-                  },
-                  "[DelegatedAgenticRun] Skipping run_end review.",
-                )
-              }
+              // Review is handled by runTurnEndPipeline (final-turn logic).
+              // No duplicate run_end review here.
               runCompleted = true
               break
             }

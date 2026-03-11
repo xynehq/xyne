@@ -23,9 +23,29 @@ export interface ToolExecutionRecordWithResult {
 
 export interface CurrentTurnArtifacts {
   fragments: MinimalAgentFragment[]
+  /** Raw unranked fragments collected from all tools this turn, keyed by tool name.
+   *  Ranking is deferred to turn-end so all fragments are ranked in a single batch.
+   *  Value includes the tool query used for retrieval so the ranker can consider retrieval context. */
+  unrankedFragmentsByTool: Map<
+    string,
+    { query: string; fragments: MinimalAgentFragment[] }
+  >
   expectations: ToolExpectationAssignment[]
   toolOutputs: ToolExecutionRecordWithResult[]
   images: FragmentImageReference[]
+  /** Number of execution tools (non-toDoWrite) called this turn */
+  executionToolsCalled: number
+  /** Whether toDoWrite was called this turn (plan-only turn detection) */
+  todoWriteCalled: boolean
+  /** Timestamp when this turn started (for latency tracking) */
+  turnStartedAt: number
+}
+
+/** Enriched fragment entry for turn-end ranking: fragment plus tool name and query used for retrieval. */
+export interface UnrankedFragmentWithToolContext {
+  fragment: MinimalAgentFragment
+  toolName: string
+  toolQuery: string
 }
 
 // ============================================================================

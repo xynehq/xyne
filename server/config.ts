@@ -67,7 +67,7 @@ let LiteLLMBaseUrl = ""
 const LiteLLMModelInfoUrl = process.env.LITELLM_MODEL_INFO_URL
 const allowSonnet46 = process.env.ALLOW_SONNET_4_6 === "true"
 const allowOpus46 = process.env.ALLOW_OPUS_4_6 === "true"
-const useAgentSelfReview = process.env.USE_AGENT_SELF_REVIEW === "true"
+const useAgenticFiltering = process.env.USE_AGENTIC_FILTERING === "true"
 const modelList = process.env.MODELS_LIST
 
 // File processing worker configuration
@@ -384,6 +384,6 @@ export default {
   ZohoClientId,
   ZohoClientSecret,
   ZohoOrgId,
-  useAgentSelfReview,
+  useAgenticFiltering,
   modelList,
 }
