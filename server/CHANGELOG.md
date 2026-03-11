@@ -1,3 +1,10 @@
+# [3.42.0](https://github.com/xynehq/xyne/compare/v3.41.0...v3.42.0) (2026-03-11)
+
+
+### Features
+
+* added model list control through env ([#1280](https://github.com/xynehq/xyne/issues/1280)) ([7e66e97](https://github.com/xynehq/xyne/commit/7e66e97cee060e17bfdff0159ec2a33e9279fb66))
+
 # [3.41.0](https://github.com/xynehq/xyne/compare/v3.40.10...v3.41.0) (2026-03-11)
 
 
