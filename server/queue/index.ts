@@ -40,7 +40,11 @@ import {
   type AttachmentJob,
 } from "@/integrations/zoho/queue"
 import { startSummaryWorker } from "@/workers/summary-worker"
+import { startEpisodicMemoryWorker } from "@/workers/episodic-memory-worker"
+import { startChatMemoryWorker } from "@/workers/chat-memory-worker"
 import { SUMMARY_QUEUE_NAME } from "./summary-generation"
+import { EPISODIC_MEMORY_QUEUE_NAME } from "./episodic-memory-extraction"
+import { CHAT_MEMORY_INDEXING_QUEUE_NAME } from "./chat-memory-indexing"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
 const SYNC_JOB_AUTH_TYPE_CLEANUP = "cleanup"
@@ -97,6 +101,8 @@ export const init = async () => {
   await boss.createQueue(SyncToolsQueue)
   await boss.createQueue(CleanupAttachmentsQueue)
   await boss.createQueue(SUMMARY_QUEUE_NAME)
+  await boss.createQueue(EPISODIC_MEMORY_QUEUE_NAME)
+  await boss.createQueue(CHAT_MEMORY_INDEXING_QUEUE_NAME)
   await initWorkers()
 }
 
@@ -895,6 +901,12 @@ const initWorkers = async () => {
 
   // Initialize summary generation worker
   await startSummaryWorker()
+
+  // Initialize episodic memory extraction worker
+  await startEpisodicMemoryWorker()
+
+  // Initialize chat memory indexing worker
+  await startChatMemoryWorker()
 }
 
 export const ProgressEvent = "progress-event"

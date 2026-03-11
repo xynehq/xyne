@@ -102,6 +102,16 @@ let ZohoOrgId = process.env.ZOHO_ORG_ID || ""
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 const MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES = 3 * 1024 // 3KB - generous limit for service account JSON files
 const AccessTokenCookie = "access-token"
+
+// Four-layer memory architecture (agentic RAG)
+export const MEMORY_CONFIG = {
+  WORKING_MEMORY_MESSAGES: parseInt(
+    process.env.WORKING_MEMORY_MESSAGES || "5",
+    5,
+  ),
+  MAX_CHAT_MEMORY_CHUNKS: 5,
+  MAX_EPISODIC_MEMORIES: 5,
+}
 export const IMAGE_CONTEXT_CONFIG = {
   enabled: true, // Enable image context tracking by default
   recencyWindow: 2, // Keep images from last 2 turns
@@ -322,6 +332,7 @@ export default {
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
   maxDefaultSummary: 10,
+  maxChunksPerTool: 80,
   maxChunksPerPage: 200,
   chatPageSize: 20, // default page size for ai search
   VespaPageSize: 20, // default page size for vespa search
@@ -365,6 +376,7 @@ export default {
   langfuseBaseUrl,
   langfuseEnabled,
   IMAGE_CONTEXT_CONFIG,
+  MEMORY_CONFIG,
   delegation_agentic: delegationAgentic,
   ZohoClientId,
   ZohoClientSecret,

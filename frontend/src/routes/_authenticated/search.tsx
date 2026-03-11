@@ -55,26 +55,6 @@ import {
 
 const logger = console
 
-/** Merge two group-count objects (e.g. main search + KB search) by summing counts per app/entity. */
-function mergeGroupCounts(
-  main: Groups | null | undefined,
-  kb: Groups | null | undefined,
-): Groups {
-  const merged: Groups = main ? { ...main } : ({} as Groups)
-  if (!kb || typeof kb !== "object") return merged
-  for (const app of Object.keys(kb) as Array<keyof Groups>) {
-    const entityCounts = kb[app]
-    if (!entityCounts || typeof entityCounts !== "object") continue
-    merged[app] = { ...(merged[app] ?? {}) }
-    for (const entity of Object.keys(entityCounts) as Array<keyof typeof entityCounts>) {
-      const a = merged[app]?.[entity] ?? 0
-      const b = entityCounts[entity] ?? 0
-      ;(merged[app] as Record<string, number>)[entity] = a + b
-    }
-  }
-  return merged
-}
-
 /** Sum all counts in groups so "All" matches the sum of filter items. */
 function sumGroupCounts(groups: Groups | null | undefined): number {
   if (!groups || typeof groups !== "object") return 0
@@ -137,6 +117,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
     select: (s) => s.location.state.isQueryTyped,
   })
 
+  const [searchTab, setSearchTab] = useState<"all" | "kb">("all")
   const [query, setQuery] = useState(decodeURIComponent(search.query || "")) // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
@@ -169,8 +150,6 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   const [autocompleteQuery, setAutocompleteQuery] = useState("")
 
   const totalCount = searchMeta?.totalCount || 0
-  // With filter: cap at that group's count. No filter: totalCount = sum of all groups (main + KB).
-  // Global search merges two streams (main + KB), so each "page" adds page*2 results; scroll stops when results.length >= filterPageSize.
   const filterPageSize =
     filter.app && filter.entity
       ? groups
@@ -182,9 +161,21 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  const handleNext = () => {
-    const newOffset = offset + page
-    setOffset(newOffset)
+  const handleNext = useCallback(() => {
+    setOffset((prev) => prev + page)
+  }, [])
+
+  const loadingRef = useRef(false)
+
+  const tabJustSwitchedRef = useRef(false)
+  const handleTabChange = (tab: "all" | "kb") => {
+    tabJustSwitchedRef.current = true
+    setSearchTab(tab)
+    setOffset(0)
+    setResults([])
+    setGroups(null)
+    setSearchMeta(null)
+    if (activeQuery) handleSearch(0, tab)
   }
 
   // for autocomplete
@@ -226,14 +217,14 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
           results.length > 0 &&
           filterPageSize > page &&
           results.length < filterPageSize &&
-          !isLoading
+          !loadingRef.current
         ) {
-          // Load more results when bottom is visible
+          loadingRef.current = true
           setIsLoading(true)
           handleNext()
         }
       },
-      { threshold: 0.5 }, // Trigger when 10% of the element is visible
+      { threshold: 0.5 }, // Trigger when 50% of the element is visible
     )
 
     observer.observe(bottomRef.current)
@@ -243,7 +234,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         observer.unobserve(bottomRef.current)
       }
     }
-  }, [results, filterPageSize, page, isLoading, handleNext])
+  }, [results, filterPageSize, page, handleNext])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -293,6 +284,10 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   }, [search])
 
   useEffect(() => {
+    if (tabJustSwitchedRef.current) {
+      tabJustSwitchedRef.current = false
+      return
+    }
     handleSearch()
   }, [offset])
 
@@ -351,9 +346,10 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
     }
   }
 
-  const handleSearch = async (newOffset = offset) => {
+  const handleSearch = async (newOffset = offset, tabOverride?: "all" | "kb") => {
     if (!activeQuery) return
     setAutocompleteResults([])
+    const effectiveTab = tabOverride ?? searchTab
     try {
       // TODO: figure out when lastUpdated changes and only
       // then make it true or when app,entity is not present
@@ -396,102 +392,52 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         }),
         state: { isQueryTyped: QueryTyped },
         replace: true,
-        resetScroll: false, // Prevent scroll jump on pagination
+        resetScroll: false,
       })
 
-      const shouldMergeKBResults = (!params.app && !params.entity) || params.app === Apps.KnowledgeBase
-      const kbParams = {
-        query: params.query,
-        page: String(params.page ?? page),
-        offset: String(newOffset),
-        ...(shouldMergeKBResults ? {} : { onlyGroupCount: "true" }),
+      let response: Response
+      if (effectiveTab === "kb") {
+        response = await api.search["knowledge-base"].$get({
+          query: {
+            query: params.query,
+            page: String(params.page ?? page),
+            offset: String(newOffset),
+          },
+        })
+      } else {
+        response = await api.search.$get({ query: params })
       }
-      const [response, kbResponse] = await Promise.all([
-        api.search.$get({ query: params }),
-        api.search["knowledge-base"].$get({ query: kbParams }),
-      ])
+
       if (response.ok) {
         const data: SearchResponse = await response.json()
-        const kbData: SearchResponse = kbResponse.ok
-          ? await kbResponse.json()
-          : { results: [], count: 0 }
-
-        const mainResults = data.results ?? []
-        const kbResults = kbData.results ?? []
-        const byDocId = new Map<string, SearchResultDiscriminatedUnion>()
-        for (const r of mainResults) {
-          const id = r.docId ?? (r as { id?: string }).id
-          if (id) byDocId.set(id, r)
-        }
-        if (shouldMergeKBResults) {
-          for (const r of kbResults) {
-            const id = r.docId ?? (r as { id?: string }).id
-            if (id) {
-              const existing = byDocId.get(id)
-              const rel = (r as { relevance?: number }).relevance ?? 0
-              const existingRel =
-                (existing as { relevance?: number } | undefined)?.relevance ?? 0
-              if (!existing || rel > existingRel) byDocId.set(id, r)
-            }
-          }
-        }
-        const merged = [...byDocId.values()].sort(
-          (a, b) =>
-            ((b as { relevance?: number }).relevance ?? 0) -
-            ((a as { relevance?: number }).relevance ?? 0),
-        )
+        const newResults = data.results ?? []
 
         if (newOffset > 0) {
-          setResults((prevResults) => [...prevResults, ...merged])
+          setResults((prev) => [...prev, ...newResults])
         } else {
-          setResults(merged)
+          setResults(newResults)
         }
 
         setAutocompleteResults([])
-        // ensure even if autocomplete results came a little later we don't show right after we show
-        // first set of results after a search
-        // one short
-        setTimeout(() => {
-          setAutocompleteResults([])
-        }, 300)
-        // one long
-        setTimeout(() => {
-          setAutocompleteResults([])
-        }, 1000)
+        setTimeout(() => setAutocompleteResults([]), 300)
+        setTimeout(() => setAutocompleteResults([]), 1000)
 
-        // updating querytyped state to false
         navigate({
           to: "/search",
-          search: (prev: any) => ({
-            ...prev,
-          }),
+          search: (prev: any) => ({ ...prev }),
           state: { isQueryTyped: false },
           replace: true,
           resetScroll: false,
         })
 
-        if (groupCount) {
-          // TODO: temp solution until we resolve groupCount from
-          // not always being true
-          const mergedGroups = mergeGroupCounts(
-            data.groupCount,
-            kbData?.groupCount,
-          )
-          setGroups(mergedGroups)
-          // So "All" matches the sum of filter items (e.g. Knowledge-Base + KB Files + ...)
-          if (!filter.app && !filter.entity) {
-            const totalFromGroups = sumGroupCounts(mergedGroups)
-            setSearchMeta({
-              totalCount:
-                totalFromGroups > 0
-                  ? totalFromGroups
-                  : (data.count ?? 0) + (kbData.count ?? 0),
-            })
-          }
-          setTraceData(data.trace || null) // Store trace data from response
-        }
-
-        // Reset loading state after results are received
+        setGroups(data.groupCount ?? null)
+        // "All" must match sum of groups so sidebar is consistent (API count can differ from groupCount sum)
+        const totalFromGroups = sumGroupCounts(data.groupCount)
+        setSearchMeta({
+          totalCount: totalFromGroups > 0 ? totalFromGroups : (data.count ?? 0),
+        })
+        setTraceData(data.trace ?? null)
+        loadingRef.current = false
         setIsLoading(false)
       } else {
         const errorText = await response.text()
@@ -509,6 +455,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
     } catch (error) {
       logger.error(error, `Error fetching search results:', ${error}`)
       setResults([]) // Clear results on error
+      loadingRef.current = false
       setIsLoading(false) // Reset loading state on error
     }
   }
@@ -674,6 +621,36 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
             setFilter(updatedFilter)
           }}
         />
+
+        {/* Search source tabs: one API per tab, no merging */}
+        {activeQuery && (
+          <div className="flex items-center gap-1 ml-[186px] mt-3 border-b border-[#E6EBF5] dark:border-gray-700">
+            <button
+              type="button"
+              onClick={() => handleTabChange("all")}
+              className={`px-4 py-2 text-sm font-medium rounded-t transition-colors ${
+                searchTab === "all"
+                  ? "bg-[#F0F4F7] dark:bg-slate-700 text-[#464B53] dark:text-gray-200 border-b-2 border-transparent -mb-[1px]"
+                  : "text-[#707F9F] dark:text-gray-400 hover:text-[#464B53] dark:hover:text-gray-200"
+              }`}
+            >
+              All Results
+              {searchTab === "all" && totalCount > 0 ? ` (${totalCount})` : ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleTabChange("kb")}
+              className={`px-4 py-2 text-sm font-medium rounded-t transition-colors ${
+                searchTab === "kb"
+                  ? "bg-[#F0F4F7] dark:bg-slate-700 text-[#464B53] dark:text-gray-200 border-b-2 border-transparent -mb-[1px]"
+                  : "text-[#707F9F] dark:text-gray-400 hover:text-[#464B53] dark:hover:text-gray-200"
+              }`}
+            >
+              Knowledge Base
+              {searchTab === "kb" && totalCount > 0 ? ` (${totalCount})` : ""}
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-row ml-[186px] h-full">
           <div className="flex flex-col w-full max-w-3xl border-r-[1px] border-[#E6EBF5] dark:border-gray-700">

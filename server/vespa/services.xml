@@ -135,9 +135,11 @@
             <document type="chat_attachment" mode="index" global="true" />  
             <document type="datasource" mode="index" global="true" />  
             <document type="datasource_file" mode="index" />  
-            <document type="kb_items" mode="index"/>  
+            <document type="kb_items" mode="index"/>
             <document type="ticket" mode="index"/>
-            
+            <document type="chat_memory" mode="index"/>
+            <document type="episodic_memory" mode="index"/>
+
             <!-- Route all document indexing/processing through the feed container cluster -->
             <!-- This ensures document embeddings are done by the feed container's GPU -->
             <document-processing cluster="feed" />

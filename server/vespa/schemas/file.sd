@@ -104,6 +104,11 @@ schema file {
     field metadata type string {
       indexing: attribute | summary
     }
+
+    # SHA256 of file content for attachment dedup (same file uploaded twice → same hash)
+    field fileHash type string {
+      indexing: attribute | summary
+    }
   }
 
   field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {

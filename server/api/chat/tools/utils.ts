@@ -9,6 +9,7 @@ import {
   type VespaSearchResponse,
   type VespaSearchResults,
 } from "@xyne/vespa-ts"
+import { ChatMemoryEntity } from "@xyne/vespa-ts/types"
 import {
   isAppSelectionMap,
   parseAppSelections,
@@ -18,10 +19,11 @@ import {
 import { answerContextMap } from "@/ai/context"
 import type { UserMetadataType } from "@/types"
 import { getDateForAI } from "@/utils/index"
-import type { MinimalAgentFragment } from "@/api/chat/types"
+import type { Citation, MinimalAgentFragment } from "@/api/chat/types"
 import { getLogger, Subsystem } from "@/logger"
 import config from "@/config"
 import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
+import { getChunkCountPerDoc } from "../chunk-selection"
 const Logger = getLogger(Subsystem.Chat)
 
 export const userMetadata: UserMetadataType = {
@@ -32,6 +34,7 @@ export const userMetadata: UserMetadataType = {
 export async function formatSearchToolResponse(
   searchResults: VespaSearchResponse | null,
   searchContext: {
+    email?: string
     query?: string
     app?: string
     labels?: string[]
@@ -67,8 +70,14 @@ export async function formatSearchToolResponse(
     workspaceId: searchContext.workspaceId ?? undefined,
   }
 
+  const chunksPerDocument = await getChunkCountPerDoc(
+    children,
+    config.maxChunksPerTool,
+    searchContext.email ?? "",
+  )
+
   const fragments: MinimalAgentFragment[] = await Promise.all(
-    children.map(async (r) => {
+    children.map(async (r, idx) => {
       const citation = searchToCitation(r)
       // One child = one document (Vespa returns docs with chunks scored); use docId as fragment id.
       const fragmentId = citation.docId
@@ -77,7 +86,7 @@ export async function formatSearchToolResponse(
         content: await answerContextMap(
           r,
           metadataForContext,
-          config.maxDefaultSummary,
+          idx < chunksPerDocument.length ? chunksPerDocument[idx] : config.maxDefaultSummary,
           undefined,
           r.fields?.sddocname === KbItemsSchema,
           builtUserQuery || undefined,
@@ -92,8 +101,52 @@ export async function formatSearchToolResponse(
   return fragments
 }
 
-export function buildChunkFragmentId(docId: string, index: number): string {
-  return `${docId}:${index}`
+export type ChatMemoryFragment = {
+  turnNumber: number
+  userMessage: string
+  assistantMessage: string
+  assistantThinking?: string
+  text: string
+  docId: string
+  relevance?: number
+}
+
+/**
+ * Format chat memory retrieval results into MinimalAgentFragment[] for tool response.
+ * Same pattern as formatSearchToolResponse: returns fragments the agent can cite and use.
+ */
+export function formatChatMemoryToolResponse(
+  fragments: ChatMemoryFragment[],
+  _context: {
+    query?: string
+    chatId?: string
+    limit?: number
+  },
+): MinimalAgentFragment[] {
+  if (!fragments?.length) return []
+  return fragments.map((f) => {
+    const contentParts: string[] = [
+      `Turn ${f.turnNumber}:`,
+      `User: ${f.userMessage}`,
+      `Assistant: ${f.assistantMessage}`,
+    ]
+    if (f.assistantThinking?.trim()) {
+      contentParts.splice(2, 0, `Assistant thinking: ${f.assistantThinking}`)
+    }
+    const source: Citation = {
+      docId: f.docId,
+      title: `Conversation turn ${f.turnNumber}`,
+      url: "",
+      app: Apps.ChatMemory,
+      entity: ChatMemoryEntity.ConversationTurn as unknown as Citation["entity"],
+    }
+    return {
+      id: f.docId,
+      content: contentParts.join("\n"),
+      source,
+      confidence: f.relevance ?? 0.7,
+    }
+  })
 }
 
 export function parseAgentAppIntegrations(agentPrompt?: string): {

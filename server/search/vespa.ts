@@ -3,10 +3,12 @@ import { Subsystem } from "@/types"
 import {
   Apps,
   DriveEntity,
+  fileSchema,
   type Entity,
   type GetItemsParams,
   type VespaQueryConfig,
   type VespaSchema,
+  type VespaSearchResult,
 } from "@xyne/vespa-ts/types"
 import config from "@/config"
 import { db } from "@/db/client"
@@ -19,12 +21,47 @@ import { isZohoDeskConnected as checkZohoDeskConnected } from "@/integrations/zo
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 
+/**
+ * Dedupe Vespa search children by fileHash when app is Attachment (same file re-uploaded → same hash).
+ * Call at Vespa entry point so downstream only sees unique attachments.
+ */
+function dedupeVespaChildrenByAttachmentHash(
+  children: VespaSearchResult[],
+): VespaSearchResult[] {
+  if (!children?.length) return children
+  const seenHash = new Set<string>()
+  return children.filter((child) => {
+    const fields = (child as { fields?: Record<string, unknown> }).fields
+    if (
+      fields?.sddocname === fileSchema &&
+      fields?.app === Apps.Attachment &&
+      typeof fields?.fileHash === "string" &&
+      fields.fileHash
+    ) {
+      if (seenHash.has(fields.fileHash)) return false
+      seenHash.add(fields.fileHash)
+    }
+    return true
+  })
+}
+
+/** Mutates result.root.children in place when present; safe for any response with root.children (e.g. search, autocomplete). */
+function dedupeResponseChildren<T>(result: T): T {
+  const r = result as { root?: { children?: VespaSearchResult[] } }
+  if (r?.root?.children?.length) {
+    r.root.children = dedupeVespaChildrenByAttachmentHash(r.root.children)
+  }
+  return result
+}
+
 export const insert = vespa.insert.bind(vespa)
 export const GetDocument = vespa.GetDocument.bind(vespa)
 export const getDocumentOrNull = vespa.getDocumentOrNull.bind(vespa)
 export const UpdateDocument = vespa.UpdateDocument.bind(vespa)
 export const DeleteDocument = vespa.DeleteDocument.bind(vespa)
 export const searchCollectionRAG = vespa.searchCollectionRAG.bind(vespa)
+export const searchChatMemory = vespa.searchChatMemory.bind(vespa)
+export const searchEpisodicMemory = vespa.searchEpisodicMemory.bind(vespa)
 export const searchVespa = async (
   query: string,
   email: string,
@@ -164,12 +201,18 @@ export const searchVespaAgent = async (
   )
 }
 
-export const searchVespaInFiles = vespa.searchVespaInFiles.bind(vespa)
+export const searchVespaInFiles = async (...args: Parameters<typeof vespa.searchVespaInFiles>) => {
+  const result = await vespa.searchVespaInFiles.bind(vespa)(...args)
+  return dedupeResponseChildren(result)
+}
 export const searchVespaKnowledgeBase = vespa.searchVespaKnowledgeBase.bind(vespa)
 export const groupVespaSearch = vespa.groupVespaSearch.bind(vespa)
 export const groupVespaSearchKnowledgeBase =
   vespa.groupVespaSearchKnowledgeBase.bind(vespa)
-export const autocomplete = vespa.autocomplete.bind(vespa)
+export const autocomplete = async (...args: Parameters<typeof vespa.autocomplete>) => {
+  const result = await vespa.autocomplete.bind(vespa)(...args)
+  return dedupeResponseChildren(result)
+}
 export const deduplicateAutocomplete = vespa.deduplicateAutocomplete.bind(vespa)
 
 // User operations

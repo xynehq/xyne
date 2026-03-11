@@ -640,9 +640,10 @@ export enum ReasoningEventType {
   ToolRecovered         = "tool_recovered",
 
   // ── Document pipeline ──────────────────────────────────────────────────────
-  DocumentsFound        = "documents_found",
-  DocumentsFiltered     = "documents_filtered",
-  DocumentsRanking      = "documents_ranking",
+  DocumentsFound            = "documents_found",
+  DocumentsFilteringStarted  = "documents_filtering_started",
+  DocumentsFiltered         = "documents_filtered",
+  DocumentsRanking          = "documents_ranking",
   MetadataFilterApplied = "metadata_filter_applied",
   MetadataNoMatch       = "metadata_no_match",
   RankingFailed         = "ranking_failed",
@@ -659,6 +660,7 @@ export enum ReasoningEventType {
   AttachmentExtracted   = "attachment_extracted",
 
   // ── Review ─────────────────────────────────────────────────────────────────
+  ReviewStarted         = "review_started",
   ReviewCompleted       = "review_completed",
   AnomaliesDetected     = "anomalies_detected",
 
@@ -734,6 +736,7 @@ export enum XyneTools {
   getSlackRelatedMessages = "getSlackRelatedMessages",
   getSlackThreads = "getSlackThreads",
   getSlackUserProfile = "getSlackUserProfile",
+  searchChatHistory = "searchChatHistory",
   listCustomAgents = "list_custom_agents",
   runPublicAgent = "run_public_agent",
   fallBack = "fall_back",

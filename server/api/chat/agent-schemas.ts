@@ -168,6 +168,10 @@ export interface AgentRunContext {
   agentPrompt?: string
   dedicatedAgentSystemPrompt?: string
 
+  // Four-layer memory: injected at request start (episodic + retrieved chat memory)
+  episodicMemoriesText?: string
+  chatMemoryText?: string
+
   // Clarification tracking
   clarifications: Clarification[]
   ambiguityResolved: boolean

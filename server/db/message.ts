@@ -14,6 +14,7 @@ import {
   asc,
   eq,
   lt,
+  gt,
   gte,
   lte,
   count,
@@ -23,6 +24,7 @@ import {
   isNull,
 } from "drizzle-orm"
 import { z } from "zod"
+import { MEMORY_CONFIG } from "@/config"
 
 export const insertMessage = async (
   trx: TxnOrClient,
@@ -48,12 +50,18 @@ export const insertMessage = async (
   return parsedData.data
 }
 
+/**
+ * Returns working memory: either last N messages (no boundary) or messages after the compaction boundary.
+ * Boundary = isSummary marker; messages before it are retrievable via Vespa chat memory.
+ */
 export const getChatMessagesUntilCompaction = async (
   trx: TxnOrClient,
   chatId: string,
   email: string,
 ): Promise<SelectMessage[]> => {
-  // 1️⃣ find the latest summary message timestamp
+  const limit = MEMORY_CONFIG.WORKING_MEMORY_MESSAGES
+
+  // 1. Find the latest compaction boundary timestamp
   const lastSummary = await trx
     .select({ createdAt: messages.createdAt })
     .from(messages)
@@ -67,14 +75,15 @@ export const getChatMessagesUntilCompaction = async (
     .orderBy(desc(messages.createdAt))
     .limit(1)
 
-  // 2️⃣ if no summary exists → return all messages
+  // 2. No boundary → return last N messages (working memory window)
   if (lastSummary.length === 0) {
-    return getChatMessagesWithAuth(trx, chatId, email)
+    const all = await getChatMessagesWithAuth(trx, chatId, email)
+    return all.slice(-limit)
   }
 
   const cutoff = lastSummary[0].createdAt
 
-  // 3️⃣ fetch messages up to the cutoff
+  // 3. Fetch messages after the cutoff (working memory), exclude boundary, cap at limit
   const messagesArr = await trx
     .select()
     .from(messages)
@@ -82,10 +91,12 @@ export const getChatMessagesUntilCompaction = async (
       and(
         eq(messages.chatExternalId, chatId),
         eq(messages.email, email),
-        lte(messages.createdAt, cutoff),
+        gt(messages.createdAt, cutoff),
+        eq(messages.isSummary, false),
       ),
     )
     .orderBy(asc(messages.createdAt))
+    .limit(limit)
 
   return z.array(selectMessageSchema).parse(messagesArr)
 }
