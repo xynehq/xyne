@@ -147,9 +147,9 @@ describe("message-agents context tracking", () => {
     )
 
     // With deferred ranking, afterToolExecutionHook stores fragments in
-    // unrankedFragmentsByTool instead of allFragments. Ranking + recording
-    // into allFragments happens at turn-end via batchRankFragments.
-    const entry = context.currentTurnArtifacts.unrankedFragmentsByTool.get("searchGlobal")
+    // unrankedFragmentsByTool instead of allFragments. Key is "toolName:query".
+    // Ranking + recording into allFragments happens at turn-end via batchRankFragments.
+    const entry = context.currentTurnArtifacts.unrankedFragmentsByTool.get("searchGlobal:ARR")
     expect(entry?.fragments).toHaveLength(1)
     expect(entry?.query).toBe("ARR")
     expect(context.currentTurnArtifacts.executionToolsCalled).toBe(1)

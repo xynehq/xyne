@@ -73,6 +73,12 @@ export interface TurnEndPipelineConfig {
     turn: number,
     emitter?: ReasoningEmitter
   ) => Promise<MinimalAgentFragment[]>
+  /** When useAgenticFiltering is false, called to promote unranked fragments into context (allFragments, turnFragments, seenDocuments) so they are preserved after cleanup. */
+  ingestFragments?: (
+    context: AgentRunContext,
+    fragments: MinimalAgentFragment[],
+    turn: number
+  ) => void
   /** Build review input for the turn range */
   buildReviewInput: (
     turn: number,
@@ -173,20 +179,27 @@ export async function runTurnEndPipeline(
     }
 
     // ────────────────────────────────────────────────────────────────────
-    // Steps 2 & 3: Batch fragment ranking + Review (parallel)
+    // Step 2: Batch fragment ranking (must complete before review)
     //
-    // These are independent LLM calls — ranking reads unranked fragments
-    // while review reads toolCallHistory/plan. Running them concurrently
-    // saves one full LLM round-trip per turn.
+    // Ranking writes selected fragments into context.allFragments via
+    // recordFragmentsForContext. Review (buildReviewPromptFromContext) reads
+    // context.allFragments for the fragments section. So we await ranking
+    // first so the reviewer always sees this turn's ranked fragments.
     // ────────────────────────────────────────────────────────────────────
 
-    const rankingPromise = buildRankingTask(context, artifacts, config, turn, emitter)
-    const reviewPromise = buildReviewTask(context, config, turn, emitter)
+    const rankingResult = await buildRankingTask(
+      context,
+      artifacts,
+      config,
+      turn,
+      emitter
+    )
 
-    const [rankingResult, reviewResult] = await Promise.all([
-      rankingPromise,
-      reviewPromise,
-    ])
+    // ────────────────────────────────────────────────────────────────────
+    // Step 3: Review (runs after ranking so context.allFragments is up to date)
+    // ────────────────────────────────────────────────────────────────────
+
+    const reviewResult = await buildReviewTask(context, config, turn, emitter)
 
     if (rankingResult) {
       result.rankingExecuted = true
@@ -261,17 +274,23 @@ async function buildRankingTask(
   turn: number,
   emitter?: ReasoningEmitter,
 ): Promise<{ count: number } | null> {
-  if (config.useAgenticFiltering === false) return null
-
   const allUnrankedWithToolContext: UnrankedFragmentWithToolContext[] = []
-  for (const [toolKey , { query, fragments }] of artifacts.unrankedFragmentsByTool.entries()) {
-    const toolName = toolKey.substring(0, toolKey.indexOf(':'))
+  for (const [toolKey, { query, fragments }] of artifacts.unrankedFragmentsByTool.entries()) {
+    const toolName = toolKey.substring(0, toolKey.indexOf(":"))
     for (const fragment of fragments) {
       allUnrankedWithToolContext.push({ fragment, toolName, toolQuery: query })
     }
   }
 
   if (allUnrankedWithToolContext.length === 0) return null
+
+  if (config.useAgenticFiltering === false) {
+    // Skip LLM ranking but still promote fragments into context so they survive
+    // cleanup (resetTurnArtifacts) and are available for synthesis/citations.
+    const fragments = allUnrankedWithToolContext.map((e) => e.fragment)
+    config.ingestFragments?.(context, fragments, turn)
+    return { count: fragments.length }
+  }
 
   Logger.debug(
     {

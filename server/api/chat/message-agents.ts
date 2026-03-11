@@ -5062,6 +5062,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 emitter
               )
             },
+            ingestFragments: (ctx, fragments, t) => {
+              recordFragmentsForContext(ctx, fragments, t)
+            },
 
             // Wiring: cleanup
             flushExpectations: () => {
@@ -6502,6 +6505,9 @@ async function runDelegatedAgentWithMessageAgents(
             t,
             emitter
           )
+        },
+        ingestFragments: (ctx, fragments, t) => {
+          recordFragmentsForContext(ctx, fragments, t)
         },
 
         flushExpectations: () => {
