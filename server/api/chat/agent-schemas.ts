@@ -24,8 +24,8 @@ export interface ToolExecutionRecordWithResult {
 export interface CurrentTurnArtifacts {
   fragments: MinimalAgentFragment[]
   /** Raw unranked fragments collected from all tools this turn, keyed by tool name.
-   *  Ranking is deferred to turn-end so all fragments are ranked in a single batch.
-   *  Value includes the tool query used for retrieval so the ranker can consider retrieval context. */
+   *  Each tool has an array of retrieval batches so each searchGlobal invocation
+   *  keeps its own { query, fragments } provenance. Ranking is deferred to turn-end. */
   unrankedFragmentsByTool: Map<
     string,
     { query: string; fragments: MinimalAgentFragment[] }

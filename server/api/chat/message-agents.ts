@@ -213,7 +213,7 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 const MIN_TURN_NUMBER = 0
 
 // when true we do fragments ranking and filtering with llm call
-const USE_AGENTIC_FILTERING = config.useAgenticFiltering || true
+const USE_AGENTIC_FILTERING = config.useAgenticFiltering ?? true
 
 const DEFAULT_REVIEW_FREQUENCY = 5
 const MIN_REVIEW_FREQUENCY = 1
@@ -2154,15 +2154,16 @@ export async function afterToolExecutionHook(
         ReasoningSteps.documentsFound(filteredContexts.length, toolName)
       )
 
-      // Store unranked fragments keyed by tool — ranking happens at turn-end (dedupe by key before adding)
+      // Store unranked fragments keyed by tool — one batch per searchGlobal invocation (provenance preserved)
       const toolQuery = extractToolQuery(toolName, args as Record<string, unknown>) ?? ""
-      const existing = context.currentTurnArtifacts.unrankedFragmentsByTool.get(toolName)
+      const key = toolName+":"+toolQuery
+      const existing = context.currentTurnArtifacts.unrankedFragmentsByTool.get(key)
       const mergedFragments = mergeFragmentLists(
         existing?.fragments ?? [],
         filteredContexts
       )
-      context.currentTurnArtifacts.unrankedFragmentsByTool.set(toolName, {
-        query: existing?.query ?? toolQuery,
+      context.currentTurnArtifacts.unrankedFragmentsByTool.set(key, {
+        query: toolQuery,
         fragments: mergedFragments,
       })
 

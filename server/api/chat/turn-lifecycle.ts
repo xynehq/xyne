@@ -138,9 +138,12 @@ export async function runTurnEndPipeline(
 
   try {
     // ────────────────────────────────────────────────────────────────────
-    // Gate: Is review locked by final synthesis?
+    // Gate: Is review locked by final synthesis for this turn?
     // ────────────────────────────────────────────────────────────────────
-    if (context.review.lockedByFinalSynthesis) {
+    if (
+      context.review.lockedByFinalSynthesis &&
+      context.review.lockedAtTurn === turn
+    ) {
       Logger.info(
         {
           turn,
@@ -261,7 +264,8 @@ async function buildRankingTask(
   if (config.useAgenticFiltering === false) return null
 
   const allUnrankedWithToolContext: UnrankedFragmentWithToolContext[] = []
-  for (const [toolName, { query, fragments }] of artifacts.unrankedFragmentsByTool.entries()) {
+  for (const [toolKey , { query, fragments }] of artifacts.unrankedFragmentsByTool.entries()) {
+    const toolName = toolKey.substring(0, toolKey.indexOf(':'))
     for (const fragment of fragments) {
       allUnrankedWithToolContext.push({ fragment, toolName, toolQuery: query })
     }
@@ -297,6 +301,7 @@ async function buildReviewTask(
     await emitReasoningEvent(emitter, ReasoningSteps.reviewStarted(turn))
     const reviewInput = config.buildReviewInput(turn, reviewFreq)
     const reviewResult = await config.runReview(context, reviewInput, turn)
+    if (reviewResult === null) return null
     return { result: reviewResult }
   }
 
