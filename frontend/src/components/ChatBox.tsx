@@ -215,7 +215,7 @@ interface ChatBoxProps {
   overrideIsRagOn?: boolean
   hideButtons?: boolean // Add prop to hide mark step as done section
   uploadStatus?: UploadStatus
-  isKnowledgeBaseChat?: boolean 
+  isKnowledgeBaseChat?: boolean
 }
 
 const availableSources: SourceItem[] = [
@@ -358,7 +358,9 @@ const getDefaultModel = (availableModels: ModelConfiguration[]): string => {
   // Try to find Claude Sonnet 4 as default, otherwise use first available
   const defaultModel =
     availableModels.find(
-      (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4.5" || m.labelName === "Claude Sonnet 4",
+      (m: ModelConfiguration) =>
+        m.labelName === "Claude Sonnet 4.5" ||
+        m.labelName === "Claude Sonnet 4",
     ) || availableModels[0]
 
   return defaultModel.labelName
@@ -366,6 +368,7 @@ const getDefaultModel = (availableModels: ModelConfiguration[]): string => {
 
 /** When true: agentic mode is default and MCP dropdown is hidden (env: VITE_AGENTIC_BY_DEFAULT) */
 const isAgenticByDefault = import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true"
+const isDemo = import.meta.env.VITE_IS_DEMO === "true"
 
 export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
   (props, ref) => {
@@ -434,7 +437,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     )
     const [globalResults, setGlobalResults] = useState<SearchResult[]>([])
     const fileAbortControllers = useRef<Map<string, AbortController>>(new Map())
-    const currentSearch = useRouterState({ select: (s) => s.location.search }) as {
+    const currentSearch = useRouterState({
+      select: (s) => s.location.search,
+    }) as {
       embedded?: boolean
     }
     const isEmbedded = currentSearch?.embedded ?? false
@@ -620,7 +625,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // Get all models including gemini 3 flash for web search mode
     const allModelsWithWebSearch = useMemo(() => {
-      return [...availableModels, GEMINI_3_FLASH_MODEL]
+      if (!isDemo) {
+        return [...availableModels, GEMINI_3_FLASH_MODEL]
+      }
+      return [...availableModels]
     }, [availableModels])
 
     // Get the currently selected model's data
@@ -643,14 +651,17 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const isModelDisabled = useCallback(
       (model: ModelConfiguration) => {
         if (selectedCapability === "websearch") {
-          return model.labelName !== "Gemini 3 Flash" && model.labelName !== "Gemini 2.5 Flash"
+          return (
+            model.labelName !== "Gemini 3 Flash" &&
+            model.labelName !== "Gemini 2.5 Flash"
+          )
         } else if (selectedCapability === "deepResearch") {
           return model.labelName !== "KIMI Latest"
-        } 
+        }
         // else if (selectedCapability === "reasoning") {
         //   // Reasoning mode: disable kimi latest
         //   return model.labelName === "KIMI Latest"
-        // } 
+        // }
         else {
           // No capability selected: disable gemini 3 flash only
           return model.labelName === "Gemini 3 Flash"
@@ -811,7 +822,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         } else if (newCapability === "websearch") {
           // Auto-select Gemini 2.5 Flash for web search
           const geminiModel = allModelsWithWebSearch.find(
-            (m: ModelConfiguration) => m.labelName === "Gemini 3 Flash" || m.labelName === "Gemini 2.5 Flash",
+            (m: ModelConfiguration) =>
+              m.labelName === "Gemini 3 Flash" ||
+              m.labelName === "Gemini 2.5 Flash",
           )
           if (geminiModel) {
             setSelectedModel(geminiModel.labelName)
@@ -856,10 +869,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const uploadFiles = useCallback(
       async (files: SelectedFile[]) => {
         if (files.length === 0) return []
-       
+
         setUploadingFilesCount((prev) => prev + files.length)
         const uploadedMetadata: AttachmentMetadata[] = []
-       
+
         files.forEach((file) => {
           fileAbortControllers.current.set(file.id, new AbortController())
         })
@@ -969,7 +982,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     }, [uploadingFilesCount])
     const processFiles = useCallback(
       (files: FileList | File[]) => {
-       
         // Check attachment limit
         if (selectedFiles.length >= MAX_ATTACHMENTS) {
           toast.error({
@@ -1560,7 +1572,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         }
 
         const data = await response.json()
-        const kbData = kbResponse.ok ? await kbResponse.json() : { results: [], count: 0 }
+        const kbData = kbResponse.ok
+          ? await kbResponse.json()
+          : { results: [], count: 0 }
 
         const mainResults: SearchResult[] = data.results || []
         const kbResults: SearchResult[] = kbData.results || []
@@ -1574,7 +1588,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           if (id) {
             const existing = byDocId.get(id)
             const rel = (r as { relevance?: number }).relevance ?? 0
-            const existingRel = (existing as { relevance?: number } | undefined)?.relevance ?? 0
+            const existingRel =
+              (existing as { relevance?: number } | undefined)?.relevance ?? 0
             if (!existing || rel > existingRel) byDocId.set(id, r)
           }
         }
@@ -3086,7 +3101,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             {showAdvancedOptions && (
               <>
                 {/* Capability Selector with Slider Animation */}
-                <div className="flex items-center gap-1 ml-2 relative bg-gray-100 dark:bg-slate-700 rounded-full px-1 py-0.5">
+                <div
+                  className={`flex items-center gap-1 ml-2 relative bg-gray-100 dark:bg-slate-700 rounded-full px-1 py-0.5 ${isDemo ? "hidden" : ""}`}
+                >
                   {/* Slider Background */}
                   <div
                     className={`absolute top-1 bottom-1 rounded-full bg-white dark:bg-slate-600 shadow-sm transition-all duration-300 ease-in-out w-10 ${
@@ -3747,7 +3764,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {!isAgenticByDefault && showAdvancedOptions &&
+            {!isAgenticByDefault &&
+              showAdvancedOptions &&
               (user?.role === UserRole.Admin ||
                 user?.role === UserRole.SuperAdmin) && (
                 <button
@@ -4013,8 +4031,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                         {isDisabled &&
                                           selectedCapability ===
                                             "deepResearch" &&
-                                          model.labelName !==
-                                            "KIMI Latest" && (
+                                          model.labelName !== "KIMI Latest" && (
                                             <span className="text-xs text-red-400 dark:text-red-400 mt-1">
                                               Not available in Deep Research
                                               mode
@@ -4022,20 +4039,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                           )}
                                         {isDisabled &&
                                           selectedCapability === "reasoning" &&
-                                          model.labelName ===
-                                            "KIMI Latest" && (
+                                          model.labelName === "KIMI Latest" && (
                                             <span className="text-xs text-red-400 dark:text-red-400 mt-1">
                                               Only available in Deep Research
                                               mode
                                             </span>
                                           )}
-                                          {isDisabled &&
+                                        {isDisabled &&
                                           selectedCapability === null &&
                                           model.labelName ===
                                             "Gemini 3 Flash" && (
                                             <span className="text-xs text-red-400 dark:text-red-400 mt-1">
-                                              Only available in Web Search
-                                              mode
+                                              Only available in Web Search mode
                                             </span>
                                           )}
                                       </div>
