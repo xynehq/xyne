@@ -64,10 +64,11 @@ let sqlInferenceModel = ""
 let LiteLLMApiKey = ""
 let LiteLLMModel = ""
 let LiteLLMBaseUrl = ""
-let LiteLLMModelInfoUrl = process.env.LITELLM_MODEL_INFO_URL
-let allowSonnet46 = process.env.ALLOW_SONNET_4_6 === "true"
-let allowOpus46 = process.env.ALLOW_OPUS_4_6 === "true"
-let useAgentSelfReview = process.env.USE_AGENT_SELF_REVIEW === "true"
+const LiteLLMModelInfoUrl = process.env.LITELLM_MODEL_INFO_URL
+const allowSonnet46 = process.env.ALLOW_SONNET_4_6 === "true"
+const allowOpus46 = process.env.ALLOW_OPUS_4_6 === "true"
+const useAgentSelfReview = process.env.USE_AGENT_SELF_REVIEW === "true"
+const modelList = process.env.MODELS_LIST
 
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
@@ -137,7 +138,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.Claude_Sonnet_4
   sqlInferenceModel = Models.Claude_Sonnet_4
-  if(defaultDeepResearchModel === "" as Models) {
+  if (defaultDeepResearchModel === ("" as Models)) {
     defaultDeepResearchModel = Models.DeepSeek_R1
   }
   defaultWebSearchModel = Models.Claude_3_5_Sonnet
@@ -152,7 +153,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   OpenAIKey = process.env["OPENAI_API_KEY"]
   defaultFastModel = Models.Gpt_4o_mini
   defaultBestModel = Models.Gpt_4o
-  if(defaultDeepResearchModel === "" as Models) {
+  if (defaultDeepResearchModel === ("" as Models)) {
     defaultDeepResearchModel = Models.o3_Deep_Research
   }
   defaultWebSearchModel = Models.Gpt_4o
@@ -169,7 +170,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["OLLAMA_FAST_MODEL"] as Models)
     : (OllamaModel as Models)
   defaultBestModel = OllamaModel as Models
-  if(defaultDeepResearchModel === "" as Models) {
+  if (defaultDeepResearchModel === ("" as Models)) {
     defaultDeepResearchModel = OllamaModel as Models
   }
   defaultWebSearchModel = OllamaModel as Models
@@ -180,7 +181,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["TOGETHER_FAST_MODEL"] as Models)
     : (TogetherAIModel as Models)
   defaultBestModel = TogetherAIModel as Models
-  if(defaultDeepResearchModel === "" as Models) {
+  if (defaultDeepResearchModel === ("" as Models)) {
     defaultDeepResearchModel = TogetherAIModel as Models
   }
   defaultWebSearchModel = TogetherAIModel as Models
@@ -198,7 +199,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["FIREWORKS_FAST_MODEL"] as Models)
     : (FireworksAIModel as Models)
   defaultBestModel = FireworksAIModel as Models
-  if(defaultDeepResearchModel === "" as Models) {
+  if (defaultDeepResearchModel === ("" as Models)) {
     defaultDeepResearchModel = FireworksAIModel as Models
   }
   defaultWebSearchModel = FireworksAIModel as Models
@@ -209,7 +210,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["GEMINI_FAST_MODEL"] as Models)
     : (GeminiAIModel as Models)
   defaultBestModel = GeminiAIModel as Models
-  if(defaultDeepResearchModel === "" as Models) {
+  if (defaultDeepResearchModel === ("" as Models)) {
     defaultDeepResearchModel = GeminiAIModel as Models
   }
   defaultWebSearchModel = GeminiAIModel as Models
@@ -224,7 +225,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["VERTEX_BEST_MODEL"] as Models)
     : Models.Vertex_Claude_Sonnet_4 // Default best model
   sqlInferenceModel = Models.Vertex_Claude_Sonnet_4
-  if(defaultDeepResearchModel === "" as Models) {
+  if (defaultDeepResearchModel === ("" as Models)) {
     defaultDeepResearchModel = Models.Vertex_Gemini_2_5_Pro
   }
   defaultWebSearchModel = Models.Vertex_Gemini_2_5_Flash
@@ -237,23 +238,25 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     }
   }
   LiteLLMApiKey = process.env["LITELLM_API_KEY"]
-  defaultBestModelAgenticMode = process.env["LITELLM_BEST_AGENTIC_MODEL"] 
-  ? (process.env["LITELLM_BEST_AGENTIC_MODEL"] as Models)
-  : Models.OPEN_LARGE
+  defaultBestModelAgenticMode = process.env["LITELLM_BEST_AGENTIC_MODEL"]
+    ? (process.env["LITELLM_BEST_AGENTIC_MODEL"] as Models)
+    : Models.OPEN_LARGE
   // Set default models for LiteLLM (no longer requiring LITELLM_MODEL to be set)
   defaultFastModel = process.env["LITELLM_FAST_MODEL"]
     ? (process.env["LITELLM_FAST_MODEL"] as Models)
-    : Models.OPEN_FAST// Default fast model
+    : Models.OPEN_FAST // Default fast model
   defaultBestModel = process.env["LITELLM_BEST_MODEL"]
     ? (process.env["LITELLM_BEST_MODEL"] as Models)
     : Models.OPEN_LARGE // Default best model
   sqlInferenceModel = Models.LiteLLM_Gemini_3_Flash
-  if(defaultDeepResearchModel === "" as Models) {
-    defaultDeepResearchModel = process.env["LITELLM_DEEP_RESEARCH_MODEL"] ? (process.env["LITELLM_DEEP_RESEARCH_MODEL"] as Models)
-    : Models.OPEN_LARGE// Default deep research model
+  if (defaultDeepResearchModel === ("" as Models)) {
+    defaultDeepResearchModel = process.env["LITELLM_DEEP_RESEARCH_MODEL"]
+      ? (process.env["LITELLM_DEEP_RESEARCH_MODEL"] as Models)
+      : Models.OPEN_LARGE // Default deep research model
   }
-  defaultWebSearchModel = process.env["LITELLM_WEB_SEARCH_MODEL"] ? (process.env["LITELLM_WEB_SEARCH_MODEL"] as Models)
-  : Models.LiteLLM_Gemini_3_Flash // Default web search model
+  defaultWebSearchModel = process.env["LITELLM_WEB_SEARCH_MODEL"]
+    ? (process.env["LITELLM_WEB_SEARCH_MODEL"] as Models)
+    : Models.LiteLLM_Gemini_3_Flash // Default web search model
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
@@ -332,12 +335,12 @@ export default {
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
   maxDefaultSummary: 10,
-  maxChunksPerTool: 80,
+  maxChunksPerTool: 50,
   maxChunksPerPage: 200,
   chatPageSize: 20, // default page size for ai search
   VespaPageSize: 20, // default page size for vespa search
   maxGoogleDriveSummary: 50,
-  maxUserRequestCount: 50,
+  maxUserRequestCount: 15,
   isReasoning,
   fastModelReasoning,
   StartThinkingToken,
@@ -382,4 +385,5 @@ export default {
   ZohoClientSecret,
   ZohoOrgId,
   useAgentSelfReview,
+  modelList,
 }
