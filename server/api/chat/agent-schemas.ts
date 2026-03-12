@@ -110,6 +110,8 @@ export interface Decision {
 export interface ReviewState {
   lastReviewTurn: number | null
   reviewFrequency: number // Review every N turns
+  /** How many entries in allFragments have already been reviewed (incremental review checkpoint). */
+  lastReviewedFragmentIndex: number
   outstandingAnomalies: string[]
   clarificationQuestions: string[]
   lastReviewResult: ReviewResult | null

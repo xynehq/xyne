@@ -1294,6 +1294,7 @@ function initializeAgentContext(
     review: {
       lastReviewTurn: null,
       reviewFrequency: 5,
+      lastReviewedFragmentIndex: 0,
       lastReviewResult: null,
       outstandingAnomalies: [],
       clarificationQuestions: [],
@@ -1403,6 +1404,7 @@ async function handleReviewOutcome(
 ): Promise<void> {
   context.review.lastReviewResult = reviewResult
   context.review.lastReviewTurn = iteration
+  context.review.lastReviewedFragmentIndex = context.allFragments.length
   context.ambiguityResolved = reviewResult.ambiguityResolved
   context.review.outstandingAnomalies = reviewResult.anomalies?.length
     ? reviewResult.anomalies
@@ -2816,9 +2818,11 @@ export function buildReviewPromptFromContext(
   fallbackExpectations?: ToolExpectationAssignment[],
 ): { prompt: string; imageFileNames: string[] } {
   const turnExpectations =
-    context.currentTurnArtifacts.expectations.length > 0
-      ? context.currentTurnArtifacts.expectations
-      : (fallbackExpectations ?? [])
+    (fallbackExpectations?.length ?? 0) > 0
+      ? (fallbackExpectations ?? [])
+      : context.currentTurnArtifacts.expectations.length > 0
+        ? context.currentTurnArtifacts.expectations
+        : []
   const planSection = formatPlanForPrompt(context.plan)
   const clarificationsSection = formatClarificationsForPrompt(
     context.clarifications,
@@ -2831,23 +2835,46 @@ export function buildReviewPromptFromContext(
   const toolOutputsSection = useMultiTurnHistory
     ? (() => {
         if (context.toolCallHistory.length === 0) {
-          return `Tool calls:\n${formatToolCallHistoryByTurn(context.toolCallHistory)}`
+          return formatToolCallHistoryByTurn(context.toolCallHistory)
         }
         const turns = context.toolCallHistory.map((r) => r.turnNumber)
         const minTurn = Math.min(...turns)
         const maxTurn = Math.max(...turns)
-        const label =
+        const turnLabel =
           minTurn === maxTurn
-            ? `Tool calls (turn ${maxTurn}):`
-            : `Tool calls (turns ${minTurn}–${maxTurn}, last ${maxTurn - minTurn + 1} turns):`
-        return `${label}\n${formatToolCallHistoryByTurn(context.toolCallHistory)}`
+            ? `turn ${maxTurn}`
+            : `turns ${minTurn}–${maxTurn} (${maxTurn - minTurn + 1} turns since last review)`
+        return `Tool activity ${turnLabel}:\n${formatToolCallHistoryByTurn(context.toolCallHistory)}`
       })()
     : formatToolOutputsForReview(context.currentTurnArtifacts.toolOutputs)
   const expectationsSection = formatExpectationsForReview(turnExpectations)
-  const fragmentsSection = answerContextMapFromFragments(
-    context.allFragments,
-    Math.max(12, context.allFragments.length || 1),
-  )
+  const fromIndex = context.review.lastReviewedFragmentIndex
+  const newFragments = context.allFragments.slice(fromIndex)
+  const maxFragmentsForReview = 25
+  const fragmentsSection = newFragments.length
+    ? `New Context Fragments (since last review):\n${answerContextMapFromFragments(
+        newFragments,
+        Math.min(newFragments.length, maxFragmentsForReview),
+      )}`
+    : "New Context Fragments (since last review):\nNo new context fragments since last review."
+  const previousReviewSection =
+    context.review.lastReviewResult != null
+      ? (() => {
+          const r = context.review.lastReviewResult
+          const parts = [
+            `Status: ${r.status}`,
+            `Recommendation: ${r.recommendation}`,
+            r.notes ? `Notes: ${r.notes}` : "",
+            r.unmetExpectations?.length
+              ? `Unmet expectations: ${r.unmetExpectations.join("; ")}`
+              : "",
+            r.anomalies?.length
+              ? `Anomalies: ${r.anomalies.join("; ")}`
+              : "",
+          ].filter(Boolean)
+          return `Previous review summary (for continuity):\n${parts.join("\n")}`
+        })()
+      : ""
   const currentImages = context.currentTurnArtifacts.images.map(
     (image) => image.fileName,
   )
@@ -2855,8 +2882,8 @@ export function buildReviewPromptFromContext(
     context.allImages.length - currentImages.length,
     0,
   )
-  const imageSection = `Current turn attachments: ${currentImages.length}\nAdditional images available from prior turns: ${additionalImages}`
-  const reviewFocus = `Review Focus: ${options?.focus ?? "turn_end"} (Turn ${
+  const imageSection = `Attachments in this window: ${currentImages.length}\nFrom prior turns: ${additionalImages}`
+  const reviewFocus = `Review Focus: ${options?.focus ?? "turn_end"} (evaluating through turn ${
     options?.turnNumber ?? context.turnCount
   })`
 
@@ -2865,9 +2892,10 @@ export function buildReviewPromptFromContext(
     planSection ? `Execution Plan Snapshot:\n${planSection}` : "",
     clarificationsSection ? `Clarifications:\n${clarificationsSection}` : "",
     workspaceSection,
-    `Current Turn Tool Outputs:\n${toolOutputsSection}`,
-    `Expectations:\n${expectationsSection}`,
-    fragmentsSection || "Context Fragments:\nNone captured yet.",
+    previousReviewSection,
+    `Recent Tool Activity (since last review):\n${toolOutputsSection}`,
+    `Expectations (associated with tool calls in this window):\n${expectationsSection}`,
+    fragmentsSection,
     `Images:\n${imageSection}`,
     reviewFocus,
   ].filter(Boolean)
@@ -2956,12 +2984,14 @@ async function runReviewLLM(
     temperature: 0,
     max_new_tokens: 800,
     systemPrompt: `You are a senior reviewer ensuring each agentic turn honors the agreed plan and tool expectations.
+- Context fragments are incremental: you receive only new fragments since the last review, plus a high-level previous review summary for continuity; use that summary to avoid re-evaluating already-reviewed context.
 - The tool call section may cover a single turn or multiple turns (e.g. "last N turns"). Inspect every tool call in that section, compare the outputs with the expected results, and decide whether each tool met or missed expectations.
 - Evaluate the current plan to see if it still fits the evidence gathered from the tool calls; suggest plan changes when necessary.
 - Detect anomalies (unexpected behaviors, contradictory data, missing outputs, or unresolved ambiguities) and call them out explicitly. If intent remains unclear, set ambiguityResolved=false and include the ambiguity notes inside the anomalies array.
 ${delegationNote}
 - When the available context is already relevant and sufficient and it meets all the requirement of user's ask , set planChangeNeeded=true and use planChangeReason to state that the plan should pivot toward final synthesis because the evidence is complete.
 - Set recommendation to "gather_more" when required evidence or data is missing, "clarify_query" when ambiguity remains unresolved, and "replan" only when the current plan is no longer viable.
+- If the user asked multiple questions or sub-questions, verify that the plan or gathered evidence addresses each; report incomplete coverage in anomalies and set recommendation or planChangeNeeded as appropriate.
 - Always set ambiguityResolved=false whenever outstanding clarifications exist or anomalies highlight missing/contradictory information; otherwise leave it true.
 Respond strictly in JSON matching this schema: ${JSON.stringify({
       status: "ok",
@@ -4996,9 +5026,10 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
         const buildTurnReviewInput = (
           turn: number,
-          reviewFreq: number,
+          _reviewFreq: number,
         ): { reviewInput: AutoReviewInput } => {
-          const startTurn = Math.max(MIN_TURN_NUMBER, turn - reviewFreq + 1)
+          const lastReviewTurn = agentContext.review.lastReviewTurn ?? -1
+          const startTurn = Math.max(MIN_TURN_NUMBER, lastReviewTurn + 1)
           const toolHistory = agentContext.toolCallHistory.filter(
             (record) =>
               record.turnNumber >= startTurn && record.turnNumber <= turn,
@@ -6454,9 +6485,10 @@ async function runDelegatedAgentWithMessageAgents(
 
     const buildTurnReviewInput = (
       turn: number,
-      reviewFreq: number,
+      _reviewFreq: number,
     ): { reviewInput: AutoReviewInput } => {
-      const startTurn = Math.max(MIN_TURN_NUMBER, turn - reviewFreq + 1)
+      const lastReviewTurn = agentContext.review.lastReviewTurn ?? -1
+      const startTurn = Math.max(MIN_TURN_NUMBER, lastReviewTurn + 1)
       const toolHistory = agentContext.toolCallHistory.filter(
         (record) => record.turnNumber >= startTurn && record.turnNumber <= turn,
       )

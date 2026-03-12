@@ -37,11 +37,12 @@ import type {
   ToolExpectationAssignment,
   UnrankedFragmentWithToolContext,
 } from "./agent-schemas"
-import type { MinimalAgentFragment, FragmentImageReference } from "./types"
+import type { MinimalAgentFragment } from "./types"
 import type { ReasoningEmitter } from "./reasoning-steps"
 import { ReasoningSteps, emitReasoningEvent } from "./reasoning-steps"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import { XyneTools } from "@/shared/types"
 
 const Logger = getLogger(Subsystem.Chat)
 
@@ -307,6 +308,36 @@ async function buildRankingTask(
   return { count: ranked.length }
 }
 
+/** Non-critical tools whose failures should not trigger review. */
+const NON_CRITICAL_TOOLS = new Set([
+  XyneTools.toDoWrite,
+  XyneTools.synthesizeFinalAnswer,
+])
+
+/** Current-turn tool failures only (avoids triggering every turn after any historical failure). Excludes plan/synthesis tools. */
+function hasCurrentTurnFailure(context: AgentRunContext): boolean {
+  const { executionToolsCalled, toolOutputs } = context.currentTurnArtifacts
+  return (
+    executionToolsCalled > 0 &&
+    toolOutputs.some(
+      (t) =>
+        t.status === "error" && !NON_CRITICAL_TOOLS.has(t.toolName as XyneTools),
+    )
+  )
+}
+
+/**
+ * True when execution tools ran this turn but no new ranked fragments were added.
+ * Evaluated after ranking: "useful information" = what the LLM filter accepted into context,
+ * not raw Vespa retrieval (which can be 40 docs that ranking rejects).
+ */
+function hasStagnation(context: AgentRunContext, turn: number): boolean {
+  const { executionToolsCalled } = context.currentTurnArtifacts
+  if (executionToolsCalled === 0) return false
+  const rankedThisTurn = context.turnFragments.get(turn)?.length ?? 0
+  return rankedThisTurn === 0
+}
+
 async function buildReviewTask(
   context: AgentRunContext,
   config: TurnEndPipelineConfig,
@@ -314,8 +345,12 @@ async function buildReviewTask(
   emitter?: ReasoningEmitter,
 ): Promise<{ result: ReviewResult | null } | null> {
   const reviewFreq = normalizeReviewFrequency(config.reviewFrequency)
-  const shouldReview =
-    context.review.lastReviewTurn === null || turn - (context.review.lastReviewTurn ?? 0) >= reviewFreq
+  const failureTrigger = hasCurrentTurnFailure(context)
+  const timeTrigger =
+    context.review.lastReviewTurn === null ||
+    turn - (context.review.lastReviewTurn ?? 0) >= reviewFreq
+  const stagnationTrigger = hasStagnation(context, turn)
+  const shouldReview = failureTrigger || timeTrigger || stagnationTrigger
 
   if (shouldReview) {
     await emitReasoningEvent(emitter, ReasoningSteps.reviewStarted(turn))
@@ -330,8 +365,11 @@ async function buildReviewTask(
       turn,
       reviewFrequency: reviewFreq,
       chatId: context.chat.externalId,
+      failureTrigger,
+      timeTrigger,
+      stagnationTrigger,
     },
-    "[TurnLifecycle] Review skipped (runs every N turns)."
+    "[TurnLifecycle] Review skipped (no trigger: failure/time/stagnation).",
   )
   return null
 }
