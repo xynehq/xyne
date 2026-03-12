@@ -76,6 +76,7 @@ import { updateMessageByExternalId } from "@/db/chat"
 // Follow-up context types and utilities
 export type WorkingSet = {
   fileIds: string[]
+  attachmentFileIds: string[] // images etc.
   carriedFromMessageIds: string[]
 }
 
@@ -88,6 +89,7 @@ export function collectFollowupContext(
   const startIdx = messages.length - 1
   const ws: WorkingSet = {
     fileIds: [],
+    attachmentFileIds: [],
     carriedFromMessageIds: [],
   }
 
@@ -104,6 +106,13 @@ export function collectFollowupContext(
     // 1) attachments the user explicitly added
     if (Array.isArray(m.attachments)) {
       for (const a of m.attachments as AttachmentMetadata[]) {
+        if (a.isImage && a.fileId && !seen.has(`img:${a.fileId}`)) {
+          ws.attachmentFileIds.push(a.fileId)
+          ws.carriedFromMessageIds.push(m.externalId)
+          seen.add(`img:${a.fileId}`)
+          continue // images are separate from fileIds
+        }
+
         if (a.fileId && !seen.has(`f:${a.fileId}`)) {
           ws.fileIds.push(a.fileId)
           ws.carriedFromMessageIds.push(m.externalId)
@@ -147,6 +156,7 @@ export function collectFollowupContext(
 
   // De-dupe & trim
   ws.fileIds = Array.from(new Set(ws.fileIds)).slice(0, MAX_FILES)
+  ws.attachmentFileIds = Array.from(new Set(ws.attachmentFileIds))
 
   return ws
 }

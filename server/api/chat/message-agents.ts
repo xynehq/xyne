@@ -935,6 +935,81 @@ function extractToolQuery(
   }
 }
 
+/**
+ * Persists an error message to the user message row so the frontend can display it
+ * (e.g. from the user message's errorMessage property). Swallows DB errors and logs
+ * with contextDescription so the original error handling can continue.
+ */
+async function persistErrorToUserMessage(
+  db: Parameters<typeof updateMessage>[0],
+  userMessageExternalId: string,
+  errorMessage: string,
+  email: string,
+  contextDescription: string,
+): Promise<void> {
+  if (!userMessageExternalId) return
+  try {
+    await updateMessage(db, userMessageExternalId, { errorMessage })
+  } catch (updateErr) {
+    loggerWithChild({ email }).warn(
+      updateErr,
+      `Failed to persist error to user message (${contextDescription})`,
+    )
+  }
+}
+
+type PersistAssistantMessageContext = {
+  chatRecord: SelectChat
+  user: { id: number; email: string }
+  workspace: { externalId: string }
+  agenticModelId: string
+  totalCost: number
+  tokenUsage: { input: number; output: number }
+  requestStartMs: number
+}
+
+type PersistAssistantMessageData = {
+  answer: string
+  citations: Citation[]
+  imageCitations: ImageCitation[]
+  citationMap: Record<number, number>
+  thinkingLog: string
+}
+
+/**
+ * Inserts an assistant message and persists trace. Shared by tool_call_end
+ * (synthesizeFinalAnswer) and run_end (direct-answer path). Caller is responsible
+ * for updating lastPersistedMessageId, lastPersistedMessageExternalId, and
+ * assistantMessageId, and for sending SSE (ResponseMetadata, End) if needed.
+ */
+async function persistAssistantMessage(
+  db: Parameters<typeof insertMessage>[0],
+  context: PersistAssistantMessageContext,
+  data: PersistAssistantMessageData,
+  persistTrace: (messageId: number, messageExternalId: string) => Promise<void>,
+): Promise<{ msg: SelectMessage; assistantMessageId: string }> {
+  const timeTakenMs = Date.now() - context.requestStartMs
+  const assistantInsert = {
+    chatId: context.chatRecord.id,
+    userId: context.user.id,
+    workspaceExternalId: String(context.workspace.externalId),
+    chatExternalId: String(context.chatRecord.externalId),
+    messageRole: MessageRole.Assistant,
+    email: context.user.email,
+    sources: data.citations,
+    imageCitations: data.imageCitations,
+    message: processMessage(data.answer, data.citationMap),
+    thinking: data.thinkingLog,
+    modelId: context.agenticModelId,
+    cost: context.totalCost.toString(),
+    tokensUsed: context.tokenUsage.input + context.tokenUsage.output,
+    timeTakenMs,
+  } as unknown as Omit<InsertMessage, "externalId">
+  const msg = await insertMessage(db, assistantInsert)
+  await persistTrace(msg.id as number, msg.externalId)
+  return { msg, assistantMessageId: String(msg.externalId) }
+}
+
 function formatClarificationsForPrompt(
   clarifications: AgentRunContext["clarifications"],
 ): string {
@@ -1078,12 +1153,28 @@ function selectImagesForFinalSynthesis(context: AgentRunContext): {
   }
 
   const attachments = images.filter((img) => img.isUserAttachment)
+
+  const confidenceByFragmentId = new Map<string, number>()
+  for (const fragment of context.currentTurnArtifacts.fragments) {
+    if (fragment.id != null) {
+      confidenceByFragmentId.set(fragment.id, fragment.confidence ?? 0)
+    }
+  }
+  for (const fragment of context.allFragments) {
+    if (fragment.id != null && !confidenceByFragmentId.has(fragment.id)) {
+      confidenceByFragmentId.set(fragment.id, fragment.confidence ?? 0)
+    }
+  }
+  const confidence = (img: FragmentImageReference) =>
+    confidenceByFragmentId.get(img.sourceFragmentId ?? "") ?? 0
+
   const nonAttachments = images
     .filter((img) => !img.isUserAttachment)
     .sort((a, b) => {
       const ageA = context.turnCount - a.addedAtTurn
       const ageB = context.turnCount - b.addedAtTurn
-      return ageA - ageB
+      if (ageA !== ageB) return ageA - ageB
+      return confidence(b) - confidence(a)
     })
 
   const prioritized = [...attachments, ...nonAttachments]
@@ -5545,32 +5636,30 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   },
                   "[MessageAgents][FinalSynthesis] Persist + End at tool_call_end",
                 )
-                const totalCost = agentContext.totalCost
-                const totalTokens =
-                  agentContext.tokenUsage.input + agentContext.tokenUsage.output
                 try {
-                  const timeTakenMs = Date.now() - requestStartMs
-                  const assistantInsert = {
-                    chatId: chatRecord.id,
-                    userId: user.id,
-                    workspaceExternalId: String(workspace.externalId),
-                    chatExternalId: String(chatRecord.externalId),
-                    messageRole: MessageRole.Assistant,
-                    email: String(user.email),
-                    sources: citations,
-                    imageCitations,
-                    message: processMessage(answer, citationMap),
-                    thinking: thinkingLog,
-                    modelId: agenticModelId,
-                    cost: totalCost.toString(),
-                    tokensUsed: totalTokens,
-                    timeTakenMs,
-                  } as unknown as Omit<InsertMessage, "externalId">
-                  const msg = await insertMessage(db, assistantInsert)
-                  assistantMessageId = String(msg.externalId)
-                  lastPersistedMessageId = msg.id as number
-                  lastPersistedMessageExternalId = assistantMessageId
-                  await persistTrace(msg.id as number, msg.externalId)
+                  const persisted = await persistAssistantMessage(
+                    db,
+                    {
+                      chatRecord,
+                      user,
+                      workspace: { externalId: workspace.externalId },
+                      agenticModelId,
+                      totalCost: agentContext.totalCost,
+                      tokenUsage: agentContext.tokenUsage,
+                      requestStartMs,
+                    },
+                    {
+                      answer,
+                      citations,
+                      imageCitations,
+                      citationMap,
+                      thinkingLog,
+                    },
+                    persistTrace,
+                  )
+                  assistantMessageId = persisted.assistantMessageId
+                  lastPersistedMessageId = persisted.msg.id as number
+                  lastPersistedMessageExternalId = persisted.assistantMessageId
                 } catch (error) {
                   loggerWithChild({ email }).error(
                     error,
@@ -5824,18 +5913,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     data: "",
                   })
                 }
-                if (userMessageExternalId) {
-                  try {
-                    await updateMessage(db, userMessageExternalId, {
-                      errorMessage: errMsg,
-                    })
-                  } catch (updateErr) {
-                    loggerWithChild({ email }).warn(
-                      updateErr,
-                      "Failed to persist error to user message (run_end)",
-                    )
-                  }
-                }
+                await persistErrorToUserMessage(
+                  db,
+                  userMessageExternalId,
+                  errMsg,
+                  email,
+                  "run_end",
+                )
                 await persistTraceForLastMessage()
               } else {
                 // Success path: if we never sent End (e.g. direct answer without
@@ -5846,31 +5930,29 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentContext.finalSynthesis.completed
                 if (!alreadySentEnd && answer && !stream.closed) {
                   try {
-                    const totalCost = agentContext.totalCost
-                    const totalTokens =
-                      agentContext.tokenUsage.input + agentContext.tokenUsage.output
-                    const timeTakenMs = Date.now() - requestStartMs
-                    const assistantInsert = {
-                      chatId: chatRecord.id,
-                      userId: user.id,
-                      workspaceExternalId: String(workspace.externalId),
-                      chatExternalId: String(chatRecord.externalId),
-                      messageRole: MessageRole.Assistant,
-                      email: String(user.email),
-                      sources: citations,
-                      imageCitations,
-                      message: processMessage(answer, citationMap),
-                      thinking: thinkingLog,
-                      modelId: agenticModelId,
-                      cost: totalCost.toString(),
-                      tokensUsed: totalTokens,
-                      timeTakenMs,
-                    } as unknown as Omit<InsertMessage, "externalId">
-                    const msg = await insertMessage(db, assistantInsert)
-                    assistantMessageId = String(msg.externalId)
-                    lastPersistedMessageId = msg.id as number
-                    lastPersistedMessageExternalId = assistantMessageId
-                    await persistTrace(msg.id as number, msg.externalId)
+                    const persisted = await persistAssistantMessage(
+                      db,
+                      {
+                        chatRecord,
+                        user,
+                        workspace: { externalId: workspace.externalId },
+                        agenticModelId,
+                        totalCost: agentContext.totalCost,
+                        tokenUsage: agentContext.tokenUsage,
+                        requestStartMs,
+                      },
+                      {
+                        answer,
+                        citations,
+                        imageCitations,
+                        citationMap,
+                        thinkingLog,
+                      },
+                      persistTrace,
+                    )
+                    assistantMessageId = persisted.assistantMessageId
+                    lastPersistedMessageId = persisted.msg.id as number
+                    lastPersistedMessageExternalId = persisted.assistantMessageId
                   } catch (error) {
                     loggerWithChild({ email }).error(
                       error,
@@ -5913,18 +5995,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
         } else {
           loggerWithChild({ email }).error(error, "MessageAgents stream error")
           const streamErrMsg = getErrorMessage(error)
-          if (userMessageExternalId) {
-            try {
-              await updateMessage(db, userMessageExternalId, {
-                errorMessage: streamErrMsg,
-              })
-            } catch (updateErr) {
-              loggerWithChild({ email }).warn(
-                updateErr,
-                "Failed to persist error to user message (stream_error catch)",
-              )
-            }
-          }
+          await persistErrorToUserMessage(
+            db,
+            userMessageExternalId,
+            streamErrMsg,
+            email,
+            "stream_error catch",
+          )
           if (!stream.closed) {
             try {
               await stream.writeSSE({

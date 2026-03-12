@@ -16,10 +16,30 @@ export function getRecentImagesFromContext(
     ...context.currentTurnArtifacts.images,
     ...context.recentImages,
   ]
+
+  // Fragment id -> confidence (relevance) for secondary sort
+  const confidenceByFragmentId = new Map<string, number>()
+  for (const fragment of context.currentTurnArtifacts.fragments) {
+    if (fragment.id != null) {
+      confidenceByFragmentId.set(fragment.id, fragment.confidence ?? 0)
+    }
+  }
+  for (const fragment of context.allFragments) {
+    if (fragment.id != null && !confidenceByFragmentId.has(fragment.id)) {
+      confidenceByFragmentId.set(fragment.id, fragment.confidence ?? 0)
+    }
+  }
+
+  const confidence = (img: (typeof combined)[0]) =>
+    confidenceByFragmentId.get(img.sourceFragmentId ?? "") ?? 0
+
   combined.sort((a, b) => {
     if (a.isUserAttachment && !b.isUserAttachment) return -1
     if (!a.isUserAttachment && b.isUserAttachment) return 1
-    return (b.addedAtTurn ?? 0) - (a.addedAtTurn ?? 0)
+    const turnA = a.addedAtTurn ?? 0
+    const turnB = b.addedAtTurn ?? 0
+    if (turnB !== turnA) return turnB - turnA
+    return confidence(b) - confidence(a)
   })
   const seen = new Set<string>()
   const fileNames: string[] = []
