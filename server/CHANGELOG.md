@@ -1,3 +1,10 @@
+## [3.43.2](https://github.com/xynehq/xyne/compare/v3.43.1...v3.43.2) (2026-03-12)
+
+
+### Bug Fixes
+
+* improved review trigger conditions ([#1281](https://github.com/xynehq/xyne/issues/1281)) ([ce323fe](https://github.com/xynehq/xyne/commit/ce323fe665bb3139dfdc835fab0ae05d862ea026))
+
 ## [3.43.1](https://github.com/xynehq/xyne/compare/v3.43.0...v3.43.1) (2026-03-12)
 
 
