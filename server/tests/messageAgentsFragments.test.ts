@@ -3,15 +3,20 @@ import type { AgentRunContext } from "@/api/chat/agent-schemas"
 import {
   __messageAgentsHistoryInternals,
   __messageAgentsMetadataInternals,
+  __messageAgentsPromptInternals,
   afterToolExecutionHook,
   beforeToolExecutionHook,
   buildDelegatedAgentFragments,
+  buildFinalSynthesisRequest,
   buildFinalSynthesisPayload,
+  buildReviewRequest,
   buildReviewPromptFromContext,
 } from "@/api/chat/message-agents"
 import { getRecentImagesFromContext } from "@/api/chat/runContextUtils"
+import { SynthesizeFinalAnswerInputSchema } from "@/api/chat/tool-schemas"
 import { buildMCPJAFTools } from "@/api/chat/jaf-adapter"
 import type { MinimalAgentFragment } from "@/api/chat/types"
+import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import { Apps } from "@xyne/vespa-ts/types"
 import { createRunId, createTraceId } from "@xynehq/jaf"
 
@@ -48,6 +53,9 @@ const createMockContext = (): AgentRunContext => ({
   userContext: "",
   agentPrompt: undefined,
   dedicatedAgentSystemPrompt: undefined,
+  conversationHistoryMessages: [],
+  episodicMemoriesText: undefined,
+  chatMemoryText: undefined,
   clarifications: [],
   ambiguityResolved: true,
   toolCallHistory: [],
@@ -265,7 +273,7 @@ describe("message-agents context tracking", () => {
     expect(context.currentTurnArtifacts.fragments).toHaveLength(0)
   }, 15000)
 
-  test("buildReviewPromptFromContext includes plan, expectations, and image metadata", () => {
+  test("buildReviewPromptFromContext includes first-review memory context", () => {
     const context = createMockContext()
     context.plan = {
       goal: "Deliver ARR update",
@@ -292,6 +300,13 @@ describe("message-agents context tracking", () => {
         successCriteria: ["ARR keyword present"],
       },
     })
+    context.episodicMemoriesText =
+      "- [preference] User prefers concise summaries. (chatId: chat-9)"
+    context.chatMemoryText = [
+      "User: Share ARR update",
+      "Assistant thinking: Pull supporting evidence from the strongest fragment.",
+      "Assistant: ARR grew 12%.",
+    ].join("\n")
     context.currentTurnArtifacts.images.push({
       fileName: "0_doc-1_0",
       addedAtTurn: 1,
@@ -309,10 +324,140 @@ describe("message-agents context tracking", () => {
     expect(imageFileNames).toEqual(["0_doc-1_0"])
     expect(prompt).toContain("User Question")
     expect(prompt).toContain("Execution Plan Snapshot")
+    expect(prompt).toContain("Memory Context")
+    expect(prompt).toContain("Relevant Past Experiences")
+    expect(prompt).toContain("Retrieved Chat Memory")
+    expect(prompt).toContain("User: Share ARR update")
+    expect(prompt).toContain("Assistant: ARR grew 12%.")
+    expect(prompt).not.toContain("Assistant thinking:")
     expect(prompt).toContain("Recent Tool Activity")
     expect(prompt).toContain("Expectations")
     expect(prompt).toContain("Images")
     expect(prompt).toContain("Review Focus")
+  })
+
+  test("buildReviewRequest prepends conversation history only on first review", () => {
+    const context = createMockContext()
+    context.conversationHistoryMessages = [
+      {
+        role: ConversationRole.USER,
+        content: [{ text: "Earlier user question" }],
+      },
+      {
+        role: ConversationRole.ASSISTANT,
+        content: [{ text: "Earlier assistant answer" }],
+      },
+    ]
+    context.episodicMemoriesText =
+      "- [preference] User prefers concise summaries. (chatId: chat-9)"
+    context.chatMemoryText = [
+      "User: Share ARR update",
+      "Assistant thinking: Pull supporting evidence from the strongest fragment.",
+      "Assistant: ARR grew 12%.",
+    ].join("\n")
+
+    const request = buildReviewRequest(context, {
+      focus: "turn_end",
+      turnNumber: 1,
+    })
+
+    expect(request.isFirstReview).toBe(true)
+    expect(request.messages).toHaveLength(3)
+    expect((request.messages[0] as any).role).toBe("user")
+    expect((request.messages[1] as any).role).toBe("assistant")
+    expect((request.messages[2] as any).role).toBe("user")
+    expect((request.messages[2] as any).content?.[0]?.text).toContain(
+      "Review Focus: turn_end (evaluating through turn 1)"
+    )
+    expect(request.prompt).toContain("Memory Context")
+    expect(request.prompt).not.toContain("Assistant thinking:")
+  })
+
+  test("buildReviewRequest keeps later reviews on single prompt without memory context", () => {
+    const context = createMockContext()
+    context.conversationHistoryMessages = [
+      {
+        role: ConversationRole.USER,
+        content: [{ text: "Earlier user question" }],
+      },
+      {
+        role: ConversationRole.ASSISTANT,
+        content: [{ text: "Earlier assistant answer" }],
+      },
+    ]
+    context.episodicMemoriesText =
+      "- [preference] User prefers concise summaries. (chatId: chat-9)"
+    context.chatMemoryText = [
+      "User: Share ARR update",
+      "Assistant thinking: Pull supporting evidence from the strongest fragment.",
+      "Assistant: ARR grew 12%.",
+    ].join("\n")
+    context.review.lastReviewResult = {
+      status: "ok",
+      notes: "Prior review completed.",
+      toolFeedback: [],
+      unmetExpectations: [],
+      planChangeNeeded: false,
+      anomaliesDetected: false,
+      anomalies: [],
+      recommendation: "proceed",
+      ambiguityResolved: true,
+    }
+
+    const { prompt } = buildReviewPromptFromContext(context, {
+      focus: "turn_end",
+      turnNumber: 2,
+    })
+    const request = buildReviewRequest(context, {
+      focus: "turn_end",
+      turnNumber: 2,
+    })
+
+    expect(prompt).not.toContain("Memory Context")
+    expect(request.isFirstReview).toBe(false)
+    expect(request.messages).toHaveLength(1)
+    expect((request.messages[0] as any).role).toBe("user")
+    expect((request.messages[0] as any).content?.[0]?.text).not.toContain(
+      "Memory Context"
+    )
+  })
+
+  test("review system prompt includes conversation and memory guidance on first review only", () => {
+    const firstReviewPrompt =
+      __messageAgentsPromptInternals.buildReviewSystemPrompt({
+        isFirstReview: true,
+        delegationNote:
+          "- If delegation tools are available, ensure list_custom_agents precedes run_public_agent when delegation is appropriate.",
+      })
+
+    expect(firstReviewPrompt).toContain(
+      "If prior conversation history is provided as messages, use it only for continuity, intent, and prior commitments."
+    )
+    expect(firstReviewPrompt).toContain(
+      "If memory context appears in the user prompt, treat it as supporting context."
+    )
+    expect(firstReviewPrompt).toContain(
+      "Prioritize current turn tool outputs, expectations, clarifications, plan state, fragments, and images over older assistant statements in conversation history."
+    )
+  })
+
+  test("review system prompt omits first-review-only guidance after the first review", () => {
+    const laterReviewPrompt =
+      __messageAgentsPromptInternals.buildReviewSystemPrompt({
+        isFirstReview: false,
+        delegationNote:
+          "- If delegation tools are available, ensure list_custom_agents precedes run_public_agent when delegation is appropriate.",
+      })
+
+    expect(laterReviewPrompt).not.toContain(
+      "If prior conversation history is provided as messages, use it only for continuity, intent, and prior commitments."
+    )
+    expect(laterReviewPrompt).not.toContain(
+      "If memory context appears in the user prompt, treat it as supporting context."
+    )
+    expect(laterReviewPrompt).not.toContain(
+      "Prioritize current turn tool outputs, expectations, clarifications, plan state, fragments, and images over older assistant statements in conversation history."
+    )
   })
 
   test("buildDelegatedAgentFragments synthesizes citation when no context provided", () => {
@@ -472,6 +617,13 @@ describe("message-agents context tracking", () => {
     const context = createMockContext()
     context.dedicatedAgentSystemPrompt =
       "You are an enterprise agent. Always use verified workspace evidence."
+    context.episodicMemoriesText =
+      "- [preference] User prefers concise executive summaries. (chatId: chat-7)"
+    context.chatMemoryText = [
+      "User: Summarize ARR for me",
+      "Assistant thinking: Identify the strongest evidence first.",
+      "Assistant: ARR grew last quarter.",
+    ].join("\n")
     context.allFragments = [
       {
         ...baseFragment,
@@ -494,11 +646,60 @@ describe("message-agents context tracking", () => {
       "You are Xyne, an enterprise search assistant with agentic capabilities."
     )
     expect(payload.userMessage).toContain("</system prompt>")
+    expect(payload.userMessage).toContain("Memory Context:")
+    expect(payload.userMessage).toContain("Relevant Past Experiences:")
+    expect(payload.userMessage).toContain("Retrieved Chat Memory:")
+    expect(payload.userMessage).toContain("User: Summarize ARR for me")
+    expect(payload.userMessage).toContain("Assistant: ARR grew last quarter.")
+    expect(payload.userMessage).not.toContain("Assistant thinking:")
     expect(payload.userMessage).toContain("Context Fragments:")
     expect(payload.userMessage).toContain("index 1 {file context begins here...}")
     expect(payload.userMessage).toContain("- title: ARR Summary")
     expect(payload.userMessage).toContain("- page_title: Quarterly Planning Sheet")
     expect(payload.userMessage).toContain("Content:")
     expect(payload.userMessage).toContain("Quarterly ARR grew 12%")
+  })
+
+  test("final synthesis request keeps prior conversation as separate messages", () => {
+    const context = createMockContext()
+    context.conversationHistoryMessages = [
+      {
+        role: ConversationRole.USER,
+        content: [{ text: "Earlier user question" }],
+      },
+      {
+        role: ConversationRole.ASSISTANT,
+        content: [{ text: "Earlier assistant answer" }],
+      },
+    ]
+
+    const request = buildFinalSynthesisRequest(context, {
+      insightsUsefulForAnswering:
+        "Lead with the ARR delta before discussing supporting evidence.",
+    })
+
+    expect(request.messages).toHaveLength(3)
+    expect((request.messages[0] as any).role).toBe("user")
+    expect((request.messages[1] as any).role).toBe("assistant")
+    expect((request.messages[2] as any).role).toBe("user")
+    expect((request.messages[2] as any).content?.[0]?.text).toContain(
+      "Synthesize the final answer using the evidence above."
+    )
+    expect((request.messages[2] as any).content?.[0]?.text).toContain(
+      "User Question:\nHow is ARR tracking?"
+    )
+    expect(request.userMessage).toContain("Agent Insights for Final Answer:")
+    expect(request.userMessage).toContain(
+      "Lead with the ARR delta before discussing supporting evidence."
+    )
+  })
+
+  test("synthesize final answer schema accepts optional insights", () => {
+    expect(SynthesizeFinalAnswerInputSchema.safeParse({}).success).toBe(true)
+    expect(
+      SynthesizeFinalAnswerInputSchema.safeParse({
+        insightsUsefulForAnswering: "Start with the conclusion.",
+      }).success
+    ).toBe(true)
   })
 })

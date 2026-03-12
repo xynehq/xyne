@@ -213,9 +213,16 @@ export type ToDoWriteOutput = z.infer<typeof ToDoWriteOutputSchema>
 // ============================================================================
 
 export const SynthesizeFinalAnswerInputSchema = z
-  .object({})
+  .object({
+    insightsUsefulForAnswering: z
+      .string()
+      .optional()
+      .describe(
+        "Optional guidance from the agent to help the final answer model emphasize key conclusions, ordering, or non-obvious takeaways. This is advisory guidance, not primary evidence. You can use it to add context or information that you think the final synthesis will be missing and that would be useful to include in the final answer.",
+      ),
+  })
   .describe(
-    "No arguments allowed. Invoke only when you are fully ready to deliver the final answer.",
+    "Invoke only when you are fully ready to deliver the final answer. The final answer model receives prior compacted conversation history, the current user question, agent system prompt context, workspace context, episodic memories, retrieved chat memory, fragments gathered across turns, selected images, and optional insightsUsefulForAnswering guidance from the agent.",
   )
 
 export const SynthesizeFinalAnswerOutputSchema = z.object({
@@ -905,7 +912,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
     description: [
       "MANDATORY FINAL STEP.",
       "Call this tool exactly once when you have gathered all required context and are ready to deliver the final answer.",
-      "It streams the final response to the user using the full text + image context.",
+      "It streams the final response to the user using prior compacted conversation history, the current question, agent system prompt context, plan snapshot, clarifications, workspace context, episodic memories, retrieved chat memory, fragments gathered across turns, selected images, and optional insightsUsefulForAnswering guidance.",
       "After calling this tool, do NOT call any other tools—simply acknowledge completion in your next assistant turn.",
     ].join(" "),
     category: ToolCategory.Finalization,
