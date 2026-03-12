@@ -36,6 +36,7 @@ import type { ChunkMetadata, UserMetadataType } from "@/types"
 import { querySheetChunks } from "@/lib/duckdb"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
 import { MIME_DATABASE_SCHEMA } from "@/integrations/database"
+import { IMAGE_CONTEXT_CONFIG } from "@/config"
 
 // Utility function to extract header from chunks and remove headers from each chunk
 const extractHeaderAndDataChunks = (
@@ -484,9 +485,9 @@ const constructFileContext = (
   let imageChunks: ScoredChunk[] = []
   const maxImageChunks =
     fields.image_chunks_summary?.length &&
-    fields.image_chunks_summary?.length < 5
+    fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
       ? fields.image_chunks_summary?.length
-      : 5
+      : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
 
   if (fields.matchfeatures) {
     const summaryStrings =
@@ -890,9 +891,9 @@ const constructDataSourceFileContext = (
   let imageChunks: ScoredChunk[] = []
   const maxImageChunks =
     fields.image_chunks_summary?.length &&
-    fields.image_chunks_summary?.length < 5
+    fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
       ? fields.image_chunks_summary?.length
-      : 5
+      : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
   if (fields.matchfeatures) {
     imageChunks = getSortedScoredImageChunks(
       fields.matchfeatures,
@@ -1008,9 +1009,9 @@ const constructCollectionFileContext = (
   let imageChunks: ScoredChunk[] = []
   const maxImageChunks =
     fields.image_chunks_summary?.length &&
-    fields.image_chunks_summary?.length < 5
+    fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
       ? fields.image_chunks_summary?.length
-      : 5
+      : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
 
   if (fields.matchfeatures) {
     const summaryStrings =

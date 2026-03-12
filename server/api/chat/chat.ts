@@ -2032,6 +2032,7 @@ async function* generateAnswerFromGivenContext(
   agentPrompt?: string,
   passedSpan?: Span,
   threadIds?: string[],
+  attachmentFileIds?: string[],
   allowChunkCitations?: boolean,
   modelId?: string,
   isValidPath?: boolean,
@@ -2328,6 +2329,12 @@ async function* generateAnswerFromGivenContext(
 
   const finalImageFileNames = imageFileNames || []
 
+  if (attachmentFileIds?.length) {
+    finalImageFileNames.push(
+      ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
+    )
+  }
+
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
   initialContextSpan?.setAttribute(
     "context_length",
@@ -2413,6 +2420,7 @@ export async function* generateAnswerFromDualRag(
   agentPrompt?: string,
   passedSpan?: Span,
   threadIds?: string[],
+  attachmentFileIds?: string[],// contains image attachments 
   allowChunkCitations?: boolean,
   modelId?: string,
   isValidPath?: boolean,
@@ -2438,6 +2446,11 @@ export async function* generateAnswerFromDualRag(
   )
   loggerWithChild({ email: email }).info(
     `generateAnswerFromDualRag - fileIds received: ${JSON.stringify(fileIds)}`,
+  )
+  loggerWithChild({ email: email }).info(
+    `generateAnswerFromDualRag - attachmentFileIds received: ${JSON.stringify(
+      attachmentFileIds,
+    )}`,
   )
   let userAlpha = alpha
   try {
@@ -2901,6 +2914,13 @@ export async function* generateAnswerFromDualRag(
   )
 
   const finalImageFileNames = imageFileNames || []
+
+  if (attachmentFileIds?.length) {
+    finalImageFileNames.push(
+      ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
+    )
+  }
+
 
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
   initialContextSpan?.setAttribute(
@@ -4802,6 +4822,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   userRequestsReasoning: boolean,
   passedSpan?: Span,
   threadIds?: string[],
+  attachmentFileIds?: string[],
   agentPrompt?: string,
   allowChunkCitations?: boolean,
   modelId?: string,
@@ -4837,6 +4858,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     agentPrompt,
     passedSpan,
     threadIds,
+    attachmentFileIds,
     allowChunkCitations,
     modelId,
     isValidPath,
@@ -5067,8 +5089,13 @@ export const MessageApi = async (c: Context) => {
     }
 
     let attachmentMetadata = parseAttachmentMetadata(c)
-    const attachmentFileIds = attachmentMetadata.flatMap((m) => expandSheetIds(m.fileId))
-    const isMsgWithAttachments = attachmentFileIds.length > 0
+    let imageAttachmentFileIds = attachmentMetadata
+      .filter((m) => m.isImage)
+      .map((m) => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata
+      .filter((m) => !m.isImage)
+      .flatMap((m) => expandSheetIds(m.fileId))
+    const isMsgWithAttachments = nonImageAttachmentFileIds.length > 0
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -5159,8 +5186,8 @@ export const MessageApi = async (c: Context) => {
     if (extractedInfo?.fileIds.length > 0) {
       fileIds = fileIds.concat(extractedInfo?.fileIds)
     }
-    if (attachmentFileIds && attachmentFileIds.length > 0) {
-      fileIds = fileIds.concat(attachmentFileIds)
+    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
+      fileIds = fileIds.concat(nonImageAttachmentFileIds)
     }
     const threadIds = extractedInfo?.threadIds || []
     const totalValidFileIdsFromLinkCount =
@@ -5379,7 +5406,10 @@ export const MessageApi = async (c: Context) => {
             topicConversationThread,
           )
 
-          if (fileIds && fileIds?.length > 0) {
+          if (
+            (fileIds && fileIds?.length > 0) ||
+            (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
+          ) {
             let answer = ""
             let citations = []
             let imageCitations: any[] = []
@@ -5406,6 +5436,7 @@ export const MessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
+              imageAttachmentFileIds,
               agentPromptValue,
               isMsgWithKbItems || isMsgWithAttachments,
               actualModelId || config.defaultBestModel,
@@ -6117,17 +6148,23 @@ export const MessageApi = async (c: Context) => {
                 // Check for follow-up context carry-forward
                 const workingSet = collectFollowupContext(filteredMessages)
 
-                const hasCarriedContext = workingSet.fileIds.length > 0
+                const hasCarriedContext =
+                  workingSet.fileIds.length > 0 ||
+                  workingSet.attachmentFileIds.length > 0
                 if (hasCarriedContext) {
                   fileIds = workingSet.fileIds
+                  imageAttachmentFileIds = workingSet.attachmentFileIds
                   loggerWithChild({ email: email }).info(
                     `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
                   )
                 }
 
-                if (fileIds && fileIds.length > 0) {
+                if (
+                  (fileIds && fileIds.length > 0) ||
+                  (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
+                ) {
                   loggerWithChild({ email: email }).info(
-                    `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(fileIds)}`,
+                    `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
                   )
                   const allowChunkCitations = fileIds.some((fileId) => fileId.startsWith("clf-")) || fileIds.some((fileId) => fileId.startsWith("attf_"))
                   iterator = UnderstandMessageAndAnswerForGivenContext(
@@ -6140,6 +6177,7 @@ export const MessageApi = async (c: Context) => {
                     userRequestsReasoning,
                     understandSpan,
                     undefined,
+                    imageAttachmentFileIds,
                     agentPromptValue,
                     allowChunkCitations,
                     actualModelId || config.defaultBestModel,
@@ -6668,14 +6706,16 @@ export const MessageRetryApi = async (c: Context) => {
 
     // If it's an assistant message, we need to get attachments from the previous user message
     let attachmentMetadata: AttachmentMetadata[] = []
-    let attachmentFileIds: string[] = []
-    let isMsgWithAttachments = false
+    let nonImageAttachmentFileIds: string[] = []
+    let imageAttachmentFileIds: string[] = []
+    let isMsgWithAttachments = false  
 
     if (isUserMessage) {
       // If retrying a user message, get attachments from that message
       attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
-      attachmentFileIds = attachmentMetadata.flatMap((m) => expandSheetIds(m.fileId))
-      isMsgWithAttachments = attachmentFileIds.length > 0
+      nonImageAttachmentFileIds = attachmentMetadata.filter((m) => !m.isImage).flatMap((m) => expandSheetIds(m.fileId))
+      imageAttachmentFileIds = attachmentMetadata.filter((m) => m.isImage).map((m) => m.fileId)
+      isMsgWithAttachments = nonImageAttachmentFileIds.length > 0
     }
 
     rootSpan.setAttribute("email", email)
@@ -6729,8 +6769,9 @@ export const MessageRetryApi = async (c: Context) => {
           prevUserMessage.externalId,
           email,
         )
-        attachmentFileIds = attachmentMetadata.flatMap((m) => expandSheetIds(m.fileId))
-        isMsgWithAttachments = attachmentFileIds.length > 0
+        nonImageAttachmentFileIds = attachmentMetadata.filter((m) => !m.isImage).flatMap((m) => expandSheetIds(m.fileId))
+        imageAttachmentFileIds = attachmentMetadata.filter((m) => m.isImage).map((m) => m.fileId)
+        isMsgWithAttachments = nonImageAttachmentFileIds.length > 0
       }
     }
 
@@ -6801,8 +6842,8 @@ export const MessageRetryApi = async (c: Context) => {
         extractedInfo?.totalValidFileIdsFromLinkCount
       threadIds = extractedInfo?.threadIds || []
     }
-    if (attachmentFileIds && attachmentFileIds.length > 0) {
-      fileIds = fileIds.concat(attachmentFileIds)
+    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
+      fileIds = fileIds.concat(nonImageAttachmentFileIds)
     }
     // we are trying to retry the first assistant's message
     if (conversation.length === 1) {
@@ -6835,7 +6876,10 @@ export const MessageRetryApi = async (c: Context) => {
 
         try {
           let message = prevUserMessage.message
-          if (fileIds && fileIds?.length > 0) {
+          if (
+            (fileIds && fileIds?.length > 0) ||
+            (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
+          ) {
             loggerWithChild({ email: email }).info(
               "[RETRY] User has selected some context with query, answering only based on that given context",
             )
@@ -6866,6 +6910,7 @@ export const MessageRetryApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
+              imageAttachmentFileIds,
               undefined,
               isMsgWithKbItems || isMsgWithAttachments,
               modelId,

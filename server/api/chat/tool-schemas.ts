@@ -764,7 +764,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   searchChatHistory: {
     name: XyneTools.searchChatHistory,
     description:
-      "Search earlier parts of this conversation for relevant context. Use when you need to recall what was said or decided in prior messages.",
+      "Search earlier parts of this conversation for relevant context, Only a limited recent window of messages is provided in context, use this when you need to recall what was said or decided in prior messages.",
     category: ToolCategory.Search,
     inputSchema: SearchChatHistoryInputSchema,
     outputSchema: ToolOutputSchema,

@@ -10,6 +10,7 @@ import { Toaster } from "@/components/ui/toaster"
 import UploadProgressWidget from "@/components/UploadProgressWidget"
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { AppConfigProvider } from "@/contexts/AppConfigContext"
 
 const queryClient = new QueryClient({})
 
@@ -27,11 +28,13 @@ declare module "@tanstack/react-router" {
 const App = () => {
   return (
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster />
-        <UploadProgressWidget />
-      </QueryClientProvider>
+      <AppConfigProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+          <Toaster />
+          <UploadProgressWidget />
+        </QueryClientProvider>
+      </AppConfigProvider>
     </ThemeProvider>
   )
 }

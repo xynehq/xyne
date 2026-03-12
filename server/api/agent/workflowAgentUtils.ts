@@ -755,6 +755,7 @@ export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams)
           false,                                // userRequestsReasoning
           understandSpan,                       // tracing span
           [],                                   // threadIds (empty for workflows)
+          params.attachmentFileIds || [],       // attachmentFileIds (ONLY for images)
           agent.prompt || JSON.stringify(agent), // agent's system prompt or full agent
           true,                                 // isMsgWithSources
           agent.model === "Auto" ? undefined : agent.model, // model ID

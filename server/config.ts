@@ -75,7 +75,7 @@ const allowSonnet46 = process.env.ALLOW_SONNET_4_6 === "true"
 const allowOpus46 = process.env.ALLOW_OPUS_4_6 === "true"
 const useAgenticFiltering = process.env.USE_AGENTIC_FILTERING === "true"
 const modelList = process.env.MODELS_LIST
-
+const enableImages = process.env.ENABLE_IMAGES === "true"
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
   process.env.FILE_PROCESSING_WORKER_THREADS || "4",
@@ -120,10 +120,11 @@ export const MEMORY_CONFIG = {
   MAX_EPISODIC_MEMORIES: 6,
 }
 export const IMAGE_CONTEXT_CONFIG = {
-  enabled: true, // Enable image context tracking by default
+  enabled: enableImages, // Enable image context tracking by default
   recencyWindow: 2, // Keep images from last 2 turns
-  maxImagesPerCall: 100, // 0 = no limit, pass all recent images
-  alwaysIncludeAttachments: true,
+  maxImagesPerCall: 5, // 0 = no limit, pass all recent images
+  alwaysIncludeAttachments: enableImages,
+  maxImagesPerFile: 2,
 }
 
 // LangFuse configuration

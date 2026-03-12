@@ -38,6 +38,7 @@ import {
   useControls,
 } from "react-zoom-pan-pinch"
 import { useTheme } from "@/components/ThemeContext"
+import { useAppConfig } from "@/contexts/AppConfigContext"
 import { Pill } from "@/components/Pill"
 import { MermaidCodeWrapper } from "@/hooks/useMermaidRenderer"
 
@@ -223,13 +224,19 @@ export const ChatPage = ({
   const chatParams: XyneChat = useSearch({
     from: "/_authenticated/chat",
   })
+  const { agenticByDefault } = useAppConfig()
   const isGlobalDebugMode = import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
   const isDebugMode = isGlobalDebugMode || chatParams.debug
   const [isAgenticMode, setIsAgenticMode] = useState(
     chatParams.agentic !== undefined
       ? Boolean(chatParams.agentic)
-      : import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true",
+      : agenticByDefault,
   )
+
+  // Sync with agenticByDefault when it changes and no explicit URL param is set
+  useEffect(() => {
+    setIsAgenticMode(agenticByDefault)
+  }, [agenticByDefault])
   const isEmbedded = chatParams.embedded ?? false
   const isWithChatId = !!(params as any).chatId
   const isSharedChat = !!chatParams.shareToken
