@@ -314,28 +314,53 @@ const NON_CRITICAL_TOOLS = new Set([
   XyneTools.synthesizeFinalAnswer,
 ])
 
-/** Current-turn tool failures only (avoids triggering every turn after any historical failure). Excludes plan/synthesis tools. */
+const MAX_TOOL_FAILURES_PER_TURN = 3
+const MAX_DISTINCT_FAILED_TOOLS = 2
+const STAGNATION_WINDOW = 2
+
+/**
+ * Review when failures cross a threshold (avoids triggering on single timeout/rate-limit/network blip).
+ * Triggers when: 3+ total failures this turn, or 2+ distinct tools failed (so two different tools failing triggers even with only 2 failures).
+ */
 function hasCurrentTurnFailure(context: AgentRunContext): boolean {
-  const { executionToolsCalled, toolOutputs } = context.currentTurnArtifacts
+  const { toolOutputs } = context.currentTurnArtifacts
+  let failedCount = 0
+  const distinctFailedTools = new Set<string>()
+
+  for (const t of toolOutputs) {
+    if (
+      t.status === "error" &&
+      !NON_CRITICAL_TOOLS.has(t.toolName as XyneTools)
+    ) {
+      failedCount++
+      distinctFailedTools.add(t.toolName)
+    }
+  }
+
+  if (failedCount === 0) return false
+
   return (
-    executionToolsCalled > 0 &&
-    toolOutputs.some(
-      (t) =>
-        t.status === "error" && !NON_CRITICAL_TOOLS.has(t.toolName as XyneTools),
-    )
+    failedCount >= MAX_TOOL_FAILURES_PER_TURN ||
+    distinctFailedTools.size >= MAX_DISTINCT_FAILED_TOOLS
   )
 }
 
 /**
- * True when execution tools ran this turn but no new ranked fragments were added.
- * Evaluated after ranking: "useful information" = what the LLM filter accepted into context,
- * not raw Vespa retrieval (which can be 40 docs that ranking rejects).
+ * True when the current turn is the newest in a STAGNATION_WINDOW of turns with tool calls that all produced 0 ranked fragments.
+ * Anchored to currentTurn so we only trigger when ending a turn that had tool calls, not after reasoning-only turns.
+ * "Useful information" = LLM-approved fragments in context, not raw retrieval.
  */
-function hasStagnation(context: AgentRunContext, turn: number): boolean {
-  const { executionToolsCalled } = context.currentTurnArtifacts
-  if (executionToolsCalled === 0) return false
-  const rankedThisTurn = context.turnFragments.get(turn)?.length ?? 0
-  return rankedThisTurn === 0
+function hasStagnation(context: AgentRunContext, currentTurn: number): boolean {
+  const turnNumbersWithToolCalls = [
+    ...new Set(context.toolCallHistory.map((r) => r.turnNumber)),
+  ].sort((a, b) => b - a)
+  const lastNTurns = turnNumbersWithToolCalls.slice(0, STAGNATION_WINDOW)
+  if (lastNTurns.length < STAGNATION_WINDOW) return false
+  if (lastNTurns[0] !== currentTurn) return false
+  const allZeroRanked = lastNTurns.every(
+    (t) => (context.turnFragments.get(t)?.length ?? 0) === 0,
+  )
+  return allZeroRanked
 }
 
 async function buildReviewTask(
