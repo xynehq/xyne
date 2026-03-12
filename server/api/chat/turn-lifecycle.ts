@@ -315,12 +315,12 @@ const NON_CRITICAL_TOOLS = new Set([
 ])
 
 const MAX_TOOL_FAILURES_PER_TURN = 3
-const MAX_DISTINCT_FAILED_TOOLS = 3
+const MAX_DISTINCT_FAILED_TOOLS = 2
 const STAGNATION_WINDOW = 2
 
 /**
  * Review when failures cross a threshold (avoids triggering on single timeout/rate-limit/network blip).
- * Triggers when: 3+ total failures this turn, or 3+ distinct tools failed.
+ * Triggers when: 3+ total failures this turn, or 2+ distinct tools failed (so two different tools failing triggers even with only 2 failures).
  */
 function hasCurrentTurnFailure(context: AgentRunContext): boolean {
   const { toolOutputs } = context.currentTurnArtifacts
