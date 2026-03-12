@@ -81,6 +81,7 @@ const createMockContext = (): AgentRunContext => ({
   review: {
     lastReviewTurn: null,
     reviewFrequency: 5,
+    lastReviewedFragmentIndex: 0,
     outstandingAnomalies: [],
     clarificationQuestions: [],
     lastReviewResult: null,
@@ -308,7 +309,7 @@ describe("message-agents context tracking", () => {
     expect(imageFileNames).toEqual(["0_doc-1_0"])
     expect(prompt).toContain("User Question")
     expect(prompt).toContain("Execution Plan Snapshot")
-    expect(prompt).toContain("Current Turn Tool Outputs")
+    expect(prompt).toContain("Recent Tool Activity")
     expect(prompt).toContain("Expectations")
     expect(prompt).toContain("Images")
     expect(prompt).toContain("Review Focus")
