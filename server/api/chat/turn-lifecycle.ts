@@ -320,19 +320,28 @@ const STAGNATION_WINDOW = 2
 
 /**
  * Review when failures cross a threshold (avoids triggering on single timeout/rate-limit/network blip).
- * Triggers when: 2+ total failures this turn, or 2+ distinct tools failed.
+ * Triggers when: 3+ total failures this turn, or 3+ distinct tools failed.
  */
 function hasCurrentTurnFailure(context: AgentRunContext): boolean {
   const { toolOutputs } = context.currentTurnArtifacts
-  const failed = toolOutputs.filter(
-    (t) =>
-      t.status === "error" && !NON_CRITICAL_TOOLS.has(t.toolName as XyneTools),
-  )
-  if (failed.length === 0) return false
-  const distinctTools = new Set(failed.map((t) => t.toolName)).size
+  let failedCount = 0
+  const distinctFailedTools = new Set<string>()
+
+  for (const t of toolOutputs) {
+    if (
+      t.status === "error" &&
+      !NON_CRITICAL_TOOLS.has(t.toolName as XyneTools)
+    ) {
+      failedCount++
+      distinctFailedTools.add(t.toolName)
+    }
+  }
+
+  if (failedCount === 0) return false
+
   return (
-    failed.length >= MAX_TOOL_FAILURES_PER_TURN ||
-    distinctTools >= MAX_DISTINCT_FAILED_TOOLS
+    failedCount >= MAX_TOOL_FAILURES_PER_TURN ||
+    distinctFailedTools.size >= MAX_DISTINCT_FAILED_TOOLS
   )
 }
 
