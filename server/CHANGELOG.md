@@ -1,3 +1,11 @@
+## [3.43.3](https://github.com/xynehq/xyne/compare/v3.43.2...v3.43.3) (2026-03-12)
+
+
+### Bug Fixes
+
+* adding conv history memory to review and final answer ([#1283](https://github.com/xynehq/xyne/issues/1283)) ([1fec425](https://github.com/xynehq/xyne/commit/1fec4257a23b7f94c6edfc0e5489217c4c43c18d))
+* fixed message persistance of direct stream and plan advance removal ([#1282](https://github.com/xynehq/xyne/issues/1282)) ([8f512d7](https://github.com/xynehq/xyne/commit/8f512d7d505bc72e911aed4d44d7b91da46bc0a6))
+
 ## [3.43.2](https://github.com/xynehq/xyne/compare/v3.43.1...v3.43.2) (2026-03-12)
 
 
