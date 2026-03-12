@@ -1342,6 +1342,14 @@ app.get("/workflow/webhook-api/list", async (c) => {
 app.post("/api/v1/webhook/jira/:webhookId", ReceiveJiraWebhookApi)
 app.post("/api/v1/webhook-test/jira/:webhookId", ReceiveJiraWebhookApi)
 
+// Public app config for frontend (runtime env; no auth required)
+app.get("/api/v1/config", (c) =>
+  c.json({
+    agenticByDefault: process.env.AGENTIC_BY_DEFAULT === "true",
+    isDemo: process.env.IS_DEMO === "true",
+  }),
+)
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)

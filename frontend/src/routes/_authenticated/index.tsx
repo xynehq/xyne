@@ -13,6 +13,7 @@ import {
   AttachmentMetadata,
 } from "shared/types"
 import { api } from "@/api"
+import { useAppConfig } from "@/contexts/AppConfigContext"
 import { ChatBox, type HandleSendOptions } from "@/components/ChatBox"
 import Sparkle from "@/assets/singleSparkle.svg?react"
 import { errorComponent } from "@/components/error"
@@ -35,8 +36,9 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
   const AGENTIC_STATE = "agenticState"
+  const { agenticByDefault } = useAppConfig()
   const [isAgenticMode, setIsAgenticMode] = useState(() => {
-    const fallback = import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true"
+    const fallback = agenticByDefault
     const storedValue = localStorage.getItem(AGENTIC_STATE)
     if (storedValue) {
       try {
@@ -62,6 +64,12 @@ const Index = () => {
       return []
     }
   })
+
+  // Sync isAgenticMode with server config when there is no stored preference
+  useEffect(() => {
+    if (localStorage.getItem(AGENTIC_STATE) != null) return
+    setIsAgenticMode(agenticByDefault)
+  }, [agenticByDefault])
 
   useEffect(() => {
     try {

@@ -78,6 +78,7 @@ import {
 } from "@/utils/fileUtils"
 import { getFileType } from "shared/fileUtils"
 import { authFetch } from "@/utils/authFetch"
+import { useAppConfig } from "@/contexts/AppConfigContext"
 
 interface SelectedFile {
   file: File
@@ -366,12 +367,9 @@ const getDefaultModel = (availableModels: ModelConfiguration[]): string => {
   return defaultModel.labelName
 }
 
-/** When true: agentic mode is default and MCP dropdown is hidden (env: VITE_AGENTIC_BY_DEFAULT) */
-const isAgenticByDefault = import.meta.env.VITE_AGENTIC_BY_DEFAULT === "true"
-const isDemo = import.meta.env.VITE_IS_DEMO === "true"
-
 export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
   (props, ref) => {
+    const { agenticByDefault, isDemo } = useAppConfig()
     const {
       role,
       query,
@@ -385,7 +383,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       agentIdFromChatData, // Destructure new prop
       user, // Destructure user prop
       setIsAgenticMode,
-      isAgenticMode = isAgenticByDefault,
+      isAgenticMode = agenticByDefault,
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
       uploadStatus,
@@ -3159,8 +3157,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </div>
               </>
             )}
-            {/* Dropdown for All Connectors (hidden when VITE_AGENTIC_BY_DEFAULT=true) */}
-            {!isAgenticByDefault &&
+            {/* Dropdown for All Connectors (hidden when config.agenticByDefault=true) */}
+            {!agenticByDefault &&
               showAdvancedOptions &&
               (role === UserRole.SuperAdmin || role === UserRole.Admin) && (
                 <DropdownMenu
@@ -3764,7 +3762,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {!isAgenticByDefault &&
+            {!agenticByDefault &&
               showAdvancedOptions &&
               (user?.role === UserRole.Admin ||
                 user?.role === UserRole.SuperAdmin) && (

@@ -2456,7 +2456,10 @@ export const AgentMessageApi = async (c: Context) => {
                     )
                   }
 
-                  if (fileIds && fileIds.length > 0) {
+                  if (
+                    (fileIds && fileIds.length > 0) ||
+                    (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
+                  ) {
                     loggerWithChild({ email: email }).info(
                       `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(fileIds)}`,
                     )
