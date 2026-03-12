@@ -235,6 +235,17 @@ export const ReasoningSteps = {
     }
   },
 
+  /** Emitted when we start filtering/ranking documents (before the LLM call). */
+  documentsFilteringStarted(toolName?: string): ReasoningEventPayload {
+    return {
+      type: ReasoningEventType.DocumentsFilteringStarted,
+      displayText: "Filtering documents.",
+      stage: "analyzing",
+      toolName,
+      timestamp: Date.now(),
+    }
+  },
+
   documentsFiltered(count: number, toolName?: string): ReasoningEventPayload {
     return {
       type: ReasoningEventType.DocumentsFiltered,
@@ -354,7 +365,7 @@ export const ReasoningSteps = {
   attachmentAnalyzing(): ReasoningEventPayload {
     return {
       type: ReasoningEventType.AttachmentAnalyzing,
-      displayText: "Analyzing your attachments.",
+      displayText: "Analyzing initial context.",
       stage: "analyzing",
       timestamp: Date.now(),
     }
@@ -363,7 +374,7 @@ export const ReasoningSteps = {
   attachmentExtracted(count: number): ReasoningEventPayload {
     return {
       type: ReasoningEventType.AttachmentExtracted,
-      displayText: `Using ${count} context ${plural(count, "snippet")} from your attachments.`,
+      displayText: `Using ${count} context ${plural(count, "snippet")} from initial context.`,
       stage: "gathering",
       count,
       timestamp: Date.now(),
@@ -372,10 +383,21 @@ export const ReasoningSteps = {
 
   // ── Review ────────────────────────────────────────────────────────────────
 
+  /** Emitted when review LLM is about to run (time-taking step). */
+  reviewStarted(turnNumber?: number): ReasoningEventPayload {
+    return {
+      type: ReasoningEventType.ReviewStarted,
+      displayText: "Reviewing results so far.",
+      stage: "analyzing",
+      turnNumber,
+      timestamp: Date.now(),
+    }
+  },
+
   reviewCompleted(recommendation: string, turnNumber?: number): ReasoningEventPayload {
     return {
       type: ReasoningEventType.ReviewCompleted,
-      displayText: "Reviewing progress and results.",
+      displayText: "Review complete.",
       stage: "analyzing",
       detail: recommendation,
       turnNumber,

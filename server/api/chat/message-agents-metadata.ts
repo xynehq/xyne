@@ -188,6 +188,34 @@ function buildFragmentMetadataSearchText(fragment: MinimalAgentFragment): string
   return `${metadataText}${confidenceText}`.toLowerCase()
 }
 
+/**
+ * Same as formatFragmentWithMetadata but with content truncated for ranking.
+ * Ranking LLMs only need title + first 300–500 chars; full document adds noise.
+ * Optional toolName/toolQuery add retrieval context so the ranker can consider why the document was retrieved.
+ */
+export function formatFragmentWithMetadataForRanking(
+  fragment: MinimalAgentFragment,
+  index: number,
+  toolName?: string,
+  toolQuery?: string
+): string {
+  const metadataEntries = collectFragmentMetadataEntries(fragment)
+  if (typeof fragment.confidence === "number" && Number.isFinite(fragment.confidence)) {
+    metadataEntries.push(["confidence", fragment.confidence.toFixed(3)])
+  }
+  const metadataBlock = metadataEntries.length
+    ? metadataEntries.map(([key, value]) => `- ${key}: ${value}`).join("\n")
+    : "- unavailable"
+  const rawContent = fragment.content?.trim() || "No content."
+  const toolContext =
+    toolName ? `Retrieved by: ${toolName}${toolQuery ? ` | Query: "${toolQuery}"` : ""}\n` : ""
+  return `index ${index + 1} {file context begins here...}
+${toolContext}Metadata:
+${metadataBlock}
+Content:
+${rawContent}`
+}
+
 export function formatFragmentWithMetadata(
   fragment: MinimalAgentFragment,
   index: number

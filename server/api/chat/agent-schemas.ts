@@ -23,9 +23,29 @@ export interface ToolExecutionRecordWithResult {
 
 export interface CurrentTurnArtifacts {
   fragments: MinimalAgentFragment[]
+  /** Raw unranked fragments collected from all tools this turn, keyed by tool name.
+   *  Each tool has an array of retrieval batches so each searchGlobal invocation
+   *  keeps its own { query, fragments } provenance. Ranking is deferred to turn-end. */
+  unrankedFragmentsByTool: Map<
+    string,
+    { query: string; fragments: MinimalAgentFragment[] }
+  >
   expectations: ToolExpectationAssignment[]
   toolOutputs: ToolExecutionRecordWithResult[]
   images: FragmentImageReference[]
+  /** Number of execution tools (non-toDoWrite) called this turn */
+  executionToolsCalled: number
+  /** Whether toDoWrite was called this turn (plan-only turn detection) */
+  todoWriteCalled: boolean
+  /** Timestamp when this turn started (for latency tracking) */
+  turnStartedAt: number
+}
+
+/** Enriched fragment entry for turn-end ranking: fragment plus tool name and query used for retrieval. */
+export interface UnrankedFragmentWithToolContext {
+  fragment: MinimalAgentFragment
+  toolName: string
+  toolQuery: string
 }
 
 // ============================================================================
@@ -90,6 +110,8 @@ export interface Decision {
 export interface ReviewState {
   lastReviewTurn: number | null
   reviewFrequency: number // Review every N turns
+  /** How many entries in allFragments have already been reviewed (incremental review checkpoint). */
+  lastReviewedFragmentIndex: number
   outstandingAnomalies: string[]
   clarificationQuestions: string[]
   lastReviewResult: ReviewResult | null

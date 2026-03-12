@@ -2617,6 +2617,7 @@ Your goal is to capture not only directly matching documents but also those that
 4. **Prioritize quality** — prefer documents that are specific, factual, and contribute distinct value.
 5. **Output** — Return only the indexes of the most relevant and complementary contexts.
 6. **Honor agent prompt** — if you see "This is the system prompt of agent:", analyse it for instructions related to selection, ranking and filtering of source documents and  treat it as binding and follow it strictly while selecting.
+7. **Consider retrieval context** — each document may include a "Retrieved by" line showing which tool retrieved it and what query was used. Use this to understand *why* the document was retrieved. A document may be highly relevant to its retrieval query even if it doesn't directly match the user's overall query.
 
 ### Input
 - Query: "${query}"
