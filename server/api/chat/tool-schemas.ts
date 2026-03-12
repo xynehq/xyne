@@ -218,7 +218,7 @@ export const SynthesizeFinalAnswerInputSchema = z
       .string()
       .optional()
       .describe(
-        "Optional guidance from the agent to help the final answer model emphasize key conclusions, ordering, or non-obvious takeaways. This is advisory guidance, not primary evidence. You can use it to add context or information that you think the final sysnthesis will be missing and that would be useful to include in the final answer.",
+        "Optional guidance from the agent to help the final answer model emphasize key conclusions, ordering, or non-obvious takeaways. This is advisory guidance, not primary evidence. You can use it to add context or information that you think the final synthesis will be missing and that would be useful to include in the final answer.",
       ),
   })
   .describe(

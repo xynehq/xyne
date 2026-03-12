@@ -334,16 +334,6 @@ export const makeXyneJAFProvider = <Ctx>(
           params.response_format = { type: "json_object" }
         }
 
-        Logger.debug(
-          {
-            email: runContext?.user?.email,
-            turn: normalizeTurnNumber(runContext?.turnCount),
-            model: actualModelId,
-            agentName: agent.name,
-            llmRequest: params,
-          },
-          "[JAF Provider] OpenAI LLM request",
-        )
 
         throwIfStopRequested(stopSignal)
         const resp = await raceWithStop(

@@ -3207,7 +3207,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     },
     "[MessageAgents][runReviewLLM] LLM params prepared",
   )
-  Logger.info(
+  Logger.debug(
     {
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -3217,7 +3217,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     "[MessageAgents][runReviewLLM] Review user prompt",
   )
 
-  Logger.info(
+  Logger.debug(
     {
       email: context.user.email,
       chatId: context.chat.externalId,
@@ -3841,7 +3841,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         systemPrompt,
         stream: true,
         temperature: 0.2,
-        max_new_tokens: context.maxOutputTokens ?? 1500,
+        max_new_tokens: context.maxOutputTokens ?? 8192,
         imageFileNames: selected,
       }
 
