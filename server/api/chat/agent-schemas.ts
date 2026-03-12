@@ -7,6 +7,7 @@
 
 import { z } from "zod"
 import type { Message as JAFMessage } from "@xynehq/jaf"
+import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import type {
   FragmentImageReference,
   MinimalAgentFragment,
@@ -191,6 +192,7 @@ export interface AgentRunContext {
   dedicatedAgentSystemPrompt?: string
 
   // Four-layer memory: injected at request start (episodic + retrieved chat memory)
+  conversationHistoryMessages: Message[]
   episodicMemoriesText?: string
   chatMemoryText?: string
 

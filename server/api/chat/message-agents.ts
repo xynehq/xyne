@@ -371,6 +371,37 @@ export const __messageAgentsHistoryInternals = {
   buildConversationHistoryForAgentRun,
 }
 
+function buildReviewSystemPrompt(options: {
+  isFirstReview: boolean
+  delegationNote: string
+}): string {
+  const firstReviewGuidance = options.isFirstReview
+    ? [
+        "- If prior conversation history is provided as messages, use it only for continuity, intent, and prior commitments.",
+        "- If memory context appears in the user prompt, treat it as supporting context.",
+        "- Prioritize current turn tool outputs, expectations, clarifications, plan state, fragments, and images over older assistant statements in conversation history.",
+      ]
+    : []
+
+  return [
+    "You are a senior reviewer ensuring each agentic turn honors the agreed plan and tool expectations.",
+    ...firstReviewGuidance,
+    "- Context fragments are incremental: you may receive only new fragments since the last review, plus a high-level previous review summary for continuity; use that summary to avoid re-evaluating already-reviewed context.",
+    '- The tool call section may cover a single turn or multiple turns (e.g. "last N turns"). Inspect every tool call in that section, compare the outputs with the expected results, and decide whether each tool met or missed expectations.',
+    "- Evaluate the current plan to see if it still fits the evidence gathered from the tool calls; suggest plan changes when necessary.",
+    "- Detect anomalies (unexpected behaviors, contradictory data, missing outputs, or unresolved ambiguities) and call them out explicitly. If intent remains unclear, set ambiguityResolved=false and include the ambiguity notes inside the anomalies array.",
+    options.delegationNote,
+    `- When the available context is already relevant and sufficient and it meets all the requirement of user's ask , set planChangeNeeded=true and use planChangeReason to state that the plan should pivot toward final synthesis because the evidence is complete.`,
+    '- Set recommendation to "gather_more" when required evidence or data is missing, "clarify_query" when ambiguity remains unresolved, and "replan" only when the current plan is no longer viable.',
+    "- If the user asked multiple questions or sub-questions, verify that the plan or gathered evidence addresses each; report incomplete coverage in anomalies and set recommendation or planChangeNeeded as appropriate.",
+    "- Always set ambiguityResolved=false whenever outstanding clarifications exist or anomalies highlight missing/contradictory information; otherwise leave it true.",
+  ].join("\n")
+}
+
+export const __messageAgentsPromptInternals = {
+  buildReviewSystemPrompt,
+}
+
 const RECENT_IMAGE_WINDOW = 2
 
 function normalizeExcludedIdsForLogging(excludedIds: unknown): string[] {
@@ -988,10 +1019,56 @@ function formatClarificationsForPrompt(
   return formatted
 }
 
+type FinalSynthesisBuildOptions = {
+  fragmentsLimit?: number
+  insightsUsefulForAnswering?: string
+}
+
+function sanitizeInsightsUsefulForAnswering(
+  insightsUsefulForAnswering?: string,
+): string | undefined {
+  const trimmed = insightsUsefulForAnswering?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function sanitizeChatMemoryForLLMContext(
+  chatMemoryText?: string,
+): string | undefined {
+  if (!chatMemoryText?.trim()) return undefined
+  const sanitized = chatMemoryText
+    .split("\n")
+    .filter(
+      (line) => !line.trimStart().startsWith("Assistant thinking:"),
+    )
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+  return sanitized ? sanitized : undefined
+}
+
+function buildLLMMemoryContextSection(
+  context: AgentRunContext,
+): string {
+  const parts: string[] = []
+  if (context.episodicMemoriesText?.trim()) {
+    parts.push(`Relevant Past Experiences:\n${context.episodicMemoriesText}`)
+  }
+  const sanitizedChatMemory = sanitizeChatMemoryForLLMContext(
+    context.chatMemoryText,
+  )
+  if (sanitizedChatMemory) {
+    parts.push(`Retrieved Chat Memory:\n${sanitizedChatMemory}`)
+  }
+  if (!parts.length) return ""
+  return `Memory Context:\n${parts.join("\n\n")}`
+}
+
 export function buildFinalSynthesisPayload(
   context: AgentRunContext,
-  fragmentsLimit = Math.max(12, context.allFragments.length || 1),
+  options?: FinalSynthesisBuildOptions,
 ): { systemPrompt: string; userMessage: string } {
+  const fragmentsLimit =
+    options?.fragmentsLimit ?? Math.max(12, context.allFragments.length || 1)
   const fragments = context.allFragments
   const agentSystemPromptBlock = buildAgentSystemPromptContextBlock(
     context.dedicatedAgentSystemPrompt,
@@ -1013,6 +1090,13 @@ export function buildFinalSynthesisPayload(
   const workspaceSection = context.userContext?.trim()
     ? `Workspace Context:\n${context.userContext}`
     : ""
+  const memorySection = buildLLMMemoryContextSection(context)
+  const sanitizedInsights = sanitizeInsightsUsefulForAnswering(
+    options?.insightsUsefulForAnswering,
+  )
+  const insightsSection = sanitizedInsights
+    ? `Agent Insights for Final Answer:\n${sanitizedInsights}`
+    : ""
 
   const parts = [
     `User Question:\n${context.message.text}`,
@@ -1022,6 +1106,8 @@ export function buildFinalSynthesisPayload(
       ? `Clarifications Resolved:\n${clarificationSection}`
       : "",
     workspaceSection,
+    memorySection,
+    insightsSection,
     fragmentsSection,
   ].filter(Boolean)
 
@@ -1029,15 +1115,18 @@ export function buildFinalSynthesisPayload(
 
   const systemPrompt = `
 ### Mission
-- Deliver the user's final answer using the conversation, plan snapshot, clarifications, workspace context, context fragments, and supplied images; never plan or call tools.
+- Deliver the user's final answer using the prior conversation history provided as messages, the plan snapshot, clarifications, workspace context, memory context, context fragments, and supplied images; never plan or call tools.
 
 ### Evidence Intake
+- Use prior conversation history for continuity, user intent, and prior commitments, but do not let earlier assistant statements override newer evidence.
+- When sources conflict, prioritize the current request, resolved clarifications, workspace context, memory context, context fragments, and images over earlier assistant statements in conversation history.
 - Prioritize the highest-signal fragments, but pull any supporting fragment that improves accuracy.
 - Only draw on context that directly answers the user's question; ignore unrelated fragments even if they were retrieved earlier.
 - Treat delegated-agent outputs as citeable fragments; reference them like any other context entry.
 - Describe evidence gaps plainly before concluding; never guess.
 - Extract actionable details from provided images and cite them via their fragment indices.
 - Respect user-imposed constraints using fragment metadata (any metadata field). If compliant evidence is missing, state that clearly.
+- Treat "Agent Insights for Final Answer" as important agent-provided context that may include material information not repeated elsewhere. Consider it seriously, use it when consistent with the broader evidence, and note any unsupported or conflicting points explicitly
 - If "This is the system prompt of agent:" is present, analyse for instructions relevant for answering and strictly bind by them .
 
 ### Response Construction
@@ -1103,6 +1192,35 @@ export function buildFinalSynthesisPayload(
 `.trim()
 
   return { systemPrompt, userMessage }
+}
+
+export function buildFinalSynthesisRequest(
+  context: AgentRunContext,
+  options?: FinalSynthesisBuildOptions,
+): {
+  systemPrompt: string
+  userMessage: string
+  finalUserPrompt: string
+  messages: Message[]
+} {
+  const { systemPrompt, userMessage } = buildFinalSynthesisPayload(
+    context,
+    options,
+  )
+  const finalUserPrompt = `${userMessage}\n\nSynthesize the final answer using the evidence above.`
+  const messages: Message[] = [
+    ...context.conversationHistoryMessages,
+    {
+      role: ConversationRole.USER,
+      content: [{ text: finalUserPrompt }],
+    },
+  ]
+  return {
+    systemPrompt,
+    userMessage,
+    finalUserPrompt,
+    messages,
+  }
 }
 
 function selectImagesForFinalSynthesis(context: AgentRunContext): {
@@ -1267,6 +1385,9 @@ function initializeAgentContext(
     userContext: options?.userContext ?? "",
     agentPrompt: options?.agentPrompt,
     dedicatedAgentSystemPrompt: options?.dedicatedAgentSystemPrompt,
+    conversationHistoryMessages: [],
+    episodicMemoriesText: undefined,
+    chatMemoryText: undefined,
     clarifications: [],
     ambiguityResolved: false,
     toolCallHistory: [],
@@ -2817,6 +2938,7 @@ export function buildReviewPromptFromContext(
   },
   fallbackExpectations?: ToolExpectationAssignment[],
 ): { prompt: string; imageFileNames: string[] } {
+  const isFirstReview = context.review.lastReviewResult === null
   const turnExpectations =
     (fallbackExpectations?.length ?? 0) > 0
       ? (fallbackExpectations ?? [])
@@ -2829,6 +2951,9 @@ export function buildReviewPromptFromContext(
   )
   const workspaceSection = context.userContext?.trim()
     ? `Workspace Context:\n${context.userContext.trim()}`
+    : ""
+  const memorySection = isFirstReview
+    ? buildLLMMemoryContextSection(context)
     : ""
   const useMultiTurnHistory =
     context.toolCallHistory.length > 0 || options?.focus === "turn_end"
@@ -2892,6 +3017,7 @@ export function buildReviewPromptFromContext(
     planSection ? `Execution Plan Snapshot:\n${planSection}` : "",
     clarificationsSection ? `Clarifications:\n${clarificationsSection}` : "",
     workspaceSection,
+    memorySection,
     previousReviewSection,
     `Recent Tool Activity (since last review):\n${toolOutputsSection}`,
     `Expectations (associated with tool calls in this window):\n${expectationsSection}`,
@@ -2903,6 +3029,40 @@ export function buildReviewPromptFromContext(
   return {
     prompt: userPromptSections.join("\n\n"),
     imageFileNames: currentImages,
+  }
+}
+
+export function buildReviewRequest(
+  context: AgentRunContext,
+  options?: {
+    focus?: string
+    turnNumber?: number
+    expectedResults?: ToolExpectationAssignment[]
+  },
+): {
+  prompt: string
+  imageFileNames: string[]
+  messages: Message[]
+  isFirstReview: boolean
+} {
+  const isFirstReview = context.review.lastReviewResult === null
+  const { prompt, imageFileNames } = buildReviewPromptFromContext(
+    context,
+    options,
+    options?.expectedResults,
+  )
+  const messages: Message[] = [
+    ...(isFirstReview ? context.conversationHistoryMessages : []),
+    {
+      role: ConversationRole.USER,
+      content: [{ text: prompt }],
+    },
+  ]
+  return {
+    prompt,
+    imageFileNames,
+    messages,
+    isFirstReview,
   }
 }
 
@@ -2947,8 +3107,21 @@ async function runReviewLLM(
       ? "- Delegation tools (list_custom_agents/run_public_agent) were disabled for this run; do not flag their absence."
       : "- If delegation tools are available, ensure list_custom_agents precedes run_public_agent when delegation is appropriate."
 
-  const { prompt: userPrompt, imageFileNames: currentImages } =
-    buildReviewPromptFromContext(context, options, options?.expectedResults)
+  const reviewRequest = buildReviewRequest(context, {
+    focus: options?.focus,
+    turnNumber: options?.turnNumber,
+    expectedResults: options?.expectedResults,
+  })
+  const {
+    prompt: userPrompt,
+    imageFileNames: currentImages,
+    messages,
+    isFirstReview,
+  } = reviewRequest
+  const hasEpisodicMemories = !!context.episodicMemoriesText?.trim()
+  const hasChatMemory = !!sanitizeChatMemoryForLLMContext(
+    context.chatMemoryText,
+  )
   Logger.debug(
     {
       email: context.user.email,
@@ -2962,6 +3135,10 @@ async function runReviewLLM(
       ),
       fragmentsCount: context.allFragments.length,
       toolOutputsCount: context.currentTurnArtifacts.toolOutputs.length,
+      isFirstReview,
+      conversationHistoryCount: context.conversationHistoryMessages.length,
+      hasEpisodicMemories,
+      hasChatMemory,
     },
     "[MessageAgents][runReviewLLM] Context summary for review model",
   )
@@ -2983,16 +3160,10 @@ async function runReviewLLM(
     stream: false,
     temperature: 0,
     max_new_tokens: 800,
-    systemPrompt: `You are a senior reviewer ensuring each agentic turn honors the agreed plan and tool expectations.
-- Context fragments are incremental: you receive only new fragments since the last review, plus a high-level previous review summary for continuity; use that summary to avoid re-evaluating already-reviewed context.
-- The tool call section may cover a single turn or multiple turns (e.g. "last N turns"). Inspect every tool call in that section, compare the outputs with the expected results, and decide whether each tool met or missed expectations.
-- Evaluate the current plan to see if it still fits the evidence gathered from the tool calls; suggest plan changes when necessary.
-- Detect anomalies (unexpected behaviors, contradictory data, missing outputs, or unresolved ambiguities) and call them out explicitly. If intent remains unclear, set ambiguityResolved=false and include the ambiguity notes inside the anomalies array.
-${delegationNote}
-- When the available context is already relevant and sufficient and it meets all the requirement of user's ask , set planChangeNeeded=true and use planChangeReason to state that the plan should pivot toward final synthesis because the evidence is complete.
-- Set recommendation to "gather_more" when required evidence or data is missing, "clarify_query" when ambiguity remains unresolved, and "replan" only when the current plan is no longer viable.
-- If the user asked multiple questions or sub-questions, verify that the plan or gathered evidence addresses each; report incomplete coverage in anomalies and set recommendation or planChangeNeeded as appropriate.
-- Always set ambiguityResolved=false whenever outstanding clarifications exist or anomalies highlight missing/contradictory information; otherwise leave it true.
+    systemPrompt: `${buildReviewSystemPrompt({
+      isFirstReview,
+      delegationNote,
+    })}
 Respond strictly in JSON matching this schema: ${JSON.stringify({
       status: "ok",
       notes: "Summary of overall findings",
@@ -3029,33 +3200,32 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
       maxTokens: params.max_new_tokens,
       json: params.json,
       stream: params.stream,
+      isFirstReview,
+      conversationHistoryCount: context.conversationHistoryMessages.length,
+      hasEpisodicMemories,
+      hasChatMemory,
     },
     "[MessageAgents][runReviewLLM] LLM params prepared",
   )
-  Logger.debug(
+  Logger.info(
     {
       email: context.user.email,
       chatId: context.chat.externalId,
       userPrompt,
+      isFirstReview,
     },
     "[MessageAgents][runReviewLLM] Review user prompt",
   )
 
-  Logger.debug(
+  Logger.info(
     {
       email: context.user.email,
       chatId: context.chat.externalId,
       systemPrompt: params.systemPrompt,
+      isFirstReview,
     },
     "[MessageAgents][runReviewLLM] System prompt",
   )
-
-  const messages: Message[] = [
-    {
-      role: ConversationRole.USER,
-      content: [{ text: userPrompt }],
-    },
-  ]
 
   const { text } = await getProviderByModel(modelId).converse(messages, params)
 
@@ -3128,6 +3298,10 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
       recommendation: validation.data.recommendation,
       imageFileCount: currentImages.length,
       toolOutputsEvaluated: context.currentTurnArtifacts.toolOutputs.length,
+      isFirstReview,
+      conversationHistoryCount: context.conversationHistoryMessages.length,
+      hasEpisodicMemories,
+      hasChatMemory,
     },
     "[MessageAgents][runReviewLLM] Review LLM call completed",
   )
@@ -3540,7 +3714,16 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         TOOL_SCHEMAS.synthesize_final_answer.inputSchema,
       ),
     },
-    async execute(_args, context) {
+    async execute(args, context) {
+      const validation = validateToolInput<{
+        insightsUsefulForAnswering?: string
+      }>(XyneTools.synthesizeFinalAnswer, args)
+      if (!validation.success) {
+        return ToolResponse.error("INVALID_INPUT", validation.error.message)
+      }
+      const insightsUsefulForAnswering = sanitizeInsightsUsefulForAnswering(
+        validation.data.insightsUsefulForAnswering,
+      )
       const mutableContext = mutableAgentContext(context)
       if (!mutableContext.review.lockedByFinalSynthesis) {
         mutableContext.review.lockedByFinalSynthesis = true
@@ -3592,13 +3775,24 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         "[MessageAgents][FinalSynthesis] Image payload",
       )
 
-      const { systemPrompt, userMessage } = buildFinalSynthesisPayload(context)
+      const synthesisRequest = buildFinalSynthesisRequest(context, {
+        insightsUsefulForAnswering,
+      })
+      const { systemPrompt, userMessage, messages } = synthesisRequest
       const fragmentsCount = context.allFragments.length
+      const hasEpisodicMemories = !!context.episodicMemoriesText?.trim()
+      const hasChatMemory = !!sanitizeChatMemoryForLLMContext(
+        context.chatMemoryText,
+      )
       loggerWithChild({ email: context.user.email }).debug(
         {
           chatId: context.chat.externalId,
           finalSynthesisSystemPrompt: systemPrompt,
           finalSynthesisUserMessage: userMessage,
+          conversationHistoryCount: context.conversationHistoryMessages.length,
+          hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+          hasEpisodicMemories,
+          hasChatMemory,
         },
         "[MessageAgents][FinalSynthesis] Full context payload",
       )
@@ -3615,6 +3809,10 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           selectedImages: selected,
           totalImages: total,
           droppedImages: dropped,
+          conversationHistoryCount: context.conversationHistoryMessages.length,
+          hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+          hasEpisodicMemories,
+          hasChatMemory,
         },
       )
 
@@ -3647,13 +3845,6 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         imageFileNames: selected,
       }
 
-      const finalUserPrompt = `${userMessage}\n\nSynthesize the final answer using the evidence above.`
-      const messages: Message[] = [
-        {
-          role: ConversationRole.USER,
-          content: [{ text: finalUserPrompt }],
-        },
-      ]
       Logger.debug(
         {
           email: context.user.email,
@@ -3663,6 +3854,10 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           clarificationsCount: context.clarifications.length,
           toolOutputsThisTurn: context.currentTurnArtifacts.toolOutputs.length,
           imageNames: selected,
+          conversationHistoryCount: context.conversationHistoryMessages.length,
+          hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+          hasEpisodicMemories,
+          hasChatMemory,
         },
         "[MessageAgents][FinalSynthesis] Context summary for synthesis call",
       )
@@ -3675,6 +3870,10 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
           systemPrompt,
           messagesCount: messages.length,
           imagesProvided: selected.length,
+          conversationHistoryCount: context.conversationHistoryMessages.length,
+          hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+          hasEpisodicMemories,
+          hasChatMemory,
         },
         "[MessageAgents][FinalSynthesis] LLM call parameters",
       )
@@ -3984,7 +4183,7 @@ function buildAgentInstructions(
     "- State the exact limitation and what manual follow-up the user must perform to finish.",
     "",
     "# FINAL SYNTHESIS",
-    "- When research is complete and evidence is locked, CALL `synthesize_final_answer` (no arguments). This tool composes and streams the response.",
+    "- When research is complete and evidence is locked, CALL `synthesize_final_answer` with optional `insightsUsefulForAnswering` guidance when it will help the final answer model emphasize the right conclusions or ordering. This tool composes and streams the response.",
     "- Never output the final answer directly—always go through the tool and then acknowledge completion.",
   )
 
@@ -4929,6 +5128,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const { jafHistory, llmHistory } = buildConversationHistoryForAgentRun(
           previousConversationHistory,
         )
+        agentContext.conversationHistoryMessages = llmHistory
         const initialMessages: JAFMessage[] = [
           ...jafHistory,
           {
@@ -5425,6 +5625,17 @@ export async function MessageAgents(c: Context): Promise<Response> {
               const activeTools = cooldown.getAvailableTools(allTools, currentTurn)
               agentContext.enabledTools = new Set(
                 activeTools.map((t) => t.schema.name)
+              )
+
+              Logger.debug(
+                {
+                  turn: currentTurn,
+                  agentName: evt.data.agentName,
+                  chatId: agentContext.chat.externalId,
+                  runId,
+                  jafRunState: runState
+                },
+                "[MessageAgents] Turn start LLM input",
               )
 
               await emitReasoningEvent(
@@ -6760,6 +6971,20 @@ async function runDelegatedAgentWithMessageAgents(
             )
             agentContext.enabledTools = new Set(
               dActiveTools.map((t) => t.schema.name),
+            )
+
+            Logger.debug(
+              {
+                turn: currentTurn,
+                agentName: evt.data.agentName,
+                chatId: agentContext.chat.externalId,
+                runId,
+                jafRunState: runState,
+                agentSystemPrompt: sanitizeAgentSystemPromptSnapshot(
+                  agentContext.dedicatedAgentSystemPrompt,
+                ),
+              },
+              "[DelegatedAgenticRun] Turn start LLM input",
             )
 
             await emitReasoningEvent(

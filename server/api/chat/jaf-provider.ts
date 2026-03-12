@@ -334,6 +334,17 @@ export const makeXyneJAFProvider = <Ctx>(
           params.response_format = { type: "json_object" }
         }
 
+        Logger.debug(
+          {
+            email: runContext?.user?.email,
+            turn: normalizeTurnNumber(runContext?.turnCount),
+            model: actualModelId,
+            agentName: agent.name,
+            llmRequest: params,
+          },
+          "[JAF Provider] OpenAI LLM request",
+        )
+
         throwIfStopRequested(stopSignal)
         const resp = await raceWithStop(
           client.chat.completions.create(params),
@@ -509,6 +520,9 @@ export const makeXyneJAFProvider = <Ctx>(
         }
       }
 
+      // Sanitize prompt to avoid logging large file data buffers
+      const sanitizedPrompt = sanitizePromptForLogging(callOptions.prompt)
+
       // Log the complete prompt and call options being sent to the LLM
       Logger.debug(
         {
@@ -522,12 +536,12 @@ export const makeXyneJAFProvider = <Ctx>(
           temperature: callOptions.temperature,
           hasResponseFormat: !!callOptions.responseFormat,
           toolChoice: callOptions.toolChoice,
+          prompt: sanitizedPrompt,
+          tools,
+          responseFormat: callOptions.responseFormat,
         },
-        "[JAF Provider] LLM call parameters",
+        "[JAF Provider] LLM request",
       )
-
-      // Sanitize prompt to avoid logging large file data buffers
-      const sanitizedPrompt = sanitizePromptForLogging(callOptions.prompt)
 
 
       throwIfStopRequested(stopSignal)
