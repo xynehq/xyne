@@ -163,16 +163,35 @@ export async function runTurnEndPipeline(
     }
 
     // ────────────────────────────────────────────────────────────────────
-    // Step 1: No-op turn detection
+    // Step 1: No-op / reasoning-only turn detection
+    //
+    // Skip review and ranking when:
+    // - No-op: only toDoWrite was called (plan-only turn).
+    // - Reasoning-only: no tools at all (agent answered from context without
+    //   calling any tools). Running review here would trigger an LLM call and
+    //   SSE emits during onTurnEnd and can break the stream if the review
+    //   fails or the client has already moved on.
     // ────────────────────────────────────────────────────────────────────
     const artifacts = context.currentTurnArtifacts
     const isNoOpTurn =
       artifacts.executionToolsCalled === 0 && artifacts.todoWriteCalled
+    const isReasoningOnlyTurn =
+      artifacts.executionToolsCalled === 0 && !artifacts.todoWriteCalled
 
     if (isNoOpTurn) {
       Logger.debug(
         { turn, chatId: context.chat.externalId },
         "[TurnLifecycle] No-op turn (only toDoWrite) — skipping review and ranking."
+      )
+      result.wasNoOpTurn = true
+      // Still do cleanup
+      return result
+    }
+
+    if (isReasoningOnlyTurn) {
+      Logger.debug(
+        { turn, chatId: context.chat.externalId },
+        "[TurnLifecycle] Reasoning-only turn (no tool calls) — skipping review and ranking."
       )
       result.wasNoOpTurn = true
       // Still do cleanup

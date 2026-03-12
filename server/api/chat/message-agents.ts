@@ -33,7 +33,11 @@ import { getChatExternalIdsByAgentId, insertChat, updateChatByExternalIdWithAuth
 import { insertChatTrace } from "@/db/chatTrace"
 import { db } from "@/db/client"
 import { getConnectorById } from "@/db/connector"
-import { getChatMessagesWithAuth, insertMessage } from "@/db/message"
+import {
+  getChatMessagesWithAuth,
+  insertMessage,
+  updateMessage,
+} from "@/db/message"
 import { getUserPersonalizationByEmail } from "@/db/personalization"
 import {
   ChatType,
@@ -928,50 +932,6 @@ function extractToolQuery(
         : undefined
     default:
       return undefined
-  }
-}
-
-function advancePlanAfterTool(
-  context: AgentRunContext,
-  toolName: string,
-  wasSuccessful: boolean,
-  detail?: string,
-): void {
-  if (!context.plan || !context.currentSubTask) return
-  const task = context.plan.subTasks.find(
-    (entry) => entry.id === context.currentSubTask,
-  )
-  if (!task) return
-  normalizeSubTask(task)
-  const requiredTools = (task.toolsRequired ??= [])
-
-  if (wasSuccessful) {
-    if (task.status === "pending" || task.status === "blocked") {
-      task.status = "in_progress"
-      task.error = undefined
-    }
-    if (requiredTools.length === 0 || requiredTools.includes(toolName)) {
-      task.status = "completed"
-      task.completedAt = Date.now()
-      task.result = detail || task.result || `Completed using ${toolName}`
-      const previousTaskId = task.id
-      const nextId = selectActiveSubTaskId(context.plan)
-      if (nextId && nextId !== previousTaskId) {
-        context.currentSubTask = nextId
-        const nextTask = context.plan.subTasks.find(
-          (entry) => entry.id === nextId,
-        )
-        if (nextTask && nextTask.status === "pending") {
-          nextTask.status = "in_progress"
-          nextTask.error = undefined
-        }
-      } else if (!nextId) {
-        context.currentSubTask = null
-      }
-    }
-  } else if (task.status !== "completed") {
-    task.status = "blocked"
-    task.error = detail
   }
 }
 
@@ -2090,8 +2050,6 @@ export async function afterToolExecutionHook(
     }
   }
 
-  advancePlanAfterTool(context, toolName, status === "success")
-
   // 5. Extract and filter contexts
   const resultData = result?.data
   let contexts: MinimalAgentFragment[] = []
@@ -2208,10 +2166,9 @@ export async function afterToolExecutionHook(
     }
   }
 
-  // After synthesizeFinalAnswer completes, advancePlanAfterTool (called above) marks
-  // the last subtask as "completed" in server memory, but no event is sent to the
-  // frontend — so the last todo step stays in loading state. Re-emit the plan with
-  // its updated (all-completed) subtask statuses so the frontend can reflect the change.
+  // Re-emit the plan after synthesis so the frontend has the latest snapshot.
+  // Plan status (including completed tasks) is owned by the LLM via toDoWrite;
+  // the server does not auto-complete tasks after tool runs.
   if (
     toolName === XyneTools.synthesizeFinalAnswer &&
     status === "success" &&
@@ -3775,15 +3732,6 @@ function buildAttachmentDirective(context: AgentRunContext): string {
     initialAttachmentSummary ||
     "User provided attachment context for this opening turn."
 
-  // Include the actual fragment content, not just metadata
-  const fragmentsContent =
-    context.allFragments.length > 0
-      ? answerContextMapFromFragments(
-          context.allFragments,
-          context.allFragments.length,
-        )
-      : "No attachment content available."
-
   return `
 # ATTACHMENT-FIRST TURN
 ${summaryLine}
@@ -3793,9 +3741,6 @@ Attachment handling:
 2. If the attachments fully answer the user's request → respond using citations (see format below).
 3. If the attachments are partial or incomplete → create a plan with toDoWrite and run the tools needed to fill the gaps in the same turn.
 4. State that information is unavailable only after the attachments and available tools have been used and the answer still cannot be found.
-
-# ATTACHMENT CONTEXT FRAGMENTS
-${fragmentsContent}
 
 # Response and citations
 - Use the provided files and chunks as your knowledge base. Treat \`Index {docId} ...\` as the start of a document and [0], [1], [2] as chunk indices within that document.
@@ -3876,6 +3821,10 @@ function buildAgentInstructions(
     ? `- Before calling ANY search, calendar, Gmail, Drive, or other research tools, you MUST invoke \`list_custom_agents\` once per run. Treat the workflow as: plan -> list agents -> (maybe) run_public_agent -> other tools. If the selector returns \`null\`, explicitly log that no agent was suitable, then proceed with core tools.\n- Before calling \`run_public_agent\`, invoke \`list_custom_agents\`, compare every candidate, and respect a \`null\` result as "no delegate—continue with built-in tools."\n- Use \`run_custom_agent\` (the execution surface for selected specialists) immediately after choosing an agent from \`list_custom_agents\`; pass the specific agentId plus a rewritten query tailored to that agent.\n- When \`list_custom_agents\` returns high-confidence candidates, pause to assess the current sub-task and explicitly decide whether running one now accelerates the goal; document the rationale either way.\n- Only delegate when a specific agent's documented capabilities make it unquestionably suitable; otherwise keep iterating yourself.`
     : ""
 
+  const isFirstTurn = context.turnCount === 1
+  const workingMemoryMessages = config.MEMORY_CONFIG?.WORKING_MEMORY_MESSAGES ?? 6
+  const conversationContext = isFirstTurn ? `You are given only the last ${workingMemoryMessages} messages of this chat in context. Use \`searchChatHistory\` when you need to recall or search older messages.` : '';
+
   const instructionLines: string[] = [
     "You are Xyne, an enterprise search assistant with agentic capabilities.",
     "",
@@ -3884,6 +3833,7 @@ function buildAgentInstructions(
     "<context>",
     `User: ${context.user.email}`,
     `Workspace: ${context.user.workspaceId}`,
+    conversationContext,
     "</context>",
     "",
   ]
@@ -4253,6 +4203,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
     let chatRecord: SelectChat
     let lastPersistedMessageId = 0
     let lastPersistedMessageExternalId = ""
+    /** User message externalId; used to persist errorMessage when the agent loop fails. */
+    let userMessageExternalId = ""
     let attachmentStorageError: Error | null = null
     let previousConversationHistory: SelectMessage[] = []
 
@@ -4271,6 +4223,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
       chatRecord = bootstrap.chat
       lastPersistedMessageId = bootstrap.userMessage.id as number
       lastPersistedMessageExternalId = String(bootstrap.userMessage.externalId)
+      userMessageExternalId = lastPersistedMessageExternalId
       attachmentStorageError = bootstrap.attachmentError ?? null
       previousConversationHistory = bootstrap.conversationHistory ?? []
       const historyFileIds = collectReferencedFileIdsUntilCompaction(
@@ -5305,9 +5258,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
 
         const streamAnswerText = async (text: string) => {
           if (!text) return
+          if (stream.closed) return
           throwIfStopRequested(stopController.signal)
           const chunkSize = 200
           for (let i = 0; i < text.length; i += chunkSize) {
+            if (stream.closed) return
             throwIfStopRequested(stopController.signal)
             const chunk = text.slice(i, i + chunkSize)
             answer += chunk
@@ -5324,6 +5279,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               yieldedImageCitations,
               email,
             )) {
+              if (stream.closed) return
               if (citationEvent.citation) {
                 const { index, item } = citationEvent.citation
                 citations.push(item)
@@ -5621,22 +5577,24 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     "Failed to persist assistant response (tool_call_end)",
                   )
                 }
-                await stream.writeSSE({
-                  event: ChatSSEvents.ResponseMetadata,
-                  data: JSON.stringify({
-                    chatId: agentContext.chat.externalId,
-                    messageId: assistantMessageId || "temp-message-id",
-                    timeTakenMs: Date.now() - requestStartMs,
-                  }),
-                })
-                await stream.writeSSE({
-                  event: ChatSSEvents.End,
-                  data: "",
-                })
-                Logger.debug(
-                  { chatId: agentContext.chat.externalId },
-                  "[MessageAgents] stream end emitted (after synthesis tool_call_end)",
-                )
+                if (!stream.closed) {
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseMetadata,
+                    data: JSON.stringify({
+                      chatId: agentContext.chat.externalId,
+                      messageId: assistantMessageId || "temp-message-id",
+                      timeTakenMs: Date.now() - requestStartMs,
+                    }),
+                  })
+                  await stream.writeSSE({
+                    event: ChatSSEvents.End,
+                    data: "",
+                  })
+                  Logger.debug(
+                    { chatId: agentContext.chat.externalId },
+                    "[MessageAgents] stream end emitted (after synthesis tool_call_end)",
+                  )
+                }
               }
 
               toolEndSpan?.end()
@@ -5853,15 +5811,87 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   "[MessageAgents] Agent run ended with error",
                 )
 
-                await stream.writeSSE({
-                  event: ChatSSEvents.Error,
-                  data: JSON.stringify({ error: err?._tag, message: errMsg }),
-                })
-                await stream.writeSSE({
-                  event: ChatSSEvents.End,
-                  data: "",
-                })
+                if (!stream.closed) {
+                  await stream.writeSSE({
+                    event: ChatSSEvents.Error,
+                    data: JSON.stringify({
+                      error: err?._tag,
+                      message: errMsg,
+                    }),
+                  })
+                  await stream.writeSSE({
+                    event: ChatSSEvents.End,
+                    data: "",
+                  })
+                }
+                if (userMessageExternalId) {
+                  try {
+                    await updateMessage(db, userMessageExternalId, {
+                      errorMessage: errMsg,
+                    })
+                  } catch (updateErr) {
+                    loggerWithChild({ email }).warn(
+                      updateErr,
+                      "Failed to persist error to user message (run_end)",
+                    )
+                  }
+                }
                 await persistTraceForLastMessage()
+              } else {
+                // Success path: if we never sent End (e.g. direct answer without
+                // synthesize_final_answer), persist and send End here so the
+                // frontend can close the stream.
+                const alreadySentEnd =
+                  agentContext.finalSynthesis.requested &&
+                  agentContext.finalSynthesis.completed
+                if (!alreadySentEnd && answer && !stream.closed) {
+                  try {
+                    const totalCost = agentContext.totalCost
+                    const totalTokens =
+                      agentContext.tokenUsage.input + agentContext.tokenUsage.output
+                    const timeTakenMs = Date.now() - requestStartMs
+                    const assistantInsert = {
+                      chatId: chatRecord.id,
+                      userId: user.id,
+                      workspaceExternalId: String(workspace.externalId),
+                      chatExternalId: String(chatRecord.externalId),
+                      messageRole: MessageRole.Assistant,
+                      email: String(user.email),
+                      sources: citations,
+                      imageCitations,
+                      message: processMessage(answer, citationMap),
+                      thinking: thinkingLog,
+                      modelId: agenticModelId,
+                      cost: totalCost.toString(),
+                      tokensUsed: totalTokens,
+                      timeTakenMs,
+                    } as unknown as Omit<InsertMessage, "externalId">
+                    const msg = await insertMessage(db, assistantInsert)
+                    assistantMessageId = String(msg.externalId)
+                    lastPersistedMessageId = msg.id as number
+                    lastPersistedMessageExternalId = assistantMessageId
+                    await persistTrace(msg.id as number, msg.externalId)
+                  } catch (error) {
+                    loggerWithChild({ email }).error(
+                      error,
+                      "Failed to persist assistant response (run_end direct-answer path)",
+                    )
+                  }
+                  if (!stream.closed) {
+                    await stream.writeSSE({
+                      event: ChatSSEvents.ResponseMetadata,
+                      data: JSON.stringify({
+                        chatId: agentContext.chat.externalId,
+                        messageId: assistantMessageId || "temp-message-id",
+                        timeTakenMs: Date.now() - requestStartMs,
+                      }),
+                    })
+                    await stream.writeSSE({
+                      event: ChatSSEvents.End,
+                      data: "",
+                    })
+                  }
+                }
               }
               runEndSpan.end()
               endJafSpan()
@@ -5882,17 +5912,39 @@ export async function MessageAgents(c: Context): Promise<Response> {
           rootSpan.end()
         } else {
           loggerWithChild({ email }).error(error, "MessageAgents stream error")
-          await stream.writeSSE({
-            event: ChatSSEvents.Error,
-            data: JSON.stringify({
-              error: "stream_error",
-              message: getErrorMessage(error),
-            }),
-          })
-          await stream.writeSSE({
-            event: ChatSSEvents.End,
-            data: "",
-          })
+          const streamErrMsg = getErrorMessage(error)
+          if (userMessageExternalId) {
+            try {
+              await updateMessage(db, userMessageExternalId, {
+                errorMessage: streamErrMsg,
+              })
+            } catch (updateErr) {
+              loggerWithChild({ email }).warn(
+                updateErr,
+                "Failed to persist error to user message (stream_error catch)",
+              )
+            }
+          }
+          if (!stream.closed) {
+            try {
+              await stream.writeSSE({
+                event: ChatSSEvents.Error,
+                data: JSON.stringify({
+                  error: "stream_error",
+                  message: streamErrMsg,
+                }),
+              })
+              await stream.writeSSE({
+                event: ChatSSEvents.End,
+                data: "",
+              })
+            } catch (writeErr) {
+              loggerWithChild({ email }).warn(
+                writeErr,
+                "Failed to send stream_error to client (stream likely closed)",
+              )
+            }
+          }
           await persistTraceForLastMessage()
           rootSpan.end()
         }
