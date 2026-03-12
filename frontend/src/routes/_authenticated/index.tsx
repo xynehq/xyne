@@ -67,7 +67,6 @@ const Index = () => {
 
   // Sync isAgenticMode with server config when there is no stored preference
   useEffect(() => {
-    if (localStorage.getItem(AGENTIC_STATE) != null) return
     setIsAgenticMode(agenticByDefault)
   }, [agenticByDefault])
 

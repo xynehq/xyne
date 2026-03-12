@@ -917,6 +917,11 @@ function AgentComponent() {
   const [selectedOwners, setSelectedOwners] = useState<User[]>([])
   const { agenticByDefault } = useAppConfig()
   const [isAgenticMode, setIsAgenticMode] = useState(agenticByDefault)
+
+  // Sync local state with context when agenticByDefault changes
+  useEffect(() => {
+    setIsAgenticMode(agenticByDefault)
+  }, [agenticByDefault])
   const [listSearchQuery, setListSearchQuery] = useState("")
   const [testAgentIsRagOn, setTestAgentIsRagOn] = useState(true)
   const [activeTab, setActiveTab] = useState<

@@ -232,6 +232,11 @@ export const ChatPage = ({
       ? Boolean(chatParams.agentic)
       : agenticByDefault,
   )
+
+  // Sync with agenticByDefault when it changes and no explicit URL param is set
+  useEffect(() => {
+    setIsAgenticMode(agenticByDefault)
+  }, [agenticByDefault])
   const isEmbedded = chatParams.embedded ?? false
   const isWithChatId = !!(params as any).chatId
   const isSharedChat = !!chatParams.shareToken

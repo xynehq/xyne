@@ -627,7 +627,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         return [...availableModels, GEMINI_3_FLASH_MODEL]
       }
       return [...availableModels]
-    }, [availableModels])
+    }, [availableModels, isDemo])
 
     // Get the currently selected model's data
     const selectedModelData = useMemo(() => {
