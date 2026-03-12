@@ -346,16 +346,17 @@ function hasCurrentTurnFailure(context: AgentRunContext): boolean {
 }
 
 /**
- * True when the last STAGNATION_WINDOW turns that had execution tool calls both produced 0 ranked fragments.
- * Only counts turns that appear in toolCallHistory (i.e. had execution tools run), not reasoning-only turns.
+ * True when the current turn is the newest in a STAGNATION_WINDOW of turns with tool calls that all produced 0 ranked fragments.
+ * Anchored to currentTurn so we only trigger when ending a turn that had tool calls, not after reasoning-only turns.
  * "Useful information" = LLM-approved fragments in context, not raw retrieval.
  */
-function hasStagnation(context: AgentRunContext): boolean {
+function hasStagnation(context: AgentRunContext, currentTurn: number): boolean {
   const turnNumbersWithToolCalls = [
     ...new Set(context.toolCallHistory.map((r) => r.turnNumber)),
   ].sort((a, b) => b - a)
   const lastNTurns = turnNumbersWithToolCalls.slice(0, STAGNATION_WINDOW)
   if (lastNTurns.length < STAGNATION_WINDOW) return false
+  if (lastNTurns[0] !== currentTurn) return false
   const allZeroRanked = lastNTurns.every(
     (t) => (context.turnFragments.get(t)?.length ?? 0) === 0,
   )
@@ -373,7 +374,7 @@ async function buildReviewTask(
   const timeTrigger =
     context.review.lastReviewTurn === null ||
     turn - (context.review.lastReviewTurn ?? 0) >= reviewFreq
-  const stagnationTrigger = hasStagnation(context)
+  const stagnationTrigger = hasStagnation(context, turn)
   const shouldReview = failureTrigger || timeTrigger || stagnationTrigger
 
   if (shouldReview) {
