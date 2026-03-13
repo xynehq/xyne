@@ -1170,6 +1170,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   userRequestsReasoning?: boolean,
   queryRagSpan?: Span,
   agentPrompt?: string,
+  modelId?: string,
   pathExtractedInfo?: PathExtractedInfo,
   publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
@@ -1761,7 +1762,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           // maxPageNumber,
           {
             stream: true,
-            modelId: defaultBestModel,
+            modelId: modelId || defaultBestModel,
             messages,
             reasoning: config.isReasoning && userRequestsReasoning,
             agentPrompt,
@@ -1978,7 +1979,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       initialContext,
       {
         stream: true,
-        modelId: defaultBestModel,
+        modelId: modelId || defaultBestModel,
         reasoning: config.isReasoning && userRequestsReasoning,
         agentPrompt,
         messages,
@@ -3126,6 +3127,7 @@ async function* generatePointQueryTimeExpansion(
   userRequestsReasoning: boolean,
   eventRagSpan?: Span,
   agentPrompt?: string,
+  modelId?: string,
   pathExtractedInfo?: PathExtractedInfo,
   publicAgents?: SelectPublicAgent[],
 ): AsyncIterableIterator<
@@ -3566,7 +3568,7 @@ async function* generatePointQueryTimeExpansion(
       initialContext,
       {
         stream: true,
-        modelId: defaultBestModel,
+        modelId: modelId || defaultBestModel,
         reasoning: config.isReasoning && userRequestsReasoning,
         agentPrompt,
         imageFileNames,
@@ -4782,6 +4784,7 @@ export async function* UnderstandMessageAndAnswer(
       userRequestsReasoning,
       eventRagSpan,
       agentPrompt,
+      modelId,
       pathExtractedInfo,
       publicAgents,
     )
@@ -4806,6 +4809,7 @@ export async function* UnderstandMessageAndAnswer(
       userRequestsReasoning,
       ragSpan,
       agentPrompt, // Pass agentPrompt to generateIterativeTimeFilterAndQueryRewrite
+      modelId,
       pathExtractedInfo,
       publicAgents,
     )
