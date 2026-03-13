@@ -148,6 +148,11 @@ const AVAILABLE_SCOPES: ApiKeyScope[] = [
     name: "Enhanced Message Feedback",
     description: "Allows submitting enhanced feedback with custom comments and options",
   },
+  {
+    id: ApiKeyScopes.GENERATE_CHAT_TITLE,
+    name: "Generate Chat Title",
+    description: "Allows generating titles for chat messages",
+  },
 ]
 
 interface ApiKeyProps {
