@@ -1,3 +1,10 @@
+## [3.43.4](https://github.com/xynehq/xyne/compare/v3.43.3...v3.43.4) (2026-03-13)
+
+
+### Bug Fixes
+
+* removed defaultBestModel overrides ([#1284](https://github.com/xynehq/xyne/issues/1284)) ([2a695bd](https://github.com/xynehq/xyne/commit/2a695bd6858e4ac4020dc3acc69fb363a5c83d1a))
+
 ## [3.43.3](https://github.com/xynehq/xyne/compare/v3.43.2...v3.43.3) (2026-03-12)
 
 
