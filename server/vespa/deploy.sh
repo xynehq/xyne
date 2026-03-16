@@ -11,6 +11,7 @@ mkdir -p models
 TOKENIZER_URL=""
 MODEL_URL=""
 DIMS=
+RESET_EMBEDDER="${RESET_EMBEDDER:-false}"
 
 
 # URLs to download
@@ -49,6 +50,12 @@ bun run replaceDIMS.ts "$DIMS"
 # File paths
 TOKENIZER_FILE="models/tokenizer.json"
 MODEL_FILE="models/model.onnx"
+
+# Optionally force refresh of existing artifacts
+if [ "$RESET_EMBEDDER" = "true" ] || [ "$RESET_EMBEDDER" = "1" ]; then
+    echo "RESET_EMBEDDER is enabled — removing existing model and tokenizer."
+    rm -f models/tokenizer.json models/model.onnx
+fi
 
 # Download the tokenizer if it doesn't exist
 if [ -f "$TOKENIZER_FILE" ]; then
