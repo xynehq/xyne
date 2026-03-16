@@ -36,8 +36,8 @@ elif [ "$EMBEDDING_MODEL" = "embeddinggemma-300m" ]; then
     DIMS=768
     echo "Deploying embedding model: $EMBEDDING_MODEL"
 elif [ "$EMBEDDING_MODEL" = "jina-embeddings-v5-text-nano" ]; then
-    TOKENIZER_URL="https://huggingface.co/Ashx098/Jina-v5-nano_ONNX-for-vespa/resolve/main/tokenizer.json"
-    MODEL_URL="https://huggingface.co/Ashx098/Jina-v5-nano_ONNX-for-vespa/resolve/main/model.onnx"
+    TOKENIZER_URL="https://huggingface.co/12Sanju21/jina-embedder-v4-nano-for-vespa/resolve/main/tokenizer.json"
+    MODEL_URL="https://huggingface.co/12Sanju21/jina-embedder-v4-nano-for-vespa/resolve/main/model.onnx"
     DIMS=768
     echo "Deploying embedding model: $EMBEDDING_MODEL"
 else
