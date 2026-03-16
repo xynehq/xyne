@@ -29,6 +29,11 @@ elif [ "$EMBEDDING_MODEL" = "bge-large-en-v1.5" ]; then
     MODEL_URL="https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main/onnx/model.onnx"
     DIMS=1024
     echo "Deploying embedding model: $EMBEDDING_MODEL"
+elif [ "$EMBEDDING_MODEL" = "embeddinggemma-300m" ]; then
+    TOKENIZER_URL="https://huggingface.co/Ashx098/Embedding-Gemma_Onnx-for-vespa/resolve/main/tokenizer.json"
+    MODEL_URL="https://huggingface.co/Ashx098/Embedding-Gemma_Onnx-for-vespa/resolve/main/model_merged.onnx"
+    DIMS=768
+    echo "Deploying embedding model: $EMBEDDING_MODEL"
 else
     echo "Error: Unknown EMBEDDING_MODEL value '$EMBEDDING_MODEL'. please add one of ['bge-small-en-v1.5','bge-base-en-v1.5','bge-large-en-v1.5']"
     exit 1
