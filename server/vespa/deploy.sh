@@ -34,8 +34,13 @@ elif [ "$EMBEDDING_MODEL" = "embeddinggemma-300m" ]; then
     MODEL_URL="https://huggingface.co/Ashx098/Embedding-Gemma_Onnx-for-vespa/resolve/main/model_merged.onnx"
     DIMS=768
     echo "Deploying embedding model: $EMBEDDING_MODEL"
+elif [ "$EMBEDDING_MODEL" = "jina-embeddings-v5-text-nano" ]; then
+    TOKENIZER_URL="https://huggingface.co/Ashx098/Jina-v5-nano_ONNX-for-vespa/resolve/main/tokenizer.json"
+    MODEL_URL="https://huggingface.co/Ashx098/Jina-v5-nano_ONNX-for-vespa/resolve/main/model.onnx"
+    DIMS=768
+    echo "Deploying embedding model: $EMBEDDING_MODEL"
 else
-    echo "Error: Unknown EMBEDDING_MODEL value '$EMBEDDING_MODEL'. please add one of ['bge-small-en-v1.5','bge-base-en-v1.5','bge-large-en-v1.5']"
+    echo "Error: Unknown EMBEDDING_MODEL value '$EMBEDDING_MODEL'. please add one of ['bge-small-en-v1.5','bge-base-en-v1.5','bge-large-en-v1.5','embeddinggemma-300m','jina-embeddings-v5-text-nano'] to .env file"
     exit 1
 fi
 
