@@ -113,6 +113,52 @@ services:
       options:
         max-size: "50m"
         max-file: "6"
+
+  keycloak-db-init:
+    image: postgres:15-alpine
+    container_name: xyne-keycloak-db-init
+    depends_on:
+      xyne-db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: xyne
+    command:
+      - sh
+      - -c
+      - |
+        until pg_isready -h xyne-db -U xyne -d xyne; do
+          sleep 2
+        done
+        psql -h xyne-db -U xyne -tAc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'" | grep -q 1 || \
+        psql -h xyne-db -U xyne -c "CREATE DATABASE keycloak;"
+    networks:
+      - xyne
+    restart: "no"
+
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0}
+    container_name: xyne-keycloak
+    hostname: keycloak
+    depends_on:
+      keycloak-db-init:
+        condition: service_completed_successfully
+    environment:
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://xyne-db:5432/keycloak
+      - KC_DB_USERNAME=xyne
+      - KC_DB_PASSWORD=xyne
+      - KC_HTTP_ENABLED=true
+      - KC_HOSTNAME=${KEYCLOAK_PUBLIC_BASE_URL:-http://localhost:8082}
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN:-admin}
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "${KEYCLOAK_PORT:-8082}:8080"
+    command: ["start-dev"]
+    networks:
+      - xyne
+    restart: unless-stopped
     
   loki:
     image: grafana/loki:3.4.1

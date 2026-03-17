@@ -106,12 +106,18 @@ import type { JwtVariables } from "hono/jwt"
 import { sign } from "hono/jwt"
 import { db } from "@/db/client"
 import { HTTPException } from "hono/http-exception"
-import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
+import crypto from "node:crypto"
+import {
+  createWorkspace,
+  getWorkspaceByDomain,
+  getWorkspaceByExternalId,
+} from "@/db/workspace"
 import {
   createUser,
   deleteRefreshTokenFromDB,
   getPublicUserAndWorkspaceByEmail,
   getUserByEmail,
+  getUserByEmailInsensitive,
   saveRefreshTokenToDB,
 } from "@/db/user"
 import { getAppGlobalOAuthProvider } from "@/db/oauthProvider" // Import getAppGlobalOAuthProvider
@@ -131,7 +137,18 @@ import {
   GenerateUserApiKey,
   GetUserApiKeys,
   DeleteUserApiKey,
+  GetAuthProviders,
 } from "@/api/auth"
+import {
+  buildKeycloakAuthorizationUrl,
+  buildKeycloakLogoutUrl,
+  createKeycloakLoginAttempt,
+  exchangeKeycloakAuthorizationCode,
+  getKeycloakAttemptCookieNames,
+  getKeycloakWebConfig,
+  type InternalAuthProvider,
+  verifyKeycloakIdToken,
+} from "@/auth/keycloak"
 import {
   getIngestionStatusSchema,
   cancelIngestionSchema,
@@ -727,6 +744,32 @@ const clearCookies = (c: Context) => {
   Logger.info("Cookies deleted")
 }
 
+const getVerifiedJwtPayload = async (token: string, secret: string) => {
+  const verified = await verify(token, secret)
+  return (
+    (verified &&
+      typeof verified === "object" &&
+      "payload" in verified &&
+      (verified as { payload: Record<string, unknown> }).payload) ||
+    (verified as Record<string, unknown>)
+  )
+}
+
+const getAuthPageUrl = (errorCode?: string) => {
+  const baseUrl = config.postOauthRedirect.startsWith("http")
+    ? new URL("/auth", config.postOauthRedirect)
+    : new URL("/auth", config.host)
+
+  if (errorCode) {
+    baseUrl.searchParams.set("error", errorCode)
+  }
+
+  return baseUrl.toString()
+}
+
+const getKeycloakCallbackRedirectUri = () =>
+  new URL("/v1/auth/keycloak/callback", config.host).toString()
+
 const LogOut = async (c: Context) => {
   const accessToken = getCookie(c, AccessTokenCookieName)
   const refreshToken = getCookie(c, RefreshTokenCookieName)
@@ -734,12 +777,16 @@ const LogOut = async (c: Context) => {
   if (!accessToken || !refreshToken) {
     Logger.warn("No tokens found during logout")
     clearCookies(c)
-    return c.redirect(`/auth`)
+    return c.json({ redirectTo: "/auth" })
   }
 
   try {
-    const { payload } = await verify(refreshToken, refreshTokenSecret)
-    const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
+    const payload = await getVerifiedJwtPayload(refreshToken, refreshTokenSecret)
+    const { sub, workspaceId, authProvider } = payload as {
+      sub: string
+      workspaceId: string
+      authProvider?: InternalAuthProvider
+    }
     const email = sub
     const userAndWorkspace: PublicUserWorkspace =
       await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
@@ -751,13 +798,30 @@ const LogOut = async (c: Context) => {
     } else {
       Logger.warn("User not found during logout")
     }
+
+    if (authProvider === "keycloak") {
+      const keycloakConfig = getKeycloakWebConfig()
+      if (keycloakConfig) {
+        const postLogoutRedirectUri = new URL(
+          keycloakConfig.logoutRedirectUrl,
+          getAuthPageUrl(),
+        ).toString()
+        const redirectTo = await buildKeycloakLogoutUrl(
+          keycloakConfig,
+          postLogoutRedirectUri,
+          crypto.randomUUID(),
+        )
+        return c.json({ redirectTo })
+      }
+    }
   } catch (err) {
     Logger.error("Error during logout token verify or DB operation", err)
   } finally {
     clearCookies(c)
-    Logger.info("Logged out, redirecting to /auth")
-    return c.redirect(`/auth`)
+    Logger.info("Logged out")
   }
+
+  return c.json({ redirectTo: "/auth" })
 }
 
 // Update Metrics From Script
@@ -887,12 +951,15 @@ const handleAppValidation = async (c: Context) => {
       user.email,
       existingUser.role,
       existingUser.workspaceExternalId,
+      false,
+      "google",
     )
     const refreshToken = await generateTokens(
       user.email,
       existingUser.role,
       existingUser.workspaceExternalId,
       true,
+      "google",
     )
     // save refresh token generated in user schema
     await saveRefreshTokenToDB(db, email, refreshToken)
@@ -1180,15 +1247,16 @@ const handleAppRefreshToken = async (c: Context) => {
 
   let payload: Record<string, unknown>
   try {
-    payload = await verify(refreshToken, refreshTokenSecret)
+    payload = await getVerifiedJwtPayload(refreshToken, refreshTokenSecret)
   } catch (err) {
     Logger.warn("Invalid or expired refresh token", err)
     return c.json({ msg: "Invalid or expired refresh token" }, 401)
   }
 
-  const { sub: email, workspaceId } = payload as {
+  const { sub: email, workspaceId, authProvider } = payload as {
     sub: string
     workspaceId: string
+    authProvider?: InternalAuthProvider
   }
 
   const uw = await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
@@ -1208,12 +1276,15 @@ const handleAppRefreshToken = async (c: Context) => {
       existingUser.email,
       existingUser.role,
       existingUser.workspaceExternalId,
+      false,
+      authProvider,
     )
     const newRefreshToken = await generateTokens(
       existingUser.email,
       existingUser.role,
       existingUser.workspaceExternalId,
       true,
+      authProvider,
     )
 
     await saveRefreshTokenToDB(db, existingUser.email, newRefreshToken)
@@ -1247,13 +1318,17 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
   let payload
   try {
-    payload = await verify(refreshToken, refreshTokenSecret)
+    payload = await getVerifiedJwtPayload(refreshToken, refreshTokenSecret)
   } catch (err) {
     Logger.warn("Failed to verify refresh token", err)
     return clearAndRedirect()
   }
 
-  const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
+  const { sub, workspaceId, authProvider } = payload as {
+    sub: string
+    workspaceId: string
+    authProvider?: InternalAuthProvider
+  }
   const email = sub
   const userAndWorkspace: PublicUserWorkspace =
     await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
@@ -1277,12 +1352,15 @@ const getNewAccessRefreshToken = async (c: Context) => {
       existingUser.email,
       existingUser.role,
       existingUser.workspaceExternalId,
+      false,
+      authProvider,
     )
     const newRefreshToken = await generateTokens(
       existingUser.email,
       existingUser.role,
       existingUser.workspaceExternalId,
       true,
+      authProvider,
     )
     // Save new refresh token in DB
     await saveRefreshTokenToDB(db, email, newRefreshToken)
@@ -1356,12 +1434,187 @@ app.get("/api/v1/config", (c) =>
   }),
 )
 
+app.get("/v1/auth/keycloak/start", async (c) => {
+  const keycloakConfig = getKeycloakWebConfig()
+  if (!keycloakConfig) {
+    return c.redirect(getAuthPageUrl("keycloak_unavailable"))
+  }
+
+  try {
+    const attempt = createKeycloakLoginAttempt()
+    const cookies = getKeycloakAttemptCookieNames(attempt.attemptId)
+    const redirectUri = getKeycloakCallbackRedirectUri()
+    const authUrl = await buildKeycloakAuthorizationUrl(
+      keycloakConfig,
+      redirectUri,
+      attempt,
+    )
+
+    const cookieOpts = {
+      secure: true,
+      path: "/",
+      httpOnly: true,
+      maxAge: 60 * 10,
+    }
+
+    setCookieByEnv(c, cookies.state, attempt.attemptId, cookieOpts)
+    setCookieByEnv(c, cookies.nonce, attempt.nonce, cookieOpts)
+    setCookieByEnv(c, cookies.codeVerifier, attempt.codeVerifier, cookieOpts)
+
+    return c.redirect(authUrl)
+  } catch (error) {
+    Logger.error(error, "Failed to initiate Keycloak login")
+    return c.redirect(getAuthPageUrl("keycloak_unavailable"))
+  }
+})
+
+app.get("/v1/auth/keycloak/callback", async (c) => {
+  const keycloakConfig = getKeycloakWebConfig()
+  if (!keycloakConfig) {
+    return c.redirect(getAuthPageUrl("keycloak_unavailable"))
+  }
+
+  const state = c.req.query("state")
+  const code = c.req.query("code")
+  const error = c.req.query("error")
+
+  if (error) {
+    if (state) {
+      const cookies = getKeycloakAttemptCookieNames(state)
+      const cookieOpts = { secure: true, path: "/", httpOnly: true }
+      deleteCookieByEnv(c, cookies.state, cookieOpts)
+      deleteCookieByEnv(c, cookies.nonce, cookieOpts)
+      deleteCookieByEnv(c, cookies.codeVerifier, cookieOpts)
+    }
+    return c.redirect(getAuthPageUrl(error))
+  }
+
+  if (!state || !code) {
+    return c.redirect(getAuthPageUrl("keycloak_failed"))
+  }
+
+  const cookies = getKeycloakAttemptCookieNames(state)
+  const cookieOpts = { secure: true, path: "/", httpOnly: true }
+  const storedState = getCookie(c, cookies.state)
+  const storedNonce = getCookie(c, cookies.nonce)
+  const storedCodeVerifier = getCookie(c, cookies.codeVerifier)
+
+  deleteCookieByEnv(c, cookies.state, cookieOpts)
+  deleteCookieByEnv(c, cookies.nonce, cookieOpts)
+  deleteCookieByEnv(c, cookies.codeVerifier, cookieOpts)
+
+  if (
+    storedState !== state ||
+    !storedNonce ||
+    !storedCodeVerifier
+  ) {
+    return c.redirect(getAuthPageUrl("keycloak_failed"))
+  }
+
+  try {
+    const redirectUri = getKeycloakCallbackRedirectUri()
+    const tokenResponse = await exchangeKeycloakAuthorizationCode(
+      keycloakConfig,
+      code,
+      storedCodeVerifier,
+      redirectUri,
+    )
+
+    const idToken = tokenResponse.id_token
+    if (!idToken) {
+      throw new HTTPException(401, {
+        message: "Keycloak did not return an ID token",
+      })
+    }
+
+    const payload = await verifyKeycloakIdToken(
+      keycloakConfig,
+      idToken,
+      storedNonce,
+    )
+
+    const keycloakEmail = payload.email
+    const name =
+      (typeof payload.name === "string" && payload.name) ||
+      (typeof payload.preferred_username === "string" &&
+        payload.preferred_username) ||
+      keycloakEmail
+
+    const existingUsers = await getUserByEmailInsensitive(db, keycloakEmail)
+    let xyneUser = existingUsers[0]
+
+    if (xyneUser) {
+      if (
+        xyneUser.workspaceExternalId !== keycloakConfig.workspaceExternalId
+      ) {
+        return c.redirect(getAuthPageUrl("workspace_mismatch"))
+      }
+    } else {
+      const workspace = await getWorkspaceByExternalId(
+        db,
+        keycloakConfig.workspaceExternalId,
+      )
+      if (!workspace) {
+        throw new HTTPException(500, {
+          message: "Configured Keycloak workspace was not found",
+        })
+      }
+
+      const [createdUser] = await createUser(
+        db,
+        workspace.id,
+        keycloakEmail,
+        name,
+        "",
+        UserRole.User,
+        workspace.externalId,
+      )
+      xyneUser = createdUser
+    }
+
+    const accessToken = await generateTokens(
+      xyneUser.email,
+      xyneUser.role,
+      xyneUser.workspaceExternalId,
+      false,
+      "keycloak",
+    )
+    const refreshToken = await generateTokens(
+      xyneUser.email,
+      xyneUser.role,
+      xyneUser.workspaceExternalId,
+      true,
+      "keycloak",
+    )
+
+    await saveRefreshTokenToDB(db, xyneUser.email, refreshToken)
+
+    const sessionCookieOpts = {
+      secure: true,
+      path: "/",
+      httpOnly: true,
+    }
+    setCookieByEnv(c, AccessTokenCookieName, accessToken, sessionCookieOpts)
+    setCookieByEnv(c, RefreshTokenCookieName, refreshToken, sessionCookieOpts)
+
+    return c.redirect(postOauthRedirect)
+  } catch (error) {
+    if (error instanceof HTTPException) {
+      Logger.error(error, "Keycloak callback failed")
+    } else {
+      Logger.error(error, "Unexpected Keycloak callback failure")
+    }
+    return c.redirect(getAuthPageUrl("keycloak_failed"))
+  }
+})
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)
   .post("/validate-apple-token", handleAppleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
+  .get("/auth/providers", GetAuthProviders)
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
   .post(
@@ -2189,6 +2442,7 @@ const generateTokens = async (
   role: string,
   workspaceId: string,
   forRefreshToken: boolean = false,
+  authProvider?: InternalAuthProvider,
 ) => {
   const payload = forRefreshToken
     ? {
@@ -2197,6 +2451,7 @@ const generateTokens = async (
         workspaceId,
         tokenType: "refresh",
         exp: Math.floor(Date.now() / 1000) + config.RefreshTokenTTL,
+        ...(authProvider ? { authProvider } : {}),
       }
     : {
         sub: email,
@@ -2204,6 +2459,7 @@ const generateTokens = async (
         workspaceId,
         tokenType: "access",
         exp: Math.floor(Date.now() / 1000) + config.AccessTokenTTL,
+        ...(authProvider ? { authProvider } : {}),
       }
   const jwtToken = await sign(
     payload,
@@ -2269,12 +2525,15 @@ app.get(
         existingUser.email,
         existingUser.role,
         existingUser.workspaceExternalId,
+        false,
+        "google",
       )
       const refreshToken = await generateTokens(
         existingUser.email,
         existingUser.role,
         existingUser.workspaceExternalId,
         true,
+        "google",
       )
       // save refresh token generated in user schema
       await saveRefreshTokenToDB(db, email, refreshToken)
@@ -2308,12 +2567,15 @@ app.get(
         user.email,
         user.role,
         user.workspaceExternalId,
+        false,
+        "google",
       )
       const refreshToken = await generateTokens(
         user.email,
         user.role,
         user.workspaceExternalId,
         true,
+        "google",
       )
       // save refresh token generated in user schema
       await saveRefreshTokenToDB(db, email, refreshToken)
@@ -2356,12 +2618,15 @@ app.get(
       userAcc.email,
       userAcc.role,
       userAcc.workspaceExternalId,
+      false,
+      "google",
     )
     const refreshToken = await generateTokens(
       userAcc.email,
       userAcc.role,
       userAcc.workspaceExternalId,
       true,
+      "google",
     )
     // save refresh token generated in user schema
     await saveRefreshTokenToDB(db, email, refreshToken)

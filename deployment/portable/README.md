@@ -76,6 +76,7 @@ portable/
 ## Access URLs
 
 - **Xyne Application**: http://localhost:3000
+- **Keycloak**: http://localhost:8082
 - **Grafana Dashboard**: http://localhost:3002  
 - **Prometheus Metrics**: http://localhost:9090
 - **Loki Logs**: http://localhost:3100
@@ -100,9 +101,36 @@ portable/
    cp .env.example .env
    ```
 
-2. Add your API keys:
+2. Configure login providers and secrets in `.env`:
    ```bash
    nano .env
+   ```
+
+   For Google web login:
+   ```bash
+   GOOGLE_WEB_LOGIN_ENABLED=true
+   GOOGLE_CLIENT_ID=<your-google-client-id>
+   GOOGLE_CLIENT_SECRET=<your-google-client-secret>
+   GOOGLE_PROD_REDIRECT_URI=http://localhost:3000/v1/auth/callback
+   ```
+
+   For Keycloak web login:
+   ```bash
+   KEYCLOAK_WEB_ENABLED=true
+   KEYCLOAK_PUBLIC_BASE_URL=http://localhost:8082
+   KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080
+   KEYCLOAK_REALM=xyne-shared
+   KEYCLOAK_CLIENT_ID=xyne-web
+   KEYCLOAK_CLIENT_SECRET=<your-keycloak-client-secret>
+   KEYCLOAK_WORKSPACE_EXTERNAL_ID=<workspace-external-id>
+   ```
+
+   Required Keycloak client settings:
+   ```text
+   Standard flow enabled
+   Access type: confidential
+   Valid redirect URI: http://localhost:3000/v1/auth/keycloak/callback
+   Valid post logout redirect URI: http://localhost:3000/auth
    ```
 
 3. Deploy:

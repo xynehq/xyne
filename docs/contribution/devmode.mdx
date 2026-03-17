@@ -47,6 +47,23 @@ GOOGLE_CLIENT_ID=<YOUR_GOOGLE_CLIENT_ID>
 GOOGLE_CLIENT_SECRET=<YOUR_GOOGLE_CLIENT_SECRET>
 GOOGLE_REDIRECT_URI=http://localhost:3000/v1/auth/callback
 
+# Optional: Keycloak web login for local development
+# Disable Google web login if you want to test Keycloak-only login locally
+GOOGLE_WEB_LOGIN_ENABLED=false
+KEYCLOAK_WEB_ENABLED=true
+KEYCLOAK_PORT=8082
+KEYCLOAK_PUBLIC_BASE_URL=http://localhost:8082
+# In local dev the server runs on the host, not inside Docker,
+# so the backchannel URL must also be localhost.
+KEYCLOAK_INTERNAL_BASE_URL=http://localhost:8082
+KEYCLOAK_REALM=xyne-shared
+KEYCLOAK_CLIENT_ID=xyne-web
+KEYCLOAK_CLIENT_SECRET=<YOUR_KEYCLOAK_CLIENT_SECRET>
+KEYCLOAK_WORKSPACE_EXTERNAL_ID=<YOUR_WORKSPACE_EXTERNAL_ID>
+KEYCLOAK_LOGOUT_REDIRECT_URL=/auth
+KEYCLOAK_ADMIN=admin
+KEYCLOAK_ADMIN_PASSWORD=admin
+
 HOST=http://localhost:3000
 
 JWT_SECRET=<YOUR_JWT_SECRET>
@@ -89,9 +106,16 @@ BASE_URL=<YOUR_BASE_URL>
 Set up docker by running the follow command : 
 
 ```javascript
-docker-compose -f deployment/docker-compose.dev.yml up
+docker compose -f deployment/docker-compose.dev.yml up -d
 ```
-Running this command will host vespa and postgres containers inside your docker.
+Running this command will host Vespa, PostgreSQL, and Keycloak containers inside Docker.
+Keycloak Admin Console will be available at `http://localhost:8082/admin/`.
+
+If you want to stop the local infrastructure, use:
+
+```javascript
+docker compose -f deployment/docker-compose.dev.yml down
+```
 
 # Set permission to run the init-script
  We first need to set the executable permission to run the init-script, for that, run the following command : 
@@ -154,4 +178,3 @@ The app will now be available in port ```5173```.  [Go to xyne](http://localhost
 
 <Tip>In case of any required support, feel free to [Contact Us](mailto:founders@xynehq.com)</Tip>
 ​
-

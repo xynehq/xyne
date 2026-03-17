@@ -150,6 +150,36 @@ services:
         max-size: "50m"
         max-file: "6"
 
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0}
+    container_name: xyne-keycloak
+    hostname: keycloak
+    depends_on:
+      xyne-db:
+        condition: service_healthy
+    environment:
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://xyne-db:5432/keycloak
+      - KC_DB_USERNAME=xyne
+      - KC_DB_PASSWORD=xyne
+      - KC_HTTP_ENABLED=true
+      - KC_HOSTNAME=${KEYCLOAK_PUBLIC_BASE_URL:-http://localhost:8082}
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN:-admin}
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    command: ["start"]
+    ports:
+      - "${KEYCLOAK_PORT:-8082}:8080"
+    networks:
+      - xyne
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
   loki-init:
     image: busybox
     volumes:

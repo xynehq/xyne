@@ -161,10 +161,13 @@ setup_environment() {
     chmod -f 755 "$DATA_DIR"/* 2>/dev/null || true
     chmod -f 755 "$DATA_DIR"/vespa-data/tmp 2>/dev/null || true
     
-    # Copy .env.example to .env if .env doesn't exist
+    # Copy env template if .env doesn't exist
     if [ ! -f .env ] && [ -f .env.example ]; then
         echo " Copying .env.example to .env..."
         cp .env.example .env
+    elif [ ! -f .env ] && [ -f .env.default ]; then
+        echo " Copying .env.default to .env..."
+        cp .env.default .env
     fi
     
     # Set Docker user environment variables
@@ -248,6 +251,35 @@ setup_permissions() {
     echo -e "${GREEN} Permissions configured${NC}"
 }
 
+wait_for_postgres() {
+    local attempts=0
+    local max_attempts=30
+
+    echo -e "${YELLOW} Waiting for PostgreSQL to become healthy...${NC}"
+    until docker exec xyne-db pg_isready -U xyne -d xyne >/dev/null 2>&1; do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge "$max_attempts" ]; then
+            echo -e "${RED}ERROR: PostgreSQL did not become ready in time${NC}"
+            exit 1
+        fi
+        sleep 2
+    done
+
+    echo -e "${GREEN} PostgreSQL is ready${NC}"
+}
+
+ensure_keycloak_database() {
+    echo -e "${YELLOW} Ensuring Keycloak database exists...${NC}"
+
+    if docker exec xyne-db psql -U xyne -tAc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'" | grep -q "1"; then
+        echo -e "${GREEN} Keycloak database already exists${NC}"
+        return
+    fi
+
+    docker exec xyne-db psql -U xyne -c "CREATE DATABASE keycloak;"
+    echo -e "${GREEN} Keycloak database created${NC}"
+}
+
 start_infrastructure() {
     echo -e "${YELLOW}  Starting infrastructure services...${NC}"
 
@@ -260,6 +292,9 @@ start_infrastructure() {
     fi
 
     DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d xyne-db
+    wait_for_postgres
+    ensure_keycloak_database
     $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --build
     echo -e "${GREEN} Infrastructure services started${NC}"
 }
@@ -382,6 +417,10 @@ update_infrastructure() {
     DOCKER_COMPOSE=$(get_docker_compose_cmd)
     $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" pull || echo -e "${YELLOW}Some images require building (this is normal for custom images)${NC}"
 
+    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d xyne-db
+    wait_for_postgres
+    ensure_keycloak_database
+
     # Build and start all services (--build will handle custom images)
     $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build
     echo -e "${GREEN} Infrastructure services updated${NC}"
@@ -412,6 +451,7 @@ show_status() {
     echo "  • Grafana: http://localhost:3002"
     echo "  • Prometheus: http://localhost:9090"
     echo "  • Loki: http://localhost:3100"
+    echo "  • Keycloak: http://localhost:8082"
     echo "  • LiveKit Server: http://localhost:7880 (WebRTC: 7881, UDP: 7882)"
     echo -e "${GREEN}  • Application Mode: Production${NC}"
     # Show GPU/CPU mode
@@ -656,7 +696,7 @@ case $COMMAND in
         start_infrastructure
         echo -e "${GREEN} Infrastructure services started successfully${NC}"
         echo -e "${BLUE} You can now run your application locally in development mode${NC}"
-        echo -e "${BLUE} Infrastructure services: PostgreSQL, Vespa, Prometheus, Grafana, Loki${NC}"
+        echo -e "${BLUE} Infrastructure services: PostgreSQL, Keycloak, Vespa, Prometheus, Grafana, Loki${NC}"
         ;;
     stop)
         stop_all

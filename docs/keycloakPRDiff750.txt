@@ -1,0 +1,4484 @@
+diff --git a/deployment/.env.prod.example b/deployment/.env.prod.example
+new file mode 100644
+index 000000000..38ee07fd3
+--- /dev/null
++++ b/deployment/.env.prod.example
+@@ -0,0 +1,94 @@
++# XYNE Production Environment Configuration
++# Copy this file to .env for production deployment
++
++# =============================================================================
++# KEYCLOAK CONFIGURATION
++# =============================================================================
++
++# Admin credentials (CHANGE THESE IN PRODUCTION!)
++KEYCLOAK_ADMIN=admin
++KEYCLOAK_ADMIN_PASSWORD=your-secure-admin-password-here
++
++# Keycloak port mapping (optional, defaults to 8081)
++KEYCLOAK_PORT=8081
++
++# Logging level (INFO, WARN, ERROR, DEBUG)
++KC_LOG_LEVEL=INFO
++
++# =============================================================================
++# DATABASE CONFIGURATION
++# =============================================================================
++
++# PostgreSQL credentials
++POSTGRES_USER=xyne
++POSTGRES_PASSWORD=your-secure-db-password-here
++
++# Database port (optional, defaults to 5432)
++XYNE_DB_PORT=5432
++
++# =============================================================================
++# XYNE APPLICATION CONFIGURATION
++# =============================================================================
++
++# Keycloak integration
++KEYCLOAK_ENABLED=true
++KEYCLOAK_BASE_URL=http://localhost:8081
++KEYCLOAK_DEFAULT_REALM=xyne-shared
++KEYCLOAK_CLIENT_ID=oa-backend
++KEYCLOAK_CLIENT_SECRET=your-client-secret-from-setup
++
++# Application secrets
++USER_SECRET=your-jwt-secret-here
++ACCESS_TOKEN_SECRET=your-access-token-secret-here
++REFRESH_TOKEN_SECRET=your-refresh-token-secret-here
++
++# =============================================================================
++# MONITORING & OBSERVABILITY
++# =============================================================================
++
++# Enable metrics and monitoring
++METRICS_ENABLED=true
++PROMETHEUS_ENABLED=true
++GRAFANA_ENABLED=true
++
++# =============================================================================
++# PRODUCTION OPTIMIZATIONS
++# =============================================================================
++
++# Resource limits (adjust based on your infrastructure)
++# These are applied via docker-compose deploy section
++
++# Keycloak Resources:
++# - Memory: 1GB limit, 512MB reservation
++# - CPU: 0.5 limit, 0.25 reservation
++
++# PostgreSQL Resources (add if needed):
++# - Memory: 2GB limit, 1GB reservation
++# - CPU: 1.0 limit, 0.5 reservation
++
++# Vespa Resources (already configured):
++# - Memory: 20GB limit
++# - CPU: Managed by ulimits
++
++# =============================================================================
++# SECURITY NOTES
++# =============================================================================
++
++# 1. Change all default passwords
++# 2. Use strong, unique secrets for JWT tokens
++# 3. Configure proper CORS origins in application
++# 4. Enable HTTPS in production with reverse proxy
++# 5. Regularly rotate secrets and credentials
++# 6. Use secret management systems for sensitive data
++
++# =============================================================================
++# BACKUP & RECOVERY
++# =============================================================================
++
++# PostgreSQL data is persisted in: ../server/xyne-data/
++# Vespa data is persisted in: ../server/vespa-data/
++# Grafana data is persisted in: ./grafana/grafana-storage/
++
++# Use deployment/backup-restore.sh for data management:
++# ./backup-restore.sh backup production-$(date +%Y%m%d)
++# ./backup-restore.sh restore production-YYYYMMDD
+\ No newline at end of file
+diff --git a/deployment/KEYCLOAK_SETUP.md b/deployment/KEYCLOAK_SETUP.md
+new file mode 100644
+index 000000000..8b7e8c4c7
+--- /dev/null
++++ b/deployment/KEYCLOAK_SETUP.md
+@@ -0,0 +1,315 @@
++# XYNE Keycloak Integration - Docker Compose Setup
++
++## Overview
++
++XYNE now includes integrated Keycloak authentication as part of the development Docker Compose stack. This provides a unified development environment with persistent authentication data.
++
++## Architecture
++
++```
++┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
++│   XYNE Server   │    │    Keycloak     │    │   PostgreSQL    │
++│   Port: 3000    │◄──►│   Port: 8081    │◄──►│   Port: 5432    │
++└─────────────────┘    └─────────────────┘    └─────────────────┘
++                                │                       │
++                                │                       ├─ xyne DB
++                                │                       └─ keycloak DB
++                                │
++                        ┌─────────────────┐
++                        │   Monitoring    │
++                        │ Grafana: 3002   │
++                        │ Prometheus: 9090│
++                        │ Loki: 3100      │
++                        └─────────────────┘
++```
++
++## Services
++
++| Service | Container Name | Ports | Purpose |
++|---------|---------------|-------|---------|
++| PostgreSQL | xyne-db | 5432 | Database for both XYNE and Keycloak |
++| Keycloak | xyne-keycloak | 8081→8080 | Authentication server |
++| Vespa | vespa | 8080, 19071 | Search engine |
++| Prometheus | xyne-prometheus | 9090 | Metrics collection |
++| Grafana | xyne-grafana | 3002→3000 | Monitoring dashboards |
++| Loki | loki | 3100 | Log aggregation |
++
++## Quick Start
++
++### Development Environment
++
++#### 1. Start All Services
++```bash
++cd deployment/
++docker-compose -f docker-compose.dev.yml up -d
++```
++
++#### 2. Initialize Keycloak
++```bash
++./setup-keycloak.sh
++```
++
++#### 3. Start XYNE Server
++```bash
++cd ../server/
++KEYCLOAK_ENABLED=true \
++KEYCLOAK_BASE_URL=http://localhost:8081 \
++KEYCLOAK_DEFAULT_REALM=xyne-shared \
++KEYCLOAK_CLIENT_ID=oa-backend \
++KEYCLOAK_CLIENT_SECRET=<your-client-secret> \
++bun run dev
++```
++
++### Production Environment
++
++#### 1. Set Environment Variables
++```bash
++# Required for production
++export KEYCLOAK_ADMIN=your-admin-username
++export KEYCLOAK_ADMIN_PASSWORD=your-secure-password
++export POSTGRES_USER=xyne
++export POSTGRES_PASSWORD=your-db-password
++export KEYCLOAK_PORT=8081  # Optional, defaults to 8081
++export KC_LOG_LEVEL=WARN   # Optional, defaults to INFO
++```
++
++#### 2. Start Production Stack
++```bash
++cd deployment/
++docker-compose -f docker-compose.prod.yml up -d
++```
++
++#### 3. Initialize Keycloak (First Time Only)
++```bash
++# Wait for Keycloak to start, then run
++./setup-keycloak.sh
++```
++
++## Configuration
++
++### Environment Variables
++
++| Variable | Default | Description |
++|----------|---------|-------------|
++| `KEYCLOAK_ENABLED` | `false` | Enable Keycloak authentication |
++| `KEYCLOAK_BASE_URL` | `http://localhost:8081` | Keycloak server URL |
++| `KEYCLOAK_DEFAULT_REALM` | `xyne-shared` | Default realm name |
++| `KEYCLOAK_CLIENT_ID` | `oa-backend` | Client ID for XYNE |
++| `KEYCLOAK_CLIENT_SECRET` | *(required)* | Client secret from Keycloak |
++
++### Default Configuration
++
++- **Admin Console**: http://localhost:8081/admin/
++  - Username: `admin`
++  - Password: `admin`
++
++- **Realm**: `xyne-shared`
++- **Client**: `oa-backend`
++- **Test User**: `debojyoti.mandal@juspay.in` / `*`
++
++## Authentication Flow
++
++XYNE supports three authentication methods:
++
++1. **Google OAuth** (existing)
++2. **Keycloak SSO** (browser redirect)
++3. **Email/Password** (direct login via Keycloak)
++
++### API Endpoints
++
++- `POST /api/keycloak/login` - Email/password authentication
++- `GET/POST /api/keycloak/callback` - OAuth callback handler
++- `POST /api/keycloak/refresh` - Token refresh
++- `POST /api/keycloak/logout` - Logout and token revocation
++
++## Database Setup
++
++### Shared PostgreSQL Configuration
++
++The setup uses a single PostgreSQL instance with separate databases:
++
++- `xyne` - Main application database
++- `keycloak` - Keycloak authentication data
++
++### Data Persistence
++
++All data is persisted in Docker volumes:
++- PostgreSQL data: `../server/xyne-data`
++- Keycloak configuration is stored in the PostgreSQL database
++
++## Development Workflow
++
++### Starting Development Environment
++
++1. **Full Stack**:
++   ```bash
++   docker-compose -f docker-compose.dev.yml up -d
++   ./setup-keycloak.sh  # Only needed once
++   ```
++
++2. **XYNE Server**:
++   ```bash
++   # With Keycloak enabled
++   export KEYCLOAK_ENABLED=true
++   export KEYCLOAK_CLIENT_SECRET=<secret-from-setup>
++   bun run dev
++   ```
++
++### Testing Authentication
++
++```bash
++# Email/Password Login
++curl -X POST 'http://localhost:3000/api/keycloak/login' \
++  -H 'Content-Type: application/json' \
++  -d '{"email": "debojyoti.mandal@juspay.in", "password": "*"}'
++
++# Test /me API
++curl 'http://localhost:3000/api/v1/me' \
++  -H 'Cookie: access-token=<token>'
++```
++
++## Enhanced /me API
++
++The `/me` API now includes Keycloak-specific information when authenticated via Keycloak:
++
++```json
++{
++  "user": {
++    "email": "user@example.com",
++    "name": "User Name",
++    "role": "SuperAdmin",
++    "email_verified": false,
++    "preferred_username": "user@example.com",
++    "given_name": "User",
++    "family_name": "Name",
++    "realm_access": {
++      "roles": ["offline_access", "uma_authorization"]
++    },
++    "resource_access": {
++      "account": {
++        "roles": ["manage-account", "view-profile"]
++      }
++    },
++    "scope": "openid email profile"
++  },
++  "workspace": { ... },
++  "authMethod": "keycloak"
++}
++```
++
++## Troubleshooting
++
++### Common Issues
++
++1. **Database Connection Error**
++   ```bash
++   # Recreate keycloak database
++   docker exec xyne-db psql -U xyne -c "CREATE DATABASE keycloak;"
++   docker restart xyne-keycloak
++   ```
++
++2. **Client Secret Missing**
++   ```bash
++   # Get client secret from Keycloak
++   ./setup-keycloak.sh  # Shows secret in output
++   ```
++
++3. **Service Not Starting**
++   ```bash
++   # Check logs
++   docker logs xyne-keycloak
++   docker logs xyne-db
++   ```
++
++### Health Checks
++
++```bash
++# Keycloak
++curl http://localhost:8081/
++
++# PostgreSQL
++docker exec xyne-db psql -U xyne -c "SELECT 1;"
++
++# XYNE Integration
++curl http://localhost:3000/api/keycloak/config
++```
++
++## Migration from Standalone
++
++If migrating from a standalone Keycloak setup:
++
++1. Export realm configuration from old instance
++2. Stop standalone container: `docker stop keycloak-demo`
++3. Start integrated stack: `docker-compose up -d`
++4. Run setup script: `./setup-keycloak.sh`
++5. Import realm configuration if needed
++
++## Production vs Development
++
++### Key Differences
++
++| Feature | Development | Production |
++|---------|-------------|------------|
++| **Keycloak Mode** | `start-dev` (hot reload) | `start --optimized` (faster startup) |
++| **Container Name** | `xyne-keycloak` | `xyne-keycloak-prod` |
++| **Resource Limits** | None | 1GB RAM, 0.5 CPU |
++| **Cache Strategy** | Simple | Kubernetes clustering ready |
++| **Health Checks** | Basic | Extended with longer startup time |
++| **Logging** | DEBUG friendly | INFO/WARN levels |
++
++### Production Optimizations
++
++The production configuration includes:
++
++- **`--optimized` mode**: Faster startup and runtime performance
++- **Resource limits**: Memory and CPU constraints for container orchestration
++- **Extended health checks**: 120s startup period for optimization phase
++- **Production cache**: Infinspan with Kubernetes clustering support
++- **Environment-based configuration**: All sensitive data via environment variables
++
++## Production Considerations
++
++For production deployment:
++
++1. **Security**:
++   - Change default admin credentials via environment variables
++   - Use proper client secrets
++   - Enable HTTPS with reverse proxy
++   - Configure proper CORS origins
++
++2. **Database**:
++   - Use separate PostgreSQL instance for Keycloak in large deployments
++   - Configure proper backup strategies
++   - Set up database clustering if needed
++
++3. **Scaling**:
++   - Configure Keycloak clustering with shared database
++   - Use external load balancer
++   - Set proper resource limits and requests
++
++4. **Monitoring**:
++   - Enable Keycloak metrics integration with Prometheus
++   - Set up proper logging levels
++   - Configure health check monitoring
++
++## Benefits of Integrated Setup
++
++✅ **Development Efficiency**
++- Single command starts entire stack
++- Consistent environment across team
++- Proper service networking
++
++✅ **Data Persistence**
++- PostgreSQL backend for Keycloak
++- Survives container restarts
++- Easy backup/restore
++
++✅ **Team Collaboration**
++- Version-controlled configuration
++- Consistent realm/client setup
++- Shared development environment
++
++✅ **Production Parity**
++- Similar architecture to production
++- Proper database integration
++- Service discovery patterns
+\ No newline at end of file
+diff --git a/deployment/docker-compose.dev.yml b/deployment/docker-compose.dev.yml
+index 517b37081..f18cafca8 100644
+--- a/deployment/docker-compose.dev.yml
++++ b/deployment/docker-compose.dev.yml
+@@ -109,6 +109,36 @@ services:
+     networks:
+       - xyne
+ 
++  keycloak:
++    image: quay.io/keycloak/keycloak:latest
++    container_name: xyne-keycloak
++    environment:
++      - KEYCLOAK_ADMIN=admin
++      - KEYCLOAK_ADMIN_PASSWORD=admin
++      - KC_DB=postgres
++      - KC_DB_URL=jdbc:postgresql://xyne-db:5432/keycloak
++      - KC_DB_USERNAME=xyne
++      - KC_DB_PASSWORD=xyne
++      - KC_HOSTNAME_STRICT=false
++      - KC_HOSTNAME_STRICT_HTTPS=false
++      - KC_HTTP_ENABLED=true
++      - KC_HEALTH_ENABLED=true
++      - KC_METRICS_ENABLED=true
++    ports:
++      - "8081:8080"
++    command: ["start-dev"]
++    depends_on:
++      - xyne-db
++    networks:
++      - xyne
++    restart: unless-stopped
++    healthcheck:
++      test: ["CMD", "java", "-version"]
++      interval: 30s
++      timeout: 10s
++      retries: 3
++      start_period: 120s
++
+ networks:
+   xyne:
+     driver: bridge
+diff --git a/deployment/docker-compose.prod.yml b/deployment/docker-compose.prod.yml
+index bc0c866ab..543d9d7ba 100644
+--- a/deployment/docker-compose.prod.yml
++++ b/deployment/docker-compose.prod.yml
+@@ -104,6 +104,61 @@ services:
+     networks:
+       - xyne
+ 
++  keycloak:
++    image: quay.io/keycloak/keycloak:latest
++    container_name: xyne-keycloak-prod
++    environment:
++      # Admin credentials - Change these in production!
++      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
++      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
++      
++      # Database configuration
++      - KC_DB=postgres
++      - KC_DB_URL=jdbc:postgresql://xyne-db:5432/keycloak
++      - KC_DB_USERNAME=${POSTGRES_USER:-xyne}
++      - KC_DB_PASSWORD=${POSTGRES_PASSWORD:-xyne}
++      
++      # Production optimizations
++      - KC_HOSTNAME_STRICT=false
++      - KC_HOSTNAME_STRICT_HTTPS=false
++      - KC_HTTP_ENABLED=true
++      - KC_PROXY=edge
++      
++      # Security and performance
++      - KC_HEALTH_ENABLED=true
++      - KC_METRICS_ENABLED=true
++      - KC_LOG_LEVEL=${KC_LOG_LEVEL:-INFO}
++      
++      # Cache configuration for production
++      - KC_CACHE=ispn
++      - KC_CACHE_STACK=kubernetes
++    ports:
++      - "${KEYCLOAK_PORT:-8081}:8080"
++    command: ["start", "--optimized"]
++    depends_on:
++      - xyne-db
++    networks:
++      - xyne
++    restart: unless-stopped
++    healthcheck:
++      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
++      interval: 30s
++      timeout: 10s
++      retries: 5
++      start_period: 120s
++    volumes:
++      # Optional: Mount custom themes or providers
++      # - ./keycloak/themes:/opt/keycloak/themes
++      # - ./keycloak/providers:/opt/keycloak/providers
++    deploy:
++      resources:
++        limits:
++          memory: 1G
++          cpus: '0.5'
++        reservations:
++          memory: 512M
++          cpus: '0.25'
++
+ networks:
+   xyne:
+     driver: bridge
+diff --git a/deployment/setup-keycloak.sh b/deployment/setup-keycloak.sh
+new file mode 100755
+index 000000000..c69a1281e
+--- /dev/null
++++ b/deployment/setup-keycloak.sh
+@@ -0,0 +1,138 @@
++#!/bin/bash
++
++# Keycloak Setup Script for XYNE Development
++# This script creates the necessary realm, client, and test user for XYNE
++
++set -e
++
++KEYCLOAK_URL="http://localhost:8081"
++ADMIN_USER="admin"
++ADMIN_PASS="admin"
++REALM_NAME="xyne-shared"
++CLIENT_ID="oa-backend"
++
++echo "🔧 Setting up Keycloak for XYNE development..."
++
++# Get admin access token
++echo "📝 Getting admin access token..."
++ADMIN_TOKEN=$(curl -s -X POST "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
++  -H "Content-Type: application/x-www-form-urlencoded" \
++  -d "username=${ADMIN_USER}&password=${ADMIN_PASS}&grant_type=password&client_id=admin-cli" | \
++  jq -r '.access_token')
++
++if [ "$ADMIN_TOKEN" == "null" ] || [ -z "$ADMIN_TOKEN" ]; then
++  echo "❌ Failed to get admin token"
++  exit 1
++fi
++
++echo "✅ Admin token obtained"
++
++# Create realm
++echo "🌍 Creating realm: ${REALM_NAME}..."
++curl -s -X POST "${KEYCLOAK_URL}/admin/realms" \
++  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
++  -H "Content-Type: application/json" \
++  -d '{
++    "realm": "'${REALM_NAME}'",
++    "enabled": true,
++    "displayName": "XYNE Shared Realm",
++    "registrationAllowed": true,
++    "loginWithEmailAllowed": true,
++    "duplicateEmailsAllowed": false,
++    "resetPasswordAllowed": true,
++    "editUsernameAllowed": true,
++    "bruteForceProtected": false
++  }' || echo "Realm might already exist"
++
++echo "✅ Realm created/verified"
++
++# Create client
++echo "🔐 Creating client: ${CLIENT_ID}..."
++curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM_NAME}/clients" \
++  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
++  -H "Content-Type: application/json" \
++  -d '{
++    "clientId": "'${CLIENT_ID}'",
++    "enabled": true,
++    "protocol": "openid-connect",
++    "publicClient": false,
++    "directAccessGrantsEnabled": true,
++    "serviceAccountsEnabled": false,
++    "standardFlowEnabled": true,
++    "implicitFlowEnabled": false,
++    "redirectUris": [
++      "http://localhost:3000/*",
++      "http://localhost:5173/*"
++    ],
++    "webOrigins": [
++      "http://localhost:3000",
++      "http://localhost:5173"
++    ],
++    "attributes": {
++      "access.token.lifespan": "300",
++      "client.secret.creation.time": "'$(date +%s)'"
++    }
++  }' || echo "Client might already exist"
++
++echo "✅ Client created/verified"
++
++# Get client UUID for further configuration
++CLIENT_UUID=$(curl -s -X GET "${KEYCLOAK_URL}/admin/realms/${REALM_NAME}/clients?clientId=${CLIENT_ID}" \
++  -H "Authorization: Bearer ${ADMIN_TOKEN}" | \
++  jq -r '.[0].id')
++
++echo "📋 Client UUID: ${CLIENT_UUID}"
++
++# Create test user
++echo "👤 Creating test user: debojyoti.mandal@juspay.in..."
++curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM_NAME}/users" \
++  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
++  -H "Content-Type: application/json" \
++  -d '{
++    "username": "debojyoti.mandal@juspay.in",
++    "email": "debojyoti.mandal@juspay.in",
++    "firstName": "Debojyoti",
++    "lastName": "Mandal",
++    "enabled": true,
++    "emailVerified": false,
++    "credentials": [{
++      "type": "password",
++      "value": "1",
++      "temporary": false
++    }]
++  }' || echo "User might already exist"
++
++echo "✅ Test user created/verified"
++
++# Test the setup
++echo "🧪 Testing configuration..."
++
++# Test password grant
++TEST_TOKEN=$(curl -s -X POST "${KEYCLOAK_URL}/realms/${REALM_NAME}/protocol/openid-connect/token" \
++  -H "Content-Type: application/x-www-form-urlencoded" \
++  -d "grant_type=password&client_id=${CLIENT_ID}&username=debojyoti.mandal@juspay.in&password=1&scope=openid email profile" | \
++  jq -r '.access_token' 2>/dev/null)
++
++if [ "$TEST_TOKEN" == "null" ] || [ -z "$TEST_TOKEN" ]; then
++  echo "⚠️  Password grant test failed - this might be expected if client secret is required"
++else
++  echo "✅ Password grant test successful"
++fi
++
++echo ""
++echo "🎉 Keycloak setup completed!"
++echo ""
++echo "📋 Configuration Summary:"
++echo "   Realm: ${REALM_NAME}"
++echo "   Client ID: ${CLIENT_ID}"
++echo "   Base URL: ${KEYCLOAK_URL}"
++echo "   Test User: debojyoti.mandal@juspay.in / password: 1"
++echo ""
++echo "🌐 Admin Console: ${KEYCLOAK_URL}/admin/"
++echo "   Username: ${ADMIN_USER}"
++echo "   Password: ${ADMIN_PASS}"
++echo ""
++echo "🔧 Next steps:"
++echo "   1. Test XYNE authentication"
++echo "   2. Configure client secret if needed"
++echo "   3. Set up additional users/roles as required"
+\ No newline at end of file
+diff --git a/frontend/package.json b/frontend/package.json
+index 658aae726..2047b846f 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -36,6 +36,7 @@
+     "date-fns": "^4.1.0",
+     "docx-preview": "^0.3.5",
+     "dompurify": "^3.2.6",
++    "esbuild": "^0.25.9",
+     "hono": "^4.6.15",
+     "jszip": "^3.10.1",
+     "lucide-react": "^0.475.0",
+diff --git a/frontend/public/assets/logo.svg b/frontend/public/assets/logo.svg
+new file mode 100644
+index 000000000..12bc8a388
+--- /dev/null
++++ b/frontend/public/assets/logo.svg
+@@ -0,0 +1,4 @@
++<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
++<circle cx="16" cy="16" r="16" fill="#FF4F4F"/>
++<path d="M19.96 22.48C20.008 22.784 20.112 23.016 20.272 23.176C20.432 23.32 20.664 23.392 20.968 23.392C21.288 23.392 21.56 23.296 21.784 23.104C22.024 22.912 22.224 22.592 22.384 22.144L22.792 20.92H23.272L22.648 22.768C22.296 23.712 21.816 24.376 21.208 24.76C20.616 25.144 19.896 25.336 19.048 25.336C18.088 25.336 17.328 25.192 16.768 24.904C16.208 24.616 15.792 24.192 15.52 23.632C15.248 23.072 15.056 22.392 14.944 21.592L13.552 10.408C13.504 10.056 13.4 9.808 13.24 9.664C13.096 9.52 12.88 9.448 12.592 9.448C12.288 9.448 12.008 9.56 11.752 9.784C11.512 10.008 11.304 10.368 11.128 10.864L10.72 12.088H10.24L10.864 10.24C11.216 9.296 11.72 8.632 12.376 8.248C13.048 7.864 13.848 7.672 14.776 7.672C15.624 7.672 16.304 7.808 16.816 8.08C17.344 8.336 17.752 8.744 18.04 9.304C18.328 9.848 18.52 10.552 18.616 11.416L19.96 22.48ZM24.496 8.08C24.24 8.08 23.976 8.136 23.704 8.248C23.448 8.344 23.184 8.488 22.912 8.68C22.464 9.064 21.936 9.688 21.328 10.552C20.72 11.416 20.088 12.504 19.432 13.816C18.792 15.112 18.184 16.616 17.608 18.328L17.872 16.504C18.224 15.464 18.656 14.424 19.168 13.384C19.68 12.344 20.224 11.4 20.8 10.552C21.376 9.688 21.92 9.016 22.432 8.536C23.152 7.96 23.88 7.672 24.616 7.672C25.416 7.672 26.048 7.944 26.512 8.488C26.976 9.016 27.208 9.672 27.208 10.456C27.208 11.304 26.952 11.984 26.44 12.496C25.928 12.992 25.312 13.24 24.592 13.24C24 13.24 23.52 13.064 23.152 12.712C22.8 12.36 22.624 11.864 22.624 11.224C22.624 10.504 22.856 9.872 23.32 9.328C23.784 8.784 24.384 8.432 25.12 8.272C25.056 8.208 24.976 8.16 24.88 8.128C24.784 8.096 24.656 8.08 24.496 8.08ZM8.632 24.928C8.92 24.928 9.192 24.872 9.448 24.76C9.72 24.648 9.992 24.504 10.264 24.328C10.744 23.976 11.32 23.408 11.992 22.624C12.664 21.84 13.352 20.848 14.056 19.648C14.776 18.448 15.44 17.064 16.048 15.496L15.688 17.32C15.32 18.248 14.856 19.184 14.296 20.128C13.752 21.056 13.176 21.904 12.568 22.672C11.96 23.44 11.36 24.064 10.768 24.544C10.048 25.072 9.296 25.336 8.512 25.336C7.728 25.336 7.104 25.072 6.64 24.544C6.16 24 5.92 23.336 5.92 22.552C5.92 21.704 6.176 21.032 6.688 20.536C7.2 20.024 7.816 19.768 8.536 19.768C9.144 19.768 9.624 19.944 9.976 20.296C10.328 20.648 10.504 21.144 10.504 21.784C10.504 22.504 10.272 23.136 9.808 23.68C9.344 24.208 8.744 24.56 8.008 24.736C8.072 24.8 8.152 24.848 8.248 24.88C8.344 24.912 8.472 24.928 8.632 24.928Z" fill="white"/>
++</svg>
+diff --git a/frontend/src/routes/auth.tsx b/frontend/src/routes/auth.tsx
+index 69a61e25a..81d288edc 100644
+--- a/frontend/src/routes/auth.tsx
++++ b/frontend/src/routes/auth.tsx
+@@ -1,4 +1,5 @@
+ import { createFileRoute, redirect } from "@tanstack/react-router"
++import { useState, useEffect } from "react"
+ 
+ import { Button } from "@/components/ui/button"
+ import {
+@@ -8,40 +9,786 @@ import {
+   CardHeader,
+   CardTitle,
+ } from "@/components/ui/card"
++import { Input } from "@/components/ui/input"
++import { Label } from "@/components/ui/label"
+ import { api } from "@/api"
+ import { errorComponent } from "@/components/error"
+ 
+ export const description =
+-  "A login form with email and password. There's an option to login with Google and a link to sign up if you don't have an account."
++  "A login form with Google OAuth and Keycloak SSO options."
+ 
+ export const containerClassName =
+   "w-full h-screen flex items-center justify-center px-4"
+ 
++interface KeycloakConfig {
++  baseUrl: string
++  realm: string
++  clientId: string
++  loginUrl: string
++}
++
++interface FeatureToggles {
++  googleLoginEnabled: boolean
++  microsoftLoginEnabled: boolean
++  linkedinLoginEnabled: boolean
++  emailPasswordLoginEnabled: boolean
++  passkeyLoginEnabled: boolean
++  ssoLoginEnabled: boolean
++}
++
+ export default function LoginForm() {
+   const logger = console
++  const [keycloakConfig, setKeycloakConfig] = useState<KeycloakConfig | null>(null)
++  const [keycloakEnabled, setKeycloakEnabled] = useState(false)
++  const [featureToggles, setFeatureToggles] = useState<FeatureToggles | null>(null)
++  const [error, setError] = useState<string | null>(null)
++  const [showEmailLogin, setShowEmailLogin] = useState(false)
++  const [email, setEmail] = useState("")
++  const [password, setPassword] = useState("")
++  const [isLoading, setIsLoading] = useState(false)
++  const [showPasskeyLogin, setShowPasskeyLogin] = useState(false)
++  const [passkeyEmail, setPasskeyEmail] = useState("")
++  const [isPasskeyLoading, setIsPasskeyLoading] = useState(false)
++
++  // Helper function to check if any Keycloak options are enabled
++  const hasAnyKeycloakOptions = () => {
++    if (!featureToggles) return false
++    return featureToggles.googleLoginEnabled || 
++           featureToggles.microsoftLoginEnabled || 
++           featureToggles.linkedinLoginEnabled || 
++           featureToggles.emailPasswordLoginEnabled || 
++           featureToggles.passkeyLoginEnabled || 
++           featureToggles.ssoLoginEnabled
++  }
++
++  // Get route data for any errors from beforeLoad
++  const route = Route.useRouteContext()
++  
++  useEffect(() => {
++    if (route?.error) {
++      setError(route.error)
++    }
++  }, [route?.error])
++
++  useEffect(() => {
++    // Fetch Keycloak configuration and feature toggles
++    const fetchKeycloakConfig = async () => {
++      try {
++        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/keycloak/config`)
++        if (response.ok) {
++          const config = await response.json()
++          setKeycloakConfig(config)
++          setKeycloakEnabled(true)
++          logger.info("Keycloak configuration loaded:", config)
++        } else {
++          logger.warn("Keycloak configuration not available")
++        }
++      } catch (error) {
++        logger.error("Failed to fetch Keycloak configuration:", error)
++      }
++    }
++
++    const fetchFeatureToggles = async () => {
++      try {
++        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/keycloak/features`)
++        if (response.ok) {
++          const features = await response.json()
++          setFeatureToggles(features)
++          logger.info("Feature toggles loaded:", features)
++        } else {
++          logger.warn("Feature toggles not available")
++        }
++      } catch (error) {
++        logger.error("Failed to fetch feature toggles:", error)
++      }
++    }
++
++    fetchKeycloakConfig()
++    fetchFeatureToggles()
++  }, [])
++
++  const handleGoogleLogin = () => {
++    logger.info("User clicked login with Google")
++    const redirectUrl = `${import.meta.env.VITE_API_BASE_URL}/v1/auth/callback`
++    window.location.href = redirectUrl
++  }
++
++  const handleKeycloakLogin = () => {
++    if (!keycloakConfig) {
++      logger.error("Keycloak configuration not available")
++      return
++    }
++
++    logger.info("User clicked login with Keycloak SSO")
++    
++    // Build Keycloak authorization URL - make sure it goes to user realm, not admin
++    const params = new URLSearchParams({
++      client_id: keycloakConfig.clientId,
++      redirect_uri: `${window.location.origin}/auth`,
++      response_type: "code",
++      scope: "openid email profile",
++      state: Math.random().toString(36).substring(2, 15),
++    })
++
++    // Use the user realm URL, not admin realm
++    const userLoginUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.realm}/protocol/openid-connect/auth`
++    const authUrl = `${userLoginUrl}?${params.toString()}`
++    
++    logger.info("Redirecting to Keycloak:", authUrl)
++    window.location.href = authUrl
++  }
++
++  const handleGoogleKeycloakLogin = () => {
++    if (!keycloakConfig) {
++      logger.error("Keycloak configuration not available")
++      return
++    }
++
++    logger.info("User clicked login with Google via Keycloak")
++    
++    // Build Keycloak authorization URL with Google identity provider hint
++    const params = new URLSearchParams({
++      client_id: keycloakConfig.clientId,
++      redirect_uri: `${window.location.origin}/auth`,
++      response_type: "code",
++      scope: "openid email profile",
++      state: Math.random().toString(36).substring(2, 15),
++      kc_idp_hint: "google", // This will direct Keycloak to use Google as identity provider
++    })
++
++    // Use the user realm URL, not admin realm
++    const userLoginUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.realm}/protocol/openid-connect/auth`
++    const authUrl = `${userLoginUrl}?${params.toString()}`
++    
++    logger.info("Redirecting to Google via Keycloak:", authUrl)
++    window.location.href = authUrl
++  }
++
++  const handleLinkedInKeycloakLogin = () => {
++    if (!keycloakConfig) {
++      logger.error("Keycloak configuration not available")
++      return
++    }
++
++    logger.info("User clicked login with LinkedIn via Keycloak")
++    
++    // Build Keycloak authorization URL with LinkedIn identity provider hint
++    const params = new URLSearchParams({
++      client_id: keycloakConfig.clientId,
++      redirect_uri: `${window.location.origin}/auth`,
++      response_type: "code",
++      scope: "openid email profile",
++      state: Math.random().toString(36).substring(2, 15),
++      kc_idp_hint: "linkedin", // This will direct Keycloak to use LinkedIn as identity provider
++    })
++
++    // Use the user realm URL, not admin realm
++    const userLoginUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.realm}/protocol/openid-connect/auth`
++    const authUrl = `${userLoginUrl}?${params.toString()}`
++    
++    logger.info("Redirecting to LinkedIn via Keycloak:", authUrl)
++    window.location.href = authUrl
++  }
++
++  const handleMicrosoftKeycloakLogin = () => {
++    if (!keycloakConfig) {
++      logger.error("Keycloak configuration not available")
++      return
++    }
++
++    logger.info("User clicked login with Microsoft via Keycloak")
++    
++    // Build Keycloak authorization URL with Microsoft identity provider hint
++    const params = new URLSearchParams({
++      client_id: keycloakConfig.clientId,
++      redirect_uri: `${window.location.origin}/auth`,
++      response_type: "code",
++      scope: "openid email profile",
++      state: Math.random().toString(36).substring(2, 15),
++      kc_idp_hint: "microsoft", // This will direct Keycloak to use Microsoft as identity provider
++    })
++
++    // Use the user realm URL, not admin realm
++    const userLoginUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.realm}/protocol/openid-connect/auth`
++    const authUrl = `${userLoginUrl}?${params.toString()}`
++    
++    logger.info("Redirecting to Microsoft via Keycloak:", authUrl)
++    window.location.href = authUrl
++  }
++
++
++  const handleEmailPasswordLogin = async (e: React.FormEvent) => {
++    e.preventDefault()
++    setIsLoading(true)
++    setError(null)
++
++    try {
++      logger.info("Attempting email/password login for:", email)
++      
++      // Use our backend endpoint for secure authentication
++      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/keycloak/login`, {
++        method: 'POST',
++        headers: {
++          'Content-Type': 'application/json',
++        },
++        body: JSON.stringify({
++          email: email,
++          password: password,
++        }),
++        credentials: 'include',
++      })
++
++      if (response.ok) {
++        await response.json() // Parse response but don't store result
++        logger.info('Email/password authentication successful')
++        
++        // Cookies are set by the server, no need to store tokens manually
++        // Just redirect to home - the cookies will be sent automatically
++        window.location.href = '/'
++      } else {
++        const errorData = await response.json()
++        logger.error('Email/password login failed:', errorData)
++        setError(errorData.error || 'Invalid email or password')
++      }
++    } catch (error) {
++      logger.error('Login error:', error)
++      setError('Login failed. Please try again.')
++    } finally {
++      setIsLoading(false)
++    }
++  }
++
++  const handlePasskeyEmailSubmit = async (e: React.FormEvent) => {
++    e.preventDefault()
++    setIsPasskeyLoading(true)
++    setError(null)
++
++    try {
++      logger.info("Checking passkey availability for:", passkeyEmail)
++      
++      // Check if user has existing passkeys
++      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/keycloak/webauthn-login`, {
++        method: 'POST',
++        headers: {
++          'Content-Type': 'application/json',
++        },
++        body: JSON.stringify({
++          email: passkeyEmail,
++        }),
++      })
++
++      if (response.ok) {
++        const data = await response.json()
++        
++        if (data.hasPasskey) {
++          // User has existing passkey, start authentication
++          await startPasskeyAuthentication(data.challenge)
++        } else {
++          // User doesn't have passkey, start registration
++          await startPasskeyRegistration(data.challenge)
++        }
++      } else {
++        const errorData = await response.json()
++        logger.error('Passkey check failed:', errorData)
++        setError(errorData.error || 'Failed to check passkey availability')
++      }
++    } catch (error) {
++      logger.error('Passkey email check error:', error)
++      setError('Failed to process passkey request. Please try again.')
++    } finally {
++      setIsPasskeyLoading(false)
++    }
++  }
++
++  const startPasskeyAuthentication = async (challenge: string) => {
++    try {
++      logger.info("Starting passkey authentication")
++      
++      // Check if WebAuthn is supported
++      if (!window.PublicKeyCredential) {
++        setError('Passkeys are not supported in this browser')
++        return
++      }
++
++      // Create authentication request
++      const publicKeyCredentialRequestOptions = {
++        challenge: Uint8Array.from(atob(challenge), c => c.charCodeAt(0)),
++        timeout: 60000,
++        userVerification: 'required' as UserVerificationRequirement,
++      }
++
++      // Request passkey authentication
++      const credential = await navigator.credentials.get({
++        publicKey: publicKeyCredentialRequestOptions
++      }) as PublicKeyCredential
++
++      if (credential) {
++        // Send credential to backend for verification
++        const authResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/keycloak/webauthn-verify`, {
++          method: 'POST',
++          headers: {
++            'Content-Type': 'application/json',
++          },
++          body: JSON.stringify({
++            email: passkeyEmail,
++            credential: {
++              id: credential.id,
++              rawId: Array.from(new Uint8Array(credential.rawId)),
++              response: {
++                authenticatorData: Array.from(new Uint8Array((credential.response as AuthenticatorAssertionResponse).authenticatorData)),
++                clientDataJSON: Array.from(new Uint8Array(credential.response.clientDataJSON)),
++                signature: Array.from(new Uint8Array((credential.response as AuthenticatorAssertionResponse).signature)),
++              },
++              type: credential.type,
++            }
++          }),
++          credentials: 'include',
++        })
++
++        if (authResponse.ok) {
++          logger.info('Passkey authentication successful')
++          window.location.href = '/'
++        } else {
++          const errorData = await authResponse.json()
++          logger.error('Passkey verification failed:', errorData)
++          setError(errorData.error || 'Passkey authentication failed')
++        }
++      }
++    } catch (error: any) {
++      logger.error('Passkey authentication error:', error)
++      if (error.name === 'NotAllowedError') {
++        setError('Passkey authentication was cancelled or failed')
++      } else if (error.name === 'SecurityError') {
++        setError('Security error: Please ensure you are on a secure connection (HTTPS)')
++      } else if (error.name === 'NotSupportedError') {
++        setError('Passkeys are not supported on this device')
++      } else {
++        setError(`Passkey authentication failed: ${error.message || 'Please try again.'}`)
++      }
++    }
++  }
++
++  const startPasskeyRegistration = async (challenge: string) => {
++    try {
++      logger.info("Starting passkey registration for:", passkeyEmail)
++      logger.info("Challenge received:", challenge)
++      logger.info("Current hostname:", window.location.hostname)
++      
++      // Check if WebAuthn is supported
++      if (!window.PublicKeyCredential) {
++        setError('Passkeys are not supported in this browser')
++        return
++      }
++
++      // Check if the current context is secure
++      if (!window.isSecureContext) {
++        setError('Passkeys require a secure context (HTTPS or localhost)')
++        return
++      }
++
++      // Create registration request
++      const publicKeyCredentialCreationOptions = {
++        challenge: Uint8Array.from(atob(challenge), c => c.charCodeAt(0)),
++        rp: {
++          name: "Xyne",
++          id: window.location.hostname,
++        },
++        user: {
++          id: new TextEncoder().encode(passkeyEmail),
++          name: passkeyEmail,
++          displayName: passkeyEmail,
++        },
++        pubKeyCredParams: [{alg: -7, type: "public-key" as const}],
++        authenticatorSelection: {
++          userVerification: "required" as UserVerificationRequirement,
++        },
++        timeout: 60000,
++        attestation: "direct" as AttestationConveyancePreference,
++      }
++
++      logger.info("Requesting passkey creation with options:", publicKeyCredentialCreationOptions)
++      
++      // Request passkey creation
++      const credential = await navigator.credentials.create({
++        publicKey: publicKeyCredentialCreationOptions
++      }) as PublicKeyCredential
++
++      logger.info("Passkey credential created:", credential)
++
++      if (credential) {
++        // Send credential to backend for registration
++        const regResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/keycloak/webauthn-register`, {
++          method: 'POST',
++          headers: {
++            'Content-Type': 'application/json',
++          },
++          body: JSON.stringify({
++            email: passkeyEmail,
++            credential: {
++              id: credential.id,
++              rawId: Array.from(new Uint8Array(credential.rawId)),
++              response: {
++                attestationObject: Array.from(new Uint8Array((credential.response as AuthenticatorAttestationResponse).attestationObject)),
++                clientDataJSON: Array.from(new Uint8Array(credential.response.clientDataJSON)),
++              },
++              type: credential.type,
++            }
++          }),
++          credentials: 'include',
++        })
++
++        if (regResponse.ok) {
++          logger.info('Passkey registration successful')
++          window.location.href = '/'
++        } else {
++          const errorData = await regResponse.json()
++          logger.error('Passkey registration failed:', errorData)
++          setError(errorData.error || 'Passkey registration failed')
++        }
++      }
++    } catch (error: any) {
++      logger.error('Passkey registration error:', error)
++      if (error.name === 'NotAllowedError') {
++        setError('Passkey registration was cancelled or failed')
++      } else if (error.name === 'SecurityError') {
++        setError('Security error: Please ensure you are on a secure connection (HTTPS)')
++      } else if (error.name === 'NotSupportedError') {
++        setError('Passkeys are not supported on this device')
++      } else {
++        setError(`Passkey registration failed: ${error.message || 'Please try again.'}`)
++      }
++    }
++  }
++
+   return (
+-    <div className="flex w-full h-full justify-center">
+-      <div className="max-w-sm flex items-center">
+-        <Card className="h-auto">
+-          <CardHeader>
+-            <CardTitle className="text-2xl">Login</CardTitle>
+-            <CardDescription>
+-              Login with your workspace google account
++    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
++      <div className="w-full max-w-md">
++        <Card className="shadow-xl border-0 bg-white/95 backdrop-blur-sm">
++          <CardHeader className="text-center pb-6 pt-6">
++            <div className="mx-auto w-12 h-12 flex items-center justify-center mb-4">
++              <img 
++                src="/assets/logo.svg" 
++                alt="Xyne Logo" 
++                className="w-12 h-12 drop-shadow-sm"
++              />
++            </div>
++            <CardTitle className="text-2xl font-bold text-gray-900 mb-2">Welcome to Xyne</CardTitle>
++            <CardDescription className="text-gray-600 text-sm">
++              Sign in to your account to continue
+             </CardDescription>
+           </CardHeader>
+-          <CardContent>
+-            <div className="grid gap-4">
+-              <Button
+-                variant="outline"
+-                className="w-full"
+-                onClick={(e) => {
+-                  logger.info("User Clicked login with google")
+-                  const redirectUrl = `${import.meta.env.VITE_API_BASE_URL}/v1/auth/callback`
+-                  window.location.href = redirectUrl
+-                }}
+-              >
+-                Login with Google
+-              </Button>
++          <CardContent className="px-8 pb-6">
++            <div className="space-y-4">
++              {/* Error Message */}
++              {error && (
++                <div className="p-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg flex items-center">
++                  <svg className="w-4 h-4 mr-2 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
++                    <path d="M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>
++                  </svg>
++                  {error}
++                </div>
++              )}
++
++              {!showEmailLogin && !showPasskeyLogin ? (
++                <>
++                  {/* Legacy Google Section */}
++                  <div className="space-y-3">
++                    <div className="text-center">
++                      <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700 mb-2">
++                        Legacy Option
++                      </div>
++                    </div>
++                    <Button
++                      variant="outline"
++                      size="lg"
++                      className="w-full h-10 bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-sm"
++                      onClick={handleGoogleLogin}
++                    >
++                      <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
++                        <path
++                          fill="currentColor"
++                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
++                        />
++                        <path
++                          fill="currentColor"
++                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
++                        />
++                        <path
++                          fill="currentColor"
++                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
++                        />
++                        <path
++                          fill="currentColor"
++                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
++                        />
++                      </svg>
++                      Continue with Google
++                    </Button>
++                  </div>
++
++                  {/* Separator */}
++                  {keycloakEnabled && hasAnyKeycloakOptions() && (
++                    <div className="relative my-5">
++                      <div className="absolute inset-0 flex items-center">
++                        <div className="w-full border-t border-gray-200" />
++                      </div>
++                      <div className="relative flex justify-center text-xs uppercase">
++                        <span className="bg-white px-4 text-gray-500 font-medium">Or continue with</span>
++                      </div>
++                    </div>
++                  )}
++
++                  {/* Keycloak Section */}
++                  {keycloakEnabled && hasAnyKeycloakOptions() && (
++                    <div className="space-y-3">
++                      <div className="text-center">
++                        <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 mb-2">
++                          Keycloak Options
++                        </div>
++                      </div>
++                      
++                      {/* Google via Keycloak */}
++                      {featureToggles?.googleLoginEnabled && (
++                        <Button
++                          variant="outline"
++                          size="lg"
++                          className="w-full h-10 bg-blue-50 border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-all duration-200 shadow-sm"
++                          onClick={handleGoogleKeycloakLogin}
++                        >
++                        <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
++                          <path
++                            fill="currentColor"
++                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
++                          />
++                          <path
++                            fill="currentColor"
++                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
++                          />
++                          <path
++                            fill="currentColor"
++                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
++                          />
++                          <path
++                            fill="currentColor"
++                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
++                          />
++                        </svg>
++                        Continue with Google
++                      </Button>
++                      )}
++
++                      {/* Microsoft via Keycloak */}
++                      {featureToggles?.microsoftLoginEnabled && (
++                        <Button
++                          variant="outline"
++                          size="lg"
++                          className="w-full h-10 bg-blue-50 border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-all duration-200 shadow-sm"
++                          onClick={handleMicrosoftKeycloakLogin}
++                        >
++                        <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
++                          <path d="M11.4 24H0V12.6h11.4V24zM24 24H12.6V12.6H24V24zM11.4 11.4H0V0h11.4v11.4zM24 11.4H12.6V0H24v11.4z"/>
++                        </svg>
++                        Continue with Microsoft
++                      </Button>
++                      )}
++
++                      {/* LinkedIn via Keycloak */}
++                      {featureToggles?.linkedinLoginEnabled && (
++                        <Button
++                          variant="outline"
++                          size="lg"
++                          className="w-full h-10 bg-blue-50 border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-all duration-200 shadow-sm"
++                          onClick={handleLinkedInKeycloakLogin}
++                        >
++                        <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
++                          <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
++                        </svg>
++                        Continue with LinkedIn
++                      </Button>
++                      )}
++
++                      {/* SSO Option - Controlled by Feature Toggle */}
++                      {featureToggles?.ssoLoginEnabled && (
++                        <Button
++                          variant="default"
++                          size="lg"
++                          className="w-full h-11 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-sm"
++                          onClick={handleKeycloakLogin}
++                        >
++                          <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
++                            <path d="M7.4 8.8h5.2L14 7h-5c-.9 0-1.6.7-1.6 1.6v6.8c0 .9.7 1.6 1.6 1.6h5L12.6 15H7.4V8.8z"/>
++                            <path d="M17 7v10l-3-5 3-5z"/>
++                          </svg>
++                          Login with SSO
++                        </Button>
++                      )}
++
++                      {/* Email/Password Option */}
++                      {featureToggles?.emailPasswordLoginEnabled && (
++                        <Button
++                          variant="outline"
++                          size="lg"
++                          className="w-full h-10 bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-sm"
++                          onClick={() => setShowEmailLogin(true)}
++                        >
++                        <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
++                          <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
++                        </svg>
++                        Login with Email & Password
++                      </Button>
++                      )}
++
++                      {/* Passkey/WebAuthn Option */}
++                      {featureToggles?.passkeyLoginEnabled && (
++                        <Button
++                          variant="outline"
++                          size="lg"
++                          className="w-full h-10 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 transition-all duration-200 shadow-sm"
++                          onClick={() => setShowPasskeyLogin(true)}
++                        >
++                        <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
++                          <path d="M17.81,4.47C17.73,4.47 17.65,4.45 17.58,4.41C17.5,4.38 17.42,4.33 17.36,4.27C17.3,4.22 17.25,4.15 17.22,4.07C17.18,4 17.16,3.92 17.16,3.84C17.16,3.76 17.18,3.68 17.22,3.6C17.25,3.53 17.3,3.46 17.36,3.4C17.42,3.35 17.5,3.3 17.58,3.27C17.65,3.24 17.73,3.22 17.81,3.22C17.89,3.22 17.97,3.24 18.04,3.27C18.12,3.3 18.2,3.35 18.25,3.4C18.31,3.46 18.36,3.53 18.39,3.6C18.43,3.68 18.45,3.76 18.45,3.84C18.45,3.92 18.43,4 18.39,4.07C18.36,4.15 18.31,4.22 18.25,4.27C18.2,4.33 18.12,4.38 18.04,4.41C17.97,4.45 17.89,4.47 17.81,4.47M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M12,10A2,2 0 0,0 10,12A2,2 0 0,0 12,14A2,2 0 0,0 14,12A2,2 0 0,0 12,10Z"/>
++                        </svg>
++                        <div className="flex flex-col items-start text-left">
++                          <span className="text-sm font-medium">Use Passkey</span>
++                          <span className="text-xs text-emerald-600">Fingerprint, Face ID, or Security Key</span>
++                        </div>
++                      </Button>
++                      )}
++                    </div>
++                  )}
++                </>
++              ) : showPasskeyLogin ? (
++                <>
++                  {/* Passkey Email Form */}
++                  <div className="space-y-5">
++                    <div className="text-center">
++                      <div className="mx-auto w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center mb-3">
++                        <svg className="w-5 h-5 text-emerald-600" viewBox="0 0 24 24" fill="currentColor">
++                          <path d="M17.81,4.47C17.73,4.47 17.65,4.45 17.58,4.41C17.5,4.38 17.42,4.33 17.36,4.27C17.3,4.22 17.25,4.15 17.22,4.07C17.18,4 17.16,3.92 17.16,3.84C17.16,3.76 17.18,3.68 17.22,3.6C17.25,3.53 17.3,3.46 17.36,3.4C17.42,3.35 17.5,3.3 17.58,3.27C17.65,3.24 17.73,3.22 17.81,3.22C17.89,3.22 17.97,3.24 18.04,3.27C18.12,3.3 18.2,3.35 18.25,3.4C18.31,3.46 18.36,3.53 18.39,3.6C18.43,3.68 18.45,3.76 18.45,3.84C18.45,3.92 18.43,4 18.39,4.07C18.36,4.15 18.31,4.22 18.25,4.27C18.2,4.33 18.12,4.38 18.04,4.41C17.97,4.45 17.89,4.47 17.81,4.47M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M12,10A2,2 0 0,0 10,12A2,2 0 0,0 12,14A2,2 0 0,0 14,12A2,2 0 0,0 12,10Z"/>
++                        </svg>
++                      </div>
++                      <h3 className="text-lg font-semibold text-gray-900 mb-1">Passkey Authentication</h3>
++                      <p className="text-sm text-gray-600 mb-3">
++                        Use your fingerprint, Face ID, or security key
++                      </p>
++                    </div>
++                    
++                    <form onSubmit={handlePasskeyEmailSubmit} className="space-y-4">
++                      <div className="space-y-2">
++                        <Label htmlFor="passkey-email" className="text-sm font-medium text-gray-700">Email address</Label>
++                        <Input
++                          id="passkey-email"
++                          type="email"
++                          placeholder="Enter your email address"
++                          value={passkeyEmail}
++                          onChange={(e) => setPasskeyEmail(e.target.value)}
++                          className="h-11 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500"
++                          required
++                        />
++                      </div>
++                      <Button 
++                        type="submit" 
++                        size="lg"
++                        className="w-full h-11 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 transition-all duration-200 shadow-sm" 
++                        disabled={isPasskeyLoading}
++                      >
++                        {isPasskeyLoading ? (
++                          <div className="flex items-center">
++                            <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
++                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
++                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
++                            </svg>
++                            Processing...
++                          </div>
++                        ) : (
++                          <div className="flex items-center">
++                            <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
++                              <path d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z"/>
++                            </svg>
++                            Continue with Passkey
++                          </div>
++                        )}
++                      </Button>
++                    </form>
++
++                    <Button
++                      variant="ghost"
++                      className="w-full text-gray-600 hover:text-gray-900 hover:bg-gray-50"
++                      onClick={() => {
++                        setShowPasskeyLogin(false)
++                        setError(null)
++                        setPasskeyEmail("")
++                      }}
++                    >
++                      ← Back to login options
++                    </Button>
++                  </div>
++                </>
++              ) : (
++                <>
++                  {/* Email/Password Form */}
++                  <div className="space-y-5">
++                    <div className="text-center">
++                      <div className="mx-auto w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mb-3">
++                        <svg className="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
++                          <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
++                        </svg>
++                      </div>
++                      <h3 className="text-lg font-semibold text-gray-900 mb-1">Email & Password</h3>
++                      <p className="text-sm text-gray-600">Sign in with your credentials</p>
++                    </div>
++                    
++                    <form onSubmit={handleEmailPasswordLogin} className="space-y-4">
++                      <div className="space-y-2">
++                        <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email address</Label>
++                        <Input
++                          id="email"
++                          type="email"
++                          placeholder="Enter your email address"
++                          value={email}
++                          onChange={(e) => setEmail(e.target.value)}
++                          className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
++                          required
++                        />
++                      </div>
++                      <div className="space-y-2">
++                        <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
++                        <Input
++                          id="password"
++                          type="password"
++                          placeholder="Enter your password"
++                          value={password}
++                          onChange={(e) => setPassword(e.target.value)}
++                          className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
++                          required
++                        />
++                      </div>
++                      <Button 
++                        type="submit" 
++                        size="lg"
++                        className="w-full h-11 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-sm" 
++                        disabled={isLoading}
++                      >
++                        {isLoading ? "Signing in..." : "Sign in"}
++                      </Button>
++                    </form>
++
++                    <Button
++                      variant="ghost"
++                      className="w-full text-gray-600 hover:text-gray-900 hover:bg-gray-50"
++                      onClick={() => {
++                        setShowEmailLogin(false)
++                        setError(null)
++                        setEmail("")
++                        setPassword("")
++                      }}
++                    >
++                      ← Back to login options
++                    </Button>
++                  </div>
++                </>
++              )}
+             </div>
+           </CardContent>
+         </Card>
+@@ -52,9 +799,9 @@ export default function LoginForm() {
+ 
+ export const Route = createFileRoute("/auth")({
+   beforeLoad: async () => {
++    // Check if user is already authenticated
+     const res = await api.me.$get()
+     if (res.ok) {
+-      // TODO: to type this response
+       const userWorkspace = await res.json()
+       // If User & Workspace exists, don't let user visit /auth
+       if (userWorkspace?.user && userWorkspace?.workspace) {
+@@ -62,6 +809,54 @@ export const Route = createFileRoute("/auth")({
+       }
+       return await res.json()
+     }
++    
++    // Check for Keycloak OAuth callback
++    const urlParams = new URLSearchParams(window.location.search)
++    const code = urlParams.get('code')
++    const state = urlParams.get('state')
++    const error = urlParams.get('error')
++    
++    if (error) {
++      console.error('Keycloak OAuth error:', error)
++      // Remove error from URL and show error message
++      window.history.replaceState({}, document.title, '/auth')
++      return { error: error }
++    }
++    
++    if (code) {
++      console.log('Processing Keycloak OAuth callback')
++      try {
++        // Exchange code for tokens
++        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/keycloak/callback`, {
++          method: 'POST',
++          headers: {
++            'Content-Type': 'application/json',
++          },
++          body: JSON.stringify({ code, state }),
++          credentials: 'include',
++        })
++        
++        if (response.ok) {
++          await response.json() // Parse response but don't store tokens
++          console.log('Keycloak authentication successful')
++          
++          // Cookies should be set by the server automatically
++          // Remove code from URL and redirect to home
++          window.history.replaceState({}, document.title, '/')
++          throw redirect({ to: "/" })
++        } else {
++          const errorData = await response.json()
++          console.error('Keycloak token exchange failed:', errorData)
++          // Remove code from URL and show error
++          window.history.replaceState({}, document.title, '/auth')
++          return { error: errorData.error || 'Authentication failed' }
++        }
++      } catch (error) {
++        console.error('Keycloak callback processing error:', error)
++        window.history.replaceState({}, document.title, '/auth')
++        return { error: 'Authentication failed' }
++      }
++    }
+   },
+   component: LoginForm,
+   errorComponent: errorComponent,
+diff --git a/server/api/auth.ts b/server/api/auth.ts
+index 3b84f74e9..dec460058 100644
+--- a/server/api/auth.ts
++++ b/server/api/auth.ts
+@@ -4,16 +4,71 @@ import config from "@/config"
+ import { db } from "@/db/client"
+ import { getPublicUserAndWorkspaceByEmail } from "@/db/user"
+ import { type PublicUserWorkspace } from "@/db/schema"
++import { sign } from "hono/jwt"
++import { getCookie } from "hono/cookie"
++import { getLogger } from "@/logger"
++import { Subsystem } from "@/types"
+ 
+ const { JwtPayloadKey, agentWhiteList } = config
++const Logger = getLogger(Subsystem.Server)
+ 
+ export const GetUserWorkspaceInfo = async (c: Context) => {
+   const { sub, workspaceId } = c.get(JwtPayloadKey)
+   const email = sub
+   const userAndWorkspace: PublicUserWorkspace =
+     await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
+-  return c.json({
++  
++  // Get auth method and context from enhanced middleware
++  const authMethod = c.get("authMethod") || "xyne"
++  const authContext = c.get("authContext")
++  
++  // Base response
++  const response: any = {
+     ...userAndWorkspace,
+     agentWhiteList: true,
+-  })
++    authMethod,
++  }
++  
++  // Add Keycloak-specific information if authenticated via Keycloak
++  if (authMethod === "keycloak" && authContext) {
++    try {
++      // Get the original Keycloak token to extract additional fields (same logic as enhanced middleware)
++      const authHeader = c.req.header("Authorization")
++      const cookieToken = getCookie(c, "auth-token") || getCookie(c, "access-token")
++      
++      let token = null
++      if (authHeader?.startsWith("Bearer ")) {
++        token = authHeader.substring(7)
++      } else if (cookieToken) {
++        token = cookieToken
++      }
++      
++      if (token) {
++        // Decode JWT payload to extract Keycloak fields
++        const parts = token.split(".")
++        if (parts.length === 3) {
++          const payload = JSON.parse(Buffer.from(parts[1], "base64").toString())
++          
++          // Add Keycloak-specific fields to user object
++          if (response.user) {
++            response.user = {
++              ...response.user,
++              email_verified: payload.email_verified || false,
++              preferred_username: payload.preferred_username || payload.email,
++              given_name: payload.given_name || "",
++              family_name: payload.family_name || "",
++              realm_access: payload.realm_access || { roles: [] },
++              resource_access: payload.resource_access || {},
++              scope: payload.scope || "",
++            }
++          }
++        }
++      }
++    } catch (error) {
++      Logger.error("Error extracting Keycloak token information:", error)
++      // Continue without Keycloak fields if extraction fails
++    }
++  }
++  
++  return c.json(response)
+ }
+diff --git a/server/api/password-auth.ts b/server/api/password-auth.ts
+new file mode 100644
+index 000000000..7cfd0f36f
+--- /dev/null
++++ b/server/api/password-auth.ts
+@@ -0,0 +1,244 @@
++import { Hono } from "hono"
++import { cors } from "hono/cors"
++import { zValidator } from "@hono/zod-validator"
++import { z } from "zod"
++import { sign } from "hono/jwt"
++import { db } from "@/db/client"
++import { createUser, getUserByEmail, verifyUserPassword, updateUserPassword } from "@/db/user"
++import { getLogger } from "@/logger"
++import { Subsystem } from "@/types"
++import { validatePasswordStrength } from "@/utils/password"
++import { UserRole } from "@/shared/types"
++
++const Logger = getLogger(Subsystem.Server).child({ module: "password-auth" })
++const userSecret = process.env.USER_SECRET!
++
++// Validation schemas
++const signupSchema = z.object({
++  email: z.string().email("Invalid email address"),
++  password: z.string().min(8, "Password must be at least 8 characters"),
++  name: z.string().min(1, "Name is required"),
++  workspaceId: z.string().optional(),
++})
++
++const loginSchema = z.object({
++  email: z.string().email("Invalid email address"), 
++  password: z.string().min(1, "Password is required"),
++})
++
++const changePasswordSchema = z.object({
++  currentPassword: z.string().min(1, "Current password is required"),
++  newPassword: z.string().min(8, "New password must be at least 8 characters"),
++})
++
++const app = new Hono()
++
++// Enable CORS for frontend requests
++app.use(
++  "*",
++  cors({
++    origin: ["http://localhost:5173", "http://localhost:3000"],
++    credentials: true,
++    allowHeaders: ["Content-Type", "Authorization"],
++    allowMethods: ["GET", "POST", "OPTIONS"],
++  }),
++)
++
++// Password-based user registration
++app.post("/signup", zValidator("json", signupSchema), async (c) => {
++  try {
++    const { email, password, name, workspaceId } = c.req.valid("json")
++    
++    Logger.info("Password signup attempt for:", email)
++    
++    // Validate password strength
++    const passwordValidation = validatePasswordStrength(password)
++    if (!passwordValidation.isValid) {
++      return c.json({
++        error: "Password does not meet requirements",
++        details: passwordValidation.errors,
++      }, 400)
++    }
++    
++    // Check if user already exists
++    const existingUsers = await getUserByEmail(db, email)
++    if (existingUsers && existingUsers.length > 0) {
++      return c.json({ error: "User already exists with this email" }, 409)
++    }
++    
++    // Get default workspace (simplified for now)
++    const defaultWorkspaceId = 3 // TODO: Make this configurable
++    const defaultWorkspaceExternalId = "goebza6pjn5xt2dgt5999val" // TODO: Make this configurable
++    
++    // Create user with hashed password
++    const newUser = await createUser(
++      db,
++      defaultWorkspaceId,
++      email,
++      name,
++      "", // No photo for password users initially
++      UserRole.User,
++      defaultWorkspaceExternalId,
++      password, // Will be hashed in createUser function
++    )
++    
++    Logger.info("Password signup successful for:", email)
++    
++    // Generate JWT tokens for immediate login
++    const accessTokenPayload = {
++      sub: email,
++      role: UserRole.User,
++      workspaceId: defaultWorkspaceExternalId,
++      tokenType: "access",
++      exp: Math.floor(Date.now() / 1000) + (5 * 60), // 5 minutes
++    }
++    
++    const refreshTokenPayload = {
++      sub: email,
++      role: UserRole.User,
++      workspaceId: defaultWorkspaceExternalId,
++      tokenType: "refresh",
++      exp: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60), // 30 days
++    }
++    
++    const accessToken = await sign(accessTokenPayload, userSecret)
++    const refreshToken = await sign(refreshTokenPayload, userSecret)
++    
++    // Set cookies
++    const accessCookie = `access-token=${accessToken}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=300`
++    const refreshCookie = `refresh-token=${refreshToken}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=2592000`
++    
++    c.res.headers.append("Set-Cookie", accessCookie)
++    c.res.headers.append("Set-Cookie", refreshCookie)
++    
++    return c.json({
++      success: true,
++      message: "Account created successfully",
++      user: {
++        email: newUser[0].email,
++        name: newUser[0].name,
++        role: newUser[0].role,
++      },
++    })
++  } catch (error) {
++    Logger.error("Password signup error:", error)
++    return c.json({
++      error: "Account creation failed",
++      message: error instanceof Error ? error.message : "Unknown error",
++    }, 500)
++  }
++})
++
++// Password-based login  
++app.post("/login", zValidator("json", loginSchema), async (c) => {
++  try {
++    const { email, password } = c.req.valid("json")
++    
++    Logger.info("Password login attempt for:", email)
++    
++    // Verify user credentials
++    const user = await verifyUserPassword(db, email, password)
++    
++    if (!user) {
++      Logger.warn("Password login failed for:", email)
++      return c.json({ error: "Invalid email or password" }, 401)
++    }
++    
++    Logger.info("Password login successful for:", email)
++    
++    // Generate JWT tokens
++    const accessTokenPayload = {
++      sub: email,
++      role: user.role,
++      workspaceId: user.workspaceExternalId,
++      tokenType: "access",
++      exp: Math.floor(Date.now() / 1000) + (5 * 60), // 5 minutes
++    }
++    
++    const refreshTokenPayload = {
++      sub: email,
++      role: user.role,
++      workspaceId: user.workspaceExternalId,
++      tokenType: "refresh",
++      exp: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60), // 30 days
++    }
++    
++    const accessToken = await sign(accessTokenPayload, userSecret)
++    const refreshToken = await sign(refreshTokenPayload, userSecret)
++    
++    // Set cookies
++    const accessCookie = `access-token=${accessToken}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=300`
++    const refreshCookie = `refresh-token=${refreshToken}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=2592000`
++    
++    c.res.headers.append("Set-Cookie", accessCookie)
++    c.res.headers.append("Set-Cookie", refreshCookie)
++    
++    return c.json({
++      success: true,
++      message: "Login successful",
++      user: {
++        email: user.email,
++        name: user.name,
++        role: user.role,
++        workspaceId: user.workspaceExternalId,
++      },
++    })
++  } catch (error) {
++    Logger.error("Password login error:", error)
++    return c.json({
++      error: "Login failed",
++      message: error instanceof Error ? error.message : "Unknown error",
++    }, 500)
++  }
++})
++
++// Change password (requires authentication)
++app.post("/change-password", zValidator("json", changePasswordSchema), async (c) => {
++  try {
++    // TODO: Add authentication middleware to get current user
++    // For now, we'll require email in the request
++    const { currentPassword, newPassword } = c.req.valid("json")
++    
++    // This would come from auth middleware in a complete implementation
++    const userEmail = c.req.header("x-user-email") // Temporary approach
++    
++    if (!userEmail) {
++      return c.json({ error: "User email required" }, 400)
++    }
++    
++    Logger.info("Password change attempt for:", userEmail)
++    
++    // Validate new password strength
++    const passwordValidation = validatePasswordStrength(newPassword)
++    if (!passwordValidation.isValid) {
++      return c.json({
++        error: "New password does not meet requirements",
++        details: passwordValidation.errors,
++      }, 400)
++    }
++    
++    // Verify current password
++    const user = await verifyUserPassword(db, userEmail, currentPassword)
++    if (!user) {
++      return c.json({ error: "Current password is incorrect" }, 401)
++    }
++    
++    // Update password
++    await updateUserPassword(db, userEmail, newPassword)
++    
++    Logger.info("Password changed successfully for:", userEmail)
++    
++    return c.json({
++      success: true,
++      message: "Password changed successfully",
++    })
++  } catch (error) {
++    Logger.error("Password change error:", error)
++    return c.json({
++      error: "Password change failed",
++      message: error instanceof Error ? error.message : "Unknown error",
++    }, 500)
++  }
++})
++
++export default app
+\ No newline at end of file
+diff --git a/server/auth/keycloak/api.ts b/server/auth/keycloak/api.ts
+new file mode 100644
+index 000000000..cc6b3cc72
+--- /dev/null
++++ b/server/auth/keycloak/api.ts
+@@ -0,0 +1,837 @@
++import { Hono } from "hono"
++import { cors } from "hono/cors"
++import { zValidator } from "@hono/zod-validator"
++import { z } from "zod"
++import { getKeycloakConfig } from "./config"
++import { getClientResolver } from "./client-resolver"
++import { getLogger } from "@/logger"
++import { Subsystem } from "@/types"
++import { UserRole } from "@/shared/types"
++import { db } from "@/db/client"
++import { 
++  getUserByEmail, 
++  createUser, 
++  getPublicUserAndWorkspaceByEmail
++} from "@/db/user"
++import { createWorkspace, getWorkspaceByDomain } from "@/db/workspace"
++
++const Logger = getLogger(Subsystem.Server)
++
++// OAuth callback schema
++const oauthCallbackSchema = z.object({
++  code: z.string().optional(),
++  state: z.string().optional(),
++  error: z.string().optional(),
++  error_description: z.string().optional(),
++})
++
++const app = new Hono()
++
++// Enable CORS for frontend requests
++app.use(
++  "*",
++  cors({
++    origin: ["http://localhost:5173", "http://localhost:3000"],
++    credentials: true,
++    allowHeaders: ["Content-Type", "Authorization"],
++    allowMethods: ["GET", "POST", "OPTIONS"],
++  }),
++)
++
++// Handle Keycloak OAuth callback via GET (browser redirect)
++app.get("/callback", zValidator("query", oauthCallbackSchema), async (c) => {
++  const { code, state, error, error_description } = c.req.valid("query")
++  const keycloakConfig = getKeycloakConfig()
++
++  if (error) {
++    Logger.error("Keycloak OAuth error:", error, error_description)
++    return c.redirect(
++      `/auth?error=${encodeURIComponent(error_description || error)}`,
++    )
++  }
++
++  if (!code) {
++    Logger.error("No authorization code received from Keycloak")
++    return c.redirect("/auth?error=No authorization code received")
++  }
++
++  try {
++    // Resolve client for authorization code flow
++    const clientResolver = getClientResolver(keycloakConfig)
++    const client = await clientResolver.resolveClient('authorization-code')
++
++    // Exchange authorization code for tokens
++    const tokenUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/token`
++
++    const baseParams = {
++      grant_type: "authorization_code",
++      code: code,
++      redirect_uri: `${c.req.header("host")}/api/keycloak/callback`,
++    }
++
++    const body = clientResolver.buildTokenParams(client, baseParams)
++
++    const tokenResponse = await fetch(tokenUrl, {
++      method: "POST",
++      headers: {
++        "Content-Type": "application/x-www-form-urlencoded",
++      },
++      body: body,
++    })
++
++    if (!tokenResponse.ok) {
++      const errorText = await tokenResponse.text()
++      Logger.error("Token exchange failed:", errorText)
++      return c.redirect("/auth?error=Token exchange failed")
++    }
++
++    const tokens = await tokenResponse.json()
++
++    // Store token in cookie (or localStorage via client-side)
++    c.header(
++      "Set-Cookie",
++      `xyne-auth-token=${tokens.access_token}; Path=/; HttpOnly=false; SameSite=Strict`,
++    )
++
++    Logger.info("Keycloak authentication successful")
++    return c.redirect("/home")
++  } catch (error) {
++    Logger.error("Keycloak OAuth callback error:", error)
++    return c.redirect("/auth?error=Authentication failed")
++  }
++})
++
++// Handle Keycloak OAuth callback via POST (frontend AJAX call)
++app.post("/callback", async (c) => {
++  try {
++    const { code, state, expectedEmail } = await c.req.json()
++    const keycloakConfig = getKeycloakConfig()
++
++    if (!code) {
++      Logger.error("No authorization code provided")
++      return c.json({ error: "Authorization code is required" }, 400)
++    }
++
++    Logger.info("Exchanging authorization code for tokens")
++
++    // Resolve client for authorization code flow
++    const clientResolver = getClientResolver(keycloakConfig)
++    const client = await clientResolver.resolveClient('authorization-code')
++
++    // Exchange authorization code for tokens
++    const tokenUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/token`
++
++    const baseParams = {
++      grant_type: "authorization_code",
++      code: code,
++      redirect_uri: "http://localhost:5173/auth", // Fixed redirect URI
++    }
++
++    const body = clientResolver.buildTokenParams(client, baseParams)
++
++    const tokenResponse = await fetch(tokenUrl, {
++      method: "POST",
++      headers: {
++        "Content-Type": "application/x-www-form-urlencoded",
++        Accept: "application/json",
++      },
++      body: body.toString(),
++    })
++
++    if (!tokenResponse.ok) {
++      const errorText = await tokenResponse.text()
++      Logger.error("Token exchange failed:", errorText)
++      return c.json(
++        {
++          error: "Failed to exchange authorization code",
++          details: errorText,
++        },
++        400,
++      )
++    }
++
++    const tokens = await tokenResponse.json()
++
++    if (!tokens.access_token) {
++      Logger.error("No access token in response:", tokens)
++      return c.json({ error: "No access token received" }, 400)
++    }
++
++    // Validate email match if expectedEmail was provided
++    if (expectedEmail) {
++      try {
++        // Decode the JWT to get the actual email
++        const payload = JSON.parse(
++          Buffer.from(tokens.access_token.split(".")[1], "base64").toString(),
++        )
++        const actualEmail = payload.email || payload.preferred_username
++
++        if (
++          actualEmail &&
++          actualEmail.toLowerCase() !== expectedEmail.toLowerCase()
++        ) {
++          Logger.warn(
++            `Email mismatch: expected ${expectedEmail}, got ${actualEmail}`,
++          )
++          return c.json(
++            {
++              error: "Email mismatch",
++              message: `SSO authentication failed. You entered "${expectedEmail}" but your Keycloak account is "${actualEmail}". Please enter the correct email address that matches your SSO account.`,
++            },
++            400,
++          )
++        }
++
++        Logger.info(`Email validation passed: ${actualEmail}`)
++      } catch (emailValidationError) {
++        Logger.error("Email validation error:", emailValidationError)
++        // Continue without email validation if decoding fails
++      }
++    }
++
++    Logger.info("Token exchange successful")
++
++    // Set cookies for the browser (similar to email/password flow)
++    const accessCookie = `access-token=${tokens.access_token}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=${tokens.expires_in || 3600}`
++    const refreshCookie = tokens.refresh_token 
++      ? `refresh-token=${tokens.refresh_token}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=1800`
++      : null
++
++    // Set multiple cookies properly - use an array to set multiple cookies
++    const cookies = [accessCookie]
++    if (refreshCookie) {
++      cookies.push(refreshCookie)
++    }
++    
++    // Set all cookies using multiple header calls
++    cookies.forEach(cookie => {
++      c.res.headers.append("Set-Cookie", cookie)
++    })
++
++    // Return the access token to the frontend
++    return c.json({
++      access_token: tokens.access_token,
++      token_type: tokens.token_type || "Bearer",
++      expires_in: tokens.expires_in,
++      refresh_token: tokens.refresh_token,
++      scope: tokens.scope,
++      success: true,
++    })
++  } catch (error) {
++    Logger.error("Keycloak OAuth callback error:", error)
++    return c.json(
++      {
++        error: "Authentication failed",
++        message: error instanceof Error ? error.message : "Unknown error",
++      },
++      500,
++    )
++  }
++})
++
++// Refresh token endpoint
++app.post("/refresh", async (c) => {
++  const keycloakConfig = getKeycloakConfig()
++  const refreshToken = c.req.header("x-refresh-token")
++
++  if (!refreshToken) {
++    return c.json({ error: "No refresh token provided" }, 400)
++  }
++
++  try {
++    // Resolve client for token refresh
++    const clientResolver = getClientResolver(keycloakConfig)
++    const client = await clientResolver.resolveClient('token-refresh')
++
++    const tokenUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/token`
++
++    const baseParams = {
++      grant_type: "refresh_token",
++      refresh_token: refreshToken,
++    }
++
++    const body = clientResolver.buildTokenParams(client, baseParams)
++
++    const response = await fetch(tokenUrl, {
++      method: "POST",
++      headers: {
++        "Content-Type": "application/x-www-form-urlencoded",
++      },
++      body: body,
++    })
++
++    if (!response.ok) {
++      const errorText = await response.text()
++      Logger.error("Token refresh failed:", errorText)
++      return c.json({ error: "Token refresh failed" }, 401)
++    }
++
++    const tokens = await response.json()
++    return c.json({
++      access_token: tokens.access_token,
++      refresh_token: tokens.refresh_token,
++      expires_in: tokens.expires_in,
++    })
++  } catch (error) {
++    Logger.error("Token refresh error:", error)
++    return c.json({ error: "Token refresh failed" }, 500)
++  }
++})
++
++// Email/Password login endpoint
++app.post("/login", async (c) => {
++  try {
++    const { email, password } = await c.req.json()
++    const keycloakConfig = getKeycloakConfig()
++
++    if (!email || !password) {
++      Logger.error("Email and password are required")
++      return c.json({ error: "Email and password are required" }, 400)
++    }
++
++    Logger.info("Attempting password grant for user:", email)
++
++    // Use client resolver with automatic fallback
++    const clientResolver = getClientResolver(keycloakConfig)
++    const tokenUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/token`
++
++    const baseParams = {
++      grant_type: "password",
++      username: email,
++      password: password,
++      scope: "openid email profile",
++    }
++
++    const response = await clientResolver.performTokenRequest(tokenUrl, 'password-grant', baseParams)
++
++    if (!response.ok) {
++      const errorText = await response.text()
++      Logger.error("Password grant failed:", errorText)
++      
++      let errorMessage = "Invalid email or password"
++      try {
++        const errorData = JSON.parse(errorText)
++        if (errorData.error_description) {
++          errorMessage = errorData.error_description
++        }
++      } catch (e) {
++        // Use default error message
++      }
++      
++      return c.json({ error: errorMessage }, 401)
++    }
++
++    const tokens = await response.json()
++
++    if (!tokens.access_token) {
++      Logger.error("No access token in response:", tokens)
++      return c.json({ error: "Authentication failed" }, 401)
++    }
++
++    Logger.info("Password grant successful for user:", email)
++
++    // Set cookies for the browser (similar to Google OAuth flow)
++    const accessCookie = `access-token=${tokens.access_token}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=${tokens.expires_in || 3600}`
++    const refreshCookie = tokens.refresh_token 
++      ? `refresh-token=${tokens.refresh_token}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=1800`
++      : null
++
++    // Set multiple cookies properly - use an array to set multiple cookies
++    const cookies = [accessCookie]
++    if (refreshCookie) {
++      cookies.push(refreshCookie)
++    }
++    
++    // Set all cookies using multiple header calls
++    cookies.forEach(cookie => {
++      c.res.headers.append("Set-Cookie", cookie)
++    })
++
++    // Also return the tokens to the frontend
++    return c.json({
++      access_token: tokens.access_token,
++      token_type: tokens.token_type || "Bearer",
++      expires_in: tokens.expires_in,
++      refresh_token: tokens.refresh_token,
++      scope: tokens.scope,
++      success: true,
++    })
++  } catch (error) {
++    Logger.error("Email/password login error:", error)
++    return c.json(
++      {
++        error: "Authentication failed",
++        message: error instanceof Error ? error.message : "Unknown error",
++      },
++      500,
++    )
++  }
++})
++
++// Logout endpoint
++app.post("/logout", async (c) => {
++  const keycloakConfig = getKeycloakConfig()
++  const refreshToken = c.req.header("x-refresh-token")
++
++  try {
++    if (refreshToken) {
++      // Resolve client for logout operation
++      const clientResolver = getClientResolver(keycloakConfig)
++      const client = await clientResolver.resolveClient('admin-api')
++
++      // Revoke token in Keycloak
++      const logoutUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/logout`
++
++      const baseParams = {
++        refresh_token: refreshToken,
++      }
++
++      const body = clientResolver.buildTokenParams(client, baseParams)
++
++      await fetch(logoutUrl, {
++        method: "POST",
++        headers: {
++          "Content-Type": "application/x-www-form-urlencoded",
++        },
++        body: body,
++      })
++    }
++
++    // Clear cookies
++    c.header(
++      "Set-Cookie",
++      "xyne-auth-token=; Path=/; HttpOnly=false; SameSite=Strict; Max-Age=0",
++    )
++    c.header(
++      "Set-Cookie",
++      "xyne-refresh-token=; Path=/; HttpOnly=false; SameSite=Strict; Max-Age=0",
++    )
++
++    return c.json({ success: true })
++  } catch (error) {
++    Logger.error("Logout error:", error)
++    return c.json({ error: "Logout failed" }, 500)
++  }
++})
++
++// WebAuthn/Passkey endpoints
++
++// Check if user has passkey and initiate authentication/registration
++app.post("/webauthn-login", async (c) => {
++  try {
++    const { email } = await c.req.json()
++    
++    if (!email) {
++      Logger.error("Email is required for passkey authentication")
++      return c.json({ error: "Email is required" }, 400)
++    }
++
++    Logger.info("Checking passkey availability for user:", email)
++    
++    // Check if user has passkey (using in-memory store for demo)
++    // In real implementation, you would check Keycloak user attributes or external DB
++    const userPasskeys = (global as any).userPasskeys || new Set()
++    const hasPasskey = userPasskeys.has(email)
++    
++    // Generate a challenge (in real implementation, store this temporarily)
++    const challenge = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64')
++    
++    return c.json({
++      hasPasskey,
++      challenge,
++      email
++    })
++  } catch (error) {
++    Logger.error("WebAuthn login initiation error:", error)
++    return c.json({ error: "Failed to initiate passkey authentication" }, 500)
++  }
++})
++
++// Register a new passkey for the user
++app.post("/webauthn-register", async (c) => {
++  try {
++    const { email, credential } = await c.req.json()
++    
++    if (!email || !credential) {
++      Logger.error("Email and credential are required for passkey registration")
++      return c.json({ error: "Email and credential are required" }, 400)
++    }
++
++    Logger.info("Registering passkey for user:", email)
++    
++    // TODO: Implement actual credential verification and storage
++    // This would involve:
++    // 1. Verifying the attestation
++    // 2. Storing the credential in Keycloak user attributes or external DB
++    
++    Logger.info("Passkey registration successful (simulated)")
++    
++    const keycloakConfig = getKeycloakConfig()
++    
++    try {
++      // Step 1: Check if user exists in Keycloak, create if not
++      const adminTokenResponse = await fetch(`${keycloakConfig.baseUrl}/realms/master/protocol/openid-connect/token`, {
++        method: 'POST',
++        headers: {
++          'Content-Type': 'application/x-www-form-urlencoded',
++        },
++        body: new URLSearchParams({
++          grant_type: 'password',
++          client_id: 'admin-cli',
++          username: 'admin',
++          password: 'admin',
++        }),
++      })
++      
++      if (!adminTokenResponse.ok) {
++        throw new Error('Failed to get admin token')
++      }
++      
++      const adminTokens = await adminTokenResponse.json()
++      const adminToken = adminTokens.access_token
++      
++      // Check if user exists
++      const userCheckResponse = await fetch(`${keycloakConfig.baseUrl}/admin/realms/${keycloakConfig.defaultRealm}/users?email=${encodeURIComponent(email)}`, {
++        headers: {
++          'Authorization': `Bearer ${adminToken}`,
++          'Content-Type': 'application/json',
++        },
++      })
++      
++      let userId = null
++      
++      if (userCheckResponse.ok) {
++        const users = await userCheckResponse.json()
++        if (users.length > 0) {
++          userId = users[0].id
++          Logger.info("User already exists in Keycloak:", email)
++          
++          // Ensure existing user profile is complete
++          const [localPart, domain] = email.split('@')
++          const updateUserResponse = await fetch(`${keycloakConfig.baseUrl}/admin/realms/${keycloakConfig.defaultRealm}/users/${userId}`, {
++            method: 'PUT',
++            headers: {
++              'Authorization': `Bearer ${adminToken}`,
++              'Content-Type': 'application/json',
++            },
++            body: JSON.stringify({
++              id: userId,
++              username: email,
++              email: email,
++              firstName: localPart,
++              lastName: domain.replace(/[^a-zA-Z0-9.\-]/g, ''),
++              enabled: true,
++              emailVerified: true,
++            }),
++          })
++          
++          if (!updateUserResponse.ok) {
++            Logger.warn("Failed to update existing user profile, continuing anyway")
++          } else {
++            Logger.info("Updated existing user profile to ensure completeness")
++          }
++        }
++      }
++      
++      // Create user if doesn't exist
++      if (!userId) {
++        Logger.info("Creating new user in Keycloak:", email)
++        
++        const [localPart, domain] = email.split('@')
++        const createUserResponse = await fetch(`${keycloakConfig.baseUrl}/admin/realms/${keycloakConfig.defaultRealm}/users`, {
++          method: 'POST',
++          headers: {
++            'Authorization': `Bearer ${adminToken}`,
++            'Content-Type': 'application/json',
++          },
++          body: JSON.stringify({
++            username: email,
++            email: email,
++            firstName: localPart,
++            lastName: domain.replace(/[^a-zA-Z0-9.\-]/g, ''), // Remove invalid characters
++            enabled: true,
++            emailVerified: true,
++          }),
++        })
++        
++        if (createUserResponse.ok || createUserResponse.status === 201) {
++          // Get the created user's ID
++          const createdUserResponse = await fetch(`${keycloakConfig.baseUrl}/admin/realms/${keycloakConfig.defaultRealm}/users?email=${encodeURIComponent(email)}`, {
++            headers: {
++              'Authorization': `Bearer ${adminToken}`,
++              'Content-Type': 'application/json',
++            },
++          })
++          
++          if (createdUserResponse.ok) {
++            const users = await createdUserResponse.json()
++            if (users.length > 0) {
++              userId = users[0].id
++              Logger.info("User created successfully:", email)
++            }
++          }
++        } else {
++          throw new Error('Failed to create user in Keycloak')
++        }
++      }
++      
++      // Step 2: Create user in Xyne database if needed
++      if (userId) {
++        Logger.info("Creating user in Xyne database:", email)
++        
++        // Extract domain from email for workspace lookup
++        const domain = email.split('@')[1]
++        const [localPart] = email.split('@')
++        
++        // Check if user already exists in Xyne database
++        const existingXyneUser = await getUserByEmail(db, email)
++        
++        let xyneUser = null
++        if (existingXyneUser && existingXyneUser.length > 0) {
++          Logger.info("User already exists in Xyne database:", email)
++          xyneUser = existingXyneUser[0]
++        } else {
++          // Check if workspace exists for this domain
++          const existingWorkspace = await getWorkspaceByDomain(domain)
++          
++          if (existingWorkspace && existingWorkspace.length > 0) {
++            Logger.info("Workspace found, creating user in existing workspace")
++            const workspace = existingWorkspace[0]
++            const [createdUser] = await createUser(
++              db,
++              workspace.id,
++              email,
++              localPart,
++              "", // photoLink - empty for now
++              UserRole.User,
++              workspace.externalId,
++            )
++            xyneUser = createdUser
++          } else {
++            Logger.info("Creating new workspace and user")
++            // Create workspace and user in transaction
++            xyneUser = await db.transaction(async (trx) => {
++              const [workspace] = await createWorkspace(trx, email, domain)
++              const [user] = await createUser(
++                trx,
++                workspace.id,
++                email,
++                localPart,
++                "", // photoLink - empty for now
++                UserRole.SuperAdmin, // First user in workspace becomes SuperAdmin
++                workspace.externalId,
++              )
++              return user
++            })
++          }
++        }
++        
++        Logger.info("Xyne database user setup completed:", xyneUser.email)
++        
++        // Step 3: Generate access token for the user
++        const clientResolver = getClientResolver(keycloakConfig)
++        
++        // Since this is a new user registration, we need to set a temporary password first
++        // Then use password grant to get a proper user token
++        
++        // Set a temporary password for the user
++        const tempPassword = crypto.randomUUID() // Generate a random temporary password
++        const setPasswordResponse = await fetch(`${keycloakConfig.baseUrl}/admin/realms/${keycloakConfig.defaultRealm}/users/${userId}/reset-password`, {
++          method: 'PUT',
++          headers: {
++            'Authorization': `Bearer ${adminToken}`,
++            'Content-Type': 'application/json',
++          },
++          body: JSON.stringify({
++            type: 'password',
++            value: tempPassword,
++            temporary: false,
++          }),
++        })
++        
++        if (!setPasswordResponse.ok) {
++          throw new Error('Failed to set temporary password for user')
++        }
++        
++        // Now use password grant to get a user token
++        const tokenUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/token`
++        const baseParams = {
++          grant_type: "password",
++          username: email,
++          password: tempPassword,
++          scope: "openid email profile",
++        }
++        
++        const response = await clientResolver.performTokenRequest(tokenUrl, 'password-grant', baseParams)
++        
++        if (response.ok) {
++          const tokens = await response.json()
++          
++          Logger.info("Created tokens for passkey registration")
++          
++          // Set cookies similar to other login methods
++          const accessCookie = `access-token=${tokens.access_token}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=${tokens.expires_in || 3600}`
++          const refreshCookie = tokens.refresh_token 
++            ? `refresh-token=${tokens.refresh_token}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=1800`
++            : null
++          
++          c.res.headers.append("Set-Cookie", accessCookie)
++          if (refreshCookie) {
++            c.res.headers.append("Set-Cookie", refreshCookie)
++          }
++          
++          // Mark that this user now has a passkey (store in memory for demo)
++          ;(global as any).userPasskeys = (global as any).userPasskeys || new Set()
++          ;(global as any).userPasskeys.add(email)
++          
++          // Store the user info for later use
++          ;(global as any).passkeyUsers = (global as any).passkeyUsers || new Map()
++          ;(global as any).passkeyUsers.set(email, { userId, credential, email, password: tempPassword })
++          
++          return c.json({
++            success: true,
++            message: "Passkey registered successfully",
++            access_token: tokens.access_token,
++            token_type: tokens.token_type || "Bearer",
++            expires_in: tokens.expires_in,
++            refresh_token: tokens.refresh_token,
++            scope: tokens.scope,
++          })
++        } else {
++          throw new Error('Failed to generate tokens')
++        }
++      } else {
++        throw new Error('Failed to create or find user')
++      }
++    } catch (error) {
++      Logger.error("Passkey registration error:", error)
++      return c.json({ error: "Failed to complete passkey registration: " + (error instanceof Error ? error.message : 'Unknown error') }, 500)
++    }
++  } catch (error) {
++    Logger.error("WebAuthn registration error:", error)
++    return c.json({ error: "Failed to register passkey" }, 500)
++  }
++})
++
++// Verify passkey authentication
++app.post("/webauthn-verify", async (c) => {
++  try {
++    const { email, credential } = await c.req.json()
++    
++    if (!email || !credential) {
++      Logger.error("Email and credential are required for passkey verification")
++      return c.json({ error: "Email and credential are required" }, 400)
++    }
++
++    Logger.info("Verifying passkey for user:", email)
++    
++    // Check if user has passkey registered
++    const userPasskeys = (global as any).userPasskeys || new Set()
++    if (!userPasskeys.has(email)) {
++      Logger.error("No passkey found for user:", email)
++      return c.json({ error: "No passkey found for this user" }, 400)
++    }
++    
++    // TODO: Implement actual credential verification
++    // This would involve:
++    // 1. Retrieving stored credential from Keycloak user attributes or external DB
++    // 2. Verifying the assertion signature
++    
++    Logger.info("Passkey authentication successful (simulated)")
++    
++    const keycloakConfig = getKeycloakConfig()
++    
++    try {
++      // Check if user exists in Xyne database
++      const existingXyneUser = await getUserByEmail(db, email)
++      
++      if (!existingXyneUser || existingXyneUser.length === 0) {
++        throw new Error("User not found in Xyne database")
++      }
++      
++      const xyneUser = existingXyneUser[0]
++      Logger.info("Found user in Xyne database:", xyneUser.email)
++      
++      const clientResolver = getClientResolver(keycloakConfig)
++      const tokenUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/token`
++      
++      // Get stored user info from memory for the temporary password
++      // In production, this should be replaced with proper passkey credential verification
++      const passkeyUsers = (global as any).passkeyUsers || new Map()
++      const userInfo = passkeyUsers.get(email)
++      
++      if (!userInfo) {
++        throw new Error("User not found in passkey registry")
++      }
++      
++      const storedPassword = userInfo.password || 'demo123' // Use stored password or default
++      
++      // Use password grant to get a proper user token
++      const baseParams = {
++        grant_type: "password",
++        username: email,
++        password: storedPassword,
++        scope: "openid email profile",
++      }
++      
++      const response = await clientResolver.performTokenRequest(tokenUrl, 'password-grant', baseParams)
++      
++      if (response.ok) {
++        const tokens = await response.json()
++        
++        Logger.info("Created tokens for passkey authentication")
++        
++        // Set cookies similar to other login methods
++        const accessCookie = `access-token=${tokens.access_token}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=${tokens.expires_in || 3600}`
++        const refreshCookie = tokens.refresh_token 
++          ? `refresh-token=${tokens.refresh_token}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=1800`
++          : null
++        
++        c.res.headers.append("Set-Cookie", accessCookie)
++        if (refreshCookie) {
++          c.res.headers.append("Set-Cookie", refreshCookie)
++        }
++        
++        return c.json({
++          success: true,
++          message: "Passkey authentication successful",
++          access_token: tokens.access_token,
++          token_type: tokens.token_type || "Bearer",
++          expires_in: tokens.expires_in,
++          refresh_token: tokens.refresh_token,
++          scope: tokens.scope,
++        })
++      } else {
++        throw new Error("Failed to generate authentication tokens")
++      }
++    } catch (error) {
++      Logger.error("Passkey authentication error:", error)
++      return c.json({ error: "Failed to complete passkey authentication: " + (error instanceof Error ? error.message : 'Unknown error') }, 500)
++    }
++  } catch (error) {
++    Logger.error("WebAuthn verification error:", error)
++    return c.json({ error: "Failed to verify passkey" }, 500)
++  }
++})
++
++// Feature toggles endpoint for authentication options
++app.get("/features", async (c) => {
++  try {
++    const features = {
++      googleLoginEnabled: process.env.IS_KEYCLOAK_GOOGLE_LOGIN_ENABLED === 'true',
++      microsoftLoginEnabled: process.env.IS_KEYCLOAK_MICROSOFT_LOGIN_ENABLED === 'true',
++      linkedinLoginEnabled: process.env.IS_KEYCLOAK_LINKEDIN_LOGIN_ENABLED === 'true',
++      emailPasswordLoginEnabled: process.env.IS_KEYCLOAK_EMAIL_PASSWORD_LOGIN_ENABLED === 'true',
++      passkeyLoginEnabled: process.env.IS_KEYCLOAK_PASSKEY_LOGIN_ENABLED === 'true',
++      ssoLoginEnabled: process.env.IS_KEYCLOAK_SSO_LOGIN_ENABLED === 'true',
++    }
++    
++    Logger.info("Returning feature toggles:", features)
++    return c.json(features)
++  } catch (error) {
++    Logger.error("Feature toggles error:", error)
++    return c.json({ error: "Failed to get feature toggles" }, 500)
++  }
++})
++
++export default app
+\ No newline at end of file
+diff --git a/server/auth/keycloak/client-manager.ts b/server/auth/keycloak/client-manager.ts
+new file mode 100644
+index 000000000..a65c83960
+--- /dev/null
++++ b/server/auth/keycloak/client-manager.ts
+@@ -0,0 +1,476 @@
++import { getLogger } from "@/logger"
++import { Subsystem } from "@/types"
++import type { KeycloakConfig, KeycloakClient, AuthFlow, ClientSelectionStrategy } from "./config"
++
++const Logger = getLogger(Subsystem.Auth)
++
++export interface AuthContext {
++  environment?: string
++  userRoles?: string[]
++  flowType: AuthFlow
++  userAgent?: string
++  clientHint?: string
++}
++
++export interface ClientValidationResult {
++  client: KeycloakClient
++  available: boolean
++  lastChecked: Date
++  error?: string
++}
++
++interface DiscoveryCache {
++  clients: KeycloakClient[]
++  lastUpdated: Date
++  ttl: number
++}
++
++export class IndustryKeycloakClientManager {
++  private config: KeycloakConfig
++  private discoveryCache: DiscoveryCache | null = null
++  private validationCache = new Map<string, ClientValidationResult>()
++
++  constructor(config: KeycloakConfig) {
++    this.config = config
++  }
++
++  /**
++   * Get all available clients using the configured strategy
++   */
++  async getAvailableClients(refresh = false): Promise<KeycloakClient[]> {
++    const clients: KeycloakClient[] = []
++
++    // Start with configured clients
++    if (this.config.clientSelectionStrategy !== 'built-in-only') {
++      clients.push(...this.config.clients)
++    }
++
++    // Add discovered clients if enabled
++    if (this.config.autoDiscovery.enabled && 
++        (this.config.clientSelectionStrategy === 'dynamic' || 
++         this.config.clientSelectionStrategy === 'hybrid')) {
++      
++      const discoveredClients = await this.discoverClients(refresh)
++      
++      // Merge discovered clients (avoid duplicates)
++      for (const discoveredClient of discoveredClients) {
++        if (!clients.find(c => c.clientId === discoveredClient.clientId)) {
++          clients.push(discoveredClient)
++        }
++      }
++    }
++
++    // Always include built-in clients as fallback
++    clients.push(...this.getBuiltInClients())
++
++    return this.deduplicateClients(clients)
++  }
++
++  /**
++   * Select the best client for a specific authentication flow
++   */
++  async selectClient(context: AuthContext): Promise<KeycloakClient> {
++    const availableClients = await this.getAvailableClients()
++    
++    Logger.info(`Selecting client for flow: ${context.flowType}`, {
++      environment: context.environment,
++      availableClients: availableClients.length,
++      strategy: this.config.clientSelectionStrategy
++    })
++
++    // Filter clients that support the required flow
++    const compatibleClients = availableClients.filter(client => 
++      this.isClientCompatible(client, context)
++    )
++
++    if (compatibleClients.length === 0) {
++      Logger.warn(`No compatible clients found for flow: ${context.flowType}`)
++      // Return built-in fallback
++      return this.getBuiltInFallback(context.flowType)
++    }
++
++    // Sort by priority and environment match
++    const sortedClients = this.sortClientsByPreference(compatibleClients, context)
++
++    // Try clients in order until one works
++    for (const client of sortedClients) {
++      if (await this.validateClient(client)) {
++        Logger.info(`Selected client: ${client.clientId}`, {
++          type: client.type,
++          priority: client.priority,
++          description: client.description
++        })
++        return client
++      }
++    }
++
++    // All clients failed, use built-in fallback
++    Logger.warn(`All compatible clients failed, using built-in fallback`)
++    return this.getBuiltInFallback(context.flowType)
++  }
++
++  /**
++   * Auto-discover clients from Keycloak admin API
++   */
++  private async discoverClients(refresh = false): Promise<KeycloakClient[]> {
++    // Check cache first
++    if (!refresh && this.discoveryCache && 
++        Date.now() - this.discoveryCache.lastUpdated.getTime() < this.discoveryCache.ttl * 1000) {
++      Logger.debug('Using cached client discovery results')
++      return this.discoveryCache.clients
++    }
++
++    Logger.info('Discovering clients from Keycloak')
++
++    try {
++      // Get admin token for API access
++      const adminToken = await this.getAdminToken()
++      
++      // Fetch clients from Keycloak API
++      const clientsUrl = `${this.config.baseUrl}/admin/realms/${this.config.defaultRealm}/clients`
++      const response = await fetch(clientsUrl, {
++        headers: {
++          'Authorization': `Bearer ${adminToken}`,
++          'Content-Type': 'application/json'
++        }
++      })
++
++      if (!response.ok) {
++        throw new Error(`Failed to fetch clients: ${response.status}`)
++      }
++
++      const rawClients = await response.json()
++      const discoveredClients = this.parseDiscoveredClients(rawClients)
++
++      // Update cache
++      this.discoveryCache = {
++        clients: discoveredClients,
++        lastUpdated: new Date(),
++        ttl: this.config.autoDiscovery.cacheTtl
++      }
++
++      Logger.info(`Discovered ${discoveredClients.length} clients from Keycloak`)
++      return discoveredClients
++
++    } catch (error) {
++      Logger.error('Failed to discover clients from Keycloak:', error)
++      
++      // Return cached results if available
++      if (this.discoveryCache) {
++        Logger.warn('Using stale discovery cache due to error')
++        return this.discoveryCache.clients
++      }
++      
++      return []
++    }
++  }
++
++  /**
++   * Get admin token for Keycloak API access
++   */
++  private async getAdminToken(): Promise<string> {
++    const tokenUrl = `${this.config.baseUrl}/realms/${this.config.adminRealm}/protocol/openid-connect/token`
++    
++    const response = await fetch(tokenUrl, {
++      method: 'POST',
++      headers: {
++        'Content-Type': 'application/x-www-form-urlencoded'
++      },
++      body: new URLSearchParams({
++        grant_type: 'password',
++        client_id: 'admin-cli',
++        username: this.config.adminUsername,
++        password: this.config.adminPassword
++      })
++    })
++
++    if (!response.ok) {
++      throw new Error(`Failed to get admin token: ${response.status}`)
++    }
++
++    const tokens = await response.json()
++    return tokens.access_token
++  }
++
++  /**
++   * Parse raw Keycloak client data into our format
++   */
++  private parseDiscoveredClients(rawClients: any[]): KeycloakClient[] {
++    return rawClients
++      .filter(client => 
++        client.enabled !== false &&
++        !client.bearerOnly &&
++        client.clientId &&
++        !this.isBuiltInClient(client.clientId)
++      )
++      .map(client => ({
++        clientId: client.clientId,
++        clientSecret: client.secret,
++        type: client.publicClient ? 'public' : 'confidential',
++        flows: this.inferSupportedFlows(client),
++        priority: 50, // Medium priority for discovered clients
++        description: `Auto-discovered: ${client.description || client.name || client.clientId}`
++      }))
++  }
++
++  /**
++   * Infer supported flows from Keycloak client configuration
++   */
++  private inferSupportedFlows(client: any): AuthFlow[] {
++    const flows: AuthFlow[] = []
++    
++    if (client.standardFlowEnabled) flows.push('authorization-code')
++    if (client.directAccessGrantsEnabled) flows.push('password-grant')
++    if (client.serviceAccountsEnabled) flows.push('client-credentials')
++    
++    // Always support refresh token if any flow is enabled
++    if (flows.length > 0) flows.push('refresh-token')
++    
++    return flows
++  }
++
++  /**
++   * Get built-in Keycloak clients as fallbacks
++   */
++  private getBuiltInClients(): KeycloakClient[] {
++    return [
++      {
++        clientId: this.config.builtInClientPreferences.confidential,
++        type: 'confidential',
++        flows: ['password-grant', 'client-credentials', 'refresh-token', 'admin-api'],
++        priority: 10, // Low priority (fallback)
++        description: 'Built-in confidential client'
++      },
++      {
++        clientId: this.config.builtInClientPreferences.public,
++        type: 'public',
++        flows: ['authorization-code', 'refresh-token'],
++        priority: 10, // Low priority (fallback)
++        description: 'Built-in public client'
++      },
++      {
++        clientId: this.config.builtInClientPreferences.serviceAccount,
++        type: 'confidential',
++        flows: ['client-credentials', 'admin-api'],
++        priority: 5, // Lowest priority
++        description: 'Built-in service account client'
++      }
++    ]
++  }
++
++  /**
++   * Check if client is compatible with the authentication context
++   */
++  private isClientCompatible(client: KeycloakClient, context: AuthContext): boolean {
++    // Check flow support
++    if (!client.flows.includes(context.flowType)) {
++      return false
++    }
++
++    // Check environment match
++    if (context.environment && client.environment && 
++        !client.environment.includes(context.environment)) {
++      return false
++    }
++
++    return true
++  }
++
++  /**
++   * Sort clients by preference (priority, environment match, etc.)
++   */
++  private sortClientsByPreference(clients: KeycloakClient[], context: AuthContext): KeycloakClient[] {
++    return clients.sort((a, b) => {
++      // Higher priority first
++      const priorityDiff = (b.priority || 0) - (a.priority || 0)
++      if (priorityDiff !== 0) return priorityDiff
++
++      // Environment match preference
++      const aEnvMatch = this.getEnvironmentMatch(a, context.environment)
++      const bEnvMatch = this.getEnvironmentMatch(b, context.environment)
++      if (aEnvMatch !== bEnvMatch) return bEnvMatch - aEnvMatch
++
++      // Prefer configured over discovered over built-in
++      const aSource = this.getClientSource(a)
++      const bSource = this.getClientSource(b)
++      if (aSource !== bSource) return aSource - bSource
++
++      return 0
++    })
++  }
++
++  private getEnvironmentMatch(client: KeycloakClient, environment?: string): number {
++    if (!environment || !client.environment) return 0
++    return client.environment.includes(environment) ? 1 : 0
++  }
++
++  private getClientSource(client: KeycloakClient): number {
++    if (this.config.clients.find(c => c.clientId === client.clientId)) return 0 // Configured
++    if (this.isBuiltInClient(client.clientId)) return 2 // Built-in
++    return 1 // Discovered
++  }
++
++  /**
++   * Validate that a client actually works
++   */
++  private async validateClient(client: KeycloakClient): Promise<boolean> {
++    const cacheKey = client.clientId
++    const cached = this.validationCache.get(cacheKey)
++    
++    // Use cached result if recent
++    if (cached && Date.now() - cached.lastChecked.getTime() < 60000) { // 1 minute cache
++      return cached.available
++    }
++
++    try {
++      // For built-in clients, assume they're always available
++      if (this.isBuiltInClient(client.clientId)) {
++        this.validationCache.set(cacheKey, {
++          client,
++          available: true,
++          lastChecked: new Date()
++        })
++        return true
++      }
++
++      // For configured and discovered clients, validate by checking if they exist in Keycloak
++      const available = await this.checkClientExists(client)
++      
++      this.validationCache.set(cacheKey, {
++        client,
++        available,
++        lastChecked: new Date(),
++        error: available ? undefined : 'Client not found in Keycloak'
++      })
++
++      return available
++
++    } catch (error) {
++      this.validationCache.set(cacheKey, {
++        client,
++        available: false,
++        lastChecked: new Date(),
++        error: error instanceof Error ? error.message : 'Unknown error'
++      })
++
++      return false
++    }
++  }
++
++  /**
++   * Check if a client exists in Keycloak without testing token flows
++   */
++  private async checkClientExists(client: KeycloakClient): Promise<boolean> {
++    try {
++      const adminToken = await this.getAdminToken()
++      const clientsUrl = `${this.config.baseUrl}/admin/realms/${this.config.defaultRealm}/clients?clientId=${encodeURIComponent(client.clientId)}`
++      
++      const response = await fetch(clientsUrl, {
++        headers: {
++          'Authorization': `Bearer ${adminToken}`,
++          'Content-Type': 'application/json'
++        }
++      })
++
++      if (!response.ok) {
++        Logger.warn(`Failed to check client existence: ${response.status}`)
++        return false
++      }
++
++      const clients = await response.json()
++      const clientExists = Array.isArray(clients) && clients.length > 0 && clients[0].enabled
++
++      Logger.debug(`Client ${client.clientId} validation: ${clientExists ? 'exists and enabled' : 'not found or disabled'}`)
++      return clientExists
++
++    } catch (error) {
++      Logger.error(`Error checking client existence for ${client.clientId}:`, error)
++      return false
++    }
++  }
++
++  /**
++   * Get built-in fallback client for a specific flow
++   */
++  private getBuiltInFallback(flow: AuthFlow): KeycloakClient {
++    const builtInClients = this.getBuiltInClients()
++    
++    // Find the best built-in client for this flow
++    const compatible = builtInClients.filter(client => client.flows.includes(flow))
++    
++    if (compatible.length === 0) {
++      // Fallback to admin-cli if nothing else works
++      return {
++        clientId: 'admin-cli',
++        type: 'confidential',
++        flows: ['password-grant', 'client-credentials', 'refresh-token', 'admin-api'],
++        priority: 1,
++        description: 'Emergency fallback client'
++      }
++    }
++
++    return compatible[0]
++  }
++
++  private isBuiltInClient(clientId: string): boolean {
++    const builtInIds = [
++      'admin-cli', 'account', 'account-console', 'broker', 'realm-management',
++      'security-admin-console', this.config.builtInClientPreferences.public,
++      this.config.builtInClientPreferences.confidential,
++      this.config.builtInClientPreferences.serviceAccount
++    ]
++    return builtInIds.includes(clientId)
++  }
++
++  private deduplicateClients(clients: KeycloakClient[]): KeycloakClient[] {
++    const seen = new Set<string>()
++    return clients.filter(client => {
++      if (seen.has(client.clientId)) return false
++      seen.add(client.clientId)
++      return true
++    })
++  }
++
++  /**
++   * Get comprehensive status of all clients
++   */
++  async getClientStatus(): Promise<{
++    total: number
++    configured: number
++    discovered: number
++    builtin: number
++    available: number
++    strategy: ClientSelectionStrategy
++    lastDiscovery?: Date
++  }> {
++    const allClients = await this.getAvailableClients()
++    const configured = this.config.clients.length
++    const builtin = this.getBuiltInClients().length
++    const discovered = this.discoveryCache?.clients.length || 0
++    
++    // Check availability of all clients
++    let available = 0
++    for (const client of allClients) {
++      if (await this.validateClient(client)) {
++        available++
++      }
++    }
++
++    return {
++      total: allClients.length,
++      configured,
++      discovered,
++      builtin,
++      available,
++      strategy: this.config.clientSelectionStrategy,
++      lastDiscovery: this.discoveryCache?.lastUpdated
++    }
++  }
++}
++
++/**
++ * Factory function to create client manager
++ */
++export const getClientManager = (config: KeycloakConfig): IndustryKeycloakClientManager => {
++  return new IndustryKeycloakClientManager(config)
++}
+\ No newline at end of file
+diff --git a/server/auth/keycloak/client-resolver.ts b/server/auth/keycloak/client-resolver.ts
+new file mode 100644
+index 000000000..862f948c6
+--- /dev/null
++++ b/server/auth/keycloak/client-resolver.ts
+@@ -0,0 +1,177 @@
++import { getLogger } from "@/logger"
++import { Subsystem } from "@/types"
++import type { KeycloakConfig, AuthFlow } from "./config"
++import { getClientManager, type AuthContext } from "./client-manager"
++
++const Logger = getLogger(Subsystem.Auth)
++
++// Legacy type aliases for backward compatibility
++export type ClientFlowType = AuthFlow
++
++export interface ClientInfo {
++  clientId: string
++  clientSecret?: string
++  isPublic: boolean
++  priority?: number
++}
++
++export class KeycloakClientResolver {
++  private clientManager: any
++
++  constructor(private config: KeycloakConfig) {
++    this.clientManager = getClientManager(config)
++  }
++
++  /**
++   * Resolves the appropriate client for a given authentication flow
++   * Now uses industry-level client manager with discovery and selection
++   */
++  async resolveClient(flowType: ClientFlowType): Promise<ClientInfo> {
++    const context: AuthContext = {
++      flowType,
++      environment: this.config.environment
++    }
++
++    try {
++      const selectedClient = await this.clientManager.selectClient(context)
++      
++      Logger.info(`Selected client for ${flowType}: ${selectedClient.clientId}`, {
++        type: selectedClient.type,
++        priority: selectedClient.priority,
++        description: selectedClient.description
++      })
++
++      return {
++        clientId: selectedClient.clientId,
++        clientSecret: selectedClient.clientSecret,
++        isPublic: selectedClient.type === 'public',
++        priority: selectedClient.priority || 50
++      }
++    } catch (error) {
++      Logger.error(`Error selecting client for ${flowType}:`, error)
++      
++      // Fallback to legacy behavior
++      return this.getLegacyFallback(flowType)
++    }
++  }
++
++  /**
++   * Legacy fallback method for backward compatibility
++   */
++  private getLegacyFallback(flowType: ClientFlowType): ClientInfo {
++    // Try legacy client first (if configured)
++    if (this.config.clientId) {
++      Logger.warn(`Using legacy client for ${flowType}: ${this.config.clientId}`)
++      return {
++        clientId: this.config.clientId,
++        clientSecret: this.config.clientSecret,
++        isPublic: !this.config.clientSecret,
++        priority: 20
++      }
++    }
++
++    // Fallback to built-in client
++    const fallbackClient = this.getFallbackClient(flowType)
++    Logger.warn(`Using legacy fallback client for ${flowType}: ${fallbackClient.clientId}`)
++    return fallbackClient
++  }
++
++  /**
++   * Builds token request parameters with appropriate client authentication
++   */
++  buildTokenParams(client: ClientInfo, baseParams: Record<string, string>): URLSearchParams {
++    const params = new URLSearchParams(baseParams)
++    params.append('client_id', client.clientId)
++
++    // Add client secret for confidential clients
++    if (client.clientSecret) {
++      params.append('client_secret', client.clientSecret)
++    }
++
++    return params
++  }
++
++  /**
++   * Performs token request with automatic fallback if primary client fails
++   * Now uses the industry-level client manager for intelligent fallback
++   */
++  async performTokenRequest(
++    tokenUrl: string, 
++    flowType: ClientFlowType, 
++    baseParams: Record<string, string>
++  ): Promise<Response> {
++    const client = await this.resolveClient(flowType)
++    const body = this.buildTokenParams(client, baseParams)
++
++    Logger.info(`Attempting token request with client: ${client.clientId}`)
++
++    const response = await fetch(tokenUrl, {
++      method: "POST",
++      headers: {
++        "Content-Type": "application/x-www-form-urlencoded",
++      },
++      body: body,
++    })
++
++    if (!response.ok) {
++      const errorText = await response.text()
++      Logger.warn(`Token request failed with client ${client.clientId}: ${errorText}`)
++      
++      // The client manager already handles fallback selection, so if we get here
++      // it means the selected client failed. Log the failure but return the response
++      // since the client manager should have already tried the best available client.
++    } else {
++      Logger.info(`Token request succeeded with client: ${client.clientId}`)
++    }
++
++    return response
++  }
++
++  private getFallbackClient(flowType: ClientFlowType): ClientInfo {
++    switch (flowType) {
++      case 'password-grant':
++      case 'admin-api':
++        // Use confidential client for secure operations
++        return {
++          clientId: this.config.builtInClientPreferences.confidential,
++          clientSecret: undefined, // Built-in clients don't need secrets
++          isPublic: false,
++          priority: 10
++        }
++      
++      case 'authorization-code':
++        // Use public client for frontend flows
++        return {
++          clientId: this.config.builtInClientPreferences.public,
++          clientSecret: undefined,
++          isPublic: true,
++          priority: 10
++        }
++      
++      case 'token-refresh':
++        // Use same client as original token (fallback to confidential)
++        return {
++          clientId: this.config.builtInClientPreferences.confidential,
++          clientSecret: undefined,
++          isPublic: false,
++          priority: 10
++        }
++      
++      default:
++        Logger.warn(`Unknown flow type: ${flowType}, using admin-cli`)
++        return {
++          clientId: 'admin-cli',
++          clientSecret: undefined,
++          isPublic: false,
++          priority: 5
++        }
++    }
++  }
++}
++
++/**
++ * Factory function to create client resolver instance
++ */
++export const getClientResolver = (config: KeycloakConfig): KeycloakClientResolver => {
++  return new KeycloakClientResolver(config)
++}
+\ No newline at end of file
+diff --git a/server/auth/keycloak/config.ts b/server/auth/keycloak/config.ts
+new file mode 100644
+index 000000000..7c1c468a0
+--- /dev/null
++++ b/server/auth/keycloak/config.ts
+@@ -0,0 +1,258 @@
++export interface KeycloakClient {
++  clientId: string
++  clientSecret?: string
++  type: 'public' | 'confidential' | 'bearer-only'
++  flows: AuthFlow[]
++  environment?: string[]
++  roles?: string[]
++  priority?: number  // Higher priority = preferred
++  description?: string
++}
++
++export type AuthFlow = 
++  | 'authorization-code'
++  | 'password-grant' 
++  | 'client-credentials'
++  | 'refresh-token'
++  | 'token-refresh'
++  | 'token-exchange'
++  | 'admin-api'
++
++export type ClientSelectionStrategy = 
++  | 'static'           // Use configured clients only
++  | 'dynamic'          // Auto-discover from Keycloak
++  | 'hybrid'           // Configured + discovered
++  | 'built-in-only'    // Only use built-in clients
++
++export interface KeycloakConfig {
++  enabled: boolean
++  baseUrl: string
++  adminRealm: string
++  adminUsername: string
++  adminPassword: string
++  defaultRealm: string
++  
++  // Multi-client support
++  clients: KeycloakClient[]
++  clientSelectionStrategy: ClientSelectionStrategy
++  
++  // Environment-based client management
++  environment?: string  // 'development' | 'staging' | 'production'
++  
++  // Built-in client preferences
++  builtInClientPreferences: {
++    public: string       // Default: 'account'
++    confidential: string // Default: 'admin-cli'  
++    serviceAccount: string // Default: 'admin-cli'
++  }
++  
++  // Auto-discovery settings
++  autoDiscovery: {
++    enabled: boolean
++    cacheTtl: number  // Cache TTL in seconds
++    retryInterval: number // Retry failed discoveries
++  }
++  
++  // Legacy support (will be migrated to clients array)
++  clientId?: string
++  clientSecret?: string
++}
++
++const parseClients = (): KeycloakClient[] => {
++  const clients: KeycloakClient[] = []
++  
++  // Primary: Parse from KEYCLOAK_CLIENTS array (JSON format)
++  const clientsJson = process.env.KEYCLOAK_CLIENTS
++  if (clientsJson) {
++    try {
++      const parsedClients = JSON.parse(clientsJson)
++      if (Array.isArray(parsedClients)) {
++        clients.push(...parsedClients.map((client, index) => ({
++          ...client,
++          priority: client.priority || (100 - index * 10), // Auto-assign decreasing priority
++          description: client.description || `Configured client #${index + 1}`
++        })))
++        console.log(`✅ Loaded ${parsedClients.length} clients from KEYCLOAK_CLIENTS`)
++      } else {
++        console.warn('⚠️ KEYCLOAK_CLIENTS must be an array, ignoring')
++      }
++    } catch (error) {
++      console.warn('⚠️ Invalid KEYCLOAK_CLIENTS JSON format, ignoring:', error)
++    }
++  }
++  
++  // Secondary: Individual client environment variables (for simpler setups)
++  const individualClients = parseIndividualClients()
++  for (const client of individualClients) {
++    if (!clients.find(c => c.clientId === client.clientId)) {
++      clients.push(client)
++    }
++  }
++  
++  // Legacy support: Single client from old env vars (lowest priority)
++  const legacyClient = parseLegacyClient()
++  if (legacyClient && !clients.find(c => c.clientId === legacyClient.clientId)) {
++    clients.push(legacyClient)
++  }
++  
++  return clients
++}
++
++const parseIndividualClients = (): KeycloakClient[] => {
++  const clients: KeycloakClient[] = []
++  let index = 1
++  
++  // Support multiple clients via numbered env vars
++  while (true) {
++    const suffix = index === 1 ? '' : `_${index}`
++    const clientId = process.env[`KEYCLOAK_CLIENT${suffix}_ID`]
++    
++    if (!clientId) break
++    
++    const clientSecret = process.env[`KEYCLOAK_CLIENT${suffix}_SECRET`]
++    const clientType = process.env[`KEYCLOAK_CLIENT${suffix}_TYPE`] as any || (clientSecret ? 'confidential' : 'public')
++    const clientFlows = process.env[`KEYCLOAK_CLIENT${suffix}_FLOWS`]?.split(',') as AuthFlow[] || ['authorization-code', 'password-grant', 'refresh-token']
++    const clientEnv = process.env[`KEYCLOAK_CLIENT${suffix}_ENVIRONMENT`]?.split(',')
++    const clientPriority = parseInt(process.env[`KEYCLOAK_CLIENT${suffix}_PRIORITY`] || String(90 - (index - 1) * 10))
++    
++    clients.push({
++      clientId,
++      clientSecret,
++      type: clientType,
++      flows: clientFlows,
++      environment: clientEnv,
++      priority: clientPriority,
++      description: `Individual client #${index}`
++    })
++    
++    index++
++  }
++  
++  if (clients.length > 0) {
++    console.log(`✅ Loaded ${clients.length} clients from individual env vars`)
++  }
++  
++  return clients
++}
++
++const parseLegacyClient = (): KeycloakClient | null => {
++  const legacyClientId = process.env.KEYCLOAK_CLIENT_ID
++  if (!legacyClientId) return null
++  
++  console.log('⚠️ Using legacy KEYCLOAK_CLIENT_ID (consider migrating to KEYCLOAK_CLIENTS array)')
++  
++  return {
++    clientId: legacyClientId,
++    clientSecret: process.env.KEYCLOAK_CLIENT_SECRET,
++    type: process.env.KEYCLOAK_CLIENT_SECRET ? 'confidential' : 'public',
++    flows: ['authorization-code', 'password-grant', 'refresh-token'],
++    priority: 50, // Medium priority for legacy client
++    description: 'Legacy single client (deprecated)'
++  }
++}
++
++export const getKeycloakConfig = (): KeycloakConfig => {
++  const config: KeycloakConfig = {
++    enabled: process.env.KEYCLOAK_ENABLED === "true",
++    baseUrl: process.env.KEYCLOAK_BASE_URL || "http://localhost:8081",
++    adminRealm: process.env.KEYCLOAK_ADMIN_REALM || "master",
++    adminUsername: process.env.KEYCLOAK_ADMIN_USERNAME || "admin",
++    adminPassword: process.env.KEYCLOAK_ADMIN_PASSWORD || "admin",
++    
++    // 🎯 REALM-CENTRIC: The core requirement - realm is mandatory
++    defaultRealm: process.env.KEYCLOAK_DEFAULT_REALM || "xyne-shared",
++    
++    // 🏭 MULTI-CLIENT ARRAY: Clients are optional arrays
++    clients: parseClients(),
++    clientSelectionStrategy: (process.env.KEYCLOAK_CLIENT_STRATEGY as ClientSelectionStrategy) || 'hybrid',
++    environment: process.env.NODE_ENV || process.env.ENVIRONMENT || 'development',
++    
++    // Built-in client preferences (per realm)
++    builtInClientPreferences: {
++      public: process.env.KEYCLOAK_BUILTIN_PUBLIC_CLIENT || 'account',
++      confidential: process.env.KEYCLOAK_BUILTIN_CONFIDENTIAL_CLIENT || 'admin-cli',
++      serviceAccount: process.env.KEYCLOAK_BUILTIN_SERVICE_CLIENT || 'admin-cli',
++    },
++    
++    // Auto-discovery settings
++    autoDiscovery: {
++      enabled: process.env.KEYCLOAK_AUTO_DISCOVERY !== 'false', // Default: true
++      cacheTtl: parseInt(process.env.KEYCLOAK_DISCOVERY_CACHE_TTL || '300'), // 5 minutes
++      retryInterval: parseInt(process.env.KEYCLOAK_DISCOVERY_RETRY_INTERVAL || '60'), // 1 minute
++    },
++    
++    // Legacy support (will be deprecated)
++    clientId: process.env.KEYCLOAK_CLIENT_ID,
++    clientSecret: process.env.KEYCLOAK_CLIENT_SECRET,
++  }
++  
++  // Validate and log configuration
++  validateKeycloakConfig(config)
++  
++  return config
++}
++
++export const validateKeycloakConfig = (config: KeycloakConfig): void => {
++  const errors: string[] = []
++  const warnings: string[] = []
++  
++  // Core validation: Realm is mandatory
++  if (!config.defaultRealm) {
++    errors.push('🚨 KEYCLOAK_DEFAULT_REALM is mandatory')
++  }
++  
++  if (!config.baseUrl) {
++    errors.push('🚨 KEYCLOAK_BASE_URL is mandatory')
++  }
++  
++  // Client validation: Arrays are optional but should be valid if provided
++  if (config.clients.length === 0) {
++    warnings.push('⚠️ No clients configured - will use built-in clients only')
++  }
++  
++  // Validate each client
++  config.clients.forEach((client, index) => {
++    if (!client.clientId) {
++      errors.push(`🚨 Client #${index + 1}: clientId is required`)
++    }
++    
++    if (client.type === 'confidential' && !client.clientSecret) {
++      warnings.push(`⚠️ Client '${client.clientId}': confidential client without secret`)
++    }
++    
++    if (!client.flows || client.flows.length === 0) {
++      warnings.push(`⚠️ Client '${client.clientId}': no flows specified`)
++    }
++  })
++  
++  // Strategy validation
++  const validStrategies: ClientSelectionStrategy[] = ['static', 'dynamic', 'hybrid', 'built-in-only']
++  if (!validStrategies.includes(config.clientSelectionStrategy)) {
++    errors.push(`🚨 Invalid client strategy: ${config.clientSelectionStrategy}`)
++  }
++  
++  // Discovery validation
++  if (config.autoDiscovery.enabled && (!config.adminUsername || !config.adminPassword)) {
++    warnings.push('⚠️ Auto-discovery enabled but admin credentials missing')
++  }
++  
++  // Log results
++  if (errors.length > 0) {
++    console.error('❌ Keycloak Configuration Errors:')
++    errors.forEach(error => console.error(`  ${error}`))
++    throw new Error('Invalid Keycloak configuration')
++  }
++  
++  if (warnings.length > 0) {
++    console.warn('⚠️ Keycloak Configuration Warnings:')
++    warnings.forEach(warning => console.warn(`  ${warning}`))
++  }
++  
++  // Success log
++  console.log('✅ Keycloak Configuration Valid:')
++  console.log(`  📍 Realm: ${config.defaultRealm}`)
++  console.log(`  🏭 Strategy: ${config.clientSelectionStrategy}`)
++  console.log(`  🔧 Clients: ${config.clients.length} configured`)
++  console.log(`  🔍 Discovery: ${config.autoDiscovery.enabled ? 'enabled' : 'disabled'}`)
++  console.log(`  🌍 Environment: ${config.environment}`)
++}
+\ No newline at end of file
+diff --git a/server/auth/keycloak/middleware.ts b/server/auth/keycloak/middleware.ts
+new file mode 100644
+index 000000000..fc8477bd8
+--- /dev/null
++++ b/server/auth/keycloak/middleware.ts
+@@ -0,0 +1,338 @@
++import type { Context, Next } from "hono"
++import { verify } from "hono/jwt"
++import { getCookie } from "hono/cookie"
++import { getKeycloakConfig } from "./config"
++import { getLogger } from "@/logger"
++import { Subsystem } from "@/types"
++import config from "@/config"
++import { db } from "@/db/client"
++import { createUser, getUserByEmail } from "@/db/user"
++import { UserRole } from "@/shared/types"
++import { eq } from "drizzle-orm"
++import { workspaces } from "@/db/schema"
++
++const Logger = getLogger(Subsystem.Server)
++const { JwtPayloadKey } = config
++const userSecret = process.env.USER_SECRET!
++const keycloakConfig = getKeycloakConfig()
++
++// Get default workspace configuration for new user creation
++async function getDefaultWorkspaceConfig(): Promise<{
++  workspaceId: number
++  workspaceExternalId: string
++}> {
++  // Try to get from environment variables first
++  const envWorkspaceId = process.env.KEYCLOAK_DEFAULT_WORKSPACE_ID
++  const envWorkspaceExternalId = process.env.KEYCLOAK_DEFAULT_WORKSPACE_EXTERNAL_ID
++
++  if (envWorkspaceId && envWorkspaceExternalId) {
++    return {
++      workspaceId: parseInt(envWorkspaceId),
++      workspaceExternalId: envWorkspaceExternalId,
++    }
++  }
++
++  // Fallback: get the first available workspace from database
++  try {
++    const firstWorkspace = await db.select().from(workspaces).limit(1)
++    if (firstWorkspace.length > 0) {
++      return {
++        workspaceId: firstWorkspace[0].id,
++        workspaceExternalId: firstWorkspace[0].externalId,
++      }
++    }
++  } catch (error) {
++    Logger.error("Error fetching default workspace:", error)
++  }
++
++  // Last resort: throw error if no workspace found
++  throw new Error("No default workspace configured and no workspaces available in database")
++}
++
++export interface AuthContext {
++  sub: string
++  role: string
++  workspaceId: string
++  source: "xyne" | "keycloak" | "api-key"
++  exp: number
++  user?: any
++}
++
++// Enhanced JWT middleware that supports both Xyne and Keycloak tokens, plus API keys
++export const enhancedJwtMiddleware = () => {
++  return async (c: Context, next: Next) => {
++    try {
++      let token: string | undefined
++
++      // Check for token in different places
++      const authHeader = c.req.header("Authorization")
++      const apiKeyHeader = c.req.header("x-api-key")
++      const cookieToken = getCookie(c, "auth-token") || getCookie(c, "access-token")
++
++      if (authHeader?.startsWith("Bearer ")) {
++        token = authHeader.substring(7)
++      } else if (apiKeyHeader) {
++        // Handle API key authentication
++        const apiKeyValid = await validateApiKey(apiKeyHeader)
++        if (apiKeyValid) {
++          const serviceAuthContext: AuthContext = {
++            sub: "service-account",
++            role: "Service",
++            workspaceId: "service",
++            source: "api-key",
++            exp: Math.floor(Date.now() / 1000) + 3600,
++          }
++
++          c.set(JwtPayloadKey, serviceAuthContext)
++          c.set("authContext", serviceAuthContext)
++          c.set("authMethod", "api-key")
++
++          await next()
++          return
++        } else {
++          Logger.warn("Invalid API key provided")
++          return c.json({ error: "Invalid API key" }, 401)
++        }
++      } else if (cookieToken) {
++        token = cookieToken
++      }
++
++      if (!token) {
++        Logger.warn("No authentication token provided")
++        return c.json({ error: "Unauthorized" }, 401)
++      }
++
++      // Try to determine token type and validate accordingly
++      const authContext = await validateToken(token)
++
++      if (!authContext) {
++        Logger.warn("Invalid or expired token")
++        return c.json({ error: "Invalid token" }, 401)
++      }
++
++      // Set auth context for downstream handlers
++      c.set(JwtPayloadKey, authContext)
++      c.set("authContext", authContext)
++      c.set("authMethod", authContext.source)
++
++      // Set user context if available (for Keycloak tokens)
++      if (authContext.user) {
++        c.set("user", authContext.user)
++      }
++
++      await next()
++    } catch (error) {
++      Logger.error("Authentication middleware error:", error)
++      return c.json({ error: "Authentication failed" }, 401)
++    }
++  }
++}
++
++// Validate token from either Xyne or Keycloak
++async function validateToken(token: string): Promise<AuthContext | null> {
++  const currentKeycloakConfig = getKeycloakConfig()
++
++  // Try Keycloak validation first if enabled
++  Logger.info("Keycloak config:", {
++    enabled: currentKeycloakConfig.enabled,
++    baseUrl: currentKeycloakConfig.baseUrl,
++    realm: currentKeycloakConfig.defaultRealm,
++  })
++
++  if (currentKeycloakConfig.enabled) {
++    Logger.info("Attempting Keycloak token validation")
++    const keycloakResult = await validateKeycloakToken(token)
++    if (keycloakResult) {
++      return keycloakResult
++    }
++    Logger.info("Keycloak validation failed, trying Xyne validation")
++  } else {
++    Logger.info("Keycloak is disabled, using Xyne validation only")
++  }
++
++  // Fallback to Xyne JWT validation
++  const xyneResult = await validateXyneToken(token)
++  return xyneResult
++}
++
++// Validate Keycloak JWT token
++async function validateKeycloakToken(
++  token: string,
++): Promise<AuthContext | null> {
++  try {
++    // Decode JWT payload first
++    const parts = token.split(".")
++    if (parts.length !== 3) {
++      return null
++    }
++
++    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString())
++
++    // Check expiration
++    if (payload.exp < Date.now() / 1000) {
++      Logger.warn("Keycloak token expired")
++      return null
++    }
++
++    // Check if this is a Keycloak token by looking at issuer
++    if (!payload.iss || !payload.iss.includes(keycloakConfig.baseUrl)) {
++      return null
++    }
++
++    Logger.info("Processing Keycloak token for user:", payload.email)
++
++    // Extract roles from Keycloak token
++    const realmRoles = payload.realm_access?.roles || []
++    const resourceRoles = payload.resource_access?.["oa-backend"]?.roles || []
++    const allRoles = [...realmRoles, ...resourceRoles]
++
++    // Determine primary role (prioritize oa-backend manager, then admin, then user)
++    let primaryRole = UserRole.User
++    const oaBackendRoles = payload.resource_access?.["oa-backend"]?.roles || []
++
++    if (
++      oaBackendRoles.includes("manager") ||
++      oaBackendRoles.includes("Manager")
++    ) {
++      primaryRole = UserRole.Admin // Map manager to admin for XYNE
++    } else if (allRoles.includes("admin") || allRoles.includes("Admin")) {
++      primaryRole = UserRole.Admin
++    }
++
++    // Auto-create user in database if they don't exist
++    const userEmail = payload.email
++    const userName = payload.name || payload.preferred_username || "User"
++
++    try {
++      // Check if user exists in database
++      const existingUsers = await getUserByEmail(db, userEmail)
++
++      if (!existingUsers || existingUsers.length === 0) {
++        // Get default workspace configuration
++        const defaultWorkspace = await getDefaultWorkspaceConfig()
++        Logger.info("Creating new user with workspace:", defaultWorkspace)
++
++        // Create user with configurable workspace values
++        await createUser(
++          db,
++          defaultWorkspace.workspaceId,
++          userEmail,
++          userName,
++          "", // No photo link from Keycloak by default
++          primaryRole,
++          defaultWorkspace.workspaceExternalId,
++          undefined, // No password for Keycloak users
++        )
++      }
++    } catch (dbError) {
++      Logger.error("Error creating/checking user in database:", dbError)
++      // Continue with authentication even if DB operation fails
++    }
++
++    // Get the actual workspace external ID from the database
++    let workspaceExternalId: string
++    
++    try {
++      const existingUsers = await getUserByEmail(db, userEmail)
++      if (existingUsers && existingUsers.length > 0) {
++        workspaceExternalId = existingUsers[0].workspaceExternalId
++      } else {
++        // Fallback to default workspace configuration
++        const defaultWorkspace = await getDefaultWorkspaceConfig()
++        workspaceExternalId = defaultWorkspace.workspaceExternalId
++      }
++    } catch (error) {
++      Logger.error("Error getting workspace external ID:", error)
++      // Last resort fallback to default workspace configuration
++      try {
++        const defaultWorkspace = await getDefaultWorkspaceConfig()
++        workspaceExternalId = defaultWorkspace.workspaceExternalId
++      } catch (fallbackError) {
++        Logger.error("Error getting fallback workspace:", fallbackError)
++        throw new Error("Unable to determine workspace for user authentication")
++      }
++    }
++
++    // Create auth context with role information
++    const authContext: AuthContext = {
++      sub: userEmail,
++      role: primaryRole,
++      workspaceId: workspaceExternalId,
++      source: "keycloak",
++      exp: payload.exp,
++      user: {
++        email: userEmail,
++        name: userName,
++        role: primaryRole,
++        workspace_external_id: workspaceExternalId,
++        keycloak_roles: allRoles, // Include all Keycloak roles for reference
++      },
++    }
++
++    return authContext
++  } catch (error) {
++    Logger.error("Keycloak token validation failed:", error)
++    return null
++  }
++}
++
++// Validate Xyne JWT token (existing logic)
++async function validateXyneToken(token: string): Promise<AuthContext | null> {
++  try {
++    const payload = await verify(token, userSecret)
++
++    // Check required fields
++    if (!payload.sub || !payload.role || !payload.workspaceId) {
++      Logger.warn("Invalid Xyne token payload")
++      return null
++    }
++
++    // Check expiration
++    if (payload.exp && Date.now() / 1000 > payload.exp) {
++      Logger.warn("Xyne token expired")
++      return null
++    }
++
++    return {
++      sub: payload.sub as string,
++      role: payload.role as string,
++      workspaceId: payload.workspaceId as string,
++      source: "xyne",
++      exp: payload.exp as number,
++    }
++  } catch (error) {
++    Logger.debug("Token is not a valid Xyne token:", error)
++    return null
++  }
++}
++
++// API key validation - validates JWT-based API keys
++async function validateApiKey(apiKey: string): Promise<boolean> {
++  try {
++    // First check environment-based static API keys
++    const validApiKeys = process.env.VALID_API_KEYS?.split(",") || []
++    if (validApiKeys.includes(apiKey)) {
++      return true
++    }
++
++    // Then validate JWT-based API keys (generated by /generate-api-key)
++    try {
++      const payload = await verify(apiKey, userSecret)
++
++      // Check if it's marked as an API key
++      if (payload.type === "api_key") {
++        Logger.info("Valid JWT API key authenticated")
++        return true
++      }
++
++      Logger.warn("JWT token is not marked as API key")
++      return false
++    } catch (jwtError) {
++      Logger.warn("JWT API key validation failed:", jwtError)
++      return false
++    }
++  } catch (error) {
++    Logger.error("API key validation error:", error)
++    return false
++  }
++}
+\ No newline at end of file
+diff --git a/server/auth/keycloak/routes.ts b/server/auth/keycloak/routes.ts
+new file mode 100644
+index 000000000..689fc0f46
+--- /dev/null
++++ b/server/auth/keycloak/routes.ts
+@@ -0,0 +1,142 @@
++import { Hono } from "hono"
++import keycloakApi from "./api"
++import { getKeycloakConfig } from "./config"
++import { getClientResolver } from "./client-resolver"
++import { getLogger } from "@/logger"
++import { Subsystem } from "@/types"
++
++const Logger = getLogger(Subsystem.Server)
++
++const app = new Hono()
++
++// Mount the API routes
++app.route("/", keycloakApi)
++
++// Health check endpoint
++app.get("/health", async (c) => {
++  try {
++    const config = getKeycloakConfig()
++    const healthUrl = `${config.baseUrl}/realms/${config.defaultRealm}`
++
++    const response = await fetch(healthUrl)
++
++    if (response.ok) {
++      return c.json({
++        status: "healthy",
++        keycloak: "connected",
++        realm: config.defaultRealm,
++        timestamp: new Date().toISOString(),
++      })
++    } else {
++      return c.json(
++        {
++          status: "unhealthy",
++          keycloak: "disconnected",
++          error: "Could not reach Keycloak server",
++        },
++        503,
++      )
++    }
++  } catch (error) {
++    Logger.error("Keycloak health check failed:", error)
++    return c.json(
++      {
++        status: "unhealthy",
++        keycloak: "error",
++        error: error instanceof Error ? error.message : "Unknown error",
++      },
++      503,
++    )
++  }
++})
++
++// Get Keycloak configuration (public info only)
++app.get("/config", async (c) => {
++  try {
++    const config = getKeycloakConfig()
++    const clientResolver = getClientResolver(config)
++    
++    // Get the appropriate client for authorization code flow (what frontend uses)
++    const client = await clientResolver.resolveClient('authorization-code')
++
++    return c.json({
++      baseUrl: config.baseUrl,
++      realm: config.defaultRealm,
++      clientId: client.clientId,
++      loginUrl: `${config.baseUrl}/realms/${config.defaultRealm}/protocol/openid-connect/auth`,
++      // Don't expose sensitive config like clientSecret
++      // Add info about whether we're using a fallback client
++      usingFallback: (client.priority || 50) <= 10, // Built-in clients have priority 10 or less
++      clientType: client.isPublic ? 'public' : 'confidential',
++      // Industry-level information
++      strategy: config.clientSelectionStrategy,
++      environment: config.environment,
++      totalConfiguredClients: config.clients.length
++    })
++  } catch (error) {
++    Logger.error("Failed to get Keycloak config:", error)
++    return c.json({ error: "Configuration error" }, 500)
++  }
++})
++
++// Industry-level client status endpoint  
++app.get("/clients/status", async (c) => {
++  try {
++    const config = getKeycloakConfig()
++    const { getClientManager } = await import("./client-manager")
++    const clientManager = getClientManager(config)
++    
++    const status = await clientManager.getClientStatus()
++    
++    return c.json({
++      ...status,
++      configuredClients: config.clients.map(client => ({
++        clientId: client.clientId,
++        type: client.type,
++        flows: client.flows,
++        environment: client.environment,
++        priority: client.priority,
++        description: client.description
++      })),
++      builtInPreferences: config.builtInClientPreferences,
++      autoDiscovery: config.autoDiscovery
++    })
++  } catch (error) {
++    Logger.error("Failed to get client status:", error)
++    return c.json({ error: "Status check failed" }, 500)
++  }
++})
++
++// Test client selection for different flows
++app.get("/clients/test/:flow", async (c) => {
++  try {
++    const flow = c.req.param('flow') as any
++    const config = getKeycloakConfig()
++    const { getClientManager } = await import("./client-manager")
++    const clientManager = getClientManager(config)
++    
++    const context = {
++      flowType: flow,
++      environment: config.environment
++    }
++    
++    const selectedClient = await clientManager.selectClient(context)
++    
++    return c.json({
++      flow,
++      selectedClient: {
++        clientId: selectedClient.clientId,
++        type: selectedClient.type,
++        flows: selectedClient.flows,
++        priority: selectedClient.priority,
++        description: selectedClient.description
++      },
++      context
++    })
++  } catch (error) {
++    Logger.error(`Failed to test client selection for flow:`, error)
++    return c.json({ error: "Client selection test failed" }, 500)
++  }
++})
++
++export default app
+\ No newline at end of file
+diff --git a/server/db/schema/users.ts b/server/db/schema/users.ts
+index 45aead9a0..163e4dc41 100644
+--- a/server/db/schema/users.ts
++++ b/server/db/schema/users.ts
+@@ -8,7 +8,7 @@ import {
+   uniqueIndex,
+   pgEnum,
+ } from "drizzle-orm/pg-core"
+-import { createInsertSchema, createSelectSchema } from "drizzle-zod"
++import { createSelectSchema } from "drizzle-zod"
+ import { z } from "zod"
+ import { UserRole } from "@/shared/types"
+ import { workspaces } from "./workspaces"
+@@ -37,6 +37,7 @@ export const users = pgTable(
+     externalId: text("external_id").unique().notNull(),
+     // this will come handy for jwt token
+     workspaceExternalId: text("workspace_external_id").notNull(),
++    password: text("password"),
+     createdAt: timestamp("created_at", { withTimezone: true })
+       .notNull()
+       .default(sql`NOW()`),
+@@ -67,6 +68,7 @@ export const userPublicSchema = selectUserSchema.omit({
+   deletedAt: true,
+   id: true,
+   workspaceId: true,
++  password: true,
+ })
+ 
+ export type PublicUser = z.infer<typeof userPublicSchema>
+diff --git a/server/db/user.ts b/server/db/user.ts
+index 7f7e2cade..55984e620 100644
+--- a/server/db/user.ts
++++ b/server/db/user.ts
+@@ -16,6 +16,7 @@ import { createId } from "@paralleldrive/cuid2"
+ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
+ import type { TxnOrClient } from "@/types"
+ import { HTTPException } from "hono/http-exception"
++import { hashPassword, verifyPassword } from "@/utils/password"
+ 
+ export const getPublicUserAndWorkspaceByEmail = async (
+   trx: TxnOrClient,
+@@ -116,8 +117,16 @@ export const createUser = async (
+   // refreshToken: string,
+   role: string,
+   workspaceExternalId: string,
++  password?: string,
+ ) => {
+   const externalId = createId()
++  
++  // Hash password if provided (for email/password users)
++  let hashedPassword: string | undefined = undefined
++  if (password && password.trim() !== "") {
++    hashedPassword = await hashPassword(password)
++  }
++  
+   return await trx
+     .insert(users)
+     .values({
+@@ -132,6 +141,7 @@ export const createUser = async (
+       lastLogin: new Date(),
+       role,
+       refreshToken: "",
++      password: hashedPassword,
+     })
+     .returning()
+ }
+@@ -179,3 +189,67 @@ export const getUserById = async (
+   }
+   return parsedRes.data
+ }
++
++/**
++ * Verify user password for email/password authentication
++ * @param trx - Database transaction or client
++ * @param email - User email
++ * @param password - Plaintext password to verify
++ * @returns Promise<SelectUser | null> - User if password is correct, null otherwise
++ */
++export const verifyUserPassword = async (
++  trx: TxnOrClient,
++  email: string,
++  password: string,
++): Promise<SelectUser | null> => {
++  try {
++    // Get user with password
++    const userResult = await trx
++      .select()
++      .from(users)
++      .where(eq(users.email, email))
++      .limit(1)
++    
++    if (!userResult || userResult.length === 0) {
++      return null // User not found
++    }
++    
++    const user = userResult[0]
++    
++    // Check if user has a password set (OAuth users might not have passwords)
++    if (!user.password) {
++      return null // User doesn't have password authentication enabled
++    }
++    
++    // Verify password
++    const isPasswordValid = await verifyPassword(password, user.password)
++    
++    if (!isPasswordValid) {
++      return null // Invalid password
++    }
++    
++    return user
++  } catch (error) {
++    throw new Error(`Password verification failed: ${error}`)
++  }
++}
++
++/**
++ * Update user password (for password reset functionality)
++ * @param trx - Database transaction or client
++ * @param email - User email
++ * @param newPassword - New plaintext password
++ * @returns Promise<void>
++ */
++export const updateUserPassword = async (
++  trx: TxnOrClient,
++  email: string,
++  newPassword: string,
++): Promise<void> => {
++  const hashedPassword = await hashPassword(newPassword)
++  
++  await trx
++    .update(users)
++    .set({ password: hashedPassword })
++    .where(eq(users.email, email))
++}
+diff --git a/server/package.json b/server/package.json
+index e5fecbfbb..526f48cc6 100644
+--- a/server/package.json
++++ b/server/package.json
+@@ -6,6 +6,7 @@
+   "devDependencies": {
+     "@biomejs/biome": "1.9.4",
+     "@faker-js/faker": "^9.3.0",
++    "@types/bcryptjs": "^3.0.0",
+     "@types/bun": "latest",
+     "@types/html-to-text": "^9.0.4",
+     "@types/uuid": "^10.0.0",
+@@ -55,7 +56,8 @@
+     "arctic": "^3.3.0",
+     "async-mutex": "^0.5.0",
+     "autoevals": "^0.0.119",
+-    "canvas": "^3.1.0",
++    "bcryptjs": "^3.0.2",
++    "canvas": "^3.2.0",
+     "cors": "^2.8.5",
+     "drizzle-orm": "^0.33.0",
+     "drizzle-zod": "^0.5.1",
+diff --git a/server/server.ts b/server/server.ts
+index 6069898cb..a417db6f6 100644
+--- a/server/server.ts
++++ b/server/server.ts
+@@ -99,6 +99,9 @@ import { getLogger, LogMiddleware } from "@/logger"
+ import { Subsystem } from "@/types"
+ import { GetUserWorkspaceInfo } from "@/api/auth"
+ import { AuthRedirectError, InitialisationError } from "@/errors"
++import keycloakRoutes from "@/auth/keycloak/routes"
++import { enhancedJwtMiddleware } from "@/auth/keycloak/middleware"
++import passwordAuthRoutes from "@/api/password-auth"
+ import {
+   ListDataSourcesApi,
+   ListDataSourceFilesApi,
+@@ -725,7 +728,7 @@ export const AppRoutes = app
+   .post("/validate-token", handleAppValidation)
+   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
+   .post("/refresh-token", getNewAccessRefreshToken)
+-  .use("*", AuthMiddleware)
++  .use("*", enhancedJwtMiddleware())
+   .use("*", honoMiddlewareLogger)
+   .post(
+     "/autocomplete",
+@@ -1066,6 +1069,12 @@ const generateTokens = async (
+ // we won't allow user to reach the login page if they are already logged in
+ // or if they have an expired token
+ 
++// Mount Keycloak routes
++app.route("/api/keycloak", keycloakRoutes)
++
++// Mount Password Authentication routes
++app.route("/api/password", passwordAuthRoutes)
++
+ // After google oauth is done, google redirects user
+ // here and this is where all the onboarding will happen
+ // if user account does not exist, then we will automatically
+diff --git a/server/utils/password.ts b/server/utils/password.ts
+new file mode 100644
+index 000000000..aa27faa6e
+--- /dev/null
++++ b/server/utils/password.ts
+@@ -0,0 +1,105 @@
++import bcrypt from "bcryptjs"
++import { getLogger } from "@/logger"
++import { Subsystem } from "@/types"
++
++const Logger = getLogger(Subsystem.Server).child({ module: "password" })
++
++/**
++ * Hash a plaintext password using bcrypt
++ * @param password - The plaintext password to hash
++ * @returns Promise<string> - The hashed password
++ */
++export async function hashPassword(password: string): Promise<string> {
++  try {
++    const saltRounds = 12 // High security - adjust if performance issues
++    const hashedPassword = await bcrypt.hash(password, saltRounds)
++    Logger.debug("Password hashed successfully")
++    return hashedPassword
++  } catch (error) {
++    Logger.error("Error hashing password:", error)
++    throw new Error("Failed to hash password")
++  }
++}
++
++/**
++ * Verify a plaintext password against a hashed password
++ * @param password - The plaintext password to verify
++ * @param hashedPassword - The hashed password to compare against
++ * @returns Promise<boolean> - True if password matches, false otherwise
++ */
++export async function verifyPassword(
++  password: string,
++  hashedPassword: string,
++): Promise<boolean> {
++  try {
++    const isMatch = await bcrypt.compare(password, hashedPassword)
++    Logger.debug("Password verification completed")
++    return isMatch
++  } catch (error) {
++    Logger.error("Error verifying password:", error)
++    return false
++  }
++}
++
++/**
++ * Check if a password is already hashed (bcrypt format)
++ * @param password - The password string to check
++ * @returns boolean - True if already hashed, false if plaintext
++ */
++export function isPasswordHashed(password: string): boolean {
++  // Bcrypt hashes start with $2a$, $2b$, $2x$, or $2y$
++  return /^\$2[abxy]\$\d+\$/.test(password)
++}
++
++/**
++ * Safely hash password only if it's not already hashed
++ * This prevents double-hashing during migrations
++ * @param password - Password that might be plaintext or already hashed
++ * @returns Promise<string> - Always returns a hashed password
++ */
++export async function ensurePasswordHashed(password: string): Promise<string> {
++  if (isPasswordHashed(password)) {
++    Logger.debug("Password already hashed, skipping hash operation")
++    return password
++  }
++  
++  Logger.info("Password is plaintext, hashing now")
++  return await hashPassword(password)
++}
++
++/**
++ * Validate password strength
++ * @param password - The password to validate
++ * @returns object - Validation result with success and messages
++ */
++export function validatePasswordStrength(password: string): {
++  isValid: boolean
++  errors: string[]
++} {
++  const errors: string[] = []
++
++  if (password.length < 8) {
++    errors.push("Password must be at least 8 characters long")
++  }
++
++  if (!/[A-Z]/.test(password)) {
++    errors.push("Password must contain at least one uppercase letter")
++  }
++
++  if (!/[a-z]/.test(password)) {
++    errors.push("Password must contain at least one lowercase letter")
++  }
++
++  if (!/\d/.test(password)) {
++    errors.push("Password must contain at least one number")
++  }
++
++  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
++    errors.push("Password must contain at least one special character")
++  }
++
++  return {
++    isValid: errors.length === 0,
++    errors,
++  }
++}
+\ No newline at end of file

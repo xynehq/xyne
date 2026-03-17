@@ -130,6 +130,14 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
           changeOrigin: true,
         },
+        "/v1/auth/keycloak/start": {
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
+          changeOrigin: true,
+        },
+        "/v1/auth/keycloak/callback": {
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
+          changeOrigin: true,
+        },
         "/oauth/start": {
           target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
           changeOrigin: true,
