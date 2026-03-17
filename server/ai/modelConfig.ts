@@ -545,6 +545,15 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     deepResearch: true,
     description: "The most intelligent, high-capability frontier model, optimized for complex reasoning, advanced coding, and autonomous agentic workflows.",
   },
+  [Models.LiteLLM_Claude_Haiku_4_5]: {
+    actualName: "vertex_ai/claude-haiku-4-5@20251001",
+    labelName: ModelDisplayNames.LITELLM_CLAUDE_HAIKU_4_5,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: true,
+    deepResearch: false,
+    description: "Fast Claude model for quick responses and lightweight reasoning.",
+  },
   // [Models.LiteLLM_Gemini_3_Pro]: {
   //   actualName: "gemini-3-pro-preview",
   //   labelName: ModelDisplayNames.LITELLM_GEMINI_3_PRO,

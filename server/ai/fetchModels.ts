@@ -234,6 +234,10 @@ export const fetchModelConfigs = async (): Promise<
           enabled: config.allowOpus46,
           name: "Claude Opus 4.6",
         },
+        [Models.LiteLLM_Claude_Haiku_4_5]: {
+          enabled: config.allowHaiku45,
+          name: "Claude Haiku 4.5",
+        },
       }
 
       const modelAllowlistInfo = allowlist[modelId as keyof typeof allowlist]
@@ -348,12 +352,15 @@ export const getAvailableModels = async (providerConfig: {
         modelId === Models.LiteLLM_Claude_Sonnet_4_6
       const isOpus46 = (modelId: Models) =>
         modelId === Models.LiteLLM_Claude_Opus_4_6
+      const isHaiku45 = (modelId: Models) =>
+        modelId === Models.LiteLLM_Claude_Haiku_4_5
       Object.entries(MODEL_CONFIGURATIONS)
         .filter(([, model]) => model.provider === AIProviders.LiteLLM)
         .filter(([modelId, model]) => {
           const id = modelId as Models
           if (isSonnet46(id)) return config.allowSonnet46
           if (isOpus46(id)) return config.allowOpus46
+          if (isHaiku45(id)) return config.allowHaiku45
           return true
         })
         .forEach(([modelId, model]) => {

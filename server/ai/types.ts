@@ -62,6 +62,7 @@ export enum LiteLLMModels {
   // Non Free Models
   Claude_Sonnet_4_6 = "claude-sonnet-4-6",
   Claude_Opus_4_6 = "claude-opus-4-6",
+  Claude_Haiku_4_5 = "vertex_ai/claude-haiku-4-5@20251001",
   // Gemini_3_Pro = "gemini-3-pro-preview",
   Gemini_3_Flash = "gemini-3-flash-preview",
 
@@ -197,6 +198,7 @@ export enum Models {
   // GLM_4_5 = LiteLLMModels.GLM_4_5, // GLM 4.5
   LiteLLM_Claude_Sonnet_4_6 = LiteLLMModels.Claude_Sonnet_4_6,
   LiteLLM_Claude_Opus_4_6 = LiteLLMModels.Claude_Opus_4_6,
+  LiteLLM_Claude_Haiku_4_5 = LiteLLMModels.Claude_Haiku_4_5,
   // LiteLLM_Gemini_3_Pro = LiteLLMModels.Gemini_3_Pro,
   LiteLLM_Gemini_3_Flash = LiteLLMModels.Gemini_3_Flash,
 
@@ -333,7 +335,7 @@ export enum ModelDisplayNames {
   LITELLM_KIMI_LATEST = "KIMI Latest",
   LITELLM_CLAUDE_HAIKU_3_5 = "LiteLLM Claude Haiku 3.5",
   LITELLM_CLAUDE_HAIKU_3_5_20241022 = "LiteLLM Claude Haiku 3.5 20241022",
-  LITELLM_CLAUDE_HAIKU_4_5 = "LiteLLM Claude Haiku 4.5",
+  LITELLM_CLAUDE_HAIKU_4_5 = "Claude Haiku 4.5",
   LITELLM_PRIVATE_LARGE = "LiteLLM Private Large",
   LITELLM_GLM_PRIVATE = "GLM Private",
 

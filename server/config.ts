@@ -73,6 +73,7 @@ let LiteLLMBaseUrl = ""
 const LiteLLMModelInfoUrl = process.env.LITELLM_MODEL_INFO_URL
 const allowSonnet46 = process.env.ALLOW_SONNET_4_6 === "true"
 const allowOpus46 = process.env.ALLOW_OPUS_4_6 === "true"
+const allowHaiku45 = process.env.ALLOW_HAIKU_4_5 === "true"
 const useAgenticFiltering = process.env.USE_AGENTIC_FILTERING === "true"
 const modelList = process.env.MODELS_LIST
 const enableImages = process.env.ENABLE_IMAGES === "true"
@@ -326,6 +327,7 @@ export default {
   LiteLLMModelInfoUrl,
   allowSonnet46,
   allowOpus46,
+  allowHaiku45,
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
