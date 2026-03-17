@@ -9,6 +9,7 @@ import {
   getUserByEmail,
 } from "@/db/user"
 import { type PublicUserWorkspace, apiKeys } from "@/db/schema"
+import { getAuthProvidersConfig } from "@/auth/keycloak"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
@@ -189,4 +190,8 @@ export const DeleteUserApiKey = async (c: Context) => {
       500,
     )
   }
+}
+
+export const GetAuthProviders = async (c: Context) => {
+  return c.json(getAuthProvidersConfig())
 }
