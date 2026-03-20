@@ -137,7 +137,7 @@ export async function formatSearchToolResponseAsRawDocuments(
     const scoredChunks = getSortedScoredChunks(
       matchfeatures as Parameters<typeof getSortedScoredChunks>[0],
       chunksSummary,
-      chunksPerDocument[idx],
+      idx < chunksPerDocument.length ? chunksPerDocument[idx] : config.maxDefaultSummary,
     )
     const chunks: RawChunkWithScore[] = scoredChunks.map((sc) => ({
       chunkKey: `i:${sc.index}`,

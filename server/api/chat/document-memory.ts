@@ -194,11 +194,13 @@ export function mergeRawDocumentsIntoDocumentMemory(
  * Merge DocumentStates from a source list into the target document memory (e.g. merge ranked
  * current-turn docs into cross-turn memory after filtering). Preserves chunks (by chunkKey)
  * and appends signals (deduped by query+turn); recomputes scores and runs eviction.
+ * @param currentTurn - The actual current turn number for accurate recency scoring.
  * @returns Number of new chunks added to the target memory (for stagnation tracking).
  */
 export function mergeDocumentStatesIntoDocumentMemory(
   targetMemory: Map<string, DocumentState>,
   sourceDocs: DocumentState[],
+  currentTurn?: number,
 ): number {
   let newChunksCount = 0
   for (const src of sourceDocs) {
@@ -229,7 +231,8 @@ export function mergeDocumentStatesIntoDocumentMemory(
         })
       }
     }
-    const refTurn = Math.max(...doc.signals.map((s) => s.turn), 1)
+    // Use the provided currentTurn for accurate recency, fallback to current doc's latest
+    const refTurn = currentTurn ?? Math.max(...doc.signals.map((s) => s.turn), 1)
     evictChunksIfNeeded(doc, refTurn)
 
     for (const sig of src.signals) {
@@ -245,7 +248,7 @@ export function mergeDocumentStatesIntoDocumentMemory(
         })
       }
     }
-    updateDocumentScores(doc)
+    updateDocumentScores(doc, currentTurn)
   }
 
   evictDocumentMemoryIfNeeded(targetMemory)
@@ -385,10 +388,10 @@ async function buildFragmentsForDocList(
       )
       uncachedVespaIndex++
     } else {
+      // Non-Vespa docs use default chunk budget (Vespa-specific budgets don't apply here)
       const refTurn = Math.max(...doc.signals.map((s) => s.turn), 1)
       const chunkEntries = Array.from(doc.chunks.entries())
-      const maxChunks =
-        chunksPerDocument[uncachedVespaIndex] ?? config.maxDefaultSummary
+      const maxChunks = config.maxDefaultSummary
       const topChunks = chunkEntries
         .sort(
           (a, b) =>

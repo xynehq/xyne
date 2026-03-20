@@ -281,6 +281,7 @@ function mergeToolOutputsIntoCurrentTurnMemory(
     mergeDocumentStatesIntoDocumentMemory(
       context.currentTurnDocumentMemory,
       context.currentTurnArtifacts.syntheticDocs,
+      turnNumber,
     )
   }
 }
@@ -2745,6 +2746,7 @@ async function batchRankFragments(
       const newChunks = mergeDocumentStatesIntoDocumentMemory(
         context.documentMemory,
         rankedDocsFromCurrentTurn,
+        turnNumber,
       )
       if (newChunks > 0) {
         context.turnNewChunksCount.set(
@@ -3034,7 +3036,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
 - Use native JSON booleans (true/false) for every yes/no field.
 - Only emit keys defined in the schema; do not add prose outside the JSON object.
 - You MUST include every key present in the example JSON object (status, notes, toolFeedback, unmetExpectations, planChangeNeeded, planChangeReason, anomaliesDetected, anomalies, recommendation, ambiguityResolved, clarificationQuestions). Missing keys = INVALID.
-- If you have no items, use [] (arrays), false (booleans), and an empty string \"\" for notes/planChangeReason. For recommendation defaults use \"gather_more\".`,
+- If you have no items, use [] (arrays), false (booleans), and an empty string \"\" for notes/planChangeReason. For recommendation defaults use \"proceed\".`,
   }
   if (currentImages.length > 0) {
     params.imageFileNames = currentImages
@@ -5028,8 +5030,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
           ...initialSyntheticMessages,
         ]
 
-        console.log("initialMessages", initialMessages)
-
         const runState: JAFRunState<AgentRunContext> = {
           runId,
           traceId,
@@ -5192,12 +5192,15 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 emitter
               )
             },
-            mergeCurrentTurnIntoCrossTurn: (ctx, t) => {
-              const docs = Array.from(ctx.currentTurnDocumentMemory.values())
+            mergeCurrentTurnIntoCrossTurn: (ctx, t, rankedDocIds) => {
+              const docs = Array.from(ctx.currentTurnDocumentMemory.values()).filter(
+                (doc) => !rankedDocIds || rankedDocIds.has(doc.docId),
+              )
               if (docs.length > 0) {
                 const newChunks = mergeDocumentStatesIntoDocumentMemory(
                   ctx.documentMemory,
                   docs,
+                  t,
                 )
                 if (newChunks > 0) {
                   ctx.turnNewChunksCount.set(
@@ -6760,12 +6763,15 @@ async function runDelegatedAgentWithMessageAgents(
             emitter
           )
         },
-        mergeCurrentTurnIntoCrossTurn: (ctx, t) => {
-          const docs = Array.from(ctx.currentTurnDocumentMemory.values())
+        mergeCurrentTurnIntoCrossTurn: (ctx, t, rankedDocIds) => {
+          const docs = Array.from(ctx.currentTurnDocumentMemory.values()).filter(
+            (doc) => !rankedDocIds || rankedDocIds.has(doc.docId),
+          )
           if (docs.length > 0) {
             const newChunks = mergeDocumentStatesIntoDocumentMemory(
               ctx.documentMemory,
               docs,
+              t,
             )
             if (newChunks > 0) {
               ctx.turnNewChunksCount.set(

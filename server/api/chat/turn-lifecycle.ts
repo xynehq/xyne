@@ -79,10 +79,14 @@ export interface TurnEndPipelineConfig {
     context: AgentRunContext,
     turn: number
   ) => Promise<UnrankedFragmentWithToolContext[] | null>
-  /** When useAgenticFiltering is false, merge all current-turn document memory into cross-turn before ingestFragments. Receives turn for stagnation tracking. */
+  /** When useAgenticFiltering is false, merge all current-turn document memory into cross-turn before ingestFragments. Receives turn for stagnation tracking. 
+   *  When rankedDocIds is provided, only merge docs in that set (filtered path);
+   *  when undefined, merge all docs (the no-ranking fallback path).
+   */
   mergeCurrentTurnIntoCrossTurn?: (
     context: AgentRunContext,
-    turn: number
+    turn: number,
+    rankedDocIds?: Set<string>,
   ) => void
   /** Build review input for the turn range */
   buildReviewInput: (
@@ -329,6 +333,9 @@ async function buildRankingTask(
 
   const ranked = await config.rankFragments(context, allUnrankedWithToolContext, turn, emitter)
   context.turnRankedCount.set(turn, ranked.length)
+  // Pass ranked doc IDs so merge callback only merges what was ranked/filtered.
+  const rankedDocIds = new Set(ranked.map((f) => f.source?.docId ?? f.id).filter(Boolean) as string[])
+  config.mergeCurrentTurnIntoCrossTurn?.(context, turn, rankedDocIds)
   return { count: ranked.length }
 }
 

@@ -624,10 +624,14 @@ const checkAndYieldCitations = async function* (
             const fields = (r as any)?.fields
             return fields?.docId === docKey || (r as any)?.id === docKey
           })
-          citationIndex = docPos >= 0 ? baseIndex + docPos + 1 : null
+          citationIndex = docPos >= 0 ? baseIndex + docPos : null
         }
 
-        if (!citationIndex || Number.isNaN(citationIndex) || citationIndex <= 0) {
+        if (
+          citationIndex === null ||
+          Number.isNaN(citationIndex) ||
+          citationIndex < 0
+        ) {
           loggerWithChild({ email: email }).warn(
             "[checkAndYieldCitations] Found KB citation but could not resolve numeric index",
             { rawChunkKey: docKey },

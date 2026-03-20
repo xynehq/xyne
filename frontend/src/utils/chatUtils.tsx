@@ -33,21 +33,6 @@ export const processMessage = (
   if (!text) return ""
   
   text = splitGroupedCitationsWithSpaces(text)
-
-  // When streaming, token indices are "absolute" (can start after prior batches).
-  // `citations` is just an array for this message; derive the absolute offset from
-  // `citationMap` keys so `K[<docKey>_<chunk>]` can be resolved even if the base
-  // index isn't 0.
-  const citationMapAbsoluteOffset: number | null =
-    citationMap && citations && citations.length > 0
-      ? (() => {
-          const numericKeys = Object.keys(citationMap)
-            .map((k) => Number.parseInt(k, 10))
-            .filter((n) => !Number.isNaN(n))
-          if (!numericKeys.length) return null
-          return Math.min(...numericKeys) - 1
-        })()
-      : null
   
   // Handle image citations
   text = text.replace(
@@ -69,36 +54,31 @@ export const processMessage = (
   text = text.replace(textToChunkCitationIndex, (_, docKey, chunkIndexStr) => {
     const chunkIndex = parseInt(chunkIndexStr, 10)
 
-    // Map docKey -> original numeric citation index (1-based)
-    let originalIndex: number | null = null
+    // `citations[]`/`citationUrls[]` are in final (0-based) order.
+    // For numeric doc keys, we can map via `citationMap` during streaming,
+    // otherwise fall back to `originalIndex - 1` (stored messages are 1-based).
+    //
+    // For non-numeric doc keys (weaker models emitting doc ids like `attf_<uuid>`),
+    // resolve directly to the final index using `citations[]`, no absolute-offset math.
+    let finalIndex: number | null = null
+
     if (/^\d+$/.test(docKey)) {
-      originalIndex = parseInt(docKey, 10)
+      const originalIndex = parseInt(docKey, 10)
+      if (citationMap && citationMap[originalIndex] !== undefined) {
+        finalIndex = citationMap[originalIndex]
+      } else {
+        // DB-loaded: direct mapping (text already has final indices as 1-based)
+        finalIndex = originalIndex - 1
+      }
     } else if (citations) {
       const docPos = citations.findIndex(
         (c) => c.docId === docKey || c.itemId === docKey,
       )
-      if (docPos >= 0) {
-        originalIndex =
-          citationMapAbsoluteOffset != null
-            ? citationMapAbsoluteOffset + docPos + 1
-            : docPos + 1
-      } else {
-        originalIndex = null
-      }
+      finalIndex = docPos >= 0 ? docPos : null
     }
-    if (!originalIndex || Number.isNaN(originalIndex) || originalIndex <= 0) {
+
+    if (finalIndex == null || Number.isNaN(finalIndex) || finalIndex < 0) {
       return ""
-    }
-    
-    // If citationMap exists (streaming), remap the index
-    // Otherwise (DB-loaded), use direct index mapping
-    let finalIndex: number
-    if (citationMap && citationMap[originalIndex] !== undefined) {
-      // Streaming: remap using citationMap
-      finalIndex = citationMap[originalIndex]
-    } else {
-      // DB-loaded: direct mapping (text already has final indices)
-      finalIndex = originalIndex - 1 // Convert [1] to array index 0
     }
     
     const url = citationUrls?.[finalIndex]
