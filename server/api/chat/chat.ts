@@ -496,6 +496,11 @@ const checkAndYieldCitations = async function* (
   const textToChunkCitationIndexWithDocKey =
     /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
 
+  // Reset global RegExp state so this function can be called repeatedly per request.
+  textToCitationIndex.lastIndex = 0
+  textToImageCitationIndex.lastIndex = 0
+  textToChunkCitationIndex.lastIndex = 0
+
   // Iterate through citation tokens in a way that avoids consuming matches from
   // multiple regexes in the same step (regexes all have `g` state via `lastIndex`).
   while (true) {
