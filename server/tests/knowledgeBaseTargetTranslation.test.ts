@@ -344,28 +344,36 @@ async function runSearchAndCapture(params: any) {
   let capturedProcessedSelections: any = null
   let capturedYql = ""
 
-  const searchExecutor = mock(async (options: any): Promise<MinimalAgentFragment[]> => {
+  const searchExecutor = mock(
+    async (options: any): Promise<{
+      fragments: MinimalAgentFragment[]
+      rawDocuments: any[]
+    }> => {
     capturedSelections = options.collectionSelections
     capturedProcessedSelections = await extractCollectionVespaIds({
       collectionSelections: options.collectionSelections,
     } as any)
     capturedYql = buildKnowledgeBaseYql(capturedProcessedSelections)
 
-    return [
-      {
-        id: "fragment-1",
-        content: "hit",
-        source: {
-          docId: "clf-spec",
-          title: "spec.md",
-          url: "",
-          app: Apps.KnowledgeBase,
-          entity: KnowledgeBaseEntity.File,
+    return {
+      fragments: [
+        {
+          id: "fragment-1",
+          content: "hit",
+          source: {
+            docId: "clf-spec",
+            title: "spec.md",
+            url: "",
+            app: Apps.KnowledgeBase,
+            entity: KnowledgeBaseEntity.File,
+          },
+          confidence: 0.9,
         },
-        confidence: 0.9,
-      },
-    ]
-  })
+      ],
+      rawDocuments: [],
+    }
+  },
+  )
 
   const result = await executeSearchKnowledgeBase(params, createContext(), {
     repo: repo as any,

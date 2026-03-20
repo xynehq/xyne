@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentRunContext } from "@/api/chat/agent-schemas"
 import {
+  chunkKeyFromContent,
+  createDocumentState,
+  getAllImagesFromDocumentMemory,
+} from "@/api/chat/document-memory"
+import {
   __messageAgentsHistoryInternals,
   __messageAgentsMetadataInternals,
   __messageAgentsPromptInternals,
@@ -12,12 +17,12 @@ import {
   buildReviewRequest,
   buildReviewPromptFromContext,
 } from "@/api/chat/message-agents"
-import { getRecentImagesFromContext } from "@/api/chat/runContextUtils"
 import { SynthesizeFinalAnswerInputSchema } from "@/api/chat/tool-schemas"
 import { buildMCPJAFTools } from "@/api/chat/jaf-adapter"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import { Apps } from "@xyne/vespa-ts/types"
+import { XyneTools } from "@/shared/types"
 import { createRunId, createTraceId } from "@xynehq/jaf"
 
 const baseFragment: MinimalAgentFragment = {
@@ -33,7 +38,8 @@ const baseFragment: MinimalAgentFragment = {
   confidence: 0.9,
 }
 
-const createMockContext = (): AgentRunContext => ({
+const createMockContext = (): AgentRunContext => {
+  const context: AgentRunContext = {
   user: {
     email: "tester@example.com",
     workspaceId: "workspace",
@@ -59,18 +65,12 @@ const createMockContext = (): AgentRunContext => ({
   clarifications: [],
   ambiguityResolved: true,
   toolCallHistory: [],
-  seenDocuments: new Set<string>(),
-  allFragments: [],
-  turnFragments: new Map(),
-  allImages: [],
-  imagesByTurn: new Map(),
-  recentImages: [],
+  documentMemory: new Map(),
+  currentTurnDocumentMemory: new Map(),
   currentTurnArtifacts: {
-    fragments: [],
-    unrankedFragmentsByTool: new Map(),
     expectations: [],
     toolOutputs: [],
-    images: [],
+    syntheticDocs: [],
     executionToolsCalled: 0,
     todoWriteCalled: false,
     turnStartedAt: Date.now(),
@@ -96,6 +96,8 @@ const createMockContext = (): AgentRunContext => ({
     lockedByFinalSynthesis: false,
     lockedAtTurn: null,
   },
+  turnRankedCount: new Map(),
+  turnNewChunksCount: new Map(),
   decisions: [],
   finalSynthesis: {
     requested: false,
@@ -105,10 +107,63 @@ const createMockContext = (): AgentRunContext => ({
     ackReceived: false,
   },
   stopRequested: false,
-})
+  }
+
+  // Legacy helper used by excludedIds injection tests (not part of AgentRunContext)
+  ;(context as any).seenDocuments = new Set<string>()
+  return context
+}
 
 describe("message-agents context tracking", () => {
-  test("afterToolExecutionHook stores fragments and images in context collections", async () => {
+  test("run_public_agent with no rawDocuments creates a synthetic DocumentState", async () => {
+    const context = createMockContext()
+
+    await afterToolExecutionHook(
+      XyneTools.runPublicAgent,
+      {
+        status: "success",
+        data: {
+          resultSummary: "Delegate found something but gave no citations.",
+          rawDocuments: [],
+          citations: [],
+          agentId: "agent-123",
+        },
+      },
+      {
+        toolCall: { id: "call-delegate-1" } as any,
+        args: { agentId: "agent-123", query: "test" },
+        state: {
+          context,
+          messages: [],
+          runId: createRunId("run-delegate-1"),
+          traceId: createTraceId("trace-delegate-1"),
+          currentAgentName: "xyne-agent",
+          turnCount: 1,
+        },
+        agentName: "xyne-agent",
+        executionTime: 10,
+        status: "success",
+      },
+      context.message.text,
+      [],
+      undefined,
+      context.turnCount,
+    )
+
+    // Delegated agent outputs now always produce a delegated attribution fragment
+    // via buildDelegatedAgentFragments (even when there are no citations/rawDocuments),
+    // so the synthetic DocumentState path is no longer used.
+    expect(context.currentTurnArtifacts.syntheticDocs.length).toBe(0)
+    expect(context.currentTurnArtifacts.toolOutputs.length).toBe(1)
+    expect(context.currentTurnArtifacts.toolOutputs[0].toolName).toBe(
+      XyneTools.runPublicAgent,
+    )
+    expect(context.currentTurnArtifacts.toolOutputs[0].resultSummary).toContain(
+      "Delegate found something",
+    )
+  })
+
+  test("afterToolExecutionHook stores rawDocuments in documentMemory and toolOutputs", async () => {
     const context = createMockContext()
     const imageRef = {
       fileName: "0_doc-1_0",
@@ -117,20 +172,33 @@ describe("message-agents context tracking", () => {
       sourceToolName: "searchGlobal",
       isUserAttachment: false,
     }
-    const fragmentWithImage: MinimalAgentFragment = {
-      ...baseFragment,
-      images: [imageRef],
-    }
+    const rawDocuments = [
+      {
+        docId: baseFragment.id,
+        relevance: 0.8,
+        source: baseFragment.source,
+        chunks: [
+          {
+            chunkKey: "c:1",
+            content: baseFragment.content,
+            score: 0.8,
+          },
+        ],
+        vespaHit: {
+          relevance: 0.8,
+          fields: { sddocname: "file", docId: baseFragment.id },
+        },
+      } as any,
+    ]
 
     await afterToolExecutionHook(
       "searchGlobal",
       {
         status: "success",
-        metadata: {
-          contexts: [fragmentWithImage],
-        },
+        metadata: {},
         data: {
           result: "Found ARR updates.",
+          rawDocuments,
         },
       },
       {
@@ -150,17 +218,17 @@ describe("message-agents context tracking", () => {
       },
       context.message.text,
       [],
-      new Set<string>(),
       undefined,
       context.turnCount
     )
 
-    // With deferred ranking, afterToolExecutionHook stores fragments in
-    // unrankedFragmentsByTool instead of allFragments. Key is "toolName:query".
-    // Ranking + recording into allFragments happens at turn-end via batchRankFragments.
-    const entry = context.currentTurnArtifacts.unrankedFragmentsByTool.get("searchGlobal:ARR")
-    expect(entry?.fragments).toHaveLength(1)
-    expect(entry?.query).toBe("ARR")
+    // Tool results are buffered and merged into currentTurnDocumentMemory at turn-end
+    expect(context.currentTurnDocumentMemory.size).toBe(0)
+    const toolOutput = context.currentTurnArtifacts.toolOutputs.find(
+      (o) => o.toolName === "searchGlobal"
+    )
+    expect(toolOutput?.rawDocuments).toHaveLength(1)
+    expect(toolOutput?.query).toBe("ARR")
     expect(context.currentTurnArtifacts.executionToolsCalled).toBe(1)
   })
 
@@ -203,7 +271,6 @@ describe("message-agents context tracking", () => {
       },
       context.message.text,
       [],
-      new Set<string>(),
       undefined,
       context.turnCount
     )
@@ -212,8 +279,6 @@ describe("message-agents context tracking", () => {
     // is populated at turn-end when ranked fragments are recorded. So after the hook we only
     // have the entry in unrankedFragmentsByTool. Simulate turn-end having run so excludedIds
     // can be verified: add the docId to seenDocuments (as turn-end recording would).
-    context.seenDocuments.add("doc-1")
-
     const preparedArgs = await beforeToolExecutionHook(
       "searchGlobal",
       {
@@ -223,7 +288,7 @@ describe("message-agents context tracking", () => {
       context
     )
 
-    expect(preparedArgs.excludedIds).toEqual(["doc-1"])
+    expect(preparedArgs.excludedIds).toEqual([])
   }, 15000)
 
   test("afterToolExecutionHook enforces strict metadata constraints when no compliant docs exist", async () => {
@@ -264,16 +329,15 @@ describe("message-agents context tracking", () => {
       },
       'Answer only from source "Q4 Planning".',
       [],
-      new Set<string>(),
       undefined,
       context.turnCount
     )
 
-    expect(context.allFragments).toHaveLength(0)
-    expect(context.currentTurnArtifacts.fragments).toHaveLength(0)
+    // No rawDocuments when strict metadata has no compliant docs → nothing merged into current-turn memory
+    expect(context.currentTurnDocumentMemory.size).toBe(0)
   }, 15000)
 
-  test("buildReviewPromptFromContext includes first-review memory context", () => {
+  test("buildReviewPromptFromContext includes first-review memory context", async () => {
     const context = createMockContext()
     context.plan = {
       goal: "Deliver ARR update",
@@ -291,7 +355,6 @@ describe("message-agents context tracking", () => {
       arguments: { query: "ARR" },
       status: "success",
       resultSummary: "Located 2 docs",
-      fragments: [baseFragment],
     })
     context.currentTurnArtifacts.expectations.push({
       toolName: "searchGlobal",
@@ -307,19 +370,15 @@ describe("message-agents context tracking", () => {
       "Assistant thinking: Pull supporting evidence from the strongest fragment.",
       "Assistant: ARR grew 12%.",
     ].join("\n")
-    context.currentTurnArtifacts.images.push({
-      fileName: "0_doc-1_0",
-      addedAtTurn: 1,
-      sourceFragmentId: baseFragment.id,
-      sourceToolName: "searchGlobal",
-      isUserAttachment: true,
-    })
-    context.allImages.push(...context.currentTurnArtifacts.images)
+    context.documentMemory.set("doc-1", createDocumentState("doc-1", baseFragment.source))
+    context.documentMemory.get("doc-1")!.images = [
+      { fileName: "doc-1_0", isAttachment: true },
+    ]
 
-    const { prompt, imageFileNames } = buildReviewPromptFromContext(context, {
-      focus: "turn_end",
-      turnNumber: 1,
-    })
+    const { prompt, imageFileNames } = await buildReviewPromptFromContext(
+      context,
+      { focus: "turn_end", turnNumber: 1 },
+    )
 
     expect(imageFileNames).toEqual(["0_doc-1_0"])
     expect(prompt).toContain("User Question")
@@ -336,7 +395,7 @@ describe("message-agents context tracking", () => {
     expect(prompt).toContain("Review Focus")
   })
 
-  test("buildReviewRequest prepends conversation history only on first review", () => {
+  test("buildReviewRequest prepends conversation history only on first review", async () => {
     const context = createMockContext()
     context.conversationHistoryMessages = [
       {
@@ -356,7 +415,7 @@ describe("message-agents context tracking", () => {
       "Assistant: ARR grew 12%.",
     ].join("\n")
 
-    const request = buildReviewRequest(context, {
+    const request = await buildReviewRequest(context, {
       focus: "turn_end",
       turnNumber: 1,
     })
@@ -373,7 +432,7 @@ describe("message-agents context tracking", () => {
     expect(request.prompt).not.toContain("Assistant thinking:")
   })
 
-  test("buildReviewRequest keeps later reviews on single prompt without memory context", () => {
+  test("buildReviewRequest keeps later reviews on single prompt without memory context", async () => {
     const context = createMockContext()
     context.conversationHistoryMessages = [
       {
@@ -404,11 +463,11 @@ describe("message-agents context tracking", () => {
       ambiguityResolved: true,
     }
 
-    const { prompt } = buildReviewPromptFromContext(context, {
+    const { prompt } = await buildReviewPromptFromContext(context, {
       focus: "turn_end",
       turnNumber: 2,
     })
-    const request = buildReviewRequest(context, {
+    const request = await buildReviewRequest(context, {
       focus: "turn_end",
       turnNumber: 2,
     })
@@ -460,19 +519,40 @@ describe("message-agents context tracking", () => {
     )
   })
 
-  test("buildDelegatedAgentFragments synthesizes citation when no context provided", () => {
-    const fragments = buildDelegatedAgentFragments({
-      result: { data: { result: "Delegate says hello." } },
-      gatheredFragmentsKeys: new Set(),
-      agentId: "agent-123",
-      agentName: "Delegate",
-      sourceToolName: "run_public_agent",
-      turnNumber: 3,
-    })
+  test("buildDelegatedAgentFragments adds response fragment only when citations absent", () => {
+    const gathered = new Set<string>()
+    const turnNumber = 3
 
-    expect(fragments).toHaveLength(1)
-    expect(fragments[0].source.app).toBe(Apps.Xyne)
-    expect(fragments[0].content).toContain("Delegate")
+    const withCitations = buildDelegatedAgentFragments({
+      result: {
+        data: {
+          result: "Agent says hi",
+          citations: [baseFragment.source],
+        },
+      },
+      agentId: "agent-123",
+      agentName: "Test Agent",
+      turnNumber,
+      sourceToolName: "run_public_agent",
+    })
+    expect(withCitations.length).toBe(1)
+    expect(withCitations[0].id).not.toContain(":response:")
+
+    const noCitations = buildDelegatedAgentFragments({
+      result: {
+        data: {
+          result: "Agent says hi",
+          citations: [],
+        },
+      },
+      agentId: "agent-123",
+      agentName: "Test Agent",
+      turnNumber,
+      sourceToolName: "run_public_agent",
+    })
+    expect(noCitations.length).toBe(1)
+    expect(noCitations[0].id).toContain(":turn:3")
+    expect(noCitations[0].content).toContain("Agent says hi")
   })
 
   test("buildConversationHistoryForAgentRun normalizes context JSON and filters invalid turns", () => {
@@ -517,40 +597,19 @@ describe("message-agents context tracking", () => {
     expect((llmHistory[1] as any).role).toBe("assistant")
   })
 
-  test("getRecentImagesFromContext prioritizes attachments and last two turns", () => {
+  test("getAllImagesFromDocumentMemory prefixes by doc order", () => {
     const context = createMockContext()
-    context.currentTurnArtifacts.images.push({
-      fileName: "current",
-      addedAtTurn: 3,
-      sourceFragmentId: "frag-current",
-      sourceToolName: "searchGlobal",
-      isUserAttachment: true,
-    })
-    context.recentImages = [
-      {
-        fileName: "turn2",
-        addedAtTurn: 2,
-        sourceFragmentId: "frag-2",
-        sourceToolName: "searchDriveFiles",
-        isUserAttachment: false,
-      },
-      {
-        fileName: "turn1",
-        addedAtTurn: 1,
-        sourceFragmentId: "frag-1",
-        sourceToolName: "searchGmail",
-        isUserAttachment: false,
-      },
-    ]
+    context.documentMemory.set("doc-a", createDocumentState("doc-a", baseFragment.source))
+    context.documentMemory.set("doc-b", createDocumentState("doc-b", baseFragment.source))
+    context.documentMemory.get("doc-a")!.images = [{ fileName: "doc-a_0", isAttachment: true }]
+    context.documentMemory.get("doc-b")!.images = [{ fileName: "doc-b_0", isAttachment: false }]
 
-    const selected = getRecentImagesFromContext(context)
-    expect(Array.isArray(selected)).toBe(true)
-    // When image context is disabled we get []; skip order assertions.
-    if (selected.length === 0) return
-    // Attachments first, then by turn (newest first); result capped by maxImagesPerCall.
-    expect(selected[0]).toBe("current")
-    expect(selected).toContain("turn2")
-    expect(selected).not.toContain("duplicate")
+    const { imageFileNamesForModel } = getAllImagesFromDocumentMemory(
+      context.documentMemory,
+      { docOrder: ["doc-b", "doc-a"], maxImages: 10 },
+    )
+
+    expect(imageFileNamesForModel).toEqual(["0_doc-b_0", "1_doc-a_0"])
   })
 
   test("buildMCPJAFTools synthesizes fragments when MCP response only has text", async () => {
@@ -613,7 +672,7 @@ describe("message-agents context tracking", () => {
     expect(ranked.rankedCandidates[0].fragment.id).toBe("doc-2")
   })
 
-  test("final synthesis payload includes metadata-enriched fragment context", () => {
+  test("final synthesis payload includes metadata-enriched fragment context", async () => {
     const context = createMockContext()
     context.dedicatedAgentSystemPrompt =
       "You are an enterprise agent. Always use verified workspace evidence."
@@ -624,18 +683,24 @@ describe("message-agents context tracking", () => {
       "Assistant thinking: Identify the strongest evidence first.",
       "Assistant: ARR grew last quarter.",
     ].join("\n")
-    context.allFragments = [
-      {
-        ...baseFragment,
-        source: {
-          ...baseFragment.source,
-          page_title: "Quarterly Planning Sheet",
-          status: "Open",
-        },
-      },
-    ]
+    const fragmentSource = {
+      ...baseFragment.source,
+      page_title: "Quarterly Planning Sheet",
+      status: "Open",
+    }
+    const doc = createDocumentState(baseFragment.id, fragmentSource)
+    doc.chunks.set(chunkKeyFromContent(baseFragment.content), {
+      content: baseFragment.content,
+      firstSeenTurn: 1,
+      lastSeenTurn: 1,
+      confidence: baseFragment.confidence ?? 0.7,
+      queries: [],
+    })
+    doc.relevanceScore = 0.8
+    doc.maxScore = 0.7
+    context.documentMemory.set(doc.docId, doc)
 
-    const payload = buildFinalSynthesisPayload(context)
+    const payload = await buildFinalSynthesisPayload(context)
     expect(payload.userMessage).toContain("Agent System Prompt Context:")
     expect(payload.userMessage).toContain("This is the system prompt of agent:")
     expect(payload.userMessage).toContain("<system prompt>")
@@ -660,7 +725,7 @@ describe("message-agents context tracking", () => {
     expect(payload.userMessage).toContain("Quarterly ARR grew 12%")
   })
 
-  test("final synthesis request keeps prior conversation as separate messages", () => {
+  test("final synthesis request keeps prior conversation as separate messages", async () => {
     const context = createMockContext()
     context.conversationHistoryMessages = [
       {
@@ -673,7 +738,7 @@ describe("message-agents context tracking", () => {
       },
     ]
 
-    const request = buildFinalSynthesisRequest(context, {
+    const request = await buildFinalSynthesisRequest(context, {
       insightsUsefulForAnswering:
         "Lead with the ARR delta before discussing supporting evidence.",
     })

@@ -754,7 +754,13 @@ describe("searchKnowledgeBase", () => {
   test("agent-scoped KB access does not widen", async () => {
     const repo = createRepo()
     const searchExecutor = mock(
-      async (): Promise<MinimalAgentFragment[]> => [],
+      async (): Promise<{
+        fragments: MinimalAgentFragment[]
+        rawDocuments: any[]
+      }> => ({
+        fragments: [],
+        rawDocuments: [],
+      }),
     )
     const result = await executeSearchKnowledgeBase(
       {
@@ -785,7 +791,13 @@ describe("searchKnowledgeBase", () => {
   test("rejects out-of-scope collection and path search targets before resolving snapshots", async () => {
     const collectionRepo = createRepo()
     const collectionSearchExecutor = mock(
-      async (): Promise<MinimalAgentFragment[]> => [],
+      async (): Promise<{
+        fragments: MinimalAgentFragment[]
+        rawDocuments: any[]
+      }> => ({
+        fragments: [],
+        rawDocuments: [],
+      }),
     )
     const collectionResult = await executeSearchKnowledgeBase(
       {
@@ -816,7 +828,13 @@ describe("searchKnowledgeBase", () => {
 
     const pathRepo = createRepo()
     const pathSearchExecutor = mock(
-      async (): Promise<MinimalAgentFragment[]> => [],
+      async (): Promise<{
+        fragments: MinimalAgentFragment[]
+        rawDocuments: any[]
+      }> => ({
+        fragments: [],
+        rawDocuments: [],
+      }),
     )
     const pathResult = await executeSearchKnowledgeBase(
       {
@@ -850,7 +868,13 @@ describe("searchKnowledgeBase", () => {
   test("rejects out-of-scope folder and file search targets before resolving snapshots", async () => {
     const folderRepo = createRepo()
     const folderSearchExecutor = mock(
-      async (): Promise<MinimalAgentFragment[]> => [],
+      async (): Promise<{
+        fragments: MinimalAgentFragment[]
+        rawDocuments: any[]
+      }> => ({
+        fragments: [],
+        rawDocuments: [],
+      }),
     )
     const folderResult = await executeSearchKnowledgeBase(
       {
@@ -881,7 +905,13 @@ describe("searchKnowledgeBase", () => {
 
     const fileRepo = createRepo()
     const fileSearchExecutor = mock(
-      async (): Promise<MinimalAgentFragment[]> => [],
+      async (): Promise<{
+        fragments: MinimalAgentFragment[]
+        rawDocuments: any[]
+      }> => ({
+        fragments: [],
+        rawDocuments: [],
+      }),
     )
     const fileResult = await executeSearchKnowledgeBase(
       {
@@ -930,11 +960,14 @@ describe("searchKnowledgeBase", () => {
 
     let capturedSelections: unknown = null
     const searchExecutor = mock(
-      async (options: any): Promise<MinimalAgentFragment[]> => {
+      async (options: any): Promise<{
+        fragments: MinimalAgentFragment[]
+        rawDocuments: any[]
+      }> => {
         capturedSelections = options.collectionSelections
-        return fragments
+        return { fragments, rawDocuments: [] } as any
       },
-    ) as SearchExecutor
+    ) as unknown as SearchExecutor
 
     const result = await executeSearchKnowledgeBase(
       {
@@ -965,9 +998,12 @@ describe("searchKnowledgeBase", () => {
         collectionFolderIds: [apiFolder.id],
       },
     ])
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: "success",
-      data: fragments,
+      data: {
+        fragments,
+        rawDocuments: [],
+      },
     })
   })
 })
