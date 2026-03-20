@@ -491,43 +491,44 @@ const checkAndYieldCitations = async function* (
   let match
   let imgMatch
   let chunkMatch = null
+  let chunkDocKeyMatch = null
 
-  while (
-    (match = textToCitationIndex.exec(text)) !== null ||
-    (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
-    (allowChunkCitations &&
-      (chunkMatch = textToChunkCitationIndex.exec(text)) !== null)
-  ) {
-    if (match || chunkMatch) {
-        let citationIndex = 0
-        if (match) {
-          citationIndex = parseInt(match[1], 10)
-        } else if (chunkMatch) {
-          citationIndex = parseInt(chunkMatch[1].split("_")[0], 10)
-        }
-        if (!yieldedCitations.has(citationIndex)) {
-          const item = results[citationIndex - baseIndex]
-          if (item) {
-            // TODO: fix this properly, empty citations making streaming broke
-            const f = (item as any)?.fields
-            if (f?.sddocname === dataSourceFileSchema) {
-              // Skip datasource files from citations
-              continue
-            }
-            yield {
-              citation: {
-                index: citationIndex,
-                item: searchToCitation(item as VespaSearchResults),
-              },
-            }
-            yieldedCitations.add(citationIndex)
-          } else {
-            loggerWithChild({ email: email }).error(
-              `Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
-            )
+  const textToChunkCitationIndexWithDocKey =
+    /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
+
+  // Iterate through citation tokens in a way that avoids consuming matches from
+  // multiple regexes in the same step (regexes all have `g` state via `lastIndex`).
+  while (true) {
+    match = textToCitationIndex.exec(text)
+    if (match) {
+      const citationIndex = parseInt(match[1], 10)
+      if (!yieldedCitations.has(citationIndex)) {
+        const item = results[citationIndex - baseIndex]
+        if (item) {
+          // TODO: fix this properly, empty citations making streaming broke
+          const f = (item as any)?.fields
+          if (f?.sddocname === dataSourceFileSchema) {
+            // Skip datasource files from citations
+            continue
           }
+          yield {
+            citation: {
+              index: citationIndex,
+              item: searchToCitation(item as VespaSearchResults),
+            },
+          }
+          yieldedCitations.add(citationIndex)
+        } else {
+          loggerWithChild({ email: email }).error(
+            `Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
+          )
         }
-    } else if (imgMatch) {
+      }
+      continue
+    }
+
+    imgMatch = textToImageCitationIndex.exec(text)
+    if (imgMatch) {
       const parts = imgMatch[1].split("_")
       if (parts.length >= 2) {
         const docIndex = parseInt(parts[0], 10)
@@ -578,7 +579,88 @@ const checkAndYieldCitations = async function* (
           }
         }
       }
+      continue
     }
+
+    if (allowChunkCitations) {
+      chunkMatch = textToChunkCitationIndex.exec(text)
+      if (chunkMatch) {
+        const citationIndex = parseInt(chunkMatch[1].split("_")[0], 10)
+        if (!yieldedCitations.has(citationIndex)) {
+          const item = results[citationIndex - baseIndex]
+          if (item) {
+            const f = (item as any)?.fields
+            if (f?.sddocname === dataSourceFileSchema) {
+              // Skip datasource files from citations
+              continue
+            }
+            yield {
+              citation: {
+                index: citationIndex,
+                item: searchToCitation(item as VespaSearchResults),
+              },
+            }
+            yieldedCitations.add(citationIndex)
+          } else {
+            loggerWithChild({ email: email }).error(
+              `Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
+            )
+          }
+        }
+        continue
+      }
+
+      // Fallback for weaker models emitting KB citations like:
+      //   K[<docKey>_<chunkIndex>]  e.g. K[attf_<uuid>_21]
+      chunkDocKeyMatch = textToChunkCitationIndexWithDocKey.exec(text)
+      if (chunkDocKeyMatch) {
+        const docKey = chunkDocKeyMatch[1]
+        let citationIndex: number | null = null
+
+        if (/^\d+$/.test(docKey)) {
+          citationIndex = parseInt(docKey, 10)
+        } else {
+          const docPos = results.findIndex((r) => {
+            const fields = (r as any)?.fields
+            return fields?.docId === docKey || (r as any)?.id === docKey
+          })
+          citationIndex = docPos >= 0 ? baseIndex + docPos + 1 : null
+        }
+
+        if (!citationIndex || Number.isNaN(citationIndex) || citationIndex <= 0) {
+          loggerWithChild({ email: email }).warn(
+            "[checkAndYieldCitations] Found KB citation but could not resolve numeric index",
+            { rawChunkKey: docKey },
+          )
+          continue
+        }
+
+        if (!yieldedCitations.has(citationIndex)) {
+          const item = results[citationIndex - baseIndex]
+          if (item) {
+            const f = (item as any)?.fields
+            if (f?.sddocname === dataSourceFileSchema) {
+              // Skip datasource files from citations
+              continue
+            }
+            yield {
+              citation: {
+                index: citationIndex,
+                item: searchToCitation(item as VespaSearchResults),
+              },
+            }
+            yieldedCitations.add(citationIndex)
+          } else {
+            loggerWithChild({ email: email }).error(
+              `Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
+            )
+          }
+        }
+        continue
+      }
+    }
+
+    break
   }
 }
 

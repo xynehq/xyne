@@ -1,12 +1,17 @@
 import { useRef, useLayoutEffect, useState, useCallback } from "react"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
+import type { Citation } from "@/components/CitationLink"
 
 // Helper function to generate UUID
 export const generateUUID = () => crypto.randomUUID()
 
 export const textToCitationIndex = /\[(\d+)\]/g
 export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
-export const textToChunkCitationIndex = /K\[(\d+_\d+)\]/g
+// KB citations emitted by stronger models:
+//   K[<docIndex>_<chunkIndex>] e.g. K[1_21]
+// We also support weaker models emitting doc keys directly:
+//   K[<docKey>_<chunkIndex>] e.g. K[docId_21]
+export const textToChunkCitationIndex = /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
 
 // Function to clean citation numbers from response text
 export const cleanCitationsFromResponse = (text: string): string => {
@@ -23,10 +28,26 @@ export const processMessage = (
   text: string,
   citationMap: Record<number, number> | undefined,
   citationUrls: string[],
+  citations?: Citation[],
 ) => {
   if (!text) return ""
   
   text = splitGroupedCitationsWithSpaces(text)
+
+  // When streaming, token indices are "absolute" (can start after prior batches).
+  // `citations` is just an array for this message; derive the absolute offset from
+  // `citationMap` keys so `K[<docKey>_<chunk>]` can be resolved even if the base
+  // index isn't 0.
+  const citationMapAbsoluteOffset: number | null =
+    citationMap && citations && citations.length > 0
+      ? (() => {
+          const numericKeys = Object.keys(citationMap)
+            .map((k) => Number.parseInt(k, 10))
+            .filter((n) => !Number.isNaN(n))
+          if (!numericKeys.length) return null
+          return Math.min(...numericKeys) - 1
+        })()
+      : null
   
   // Handle image citations
   text = text.replace(
@@ -45,10 +66,29 @@ export const processMessage = (
   // Handle KB citations
   // Case 1: K[docId_chunkIndex] format (during streaming, before backend processing)
   // Case 2: [N_chunkIndex] format (after backend processing or from DB)
-  text = text.replace(textToChunkCitationIndex, (_, citationKey) => {
-    const parts = citationKey.split("_")
-    const originalIndex = parseInt(parts[0], 10)
-    const chunkIndex = parseInt(parts[1], 10)
+  text = text.replace(textToChunkCitationIndex, (_, docKey, chunkIndexStr) => {
+    const chunkIndex = parseInt(chunkIndexStr, 10)
+
+    // Map docKey -> original numeric citation index (1-based)
+    let originalIndex: number | null = null
+    if (/^\d+$/.test(docKey)) {
+      originalIndex = parseInt(docKey, 10)
+    } else if (citations) {
+      const docPos = citations.findIndex(
+        (c) => c.docId === docKey || c.itemId === docKey,
+      )
+      if (docPos >= 0) {
+        originalIndex =
+          citationMapAbsoluteOffset != null
+            ? citationMapAbsoluteOffset + docPos + 1
+            : docPos + 1
+      } else {
+        originalIndex = null
+      }
+    }
+    if (!originalIndex || Number.isNaN(originalIndex) || originalIndex <= 0) {
+      return ""
+    }
     
     // If citationMap exists (streaming), remap the index
     // Otherwise (DB-loaded), use direct index mapping
@@ -64,7 +104,12 @@ export const processMessage = (
     const url = citationUrls?.[finalIndex]
     
     // Show citation number even if URL is missing
-    if (typeof finalIndex === "number" && typeof chunkIndex === "number" && finalIndex >= 0) {
+    if (
+      typeof finalIndex === "number" &&
+      typeof chunkIndex === "number" &&
+      finalIndex >= 0 &&
+      chunkIndex >= 0
+    ) {
       return url ? `[${finalIndex + 1}_${chunkIndex}](${url})` : `[${finalIndex + 1}_${chunkIndex}]`
     }
     return ""

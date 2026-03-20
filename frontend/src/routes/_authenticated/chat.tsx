@@ -2872,7 +2872,7 @@ export const ChatMessage = ({
                 ) : message !== "" ? (
                   <MarkdownPreview
                     key={`markdown-${messageId || "unknown"}`}
-                    source={processMessage(message, citationMap, citationUrls)}
+                      source={processMessage(message, citationMap, citationUrls, citations)}
                     wrapperElement={{
                       "data-color-mode": theme,
                     }}

@@ -155,6 +155,7 @@ const ChatMessage = React.memo(
                         message,
                         citationMap,
                         citationUrls,
+                        citations,
                       )}
                       wrapperElement={{
                         "data-color-mode": theme,
