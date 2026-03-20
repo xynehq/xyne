@@ -82,6 +82,20 @@ export type WorkingSet = {
 
 const MAX_FILES = 12
 
+/**
+ * Deduplication key for fragments: Vespa document id when present, otherwise fragment id.
+ * Used so the same document is not stored or re-fetched under different synthetic ids.
+ * NOTE: Current pipeline uses this to keep only ONE fragment per doc (drop/replace others),
+ * which can lose chunks when the same doc is returned from multiple queries. See
+ * server/api/chat/docs/fragments-dedupe-analysis.md for analysis and doc-centric merge design.
+ */
+export function getFragmentDedupKey(fragment: MinimalAgentFragment): string {
+  if (!fragment?.id) return ""
+  const vespaDocId = fragment.source?.docId
+  if (vespaDocId != null && vespaDocId !== "") return vespaDocId
+  return fragment.id
+}
+
 export function collectFollowupContext(
   messages: SelectMessage[],
   maxHops = 12,

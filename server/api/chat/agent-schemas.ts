@@ -9,31 +9,127 @@ import { z } from "zod"
 import type { Message as JAFMessage } from "@xynehq/jaf"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import type {
+  Citation,
   FragmentImageReference,
   MinimalAgentFragment,
 } from "./types"
 import type { ReasoningEventPayload } from "@/shared/types"
+import type { VespaSearchResults } from "@xyne/vespa-ts"
+
+// ============================================================================
+// RAW HITS & DOCUMENT-CENTRIC MEMORY (see docs/memory-architecture-across-turns.md)
+// ============================================================================
+
+/**
+ * One chunk with its BM25/retrieval score. Raw from Vespa (chunks_summary + matchfeatures).
+ * No answerContextMap — use only when merging and when building display via answerContextMap at filter/review/synthesis.
+ */
+export interface RawChunkWithScore {
+  /** Stable key for dedupe (e.g. index or hash). */
+  chunkKey: string
+  /** Raw chunk text from Vespa. */
+  content: string
+  /** Chunk-level score from Vespa (e.g. bm25(chunks)). */
+  score: number
+}
+
+/**
+ * Raw Vespa document: one doc with all its chunks and scores. No expanded/truncated content.
+ * answerContextMap is used only when building MinimalAgentFragment for filtering, review, synthesis.
+ */
+export interface ToolRawDocument {
+  docId: string
+  /** Document-level relevance from Vespa. */
+  relevance: number
+  source: Citation
+  /** All chunks for this doc with their scores (from chunks_summary + matchfeatures). */
+  chunks: RawChunkWithScore[]
+  /** Original Vespa hit; required for answerContextMap when building fragment content at filter/review/synthesis. */
+  vespaHit: VespaSearchResults
+}
+
+/**
+ * State for a single chunk within a document. Chunks are deduplicated by chunkKey across turns.
+ */
+export interface ChunkState {
+  content: string
+  firstSeenTurn: number
+  lastSeenTurn: number
+  confidence: number
+  /** Queries that retrieved this chunk (for scoring and provenance). */
+  queries: string[]
+}
+
+/**
+ * Retrieval signal: one (tool, query, confidence, turn) that contributed to this document.
+ * Used for filtering (show which tools/queries found this doc) and for ranking.
+ */
+export interface RetrievalSignal {
+  query: string
+  confidence: number
+  turn: number
+  /** Tool that produced this hit (e.g. searchGlobal). */
+  toolName?: string
+}
+
+export interface DocumentImageReference {
+  /** Raw image file name stored on disk (without docIndex prefix). */
+  fileName: string
+  /** True when the source document is an attachment document. */
+  isAttachment: boolean
+}
+
+/**
+ * Document-centric state: one per docId, accumulated across turns.
+ * Used for review, synthesis, and stagnation; MinimalAgentFragment[] are built on demand from this.
+ */
+export interface DocumentState {
+  docId: string
+  /** Citation for this document (from first hit). Used when building MinimalAgentFragment from chunks. */
+  source: Citation
+  /** All chunks seen across turns; key = chunkKey (hash(content) or chunkId). */
+  chunks: Map<string, ChunkState>
+  /** Every (query, confidence, turn) that produced a hit for this doc. */
+  signals: RetrievalSignal[]
+  /** Max confidence across signals (derived). */
+  maxScore: number
+  /** Aggregated relevance (e.g. max + multi-query bonus + recency). */
+  relevanceScore: number
+  /** Image references extracted from the document fragment content. */
+  images: DocumentImageReference[]
+  /** Last Vespa hit for this doc; used to build fragment content via answerContextMap at filter/review/synthesis. */
+  vespaHit?: VespaSearchResults
+  /** Cached fragment (built via answerContextMap or joined chunks). Invalidated when doc is updated by merge. */
+  cachedFragment?: MinimalAgentFragment
+}
+
+/** Limits for document memory eviction (see memory-architecture-across-turns.md). */
+export const DOCUMENT_MEMORY_MAX_DOCS = 30
+/** Max chunks to keep per document; excess evicted by score (confidence + recency). */
+export const DOCUMENT_MEMORY_MAX_CHUNKS_PER_DOC = 10
+/** Max documents to pass to LLM (context budget). */
+export const DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM = 10
+
+// ============================================================================
+// TOOL OUTPUTS & TURN ARTIFACTS
+// ============================================================================
 
 export interface ToolExecutionRecordWithResult {
   toolName: string
   arguments: Record<string, unknown>
   status: "success" | "error"
   resultSummary?: string
-  fragments?: MinimalAgentFragment[]
+  /** Query string for this invocation (e.g. search term). Used for ranking provenance. */
+  query?: string
+  /** Raw Vespa documents (doc + chunks + scores + vespaHit). Used for merge and for building fragments via answerContextMap at filter/review/synthesis. */
+  rawDocuments?: ToolRawDocument[]
 }
 
 export interface CurrentTurnArtifacts {
-  fragments: MinimalAgentFragment[]
-  /** Raw unranked fragments collected from all tools this turn, keyed by tool name.
-   *  Each tool has an array of retrieval batches so each searchGlobal invocation
-   *  keeps its own { query, fragments } provenance. Ranking is deferred to turn-end. */
-  unrankedFragmentsByTool: Map<
-    string,
-    { query: string; fragments: MinimalAgentFragment[] }
-  >
   expectations: ToolExpectationAssignment[]
   toolOutputs: ToolExecutionRecordWithResult[]
-  images: FragmentImageReference[]
+  /** Synthetic non-Vespa docs (e.g. delegated agent responses without citations). */
+  syntheticDocs: DocumentState[]
   /** Number of execution tools (non-toDoWrite) called this turn */
   executionToolsCalled: number
   /** Whether toDoWrite was called this turn (plan-only turn detection) */
@@ -42,11 +138,13 @@ export interface CurrentTurnArtifacts {
   turnStartedAt: number
 }
 
-/** Enriched fragment entry for turn-end ranking: fragment plus tool name and query used for retrieval. */
+/** Fragment + tool context (used when we build MinimalAgentFragment from DocumentState for ranking). */
 export interface UnrankedFragmentWithToolContext {
   fragment: MinimalAgentFragment
   toolName: string
   toolQuery: string
+  /** All retrieval signals that contributed to this document (tool/query/confidence/turn). */
+  signals: RetrievalSignal[]
 }
 
 // ============================================================================
@@ -111,7 +209,7 @@ export interface Decision {
 export interface ReviewState {
   lastReviewTurn: number | null
   reviewFrequency: number // Review every N turns
-  /** How many entries in allFragments have already been reviewed (incremental review checkpoint). */
+  /** Incremental review checkpoint (e.g. number of docs/chunks already reviewed when using document memory). */
   lastReviewedFragmentIndex: number
   outstandingAnomalies: string[]
   clarificationQuestions: string[]
@@ -202,12 +300,10 @@ export interface AgentRunContext {
 
   // Execution history
   toolCallHistory: ToolExecutionRecord[]
-  seenDocuments: Set<string> // Vespa doc ids already seen (fed into excludedIds to prevent re-fetch)
-  allFragments: MinimalAgentFragment[]
-  turnFragments: Map<number, MinimalAgentFragment[]>
-  allImages: FragmentImageReference[]
-  imagesByTurn: Map<number, FragmentImageReference[]>
-  recentImages: FragmentImageReference[]
+  /** Cross-turn document memory: accumulates reranked docs after each turn; used for synthesis and review. */
+  documentMemory: Map<string, DocumentState>
+  /** Current-turn document memory: raw Vespa docs from tool calls this turn only; used for filtering (reranking); merged into documentMemory after ranking, then cleared. */
+  currentTurnDocumentMemory: Map<string, DocumentState>
   currentTurnArtifacts: CurrentTurnArtifacts
   turnCount: number
 
@@ -233,6 +329,10 @@ export interface AgentRunContext {
 
   // Review state
   review: ReviewState
+  /** Per-turn count of fragments selected by ranker (used for stagnation detection). */
+  turnRankedCount: Map<number, number>
+  /** Per-turn count of new chunks merged into cross-turn document memory (for stagnation: no new info). */
+  turnNewChunksCount: Map<number, number>
 
   // Decision log (for debugging)
   decisions: Decision[]
@@ -411,15 +511,17 @@ export const ToolReviewFindingSchema = z.object({
 })
 
 export const ReviewResultSchema = z.object({
-  status: z.enum(["ok", "needs_attention"]),
-  notes: z.string(),
-  toolFeedback: z.array(ToolReviewFindingSchema),
-  unmetExpectations: z.array(z.string()),
-  planChangeNeeded: z.boolean(),
+  status: z.enum(["ok", "needs_attention"]).default("needs_attention"),
+  notes: z.string().default(""),
+  toolFeedback: z.array(ToolReviewFindingSchema).default([]),
+  unmetExpectations: z.array(z.string()).default([]),
+  planChangeNeeded: z.boolean().default(false),
   planChangeReason: z.string().optional(),
-  anomaliesDetected: z.boolean(),
-  anomalies: z.array(z.string()),
-  recommendation: z.enum(["proceed", "gather_more", "clarify_query", "replan"]),
-  ambiguityResolved: z.boolean(),
-  clarificationQuestions: z.array(z.string()).optional(),
+  anomaliesDetected: z.boolean().default(false),
+  anomalies: z.array(z.string()).default([]),
+  recommendation: z
+    .enum(["proceed", "gather_more", "clarify_query", "replan"])
+    .default("proceed"),
+  ambiguityResolved: z.boolean().default(false),
+  clarificationQuestions: z.array(z.string()).default([]),
 })

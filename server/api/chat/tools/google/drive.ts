@@ -4,7 +4,11 @@ import { ToolErrorCodes, ToolResponse } from "@xynehq/jaf"
 import { Apps, GoogleApps, DriveEntity } from "@xyne/vespa-ts"
 import { getErrorMessage } from "@/utils"
 import { searchGoogleApps } from "@/search/vespa"
-import { formatSearchToolResponse, parseAgentAppIntegrations } from "../utils"
+import {
+  formatSearchToolResponse,
+  formatSearchToolResponseAsRawDocuments,
+  parseAgentAppIntegrations,
+} from "../utils"
 import { extractDriveIds } from "@/search/utils"
 import config from "@/config"
 import type { Ctx, WithExcludedIds } from "../types"
@@ -130,7 +134,11 @@ export const searchDriveFilesTool: Tool<DriveSearchToolParams, Ctx> = {
         searchType: "Drive file",
       })
 
-      return ToolResponse.success(fragments)
+      const rawDocuments = await formatSearchToolResponseAsRawDocuments(
+        searchResults,
+        { email },
+      )
+      return ToolResponse.success({ fragments, rawDocuments })
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(

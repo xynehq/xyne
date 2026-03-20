@@ -1,6 +1,7 @@
 import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import type { MinimalAgentFragment } from "./types"
+import type { RetrievalSignal } from "./agent-schemas"
 
 const METADATA_VALUE_MAX_LENGTH = 220
 const METADATA_TERM_MAX_LENGTH = 96
@@ -197,7 +198,8 @@ export function formatFragmentWithMetadataForRanking(
   fragment: MinimalAgentFragment,
   index: number,
   toolName?: string,
-  toolQuery?: string
+  toolQuery?: string,
+  signals?: RetrievalSignal[]
 ): string {
   const metadataEntries = collectFragmentMetadataEntries(fragment)
   if (typeof fragment.confidence === "number" && Number.isFinite(fragment.confidence)) {
@@ -207,8 +209,24 @@ export function formatFragmentWithMetadataForRanking(
     ? metadataEntries.map(([key, value]) => `- ${key}: ${value}`).join("\n")
     : "- unavailable"
   const rawContent = fragment.content?.trim() || "No content."
+
+  const formattedSignals =
+    signals && signals.length > 0
+      ? signals
+          .map((s) => {
+            const tool = s.toolName ?? "search"
+            const query = truncateValue(normalizeWhitespace(s.query), 120)
+            return `- tool: ${tool} | query: "${query}" | turn: ${s.turn} | confidence: ${s.confidence.toFixed(3)}`
+          })
+          .join("\n")
+      : ""
+
   const toolContext =
-    toolName ? `Retrieved by: ${toolName}${toolQuery ? ` | Query: "${toolQuery}"` : ""}\n` : ""
+    formattedSignals.length > 0
+      ? `Retrieved by signals:\n${formattedSignals}\n`
+      : toolName
+        ? `Retrieved by: ${toolName}${toolQuery ? ` | Query: "${toolQuery}"` : ""}\n`
+        : ""
   return `index ${index + 1} {file context begins here...}
 ${toolContext}Metadata:
 ${metadataBlock}

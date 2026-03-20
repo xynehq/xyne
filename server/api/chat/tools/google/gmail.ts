@@ -6,7 +6,11 @@ import { getErrorMessage } from "@/utils"
 import { expandEmailThreadsInResults } from "@/api/chat/utils"
 import { searchGoogleApps } from "@/search/vespa"
 import config from "@/config"
-import { formatSearchToolResponse, parseAgentAppIntegrations } from "../utils"
+import {
+  formatSearchToolResponse,
+  formatSearchToolResponseAsRawDocuments,
+  parseAgentAppIntegrations,
+} from "../utils"
 import type { Ctx, WithExcludedIds } from "../types"
 import { baseToolParams, createQuerySchema } from "../schemas"
 
@@ -160,7 +164,11 @@ export const searchGmailTool: Tool<GmailSearchToolParams, Ctx> = {
         searchType: "Gmail message",
       })
 
-      return ToolResponse.success(fragments)
+      const rawDocuments = await formatSearchToolResponseAsRawDocuments(
+        searchResults,
+        { email },
+      )
+      return ToolResponse.success({ fragments, rawDocuments })
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(

@@ -34,7 +34,7 @@ import OpenAI from "openai"
 import type { AgentRunContext } from "./agent-schemas"
 import { raceWithStop, throwIfStopRequested } from "./agent-stop"
 import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
-import { getRecentImagesFromContext } from "./runContextUtils"
+import { getImagesFromDocumentMemory } from "./runContextUtils"
 const { IMAGE_CONTEXT_CONFIG } = config
 const IMAGE_BASE_DIR = path.resolve(
   process.env.IMAGE_DIR || "downloads/xyne_images_db",
@@ -293,6 +293,61 @@ export const makeXyneJAFProvider = <Ctx>(
           }
         }
 
+        // Inject multimodal image parts for the last user message.
+        // This mirrors the AI-SDK branch, but uses OpenAI-compatible `image_url`
+        // content parts (data URL).
+        const selectedImages = await getImagesFromDocumentMemory(runContext)
+        const userEmail = runContext?.user?.email || "unknown"
+        if (selectedImages.length > 0) {
+          const lastUserIndex = (() => {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              if ((messages[i] as any)?.role === "user") return i
+            }
+            return -1
+          })()
+
+          if (lastUserIndex !== -1) {
+            const imageParts = await buildLanguageModelImageParts(
+              selectedImages,
+            )
+
+            if (imageParts.length > 0) {
+              const lastUser = messages[lastUserIndex] as any
+              const baseText =
+                typeof lastUser.content === "string" ? lastUser.content : ""
+
+              const contentParts: any[] = []
+              if (baseText) {
+                contentParts.push({ type: "text", text: baseText })
+              }
+
+              for (const { label, filePart } of imageParts) {
+                contentParts.push({ type: "text", text: label })
+                contentParts.push({
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${filePart.mediaType};base64,${Buffer.from(
+                      filePart.data as any,
+                    ).toString("base64")}`,
+                  },
+                })
+              }
+
+              lastUser.content = contentParts
+            } else {
+              loggerWithChild({ email: userEmail }).warn(
+                {
+                  selectedImagesCount: selectedImages.length,
+                  turn: normalizeTurnNumber(runContext?.turnCount),
+                  imageBaseDir: IMAGE_BASE_DIR,
+                  firstSelectedImage: selectedImages[0],
+                },
+                "No valid image parts built for selected images (LiteLLM path)",
+              )
+            }
+          }
+        }
+
         // Build tools in OpenAI format
         const tools = buildFunctionTools(agent).map((tool) => ({
           type: "function" as const,
@@ -415,17 +470,11 @@ export const makeXyneJAFProvider = <Ctx>(
       //   model,
       //   agentName: agent.name,
       // })
-      const selectedImages = getRecentImagesFromContext(runContext)
+      const selectedImages = await getImagesFromDocumentMemory(runContext)
       Logger.debug(
         {
           email: runContext?.user?.email,
           turn: normalizeTurnNumber(runContext?.turnCount),
-          currentTurnImages: runContext?.currentTurnArtifacts?.images?.map(
-            (img) => img.fileName,
-          ),
-          recentWindowImages: runContext?.recentImages?.map(
-            (img) => img.fileName,
-          ),
           selectedImages,
         },
         "[JAF Provider] Prepared image attachments for agent call",

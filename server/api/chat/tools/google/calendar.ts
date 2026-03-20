@@ -5,7 +5,11 @@ import { Apps, GoogleApps } from "@xyne/vespa-ts"
 import { getErrorMessage } from "@/utils"
 import { searchGoogleApps } from "@/search/vespa"
 import config from "@/config"
-import { formatSearchToolResponse, parseAgentAppIntegrations } from "../utils"
+import {
+  formatSearchToolResponse,
+  formatSearchToolResponseAsRawDocuments,
+  parseAgentAppIntegrations,
+} from "../utils"
 import type { Ctx, WithExcludedIds } from "../types"
 import type { EventStatusType } from "@xyne/vespa-ts"
 import { baseToolParams, createQuerySchema } from "../schemas"
@@ -119,7 +123,11 @@ export const searchCalendarEventsTool: Tool<CalendarSearchToolParams, Ctx> = {
         searchType: "Calendar event",
       })
 
-      return ToolResponse.success(fragments)
+      const rawDocuments = await formatSearchToolResponseAsRawDocuments(
+        searchResults,
+        { email },
+      )
+      return ToolResponse.success({ fragments, rawDocuments })
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(

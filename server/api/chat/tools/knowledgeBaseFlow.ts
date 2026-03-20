@@ -1434,7 +1434,7 @@ export async function executeSearchKnowledgeBase(
       "[KnowledgeBase][search] Resolved KB targets into collection selections for Vespa",
     )
 
-    const fragments = await searchExecutor({
+    const { fragments, rawDocuments } = await searchExecutor({
       email,
       query,
       app: Apps.KnowledgeBase,
@@ -1456,7 +1456,7 @@ export async function executeSearchKnowledgeBase(
       )
     }
 
-    return ToolResponse.success(fragments)
+    return ToolResponse.success({ fragments, rawDocuments })
   } catch (error) {
     return ToolResponse.error(
       ToolErrorCodes.EXECUTION_FAILED,

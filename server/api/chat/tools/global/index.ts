@@ -15,6 +15,7 @@ import { getErrorMessage } from "@/utils"
 import { searchVespaAgent, searchVespa } from "@/search/vespa"
 import {
   formatSearchToolResponse,
+  formatSearchToolResponseAsRawDocuments,
   parseAgentAppIntegrations,
 } from "../utils"
 import {
@@ -28,6 +29,7 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import type { MinimalAgentFragment } from "../../types"
 import config from "@/config"
+import type { ToolRawDocument } from "@/api/chat/agent-schemas"
 import {
   buildKnowledgeBaseCollectionSelections,
   KnowledgeBaseScope,
@@ -132,7 +134,7 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         ? Math.min(params.limit, config.maxUserRequestCount) + (offset ?? 0)
         : undefined
 
-      const fragments = await executeVespaSearch({
+      const { fragments, rawDocuments } = await executeVespaSearch({
         email,
         query: queryToUse,
         limit,
@@ -149,7 +151,7 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         workspaceId: context.user.workspaceNumericId,
       })
 
-      return ToolResponse.success(fragments)
+      return ToolResponse.success({ fragments, rawDocuments })
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(
@@ -248,7 +250,7 @@ interface UnifiedSearchOptions {
   workspaceId?: number | null
 }
 
-export async function executeVespaSearch(options: UnifiedSearchOptions): Promise<MinimalAgentFragment[]> {
+export async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{ fragments: MinimalAgentFragment[]; rawDocuments: ToolRawDocument[] }> {
   const {
     email,
     query,
@@ -360,6 +362,8 @@ export async function executeVespaSearch(options: UnifiedSearchOptions): Promise
     )
   }
 
+  const rawDocuments = await formatSearchToolResponseAsRawDocuments(searchResults, { email })
+
   const fragments = await formatSearchToolResponse(searchResults, {
     query,
     app: Array.isArray(app) ? app.join(", ") : app ?? undefined,
@@ -374,7 +378,7 @@ export async function executeVespaSearch(options: UnifiedSearchOptions): Promise
     workspaceId: workspaceId ?? undefined,
   })
 
-  return fragments
+  return { fragments, rawDocuments }
 }
 
 function buildCollectionSelectionsFromIds(

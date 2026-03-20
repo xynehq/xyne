@@ -9,6 +9,7 @@ import {
   type VespaSearchResponse,
   type VespaSearchResults,
 } from "@xyne/vespa-ts"
+import { getSortedScoredChunks } from "@xyne/vespa-ts/mappers"
 import { ChatMemoryEntity } from "@xyne/vespa-ts/types"
 import {
   isAppSelectionMap,
@@ -19,6 +20,10 @@ import {
 import { answerContextMap } from "@/ai/context"
 import type { UserMetadataType } from "@/types"
 import { getDateForAI } from "@/utils/index"
+import type {
+  RawChunkWithScore,
+  ToolRawDocument,
+} from "@/api/chat/agent-schemas"
 import type { Citation, MinimalAgentFragment } from "@/api/chat/types"
 import { getLogger, Subsystem } from "@/logger"
 import config from "@/config"
@@ -99,6 +104,56 @@ export async function formatSearchToolResponse(
   )
 
   return fragments
+}
+
+/**
+ * Return raw Vespa documents: one per hit with all chunks and their scores.
+ * No answerContextMap — content is raw chunk text; use answerContextMap only at filtering, review, synthesis.
+ */
+export async function formatSearchToolResponseAsRawDocuments(
+  searchResults: VespaSearchResponse | null,
+  searchContext: {
+    email?: string
+  },
+): Promise<ToolRawDocument[]> {
+  const children = (searchResults?.root?.children || []).filter(
+    (item): item is VespaSearchResults =>
+      !!(item.fields && "sddocname" in item.fields),
+  )
+
+  if (children.length === 0) return []
+
+  const chunksPerDocument = await getChunkCountPerDoc(
+    children,
+    config.maxChunksPerTool,
+    searchContext.email ?? "",
+  )
+
+  const rawDocuments: ToolRawDocument[] = children.map((r, idx) => {
+    const citation = searchToCitation(r)
+    const fields = r.fields as { chunks_summary?: string[]; matchfeatures?: unknown } | undefined
+    const chunksSummary = fields?.chunks_summary ?? []
+    const matchfeatures = fields?.matchfeatures
+    const scoredChunks = getSortedScoredChunks(
+      matchfeatures as Parameters<typeof getSortedScoredChunks>[0],
+      chunksSummary,
+      chunksPerDocument[idx],
+    )
+    const chunks: RawChunkWithScore[] = scoredChunks.map((sc) => ({
+      chunkKey: `i:${sc.index}`,
+      content: sc.chunk,
+      score: sc.score,
+    }))
+    return {
+      docId: citation.docId,
+      relevance: r.relevance ?? 0.7,
+      source: citation,
+      chunks,
+      vespaHit: r,
+    }
+  })
+
+  return rawDocuments
 }
 
 export type ChatMemoryFragment = {

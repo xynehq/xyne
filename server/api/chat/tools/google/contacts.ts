@@ -5,7 +5,7 @@ import { Apps, GoogleApps } from "@xyne/vespa-ts"
 import { getErrorMessage } from "@/utils"
 import { searchGoogleApps } from "@/search/vespa"
 import config from "@/config"
-import { formatSearchToolResponse } from "../utils"
+import { formatSearchToolResponse, formatSearchToolResponseAsRawDocuments } from "../utils"
 import type { Ctx, WithExcludedIds } from "../types"
 import { baseToolParams, createQuerySchema } from "../schemas"
 
@@ -71,7 +71,11 @@ export const searchGoogleContactsTool: Tool<ContactsSearchToolParams, Ctx> = {
         searchType: "Contact",
       })
 
-      return ToolResponse.success(fragments)
+      const rawDocuments = await formatSearchToolResponseAsRawDocuments(
+        searchResults,
+        { email },
+      )
+      return ToolResponse.success({ fragments, rawDocuments })
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(

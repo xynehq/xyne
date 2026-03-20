@@ -55,6 +55,7 @@ import { getLogger, getLoggerWithChild } from "@/logger"
 import { expandSheetIds } from "@/search/utils"
 import {
   SearchEmailThreads,
+  GetDocumentsByDocIds,
   searchCollectionRAG,
   searchVespaInFiles,
 } from "@/search/vespa"
@@ -117,6 +118,7 @@ import type {
   AgentRunContext,
   AutoReviewInput,
   CurrentTurnArtifacts,
+  DocumentState,
   FinalSynthesisState,
   MCPToolDefinition,
   MCPVirtualAgentRuntime,
@@ -128,6 +130,8 @@ import type {
   ToolExpectation,
   ToolExpectationAssignment,
   ToolFailureInfo,
+  ToolRawDocument,
+  RetrievalSignal,
   UnrankedFragmentWithToolContext,
 } from "./agent-schemas"
 import { ReviewResultSchema, ToolExpectationSchema } from "./agent-schemas"
@@ -177,19 +181,28 @@ import {
   searchKnowledgeBaseTool,
 } from "./tools/knowledgeBaseFlow"
 import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
-import { parseAgentAppIntegrations } from "./tools/utils"
-import type {
-  Citation,
-  FragmentImageReference,
-  ImageCitation,
-  MinimalAgentFragment,
-} from "./types"
+import {
+  formatSearchToolResponseAsRawDocuments,
+  parseAgentAppIntegrations,
+} from "./tools/utils"
+import {
+  documentMemoryToRawDocuments,
+  chunkKeyFromContent,
+  createDocumentState,
+  getFragmentsForSynthesis,
+  getFragmentsForSynthesisForDocs,
+  getDocsWithSignalsInTurnRange,
+  getAllImagesFromDocumentMemory,
+  mergeDocumentStatesIntoDocumentMemory,
+  mergeRawDocumentsIntoDocumentMemory,
+} from "./document-memory"
+import type { Citation, FragmentImageReference, ImageCitation, MinimalAgentFragment } from "./types"
 import {
   checkAndYieldCitationsForAgent,
   collectReferencedFileIdsUntilCompaction,
   extractFileIdsFromMessage,
-  extractImageFileNames,
   isMessageWithContext,
+  getFragmentDedupKey,
   processMessage,
   processThreadResults,
   safeDecodeURIComponent,
@@ -236,15 +249,41 @@ const mutableAgentContext = (
 ): AgentRunContext => context as AgentRunContext
 
 const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
-  fragments: [],
-  unrankedFragmentsByTool: new Map(),
   expectations: [],
   toolOutputs: [],
-  images: [],
+  syntheticDocs: [],
   executionToolsCalled: 0,
   todoWriteCalled: false,
   turnStartedAt: Date.now(),
 })
+
+function mergeToolOutputsIntoCurrentTurnMemory(
+  context: AgentRunContext,
+  turnNumber: number,
+): void {
+  // Rebuild current-turn memory from buffered tool outputs to avoid races
+  // while tools execute in parallel.
+  context.currentTurnDocumentMemory = new Map<string, DocumentState>()
+
+  for (const output of context.currentTurnArtifacts.toolOutputs) {
+    const raw = output.rawDocuments
+    if (!raw || raw.length === 0) continue
+    mergeRawDocumentsIntoDocumentMemory(
+      context.currentTurnDocumentMemory,
+      raw,
+      turnNumber,
+      output.query ?? "",
+      output.toolName,
+    )
+  }
+
+  if (context.currentTurnArtifacts.syntheticDocs.length > 0) {
+    mergeDocumentStatesIntoDocumentMemory(
+      context.currentTurnDocumentMemory,
+      context.currentTurnArtifacts.syntheticDocs,
+    )
+  }
+}
 
 const reviewsAllowed = (context: AgentRunContext): boolean =>
   !context.review.lockedByFinalSynthesis
@@ -406,8 +445,6 @@ export const __messageAgentsPromptInternals = {
   buildReviewSystemPrompt,
 }
 
-const RECENT_IMAGE_WINDOW = 2
-
 function normalizeExcludedIdsForLogging(excludedIds: unknown): string[] {
   if (Array.isArray(excludedIds)) {
     return excludedIds
@@ -435,13 +472,8 @@ function buildContextTraceSnapshot(
     chatId: context.chat.externalId,
     turnCount: context.turnCount,
     currentSubTask: context.currentSubTask,
-    seenDocumentsCount: context.seenDocuments.size,
-    seenDocumentsSample: Array.from(context.seenDocuments).slice(0, 10),
-    allFragmentsCount: context.allFragments.length,
-    allImagesCount: context.allImages.length,
-    recentImagesCount: context.recentImages.length,
-    currentTurnFragmentCount: context.currentTurnArtifacts.fragments.length,
-    currentTurnImageCount: context.currentTurnArtifacts.images.length,
+    documentMemoryDocCount: context.documentMemory.size,
+    currentTurnDocumentMemoryDocCount: context.currentTurnDocumentMemory.size,
     currentTurnToolOutputCount: context.currentTurnArtifacts.toolOutputs.length,
     currentTurnExpectationCount:
       context.currentTurnArtifacts.expectations.length,
@@ -470,191 +502,25 @@ function logContextMutation(
   )
 }
 
-/**
- * Deduplication key for fragments: Vespa document id when present, otherwise fragment id.
- * All dedupe (merge, seenDocuments, excludedIds) should rely on this so the same document
- * is not stored or re-fetched under different synthetic ids (e.g. docA:0, agentX:docA:turn:0).
- */
-function getFragmentDedupKey(fragment: MinimalAgentFragment): string {
-  if (!fragment?.id) return ""
-  const vespaDocId = fragment.source?.docId
-  if (vespaDocId != null && vespaDocId !== "") return vespaDocId
-  return fragment.id
-}
-
-function mergeFragmentLists(
-  target: MinimalAgentFragment[],
-  incoming: MinimalAgentFragment[],
-): MinimalAgentFragment[] {
-  if (!incoming.length) {
-    return target
-  }
-  const merged = [...target]
-  const indexByDedupKey = new Map<string, number>()
-  merged.forEach((fragment, idx) => {
-    const key = getFragmentDedupKey(fragment)
-    if (key) indexByDedupKey.set(key, idx)
-  })
-  for (const fragment of incoming) {
-    const key = getFragmentDedupKey(fragment)
-    if (!key) continue
-    const existingIndex = indexByDedupKey.get(key)
-    if (existingIndex !== undefined) {
-      merged[existingIndex] = fragment
-    } else {
-      indexByDedupKey.set(key, merged.length)
-      merged.push(fragment)
-    }
-  }
-  return merged
-}
-
-function mergeImageReferences(
-  target: FragmentImageReference[],
-  incoming: FragmentImageReference[],
-): FragmentImageReference[] {
-  if (!incoming.length) {
-    return target
-  }
-  const merged = [...target]
-  const indexByFile = new Map<string, number>()
-  merged.forEach((image, idx) => indexByFile.set(image.fileName, idx))
-  for (const image of incoming) {
-    if (!image?.fileName) continue
-    const existingIndex = indexByFile.get(image.fileName)
-    if (existingIndex !== undefined) {
-      merged[existingIndex] = image
-    } else {
-      indexByFile.set(image.fileName, merged.length)
-      merged.push(image)
-    }
-  }
-  return merged
-}
-
-function extractImagesFromFragments(
-  fragments: MinimalAgentFragment[],
-): FragmentImageReference[] {
-  const references: FragmentImageReference[] = []
-  for (const fragment of fragments) {
-    if (!Array.isArray(fragment.images) || fragment.images.length === 0)
-      continue
-    for (const image of fragment.images) {
-      if (image?.fileName) {
-        references.push(image)
-      }
-    }
-  }
-  return references
-}
-
-function recordFragmentsForContext(
-  context: AgentRunContext,
-  fragments: MinimalAgentFragment[],
-  turnNumber: number,
-): void {
-  if (!fragments.length) return
-
-  const seenDocumentsBefore = context.seenDocuments.size
-  const addedSeenDocumentIds: string[] = []
-
-  fragments.forEach((fragment) => {
-    const vespaDocId = fragment.source?.docId
-    if (vespaDocId != null && vespaDocId !== "") {
-      if (!context.seenDocuments.has(vespaDocId)) {
-        addedSeenDocumentIds.push(vespaDocId)
-      }
-      context.seenDocuments.add(vespaDocId)
-    }
-  })
-
-  context.currentTurnArtifacts.fragments = mergeFragmentLists(
-    context.currentTurnArtifacts.fragments,
-    fragments,
-  )
-  context.allFragments = mergeFragmentLists(context.allFragments, fragments)
-  const existingForTurn = context.turnFragments.get(turnNumber) ?? []
-  context.turnFragments.set(
-    turnNumber,
-    mergeFragmentLists(existingForTurn, fragments),
-  )
-
-  logContextMutation(
-    context,
-    "[MessageAgents][Context] Recorded fragments and updated seenDocuments",
-    {
-      turnNumber,
-      fragmentCount: fragments.length,
-      fragmentIds: fragments.map((fragment) => fragment.id),
-      addedSeenDocumentIds,
-      seenDocumentsBefore,
-      seenDocumentsAfter: context.seenDocuments.size,
-      turnFragmentCount: (context.turnFragments.get(turnNumber) || []).length,
-    },
-  )
-
-  const fragmentImages = extractImagesFromFragments(fragments)
-  if (fragmentImages.length > 0) {
-    context.currentTurnArtifacts.images = mergeImageReferences(
-      context.currentTurnArtifacts.images,
-      fragmentImages,
-    )
-    logContextMutation(
-      context,
-      "[MessageAgents][Context] Updated current turn images from fragments",
-      {
-        turnNumber,
-        fragmentCount: fragments.length,
-        imageNames: fragmentImages.map((img) => img.fileName),
-        addedImageCount: fragmentImages.length,
-      },
-    )
-  }
-}
-
 function resetCurrentTurnArtifacts(context: AgentRunContext): void {
   const previousArtifacts = context.currentTurnArtifacts
+  const clearedRawCount = previousArtifacts.toolOutputs.reduce(
+    (sum, o) => sum + (o.rawDocuments?.length ?? 0),
+    0,
+  )
+  const clearedSyntheticDocsCount = previousArtifacts.syntheticDocs.length
+  const currentTurnDocCount = context.currentTurnDocumentMemory.size
   context.currentTurnArtifacts = createEmptyTurnArtifacts()
+  context.currentTurnDocumentMemory = new Map<string, DocumentState>()
   logContextMutation(
     context,
     "[MessageAgents][Context] Reset current turn artifacts",
     {
-      clearedFragmentCount: previousArtifacts.fragments.length,
-      clearedImageCount: previousArtifacts.images.length,
+      clearedRawCount,
+      clearedSyntheticDocsCount,
       clearedExpectationCount: previousArtifacts.expectations.length,
       clearedToolOutputCount: previousArtifacts.toolOutputs.length,
-    },
-  )
-}
-
-function finalizeTurnImages(
-  context: AgentRunContext,
-  turnNumber: number,
-): void {
-  const imagesForTurn = context.currentTurnArtifacts.images
-  context.imagesByTurn.set(turnNumber, [...imagesForTurn])
-  context.allImages = mergeImageReferences(context.allImages, imagesForTurn)
-  const recentTurns = Array.from(context.imagesByTurn.keys())
-    .sort((a, b) => a - b)
-    .slice(-RECENT_IMAGE_WINDOW)
-  const flattened: FragmentImageReference[] = []
-  for (const recentTurn of recentTurns) {
-    const refs = context.imagesByTurn.get(recentTurn)
-    if (refs?.length) {
-      flattened.push(...refs)
-    }
-  }
-  context.recentImages = mergeImageReferences([], flattened)
-  context.currentTurnArtifacts.images = []
-  logContextMutation(
-    context,
-    "[MessageAgents][Context] Finalized turn images",
-    {
-      turnNumber,
-      committedImages: imagesForTurn.map((img) => img.fileName),
-      recentWindow: recentTurns,
-      recentImages: context.recentImages.map((img) => img.fileName),
-      allImagesCount: context.allImages.length,
+      clearedCurrentTurnDocumentMemoryDocs: currentTurnDocCount,
     },
   )
 }
@@ -724,87 +590,6 @@ function buildTurnToolReasoningSummary(
     return `${idx + 1}. ${record.toolName} (${argsSummary})`
   })
   return `Tools executed in turn ${turnNumber}:\n${lines.join("\n")}`
-}
-
-type FragmentImageOptions = {
-  turnNumber: number
-  sourceToolName: string
-  isUserAttachment: boolean
-}
-
-function attachImagesToFragments(
-  fragments: MinimalAgentFragment[],
-  imageNames: string[],
-  options: FragmentImageOptions,
-): MinimalAgentFragment[] {
-  if (!Array.isArray(imageNames) || imageNames.length === 0) {
-    return fragments
-  }
-
-  const fragmentIndexMap = new Map<number, string>()
-  fragments.forEach((fragment, idx) => fragmentIndexMap.set(idx, fragment.id))
-
-  const referencesByFragment = new Map<string, FragmentImageReference[]>()
-  for (const imageName of imageNames) {
-    if (!imageName) continue
-    const fragmentId = getFragmentIdFromImageName(
-      imageName,
-      fragmentIndexMap,
-      fragments[0]?.id || "",
-    )
-    if (!fragmentId) continue
-    const ref: FragmentImageReference = {
-      fileName: imageName,
-      addedAtTurn: options.turnNumber,
-      sourceFragmentId: fragmentId,
-      sourceToolName: options.sourceToolName,
-      isUserAttachment: options.isUserAttachment,
-    }
-    const existing = referencesByFragment.get(fragmentId)
-    if (existing) {
-      existing.push(ref)
-    } else {
-      referencesByFragment.set(fragmentId, [ref])
-    }
-  }
-
-  if (referencesByFragment.size === 0) {
-    return fragments
-  }
-
-  return fragments.map((fragment) => {
-    const refs = referencesByFragment.get(fragment.id)
-    if (!refs || refs.length === 0) {
-      return fragment
-    }
-
-    const existing = fragment.images ?? []
-    const seen = new Set(existing.map((img) => img.fileName))
-    const merged = [...existing]
-    for (const ref of refs) {
-      if (!seen.has(ref.fileName)) {
-        merged.push(ref)
-        seen.add(ref.fileName)
-      }
-    }
-
-    return {
-      ...fragment,
-      images: merged,
-    }
-  })
-}
-
-function getFragmentIdFromImageName(
-  imageName: string,
-  fragmentIndexMap: Map<number, string>,
-  fallback = "",
-): string {
-  const separatorIdx = imageName.indexOf("_")
-  if (separatorIdx <= 0) return fallback
-  const docIndex = Number(imageName.slice(0, separatorIdx))
-  if (Number.isNaN(docIndex)) return fallback
-  return fragmentIndexMap.get(docIndex) ?? fallback
 }
 
 function getMetadataLayers(result: any): Record<string, unknown>[] {
@@ -1098,13 +883,15 @@ function buildLLMMemoryContextSection(
   return `Memory Context:\n${parts.join("\n\n")}`
 }
 
-export function buildFinalSynthesisPayload(
+export async function buildFinalSynthesisPayload(
   context: AgentRunContext,
   options?: FinalSynthesisBuildOptions,
-): { systemPrompt: string; userMessage: string } {
-  const fragmentsLimit =
-    options?.fragmentsLimit ?? Math.max(12, context.allFragments.length || 1)
-  const fragments = context.allFragments
+): Promise<{ systemPrompt: string; userMessage: string }> {
+  const fragments = await getFragmentsForSynthesis(context.documentMemory, {
+    email: context.user.email,
+    userId: context.user.numericId ?? undefined,
+    workspaceId: context.user.workspaceNumericId ?? undefined,
+  })
   const agentSystemPromptBlock = buildAgentSystemPromptContextBlock(
     context.dedicatedAgentSystemPrompt,
   )
@@ -1113,7 +900,6 @@ export function buildFinalSynthesisPayload(
     : ""
   const formattedFragments = formatFragmentsWithMetadata(
     fragments,
-    fragmentsLimit,
   )
   const fragmentsSection = formattedFragments
     ? `Context Fragments:\n${formattedFragments}`
@@ -1229,16 +1015,16 @@ export function buildFinalSynthesisPayload(
   return { systemPrompt, userMessage }
 }
 
-export function buildFinalSynthesisRequest(
+export async function buildFinalSynthesisRequest(
   context: AgentRunContext,
   options?: FinalSynthesisBuildOptions,
-): {
+): Promise<{
   systemPrompt: string
   userMessage: string
   finalUserPrompt: string
   messages: Message[]
-} {
-  const { systemPrompt, userMessage } = buildFinalSynthesisPayload(
+}> {
+  const { systemPrompt, userMessage } = await buildFinalSynthesisPayload(
     context,
     options,
   )
@@ -1258,75 +1044,39 @@ export function buildFinalSynthesisRequest(
   }
 }
 
-function selectImagesForFinalSynthesis(context: AgentRunContext): {
-  selected: string[]
-  total: number
-  dropped: string[]
-  userAttachmentCount: number
-} {
-  const images = context.allImages
-  const total = images.length
-  if (!IMAGE_CONTEXT_CONFIG.enabled || total === 0) {
-    return { selected: [], total, dropped: [], userAttachmentCount: 0 }
-  }
+/** Synthetic tool name for initial memory context (episodic + chat memory). */
+const INITIAL_TOOL_MESSAGE = "getChatMemory"
+/** Synthetic tool name for attachment fragments context. */
+const ATTACHMENT_TOOL_MESSAGE = "getAttachmentContent"
 
-  const attachments = images.filter((img) => img.isUserAttachment)
-
-  const confidenceByFragmentId = new Map<string, number>()
-  for (const fragment of context.currentTurnArtifacts.fragments) {
-    if (fragment.id != null) {
-      confidenceByFragmentId.set(fragment.id, fragment.confidence ?? 0)
-    }
-  }
-  for (const fragment of context.allFragments) {
-    if (fragment.id != null && !confidenceByFragmentId.has(fragment.id)) {
-      confidenceByFragmentId.set(fragment.id, fragment.confidence ?? 0)
-    }
-  }
-  const confidence = (img: FragmentImageReference) =>
-    confidenceByFragmentId.get(img.sourceFragmentId ?? "") ?? 0
-
-  const nonAttachments = images
-    .filter((img) => !img.isUserAttachment)
-    .sort((a, b) => {
-      const ageA = context.turnCount - a.addedAtTurn
-      const ageB = context.turnCount - b.addedAtTurn
-      if (ageA !== ageB) return ageA - ageB
-      return confidence(b) - confidence(a)
-    })
-
-  const prioritized = [...attachments, ...nonAttachments]
-  const uniqueNames: string[] = []
-  const seen = new Set<string>()
-  for (const image of prioritized) {
-    if (seen.has(image.fileName)) continue
-    seen.add(image.fileName)
-    uniqueNames.push(image.fileName)
-  }
-
-  let selected = uniqueNames
-  let dropped: string[] = []
-
-  if (
-    IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0 &&
-    uniqueNames.length > IMAGE_CONTEXT_CONFIG.maxImagesPerCall
-  ) {
-    selected = uniqueNames.slice(0, IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
-    dropped = uniqueNames.slice(IMAGE_CONTEXT_CONFIG.maxImagesPerCall)
-  }
-
+/**
+ * Builds a synthetic assistant tool-call message so the JAF prompt builder can
+ * include the corresponding tool result (role="tool") as a proper
+ * OpenAI-style tool-result part.
+ */
+function buildSyntheticAssistantToolCallMessage(args: {
+  toolCallId: string
+  toolName: string
+  // Keep runtime OpenAI-compatible JSON for tool-call arguments.
+  // JAF type definitions in this repo expect `function.arguments` to be a string.
+  arguments: unknown
+}): JAFMessage {
   return {
-    selected,
-    total,
-    dropped,
-    userAttachmentCount: attachments.length,
+    role: "assistant",
+    content: "",
+    tool_calls: [
+      {
+        id: args.toolCallId,
+        type: "function",
+        function: {
+          name: args.toolName,
+          // JAF expects stringified JSON for tool-call arguments (OpenAI-style).
+          arguments: JSON.stringify(args.arguments as any),
+        },
+      },
+    ],
   }
 }
-
-/** Synthetic tool name for initial memory context (episodic + chat memory). */
-const INITIAL_TOOL_MESSAGE = "initialToolMessage"
-/** Synthetic tool name for attachment fragments context. */
-const ATTACHMENT_TOOL_MESSAGE = "attachmentToolMessage"
 
 /**
  * Builds a synthetic tool-result message for memory context (episodic + chat memory).
@@ -1335,6 +1085,7 @@ const ATTACHMENT_TOOL_MESSAGE = "attachmentToolMessage"
 function buildInitialToolMessage(options: {
   episodicMemoriesText?: string
   chatMemoryText?: string
+  toolCallId: string
 }): JAFMessage | null {
   const parts: string[] = []
   if (options.episodicMemoriesText?.trim()) {
@@ -1358,19 +1109,27 @@ function buildInitialToolMessage(options: {
   }
   return {
     role: "tool",
+    tool_call_id: options.toolCallId,
     content: JSON.stringify(envelope),
   }
 }
 
 /**
- * Builds a synthetic tool-result message for attachment fragments.
- * Model receives this as low-privilege tool output, not system instructions.
+ * Builds a synthetic tool-result message for attachment context.
+ * Fragments are built from document memory (after raw docs are merged) so the model receives
+ * the same fragment shape as other tool results.
  */
 function buildAttachmentToolMessage(
   fragments: MinimalAgentFragment[],
   summary: string,
+  toolCallId: string,
 ): JAFMessage {
-  const resultPayload = ToolResponse.success({ summary, fragments })
+  const resultPayload = ToolResponse.success({
+    summary:
+      summary ||
+      "Attachment content retrieved and ready for answering the user query. Use these fragments directly; no further retrieval is needed unless they are irrelevant.",
+    fragments,
+  })
   const envelope = {
     status: "executed",
     result: JSON.stringify(resultPayload),
@@ -1379,6 +1138,7 @@ function buildAttachmentToolMessage(
   }
   return {
     role: "tool",
+    tool_call_id: toolCallId,
     content: JSON.stringify(envelope),
   }
 }
@@ -1442,12 +1202,10 @@ function initializeAgentContext(
     clarifications: [],
     ambiguityResolved: false,
     toolCallHistory: [],
-    seenDocuments: new Set<string>(),
-    allFragments: [],
-    turnFragments: new Map<number, MinimalAgentFragment[]>(),
-    allImages: [],
-    imagesByTurn: new Map<number, FragmentImageReference[]>(),
-    recentImages: [],
+    documentMemory: new Map(),
+    currentTurnDocumentMemory: new Map(),
+    turnRankedCount: new Map(),
+    turnNewChunksCount: new Map(),
     currentTurnArtifacts,
     turnCount: MIN_TURN_NUMBER,
     totalLatency: 0,
@@ -1576,7 +1334,6 @@ async function handleReviewOutcome(
 ): Promise<void> {
   context.review.lastReviewResult = reviewResult
   context.review.lastReviewTurn = iteration
-  context.review.lastReviewedFragmentIndex = context.allFragments.length
   context.ambiguityResolved = reviewResult.ambiguityResolved
   context.review.outstandingAnomalies = reviewResult.anomalies?.length
     ? reviewResult.anomalies
@@ -1791,44 +1548,17 @@ async function storeAttachmentSafely(
   }
 }
 
-async function vespaResultToAttachmentFragment(
-  child: VespaSearchResult,
-  idx: number,
-  userMetadata: UserMetadataType,
-  query: string,
-  allowChunkCitations?: boolean,
-  maxSummaryChunks?: number,
-  precomputedDbContext?: Map<string, string>,
-): Promise<MinimalAgentFragment> {
-  const docId =
-    (child.fields as Record<string, unknown>)?.docId ||
-    `attachment_fragment_${idx}`
-
-  return {
-    id: String(docId),
-    content: await answerContextMap(
-      child as VespaSearchResults,
-      userMetadata,
-      maxSummaryChunks ? maxSummaryChunks : 0,
-      true,
-      allowChunkCitations ?? false,
-      query,
-      precomputedDbContext,
-    ),
-    source: searchToCitation(child as VespaSearchResults),
-    confidence: 1,
-  }
-}
-
 async function prepareInitialAttachmentContext(
-  fileIds: string[],
+  fileIds: string[] = [],
   threadIds: string[],
   userMetadata: UserMetadataType,
   query: string,
   email: string,
-  allowChunkCitations?: boolean,
-): Promise<{ fragments: MinimalAgentFragment[]; summary: string } | null> {
-  if (!fileIds?.length) {
+  imageAttachmentFileIds: string[] = [],
+): Promise<{ rawDocuments: ToolRawDocument[]; summary: string } | null> {
+  // We support image-only requests: `fileIds` can be empty while
+  // `imageAttachmentFileIds` is non-empty (images extracted from attachments).
+  if ((!fileIds?.length || fileIds.length === 0) && (!imageAttachmentFileIds?.length || imageAttachmentFileIds.length === 0)) {
     return null
   }
 
@@ -1852,16 +1582,11 @@ async function prepareInitialAttachmentContext(
 
   try {
     const combinedSearchResponse: VespaSearchResult[] = []
-    let chunksPerDocument: number[] = []
-    const targetChunks = config.maxChunksPerPage
-    const maxSummaryChunks = config.maxDefaultSummary
+    const attachmentFallbackDocs: VespaSearchResult[] = []
 
     if (fileIds && fileIds.length > 0) {
       const fileSearchSpan = span.startSpan("file_search")
       let results
-      // Split into 3 groups
-      // Search each group
-      // Push results to combinedSearchResponse
       const collectionFileIds = fileIds.filter(
         (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
       )
@@ -1885,7 +1610,6 @@ async function prepareInitialAttachmentContext(
         }
       }
       if (collectionFileIds && collectionFileIds.length > 0) {
-        allowChunkCitations = true // for the case where kb files are in @
         results = await searchCollectionRAG(
           queryText,
           collectionFileIds,
@@ -1910,19 +1634,31 @@ async function prepareInitialAttachmentContext(
             rankProfile: SearchModes.GlobalSorted,
           },
         )
-        if (results.root.children) {
+        if (results.root.children && results.root.children.length > 0) {
           combinedSearchResponse.push(...results.root.children)
+        } else {
+          // Fallback: if Vespa search can't score attachments (or yields nothing),
+          // fetch the raw attachment documents directly and treat them as equal-weight hits.
+          const direct = await GetDocumentsByDocIds(
+            attachmentFileIds,
+            fileSearchSpan ?? span,
+          )
+          if (direct?.root?.children?.length) {
+            attachmentFallbackDocs.push(...direct.root.children)
+          }
         }
       }
-
-      // Apply intelligent chunk selection based on document relevance and chunk scores
-      chunksPerDocument = await getChunkCountPerDoc(
-        combinedSearchResponse,
-        targetChunks,
-        email,
-        fileSearchSpan,
-      )
       fileSearchSpan?.end()
+    }
+    
+    if(imageAttachmentFileIds && imageAttachmentFileIds.length > 0) {
+      const direct = await GetDocumentsByDocIds(
+        imageAttachmentFileIds,
+        span,
+      )
+      if (direct?.root?.children?.length) {
+        attachmentFallbackDocs.push(...direct.root.children)
+      }
     }
 
     if (threadIds && threadIds.length > 0) {
@@ -1938,8 +1674,6 @@ async function prepareInitialAttachmentContext(
           const existingDocIds = new Set(
             combinedSearchResponse.map((child: any) => child.fields.docId),
           )
-
-          // Use the helper function to process thread results
           const { addedCount, threadInfo } = processThreadResults(
             threadResults.root.children,
             existingDocIds,
@@ -1963,30 +1697,57 @@ async function prepareInitialAttachmentContext(
       threadSpan?.end()
     }
 
-    const precomputedDbContext = await getPrecomputedDbContextIfNeeded(
-      combinedSearchResponse as VespaSearchResults[],
-      query,
-      userMetadata.userId,
-      userMetadata.workspaceId,
-    )
-    const fragments = await Promise.all(
-      combinedSearchResponse.map((child, idx) =>
-        vespaResultToAttachmentFragment(
-          child as VespaSearchResult,
-          idx,
-          userMetadata,
-          query,
-          allowChunkCitations,
-          idx < chunksPerDocument.length ? chunksPerDocument[idx] : maxSummaryChunks,
-          precomputedDbContext,
-        ),
-      ),
-    )
+    let rawDocuments: ToolRawDocument[] = []
+    if (combinedSearchResponse.length > 0) {
+      const vespaResponse = {
+        root: { children: combinedSearchResponse },
+      } as Parameters<typeof formatSearchToolResponseAsRawDocuments>[0]
+      rawDocuments = await formatSearchToolResponseAsRawDocuments(
+        vespaResponse,
+        { email },
+      )
+    }
 
-    const summary = `User provided ${fragments.length} attachment fragment${
-      fragments.length === 1 ? "" : "s"
-    } for the first turn.`
-    return { fragments, summary }
+    if (attachmentFallbackDocs.length > 0) {
+      const existing = new Set(rawDocuments.map((d) => d.docId))
+      const perDocChunkBudget = Math.max(
+        1,
+        Math.floor(config.maxChunksPerTool / attachmentFallbackDocs.length),
+      )
+      for (const doc of attachmentFallbackDocs) {
+        const fields = (doc as any)?.fields
+        const docId = fields?.docId
+        if (!docId || existing.has(docId)) continue
+        existing.add(docId)
+        const citation = searchToCitation(doc as any)
+        const chunksSummary: unknown[] = Array.isArray(fields?.chunks_summary)
+          ? fields.chunks_summary
+          : []
+        const chunks = chunksSummary
+          .slice(0, perDocChunkBudget)
+          .map((c: any, idx: number) => ({
+            chunkKey: `i:${idx}`,
+            content: typeof c === "string" ? c : String(c ?? ""),
+            score: 0,
+          }))
+          .filter((c: any) => c.content)
+        rawDocuments.push({
+          docId,
+          relevance: 1,
+          source: citation,
+          chunks,
+          vespaHit: doc as any,
+        })
+      }
+    }
+
+    const summary =
+      rawDocuments.length > 0
+        ? `Attachment content retrieved (${rawDocuments.length} document${
+            rawDocuments.length === 1 ? "" : "s"
+          }) for the first turn.`
+        : "No attachment content could be retrieved for this turn; continue without attachment context."
+    return { rawDocuments, summary }
   } catch (error) {
     span.addEvent("attachment_context_error", {
       message: getErrorMessage(error),
@@ -2062,43 +1823,6 @@ export async function beforeToolExecutionHook(
     return null // Skip execution — tool is also removed from tool list
   }
 
-  // 3. Add excludedIds to prevent re-fetching seen documents
-  if (args?.excludedIds !== undefined) {
-    const providedExcludedIds = normalizeExcludedIdsForLogging(args.excludedIds)
-    const seenDocIds = Array.from(context.seenDocuments)
-    const mergedExcludedIds = [...providedExcludedIds, ...seenDocIds]
-
-    logContextMutation(
-      context,
-      "[beforeToolExecutionHook] Merged excludedIds with seenDocuments",
-      {
-        toolName,
-        args,
-        providedExcludedIds,
-        providedExcludedIdsCount: providedExcludedIds.length,
-        seenDocumentIds: seenDocIds,
-        seenDocumentCount: seenDocIds.length,
-        mergedExcludedIds,
-        mergedExcludedIdsCount: mergedExcludedIds.length,
-      },
-    )
-
-    return {
-      ...args,
-      excludedIds: mergedExcludedIds,
-    }
-  }
-
-  logContextMutation(
-    context,
-    "[beforeToolExecutionHook] excludedIds not provided on tool args",
-    {
-      toolName,
-      args,
-      seenDocumentIds: Array.from(context.seenDocuments),
-    },
-  )
-
   return args
 }
 
@@ -2124,7 +1848,6 @@ export async function afterToolExecutionHook(
   },
   userMessage: string,
   messagesWithNoErrResponse: Message[],
-  gatheredFragmentsKeys: Set<string>,
   expectedResult: ToolExpectation | undefined,
   turnNumber: number,
   reasoningEmitter?: ReasoningEmitter,
@@ -2149,7 +1872,6 @@ export async function afterToolExecutionHook(
       resultExcludedIds: normalizeExcludedIdsForLogging(
         result?.data?.excludedIds,
       ),
-      seenDocumentIds: Array.from(context.seenDocuments),
     },
   )
 
@@ -2206,41 +1928,6 @@ export async function afterToolExecutionHook(
     context.currentTurnArtifacts.executionToolsCalled++
   }
 
-  const toolFragments: MinimalAgentFragment[] = []
-  const addToolFragments = (fragments: MinimalAgentFragment[]) => {
-    if (!Array.isArray(fragments) || fragments.length === 0) {
-      return
-    }
-    const deduped: MinimalAgentFragment[] = []
-    const skippedKeys: string[] = []
-    for (const fragment of fragments) {
-      const key = getFragmentDedupKey(fragment)
-      if (!key) continue
-      if (gatheredFragmentsKeys.has(key)) {
-        skippedKeys.push(key)
-        continue
-      }
-      gatheredFragmentsKeys.add(key)
-      deduped.push(fragment)
-    }
-    if (deduped.length !== fragments.length) {
-      Logger.info(
-        {
-          toolName,
-          incoming: fragments.length,
-          deduped: deduped.length,
-          skippedKeys,
-        },
-        "[afterToolExecutionHook] Deduplicated tool fragments (by Vespa docId / dedup key)",
-      )
-    }
-    if (!deduped.length) {
-      return
-    }
-    toolFragments.push(...deduped)
-    recordFragmentsForContext(context, deduped, effectiveTurnNumber)
-  }
-
   // 3. Update metrics
   context.totalLatency += executionTime
   context.totalCost += record.estimatedCostUsd
@@ -2262,92 +1949,26 @@ export async function afterToolExecutionHook(
     }
   }
 
-  // 5. Extract and filter contexts
+  // 5. Extract raw Vespa results only. All tools return rawDocuments.
   const resultData = result?.data
-  let contexts: MinimalAgentFragment[] = []
-  if (Array.isArray(resultData)) {
-    contexts = resultData as unknown as MinimalAgentFragment[]
-  } else if (resultData && typeof resultData === "object") {
-    const fragmentsCandidate = (resultData as { fragments?: unknown }).fragments
-    if (Array.isArray(fragmentsCandidate)) {
-      contexts = fragmentsCandidate as MinimalAgentFragment[]
-    }
-  }
-  if (!Array.isArray(contexts) || contexts.length === 0) {
-    const legacyContexts = getMetadataValue<MinimalAgentFragment[]>(
-      result,
-      "contexts",
-    )
-    if (Array.isArray(legacyContexts)) {
-      contexts = legacyContexts
-    }
-  }
+  const rawDocuments: ToolRawDocument[] =
+    (resultData && typeof resultData === "object" && Array.isArray((resultData as { rawDocuments?: unknown }).rawDocuments))
+      ? (resultData as { rawDocuments: ToolRawDocument[] }).rawDocuments
+      : []
+  let toolFragments: MinimalAgentFragment[] = (resultData && typeof resultData === "object" && Array.isArray((resultData as { fragments?: unknown }).fragments))
+    ? (resultData as { fragments: MinimalAgentFragment[] }).fragments
+    : []
 
-  // LOG: Context extraction results
   loggerWithChild({ email: context.user.email }).info(
-    {
-      toolName,
-      totalContextsExtracted: contexts.length,
-      gatheredFragmentsKeysSize: gatheredFragmentsKeys.size,
-    },
-    "[afterToolExecutionHook] Context extraction completed",
+    { toolName, rawDocumentsExtracted: rawDocuments.length },
+    "[afterToolExecutionHook] Raw Vespa results extracted",
   )
 
-  // ── Fragment collection (deferred ranking) ──────────────────────────
-  // Instead of ranking per-tool (N LLM calls), we collect all unranked
-  // fragments here and defer ranking to a single batch call at turn-end
-  // via the turn-lifecycle pipeline. This eliminates N-1 redundant LLM
-  // calls and gives the ranker full cross-tool context.
-  if (Array.isArray(contexts) && contexts.length > 0) {
-    const filteredContexts = contexts.filter((c: MinimalAgentFragment) => {
-      const key = getFragmentDedupKey(c)
-      return !key || !gatheredFragmentsKeys.has(key)
-    })
-
-    loggerWithChild({ email: context.user.email }).info(
-      {
-        toolName,
-        totalContexts: contexts.length,
-        filteredContextsCount: filteredContexts.length,
-        duplicatesFiltered: contexts.length - filteredContexts.length,
-      },
-      "[afterToolExecutionHook] Filtered out duplicate contexts",
+  if (rawDocuments.length > 0) {
+    await emitReasoningEvent(
+      reasoningEmitter,
+      ReasoningSteps.documentsFound(rawDocuments.length, toolName),
     )
-
-    if (filteredContexts.length > 0) {
-      // Mark dedup keys as seen
-      for (const c of filteredContexts) {
-        const key = getFragmentDedupKey(c)
-        if (key) gatheredFragmentsKeys.add(key)
-      }
-
-      await emitReasoningEvent(
-        reasoningEmitter,
-        ReasoningSteps.documentsFound(filteredContexts.length, toolName)
-      )
-
-      // Store unranked fragments keyed by tool — one batch per searchGlobal invocation (provenance preserved)
-      const toolQuery = extractToolQuery(toolName, args as Record<string, unknown>) ?? ""
-      const key = toolName+":"+toolQuery
-      const existing = context.currentTurnArtifacts.unrankedFragmentsByTool.get(key)
-      const mergedFragments = mergeFragmentLists(
-        existing?.fragments ?? [],
-        filteredContexts
-      )
-      context.currentTurnArtifacts.unrankedFragmentsByTool.set(key, {
-        query: toolQuery,
-        fragments: mergedFragments,
-      })
-
-      loggerWithChild({ email: context.user.email }).debug(
-        {
-          toolName,
-          deferredCount: filteredContexts.length,
-          totalDeferredForTool: (existing?.fragments?.length ?? 0) + filteredContexts.length,
-        },
-        "[afterToolExecutionHook] Fragments deferred to turn-end batch ranking"
-      )
-    }
   }
 
   // Emit metrics even if no contexts (ToolMetric event to be added to ChatSSEvents later)
@@ -2426,15 +2047,12 @@ export async function afterToolExecutionHook(
       "unknown agent"
     const delegationFragments = buildDelegatedAgentFragments({
       result,
-      gatheredFragmentsKeys,
       agentId,
       agentName,
       turnNumber: effectiveTurnNumber,
       sourceToolName: toolName,
     })
-    if (delegationFragments.length > 0) {
-      addToolFragments(delegationFragments)
-    }
+    toolFragments = delegationFragments.concat(toolFragments)
     // Read the delegation ID from the tool's return value — each parallel call
     // returns its own ID, so no shared mutable state and no race condition.
     const delegationRunId = (result?.data as { delegationRunId?: string })
@@ -2458,28 +2076,81 @@ export async function afterToolExecutionHook(
     )
   }
 
+  const toolQuery = extractToolQuery(toolName, args as Record<string, unknown>) ?? ""
+  const resultSummary =
+    (result?.data && typeof result.data === "object" && typeof (result.data as { resultSummary?: string }).resultSummary === "string")
+      ? (result.data as { resultSummary: string }).resultSummary
+      : summarizeToolResultPayload(result)
+
+  // Special case: delegated agent response with no citations/rawDocuments.
+  // Represent its output as a synthetic non-Vespa DocumentState so it can flow through
+  // the same filter/review/synthesis paths (fallback chunk-join when vespaHit is absent).
+  if (
+    toolName === XyneTools.runPublicAgent &&
+    toolFragments.length === 0 &&
+    typeof resultSummary === "string" &&
+    resultSummary.trim().length > 0
+  ) {
+    const agentId =
+      (result?.data as { agentId?: string })?.agentId ||
+      (hookContext?.args as { agentId?: string })?.agentId ||
+      "unknown"
+    const agentName =
+      context.availableAgents.find((agent) => agent.agentId === agentId)
+        ?.agentName ||
+      agentId ||
+      "unknown agent"
+    const syntheticDocId = `delegated_agent:${agentId}:turn:${effectiveTurnNumber}`
+    const existsAlready = context.currentTurnArtifacts.syntheticDocs.some(
+      (d) => d.docId === syntheticDocId,
+    )
+    if (!existsAlready) {
+      const doc = createDocumentState(syntheticDocId, {
+        docId: syntheticDocId,
+        title: `Delegated agent (${agentName})`,
+        url: "",
+        app: Apps.Xyne,
+        entity: { type: "agent", name: agentName } as unknown as Citation["entity"],
+      })
+      doc.chunks.set(chunkKeyFromContent(resultSummary), {
+        content: resultSummary,
+        firstSeenTurn: effectiveTurnNumber,
+        lastSeenTurn: effectiveTurnNumber,
+        confidence: 0.7,
+        queries: toolQuery ? [toolQuery] : [],
+      })
+      doc.signals.push({
+        query: toolQuery,
+        confidence: 0.7,
+        turn: effectiveTurnNumber,
+        toolName,
+      })
+      doc.maxScore = 0.7
+      doc.relevanceScore = 0.7
+      context.currentTurnArtifacts.syntheticDocs.push(doc)
+    }
+  }
+
   context.currentTurnArtifacts.toolOutputs.push({
     toolName,
     arguments: args,
     status: record.status,
-    resultSummary: summarizeToolResultPayload(result),
-    fragments: toolFragments,
+    resultSummary,
+    query: toolQuery,
+    rawDocuments: rawDocuments.length > 0 ? rawDocuments : undefined,
   })
   logContextMutation(
     context,
-    "[afterToolExecutionHook] Recorded tool output for current turn",
+    "[afterToolExecutionHook] Recorded tool output (raw only; no fragments in message)",
     {
       toolName,
       turnNumber: effectiveTurnNumber,
-      toolFragmentsCount: toolFragments.length,
-      toolFragmentIds: toolFragments.map((fragment) => fragment.id),
-      resultSummary: summarizeToolResultPayload(result),
+      rawDocumentsCount: rawDocuments.length,
+      fragmentsCount: toolFragments.length,
+      resultSummary,
     },
   )
 
-  // Emit toolCompleted here so it uses the per-call scoped emitter passed in
-  // from onAfterToolExecution — this ensures correct toolExecutionId for parallel
-  // tool calls. runPublicAgent uses agentCompleted (emitted above) instead.
   if (toolName !== XyneTools.runPublicAgent) {
     await emitReasoningEvent(
       reasoningEmitter,
@@ -2496,7 +2167,6 @@ export async function afterToolExecutionHook(
 
 export function buildDelegatedAgentFragments(opts: {
   result: any
-  gatheredFragmentsKeys: Set<string>
   agentId?: string
   agentName?: string
   turnNumber: number
@@ -2504,7 +2174,6 @@ export function buildDelegatedAgentFragments(opts: {
 }): MinimalAgentFragment[] {
   const {
     result,
-    gatheredFragmentsKeys,
     agentId,
     agentName,
     turnNumber,
@@ -2543,7 +2212,6 @@ export function buildDelegatedAgentFragments(opts: {
   if (Array.isArray(citations) && citations.length > 0) {
     citations.forEach((citation, idx) => {
       const fragmentId = `${normalizedAgentId}:${citation.docId || idx}:${fragmentTurn}:${idx}`
-      if (gatheredFragmentsKeys.has(fragmentId)) return
       const citationExtras = citation as Partial<{
         excerpt: string
         summary: string
@@ -2572,16 +2240,14 @@ export function buildDelegatedAgentFragments(opts: {
 
   if (agentFragments.length === 0) {
     const attributionFragmentId = `${normalizedAgentId}:turn:${fragmentTurn}`
-    if (!gatheredFragmentsKeys.has(attributionFragmentId)) {
-      agentFragments.push({
-        id: attributionFragmentId,
-        content:
-          textResult ||
-          `Response provided by delegated agent ${normalizedAgentName}`,
-        source: baseSource,
-        confidence: 0.9,
-      })
-    }
+    agentFragments.push({
+      id: attributionFragmentId,
+      content:
+        textResult ||
+        `Response provided by delegated agent ${normalizedAgentName}`,
+      source: baseSource,
+      confidence: 0.9,
+    })
   }
 
   if (agentFragments.length === 0) {
@@ -2742,10 +2408,11 @@ function formatToolOutputsForReview(
       const argsSummary = formatToolArgumentsForReasoning(
         output.arguments || {},
       )
-      const fragmentSummary = output.fragments?.length
-        ? `${output.fragments.length} fragment${output.fragments.length === 1 ? "" : "s"}`
-        : "0 fragments"
-      return `${idx + 1}. ${output.toolName} [${output.status}]\n   Args: ${argsSummary}\n   Result: ${output.resultSummary ?? "No result summary available."}\n   Fragments: ${fragmentSummary}`
+      const rawSummary =
+        (output.rawDocuments?.length ?? 0) > 0
+          ? ` (${output.rawDocuments!.length} doc${output.rawDocuments!.length === 1 ? "" : "s"} for document memory)`
+          : ""
+      return `${idx + 1}. ${output.toolName} [${output.status}]\n   Args: ${argsSummary}\n   Result: ${output.resultSummary ?? "No result summary available."}${rawSummary}`
     })
     .join("\n\n")
 }
@@ -2791,6 +2458,104 @@ function buildDefaultReviewPayload(notes?: string): ReviewResult {
   }
 }
 
+function normalizeReviewResult(raw: unknown): unknown {
+  // We only normalize the top-level keys that the review schema requires.
+  // This protects weaker models that sometimes omit "optional-looking" fields.
+  if (!raw || typeof raw !== "object") return raw
+  const r = raw as Record<string, unknown>
+
+  const toolFeedback = Array.isArray(r.toolFeedback)
+    ? r.toolFeedback.map((item: any) => ({
+        toolName: typeof item?.toolName === "string" ? item.toolName : "",
+        outcome:
+          item?.outcome === "met" ||
+          item?.outcome === "missed" ||
+          item?.outcome === "error"
+            ? item.outcome
+            : "missed",
+        summary: typeof item?.summary === "string" ? item.summary : "",
+        expectationGoal:
+          typeof item?.expectationGoal === "string"
+            ? item.expectationGoal
+            : "",
+        followUp:
+          typeof item?.followUp === "string"
+            ? item.followUp
+            : "",
+      }))
+    : []
+  const unmetExpectations = Array.isArray(r.unmetExpectations)
+    ? r.unmetExpectations
+    : []
+  const anomalies = Array.isArray(r.anomalies) ? r.anomalies : []
+  const clarificationQuestions = Array.isArray(r.clarificationQuestions)
+    ? r.clarificationQuestions
+    : []
+
+  return {
+    status:
+      r.status === "ok" || r.status === "needs_attention"
+        ? r.status
+        : "needs_attention",
+    notes: typeof r.notes === "string" ? r.notes : "",
+    toolFeedback,
+    unmetExpectations,
+    planChangeNeeded: typeof r.planChangeNeeded === "boolean" ? r.planChangeNeeded : false,
+    planChangeReason: typeof r.planChangeReason === "string" ? r.planChangeReason : undefined,
+    anomaliesDetected:
+      typeof r.anomaliesDetected === "boolean"
+        ? r.anomaliesDetected
+        : anomalies.length > 0,
+    anomalies,
+    recommendation:
+      r.recommendation === "proceed" ||
+      r.recommendation === "gather_more" ||
+      r.recommendation === "clarify_query" ||
+      r.recommendation === "replan"
+        ? r.recommendation
+        : "proceed",
+    ambiguityResolved: typeof r.ambiguityResolved === "boolean" ? r.ambiguityResolved : false,
+    clarificationQuestions,
+  }
+}
+
+/**
+ * Build unranked fragments from current-turn document memory only (raw Vespa docs
+ * from tool calls this turn). One fragment per document; used for filtering (reranking).
+ * After ranking, ranked results are merged into cross-turn documentMemory.
+ */
+async function buildUnrankedFragmentsFromDocumentMemory(
+  context: AgentRunContext,
+  turn: number,
+): Promise<UnrankedFragmentWithToolContext[] | null> {
+  const docs = Array.from(context.currentTurnDocumentMemory.values())
+  if (docs.length === 0) return null
+
+  const fragments = await getFragmentsForSynthesisForDocs(
+    context.currentTurnDocumentMemory,
+    docs,
+    {
+      email: context.user.email,
+      userId: context.user.numericId ?? undefined,
+      workspaceId: context.user.workspaceNumericId ?? undefined,
+    },
+  )
+  if (fragments.length === 0) return null
+
+  const docById = new Map(docs.map((d) => [d.docId, d]))
+  const out: UnrankedFragmentWithToolContext[] = []
+  for (const fragment of fragments) {
+    const doc = fragment.id != null ? docById.get(fragment.id) : undefined
+    if (!doc) continue
+    const signals = doc.signals
+    const lastSignal = signals[signals.length - 1]
+    const toolName = lastSignal?.toolName ?? "search"
+    const toolQuery = lastSignal?.query ?? ""
+    out.push({ fragment, toolName, toolQuery, signals })
+  }
+  return out
+}
+
 /**
  * Batch fragment ranking — runs a SINGLE extractBestDocumentIndexes LLM call
  * for ALL fragments collected across all tools in this turn.
@@ -2809,11 +2574,29 @@ async function batchRankFragments(
   if (allUnrankedWithToolContext.length === 0) return []
 
   const allUnranked = allUnrankedWithToolContext.map((e) => e.fragment)
-  const fragmentKeyToToolContext = new Map<string, { toolName: string; toolQuery: string }>()
-  for (const { fragment, toolName, toolQuery } of allUnrankedWithToolContext) {
+  const fragmentKeyToToolContext = new Map<
+    string,
+    { toolName: string; toolQuery: string; signals: RetrievalSignal[] }
+  >()
+  for (const { fragment, toolName, toolQuery, signals } of allUnrankedWithToolContext) {
     const key = getFragmentDedupKey(fragment) || fragment.id || ""
     if (!fragmentKeyToToolContext.has(key)) {
-      fragmentKeyToToolContext.set(key, { toolName, toolQuery })
+      fragmentKeyToToolContext.set(key, { toolName, toolQuery, signals: [...signals] })
+      continue
+    }
+
+    const existing = fragmentKeyToToolContext.get(key)
+    if (!existing) continue
+
+    // Preserve "all" signals for this doc/content key (dedupe by query+turn+toolName).
+    const existingSigKeys = new Set(
+      existing.signals.map((s) => `${s.toolName ?? "search"}|${s.query}|${s.turn}`),
+    )
+    for (const sig of signals) {
+      const k = `${sig.toolName ?? "search"}|${sig.query}|${sig.turn}`
+      if (existingSigKeys.has(k)) continue
+      existing.signals.push(sig)
+      existingSigKeys.add(k)
     }
   }
 
@@ -2865,7 +2648,8 @@ async function batchRankFragments(
           fragment,
           index,
           toolContext?.toolName,
-          toolContext?.toolQuery
+          toolContext?.toolQuery,
+          toolContext?.signals,
         )
       }
     )
@@ -2950,42 +2734,38 @@ async function batchRankFragments(
       ReasoningSteps.documentsFiltered(selectedDocs.length)
     )
 
-    // Extract images from selected documents
-    if (IMAGE_CONTEXT_CONFIG.enabled) {
-      const vespaLikeResults = selectedDocs.map((doc) => ({
-        id: doc.id,
-        relevance: 0,
-        fields: { docId: doc.source.docId },
-      })) as unknown as VespaSearchResult[]
-      const combinedContext = selectedDocs.map((doc) => doc.content).join("\n")
-      const { imageFileNames: extractedImages } = extractImageFileNames(
-        combinedContext,
-        vespaLikeResults
+    // Merge ranked current-turn docs into cross-turn document memory before recording
+    const rankedDocIds = new Set(
+      selectedDocs.map((f) => f.source?.docId ?? f.id).filter(Boolean) as string[]
+    )
+    const rankedDocsFromCurrentTurn = Array.from(
+      context.currentTurnDocumentMemory.values()
+    ).filter((d) => rankedDocIds.has(d.docId))
+    if (rankedDocsFromCurrentTurn.length > 0) {
+      const newChunks = mergeDocumentStatesIntoDocumentMemory(
+        context.documentMemory,
+        rankedDocsFromCurrentTurn,
       )
-      if (extractedImages.length > 0) {
-        selectedDocs = attachImagesToFragments(selectedDocs, extractedImages, {
+      if (newChunks > 0) {
+        context.turnNewChunksCount.set(
           turnNumber,
-          sourceToolName: "batch_ranking",
-          isUserAttachment: false,
-        })
+          (context.turnNewChunksCount.get(turnNumber) ?? 0) + newChunks,
+        )
       }
     }
-
-    // Record into context
-    recordFragmentsForContext(context, selectedDocs, turnNumber)
   }
 
   return selectedDocs
 }
 
-export function buildReviewPromptFromContext(
+export async function buildReviewPromptFromContext(
   context: AgentRunContext,
   options?: {
     focus?: string
     turnNumber?: number
   },
   fallbackExpectations?: ToolExpectationAssignment[],
-): { prompt: string; imageFileNames: string[] } {
+): Promise<{ prompt: string; imageFileNames: string[] }> {
   const isFirstReview = context.review.lastReviewResult === null
   const turnExpectations =
     (fallbackExpectations?.length ?? 0) > 0
@@ -3021,13 +2801,27 @@ export function buildReviewPromptFromContext(
       })()
     : formatToolOutputsForReview(context.currentTurnArtifacts.toolOutputs)
   const expectationsSection = formatExpectationsForReview(turnExpectations)
-  const fromIndex = context.review.lastReviewedFragmentIndex
-  const newFragments = context.allFragments.slice(fromIndex)
-  const maxFragmentsForReview = 25
+  const currentTurn = options?.turnNumber ?? context.turnCount
+  const newDocs = isFirstReview
+    ? Array.from(context.documentMemory?.values() ?? [])
+    : getDocsWithSignalsInTurnRange(
+        context.documentMemory ?? new Map(),
+        (context.review.lastReviewTurn ?? 0) + 1,
+        currentTurn,
+      )
+  const newFragments = await getFragmentsForSynthesisForDocs(
+    context.documentMemory ?? new Map(),
+    newDocs,
+    {
+      email: context.user.email,
+      userId: context.user.numericId ?? undefined,
+      workspaceId: context.user.workspaceNumericId ?? undefined,
+    },
+  )
   const fragmentsSection = newFragments.length
     ? `New Context Fragments (since last review):\n${answerContextMapFromFragments(
         newFragments,
-        Math.min(newFragments.length, maxFragmentsForReview),
+        newFragments.length,
       )}`
     : "New Context Fragments (since last review):\nNo new context fragments since last review."
   const previousReviewSection =
@@ -3048,13 +2842,17 @@ export function buildReviewPromptFromContext(
           return `Previous review summary (for continuity):\n${parts.join("\n")}`
         })()
       : ""
-  const currentImages = context.currentTurnArtifacts.images.map(
-    (image) => image.fileName,
-  )
-  const additionalImages = Math.max(
-    context.allImages.length - currentImages.length,
-    0,
-  )
+  const docOrderForImages = newFragments.map((f) => f.id)
+  const reviewImageBudget =
+    IMAGE_CONTEXT_CONFIG.maxImagesPerCall && IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0
+      ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
+      : 8
+  const { imageFileNamesForModel: currentImages, total: totalImages } =
+    getAllImagesFromDocumentMemory(context.documentMemory ?? new Map(), {
+      docOrder: docOrderForImages,
+      maxImages: reviewImageBudget,
+    })
+  const additionalImages = Math.max(totalImages - currentImages.length, 0)
   const imageSection = `Attachments in this window: ${currentImages.length}\nFrom prior turns: ${additionalImages}`
   const reviewFocus = `Review Focus: ${options?.focus ?? "turn_end"} (evaluating through turn ${
     options?.turnNumber ?? context.turnCount
@@ -3080,21 +2878,21 @@ export function buildReviewPromptFromContext(
   }
 }
 
-export function buildReviewRequest(
+export async function buildReviewRequest(
   context: AgentRunContext,
   options?: {
     focus?: string
     turnNumber?: number
     expectedResults?: ToolExpectationAssignment[]
   },
-): {
+): Promise<{
   prompt: string
   imageFileNames: string[]
   messages: Message[]
   isFirstReview: boolean
-} {
+}> {
   const isFirstReview = context.review.lastReviewResult === null
-  const { prompt, imageFileNames } = buildReviewPromptFromContext(
+  const { prompt, imageFileNames } = await buildReviewPromptFromContext(
     context,
     options,
     options?.expectedResults,
@@ -3155,7 +2953,7 @@ async function runReviewLLM(
       ? "- Delegation tools (list_custom_agents/run_public_agent) were disabled for this run; do not flag their absence."
       : "- If delegation tools are available, ensure list_custom_agents precedes run_public_agent when delegation is appropriate."
 
-  const reviewRequest = buildReviewRequest(context, {
+  const reviewRequest = await buildReviewRequest(context, {
     focus: options?.focus,
     turnNumber: options?.turnNumber,
     expectedResults: options?.expectedResults,
@@ -3170,6 +2968,10 @@ async function runReviewLLM(
   const hasChatMemory = !!sanitizeChatMemoryForLLMContext(
     context.chatMemoryText,
   )
+  const totalImagesAll = Array.from(context.documentMemory?.values?.() ?? []).reduce(
+    (sum, doc) => sum + (doc.images?.length ?? 0),
+    0,
+  )
   Logger.debug(
     {
       email: context.user.email,
@@ -3177,11 +2979,8 @@ async function runReviewLLM(
       focus: options?.focus,
       turnNumber: options?.turnNumber,
       reviewImages: currentImages,
-      additionalImages: Math.max(
-        context.allImages.length - currentImages.length,
-        0,
-      ),
-      fragmentsCount: context.allFragments.length,
+      additionalImages: Math.max(totalImagesAll - currentImages.length, 0),
+      fragmentsCount: context.documentMemory.size,
       toolOutputsCount: context.currentTurnArtifacts.toolOutputs.length,
       isFirstReview,
       conversationHistoryCount: context.conversationHistoryMessages.length,
@@ -3233,7 +3032,9 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
       ambiguityResolved: true,
     })}
 - Use native JSON booleans (true/false) for every yes/no field.
-- Only emit keys defined in the schema; do not add prose outside the JSON object.`,
+- Only emit keys defined in the schema; do not add prose outside the JSON object.
+- You MUST include every key present in the example JSON object (status, notes, toolFeedback, unmetExpectations, planChangeNeeded, planChangeReason, anomaliesDetected, anomalies, recommendation, ambiguityResolved, clarificationQuestions). Missing keys = INVALID.
+- If you have no items, use [] (arrays), false (booleans), and an empty string \"\" for notes/planChangeReason. For recommendation defaults use \"gather_more\".`,
   }
   if (currentImages.length > 0) {
     params.imageFileNames = currentImages
@@ -3314,7 +3115,8 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     )
   }
 
-  const validation = ReviewResultSchema.safeParse(parsed)
+  const normalized = normalizeReviewResult(parsed)
+  const validation = ReviewResultSchema.safeParse(normalized)
   if (!validation.success) {
     Logger.error(
       {
@@ -3322,6 +3124,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
         chatId: context.chat.externalId,
         error: validation.error.format(),
         raw: parsed,
+        normalized,
       },
       "[MessageAgents][runReviewLLM] Review result does not match schema",
     )
@@ -3738,9 +3541,27 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
                 } as MinimalAgentFragment
               })
             : []
+      const rawDocumentsUnfiltered = Array.isArray((metadata as any).rawDocuments)
+        ? ((metadata as any).rawDocuments as ToolRawDocument[])
+        : []
+      const citations = Array.isArray((metadata as any).citations)
+        ? ((metadata as any).citations as Citation[])
+        : []
+      const citedDocIds = new Set(
+        citations.map((c) => c?.docId).filter((id): id is string => !!id),
+      )
+      const rawDocuments =
+        citedDocIds.size === 0
+          ? []
+          : rawDocumentsUnfiltered.filter((d) => citedDocIds.has(d.docId))
+      const resultSummary =
+        typeof toolOutput.result === "string"
+          ? toolOutput.result
+          : "Delegated agent completed."
 
       return ToolResponse.success({
-        result: toolOutput.result,
+        resultSummary,
+        rawDocuments,
         fragments,
         agentId: validation.data.agentId,
         // Pass back so afterToolExecutionHook can tag agentCompleted with the
@@ -3810,24 +3631,42 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         )
       }
 
-      const { selected, total, dropped, userAttachmentCount } =
-        selectImagesForFinalSynthesis(context)
+      const synthesisRequest = await buildFinalSynthesisRequest(context, {
+        insightsUsefulForAnswering,
+      })
+      const { systemPrompt, userMessage, messages } = synthesisRequest
+      const fragments = await getFragmentsForSynthesis(context.documentMemory, {
+        email: context.user.email,
+        userId: context.user.numericId ?? undefined,
+        workspaceId: context.user.workspaceNumericId ?? undefined,
+      })
+      const docOrder = fragments.map((f) => f.id)
+      const {
+        imageFileNamesForModel: selected,
+        total,
+        dropped,
+      } = IMAGE_CONTEXT_CONFIG.enabled
+        ? getAllImagesFromDocumentMemory(context.documentMemory, {
+            docOrder,
+            maxImages: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
+          })
+        : { imageFileNamesForModel: [], total: 0, dropped: 0 }
+
+      const attachmentImageCount = Array.from(context.documentMemory.values())
+        .flatMap((d) => d.images ?? [])
+        .filter((img) => img.isAttachment).length
+
       loggerWithChild({ email: context.user.email }).debug(
         {
           chatId: context.chat.externalId,
           selectedImages: selected,
           totalImages: total,
           droppedImages: dropped,
-          userAttachmentCount,
+          attachmentImageCount,
         },
         "[MessageAgents][FinalSynthesis] Image payload",
       )
-
-      const synthesisRequest = buildFinalSynthesisRequest(context, {
-        insightsUsefulForAnswering,
-      })
-      const { systemPrompt, userMessage, messages } = synthesisRequest
-      const fragmentsCount = context.allFragments.length
+      const fragmentsCount = fragments.length
       const hasEpisodicMemories = !!context.episodicMemoriesText?.trim()
       const hasChatMemory = !!sanitizeChatMemoryForLLMContext(
         context.chatMemoryText,
@@ -3869,10 +3708,10 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
       )
 
       const logger = loggerWithChild({ email: context.user.email })
-      if (dropped.length > 0) {
+      if (dropped > 0) {
         logger.info(
           {
-            droppedCount: dropped.length,
+            droppedCount: dropped,
             limit: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
             totalImages: total,
           },
@@ -3897,7 +3736,7 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         {
           email: context.user.email,
           chatId: context.chat.externalId,
-          fragmentsCount: context.allFragments.length,
+          fragmentsCount: fragments.length,
           planPresent: !!context.plan,
           clarificationsCount: context.clarifications.length,
           toolOutputsThisTurn: context.currentTurnArtifacts.toolOutputs.length,
@@ -4433,7 +4272,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
           .map((meta) => meta.fileId),
       ),
     )
-    const isMstWithAttachments = attachmentMetadata.length > 0
 
     const userAndWorkspace: InternalUserWorkspace =
       await getUserAndWorkspaceByEmail(db, workspaceId, email)
@@ -5038,102 +4876,110 @@ export async function MessageAgents(c: Context): Promise<Response> {
           "[MessageAgents] Tools exposed to LLM after filtering",
         )
 
-        // Track gathered fragments
-        const gatheredFragmentsKeys = new Set<string>()
 
         const initialSyntheticMessages: JAFMessage[] = []
 
         let initialAttachmentContext: {
-          fragments: MinimalAgentFragment[]
+          rawDocuments: ToolRawDocument[]
           summary: string
         } | null = null
 
-        if (allReferencedFileIds.length > 0) {
+        const referencedWithImages = [
+          ...allReferencedFileIds,
+          ...imageAttachmentFileIds,
+        ]
+        if (referencedWithImages.length > 0) {
           await emitReasoningEvent(
             emitReasoningStep,
             ReasoningSteps.attachmentAnalyzing()
           )
-          initialAttachmentContext = await prepareInitialAttachmentContext(
+          const prepared = await prepareInitialAttachmentContext(
             allReferencedFileIds,
             threadIds,
             userMetadata,
             message,
             email,
-            isMstWithAttachments,
+            imageAttachmentFileIds
           )
-          if (initialAttachmentContext) {
+          if (prepared) {
             await emitReasoningEvent(
               emitReasoningStep,
-              ReasoningSteps.attachmentExtracted(initialAttachmentContext.fragments.length)
+              ReasoningSteps.attachmentExtracted(prepared.rawDocuments.length)
             )
-          }
-        }
-        if (imageAttachmentFileIds.length > 0) {
-          const imageFragments = imageAttachmentFileIds.map((fileId, index) => {
-            const fragmentId = `user_attachment_image:${fileId}:${index}`
-            return {
-              id: fragmentId,
-              content: `User provided image attachment ${index + 1}.`,
-              source: {
-                docId: fileId,
-                title: `Attachment image ${index + 1}`,
-                url: "",
-                app: Apps.Attachment,
-                entity: AttachmentEntity.Image,
-              } as Citation,
-              confidence: 0.9,
-              images: [
-                {
-                  fileName: `${index}_${fileId}_0`,
-                  addedAtTurn: 0,
-                  sourceFragmentId: fragmentId,
-                  sourceToolName: "user_input",
-                  isUserAttachment: true,
-                },
-              ],
-            } as MinimalAgentFragment
-          })
-          const summary = `User provided ${imageFragments.length} image attachment${imageFragments.length === 1 ? "" : "s"}.`
-          if (initialAttachmentContext) {
-            initialAttachmentContext.fragments.push(...imageFragments)
-            initialAttachmentContext.summary = `${initialAttachmentContext.summary}\n${summary}`
-          } else {
             initialAttachmentContext = {
-              fragments: imageFragments,
-              summary,
+              rawDocuments: prepared.rawDocuments,
+              summary: prepared.summary,
             }
           }
         }
         if (initialAttachmentContext) {
-          initialAttachmentContext.fragments.forEach((fragment) => {
-            const key = getFragmentDedupKey(fragment)
-            if (key) gatheredFragmentsKeys.add(key)
-          })
-          recordFragmentsForContext(
-            agentContext,
-            initialAttachmentContext.fragments,
-            MIN_TURN_NUMBER,
-          )
+          const { rawDocuments, summary: attachmentSummary } =
+            initialAttachmentContext
+          if (rawDocuments.length > 0) {
+            mergeRawDocumentsIntoDocumentMemory(
+              agentContext.documentMemory,
+              rawDocuments,
+              MIN_TURN_NUMBER,
+              message,
+              "initial_attachment",
+            )
+          }
           agentContext.chat.metadata = {
             ...agentContext.chat.metadata,
             initialAttachmentPhase: true,
-            initialAttachmentSummary: initialAttachmentContext.summary,
+            initialAttachmentSummary: attachmentSummary,
           }
         }
 
-        // Pass memory then attachments as low-privilege synthetic tool results
+        // Pass memory then attachments as low-privilege synthetic tool results.
+        // We must also simulate the preceding assistant tool_call so JAF can
+        // correctly include the tool-result content in the prompt.
+        const initialToolCallId = `synthetic-initialToolMessage-${MIN_TURN_NUMBER}`
         const initialToolMsg = buildInitialToolMessage({
           episodicMemoriesText: agentContext.episodicMemoriesText,
           chatMemoryText: agentContext.chatMemoryText,
+          toolCallId: initialToolCallId,
         })
         if (initialToolMsg) {
-          initialSyntheticMessages.push(initialToolMsg)
+          initialSyntheticMessages.push(
+            buildSyntheticAssistantToolCallMessage({
+              toolCallId: initialToolCallId,
+              toolName: INITIAL_TOOL_MESSAGE,
+              arguments: {},
+            }),
+            initialToolMsg,
+          )
         }
         if (initialAttachmentContext) {
+          const attachmentDocIds = initialAttachmentContext.rawDocuments.map(
+            (d) => d.docId,
+          )
+          const attachmentDocs = attachmentDocIds
+            .map((id) => agentContext.documentMemory.get(id))
+            .filter((d): d is DocumentState => d != null)
+          const attachmentFragments =
+            attachmentDocs.length > 0
+              ? await getFragmentsForSynthesisForDocs(
+                  agentContext.documentMemory,
+                  attachmentDocs,
+                  {
+                    email: agentContext.user.email,
+                    userId: agentContext.user.numericId ?? undefined,
+                    workspaceId: agentContext.user.workspaceNumericId ?? undefined,
+                  },
+                )
+              : []
+          const attachmentToolCallId = `synthetic-${ATTACHMENT_TOOL_MESSAGE}-${MIN_TURN_NUMBER}`
           initialSyntheticMessages.push(
+            buildSyntheticAssistantToolCallMessage({
+              toolCallId: attachmentToolCallId,
+              toolName: ATTACHMENT_TOOL_MESSAGE,
+              arguments: { source: "user_attachment" },
+            }),
             buildAttachmentToolMessage(
-              initialAttachmentContext.fragments,
+              attachmentFragments,
               initialAttachmentContext.summary,
+              attachmentToolCallId,
             ),
           )
         }
@@ -5181,6 +5027,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
           },
           ...initialSyntheticMessages,
         ]
+
+        console.log("initialMessages", initialMessages)
 
         const runState: JAFRunState<AgentRunContext> = {
           runId,
@@ -5309,6 +5157,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         const runTurnEndReviewAndCleanup = async (
           turn: number,
         ): Promise<void> => {
+          mergeToolOutputsIntoCurrentTurnMemory(agentContext, turn)
           await runTurnEndPipeline(agentContext, {
             turn,
             useAgenticFiltering: USE_AGENTIC_FILTERING,
@@ -5330,7 +5179,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
             },
             getExpectationsForTurn: (t) => expectationHistory.get(t) || [],
 
-            // Wiring: batch fragment ranking
+            // Wiring: batch fragment ranking (one fragment per doc from merged document memory)
+            getUnrankedFragmentsForRanking: (ctx, t) =>
+              buildUnrankedFragmentsFromDocumentMemory(ctx, t),
             rankFragments: async (ctx, allUnrankedWithToolContext, t, emitter) => {
               return await batchRankFragments(
                 ctx,
@@ -5341,15 +5192,26 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 emitter
               )
             },
-            ingestFragments: (ctx, fragments, t) => {
-              recordFragmentsForContext(ctx, fragments, t)
+            mergeCurrentTurnIntoCrossTurn: (ctx, t) => {
+              const docs = Array.from(ctx.currentTurnDocumentMemory.values())
+              if (docs.length > 0) {
+                const newChunks = mergeDocumentStatesIntoDocumentMemory(
+                  ctx.documentMemory,
+                  docs,
+                )
+                if (newChunks > 0) {
+                  ctx.turnNewChunksCount.set(
+                    t,
+                    (ctx.turnNewChunksCount.get(t) ?? 0) + newChunks,
+                  )
+                }
+              }
             },
 
             // Wiring: cleanup
             flushExpectations: () => {
               pendingExpectations.length = 0
             },
-            finalizeTurnImages,
             resetTurnArtifacts: resetCurrentTurnArtifacts,
             clearAttachmentPhase: (ctx) => {
               const attachmentState = getAttachmentPhaseMetadata(ctx)
@@ -5497,7 +5359,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
               hookContext,
               message,
               messagesWithNoErrResponse,
-              gatheredFragmentsKeys,
               expectationForCall,
               turnForCall,
               toolScopedEmitter,
@@ -5562,7 +5423,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
               data: chunk,
             })
 
-            const fragmentsForCitations = agentContext.allFragments
+            const fragmentsForCitations =
+              await getFragmentsForSynthesis(agentContext.documentMemory, {
+                email: agentContext.user?.email,
+                userId: agentContext.user?.numericId ?? undefined,
+                workspaceId: agentContext.user?.workspaceNumericId ?? undefined,
+              })
             for await (const citationEvent of checkAndYieldCitationsForAgent(
               answer,
               yieldedCitations,
@@ -6724,8 +6590,6 @@ async function runDelegatedAgentWithMessageAgents(
         .join("\n")
     }
 
-    const gatheredFragmentsKeys = new Set<string>()
-
     const instructions = () => {
       return buildAgentInstructions(
         agentContext,
@@ -6752,16 +6616,27 @@ async function runDelegatedAgentWithMessageAgents(
     const traceId = generateTraceId()
     const message = params.query
 
+    const delegatedInitialToolCallId = `synthetic-initialToolMessage-delegated-${MIN_TURN_NUMBER}`
     const delegatedInitialToolMsg = buildInitialToolMessage({
       episodicMemoriesText: agentContext.episodicMemoriesText,
       chatMemoryText: agentContext.chatMemoryText,
+      toolCallId: delegatedInitialToolCallId,
     })
     const initialMessages: JAFMessage[] = [
       {
         role: "user",
         content: message,
       },
-      ...(delegatedInitialToolMsg ? [delegatedInitialToolMsg] : []),
+      ...(delegatedInitialToolMsg
+        ? [
+            buildSyntheticAssistantToolCallMessage({
+              toolCallId: delegatedInitialToolCallId,
+              toolName: INITIAL_TOOL_MESSAGE,
+              arguments: {},
+            }),
+            delegatedInitialToolMsg,
+          ]
+        : []),
     ]
 
     const runState: JAFRunState<AgentRunContext> = {
@@ -6852,6 +6727,7 @@ async function runDelegatedAgentWithMessageAgents(
     const runTurnEndReviewAndCleanup = async (
       turn: number,
     ): Promise<void> => {
+          mergeToolOutputsIntoCurrentTurnMemory(agentContext, turn)
       await runTurnEndPipeline(agentContext, {
         turn,
         useAgenticFiltering: USE_AGENTIC_FILTERING,
@@ -6872,6 +6748,8 @@ async function runDelegatedAgentWithMessageAgents(
         },
         getExpectationsForTurn: (t) => expectationHistory.get(t) || [],
 
+        getUnrankedFragmentsForRanking: (ctx, t) =>
+          buildUnrankedFragmentsFromDocumentMemory(ctx, t),
         rankFragments: async (ctx, allUnrankedWithToolContext, t, emitter) => {
           return await batchRankFragments(
             ctx,
@@ -6882,14 +6760,25 @@ async function runDelegatedAgentWithMessageAgents(
             emitter
           )
         },
-        ingestFragments: (ctx, fragments, t) => {
-          recordFragmentsForContext(ctx, fragments, t)
+        mergeCurrentTurnIntoCrossTurn: (ctx, t) => {
+          const docs = Array.from(ctx.currentTurnDocumentMemory.values())
+          if (docs.length > 0) {
+            const newChunks = mergeDocumentStatesIntoDocumentMemory(
+              ctx.documentMemory,
+              docs,
+            )
+            if (newChunks > 0) {
+              ctx.turnNewChunksCount.set(
+                t,
+                (ctx.turnNewChunksCount.get(t) ?? 0) + newChunks,
+              )
+            }
+          }
         },
 
         flushExpectations: () => {
           pendingExpectations.length = 0
         },
-        finalizeTurnImages,
         resetTurnArtifacts: resetCurrentTurnArtifacts,
         clearAttachmentPhase: (ctx) => {
           const attachmentState = getAttachmentPhaseMetadata(ctx)
@@ -7018,7 +6907,6 @@ async function runDelegatedAgentWithMessageAgents(
           hookContext,
           message,
           messagesWithNoErrResponse,
-          gatheredFragmentsKeys,
           expectationForCall,
           turnForCall,
           toolScopedEmitter,
@@ -7294,8 +7182,12 @@ async function runDelegatedAgentWithMessageAgents(
         ? answer
         : agentContext.finalSynthesis.streamedText || ""
 
+    const fragmentsForCitations =
+    await getFragmentsForSynthesis(agentContext.documentMemory, {
+      email: params.userEmail,
+    })
+
     if (answerForCitations) {
-      const fragmentsForCitations = agentContext.allFragments
       for await (const event of checkAndYieldCitationsForAgent(
         answerForCitations,
         yieldedCitations,
@@ -7313,14 +7205,16 @@ async function runDelegatedAgentWithMessageAgents(
     }
 
     const finalAnswer = answerForCitations || "Agent did not return any text."
+    const rawDocuments = documentMemoryToRawDocuments(agentContext.documentMemory)
 
     return {
       result: finalAnswer,
-      contexts: fragmentsToToolContexts(agentContext.allFragments),
       metadata: {
         agentId: params.agentId,
+        contexts: fragmentsToToolContexts(fragmentsForCitations),
         citations,
         imageCitations,
+        rawDocuments,
         cost: agentContext.totalCost,
         tokensUsed:
           agentContext.tokenUsage.input + agentContext.tokenUsage.output,
