@@ -73,10 +73,10 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOp
       }
     }
     
-    // Cleanup function to remove the goToPage function when component unmounts
     return () => {
       if (documentOperationsRef?.current) {
         documentOperationsRef.current.goToPage = undefined
+        documentOperationsRef.current.waitForPageReady = undefined
       }
     }
   }, [documentOperationsRef, setActiveSheet, sheets])

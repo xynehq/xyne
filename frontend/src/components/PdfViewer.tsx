@@ -114,6 +114,16 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     Record<number, { canvas?: boolean; text?: boolean; anno?: boolean }>
   >({})
 
+  /** Avoid stale closures when comparing “already on this page?” for readiness invalidation. */
+  const pageNumberRef = useRef(pageNumber)
+  const currentVisiblePageRef = useRef(currentVisiblePage)
+  useEffect(() => {
+    pageNumberRef.current = pageNumber
+  }, [pageNumber])
+  useEffect(() => {
+    currentVisiblePageRef.current = currentVisiblePage
+  }, [currentVisiblePage])
+
   // Track component mount status to prevent operations on unmounted components
   const isMountedRef = useRef<boolean>(true)
 
@@ -211,7 +221,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     count: numPages || 0,
     getScrollElement: () => containerRef.current,
     estimateSize: getEstimatedHeight,
-    overscan: 6,
+    overscan: 10,
     enabled: displayMode === "continuous" && !!numPages,
   })
 
@@ -432,6 +442,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         return
       }
 
+      // Scale change re-renders every page; old canvas/text/anno flags are invalid.
+      pageReadyRef.current = {}
+
       const recomputeHeights = async () => {
         try {
           const newHeights = await computeHeightMap(pdfDocument, scale)
@@ -485,40 +498,88 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     [numPages, displayMode, rowVirtualizer],
   )
 
-  // Register the goToPage function with the DocumentOperations ref
+  // Register navigation + readiness on the document ref (highlight pipeline calls them separately).
   useEffect(() => {
     if (documentOperationsRef?.current) {
       documentOperationsRef.current.goToPage = async (pageIndex?: number) => {
         if (!isMountedRef.current || pageIndex === undefined || pageIndex < 0) {
           return
         }
-        // Convert 0-based index to 1-based page number
-        const pageNumber = pageIndex + 1
-        if (currentVisiblePage !== pageNumber) {
-          goToPage(pageNumber)
+        const target = pageIndex + 1
+        const visible =
+          displayMode === "paginated"
+            ? pageNumberRef.current
+            : currentVisiblePageRef.current
+        const pageElBeforeNav = containerRef.current?.querySelector(
+          `[data-page-number="${target}"]`,
+        )
+        const isMountedInDom = !!pageElBeforeNav
+        const wasReady = isFullyReady(target)
+        // Virtualizer can unmount a page while pageReadyRef still says ready — never trust
+        // readiness unless the page node exists in the DOM.
+        if (visible !== target && (!wasReady || !isMountedInDom)) {
+          delete pageReadyRef.current[target]
+        }
+        // Always scroll so repeat citations re-center even when already on this page.
+        goToPage(target)
+        if (displayMode === "continuous") {
+          rowVirtualizer.measure()
+        }
+      }
+
+      documentOperationsRef.current.waitForPageReady = async (
+        pageIndex?: number,
+      ) => {
+        if (!isMountedRef.current || pageIndex === undefined || pageIndex < 0) {
+          return
+        }
+        const pageNum = pageIndex + 1
+
+        const pageNode = () =>
+          containerRef.current?.querySelector<HTMLElement>(
+            `[data-page-number="${pageNum}"]`,
+          )
+
+        if (pageNode() && isFullyReady(pageNum)) {
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => resolve())
+          })
+          return
         }
 
-        // Wait for the specific page to be ready
         let attempts = 0
-        const maxAttempts = 100 // 5 seconds max wait
-        while (
-          isMountedRef.current &&
-          !isFullyReady(pageNumber) &&
-          attempts < maxAttempts
-        ) {
-          await new Promise((resolve) => setTimeout(resolve, 50))
+        const maxAttempts = 300
+        const pollMs = 16
+        while (isMountedRef.current && attempts < maxAttempts) {
+          const el = pageNode()
+          if (el && isFullyReady(pageNum)) {
+            break
+          }
+          await new Promise((r) => setTimeout(r, pollMs))
           attempts++
+        }
+        // Two frames after DOM + layers agree — layout/transform often settles here.
+        if (
+          isMountedRef.current &&
+          pageNode() &&
+          isFullyReady(pageNum)
+        ) {
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => resolve())
+            })
+          })
         }
       }
     }
 
-    // Cleanup function to remove the goToPage function when component unmounts
     return () => {
       if (documentOperationsRef?.current) {
         documentOperationsRef.current.goToPage = undefined
+        documentOperationsRef.current.waitForPageReady = undefined
       }
     }
-  }, [documentOperationsRef, goToPage])
+  }, [documentOperationsRef, goToPage, displayMode, rowVirtualizer])
 
   const commitPageInput = useCallback(() => {
     if (pageInput === null) return

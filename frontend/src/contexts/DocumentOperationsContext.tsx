@@ -17,6 +17,8 @@ export interface DocumentOperations {
   clearHighlights?: () => void
   scrollToMatch?: (index: number) => boolean
   goToPage?: (pageIndex: number) => Promise<void>
+  /** PDF viewer: wait until canvas + text + annotation layers are ready for this 0-based page. */
+  waitForPageReady?: (pageIndex: number) => Promise<void>
 }
 
 // Create the context
@@ -107,6 +109,11 @@ export const withDocumentOperations = <P extends object>(
         goToPage: async (pageIndex: number) => {
           if (documentOperationsRef.current?.goToPage) {
             await documentOperationsRef.current.goToPage(pageIndex)
+          }
+        },
+        waitForPageReady: async (pageIndex: number) => {
+          if (documentOperationsRef.current?.waitForPageReady) {
+            await documentOperationsRef.current.waitForPageReady(pageIndex)
           }
         },
       }),

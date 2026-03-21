@@ -1370,11 +1370,19 @@ export const ChatPage = ({
       
       // Same document already open: only change chunk; handleChunkIndexChange will fetch and goToPage (no full reload)
       if (previewAlreadyOpenWithSameDoc) {
-        setSelectedChunkIndex(chunkIndex ?? null)
+        const nextChunk = chunkIndex ?? null
+        const isSameChunkAsSelection =
+          (selectedChunkIndex ?? null) === (nextChunk ?? null)
+        setSelectedChunkIndex(nextChunk)
         setShowSources(false)
         if (!fromSources) {
           setCurrentCitations([])
           setCurrentMessageId(null)
+        }
+        // Re-clicking the same citation does not change `selectedChunkIndex`, so the effect that
+        // calls handleChunkIndexChange will not run — user stays on another page with no scroll/highlight.
+        if (isSameChunkAsSelection && citation.docId) {
+          void handleChunkIndexChange(nextChunk, citation.docId)
         }
         return
       }
@@ -1426,7 +1434,12 @@ export const ChatPage = ({
         setCurrentMessageId(null)
       }
     },
-    [isCitationPreviewOpen, selectedCitation],
+    [
+      isCitationPreviewOpen,
+      selectedCitation,
+      selectedChunkIndex,
+      handleChunkIndexChange,
+    ],
   )
 
   // Memoized callback for closing citation preview - moved before conditional returns

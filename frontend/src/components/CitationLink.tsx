@@ -56,8 +56,25 @@ export const createCitationLink =
       ) {
         chunkIndex = Math.max(chunkIndex - 1, 0)
       }
+
+     /* 
+      * showTooltip is true meaning normal chat.tsx which needs citations of multiple docs ex: 1.1, 1.2, 2.1 etc. 
+      * If false, it means citation link is being rendered in a context where only one doc is being cited (ex: document chat) and 
+      * we can just show incremental numbers like 1, 2, 3 for chunks without the citation index prefix.
+      */
       if(showTooltip) {
-        children = (citationIndex + 1).toString()
+        if (!globalChunkIndexMap.has(`${citationIndex}_${-1}`)) {
+          globalChunkIndexMap.set(`${citationIndex}_${-1}`, 0)
+        }
+        globalCount = globalChunkIndexMap.get(`${citationIndex}_${-1}`)!
+        if (!globalChunkIndexMap.has(`${citationIndex}_${chunkIndex}`)) {
+          globalChunkIndexMap.set(`${citationIndex}_${chunkIndex}`, globalCount)
+          globalCount = globalCount + 1
+          globalChunkIndexMap.set(`${citationIndex}_${-1}`, globalCount)
+        } else {
+          const displayedIndex = globalChunkIndexMap.get(`${citationIndex}_${chunkIndex}`)!
+          children = `${citationIndex + 1}.${displayedIndex}`
+        }
       } else {
         if (!globalChunkIndexMap.has(`${citationIndex}_${chunkIndex}`)) {
           globalCount = globalCount + 1
