@@ -54,7 +54,7 @@ export function useScopedFind(
   const {
     caseSensitive = true,
     highlightClass = "bg-yellow-200/60 dark:bg-yellow-200/40 rounded-sm px-0.5 py-px",
-    debug = true,
+    debug = false,
     documentId,
   } = opts
 

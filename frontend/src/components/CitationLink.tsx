@@ -71,10 +71,9 @@ export const createCitationLink =
           globalChunkIndexMap.set(`${citationIndex}_${chunkIndex}`, globalCount)
           globalCount = globalCount + 1
           globalChunkIndexMap.set(`${citationIndex}_${-1}`, globalCount)
-        } else {
-          const displayedIndex = globalChunkIndexMap.get(`${citationIndex}_${chunkIndex}`)!
-          children = `${citationIndex + 1}.${displayedIndex}`
         }
+        const displayedIndex = globalChunkIndexMap.get(`${citationIndex}_${chunkIndex}`)!
+        children = `${citationIndex + 1}.${displayedIndex}`
       } else {
         if (!globalChunkIndexMap.has(`${citationIndex}_${chunkIndex}`)) {
           globalCount = globalCount + 1
