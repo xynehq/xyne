@@ -41,9 +41,12 @@ function findPdfPageRoot(
   pageIndex0: number,
 ): HTMLElement | null {
   if (pageIndex0 < 0) return null
-  return root.querySelector<HTMLElement>(
-    `[data-page-number="${pageIndex0 + 1}"]`,
-  )
+  const selector = `[data-page-number="${pageIndex0 + 1}"]`
+  // Check if root itself matches the selector
+  if (root.matches(selector)) {
+    return root
+  }
+  return root.querySelector<HTMLElement>(selector)
 }
 
 export function useScopedFind(
@@ -438,10 +441,8 @@ export function useScopedFind(
     [isPDFContext, createOverlayHighlights, createMarkHighlights, debug],
   )
 
-  const clearHighlights = useCallback(() => {
-    const root = containerRef.current
-    if (!root) return
-
+  // Internal function to clear DOM highlights without affecting the cancellation token
+  const clearHighlightsFromDOM = useCallback((root: HTMLElement) => {
     // Clear mark-based highlights
     const marks = root.querySelectorAll<HTMLElement>("mark[data-match-index]")
     marks.forEach((m) => {
@@ -466,10 +467,21 @@ export function useScopedFind(
     individualOverlays.forEach((overlay) => {
       overlay.remove()
     })
+  }, [])
+
+  // Exported function: increments token to cancel pending work, clears DOM, resets state
+  const clearHighlights = useCallback(() => {
+    const root = containerRef.current
+    if (!root) return
+
+    // Increment token to invalidate any pending async work
+    callTokenRef.current += 1
+
+    clearHighlightsFromDOM(root)
 
     setMatches([])
     setIndex(0)
-  }, [containerRef])
+  }, [containerRef, clearHighlightsFromDOM])
 
   // Wait for text layer to be fully rendered and positioned
   const waitForTextLayerReady = useCallback(
@@ -585,7 +597,7 @@ export function useScopedFind(
         console.log("Container found:", root)
       }
 
-      clearHighlights()
+      clearHighlightsFromDOM(root)
       if (!text) return false
 
       setIsLoading(true)
@@ -629,7 +641,14 @@ export function useScopedFind(
             }
 
             if (isPDFContext(root)) {
-              highlightScope = findPdfPageRoot(root, pageIndex) || root
+              const pageRoot = findPdfPageRoot(root, pageIndex)
+              if (!pageRoot) {
+                if (debug) {
+                  console.log(`PDF page ${pageIndex} not found, skipping highlight`)
+                }
+                return false
+              }
+              highlightScope = pageRoot
             }
 
             if (waitForPageReadyFn) {
@@ -807,7 +826,7 @@ export function useScopedFind(
         }
 
         // Drop any stray marks from a racing call that finished after our initial clear.
-        clearHighlights()
+        clearHighlightsFromDOM(root)
 
         // Create highlight marks for all matches
         const allMarks: HTMLElement[] = []
@@ -865,7 +884,7 @@ export function useScopedFind(
       } catch (error) {
         console.error("Error during client-side highlighting:", error)
         if (currentToken === callTokenRef.current) {
-          clearHighlights()
+          clearHighlightsFromDOM(root)
         }
         return false
       } finally {
@@ -876,7 +895,7 @@ export function useScopedFind(
       }
     },
     [
-      clearHighlights,
+      clearHighlightsFromDOM,
       containerRef,
       extractContainerText,
       createHighlightMarks,
