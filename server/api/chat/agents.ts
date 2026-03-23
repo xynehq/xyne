@@ -643,7 +643,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             messagesWithNoErrResponse,
             finalImageFileNames,
             email,
-            isReasoningEnabled,
+            userRequestsReasoningAndEnabled,
             actualModelId || undefined,
           )
           let answer = ""
@@ -978,7 +978,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           messagesWithNoErrResponse,
           finalImageFileNames,
           email,
-          isReasoningEnabled,
+          userRequestsReasoningAndEnabled,
           actualModelId || undefined,
         )
 
@@ -2197,6 +2197,7 @@ export const AgentMessageApi = async (c: Context) => {
               // one more bug is now llm automatically copies the citation text sometimes without any reference
               // leads to [NaN] in the answer
               let currentAnswer = ""
+              let answerComplete = false
               let answer = ""
               let citations: Citation[] = []
               let imageCitations: ImageCitation[] = []
@@ -2312,7 +2313,11 @@ export const AgentMessageApi = async (c: Context) => {
                       buffer += chunk.text
                       try {
                         parsed = jsonParseLLMOutput(buffer) || {}
-                        if (parsed.answer && currentAnswer !== parsed.answer) {
+                        if (
+                          !answerComplete &&
+                          parsed.answer &&
+                          currentAnswer !== parsed.answer
+                        ) {
                           if (currentAnswer === "") {
                             Logger.info(
                               "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
@@ -2342,7 +2347,7 @@ export const AgentMessageApi = async (c: Context) => {
                           typeof currentAnswer === "string" &&
                           currentAnswer.trim().length > 0
                         ) {
-                          break
+                          answerComplete = true
                         }
                       } catch (err) {
                         const errMessage = (err as Error).message
@@ -2378,7 +2383,7 @@ export const AgentMessageApi = async (c: Context) => {
               )
               conversationSpan.end()
 
-              if (parsed.answer === null || parsed.answer === "" || !parsed.answer) {
+              if (parsed.answer === null || parsed.answer === "") {
                 const ragSpan = streamSpan.startSpan("rag_processing")
                 if (parsed.queryRewrite) {
                   Logger.info(

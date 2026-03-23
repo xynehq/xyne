@@ -826,7 +826,27 @@ async function* processIterator(
     try {
       const recovered = jsonParseLLMOutput(finalBuffer, ANSWER_TOKEN)
       if (recovered?.answer) {
-        return recovered.answer
+        const recoveredAnswer = recovered.answer
+        if (currentAnswer !== recoveredAnswer) {
+          const baseLength = currentAnswer.length
+          const newText = recoveredAnswer.slice(baseLength)
+          currentAnswer = recoveredAnswer
+
+          if (newText.length > 0) {
+            yield { text: newText }
+          }
+
+          yield* checkAndYieldCitations(
+            recoveredAnswer,
+            yieldedCitations,
+            results,
+            previousResultsLength,
+            email!,
+            yieldedImageCitations,
+            allowChunkCitations,
+          )
+        }
+        return currentAnswer
       }
     } catch {
       // no-op
@@ -2204,6 +2224,7 @@ async function* generateAnswerFromGivenContext(
 
   let previousResultsLength = 0
   const combinedSearchResponse: VespaSearchResult[] = []
+  const attachmentFallbackDocs: VespaSearchResult[] = []
   let chunksPerDocument: number[] = []
   const targetChunks = maxChunksPerPage
 
@@ -2268,8 +2289,27 @@ async function* generateAnswerFromGivenContext(
             rankProfile: SearchModes.AttachmentRank,
           },
         )
-        if (results.root.children) {
+        if (results.root.children && results.root.children.length > 0) {
           combinedSearchResponse.push(...results.root.children)
+        } else {
+          // Fallback: if Vespa search can't score attachments (or yields nothing),
+          // fetch the raw attachment documents directly and treat them as equal-weight hits.
+          const createdDirectFetchSpan = !fileSearchSpan && !generateAnswerSpan
+          const directFetchSpan: Span =
+            fileSearchSpan ??
+            generateAnswerSpan ??
+            passedSpan?.startSpan("attachment_direct_doc_fetch") ??
+            getTracer("chat").startSpan("attachment_direct_doc_fetch")
+          const direct = await GetDocumentsByDocIds(
+            attachmentFileIds,
+            directFetchSpan,
+          )
+          if (direct?.root?.children?.length) {
+            attachmentFallbackDocs.push(...direct.root.children)
+          }
+          if (createdDirectFetchSpan) {
+            directFetchSpan.end()
+          }
         }
       }
     }
@@ -2394,6 +2434,13 @@ async function* generateAnswerFromGivenContext(
     userMetadata.userId,
     userMetadata.workspaceId,
   )
+
+  if(attachmentFallbackDocs.length > 0) {
+    loggerWithChild({ email: email }).info(
+      `Adding ${attachmentFallbackDocs.length} attachment fallback documents to the context`,
+    )
+    combinedSearchResponse.push(...attachmentFallbackDocs)
+  }
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
     let content = await answerContextMap(
       v as VespaSearchResults,
@@ -5837,7 +5884,7 @@ export const MessageApi = async (c: Context) => {
               loggerWithChild({ email: email }).info(
                 "Using deep research for the question",
               )
-              reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[actualModelId as Models || config.defaultDeepResearchModel]?.reasoning ?? true) === true
+              reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[config.defaultDeepResearchModel]?.reasoning ?? true) === true
               searchOrAnswerIterator = getDeepResearchResponse(message, ctx, {
                 modelId: config.defaultDeepResearchModel,
                 stream: true,
@@ -5852,7 +5899,7 @@ export const MessageApi = async (c: Context) => {
               loggerWithChild({ email: email }).info(
                 "Using web search for the question",
               )
-              reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[actualModelId as Models || config.defaultWebSearchModel]?.reasoning ?? true) === true
+              reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[config.defaultWebSearchModel]?.reasoning ?? true) === true
               searchOrAnswerIterator = webSearchQuestion(
                 message,
                 ctx,

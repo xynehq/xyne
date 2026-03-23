@@ -1,5 +1,5 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
-import BaseProvider from "@/ai/provider/base"
+import BaseProvider, { findImageByName, regex } from "@/ai/provider/base"
 import type { ConverseResponse, ModelParams } from "@/ai/types"
 import { AIProviders } from "@/ai/types"
 import { calculateCost } from "@/utils/index"
@@ -9,9 +9,167 @@ import { modelDetailsMap } from "@/ai/mappers"
 import OpenAI from "openai"
 import { getCostConfigForModel } from "@/ai/fetchModels"
 import config from "@/config"
+import fs from "fs"
+import path from "path"
 
 const Logger = getLogger(Subsystem.AI)
 const { StartThinkingToken, EndThinkingToken } = config
+
+const imageFormatToMimeType: Record<string, string> = {
+  png: "image/png",
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+}
+
+const getMessageText = (message: Message): string =>
+  (message.content ?? [])
+    .filter((block: any) => typeof block?.text === "string")
+    .map((block: any) => block.text)
+    .join("\n")
+
+function extractReasoningText(rawReasoning: any): string {
+  if (typeof rawReasoning === "string") {
+    return rawReasoning
+  }
+  if (Array.isArray(rawReasoning)) {
+    return rawReasoning
+      .map((part: any) => (typeof part === "string" ? part : (part?.text ?? "")))
+      .join("")
+  }
+  if (rawReasoning && typeof rawReasoning === "object") {
+    return (rawReasoning as any).text || ""
+  }
+  return ""
+}
+
+const buildLiteLLMImageParts = async (
+  imagePaths: string[],
+): Promise<OpenAI.Chat.Completions.ChatCompletionContentPartImage[]> => {
+  const baseDir = path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db")
+
+  const imagePromises = imagePaths.map(async (imgPath) => {
+    const match = imgPath.match(regex)
+    if (!match) {
+      Logger.warn(
+        `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,
+      )
+      return null
+    }
+
+    const docId = match[2]
+    const imageNumber = match[3]
+
+    if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
+      Logger.warn(`Invalid docId containing path traversal: ${docId}`)
+      return null
+    }
+
+    const imageDir = path.join(baseDir, docId)
+    const absolutePath = findImageByName(imageDir, imageNumber)
+    const extension = path.extname(absolutePath).toLowerCase()
+    const mimeType = imageFormatToMimeType[extension.replace(".", "")]
+    if (!mimeType) {
+      Logger.warn(
+        `Unsupported image format: ${extension}. Skipping image: ${absolutePath}`,
+      )
+      return null
+    }
+
+    const resolvedPath = path.resolve(imageDir)
+    if (!resolvedPath.startsWith(baseDir)) {
+      Logger.warn(`Path traversal attempt detected: ${imageDir}`)
+      return null
+    }
+
+    try {
+      await fs.promises.access(absolutePath, fs.constants.F_OK)
+      const imageBytes = await fs.promises.readFile(absolutePath)
+
+      if (imageBytes.length > 4 * 1024 * 1024) {
+        Logger.warn(
+          `Image buffer too large after read (${imageBytes.length} bytes, ${(imageBytes.length / (1024 * 1024)).toFixed(2)}MB): ${absolutePath}. Skipping this image.`,
+        )
+        return null
+      }
+
+      return {
+        type: "image_url" as const,
+        image_url: {
+          url: `data:${mimeType};base64,${imageBytes.toString("base64")}`,
+        },
+      }
+    } catch (error) {
+      Logger.warn(
+        `Failed to read image file ${absolutePath}: ${error instanceof Error ? error.message : error}`,
+      )
+      return null
+    }
+  })
+
+  const results = await Promise.all(imagePromises)
+  return results.filter(
+    (
+      part,
+    ): part is OpenAI.Chat.Completions.ChatCompletionContentPartImage =>
+      part !== null,
+  )
+}
+
+const transformLiteLLMMessages = async (
+  messages: Message[],
+  imageFileNames?: string[],
+): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam[]> => {
+  const imageParts =
+    imageFileNames && imageFileNames.length > 0
+      ? await buildLiteLLMImageParts(imageFileNames)
+      : []
+
+  const lastUserMessageIndex =
+    messages
+      .map((m, idx) => ({ message: m, index: idx }))
+      .reverse()
+      .find(({ message }) => message.role === "user")?.index ?? -1
+
+  return messages.map((message, index) => {
+    const role = message.role === "assistant" ? "assistant" : "user"
+    const text = getMessageText(message)
+
+    if (role === "user" && index === lastUserMessageIndex && imageParts.length > 0) {
+      const labeledParts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
+        {
+          type: "text",
+          text:
+            "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question. When referring to images in your response, please use the labels provided [docIndex_imageNumber] (e.g., [0_12], [7_2], etc.).\n\n" +
+            text,
+        },
+      ]
+
+      imageParts.forEach((part, i) => {
+        const imageFileName = imageFileNames?.[i] || ""
+        const match = imageFileName.match(regex)
+        if (match) {
+          labeledParts.push({
+            type: "text",
+            text: `\n--- imageNumber: ${match[3]}, docIndex: ${match[1]} ---`,
+          })
+        }
+        labeledParts.push(part)
+      })
+
+      return {
+        role: "user",
+        content: labeledParts,
+      }
+    }
+
+    return {
+      role,
+      content: text,
+    }
+  })
+}
 
 interface LiteLLMClientConfig {
   apiKey: string
@@ -53,13 +211,8 @@ export class LiteLLMProvider extends BaseProvider {
 
     try {
       // Transform messages to OpenAI-compatible format
-      const transformedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = messages.map((message) => {
-        const role = message.role === "assistant" ? "assistant" : "user"
-        return {
-          role,
-          content: message.content?.[0]?.text || "",
-        }
-      })
+      const transformedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+        await transformLiteLLMMessages(messages, params.imageFileNames)
 
       const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         {
@@ -166,13 +319,8 @@ export class LiteLLMProvider extends BaseProvider {
 
     try {
       // Transform messages to OpenAI-compatible format
-      const transformedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = messages.map((message) => {
-        const role = message.role === "assistant" ? "assistant" : "user"
-        return {
-          role,
-          content: message.content?.[0]?.text || "",
-        }
-      })
+      const transformedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+        await transformLiteLLMMessages(messages, params.imageFileNames)
 
       const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         {
@@ -256,18 +404,7 @@ export class LiteLLMProvider extends BaseProvider {
             (delta as any)?.reasoning_content ??
             (delta as any)?.reasoning ??
             (delta as any)?.reasoning_text
-          let reasoningText = ""
-          if (typeof rawReasoning === "string") {
-            reasoningText = rawReasoning
-          } else if (Array.isArray(rawReasoning)) {
-            reasoningText = rawReasoning
-              .map((part: any) =>
-                typeof part === "string" ? part : (part?.text ?? ""),
-              )
-              .join("")
-          } else if (rawReasoning && typeof rawReasoning === "object") {
-            reasoningText = (rawReasoning as any).text || ""
-          }
+          const reasoningText = extractReasoningText(rawReasoning)
           if (reasoningText) {
             if (!startedReasoning) {
               yield { text: `${StartThinkingToken}${reasoningText}` }
@@ -282,7 +419,7 @@ export class LiteLLMProvider extends BaseProvider {
         // Some LiteLLM backends may start emitting answer content before finish_reason.
         // Close thinking as soon as first content token arrives so downstream parser can consume JSON.
         if (delta?.content) {
-          if (params.reasoning && startedReasoning && !reasoningComplete) {
+          if (params.reasoning && !reasoningComplete) {
             yield { text: EndThinkingToken }
             reasoningComplete = true
           }
