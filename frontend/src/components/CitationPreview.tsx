@@ -27,6 +27,10 @@ interface CitationPreviewProps {
   onDocumentLoaded?: () => void
   /** 0-based page/sheet index to open at (from chunk API). PDF uses as initialPage (1-based), Excel as initial sheet. */
   initialPageIndex?: number | null
+  /** Sentence-level query for Vespa highlight search (citation click) */
+  highlightQueryText?: string
+  /** Current chunk (0-based) aligned with Vespa chunk id `${docId}_${index}` */
+  selectedChunkIndex?: number | null
 }
 
 function isAgentDocumentCitation(c: Citation | null): boolean {
@@ -65,6 +69,8 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   documentOperationsRef,
   onDocumentLoaded,
   initialPageIndex,
+  highlightQueryText,
+  selectedChunkIndex: selectedChunkIndexProp,
 }) => {
   const [documentContent, setDocumentContent] = useState<Blob | null>(null)
   const [agentDocument, setAgentDocument] = useState<AgentDocumentPayload | null>(
@@ -184,10 +190,34 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     }
   }, [citation, isOpen])
 
+  const docIdForHighlight = citation?.docId ?? ""
+  const vespaChunkKey: number | undefined =
+    highlightQueryText?.trim() &&
+    docIdForHighlight &&
+    selectedChunkIndexProp !== null &&
+    selectedChunkIndexProp !== undefined
+      ? selectedChunkIndexProp
+      : undefined
+
+  const vespaHighlight = useVespaHighlight({
+    query: highlightQueryText ?? "",
+    docId: docIdForHighlight,
+    chunkId: vespaChunkKey,
+    enabled:
+      isOpen &&
+      !!highlightQueryText?.trim() &&
+      !!docIdForHighlight &&
+      selectedChunkIndexProp !== null &&
+      selectedChunkIndexProp !== undefined,
+    caseSensitive: false,
+  })
+
   const { highlightText, clearHighlights, scrollToMatch } = useScopedFind(
     containerRef,
     {
       documentId: citation?.itemId ?? citation?.docId ?? "",
+      vespaKeywordTokens: vespaHighlight.tokens,
+      vespaChunkId: vespaHighlight.chunk?.id ?? null,
     },
   )
 
@@ -199,6 +229,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
         chunkIndex: number,
         pageIndex?: number,
         waitForTextLayer: boolean = false,
+        queryText?: string,
       ) => {
         if (!containerRef.current) {
           return false
@@ -210,6 +241,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
             chunkIndex,
             pageIndex,
             waitForTextLayer,
+            queryText,
           )
           return success
         } catch (error) {

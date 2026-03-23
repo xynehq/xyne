@@ -66,6 +66,7 @@ import {
   useInfiniteQuery,
   InfiniteData,
 } from "@tanstack/react-query"
+import { prefetchVespaHighlight } from "@/hooks/useVespaHighlight"
 import { SelectPublicChat } from "shared/types"
 import {
   fetchChats,
@@ -103,13 +104,17 @@ import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { renderToStaticMarkup } from "react-dom/server"
 import CitationPreview from "@/components/CitationPreview"
-import { createCitationLink } from "@/components/CitationLink"
+import {
+  createCitationLink,
+  type CitationLinkClickCtx,
+} from "@/components/CitationLink"
 import { createPortal } from "react-dom"
 import {
   cleanCitationsFromResponse,
   processMessage,
   createTableComponents,
 } from "@/utils/chatUtils.tsx"
+import { extractSentenceAroundCitation } from "@/utils/keywordHighlightQuery"
 import {
   useDocumentOperations,
   DocumentOperationsProvider,
@@ -452,6 +457,11 @@ export const ChatPage = ({
   } | null>(null)
   /** Token to invalidate in-flight prefetch/chunk handlers so a slower call cannot overwrite newer citation state. */
   const latestPrefetchTokenRef = useRef<symbol>(Symbol())
+  /** User / sentence text for keyword highlights on top of chunk highlights (set on citation click). */
+  const citationHighlightQueryTextRef = useRef<string | undefined>(undefined)
+  const [citationHighlightQueryText, setCitationHighlightQueryText] = useState<
+    string | undefined
+  >(undefined)
   const [cameFromSources, setCameFromSources] = useState(false)
   const [isDocumentLoaded, setIsDocumentLoaded] = useState(false)
 
@@ -1307,6 +1317,7 @@ export const ChatPage = ({
                   newChunkIndex,
                   pageIndex,
                   true,
+                  citationHighlightQueryTextRef.current,
                 )
               } catch (error) {
                 console.error(
@@ -1351,6 +1362,7 @@ export const ChatPage = ({
       citation: Citation,
       chunkIndex?: number,
       fromSources: boolean = false,
+      ctx?: { highlightQueryText?: string },
     ) => {
       const delegatedAgent =
         citation.docId.startsWith("delegated_agent:") &&
@@ -1382,6 +1394,11 @@ export const ChatPage = ({
         }
         return
       }
+      if (ctx !== undefined) {
+        const q = ctx.highlightQueryText || undefined
+        citationHighlightQueryTextRef.current = q
+        setCitationHighlightQueryText(q)
+      }
 
       const isRegularCitation = citation?.clId && citation?.itemId
       const isAttachment = citation?.app === "attachment"
@@ -1391,6 +1408,20 @@ export const ChatPage = ({
           window.open(citation.url, "_blank", "noopener,noreferrer")
         }
         return
+      }
+
+      const prefetchHighlightQuery = ctx?.highlightQueryText?.trim()
+      if (
+        prefetchHighlightQuery &&
+        citation.docId &&
+        chunkIndex !== undefined &&
+        chunkIndex !== null
+      ) {
+        void prefetchVespaHighlight(queryClient, {
+          query: prefetchHighlightQuery,
+          docId: citation.docId,
+          chunkId: chunkIndex,
+        })
       }
 
       const sameDoc =
@@ -1478,11 +1509,14 @@ export const ChatPage = ({
       selectedCitation,
       selectedChunkIndex,
       handleChunkIndexChange,
+      queryClient,
     ],
   )
 
   // Memoized callback for closing citation preview - moved before conditional returns
   const handleCloseCitationPreview = useCallback(() => {
+    citationHighlightQueryTextRef.current = undefined
+    setCitationHighlightQueryText(undefined)
     setIsCitationPreviewOpen(false)
     setSelectedCitation(null)
     setSelectedChunkIndex(null)
@@ -1507,6 +1541,8 @@ export const ChatPage = ({
     setCitationInitialPageIndex(null)
     setCameFromSources(false)
     setIsDocumentLoaded(false)
+    citationHighlightQueryTextRef.current = undefined
+    setCitationHighlightQueryText(undefined)
   }, [chatId])
 
   // Handler for back to sources navigation
@@ -1519,6 +1555,8 @@ export const ChatPage = ({
       setSelectedChunkIndex(null)
       setCitationInitialPageIndex(null)
       setCameFromSources(false)
+      citationHighlightQueryTextRef.current = undefined
+      setCitationHighlightQueryText(undefined)
     }
   }, [currentCitations, currentMessageId])
 
@@ -1927,6 +1965,8 @@ export const ChatPage = ({
         documentOperationsRef={documentOperationsRef}
         onDocumentLoaded={handleDocumentLoaded}
         initialPageIndex={citationInitialPageIndex}
+        highlightQueryText={citationHighlightQueryText}
+        selectedChunkIndex={selectedChunkIndex}
       />
     </div>
   )
@@ -2307,7 +2347,12 @@ interface VirtualizedMessagesProps {
   chatId: string | null
   userHasScrolled: boolean
   setUserHasScrolled: (hasScrolled: boolean) => void
-  onCitationClick: (citation: Citation) => void
+  onCitationClick: (
+    citation: Citation,
+    chunkIndex?: number,
+    fromSources?: boolean,
+    ctx?: { highlightQueryText?: string },
+  ) => void
   isCitationPreviewOpen: boolean
   setIsCitationPreviewOpen: (open: boolean) => void
   setSelectedCitation: (citation: Citation | null) => void
@@ -2814,7 +2859,12 @@ export const ChatMessage = ({
   onShare?: (messageId: string) => void
   disableRetry?: boolean
   attachments?: AttachmentMetadata[]
-  onCitationClick?: (citation: Citation) => void
+  onCitationClick?: (
+    citation: Citation,
+    chunkIndex?: number,
+    fromSources?: boolean,
+    ctx?: { highlightQueryText?: string },
+  ) => void
   isCitationPreviewOpen?: boolean
   clarificationRequest?: any
   waitingForClarification?: boolean
@@ -2832,6 +2882,11 @@ export const ChatMessage = ({
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
+  const citationMdSource = useMemo(
+    () =>
+      processMessage(message, citationMap, citationUrls ?? [], citations),
+    [message, citationMap, citationUrls, citations],
+  )
   const tableIndexRef = useRef(0)
   const getNextTableIndex = useCallback(() => tableIndexRef.current++, [])
   const tableComponents = useMemo(
@@ -2847,6 +2902,31 @@ export const ChatMessage = ({
           : undefined,
       ),
     [messageId, saveTableScroll, restoreTableScroll, getNextTableIndex],
+  )
+
+  const handleCitationWithContext = useCallback(
+    (
+      citation: Citation,
+      chunkIndex?: number,
+      fromSources?: boolean,
+      linkCtx?: CitationLinkClickCtx,
+    ) => {
+      if (!onCitationClick) return
+      const sentence = extractSentenceAroundCitation(
+        citationMdSource,
+        citation,
+        citations,
+        chunkIndex,
+        linkCtx?.sourceOffset,
+      )
+      const highlightQueryText =
+        sentence?.trim() ||
+        undefined
+      onCitationClick(citation, chunkIndex, fromSources, {
+        highlightQueryText,
+      })
+    },
+    [onCitationClick, citationMdSource, citations],
   )
 
   return (
@@ -2924,7 +3004,7 @@ export const ChatMessage = ({
                 ) : message !== "" ? (
                   <MarkdownPreview
                     key={`markdown-${messageId || "unknown"}`}
-                      source={processMessage(message, citationMap, citationUrls, citations)}
+                      source={citationMdSource}
                     wrapperElement={{
                       "data-color-mode": theme,
                     }}
@@ -2938,7 +3018,13 @@ export const ChatMessage = ({
                       minWidth: 0,
                     }}
                     components={{
-                      a: createCitationLink(citations, onCitationClick),
+                      a: createCitationLink(
+                        citations,
+                        handleCitationWithContext,
+                        true,
+                        new Map(),
+                        0,
+                      ),
                       code: MermaidCodeWrapper,
                       img: ({ src, alt, ...props }: any) => {
                         if (src?.startsWith("image-citation:")) {
@@ -3096,7 +3182,7 @@ export const ChatMessage = ({
                   <MessageCitationList
                     citations={citations.slice(0, 3)}
                     onToggleSources={onToggleSources}
-                    onCitationClick={onCitationClick}
+                    onCitationClick={handleCitationWithContext}
                   />
                 </div>
               </div>

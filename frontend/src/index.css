@@ -474,3 +474,119 @@ html {
   }
 }
 
+/* Citation chunk vs keyword highlights (useScopedFind) — subtle context vs strong signal */
+@keyframes scoped-find-chunk-fade {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scoped-find-keyword-fade {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+mark.scoped-find-chunk-highlight {
+  display: inline;
+  margin: 2px 0;
+  padding: 0 1px;
+  border-radius: 4px;
+  background: linear-gradient(
+    to right,
+    rgba(255, 235, 130, 0.3),
+    rgba(255, 235, 130, 0.5)
+  );
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  position: relative;
+  z-index: 1;
+  animation: scoped-find-chunk-fade 0.6s ease-out;
+}
+
+.dark mark.scoped-find-chunk-highlight {
+  background: linear-gradient(
+    to right,
+    rgba(255, 235, 130, 0.16),
+    rgba(255, 235, 130, 0.28)
+  );
+}
+
+mark.scoped-find-keyword-highlight {
+  display: inline;
+  padding: 0 2px;
+  border-radius: 3px;
+  background: rgba(255, 170, 0, 0.9);
+  color: #000;
+  font-weight: 600;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  position: relative;
+  z-index: 2;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  animation: scoped-find-keyword-fade 0.55s ease-out;
+}
+
+.dark mark.scoped-find-keyword-highlight {
+  background: rgba(255, 178, 50, 0.88);
+  color: #0a0a0a;
+}
+
+/* PDF overlay rects (same hierarchy: chunk subtle, keyword strong) */
+.pdf-highlight-overlay.scoped-find-pdf-chunk {
+  background: linear-gradient(
+    to right,
+    rgba(255, 235, 130, 0.22),
+    rgba(255, 235, 130, 0.36)
+  );
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.pdf-highlight-overlay.scoped-find-pdf-keyword {
+  background: rgba(255, 180, 60, 0.35);
+  border-bottom: 2px solid rgba(255, 140, 0, 0.75);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1001;
+  animation: keywordPulse 0.6s ease-out;
+}
+
+@keyframes keywordPulse {
+  0% {
+    border-bottom-color: rgba(255, 140, 0, 1);
+  }
+  100% {
+    border-bottom-color: rgba(255, 140, 0, 0.6);
+  }
+}
+
+.dark .pdf-highlight-overlay.scoped-find-pdf-chunk {
+  background: linear-gradient(
+    to right,
+    rgba(255, 235, 130, 0.18),
+    rgba(255, 235, 130, 0.32)
+  );
+}
+
+.dark .pdf-highlight-overlay.scoped-find-pdf-keyword {
+  background: rgba(255, 180, 60, 0.28);
+  border-bottom-color: rgba(255, 140, 0, 0.65);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  mark.scoped-find-chunk-highlight,
+  mark.scoped-find-keyword-highlight,
+  .pdf-highlight-overlay.scoped-find-pdf-keyword {
+    animation: none;
+  }
+}
+

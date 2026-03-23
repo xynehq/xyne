@@ -19,10 +19,20 @@ export interface Citation {
   clId?: string
 }
 
+/** Ground truth for which marker was clicked (react-markdown HAST `position.start.offset`). */
+export type CitationLinkClickCtx = {
+  sourceOffset?: number
+}
+
 export const createCitationLink =
   (
     citations: Citation[] = [],
-    onCitationClick?: (citation: Citation, chunkIndex?: number) => void,
+    onCitationClick?: (
+      citation: Citation,
+      chunkIndex?: number,
+      fromSources?: boolean,
+      ctx?: CitationLinkClickCtx,
+    ) => void,
     showTooltip: boolean = true,
     globalChunkIndexMap: Map<string, number> = new Map(),
     globalCount: number = 0,
@@ -30,10 +40,12 @@ export const createCitationLink =
   ({
     href,
     children,
+    node,
     ...linkProps
   }: {
     href?: string
     children?: React.ReactNode
+    node?: { position?: { start?: { offset?: number } } }
     [key: string]: any
   }) => {
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)
@@ -180,9 +192,7 @@ export const createCitationLink =
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  if (onCitationClick) {
-                    onCitationClick(citation, citation.title.startsWith('Database:')? undefined: chunkIndex)
-                  }
+                  emitCitationPillClick()
                   setIsTooltipOpen(false)
                 }}
               >
@@ -204,9 +214,7 @@ export const createCitationLink =
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    if (onCitationClick) {
-                      onCitationClick(citation, citation.title.startsWith('Database:')? undefined: chunkIndex)
-                    }
+                    emitCitationPillClick()
                     setIsTooltipOpen(false)
                   }}
                 >
@@ -240,7 +248,7 @@ export const createCitationLink =
                   </div>
 
                   {/* Content */}
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="font-medium text-sm text-gray-900 dark:text-gray-100 leading-tight truncate">
                       {citation.title.split("/").pop() || "Untitled Document"}
                     </div>
