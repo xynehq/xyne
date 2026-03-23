@@ -815,7 +815,6 @@ The context provided will be formatted with specific fields for each type:
   Do not respond in JSON for the thinking part.
 </think>
 
-<answer>
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -824,8 +823,11 @@ This includes:
 - Current time and date
 - Timezone
 [0] or [1] is citations not Index, do not refer to it as Index, use [1] or [10]
+
 # Retrieved Context
 ${retrievedContext}
+
+<answer>
 # Guidelines for Response
 1. Data Interpretation:
    - Pay attention to timestamps for temporal context

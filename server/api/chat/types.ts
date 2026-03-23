@@ -7,17 +7,8 @@ import { entitySchema } from "@/shared/types"
 import type { ConverseResponse } from "@/ai/types"
 
 const {
-  JwtPayloadKey,
-  chatHistoryPageSize,
   defaultBestModel,
   defaultFastModel,
-  maxDefaultSummary,
-  chatPageSize,
-  isReasoning,
-  fastModelReasoning,
-  StartThinkingToken,
-  EndThinkingToken,
-  maxValidLinks,
 } = config
 // this is not always the case but unless our router detects that we need
 // these we will by default remove them
@@ -37,11 +28,9 @@ export enum RagPipelineStages {
 export const ragPipelineConfig = {
   [RagPipelineStages.QueryRouter]: {
     modelId: defaultFastModel,
-    reasoning: fastModelReasoning,
   },
   [RagPipelineStages.AnswerOrSearch]: {
-    modelId: defaultBestModel, //defaultBestModel,
-    reasoning: fastModelReasoning,
+    modelId: defaultBestModel,
   },
   [RagPipelineStages.AnswerWithList]: {
     modelId: defaultBestModel,

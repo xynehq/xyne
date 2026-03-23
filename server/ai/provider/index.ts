@@ -1697,7 +1697,6 @@ export function generateSearchQueryOrAnswerFromConversation(
   connectedApps?: Apps[],
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
-  params.modelId = defaultFastModel
   let defaultReasoning = isReasoning
 
   if (params.reasoning !== undefined) {

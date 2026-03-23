@@ -31,6 +31,7 @@ abstract class Provider implements LLMProvider {
       userCtx: params.userCtx,
       stream: params.stream,
       json: params.json || null,
+      reasoning: params.reasoning || false,
     }
   }
 

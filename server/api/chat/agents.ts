@@ -92,7 +92,7 @@ import {
   safeDecodeURIComponent,
 } from "./utils"
 import config from "@/config"
-import { getModelValueFromLabel, getActiveProvider } from "@/ai/modelConfig"
+import { getModelValueFromLabel, getActiveProvider, MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
 import {
   buildUserQuery,
   isContextSelected,
@@ -416,7 +416,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       agentPromptForLLM = JSON.stringify(agentForDb)
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
-    const userRequestsReasoning = isReasoningEnabled
+    const userRequestsReasoningAndEnabled = isReasoningEnabled && config.isReasoning
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1308,7 +1308,7 @@ export const AgentMessageApi = async (c: Context) => {
       }
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
-    const userRequestsReasoning = isReasoningEnabled
+    const userRequestsReasoningAndEnabled = isReasoningEnabled && config.isReasoning
     if (!message) {
       throw new HTTPException(400, {
         message: "Message is required",
@@ -1607,8 +1607,7 @@ export const AgentMessageApi = async (c: Context) => {
               let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
-                userRequestsReasoning &&
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+                userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[actualModelId as Models || config.defaultBestModel]?.reasoning ?? true) === true
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
@@ -1627,7 +1626,7 @@ export const AgentMessageApi = async (c: Context) => {
                 0.5,
                 fileIds,
                 agentAppEnums,
-                userRequestsReasoning,
+                userRequestsReasoningAndEnabled,
                 agentPromptForLLM,
                 understandSpan,
                 undefined, // threadIds
@@ -1647,7 +1646,6 @@ export const AgentMessageApi = async (c: Context) => {
 
               answer = ""
               thinking = ""
-              reasoning = isReasoning && userRequestsReasoning
               citations = []
               imageCitations = []
               citationMap = {}
@@ -1856,8 +1854,7 @@ export const AgentMessageApi = async (c: Context) => {
               let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
-                userRequestsReasoning &&
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+                userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
@@ -1875,7 +1872,7 @@ export const AgentMessageApi = async (c: Context) => {
                 message,
                 0.5,
                 fileIds,
-                userRequestsReasoning,
+                reasoning,
                 understandSpan,
                 [],
                 imageAttachmentFileIds,
@@ -1890,7 +1887,6 @@ export const AgentMessageApi = async (c: Context) => {
 
               answer = ""
               thinking = ""
-              reasoning = isReasoning && userRequestsReasoning
               citations = []
               imageCitations = []
               citationMap = {}
@@ -2171,9 +2167,7 @@ export const AgentMessageApi = async (c: Context) => {
                     json: false,
                     agentPrompt: agentPromptForLLM,
                     reasoning:
-                      userRequestsReasoning &&
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .reasoning,
+                      userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerAnswerOrSearchModelId as Models]?.reasoning ?? true) === true,
                     messages: limitedMessages,
                     agentWithNoIntegrations: true,
                   },
@@ -2189,9 +2183,7 @@ export const AgentMessageApi = async (c: Context) => {
                       stream: true,
                       json: true,
                       reasoning:
-                        userRequestsReasoning &&
-                        ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                          .reasoning,
+                        userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerAnswerOrSearchModelId as Models]?.reasoning ?? true) === true,
                       messages: limitedMessages,
                       agentPrompt: agentPromptForLLM,
                     },
@@ -2233,8 +2225,7 @@ export const AgentMessageApi = async (c: Context) => {
 
               let thinking = ""
               let reasoning =
-                userRequestsReasoning &&
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+                userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerAnswerOrSearchModelId as Models]?.reasoning ?? true) === true
               let buffer = ""
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
@@ -2347,6 +2338,12 @@ export const AgentMessageApi = async (c: Context) => {
                           }
                           currentAnswer = parsed.answer
                         }
+                        if (
+                          typeof currentAnswer === "string" &&
+                          currentAnswer.trim().length > 0
+                        ) {
+                          break
+                        }
                       } catch (err) {
                         const errMessage = (err as Error).message
                         Logger.error(
@@ -2369,6 +2366,10 @@ export const AgentMessageApi = async (c: Context) => {
                 }
               }
 
+              if (currentAnswer && currentAnswer.trim().length > 0) {
+                parsed.answer = currentAnswer
+              }
+
               conversationSpan.setAttribute("answer_found", parsed.answer)
               conversationSpan.setAttribute("answer", answer)
               conversationSpan.setAttribute(
@@ -2377,7 +2378,7 @@ export const AgentMessageApi = async (c: Context) => {
               )
               conversationSpan.end()
 
-              if (parsed.answer === null || parsed.answer === "") {
+              if (parsed.answer === null || parsed.answer === "" || !parsed.answer) {
                 const ragSpan = streamSpan.startSpan("rag_processing")
                 if (parsed.queryRewrite) {
                   Logger.info(
@@ -2464,6 +2465,7 @@ export const AgentMessageApi = async (c: Context) => {
                       `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(fileIds)}`,
                     )
                     const allowedChunkCitations = fileIds.some((fileId) => fileId.startsWith("clf-")) || fileIds.some((fileId) => fileId.startsWith("attf_"))
+                    reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true
                     iterator = UnderstandMessageAndAnswerForGivenContext(
                       email,
                       ctx,
@@ -2471,13 +2473,13 @@ export const AgentMessageApi = async (c: Context) => {
                       message,
                       0.5,
                       fileIds as string[],
-                      userRequestsReasoning,
+                      reasoning,
                       understandSpan,
                       undefined,
                       imageAttachmentFileIds,
                       agentPromptForLLM,
                       allowedChunkCitations,
-                      actualModelId || config.defaultBestModel,
+                      consumerGivenContextModelId,
                     )
                   } else {
                     loggerWithChild({ email: email }).info(
@@ -2490,6 +2492,7 @@ export const AgentMessageApi = async (c: Context) => {
 
                 // If no iterator was set above (non-file-context scenario), use the regular flow with the new classification
                 if (!iterator) {
+                  reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true
                   iterator = UnderstandMessageAndAnswer(
                     email,
                     ctx,
@@ -2498,10 +2501,10 @@ export const AgentMessageApi = async (c: Context) => {
                     classification,
                     limitedMessages,
                     0.5,
-                    userRequestsReasoning,
+                    userRequestsReasoningAndEnabled,
                     understandSpan,
                     agentPromptForLLM,
-                    actualModelId,
+                    consumerGivenContextModelId,
                     pathExtractedInfo,
                   )
                 }
@@ -2512,7 +2515,6 @@ export const AgentMessageApi = async (c: Context) => {
 
                 answer = ""
                 thinking = ""
-                reasoning = isReasoning && userRequestsReasoning
                 citations = []
                 citationMap = {}
                 let citationValues: Record<number, Citation> = {}
@@ -2951,7 +2953,7 @@ export const AgentMessageApi = async (c: Context) => {
             message,
             0.5,
             fileIds,
-            userRequestsReasoning,
+            userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true,
             understandSpan,
             [],
             imageAttachmentFileIds,

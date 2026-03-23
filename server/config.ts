@@ -94,7 +94,6 @@ let pdfFileProcessingTeamSize = parseInt(
   process.env.PDF_FILE_PROCESSING_TEAM_SIZE || "2",
   10,
 )
-let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
 let ragOffFeature = true
@@ -277,13 +276,6 @@ if (process.env["RAG_OFF_FEATURE"] === "true") {
   ragOffFeature = true
 }
 
-if (
-  process.env["FAST_MODEL_REASONING"] &&
-  process.env["FAST_MODEL_REASONING"] === "true"
-) {
-  fastModelReasoning = true
-}
-
 if (!slackHost) {
   slackHost = host
 }
@@ -352,7 +344,6 @@ export default {
   maxGoogleDriveSummary: 50,
   maxUserRequestCount: 15,
   isReasoning,
-  fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
   JobExpiryHours: 23,

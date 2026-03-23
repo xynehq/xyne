@@ -8,8 +8,10 @@ import { Subsystem } from "@/types"
 import { modelDetailsMap } from "@/ai/mappers"
 import OpenAI from "openai"
 import { getCostConfigForModel } from "@/ai/fetchModels"
+import config from "@/config"
 
 const Logger = getLogger(Subsystem.AI)
+const { StartThinkingToken, EndThinkingToken } = config
 
 interface LiteLLMClientConfig {
   apiKey: string
@@ -43,6 +45,10 @@ export class LiteLLMProvider extends BaseProvider {
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+    Logger.info({
+      modelId: modelParams.modelId,
+      thinking: params.reasoning ?? false,
+    }, "LiteLLM Converse called with model:")
     const client = (this.client as LiteLLM).getClient()
 
     try {
@@ -74,7 +80,7 @@ export class LiteLLMProvider extends BaseProvider {
           }))
         : undefined
 
-      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & { extra_body?: Record<string, unknown> } = {
         model: modelParams.modelId,
         messages: openaiMessages,
         max_tokens: modelParams.maxTokens,
@@ -82,6 +88,11 @@ export class LiteLLMProvider extends BaseProvider {
         tools,
         tool_choice: tools ? (params.tool_choice ?? "auto") : undefined,
         response_format: modelParams.json ? { type: "json_object" } : undefined,
+        extra_body: {
+          chat_template_kwargs: {
+            enable_thinking: params.reasoning ?? false,
+          },
+        },
       }
       
       const response = await client.chat.completions.create(requestParams)
@@ -147,6 +158,10 @@ export class LiteLLMProvider extends BaseProvider {
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+    Logger.info({
+      modelId: modelParams.modelId,
+      thinking: params.reasoning ?? false,
+    }, "LiteLLM ConverseStream called with model:")
     const client = (this.client as LiteLLM).getClient()
 
     try {
@@ -178,7 +193,7 @@ export class LiteLLMProvider extends BaseProvider {
           }))
         : undefined
 
-      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
+      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & { extra_body?: Record<string, unknown> } = {
         model: modelParams.modelId,
         messages: openaiMessages,
         max_tokens: modelParams.maxTokens,
@@ -190,11 +205,18 @@ export class LiteLLMProvider extends BaseProvider {
         stream_options: {
           include_usage: true,
         },
+        extra_body: {
+          chat_template_kwargs: {
+            enable_thinking: params.reasoning ?? false,
+          },
+        },
       }
 
       let accumulatedCost = 0
       let toolCalls: any[] = []
       let hasYieldedToolCalls = false
+      let startedReasoning = false
+      let reasoningComplete = false
 
       const stream = await client.chat.completions.create(requestParams)
 
@@ -228,8 +250,42 @@ export class LiteLLMProvider extends BaseProvider {
         const delta = choice.delta
         const finishReason = choice.finish_reason
 
-        // Handle text content
+        // Handle reasoning content from OpenAI-compatible providers (LiteLLM backends vary).
+        if (params.reasoning && !reasoningComplete) {
+          const rawReasoning =
+            (delta as any)?.reasoning_content ??
+            (delta as any)?.reasoning ??
+            (delta as any)?.reasoning_text
+          let reasoningText = ""
+          if (typeof rawReasoning === "string") {
+            reasoningText = rawReasoning
+          } else if (Array.isArray(rawReasoning)) {
+            reasoningText = rawReasoning
+              .map((part: any) =>
+                typeof part === "string" ? part : (part?.text ?? ""),
+              )
+              .join("")
+          } else if (rawReasoning && typeof rawReasoning === "object") {
+            reasoningText = (rawReasoning as any).text || ""
+          }
+          if (reasoningText) {
+            if (!startedReasoning) {
+              yield { text: `${StartThinkingToken}${reasoningText}` }
+              startedReasoning = true
+            } else {
+              yield { text: reasoningText }
+            }
+          }
+        }
+
+        // Handle text content.
+        // Some LiteLLM backends may start emitting answer content before finish_reason.
+        // Close thinking as soon as first content token arrives so downstream parser can consume JSON.
         if (delta?.content) {
+          if (params.reasoning && startedReasoning && !reasoningComplete) {
+            yield { text: EndThinkingToken }
+            reasoningComplete = true
+          }
           yield {
             text: delta.content,
             cost: 0, // Cost will be yielded at the end
@@ -262,6 +318,11 @@ export class LiteLLMProvider extends BaseProvider {
 
         // Check if this is the final chunk
         if (finishReason) {
+          // Close reasoning segment if it was started.
+          if (startedReasoning && !reasoningComplete) {
+            yield { text: EndThinkingToken }
+            reasoningComplete = true
+          }
           // Yield tool calls if we have any and haven't yielded them yet
           if (toolCalls.length > 0 && !hasYieldedToolCalls) {
             hasYieldedToolCalls = true

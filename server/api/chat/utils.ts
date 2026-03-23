@@ -689,6 +689,12 @@ const searchToCitations = (results: VespaSearchResults[]): Citation[] => {
 export const textToCitationIndex = /\[(\d+)\]/g
 export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
 export const textToChunkCitationIndex = /K\[(\d+_\d+)\]/g
+// Fallback for weaker LLMs emitting KB citations as:
+//   K[<docId>_<chunkIndex>]  (e.g. K[attf_<uuid>_21])
+// instead of the expected:
+//   K[<docIndex>_<chunkIndex>] (e.g. K[1_21])
+const textToChunkCitationIndexWithDocKey =
+      /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
 
 export const processMessage = (
   text: string,
@@ -1407,6 +1413,18 @@ export const addErrMessageToMessage = async (
   }
 }
 
+// Function to clean citation numbers from response text
+export const cleanCitationsFromResponse = (text: string): string => {
+  // Clean both types of citations and trim any extra whitespace
+  return text
+    .replace(textToCitationIndex, "")
+    .replace(textToImageCitationIndex, "")
+    .replace(textToChunkCitationIndex, "")
+    .replace(textToChunkCitationIndexWithDocKey, "")
+    .replace(/[ \t]+/g, " ")
+    .trim()
+}
+
 export const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
@@ -1437,12 +1455,6 @@ export const checkAndYieldCitationsForAgent = async function* (
     textToChunkCitationIndex.lastIndex = 0
 
     const text = splitGroupedCitationsWithSpaces(textInput)
-    // Fallback for weaker LLMs emitting KB citations as:
-    //   K[<docId>_<chunkIndex>]  (e.g. K[attf_<uuid>_21])
-    // instead of the expected:
-    //   K[<docIndex>_<chunkIndex>] (e.g. K[1_21])
-    const textToChunkCitationIndexWithDocKey =
-      /K\[([A-Za-z0-9_-]+)_([0-9]+)\]/g
 
     let match
     let imgMatch

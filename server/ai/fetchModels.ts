@@ -298,7 +298,7 @@ export const fetchModelConfigs = async (): Promise<
         actualName: actualName,
         labelName: modelId, // Use model_name as fallback label
         provider: "LiteLLM",
-        reasoning: false,
+        reasoning: true,
         websearch: false,
         deepResearch: false,
         description: "",
