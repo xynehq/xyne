@@ -40,7 +40,8 @@ export const chunkTextByParagraph = (
 
   // Helper function to add a chunk to the chunks array
   const addChunk = (chunkArr: string[]) => {
-    const chunkStr = chunkArr.join("\n")
+    const chunkStr = chunkArr.join("\n").trim()
+    if (!chunkStr || chunkStr.length < 20) return
     chunks.push(chunkStr)
 
     if (overlap > 0) {
