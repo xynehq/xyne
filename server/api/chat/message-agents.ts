@@ -4504,7 +4504,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         email,
         user: { id: user.id, email: user.email },
         workspace: { id: workspace.id, externalId: workspace.externalId },
-        message,
+        message, // user query
         fileIds: referencedFileIds,
         attachmentMetadata,
         modelId: agenticModelId,

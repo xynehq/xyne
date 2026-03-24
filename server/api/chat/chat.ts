@@ -165,7 +165,7 @@ import {
 } from "./types"
 import { activeStreams } from "./stream"
 import { AgentMessageApi } from "@/api/chat/agents"
-import { MessageAgents } from "@/api/chat/message-agents"
+import { MessageAgentsPiMono } from "@/api/chat/pi-mono/message-agents"
 import {
   extractFileIdsFromMessage,
   isMessageWithContext,
@@ -5088,8 +5088,8 @@ export const MessageApi = async (c: Context) => {
       isAgentic && !enableWebSearch && !deepResearchEnabled
 
     if (shouldUseMessageAgents) {
-      Logger.info(`Routing to MessageAgents (JAF-based agentic flow)`)
-      return MessageAgents(c)
+      Logger.info(`Routing to MessageAgentsPiMono (pi-mono agentic flow)`)
+      return MessageAgentsPiMono(c)
     }
 
     let attachmentMetadata = parseAttachmentMetadata(c)
