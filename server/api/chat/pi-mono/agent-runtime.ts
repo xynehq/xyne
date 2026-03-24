@@ -1,11 +1,11 @@
 /**
  * Pi-Mono Agent Runtime Integration
- * 
+ *
  * Integration with @mariozechner/pi-coding-agent SDK
  * Uses AgentSession for managing agent lifecycle and tool execution
  */
 
-import { 
+import {
   createAgentSession,
   type CreateAgentSessionOptions,
   type AgentSession,
@@ -72,9 +72,10 @@ PLANNING:
 export async function createPiMonoAgentSession(
   tools: ToolDefinition<any, any, any>[],
   xyneState: XyneAgentState,
-  modelId?: string
+  modelId?: string,
 ): Promise<CreateAgentSessionResult> {
-  const resolvedModelId = modelId || xyneState.modelId || config.defaultBestModelAgenticMode
+  const resolvedModelId =
+    modelId || xyneState.modelId || config.defaultBestModelAgenticMode
 
   // Build session options - pass tools as customTools
   const sessionOptions: CreateAgentSessionOptions = {
@@ -93,7 +94,7 @@ export async function createPiMonoAgentSession(
 
   // Create the agent session using pi-mono SDK
   const result = await createAgentSession(sessionOptions)
-  
+
   return result
 }
 
@@ -109,11 +110,11 @@ export async function runPiMonoAgent(
 ) {
   try {
     Logger.info(
-      { 
+      {
         messageLength: userMessage.length,
-        chatId: _xyneState.chat.externalId 
-      }, 
-      "Running pi-mono agent"
+        chatId: _xyneState.chat.externalId,
+      },
+      "Running pi-mono agent",
     )
 
     // Send the user message to the agent session
@@ -131,7 +132,12 @@ export async function runPiMonoAgent(
 }
 
 // Re-export types from pi-mono for convenience
-export type { AgentSession, CreateAgentSessionResult, CreateAgentSessionOptions, ToolDefinition }
+export type {
+  AgentSession,
+  CreateAgentSessionResult,
+  CreateAgentSessionOptions,
+  ToolDefinition,
+}
 export { createAgentSession }
 
 /**
@@ -156,13 +162,13 @@ export class PiMonoAgent {
                   run: async (_userMessage: string, _options?: any) => ({
                     text: "Pi-mono agent runtime stub - implement with createAgentSession",
                     toolCalls: [],
-                  })
-                })
-              })
-            })
-          })
-        })
-      })
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      }),
     }
   }
 }

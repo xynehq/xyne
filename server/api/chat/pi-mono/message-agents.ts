@@ -2,7 +2,7 @@
  * MessageAgents - Pi-Mono Version
  *
  * Full implementation using pi-mono coding-agent runtime.
- * Maintains compatibility with existing XyneAgentState.
+ * Based on the INTEGRATION_GUIDE.md for proper SDK usage.
  */
 
 import type { Context } from "hono"
@@ -25,7 +25,6 @@ import { db } from "@/db/client"
 import {
   getChatMessagesWithAuth,
   insertMessage,
-  updateMessage,
 } from "@/db/message"
 import {
   ChatType,
@@ -39,37 +38,68 @@ import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem, type UserMetadataType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { getDateForAI } from "@/utils/index"
-import { ChatSSEvents, XyneTools, type AttachmentMetadata, DEFAULT_TEST_AGENT_ID } from "@/shared/types"
+import {
+  ChatSSEvents,
+  type AttachmentMetadata,
+  DEFAULT_TEST_AGENT_ID,
+} from "@/shared/types"
 import { MessageRole } from "@/types"
 import { insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 import { storeAttachmentMetadata } from "@/db/attachment"
-import { searchVespaInFiles, searchCollectionRAG, SearchEmailThreads } from "@/search/vespa"
+import {
+  searchVespaInFiles,
+  searchCollectionRAG,
+  SearchEmailThreads,
+} from "@/search/vespa"
 import { getChunkCountPerDoc } from "@/api/chat/chunk-selection"
 import { expandSheetIds } from "@/search/utils"
 import { parseMessageText } from "@/api/chat/chat"
-import { extractFileIdsFromMessage, processThreadResults, collectReferencedFileIdsUntilCompaction } from "@/api/chat/utils"
+import {
+  extractFileIdsFromMessage,
+  processThreadResults,
+  collectReferencedFileIdsUntilCompaction,
+} from "@/api/chat/utils"
 import { getUserPersonalizationByEmail } from "@/db/personalization"
 import { answerContextMap } from "@/ai/context"
-import type { AgentRunContext, SubTask, ToolExecutionRecord, ToolExecutionRecordWithResult } from "@/api/chat/agent-schemas"
-import { ReasoningSteps, emitReasoningEvent, type ReasoningEmitter as StructuredReasoningEmitter } from "@/api/chat/reasoning-steps"
-import { ToolCooldownManager } from "@/api/chat/tool-cooldown"
+import type {
+  AgentRunContext,
+  SubTask,
+  ToolExecutionRecord,
+  ToolExecutionRecordWithResult,
+} from "@/api/chat/agent-schemas"
+import {
+  ReasoningSteps,
+  emitReasoningEvent,
+  type ReasoningEmitter as StructuredReasoningEmitter,
+} from "@/api/chat/reasoning-steps"
 import { activeStreams } from "@/api/chat/stream"
-import type { Citation, FragmentImageReference, MinimalAgentFragment } from "@/api/chat/types"
-import { extractImageFileNames, checkAndYieldCitationsForAgent, searchToCitation } from "@/api/chat/utils"
-import { buildFinalSynthesisPayload, buildFinalSynthesisRequest } from "@/api/chat/message-agents"
+import type {
+  Citation,
+  FragmentImageReference,
+  MinimalAgentFragment,
+} from "@/api/chat/types"
+import {
+  extractImageFileNames,
+  checkAndYieldCitationsForAgent,
+  searchToCitation,
+} from "@/api/chat/utils"
+import {
+  buildFinalSynthesisPayload,
+  buildFinalSynthesisRequest,
+} from "@/api/chat/message-agents"
 import { getModelValueFromLabel } from "@/ai/modelConfig"
 import { Models } from "@/ai/types"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 import { userContext } from "@/ai/context"
-import { createEmptyConnectorState, getUserConnectorState } from "@/api/chat/resource-access"
+import {
+  createEmptyConnectorState,
+  getUserConnectorState,
+} from "@/api/chat/resource-access"
 import { isMessageWithContext } from "@/api/chat/utils"
 import { safeDecodeURIComponent } from "@/api/chat/utils"
-import { retrieveEpisodicMemories } from "@/services/episodicMemoryRetriever"
-import { retrieveRelevantChatHistory } from "@/services/chatMemoryRetriever"
 import { maybeCompactAndIndex } from "@/services/chatMemoryIndexer"
-import { getChatExternalIdsByAgentId } from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
 import { getTracer } from "@/tracer"
 
@@ -83,35 +113,39 @@ import {
 } from "@mariozechner/pi-coding-agent"
 import { getModel } from "@mariozechner/pi-ai"
 
-import { setXyneState, createInitialXyneState, type XyneAgentState } from "./adapter"
-import { searchGlobalTool } from "./tools/search-global"
-import { searchGmailTool } from "./tools/search-gmail"
-import { searchDriveFilesTool } from "./tools/search-drive-files"
-import { searchCalendarEventsTool } from "./tools/search-calendar-events"
-import { searchGoogleContactsTool } from "./tools/search-google-contacts"
-import { getSlackRelatedMessagesTool } from "./tools/get-slack-related-messages"
-import { lsKnowledgeBaseTool } from "./tools/ls-knowledge-base"
-import { searchKnowledgeBaseTool } from "./tools/search-knowledge-base"
-import { fallBackTool } from "./tools/fall-back"
-import { toDoWriteTool } from "./tools/to-do-write"
-import { synthesizeFinalAnswerTool } from "./tools/synthesize-final-answer"
-import { searchChatHistoryTool } from "./tools/search-chat-history"
-import { listCustomAgentsTool } from "./tools/list-custom-agents"
-import { runPublicAgentTool } from "./tools/run-public-agent"
+// Pi-mono tools
+import {
+  searchGlobalTool,
+  searchGmailTool,
+  searchDriveFilesTool,
+  searchCalendarEventsTool,
+  searchGoogleContactsTool,
+  getSlackRelatedMessagesTool,
+  lsKnowledgeBaseTool,
+  searchKnowledgeBaseTool,
+  searchChatHistoryTool,
+  toDoWriteTool,
+  fallBackTool,
+  synthesizeFinalAnswerTool,
+  listCustomAgentsTool,
+  runPublicAgentTool,
+} from "./tools"
+
+import {
+  setXyneState,
+  createInitialXyneState,
+  type XyneAgentState,
+  setPersistFunction,
+} from "./adapter"
 
 const {
   defaultBestModel,
   defaultBestModelAgenticMode,
-  defaultFastModel,
   JwtPayloadKey,
-  IMAGE_CONTEXT_CONFIG,
 } = config
 
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
-
-const MIN_TURN_NUMBER = 0
-const DEFAULT_REVIEW_FREQUENCY = 5
 
 // ============================================================================
 // TYPES
@@ -159,117 +193,6 @@ type PersistAssistantMessageData = {
 // ============================================================================
 
 /**
- * Initialize fresh Xyne state for pi-mono
- */
-function initializePiMonoAgentContext(
-  userEmail: string,
-  workspaceId: string,
-  userId: number,
-  chatExternalId: string,
-  messageText: string,
-  attachments: Array<{ fileId: string; isImage: boolean }>,
-  options?: {
-    userContext?: string
-    agentPrompt?: string
-    dedicatedAgentSystemPrompt?: string
-    workspaceNumericId?: number
-    chatId?: number
-    stopController?: AbortController
-    stopSignal?: AbortSignal
-    modelId?: string
-  },
-): XyneAgentState {
-  // Create base state
-  const state = createInitialXyneState(
-    userEmail,
-    workspaceId,
-    userId,
-    chatExternalId,
-    messageText,
-    attachments
-  )
-  
-  // Apply optional overrides
-  if (options?.userContext) state.userContext = options.userContext
-  if (options?.agentPrompt) state.agentPrompt = options.agentPrompt
-  if (options?.dedicatedAgentSystemPrompt) {
-    state.dedicatedAgentSystemPrompt = options.dedicatedAgentSystemPrompt
-  }
-  if (options?.workspaceNumericId) {
-    state.user.workspaceNumericId = options.workspaceNumericId
-  }
-  if (options?.chatId) state.chat.id = options.chatId
-  if (options?.stopController) {
-    state.stopController = options.stopController
-    state.stopSignal = options.stopController.signal
-  }
-  if (options?.stopSignal) state.stopSignal = options.stopSignal
-  if (options?.modelId) state.modelId = options.modelId
-  
-  return state
-}
-
-/**
- * Build tool list for pi-mono
- */
-function buildPiMonoTools(): any[] {
-  return [
-    // Search tools
-    searchGlobalTool,
-    searchGmailTool,
-    searchDriveFilesTool,
-    searchCalendarEventsTool,
-    searchGoogleContactsTool,
-    getSlackRelatedMessagesTool,
-    lsKnowledgeBaseTool,
-    searchKnowledgeBaseTool,
-    searchChatHistoryTool,
-    // Control flow tools
-    toDoWriteTool,
-    fallBackTool,
-    synthesizeFinalAnswerTool,
-    // Agent delegation
-    listCustomAgentsTool,
-    runPublicAgentTool,
-  ]
-}
-
-/**
- * Persist assistant message to database
- */
-async function persistAssistantMessage(
-  context: PersistAssistantMessageContext,
-  data: PersistAssistantMessageData,
-): Promise<{ msg: SelectMessage; assistantMessageId: string }> {
-  const timeTakenMs = Date.now() - context.requestStartMs
-  
-  const assistantInsert = {
-    chatId: context.chatRecord.id,
-    userId: context.user.id,
-    workspaceExternalId: String(context.workspace.externalId),
-    chatExternalId: String(context.chatRecord.externalId),
-    messageRole: MessageRole.Assistant,
-    email: context.user.email,
-    sources: data.citations,
-    imageCitations: data.imageCitations,
-    message: data.answer,
-    thinking: data.thinkingLog,
-    modelId: context.agenticModelId,
-    cost: context.totalCost.toString(),
-    tokensUsed: context.tokenUsage.input + context.tokenUsage.output,
-    timeTakenMs,
-  } as unknown as Omit<InsertMessage, "externalId">
-  
-  // Note: This is a simplified version - full implementation would use actual DB insert
-  const msg = await insertMessage(db, assistantInsert)
-  
-  return { 
-    msg, 
-    assistantMessageId: String(msg.externalId) 
-  }
-}
-
-/**
  * Ensure chat exists and persist user message
  */
 async function ensureChatAndPersistUserMessage(
@@ -281,7 +204,7 @@ async function ensureChatAndPersistUserMessage(
   const userEmail = String(params.user.email)
   const incomingChatId = params.chatId ? String(params.chatId) : undefined
   let attachmentError: Error | null = null
-  
+
   return await db.transaction(async (tx) => {
     if (!incomingChatId) {
       const chatInsert = {
@@ -533,9 +456,6 @@ async function prepareInitialAttachmentContext(
     if (fileIds && fileIds.length > 0) {
       const fileSearchSpan = span.startSpan("file_search")
       let results
-      // Split into 3 groups
-      // Search each group
-      // Push results to combinedSearchResponse
       const collectionFileIds = fileIds.filter(
         (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
       )
@@ -559,7 +479,7 @@ async function prepareInitialAttachmentContext(
         }
       }
       if (collectionFileIds && collectionFileIds.length > 0) {
-        allowChunkCitations = true // for the case where kb files are in @
+        allowChunkCitations = true
         results = await searchCollectionRAG(
           queryText,
           collectionFileIds,
@@ -589,7 +509,6 @@ async function prepareInitialAttachmentContext(
         }
       }
 
-      // Apply intelligent chunk selection based on document relevance and chunk scores
       chunksPerDocument = await getChunkCountPerDoc(
         combinedSearchResponse,
         targetChunks,
@@ -613,7 +532,6 @@ async function prepareInitialAttachmentContext(
             combinedSearchResponse.map((child: any) => child.fields.docId),
           )
 
-          // Use the helper function to process thread results
           const { addedCount, threadInfo } = processThreadResults(
             threadResults.root.children,
             existingDocIds,
@@ -651,7 +569,9 @@ async function prepareInitialAttachmentContext(
           userMetadata,
           query,
           allowChunkCitations,
-          idx < chunksPerDocument.length ? chunksPerDocument[idx] : maxSummaryChunks,
+          idx < chunksPerDocument.length
+            ? chunksPerDocument[idx]
+            : maxSummaryChunks,
           precomputedDbContext,
         ),
       ),
@@ -704,28 +624,184 @@ async function vespaResultToAttachmentFragment(
   }
 }
 
+/**
+ * Persist assistant message to database
+ */
+async function persistAssistantMessage(
+  context: PersistAssistantMessageContext,
+  data: PersistAssistantMessageData,
+): Promise<{ msg: SelectMessage; assistantMessageId: string }> {
+  const timeTakenMs = Date.now() - context.requestStartMs
+
+  const assistantInsert = {
+    chatId: context.chatRecord.id,
+    userId: context.user.id,
+    workspaceExternalId: String(context.workspace.externalId),
+    chatExternalId: String(context.chatRecord.externalId),
+    messageRole: MessageRole.Assistant,
+    email: context.user.email,
+    sources: data.citations,
+    imageCitations: data.imageCitations,
+    message: data.answer,
+    thinking: data.thinkingLog,
+    modelId: context.agenticModelId,
+    cost: context.totalCost.toString(),
+    tokensUsed: context.tokenUsage.input + context.tokenUsage.output,
+    timeTakenMs,
+  } as unknown as Omit<InsertMessage, "externalId">
+
+  const msg = await insertMessage(db, assistantInsert)
+
+  return {
+    msg,
+    assistantMessageId: String(msg.externalId),
+  }
+}
+
+// ============================================================================
+// SYSTEM PROMPT BUILDER (mirrors JAF structure)
+// ============================================================================
+
+/**
+ * Build system prompt for pi-mono (mirrors JAF's buildAgentInstructions)
+ */
+function buildPiMonoSystemPrompt(
+  toolNames: string[],
+  dateForAI: string,
+  agentPrompt?: string,
+  userContext?: string,
+  dedicatedAgentSystemPrompt?: string,
+  email?: string,
+  workspaceId?: string,
+): string {
+  const instructionLines: string[] = [
+    "You are Xyne, an enterprise search assistant with agentic capabilities.",
+    "",
+    `The current date is: ${dateForAI}`,
+    "",
+    "<context>",
+    `User: ${email || "Unknown"}`,
+    `Workspace: ${workspaceId || "Unknown"}`,
+    "</context>",
+    "",
+  ]
+
+  // Available tools section
+  instructionLines.push(
+    "<available_tools>",
+    "You have access to the following tools:",
+    ...toolNames.map(name => `- ${name}`),
+    "",
+    "Tool descriptions:",
+    "- todo_write: Create or update an execution plan with sequential tasks. MUST be called first.",
+    "- searchGlobal: Search across all connected applications and data sources.",
+    "- searchGmail: Search Gmail messages by content with optional filters.",
+    "- searchDriveFiles: Search Google Drive files by title/content.",
+    "- searchCalendarEvents: Search Google Calendar events.",
+    "- searchGoogleContacts: Search Google Contacts.",
+    "- getSlackRelatedMessages: Search Slack messages.",
+    "- lsKnowledgeBase: Browse knowledge base collections/folders.",
+    "- searchKnowledgeBase: Search document content in knowledge base.",
+    "- searchChatHistory: Search earlier parts of the conversation.",
+    "- listCustomAgents: List available custom AI agents.",
+    "- runPublicAgent: Delegate execution to a custom agent.",
+    "- synthesizeFinalAnswer: Generate and stream the final answer to the user. MUST be called last.",
+    "- fallBack: Generate reasoning when search fails.",
+    "</available_tools>",
+    "",
+  )
+
+  // User context
+  if (userContext?.trim()) {
+    instructionLines.push("Workspace Context:", userContext.trim(), "")
+  }
+
+  // Agent system prompt
+  if (dedicatedAgentSystemPrompt?.trim()) {
+    instructionLines.push("Agent System Prompt:", dedicatedAgentSystemPrompt.trim(), "")
+  } else if (agentPrompt?.trim()) {
+    instructionLines.push("Agent Context:", agentPrompt.trim(), "")
+  }
+
+  // Core instructions
+  instructionLines.push(
+    "# PLANNING",
+    "- Call todo_write at the start to create a plan.",
+    "- The plan should have sequential tasks for gathering information.",
+    "- Update task status as you progress.",
+    "",
+    "# EXECUTION",
+    "- Work tasks sequentially; complete the current task before starting the next.",
+    "- Use search tools to gather evidence from connected data sources.",
+    "- Cite your sources using the K[docId_chunkIndex] format.",
+    "",
+    "# TOOL CALLS",
+    "- Use the model's native function/tool-call interface.",
+    "- Provide clean JSON arguments matching each tool's schema.",
+    "- Wait for tool results before proceeding.",
+    "",
+    "# FINAL SYNTHESIS",
+    "- When research is complete, CALL synthesizeFinalAnswer.",
+    "- This tool streams the final response to the user.",
+    "- Never output the final answer directly without using the tool.",
+    "",
+    "# CITATION RULES",
+    "- ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.",
+    "- Place the citation immediately after the relevant claim.",
+    "- Use at most 1-2 citations per sentence.",
+    "",
+  )
+
+  return instructionLines.join("\n")
+}
+
+// ============================================================================
+// CUSTOM TOOLS FOR PI-MONO
+// ============================================================================
+
+/**
+ * Build the list of Xyne tools for pi-mono
+ * Uses existing tool definitions from ./tools
+ */
+function buildXyneTools(): any[] {
+  return [
+    searchGlobalTool,
+    searchGmailTool,
+    searchDriveFilesTool,
+    searchCalendarEventsTool,
+    searchGoogleContactsTool,
+    getSlackRelatedMessagesTool,
+    lsKnowledgeBaseTool,
+    searchKnowledgeBaseTool,
+    searchChatHistoryTool,
+    toDoWriteTool,
+    fallBackTool,
+    synthesizeFinalAnswerTool,
+    listCustomAgentsTool,
+    runPublicAgentTool,
+  ]
+}
+
 // ============================================================================
 // MAIN MESSAGE AGENTS FUNCTION (PI-MONO VERSION)
 // ============================================================================
 
 /**
  * MessageAgents - Pi-Mono Implementation
- * 
+ *
  * Full implementation using pi-mono coding-agent runtime.
- * Maintains compatibility with existing XyneAgentState and streaming.
  */
 export async function MessageAgentsPiMono(c: Context): Promise<Response> {
   const tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageAgentsPiMono")
 
   const { sub: email, workspaceId } = c.get(JwtPayloadKey)
-  
+
   try {
     loggerWithChild({ email }).info("MessageAgentsPiMono starting")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
-    
-    // Parse request body
+
     // @ts-ignore
     const body = c.req.valid("query")
     let {
@@ -741,7 +817,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
       toolsList?: Array<{ connectorId: string; tools: string[] }>
       selectedModelConfig?: string
     } = body
-    
+
     if (!message) {
       throw new HTTPException(400, { message: "Message is required" })
     }
@@ -749,7 +825,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
     message = safeDecodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     rootSpan.setAttribute("chatId", chatId || "new")
-    
+
     // Parse model configuration
     let parsedModelId: string | undefined = undefined
     let isReasoningEnabled = false
@@ -894,7 +970,11 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
     )
     const isMstWithAttachments = attachmentMetadata.length > 0
 
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(db, workspaceId, email)
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
     const rawUser = userAndWorkspace.user
     const rawWorkspace = userAndWorkspace.workspace
     const user = {
@@ -1039,25 +1119,32 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
       agentRecord.prompt.trim().length > 0
         ? agentRecord.prompt.trim()
         : undefined
-    const delegationEnabled = !hasExplicitAgent
 
-        // Build tools - cast to any to bypass type checking since our tool definitions
-        // have more specific types than the base ToolDefinition
-        const tools = buildPiMonoTools() as any[]
+        // Build custom tools (they use Xyne state via adapter)
+        const customTools = buildXyneTools()
+
+        // Build simplified system prompt (mirroring JAF structure)
+        const systemPrompt = buildPiMonoSystemPrompt(
+          customTools.map((tool: any) => tool.name),
+          dateForAI,
+          agentPromptForLLM,
+          userCtxString,
+          dedicatedAgentSystemPrompt,
+          email,
+          workspaceId
+        )
 
     // Return streaming response
     return streamSSE(c, async (stream) => {
       const requestStartMs = Date.now()
       const stopController = new AbortController()
       const streamKey = String(chatRecord.externalId)
-      let agentContextRef: XyneAgentState | null = null
-      
+
       const markStop = () => {
-        if (agentContextRef) {
-          agentContextRef.stopRequested = true
-        }
+        stopController.abort()
       }
-      stopController.signal.addEventListener("abort", markStop)
+      // Listen to the incoming request's signal for client disconnect
+      c.req.raw.signal.addEventListener("abort", markStop)
       activeStreams.set(streamKey, { stream, stopController })
 
       if (!chatId) {
@@ -1093,32 +1180,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
 
       try {
         let thinkingLog = ""
-        
-        // Initialize context with actual data
-        const agentContext = initializePiMonoAgentContext(
-          email,
-          String(workspaceId),
-          user.id,
-          String(chatRecord.externalId),
-          message,
-          attachmentsForContext,
-          {
-            userContext: userCtxString,
-            workspaceNumericId: workspace.id,
-            agentPrompt: agentPromptForLLM,
-            dedicatedAgentSystemPrompt,
-            chatId: chatRecord.id as number,
-            stopController,
-            modelId: agenticModelId,
-          },
-        )
-        agentContextRef = agentContext
-        
-        // Build conversation history
-        const { messages: llmHistory } = buildConversationHistoryForAgentRun(
-          previousConversationHistory,
-        )
-        
+
         // Prepare initial attachment context
         let initialAttachmentContext: {
           fragments: MinimalAgentFragment[]
@@ -1126,17 +1188,14 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         } | null = null
 
         if (allReferencedFileIds.length > 0) {
-          await emitReasoningEvent(
-            async (payload) => {
-              thinkingLog += `${JSON.stringify(payload)}\n`
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify(payload),
-              })
-            },
-            ReasoningSteps.attachmentAnalyzing()
-          )
-          
+          await emitReasoningEvent(async (payload) => {
+            thinkingLog += `${JSON.stringify(payload)}\n`
+            await stream.writeSSE({
+              event: ChatSSEvents.Reasoning,
+              data: JSON.stringify(payload),
+            })
+          }, ReasoningSteps.attachmentAnalyzing())
+
           initialAttachmentContext = await prepareInitialAttachmentContext(
             allReferencedFileIds,
             threadIds,
@@ -1145,23 +1204,22 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
             email,
             isMstWithAttachments,
           )
-          
+
           if (initialAttachmentContext) {
-            await emitReasoningEvent(
-              async (payload) => {
-                thinkingLog += `${JSON.stringify(payload)}\n`
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify(payload),
-                })
-              },
-              ReasoningSteps.attachmentExtracted(initialAttachmentContext.fragments.length)
-            )
-            agentContext.allFragments.push(...initialAttachmentContext.fragments)
+            await emitReasoningEvent(async (payload) => {
+              thinkingLog += `${JSON.stringify(payload)}\n`
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: JSON.stringify(payload),
+              })
+            }, ReasoningSteps.attachmentExtracted(
+              initialAttachmentContext.fragments.length,
+            ))
           }
         }
 
         // Handle image attachments
+        const allFragments: MinimalAgentFragment[] = initialAttachmentContext?.fragments || []
         if (imageAttachmentFileIds.length > 0) {
           const imageFragments = imageAttachmentFileIds.map((fileId, index) => {
             const fragmentId = `user_attachment_image:${fileId}:${index}`
@@ -1187,25 +1245,20 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               ],
             } as MinimalAgentFragment
           })
-          
-          const summary = `User provided ${imageFragments.length} image attachment${imageFragments.length === 1 ? "" : "s"}.`
-          if (initialAttachmentContext) {
-            initialAttachmentContext.fragments.push(...imageFragments)
-            initialAttachmentContext.summary = `${initialAttachmentContext.summary}\n${summary}`
-          } else {
-            initialAttachmentContext = {
-              fragments: imageFragments,
-              summary,
-            }
-          }
-          agentContext.allFragments.push(...imageFragments)
+          allFragments.push(...imageFragments)
         }
+
+        // Send start event
+        await stream.writeSSE({
+          event: ChatSSEvents.Start,
+          data: "",
+        })
 
         // Send initial metadata
         await stream.writeSSE({
           event: ChatSSEvents.ResponseMetadata,
           data: JSON.stringify({
-            chatId: agentContext.chat.externalId,
+            chatId: chatRecord.externalId,
           }),
         })
 
@@ -1231,90 +1284,111 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           })
         }
 
-        // Set up pi-mono auth and model with LiteLLM
+        // 1. Format Base URL (ensure /v1 suffix)
+        const baseUrl = config.LiteLLMBaseUrl?.endsWith("/v1") 
+          ? config.LiteLLMBaseUrl 
+          : `${config.LiteLLMBaseUrl}/v1`;
+
+        // 2. Initialize AuthStorage and set LiteLLM credentials
         const authStorage = AuthStorage.create()
-        const modelRegistry = new ModelRegistry(authStorage)
-        
-        // Register LiteLLM as a custom provider
-        if (config.LiteLLMBaseUrl && config.LiteLLMApiKey) {
-          modelRegistry.registerProvider("litellm", {
-            baseUrl: config.LiteLLMBaseUrl,
-            apiKey: config.LiteLLMApiKey,
-            api: "openai-chat",
-            headers: {
-              "Authorization": `Bearer ${config.LiteLLMApiKey}`,
-              "Content-Type": "application/json",
-            },
-            authHeader: true,
+        if (config.LiteLLMApiKey) {
+          authStorage.set("litellm", {
+            type: "api_key",
+            key: config.LiteLLMApiKey
           })
         }
-        
-        // Map Xyne model to pi-mono model
-        // Try to get model from LiteLLM first
-        let piModel = modelRegistry.find("litellm", agenticModelId as any)
-        
-        // If not found in LiteLLM, try other providers
-        if (!piModel) {
-          piModel = modelRegistry.find("anthropic", agenticModelId as any) || 
-                    modelRegistry.find("openai", agenticModelId as any)
-        }
-        
-        // If not found in registry, try to get from built-in models
-        if (!piModel) {
-          // Try common model IDs
-          piModel = getModel("anthropic", agenticModelId as any) || 
-                    getModel("openai", agenticModelId as any)
-        }
-        
-        // If still not found, create a custom model for LiteLLM
-        if (!piModel && config.LiteLLMBaseUrl) {
-          piModel = {
-            provider: "litellm",
-            id: agenticModelId,
-            name: agenticModelId,
-            api: "openai-chat",
-            reasoning: false,
-            input: ["text", "image"],
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            contextWindow: 128000,
-            maxTokens: 4096,
-            compat: { supportsStreaming: true },
-          } as any
-        }
-        
-        // If still not found, use a default
-        if (!piModel) {
-          loggerWithChild({ email }).warn(
-            `Model ${agenticModelId} not found in pi-mono registry, trying to use default`
-          )
-          // Try to get any available model
-          const availableModels = await modelRegistry.getAvailable()
-          if (availableModels.length > 0) {
-            piModel = availableModels[0]
-          } else {
-            throw new Error(`No model available for ${agenticModelId}. Please configure API keys.`)
-          }
-        }
 
-        // Create pi-mono agent session with Xyne tools
+        const modelRegistry = new ModelRegistry(authStorage)
+
+        // 3. Define LiteLLM model directly (official pattern from docs)
+        loggerWithChild({ email }).info(`Creating LiteLLM model profile for ${agenticModelId}`)
+        const piModel = {
+          id: agenticModelId,  // model ID as configured in LiteLLM (e.g., "kimi-latest")
+          name: agenticModelId,
+          api: "openai-completions",  // LiteLLM uses OpenAI-compatible API
+          provider: "litellm",
+          baseUrl: baseUrl,
+          reasoning: false,
+          input: ["text", "image"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128000,
+          maxTokens: 4096,
+          compat: {
+            supportsStore: false,  // LiteLLM doesn't support 'store' field
+            supportsStreaming: true,
+            supportsToolStreaming: true
+          }
+        } as any
+
+        loggerWithChild({ email }).info({
+          modelId: piModel.id,
+          modelProvider: piModel.provider,
+          baseUrl: piModel.baseUrl
+        }, "Using pi-mono model with LiteLLM")
+
+        // Create Xyne state first (needed by tools)
+        const xyneState = createInitialXyneState(
+          email,
+          String(workspaceId),
+          user.id,
+          String(chatRecord.externalId),
+          message,
+          attachmentsForContext
+        )
+        
+        // Add additional context to state
+        xyneState.userContext = userCtxString
+        xyneState.agentPrompt = agentPromptForLLM
+        xyneState.dedicatedAgentSystemPrompt = dedicatedAgentSystemPrompt
+        xyneState.user.workspaceNumericId = workspace.id
+        xyneState.chat.id = chatRecord.id
+        
+        // Set up persist function
+        setPersistFunction(async (state) => {
+          // Persist state if needed - for now just log
+          loggerWithChild({ email }).debug("Persisting Xyne state")
+        })
+
+        // Build custom tools (they use Xyne state via adapter)
+        const customTools = buildXyneTools()
+
+        // Create pi-mono session
         const { session: piSession } = await createAgentSession({
           model: piModel,
-          tools: tools as any[],
-          // Use in-memory session manager to avoid file-based session storage
+          tools: [], // disable default tools
+          customTools,
+          authStorage,     // explicitly pass this (from docs)
+          modelRegistry,   // explicitly pass this (from docs)
           sessionManager: SessionManager.inMemory(),
-          // Use in-memory settings
           settingsManager: SettingsManager.inMemory({
             compaction: { enabled: true },
             retry: { enabled: false, maxRetries: 3, baseDelayMs: 1000 },
           }),
-          authStorage,
-          modelRegistry,
         })
 
-        // Store Xyne state in the adapter for tools to access
-        setXyneState(piSession as any, agentContext)
+        // Set system prompt
+        piSession.agent.setSystemPrompt(systemPrompt)
+        
+        // Store Xyne state in adapter for tools to access
+        // Use the session's internal context as the key
+        setXyneState(piSession as any, xyneState)
+        
+        // Log the full system prompt for debugging
+        loggerWithChild({ email }).info(
+          { systemPrompt },
+          "📝 PI-MONO SYSTEM PROMPT"
+        )
+        
+        loggerWithChild({ email }).info(
+          { 
+            systemPromptLength: systemPrompt.length, 
+            toolCount: customTools.length,
+            toolNames: customTools.map((t: any) => t.name)
+          },
+          "Created pi-mono session with Xyne state"
+        )
 
-        // Subscribe to pi-mono events and forward to SSE stream
+        // Subscribe to events
         let answer = ""
         const citations: Citation[] = []
         const imageCitations: any[] = []
@@ -1322,7 +1396,6 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         const yieldedCitations = new Set<number>()
         const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
-        let turnCount = 0
 
         const reasoningEmitter: StructuredReasoningEmitter = async (payload) => {
           thinkingLog += `${JSON.stringify(payload)}\n`
@@ -1333,263 +1406,217 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           })
         }
 
+        // Track completion
+        let agentCompleted = false
+        let agentCompletionResolve: (() => void) | null = null
+        let agentCompletionReject: ((err: Error) => void) | null = null
+        const agentCompletionPromise = new Promise<void>((resolve, reject) => {
+          agentCompletionResolve = resolve
+          agentCompletionReject = reject
+        })
+
         // Subscribe to session events
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         piSession.subscribe(async (event: any) => {
+          // Log ALL events for debugging
+          loggerWithChild({ email }).debug({ eventType: event.type, event }, "PI-MONO EVENT")
+          
           if (stream.closed) return
 
-          switch (event.type) {
-            case "turn_start": {
-              turnCount++
-              await emitReasoningEvent(
-                reasoningEmitter,
-                ReasoningSteps.turnStarted(turnCount)
-              )
-              break
-            }
-
-            case "tool_execution_start": {
-              // Tool execution starting - emit tool selection
-              const toolCall = event.toolCall
-              if (!toolCall) break
-              
-              const toolQuery = typeof toolCall.args?.query === "string" 
-                ? toolCall.args.query 
-                : undefined
-              
-              if (toolCall.name === XyneTools.toDoWrite) {
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.toolSelected(toolCall.name)
-                )
-              } else if (toolCall.name === XyneTools.listCustomAgents) {
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.agentSearching()
-                )
-              } else if (toolCall.name === XyneTools.runPublicAgent) {
-                // Handled in tool completion
-              } else if (toolCall.name === XyneTools.fallBack) {
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.fallbackActivated()
-                )
-              } else {
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.toolSelected(toolCall.name, toolQuery)
-                )
-              }
-              break
-            }
-
-            case "tool_execution_end": {
-              // Tool execution completed
-              const toolResult = event.result
-              const toolError = event.error
-              const toolName = event.toolCall?.name
-
-              if (toolError) {
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.toolCompleted(toolName, true)
-                )
-              } else {
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.toolCompleted(toolName, false)
-                )
+          try {
+            switch (event.type) {
+              case "agent_start": {
+                loggerWithChild({ email }).info("Pi-mono agent started")
+                await emitReasoningEvent(reasoningEmitter, ReasoningSteps.turnStarted(1))
+                break
               }
 
-              // Handle special tools
-              if (toolName === XyneTools.toDoWrite && toolResult?.plan) {
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.planCreated(
-                    toolResult.plan.goal || "Goal not specified",
-                    toolResult.plan.subTasks?.map((t: any) => ({
-                      id: t.id,
-                      description: t.description,
-                      status: t.status,
-                    })) || []
-                  )
-                )
+              case "tool_execution_start": {
+                const toolName = event.toolName
+                loggerWithChild({ email }).info({ toolName, args: event.args }, "🔧 TOOL EXECUTION STARTED")
+                await emitReasoningEvent(reasoningEmitter, ReasoningSteps.toolSelected(toolName))
+                break
               }
 
-              if (toolName === XyneTools.listCustomAgents && toolResult?.agents) {
-                const agentCount = Array.isArray(toolResult.agents) 
-                  ? toolResult.agents.length 
-                  : 0
-                const agentNames = agentCount 
-                  ? toolResult.agents.map((a: any) => a.agentName) 
-                  : undefined
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.agentsFound(agentCount, agentNames)
-                )
+              case "tool_execution_end": {
+                const toolName = event.toolName
+                const isError = event.isError
+                const result = event.result
+                loggerWithChild({ email }).info({ toolName, isError, hasResult: !!result }, "🔧 TOOL EXECUTION ENDED")
+                await emitReasoningEvent(reasoningEmitter, ReasoningSteps.toolCompleted(toolName, isError))
+                
+                if (toolName === "todo_write" && !isError) {
+                  await emitReasoningEvent(reasoningEmitter, ReasoningSteps.planCreated(
+                    "Execute search plan",
+                    [{ id: "1", description: "Search for information", status: "in_progress" }]
+                  ))
+                }
+                break
               }
 
-              if (toolName === XyneTools.runPublicAgent && toolResult) {
-                const agentName = toolResult.agentName || "unknown agent"
-                const delegationRunId = toolResult.delegationRunId
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.agentCompleted(agentName, delegationRunId)
-                )
+              case "tool_call": {
+                // Pi-mono might use different event name
+                const toolName = event.toolName || event.name
+                const args = event.args || event.arguments || event.input
+                loggerWithChild({ email }).info({ toolName, args }, "🔧 TOOL CALL EVENT")
+                break
               }
 
-              if (toolName === XyneTools.fallBack && toolResult?.reasoning) {
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.fallbackCompleted()
-                )
-              }
-
-              // Handle synthesis completion
-              if (
-                toolName === XyneTools.synthesizeFinalAnswer &&
-                !toolError
-              ) {
-                await emitReasoningEvent(
-                  reasoningEmitter,
-                  ReasoningSteps.synthesisCompleted()
-                )
-              }
-              break
-            }
-
-            case "message_update": {
-              // Handle assistant text streaming
-              const assistantEvent = event.assistantMessageEvent
-              if (assistantEvent?.type === "text_delta") {
-                const delta = assistantEvent.delta
-                if (delta) {
+              case "message_update": {
+                // Handle streaming text from assistant
+                const assistantEvent = event.assistantMessageEvent
+                if (assistantEvent?.type === "text_delta") {
+                  const delta = assistantEvent.delta || ""
                   answer += delta
                   await stream.writeSSE({
                     event: ChatSSEvents.ResponseUpdate,
                     data: delta,
                   })
-
-                  // Check for citations
-                  for await (const citationEvent of checkAndYieldCitationsForAgent(
-                    answer,
-                    yieldedCitations,
-                    agentContext.allFragments,
-                    yieldedImageCitations,
-                    email,
-                  )) {
-                    if (stream.closed) break
-                    if (citationEvent.citation) {
-                      const { index, item } = citationEvent.citation
-                      citations.push(item)
-                      citationMap[index] = citations.length - 1
-                      await stream.writeSSE({
-                        event: ChatSSEvents.CitationsUpdate,
-                        data: JSON.stringify({
-                          contextChunks: citations,
-                          citationMap,
-                        }),
-                      })
-                    }
-                    if (citationEvent.imageCitation) {
-                      imageCitations.push(citationEvent.imageCitation)
-                      await stream.writeSSE({
-                        event: ChatSSEvents.ImageCitationUpdate,
-                        data: JSON.stringify(citationEvent.imageCitation),
-                      })
-                    }
-                  }
                 }
+                break
               }
-              break
-            }
 
-            case "turn_end": {
-              // Turn completed
-              break
-            }
+              case "turn_start": {
+                loggerWithChild({ email }).info({ turn: event.turnIndex }, "Pi-mono turn started")
+                break
+              }
 
-            case "agent_end": {
-              // Run completed - persist and send final metadata
-              if (!stream.closed) {
-                try {
-                  const persisted = await persistAssistantMessage(
-                    {
-                      chatRecord,
-                      user,
-                      workspace: { externalId: workspace.externalId },
-                      agenticModelId,
-                      totalCost: 0, // TODO: Extract from pi-mono
-                      tokenUsage: { input: 0, output: 0 }, // TODO: Extract from pi-mono
-                      requestStartMs,
-                    },
-                    {
-                      answer,
-                      citations,
-                      imageCitations,
-                      citationMap,
-                      thinkingLog,
-                    },
-                  )
-                  assistantMessageId = persisted.assistantMessageId
-                  lastPersistedMessageId = persisted.msg.id as number
-                  lastPersistedMessageExternalId = persisted.assistantMessageId
-                  
-                  await persistTrace(lastPersistedMessageId, lastPersistedMessageExternalId)
-                } catch (error) {
-                  loggerWithChild({ email }).error(
-                    error,
-                    "Failed to persist assistant response",
-                  )
+              case "turn_end": {
+                loggerWithChild({ email }).info({ turn: event.turnIndex }, "Pi-mono turn ended")
+                break
+              }
+
+              case "assistant_message": {
+                const content = event.message?.content
+                loggerWithChild({ email }).info({ hasContent: !!content, contentLength: content?.length }, "Pi-mono assistant message")
+                break
+              }
+
+              case "agent_end": {
+                loggerWithChild({ email }).info("Pi-mono agent ended")
+                agentCompleted = true
+                if (agentCompletionResolve) {
+                  agentCompletionResolve()
                 }
-
-                await stream.writeSSE({
-                  event: ChatSSEvents.ResponseMetadata,
-                  data: JSON.stringify({
-                    chatId: agentContext.chat.externalId,
-                    messageId: assistantMessageId || "temp-message-id",
-                    timeTakenMs: Date.now() - requestStartMs,
-                  }),
-                })
-                await stream.writeSSE({
-                  event: ChatSSEvents.End,
-                  data: "",
-                })
+                break
               }
-              break
-            }
 
-            case "error": {
-              // Error occurred
-              loggerWithChild({ email }).error(
-                { error: event.error },
-                "Pi-mono session error"
-              )
-              if (!stream.closed) {
-                await stream.writeSSE({
-                  event: ChatSSEvents.Error,
-                  data: JSON.stringify({
-                    error: "agent_error",
-                    message: event.error?.message || "Unknown error",
-                  }),
-                })
+              case "error": {
+                const errorData = (event as any).error || {}
+                loggerWithChild({ email }).error({ error: errorData }, "Pi-mono error")
+                if (!stream.closed) {
+                  await stream.writeSSE({
+                    event: ChatSSEvents.Error,
+                    data: JSON.stringify({
+                      error: "agent_error",
+                      message: errorData.message || "Unknown error",
+                    }),
+                  })
+                }
+                
+                // Reject the promise so we don't wait 10 minutes
+                agentCompleted = true
+                if (agentCompletionReject) {
+                  agentCompletionReject(new Error(errorData.message || "Agent Error"))
+                }
+                break
               }
-              break
+
+              default: {
+                loggerWithChild({ email }).debug({ eventType: event.type }, "Unhandled pi-mono event type")
+              }
             }
+          } catch (handlerError) {
+            loggerWithChild({ email }).error(handlerError, "Event handler error")
           }
         })
 
-        // Start the pi-mono session with the user's message
-        await piSession.prompt(message)
+        // Start the conversation
+        loggerWithChild({ email }).info("Starting pi-mono prompt...")
+        
+        // Catch synchronous errors from prompt()
+        let promptError: Error | null = null
+        piSession.prompt(message).catch((err: any) => {
+          promptError = err instanceof Error ? err : new Error(String(err))
+          loggerWithChild({ email }).error({ err }, "PI-MONO PROMPT CRASHED")
+          // Force agent completion to unblock the promise
+          if (!agentCompleted && agentCompletionResolve) {
+            agentCompletionResolve()
+          }
+        })
+        
+        // Small delay to see if prompt() fails synchronously
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        if (promptError) {
+          throw new Error(`Prompt failed: ${(promptError as Error).message}`)
+        }
+        
+        loggerWithChild({ email }).info("Pi-mono prompt returned, waiting for completion...")
 
-        // Wait for run to complete
-        // The run_end event will handle cleanup and final metadata
+        // Wait for completion
+        const completionTimeoutMs = 10 * 60 * 1000 // 10 minutes
+        try {
+          await Promise.race([
+            agentCompletionPromise,
+            new Promise<void>((_, reject) => 
+              setTimeout(() => reject(new Error("Agent completion timeout")), completionTimeoutMs)
+            )
+          ])
+          loggerWithChild({ email }).info("Agent completed successfully")
+        } catch (timeoutErr) {
+          loggerWithChild({ email }).error(timeoutErr, "Agent completion timeout")
+          if (!agentCompleted) {
+            throw timeoutErr
+          }
+        }
+
+        // Persist final message
+        try {
+          const persisted = await persistAssistantMessage(
+            {
+              chatRecord,
+              user,
+              workspace: { externalId: workspace.externalId },
+              agenticModelId,
+              totalCost: 0,
+              tokenUsage: { input: 0, output: 0 },
+              requestStartMs,
+            },
+            {
+              answer,
+              citations,
+              imageCitations,
+              citationMap,
+              thinkingLog,
+            },
+          )
+          assistantMessageId = persisted.assistantMessageId
+          await persistTrace(persisted.msg.id as number, assistantMessageId)
+        } catch (persistErr) {
+          loggerWithChild({ email }).error(persistErr, "Failed to persist message")
+        }
+
+        // Send final metadata
+        if (!stream.closed) {
+          await stream.writeSSE({
+            event: ChatSSEvents.ResponseMetadata,
+            data: JSON.stringify({
+              chatId: chatRecord.externalId,
+              messageId: assistantMessageId || "temp-message-id",
+              timeTakenMs: Date.now() - requestStartMs,
+            }),
+          })
+          await stream.writeSSE({
+            event: ChatSSEvents.End,
+            data: "",
+          })
+        }
 
         rootSpan.end()
       } catch (error) {
         loggerWithChild({ email }).error(error, "MessageAgentsPiMono stream error")
         const streamErrMsg = getErrorMessage(error)
-        
+
         if (!stream.closed) {
           try {
             await stream.writeSSE({
@@ -1604,10 +1631,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               data: "",
             })
           } catch (writeErr) {
-            loggerWithChild({ email }).warn(
-              writeErr,
-              "Failed to send stream_error to client (stream likely closed)",
-            )
+            loggerWithChild({ email }).warn(writeErr, "Failed to send error to client")
           }
         }
         rootSpan.end()
@@ -1619,7 +1643,6 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         }
       }
     })
-    
   } catch (error) {
     loggerWithChild({ email }).error(error, "MessageAgentsPiMono failed")
     rootSpan.end()
@@ -1632,11 +1655,10 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
 // ============================================================================
 
 export const __messageAgentsPiMonoInternals = {
-  initializePiMonoAgentContext,
-  buildPiMonoTools,
-  persistAssistantMessage,
   ensureChatAndPersistUserMessage,
   resolveAgenticModelId,
   buildConversationHistoryForAgentRun,
   prepareInitialAttachmentContext,
+  buildXyneTools,
+  persistAssistantMessage,
 }

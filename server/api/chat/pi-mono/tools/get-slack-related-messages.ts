@@ -1,6 +1,6 @@
 /**
  * getSlackRelatedMessages tool - pi-mono version
- * 
+ *
  * Fully wired to existing JAF implementation
  */
 
@@ -25,11 +25,15 @@ import { getErrorMessage } from "@/utils"
 const Logger = getLogger(Subsystem.Chat)
 const DEFAULT_SLACK_LOOKBACK_MS = 72 * 60 * 60 * 1000
 
-type NormalizedTimestampRange = { from: number | null; to: number | null } | null
+type NormalizedTimestampRange = {
+  from: number | null
+  to: number | null
+} | null
 
-function normalizeTimestampRange(
-  range?: { startTime?: string; endTime?: string }
-): NormalizedTimestampRange {
+function normalizeTimestampRange(range?: {
+  startTime?: string
+  endTime?: string
+}): NormalizedTimestampRange {
   if (!range) {
     return null
   }
@@ -89,43 +93,77 @@ Create SHORT, targeted search terms optimized for retrieval systems. Focus on 1-
 `
 
 const getSlackRelatedMessagesParams = Type.Object({
-  query: Type.Optional(Type.String({ 
-    description: retrievalQueryDescription 
-  })),
-  channelName: Type.Optional(Type.String({ 
-    description: "Optional Slack channel name string, such as `eng-launches`. Pass the human-facing channel name, not a Slack channel ID." 
-  })),
-  user: Type.Optional(Type.String({ 
-    description: "Optional Slack user identifier string to restrict messages by author. Email is preferred; display name can also work." 
-  })),
-  mentions: Type.Optional(Type.Array(Type.String({ 
-    description: "Optional list of mentioned-user identifier strings, usually emails or usernames, to find messages that mention specific people." 
-  }), { 
-    description: "Optional list of mentioned-user identifier strings, usually emails or usernames, to find messages that mention specific people." 
-  })),
-  limit: Type.Optional(Type.Number({ 
-    description: "Maximum number of results to return as an integer between 1 and 100. Default is 20. Keep this small for precision-first retrieval and page with `offset` when needed.",
-    default: 20 
-  })),
-  offset: Type.Optional(Type.Number({ 
-    description: "Pagination offset as a non-negative integer. Use it after reviewing the current page to continue from the next unseen results.",
-    default: 0 
-  })),
-  excludedIds: Type.Optional(Type.Array(Type.String(), { 
-    description: "Previously seen result document `docId`s to suppress on follow-up searches. Prefer prior `fragment.source.docId` values. Do not pass collection, folder, file, path, or fragment IDs." 
-  })),
-  timeRange: Type.Optional(Type.Object({
-    startTime: Type.Optional(Type.String({ description: "Inclusive start time as a string." })),
-    endTime: Type.Optional(Type.String({ description: "Inclusive end time as a string." }))
-  }, { 
-    description: "Optional time-range object with string fields `{ startTime, endTime }`. Use it when the query is bounded by an explicit time window." 
-  })),
-  sortBy: Type.Optional(Type.Union([
-    Type.Literal("asc"),
-    Type.Literal("desc")
-  ], { 
-    description: "Sort direction. Valid values are `asc` and `desc`. Use `desc` for newest-first or most-recent-first ordering when supported." 
-  }))
+  query: Type.Optional(
+    Type.String({
+      description: retrievalQueryDescription,
+    }),
+  ),
+  channelName: Type.Optional(
+    Type.String({
+      description:
+        "Optional Slack channel name string, such as `eng-launches`. Pass the human-facing channel name, not a Slack channel ID.",
+    }),
+  ),
+  user: Type.Optional(
+    Type.String({
+      description:
+        "Optional Slack user identifier string to restrict messages by author. Email is preferred; display name can also work.",
+    }),
+  ),
+  mentions: Type.Optional(
+    Type.Array(
+      Type.String({
+        description:
+          "Optional list of mentioned-user identifier strings, usually emails or usernames, to find messages that mention specific people.",
+      }),
+      {
+        description:
+          "Optional list of mentioned-user identifier strings, usually emails or usernames, to find messages that mention specific people.",
+      },
+    ),
+  ),
+  limit: Type.Optional(
+    Type.Number({
+      description:
+        "Maximum number of results to return as an integer between 1 and 100. Default is 20. Keep this small for precision-first retrieval and page with `offset` when needed.",
+      default: 20,
+    }),
+  ),
+  offset: Type.Optional(
+    Type.Number({
+      description:
+        "Pagination offset as a non-negative integer. Use it after reviewing the current page to continue from the next unseen results.",
+      default: 0,
+    }),
+  ),
+  excludedIds: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Previously seen result document `docId`s to suppress on follow-up searches. Prefer prior `fragment.source.docId` values. Do not pass collection, folder, file, path, or fragment IDs.",
+    }),
+  ),
+  timeRange: Type.Optional(
+    Type.Object(
+      {
+        startTime: Type.Optional(
+          Type.String({ description: "Inclusive start time as a string." }),
+        ),
+        endTime: Type.Optional(
+          Type.String({ description: "Inclusive end time as a string." }),
+        ),
+      },
+      {
+        description:
+          "Optional time-range object with string fields `{ startTime, endTime }`. Use it when the query is bounded by an explicit time window.",
+      },
+    ),
+  ),
+  sortBy: Type.Optional(
+    Type.Union([Type.Literal("asc"), Type.Literal("desc")], {
+      description:
+        "Sort direction. Valid values are `asc` and `desc`. Use `desc` for newest-first or most-recent-first ordering when supported.",
+    }),
+  ),
 })
 
 export const getSlackRelatedMessagesTool = createXyneTool(
@@ -134,37 +172,53 @@ export const getSlackRelatedMessagesTool = createXyneTool(
   getSlackRelatedMessagesParams,
   async (toolCallId, params, signal, onUpdate, ctx: XyneToolContext) => {
     const { xyneState, persistState } = ctx
-    
+
     try {
       const email = xyneState.user.email
       const agentPrompt = xyneState.agentPrompt
-      
+
       if (!email) {
         return {
-          content: [{ type: "text", text: "User email is required for Slack message retrieval." }],
+          content: [
+            {
+              type: "text",
+              text: "User email is required for Slack message retrieval.",
+            },
+          ],
           isError: true,
-          details: { toolName: "getSlackRelatedMessages" }
+          details: { toolName: "getSlackRelatedMessages" },
         }
       }
 
-      const { agentAppEnums, selectedItems } = parseAgentAppIntegrations(agentPrompt)
-      const channelIds = ((selectedItems as Record<string, unknown>)[Apps.Slack] as any) || []
-      
+      const { agentAppEnums, selectedItems } =
+        parseAgentAppIntegrations(agentPrompt)
+      const channelIds =
+        ((selectedItems as Record<string, unknown>)[Apps.Slack] as any) || []
+
       // Check if Slack is allowed for this agent
       if (agentAppEnums && agentAppEnums.length > 0) {
         if (!agentAppEnums.includes(Apps.Slack)) {
           return {
-            content: [{ type: "text", text: "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. Cannot retrieve related Slack messages." }],
+            content: [
+              {
+                type: "text",
+                text: "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. Cannot retrieve related Slack messages.",
+              },
+            ],
             isError: true,
-            details: { toolName: "getSlackRelatedMessages", code: "PERMISSION_DENIED" }
+            details: {
+              toolName: "getSlackRelatedMessages",
+              code: "PERMISSION_DENIED",
+            },
           }
         }
       }
 
       // Validate that at least one scope parameter is provided
-      const hasScope = params.channelName || params.user || params.timeRange || params.mentions
+      const hasScope =
+        params.channelName || params.user || params.timeRange || params.mentions
       const shouldApplyFallbackRange = !hasScope && !params.query
-      
+
       let scopedTimeRange = params.timeRange
       if (shouldApplyFallbackRange) {
         const end = new Date()
@@ -174,7 +228,7 @@ export const getSlackRelatedMessagesTool = createXyneTool(
           endTime: end.toISOString(),
         }
         Logger.debug(
-          "[getSlackRelatedMessages] No filters provided. Defaulting to the last 72 hours."
+          "[getSlackRelatedMessages] No filters provided. Defaulting to the last 72 hours.",
         )
       }
 
@@ -183,9 +237,17 @@ export const getSlackRelatedMessagesTool = createXyneTool(
         normalizedTimestampRange = normalizeTimestampRange(scopedTimeRange)
       } catch {
         return {
-          content: [{ type: "text", text: "Invalid timeRange supplied. Provide ISO-8601 values for startTime and endTime." }],
+          content: [
+            {
+              type: "text",
+              text: "Invalid timeRange supplied. Provide ISO-8601 values for startTime and endTime.",
+            },
+          ],
           isError: true,
-          details: { toolName: "getSlackRelatedMessages", code: "INVALID_INPUT" }
+          details: {
+            toolName: "getSlackRelatedMessages",
+            code: "INVALID_INPUT",
+          },
         }
       }
 
@@ -200,7 +262,10 @@ export const getSlackRelatedMessagesTool = createXyneTool(
         timestampRange: normalizedTimestampRange,
         agentChannelIds: channelIds.length > 0 ? channelIds : undefined,
         excludeDocIds: params.excludedIds || [],
-        mentions: params.mentions && params.mentions.length > 0 ? params.mentions : undefined,
+        mentions:
+          params.mentions && params.mentions.length > 0
+            ? params.mentions
+            : undefined,
       }
 
       const searchResponse = await searchSlackMessages(searchParams)
@@ -217,12 +282,16 @@ export const getSlackRelatedMessagesTool = createXyneTool(
         await persistState()
         return {
           content: [{ type: "text", text: "Found 0 Slack messages" }],
-          details: { fragments: [], query: params.query, toolName: "getSlackRelatedMessages" }
+          details: {
+            fragments: [],
+            query: params.query,
+            toolName: "getSlackRelatedMessages",
+          },
         }
       }
 
       Logger.info(
-        `[getSlackRelatedMessages] retrieved ${items.length} initial messages for user ${email}`
+        `[getSlackRelatedMessages] retrieved ${items.length} initial messages for user ${email}`,
       )
 
       // Check for thread messages and fetch them automatically
@@ -257,7 +326,7 @@ export const getSlackRelatedMessagesTool = createXyneTool(
           }
         } catch (error) {
           Logger.warn(
-            `[getSlackRelatedMessages] Failed to fetch thread messages: ${getErrorMessage(error)}`
+            `[getSlackRelatedMessages] Failed to fetch thread messages: ${getErrorMessage(error)}`,
           )
         }
       }
@@ -291,27 +360,35 @@ export const getSlackRelatedMessagesTool = createXyneTool(
             source: citation,
             confidence: item.relevance || 0.7,
           }
-        })
+        }),
       )
 
       xyneState.allFragments.push(...fragments)
       await persistState()
 
       Logger.info(
-        `[getSlackRelatedMessages] retrieved ${fragments.length} messages for user ${email}`
+        `[getSlackRelatedMessages] retrieved ${fragments.length} messages for user ${email}`,
       )
 
       return {
-        content: [{ type: "text", text: `Found ${fragments.length} Slack messages` }],
-        details: { fragments, query: params.query, toolName: "getSlackRelatedMessages" }
+        content: [
+          { type: "text", text: `Found ${fragments.length} Slack messages` },
+        ],
+        details: {
+          fragments,
+          query: params.query,
+          toolName: "getSlackRelatedMessages",
+        },
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
       return {
-        content: [{ type: "text", text: `Error retrieving Slack messages: ${errMsg}` }],
+        content: [
+          { type: "text", text: `Error retrieving Slack messages: ${errMsg}` },
+        ],
         isError: true,
-        details: { toolName: "getSlackRelatedMessages", error: errMsg }
+        details: { toolName: "getSlackRelatedMessages", error: errMsg },
       }
     }
-  }
+  },
 )

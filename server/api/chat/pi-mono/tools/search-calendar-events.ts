@@ -1,6 +1,6 @@
 /**
  * searchCalendarEvents tool - pi-mono version
- * 
+ *
  * Fully wired to existing JAF implementation
  */
 
@@ -10,7 +10,10 @@ import type { XyneToolContext } from "../adapter"
 import { Apps, GoogleApps } from "@xyne/vespa-ts"
 import type { EventStatusType } from "@xyne/vespa-ts"
 import { searchGoogleApps } from "@/search/vespa"
-import { formatSearchToolResponse, parseAgentAppIntegrations } from "../../tools/utils"
+import {
+  formatSearchToolResponse,
+  parseAgentAppIntegrations,
+} from "../../tools/utils"
 import config from "@/config"
 
 const retrievalQueryDescription = `
@@ -45,44 +48,78 @@ Create SHORT, targeted search terms optimized for retrieval systems. Focus on 1-
 `
 
 const searchCalendarEventsParams = Type.Object({
-  query: Type.Optional(Type.String({ 
-    description: retrievalQueryDescription
-  })),
-  limit: Type.Optional(Type.Number({ 
-    description: "Maximum number of results to return as an integer between 1 and 100. Default is 20. Keep this small for precision-first retrieval and page with `offset` when needed.",
-    default: 20 
-  })),
-  offset: Type.Optional(Type.Number({ 
-    description: "Pagination offset as a non-negative integer. Use it after reviewing the current page to continue from the next unseen results.",
-    default: 0 
-  })),
-  sortBy: Type.Optional(Type.Union([
-    Type.Literal("asc"),
-    Type.Literal("desc")
-  ], { 
-    description: "Sort direction. Valid values are `asc` and `desc`. Use `desc` for newest-first or most-recent-first ordering when supported." 
-  })),
-  excludedIds: Type.Optional(Type.Array(Type.String(), { 
-    description: "Previously seen result document `docId`s to suppress on follow-up searches. Prefer prior `fragment.source.docId` values. Do not pass collection, folder, file, path, or fragment IDs." 
-  })),
-  attendees: Type.Optional(Type.Array(Type.String({ 
-    description: "Optional attendee identifier strings. Email addresses are preferred; attendee display names can also work." 
-  }), { 
-    description: "Optional attendee identifier strings. Email addresses are preferred; attendee display names can also work." 
-  })),
-  status: Type.Optional(Type.Union([
-    Type.Literal("confirmed"),
-    Type.Literal("tentative"),
-    Type.Literal("cancelled")
-  ], { 
-    description: "Optional event status enum. Valid values are `confirmed`, `tentative`, and `cancelled`." 
-  })),
-  timeRange: Type.Optional(Type.Object({
-    startTime: Type.Optional(Type.String({ description: "Inclusive start time as a string." })),
-    endTime: Type.Optional(Type.String({ description: "Inclusive end time as a string." }))
-  }, { 
-    description: "Optional time-range object with string fields `{ startTime, endTime }`. Use it when the query is bounded by an explicit time window." 
-  }))
+  query: Type.Optional(
+    Type.String({
+      description: retrievalQueryDescription,
+    }),
+  ),
+  limit: Type.Optional(
+    Type.Number({
+      description:
+        "Maximum number of results to return as an integer between 1 and 100. Default is 20. Keep this small for precision-first retrieval and page with `offset` when needed.",
+      default: 20,
+    }),
+  ),
+  offset: Type.Optional(
+    Type.Number({
+      description:
+        "Pagination offset as a non-negative integer. Use it after reviewing the current page to continue from the next unseen results.",
+      default: 0,
+    }),
+  ),
+  sortBy: Type.Optional(
+    Type.Union([Type.Literal("asc"), Type.Literal("desc")], {
+      description:
+        "Sort direction. Valid values are `asc` and `desc`. Use `desc` for newest-first or most-recent-first ordering when supported.",
+    }),
+  ),
+  excludedIds: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Previously seen result document `docId`s to suppress on follow-up searches. Prefer prior `fragment.source.docId` values. Do not pass collection, folder, file, path, or fragment IDs.",
+    }),
+  ),
+  attendees: Type.Optional(
+    Type.Array(
+      Type.String({
+        description:
+          "Optional attendee identifier strings. Email addresses are preferred; attendee display names can also work.",
+      }),
+      {
+        description:
+          "Optional attendee identifier strings. Email addresses are preferred; attendee display names can also work.",
+      },
+    ),
+  ),
+  status: Type.Optional(
+    Type.Union(
+      [
+        Type.Literal("confirmed"),
+        Type.Literal("tentative"),
+        Type.Literal("cancelled"),
+      ],
+      {
+        description:
+          "Optional event status enum. Valid values are `confirmed`, `tentative`, and `cancelled`.",
+      },
+    ),
+  ),
+  timeRange: Type.Optional(
+    Type.Object(
+      {
+        startTime: Type.Optional(
+          Type.String({ description: "Inclusive start time as a string." }),
+        ),
+        endTime: Type.Optional(
+          Type.String({ description: "Inclusive end time as a string." }),
+        ),
+      },
+      {
+        description:
+          "Optional time-range object with string fields `{ startTime, endTime }`. Use it when the query is bounded by an explicit time window.",
+      },
+    ),
+  ),
 })
 
 export const searchCalendarEventsTool = createXyneTool(
@@ -91,18 +128,23 @@ export const searchCalendarEventsTool = createXyneTool(
   searchCalendarEventsParams,
   async (toolCallId, params, signal, onUpdate, ctx: XyneToolContext) => {
     const { xyneState, persistState } = ctx
-    
+
     try {
       const email = xyneState.user.email
       const agentPrompt = xyneState.agentPrompt
-      
+
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
 
       if (!email) {
         return {
-          content: [{ type: "text", text: "Email is required for calendar events search." }],
+          content: [
+            {
+              type: "text",
+              text: "Email is required for calendar events search.",
+            },
+          ],
           isError: true,
-          details: { toolName: "searchCalendarEvents" }
+          details: { toolName: "searchCalendarEvents" },
         }
       }
 
@@ -110,9 +152,17 @@ export const searchCalendarEventsTool = createXyneTool(
       if (agentAppEnums && agentAppEnums.length > 0) {
         if (!agentAppEnums.includes(Apps.GoogleCalendar)) {
           return {
-            content: [{ type: "text", text: "Google Calendar is not allowed for this agent. Cannot search." }],
+            content: [
+              {
+                type: "text",
+                text: "Google Calendar is not allowed for this agent. Cannot search.",
+              },
+            ],
             isError: true,
-            details: { toolName: "searchCalendarEvents", code: "PERMISSION_DENIED" }
+            details: {
+              toolName: "searchCalendarEvents",
+              code: "PERMISSION_DENIED",
+            },
           }
         }
       }
@@ -161,16 +211,24 @@ export const searchCalendarEventsTool = createXyneTool(
       await persistState()
 
       return {
-        content: [{ type: "text", text: `Found ${fragments.length} calendar events` }],
-        details: { fragments, query: params.query, toolName: "searchCalendarEvents" }
+        content: [
+          { type: "text", text: `Found ${fragments.length} calendar events` },
+        ],
+        details: {
+          fragments,
+          query: params.query,
+          toolName: "searchCalendarEvents",
+        },
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
       return {
-        content: [{ type: "text", text: `Calendar events search error: ${errMsg}` }],
+        content: [
+          { type: "text", text: `Calendar events search error: ${errMsg}` },
+        ],
         isError: true,
-        details: { toolName: "searchCalendarEvents", error: errMsg }
+        details: { toolName: "searchCalendarEvents", error: errMsg },
       }
     }
-  }
+  },
 )

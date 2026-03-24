@@ -5,9 +5,9 @@
  * Maintains XyneAgentState alongside pi-mono's internal state
  */
 
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import type { Static, TSchema } from "@sinclair/typebox";
-import type { AgentRunContext } from "../agent-schemas";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent"
+import type { Static, TSchema } from "@sinclair/typebox"
+import type { AgentRunContext } from "../agent-schemas"
 
 /**
  * Xyne-specific state maintained alongside pi-mono session
@@ -15,71 +15,71 @@ import type { AgentRunContext } from "../agent-schemas";
 export interface XyneAgentState {
   // Clarification tracking
   clarifications: Array<{
-    id: string;
-    question: string;
-    answer?: string;
-    timestamp: number;
-  }>;
-  ambiguityResolved: boolean;
-  pendingClarificationId?: string;
+    id: string
+    question: string
+    answer?: string
+    timestamp: number
+  }>
+  ambiguityResolved: boolean
+  pendingClarificationId?: string
 
   // Existing context fields
-  plan: any | null;
-  currentSubTask: string | null;
-  allFragments: any[];
-  toolCallHistory: any[];
-  review: any;
-  finalSynthesis: any;
-  agentPrompt?: string;
-  userContext?: string;
-  dedicatedAgentSystemPrompt?: string;
-  modelId?: string;
+  plan: any | null
+  currentSubTask: string | null
+  allFragments: any[]
+  toolCallHistory: any[]
+  review: any
+  finalSynthesis: any
+  agentPrompt?: string
+  userContext?: string
+  dedicatedAgentSystemPrompt?: string
+  modelId?: string
 
   // Turn artifacts
   currentTurnArtifacts: {
-    fragments: any[];
-    unrankedFragmentsByTool: Map<string, any>;
-    expectations: any[];
-    toolOutputs: any[];
-    images: any[];
-    executionToolsCalled: number;
-    todoWriteCalled: boolean;
-    turnStartedAt: number;
-  };
+    fragments: any[]
+    unrankedFragmentsByTool: Map<string, any>
+    expectations: any[]
+    toolOutputs: any[]
+    images: any[]
+    executionToolsCalled: number
+    todoWriteCalled: boolean
+    turnStartedAt: number
+  }
 
   // Agent delegation
   availableAgents: Array<{
-    agentId: string;
-    agentName: string;
-    description?: string;
-    capabilities?: string[];
-  }>;
-  usedAgents: string[];
+    agentId: string
+    agentName: string
+    description?: string
+    capabilities?: string[]
+  }>
+  usedAgents: string[]
 
   // User context
   user: {
-    email: string;
-    workspaceId: string;
-    id: string;
-    numericId: number;
-    workspaceNumericId?: number;
-    timeZone?: string;
-  };
+    email: string
+    workspaceId: string
+    id: string
+    numericId: number
+    workspaceNumericId?: number
+    timeZone?: string
+  }
   chat: {
-    id?: number;
-    externalId: string;
-    metadata: Record<string, any>;
-  };
+    id?: number
+    externalId: string
+    metadata: Record<string, any>
+  }
   message: {
-    text: string;
-    attachments: Array<{ fileId: string; isImage: boolean }>;
-    timestamp: string;
-  };
+    text: string
+    attachments: Array<{ fileId: string; isImage: boolean }>
+    timestamp: string
+  }
 
   // Stop/abort control
-  stopController?: AbortController;
-  stopSignal?: AbortSignal;
-  stopRequested?: boolean;
+  stopController?: AbortController
+  stopSignal?: AbortSignal
+  stopRequested?: boolean
 
   // ... other fields from AgentRunContext
 }
@@ -91,14 +91,14 @@ export interface XyneAgentState {
 export interface XyneToolContext {
   // pi-mono provided
   events: {
-    emit: (event: string, payload: any) => void;
-  };
+    emit: (event: string, payload: any) => void
+  }
 
   // Xyne-specific state (stored separately)
-  xyneState: XyneAgentState;
+  xyneState: XyneAgentState
 
   // Helpers
-  persistState: () => Promise<void>;
+  persistState: () => Promise<void>
 }
 
 /**
@@ -128,16 +128,16 @@ export function createXyneTool<TParams extends TSchema>(
     parameters,
     execute: async (toolCallId, params, signal, onUpdate, extCtx) => {
       // Get Xyne state from extension context
-      const xyneState = getXyneState(extCtx);
+      const xyneState = getXyneState(extCtx)
 
       // Create Xyne tool context
       const xyneCtx: XyneToolContext = {
         events: (extCtx as any).events || { emit: () => {} },
         xyneState,
         persistState: async () => {
-          await persistXyneState(xyneState);
+          await persistXyneState(xyneState)
         },
-      };
+      }
 
       // Execute with Xyne context
       return execute(
@@ -146,48 +146,58 @@ export function createXyneTool<TParams extends TSchema>(
         signal,
         onUpdate,
         xyneCtx,
-      );
+      )
     },
-  };
+  }
 }
 
 /**
  * Get Xyne state from extension context
  * Uses WeakMap to associate state with context object
  */
-const stateMap = new WeakMap<any, XyneAgentState>();
+const stateMap = new WeakMap<any, XyneAgentState>()
+
+// Global reference for tools that can't access the context
+let globalXyneState: XyneAgentState | null = null
 
 /**
  * Persist function - will be set during initialization
  */
 let persistXyneState: PersistXyneStateFn = async () => {
   // Default no-op, should be overridden
-  console.warn("persistXyneState not initialized");
-};
+  console.warn("persistXyneState not initialized")
+}
 
 export function getXyneState(ctx: any): XyneAgentState {
-  if (!stateMap.has(ctx)) {
-    throw new Error("Xyne state not initialized for this context");
+  // First try to get from context
+  if (stateMap.has(ctx)) {
+    return stateMap.get(ctx)!
   }
-  return stateMap.get(ctx)!;
+  // Fall back to global state
+  if (globalXyneState) {
+    return globalXyneState
+  }
+  throw new Error("Xyne state not initialized")
 }
 
 export function setXyneState(ctx: any, state: XyneAgentState): void {
-  stateMap.set(ctx, state);
+  stateMap.set(ctx, state)
+  // Also set globally as fallback
+  globalXyneState = state
 }
 
 /**
  * Set the persist function
  */
 export function setPersistFunction(fn: PersistXyneStateFn): void {
-  persistXyneState = fn;
+  persistXyneState = fn
 }
 
 /**
  * Persist Xyne state to database
  * NOTE: Implement this based on your database schema
  */
-export type PersistXyneStateFn = (state: XyneAgentState) => Promise<void>;
+export type PersistXyneStateFn = (state: XyneAgentState) => Promise<void>
 
 /**
  * Load Xyne state from database
@@ -195,7 +205,7 @@ export type PersistXyneStateFn = (state: XyneAgentState) => Promise<void>;
  */
 export type LoadXyneStateFn = (
   chatExternalId: string,
-) => Promise<XyneAgentState | null>;
+) => Promise<XyneAgentState | null>
 
 /**
  * Initialize fresh Xyne state
@@ -259,5 +269,5 @@ export function createInitialXyneState(
       attachments,
       timestamp: new Date().toISOString(),
     },
-  };
+  }
 }

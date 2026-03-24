@@ -1,6 +1,6 @@
 /**
  * searchDriveFiles tool - pi-mono version
- * 
+ *
  * Fully wired to existing JAF implementation
  */
 
@@ -9,7 +9,10 @@ import { createXyneTool } from "../adapter"
 import type { XyneToolContext } from "../adapter"
 import { Apps, GoogleApps, DriveEntity } from "@xyne/vespa-ts"
 import { searchGoogleApps } from "@/search/vespa"
-import { formatSearchToolResponse, parseAgentAppIntegrations } from "../../tools/utils"
+import {
+  formatSearchToolResponse,
+  parseAgentAppIntegrations,
+} from "../../tools/utils"
 import { extractDriveIds } from "@/search/utils"
 import config from "@/config"
 
@@ -45,42 +48,77 @@ Create SHORT, targeted search terms optimized for retrieval systems. Focus on 1-
 `
 
 const searchDriveFilesParams = Type.Object({
-  query: Type.String({ 
+  query: Type.String({
     description: retrievalQueryDescription,
-    minLength: 1 
+    minLength: 1,
   }),
-  limit: Type.Optional(Type.Number({ 
-    description: "Maximum number of results to return as an integer between 1 and 100. Default is 20. Keep this small for precision-first retrieval and page with `offset` when needed.",
-    default: 20 
-  })),
-  offset: Type.Optional(Type.Number({ 
-    description: "Pagination offset as a non-negative integer. Use it after reviewing the current page to continue from the next unseen results.",
-    default: 0 
-  })),
-  sortBy: Type.Optional(Type.Union([
-    Type.Literal("asc"),
-    Type.Literal("desc")
-  ], { 
-    description: "Sort direction. Valid values are `asc` and `desc`. Use `desc` for newest-first or most-recent-first ordering when supported." 
-  })),
-  excludedIds: Type.Optional(Type.Array(Type.String(), { 
-    description: "Previously seen result document `docId`s to suppress on follow-up searches. Prefer prior `fragment.source.docId` values. Do not pass collection, folder, file, path, or fragment IDs." 
-  })),
-  owner: Type.Optional(Type.String({ 
-    description: "Optional Drive owner identifier string. Email is preferred; owner display name can also work." 
-  })),
-  filetype: Type.Optional(Type.Array(Type.String({ 
-    description: `Optional Drive file-type enum values. Valid values are ${Object.values(DriveEntity).map((e) => `'${e}'`).join(", ")}.`,
-    enum: Object.values(DriveEntity)
-  }), { 
-    description: `Optional Drive file-type enum values. Valid values are ${Object.values(DriveEntity).map((e) => `'${e}'`).join(", ")}.` 
-  })),
-  timeRange: Type.Optional(Type.Object({
-    startTime: Type.Optional(Type.String({ description: "Inclusive start time as a string." })),
-    endTime: Type.Optional(Type.String({ description: "Inclusive end time as a string." }))
-  }, { 
-    description: "Optional time-range object with string fields `{ startTime, endTime }`. Use it when the query is bounded by an explicit time window." 
-  }))
+  limit: Type.Optional(
+    Type.Number({
+      description:
+        "Maximum number of results to return as an integer between 1 and 100. Default is 20. Keep this small for precision-first retrieval and page with `offset` when needed.",
+      default: 20,
+    }),
+  ),
+  offset: Type.Optional(
+    Type.Number({
+      description:
+        "Pagination offset as a non-negative integer. Use it after reviewing the current page to continue from the next unseen results.",
+      default: 0,
+    }),
+  ),
+  sortBy: Type.Optional(
+    Type.Union([Type.Literal("asc"), Type.Literal("desc")], {
+      description:
+        "Sort direction. Valid values are `asc` and `desc`. Use `desc` for newest-first or most-recent-first ordering when supported.",
+    }),
+  ),
+  excludedIds: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Previously seen result document `docId`s to suppress on follow-up searches. Prefer prior `fragment.source.docId` values. Do not pass collection, folder, file, path, or fragment IDs.",
+    }),
+  ),
+  owner: Type.Optional(
+    Type.String({
+      description:
+        "Optional Drive owner identifier string. Email is preferred; owner display name can also work.",
+    }),
+  ),
+  filetype: Type.Optional(
+    Type.Array(
+      Type.String({
+        description: `Optional Drive file-type enum values. Valid values are ${Object.values(
+          DriveEntity,
+        )
+          .map((e) => `'${e}'`)
+          .join(", ")}.`,
+        enum: Object.values(DriveEntity),
+      }),
+      {
+        description: `Optional Drive file-type enum values. Valid values are ${Object.values(
+          DriveEntity,
+        )
+          .map((e) => `'${e}'`)
+          .join(", ")}.`,
+      },
+    ),
+  ),
+  timeRange: Type.Optional(
+    Type.Object(
+      {
+        startTime: Type.Optional(
+          Type.String({ description: "Inclusive start time as a string." }),
+        ),
+        endTime: Type.Optional(
+          Type.String({ description: "Inclusive end time as a string." }),
+        ),
+      },
+      {
+        description:
+          "Optional time-range object with string fields `{ startTime, endTime }`. Use it when the query is bounded by an explicit time window.",
+      },
+    ),
+  ),
 })
 
 export const searchDriveFilesTool = createXyneTool(
@@ -89,18 +127,21 @@ export const searchDriveFilesTool = createXyneTool(
   searchDriveFilesParams,
   async (toolCallId, params, signal, onUpdate, ctx: XyneToolContext) => {
     const { xyneState, persistState } = ctx
-    
+
     try {
       const email = xyneState.user.email
       const agentPrompt = xyneState.agentPrompt
-      
-      const { agentAppEnums, selectedItems } = parseAgentAppIntegrations(agentPrompt)
+
+      const { agentAppEnums, selectedItems } =
+        parseAgentAppIntegrations(agentPrompt)
 
       if (!email) {
         return {
-          content: [{ type: "text", text: "Email is required for Drive files search." }],
+          content: [
+            { type: "text", text: "Email is required for Drive files search." },
+          ],
           isError: true,
-          details: { toolName: "searchDriveFiles" }
+          details: { toolName: "searchDriveFiles" },
         }
       }
 
@@ -108,9 +149,17 @@ export const searchDriveFilesTool = createXyneTool(
       if (agentAppEnums && agentAppEnums.length > 0) {
         if (!agentAppEnums.includes(Apps.GoogleDrive)) {
           return {
-            content: [{ type: "text", text: "Google Drive is not allowed for this agent. Cannot search." }],
+            content: [
+              {
+                type: "text",
+                text: "Google Drive is not allowed for this agent. Cannot search.",
+              },
+            ],
             isError: true,
-            details: { toolName: "searchDriveFiles", code: "PERMISSION_DENIED" }
+            details: {
+              toolName: "searchDriveFiles",
+              code: "PERMISSION_DENIED",
+            },
           }
         }
       }
@@ -167,16 +216,24 @@ export const searchDriveFilesTool = createXyneTool(
       await persistState()
 
       return {
-        content: [{ type: "text", text: `Found ${fragments.length} Drive files` }],
-        details: { fragments, query: params.query, toolName: "searchDriveFiles" }
+        content: [
+          { type: "text", text: `Found ${fragments.length} Drive files` },
+        ],
+        details: {
+          fragments,
+          query: params.query,
+          toolName: "searchDriveFiles",
+        },
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
       return {
-        content: [{ type: "text", text: `Drive files search error: ${errMsg}` }],
+        content: [
+          { type: "text", text: `Drive files search error: ${errMsg}` },
+        ],
         isError: true,
-        details: { toolName: "searchDriveFiles", error: errMsg }
+        details: { toolName: "searchDriveFiles", error: errMsg },
       }
     }
-  }
+  },
 )

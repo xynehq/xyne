@@ -1,6 +1,6 @@
 /**
  * searchGoogleContacts tool - pi-mono version
- * 
+ *
  * Fully wired to existing JAF implementation
  */
 
@@ -44,20 +44,31 @@ Create SHORT, targeted search terms optimized for retrieval systems. Focus on 1-
 `
 
 const searchGoogleContactsParams = Type.Object({
-  query: Type.Optional(Type.String({ 
-    description: retrievalQueryDescription
-  })),
-  limit: Type.Optional(Type.Number({ 
-    description: "Maximum number of results to return as an integer between 1 and 100. Default is 20. Keep this small for precision-first retrieval and page with `offset` when needed.",
-    default: 20 
-  })),
-  offset: Type.Optional(Type.Number({ 
-    description: "Pagination offset as a non-negative integer. Use it after reviewing the current page to continue from the next unseen results.",
-    default: 0 
-  })),
-  excludedIds: Type.Optional(Type.Array(Type.String(), { 
-    description: "Previously seen result document `docId`s to suppress on follow-up searches. Prefer prior `fragment.source.docId` values. Do not pass collection, folder, file, path, or fragment IDs." 
-  }))
+  query: Type.Optional(
+    Type.String({
+      description: retrievalQueryDescription,
+    }),
+  ),
+  limit: Type.Optional(
+    Type.Number({
+      description:
+        "Maximum number of results to return as an integer between 1 and 100. Default is 20. Keep this small for precision-first retrieval and page with `offset` when needed.",
+      default: 20,
+    }),
+  ),
+  offset: Type.Optional(
+    Type.Number({
+      description:
+        "Pagination offset as a non-negative integer. Use it after reviewing the current page to continue from the next unseen results.",
+      default: 0,
+    }),
+  ),
+  excludedIds: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Previously seen result document `docId`s to suppress on follow-up searches. Prefer prior `fragment.source.docId` values. Do not pass collection, folder, file, path, or fragment IDs.",
+    }),
+  ),
 })
 
 export const searchGoogleContactsTool = createXyneTool(
@@ -66,15 +77,20 @@ export const searchGoogleContactsTool = createXyneTool(
   searchGoogleContactsParams,
   async (toolCallId, params, signal, onUpdate, ctx: XyneToolContext) => {
     const { xyneState, persistState } = ctx
-    
+
     try {
       const email = xyneState.user.email
-      
+
       if (!email) {
         return {
-          content: [{ type: "text", text: "Email is required for Google contacts search." }],
+          content: [
+            {
+              type: "text",
+              text: "Email is required for Google contacts search.",
+            },
+          ],
           isError: true,
-          details: { toolName: "searchGoogleContacts" }
+          details: { toolName: "searchGoogleContacts" },
         }
       }
 
@@ -106,15 +122,21 @@ export const searchGoogleContactsTool = createXyneTool(
 
       return {
         content: [{ type: "text", text: `Found ${fragments.length} contacts` }],
-        details: { fragments, query: params.query, toolName: "searchGoogleContacts" }
+        details: {
+          fragments,
+          query: params.query,
+          toolName: "searchGoogleContacts",
+        },
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
       return {
-        content: [{ type: "text", text: `Google contacts search error: ${errMsg}` }],
+        content: [
+          { type: "text", text: `Google contacts search error: ${errMsg}` },
+        ],
         isError: true,
-        details: { toolName: "searchGoogleContacts", error: errMsg }
+        details: { toolName: "searchGoogleContacts", error: errMsg },
       }
     }
-  }
+  },
 )

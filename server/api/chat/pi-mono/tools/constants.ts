@@ -1,6 +1,6 @@
 /**
  * Shared constants for pi-mono tools
- * 
+ *
  * Centralizes descriptions and constants used across multiple tools
  * to ensure consistency and avoid duplication.
  */
@@ -271,11 +271,9 @@ export const SORT_BY_DESCRIPTION =
 export const TIME_RANGE_DESCRIPTION =
   "Optional time-range object with string fields `{ startTime, endTime }`. Use it when the query is bounded by an explicit time window."
 
-export const TIME_RANGE_START_DESCRIPTION =
-  "Inclusive start time as a string."
+export const TIME_RANGE_START_DESCRIPTION = "Inclusive start time as a string."
 
-export const TIME_RANGE_END_DESCRIPTION =
-  "Inclusive end time as a string."
+export const TIME_RANGE_END_DESCRIPTION = "Inclusive end time as a string."
 
 // ============================================================================
 // TOOL DESCRIPTIONS

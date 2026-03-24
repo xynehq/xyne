@@ -1,6 +1,6 @@
 /**
  * fallBack tool - pi-mono version
- * 
+ *
  * Fully wired to existing JAF implementation
  */
 
@@ -36,7 +36,7 @@ export const fallBackTool = createXyneTool(
   async (toolCallId, params, signal, onUpdate, ctx: XyneToolContext) => {
     try {
       const userContext = ctx.xyneState.userContext || ""
-      
+
       const fallbackResponse = await generateFallback(
         userContext,
         params.originalQuery,
@@ -47,31 +47,31 @@ export const fallBackTool = createXyneTool(
           modelId: config.defaultFastModel,
           stream: false,
           json: true,
-        }
+        },
       )
-      
+
       if (!fallbackResponse.reasoning?.trim()) {
         return {
           content: [{ type: "text", text: "No reasoning could be generated." }],
           isError: true,
-          details: { toolName: "fallBack" }
+          details: { toolName: "fallBack" },
         }
       }
-      
+
       return {
         content: [{ type: "text", text: fallbackResponse.reasoning }],
-        details: { 
+        details: {
           reasoning: fallbackResponse.reasoning,
-          toolName: "fallBack" 
-        }
+          toolName: "fallBack",
+        },
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)
       return {
         content: [{ type: "text", text: `Fallback error: ${errMsg}` }],
         isError: true,
-        details: { toolName: "fallBack", error: errMsg }
+        details: { toolName: "fallBack", error: errMsg },
       }
     }
-  }
+  },
 )
