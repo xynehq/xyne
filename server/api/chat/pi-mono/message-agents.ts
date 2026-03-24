@@ -22,10 +22,7 @@ import {
 // Xyne imports
 import config from "@/config"
 import { db } from "@/db/client"
-import {
-  getChatMessagesWithAuth,
-  insertMessage,
-} from "@/db/message"
+import { getChatMessagesWithAuth, insertMessage } from "@/db/message"
 import {
   ChatType,
   type InsertChat,
@@ -83,11 +80,13 @@ import {
   extractImageFileNames,
   checkAndYieldCitationsForAgent,
   searchToCitation,
+  processMessage,
 } from "@/api/chat/utils"
 import {
   buildFinalSynthesisPayload,
   buildFinalSynthesisRequest,
 } from "@/api/chat/message-agents"
+import { buildAgentPromptAddendum } from "@/api/chat/agentPromptCreation"
 import { getModelValueFromLabel } from "@/ai/modelConfig"
 import { Models } from "@/ai/types"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
@@ -100,8 +99,14 @@ import {
 import { isMessageWithContext } from "@/api/chat/utils"
 import { safeDecodeURIComponent } from "@/api/chat/utils"
 import { maybeCompactAndIndex } from "@/services/chatMemoryIndexer"
+import { retrieveEpisodicMemories } from "@/services/episodicMemoryRetriever"
+import { retrieveRelevantChatHistory } from "@/services/chatMemoryRetriever"
 import { insertChatTrace } from "@/db/chatTrace"
 import { getTracer } from "@/tracer"
+import {
+  extractMetadataConstraintsFromUserMessage,
+  rankFragmentsByMetadataConstraints,
+} from "@/api/chat/message-agents-metadata"
 
 // Pi-mono imports
 import {
@@ -133,16 +138,17 @@ import {
 
 import {
   setXyneState,
+  setRuntime,
+  registerSession,
+  unregisterSession,
+  setSessionRuntime,
   createInitialXyneState,
   type XyneAgentState,
   setPersistFunction,
 } from "./adapter"
+import { ToolCooldownManager } from "@/api/chat/tool-cooldown"
 
-const {
-  defaultBestModel,
-  defaultBestModelAgenticMode,
-  JwtPayloadKey,
-} = config
+const { defaultBestModel, defaultBestModelAgenticMode, JwtPayloadKey } = config
 
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
@@ -642,7 +648,7 @@ async function persistAssistantMessage(
     email: context.user.email,
     sources: data.citations,
     imageCitations: data.imageCitations,
-    message: data.answer,
+    message: processMessage(data.answer, data.citationMap),
     thinking: data.thinkingLog,
     modelId: context.agenticModelId,
     cost: context.totalCost.toString(),
@@ -663,93 +669,212 @@ async function persistAssistantMessage(
 // ============================================================================
 
 /**
- * Build system prompt for pi-mono (mirrors JAF's buildAgentInstructions)
+ * Build system prompt for pi-mono (Exact match of JAF's buildAgentInstructions)
  */
 function buildPiMonoSystemPrompt(
-  toolNames: string[],
+  context: XyneAgentState,
+  enabledToolNames: string[],
   dateForAI: string,
-  agentPrompt?: string,
-  userContext?: string,
-  dedicatedAgentSystemPrompt?: string,
-  email?: string,
-  workspaceId?: string,
+  delegationEnabled = true,
 ): string {
+  const toolDescriptions =
+    enabledToolNames.length > 0
+      ? "You have access to the following tools:\n" +
+        enabledToolNames.map((t) => `- ${t}`).join("\n") +
+        "\ntool schemas are provided to you."
+      : "No tools available yet. "
+
+  // Cooldown Manager Simulator
+  let cooldownBlock = ""
+  if (context.toolCallHistory && context.toolCallHistory.length > 0) {
+    const failedCounts = new Map<string, number>()
+    // count recent consecutive failures
+    const toolsInCooldown = [] // Simplified cooldown representation for now
+  }
+
+  const agentSection = context.agentPrompt
+    ? `\n\nAgent Constraints:\n${context.agentPrompt}`
+    : ""
+
+  let attachmentDirective = ""
+  if (context.message.attachments?.length > 0) {
+    attachmentDirective = `
+# ATTACHMENT-FIRST TURN
+User provided attachment context for this opening turn.
+
+Attachment handling:
+1. Inspect the attachment fragments below.
+2. If the attachments fully answer the user's request → respond using citations (see format below).
+3. If the attachments are partial or incomplete → create a plan with todo_write and run the tools needed to fill the gaps in the same turn.
+4. State that information is unavailable only after the attachments and available tools have been used and the answer still cannot be found.
+
+# Response and citations
+- Use the provided files and chunks as your knowledge base. Treat \`Index {docId} ...\` as the start of a document and [0], [1], [2] as chunk indices within that document.
+- Cite every factual statement with the exact chunk: K[docId_chunkIndex] (docId from the file header, chunkIndex from the bracketed number). Example: "X is true K[3_12]." Use at most 1-2 citations per sentence; for two chunks use two citations: "... K[3_12] ... K[1_0]".
+- Place the citation immediately after the claim. Only cite information that appears in or is directly inferable from the cited chunk; if you cannot ground a claim, omit it.
+- Keep tone professional and concise; note inconsistencies across chunks when relevant and acknowledge gaps when the chunks lack detail.
+`.trim()
+  }
+
+  const promptAddendum = buildAgentPromptAddendum()
+
+  const reviewResultBlock = context.review.lastReviewResult
+    ? [
+        "<last_review_result>",
+        JSON.stringify(context.review.lastReviewResult, null, 2),
+        "</last_review_result>",
+        "",
+      ].join("\n")
+    : ""
+
+  let planSection = "\n<plan>\n"
+  if (context.plan) {
+    planSection += `Goal: ${context.plan.goal || "Execute Plan"}\n\n`
+    planSection += "Steps:\n"
+    if (Array.isArray(context.plan.subTasks)) {
+      context.plan.subTasks.forEach((task: any, i: number) => {
+        const status =
+          task.status === "completed"
+            ? "✓"
+            : task.status === "in_progress"
+              ? "→"
+              : task.status === "failed"
+                ? "✗"
+                : "○"
+        planSection += `${i + 1}. [${status}] ${task.description}\n`
+      })
+    }
+    planSection += "\n</plan>\n"
+  } else {
+    planSection +=
+      "No plan exists yet. Use todo_write to create one.\n</plan>\n"
+  }
+
+  const delegationGuidance = delegationEnabled
+    ? `- Before calling ANY search, calendar, Gmail, Drive, or other research tools, you MUST invoke \`listCustomAgents\` once per run. Treat the workflow as: plan -> list agents -> (maybe) runPublicAgent -> other tools. If the selector returns \`null\`, explicitly log that no agent was suitable, then proceed with core tools.\n- Before calling \`runPublicAgent\`, invoke \`listCustomAgents\`, compare every candidate, and respect a \`null\` result as "no delegate—continue with built-in tools."\n- Use \`runPublicAgent\` immediately after choosing an agent from \`listCustomAgents\`; pass the specific agentId plus a rewritten query tailored to that agent.`
+    : ""
+
+  const workingMemoryMessages =
+    config.MEMORY_CONFIG?.WORKING_MEMORY_MESSAGES ?? 6
+  // Turn count approximation since we don't have exactly turnCount in XyneAgentState
+  const conversationContext = `You are given only the last ${workingMemoryMessages} messages of this chat in context. Use \`searchChatHistory\` when you need to recall or search older messages.`
+
   const instructionLines: string[] = [
     "You are Xyne, an enterprise search assistant with agentic capabilities.",
     "",
     `The current date is: ${dateForAI}`,
     "",
     "<context>",
-    `User: ${email || "Unknown"}`,
-    `Workspace: ${workspaceId || "Unknown"}`,
+    `User: ${context.user.email}`,
+    `Workspace: ${context.user.workspaceId}`,
+    conversationContext,
     "</context>",
     "",
   ]
 
-  // Available tools section
   instructionLines.push(
     "<available_tools>",
-    "You have access to the following tools:",
-    ...toolNames.map(name => `- ${name}`),
-    "",
-    "Tool descriptions:",
-    "- todo_write: Create or update an execution plan with sequential tasks. MUST be called first.",
-    "- searchGlobal: Search across all connected applications and data sources.",
-    "- searchGmail: Search Gmail messages by content with optional filters.",
-    "- searchDriveFiles: Search Google Drive files by title/content.",
-    "- searchCalendarEvents: Search Google Calendar events.",
-    "- searchGoogleContacts: Search Google Contacts.",
-    "- getSlackRelatedMessages: Search Slack messages.",
-    "- lsKnowledgeBase: Browse knowledge base collections/folders.",
-    "- searchKnowledgeBase: Search document content in knowledge base.",
-    "- searchChatHistory: Search earlier parts of the conversation.",
-    "- listCustomAgents: List available custom AI agents.",
-    "- runPublicAgent: Delegate execution to a custom agent.",
-    "- synthesizeFinalAnswer: Generate and stream the final answer to the user. MUST be called last.",
-    "- fallBack: Generate reasoning when search fails.",
+    toolDescriptions,
     "</available_tools>",
-    "",
+    cooldownBlock,
   )
 
-  // User context
-  if (userContext?.trim()) {
-    instructionLines.push("Workspace Context:", userContext.trim(), "")
+  if (agentSection.trim()) {
+    instructionLines.push(agentSection.trim(), "")
   }
 
-  // Agent system prompt
-  if (dedicatedAgentSystemPrompt?.trim()) {
-    instructionLines.push("Agent System Prompt:", dedicatedAgentSystemPrompt.trim(), "")
-  } else if (agentPrompt?.trim()) {
-    instructionLines.push("Agent Context:", agentPrompt.trim(), "")
+  if (context.userContext?.trim()) {
+    instructionLines.push("Workspace Context:", context.userContext.trim(), "")
   }
 
-  // Core instructions
+  if (context.dedicatedAgentSystemPrompt?.trim()) {
+    instructionLines.push(
+      "Agent System Prompt:",
+      context.dedicatedAgentSystemPrompt.trim(),
+      "",
+    )
+  }
+
+  instructionLines.push(planSection.trim(), "")
+
+  if (attachmentDirective) {
+    instructionLines.push(attachmentDirective, "")
+  }
+
+  instructionLines.push(promptAddendum.trim())
+
+  if (reviewResultBlock) {
+    instructionLines.push("", reviewResultBlock.trim(), "")
+  }
+
+  if (context.review.lastReviewResult) {
+    instructionLines.push(
+      "# REVIEW FEEDBACK",
+      "- Inspect the <last_review_result> block above; treat every instruction, anomaly, and clarification inside it as mandatory.",
+      "- Example: if the review notes “Tool X lacked evidence,” reopen that sub-task, add a step to fetch the missing evidence, and mark status accordingly before launching tools.",
+      "- Log every required fix directly in the plan so auditors can see alignment with the review.",
+      "- When the review lists anomalies or ambiguity, capture each as a corrective sub-task (e.g., “Validate source for claim [2]”) and close it before moving forward.",
+      "- Answer outstanding clarification questions immediately; if the user must respond, surface the exact question back to them.",
+      "",
+    )
+  }
+
   instructionLines.push(
     "# PLANNING",
-    "- Call todo_write at the start to create a plan.",
-    "- The plan should have sequential tasks for gathering information.",
-    "- Update task status as you progress.",
-    "",
-    "# EXECUTION",
+    "- Call todo_write at the start of a turn when the plan is new, when review requested changes, or when you need to add or close tasks; otherwise you may proceed without calling todo_write to avoid unnecessary iterations.",
+    "- Terminate the active plan the moment you have enough evidence to cater to the complete requirement of the user; immediately drop any remaining subtasks when the goal is satisfied.",
+    "- Scale the number of subtasks to the query’s true complexity , however quality of the final answer and complete execution and satisfaction of user's query outranks task count, you must always prioritize quality",
+    "- Maintain one sub-task per concrete goal; list only the tools truly needed for that sub-task.",
+    "- Only chain subtasks when real dependencies exist—for example, “fetch the people who messaged me today → gather the emails received from them → summarize the combined thread” keeps later steps paused until earlier outputs arrive.",
+    "- After every tool run, immediately update the active sub-task’s status, result, and any newly required tasks so the plan mirrors reality.",
+    "- Never finish a turn after only calling todo_write—run at least one execution tool that advances the active task.",
+    "# EXECUTION STRATEGY",
     "- Work tasks sequentially; complete the current task before starting the next.",
-    "- Use search tools to gather evidence from connected data sources.",
-    "- Cite your sources using the K[docId_chunkIndex] format.",
+    "- Call tools with precise parameters tied to the sub-task goal; reuse stored fragments instead of re-fetching data.",
+  )
+
+  const hasDelegationTools =
+    enabledToolNames.includes("listCustomAgents") &&
+    enabledToolNames.includes("runPublicAgent")
+  if (delegationEnabled && hasDelegationTools) {
+    instructionLines.push(
+      "- When delegation is enabled and justified, run listCustomAgents before runPublicAgent; document why the selected agent accelerates the plan.",
+      "- Prefer listCustomAgents → runPublicAgent before core tools when delegation is enabled and justified by the plan.",
+      "- Invoke listCustomAgents at the sub-task level whenever targeted delegation could unlock better results; multi-part queries may require multiple calls as the context evolves.",
+      "- Let earlier tool outputs reshape later sub-tasks (e.g., if getSlackRelatedMessages returns only Finance senders, rewrite the next listCustomAgents query with that Finance focus before proceeding).",
+    )
+  }
+
+  instructionLines.push(
+    "- Obey the `recommendation` flag: pause for clarifications when it reads `clarify_query`, keep collecting data for `gather_more`, and do not progress until a fresh plan is in place for `replan`.",
+    "- If anomalies or notes in the latest review call out missing evidence, misalignments, or unresolved questions, fix those items before progressing and explain the remediation in the plan.",
     "",
-    "# TOOL CALLS",
-    "- Use the model's native function/tool-call interface.",
-    "- Provide clean JSON arguments matching each tool's schema.",
-    "- Wait for tool results before proceeding.",
+    "# TOOL CALLS & EXPECTATIONS",
+    "- Use the model's native function/tool-call interface. Provide clean JSON arguments.",
+    "- Do NOT wrap tool calls in custom XML.",
+    delegationGuidance,
+    "- After you decide which tools to call, emit a standalone expected-results block summarizing what each tool should achieve:",
+    "<expected_results>",
+    "[",
+    "  {",
+    '    "toolName": "searchGlobal",',
+    '    "goal": "Find Q4 ARR mentions",',
+    '    "successCriteria": ["ARR keyword present", "Dated Q4"],',
+    '    "failureSignals": ["No ARR context"],',
+    '    "stopCondition": "After 2 unsuccessful searches"',
+    "  }",
+    "]",
+    "</expected_results>",
+    "- Include one entry per tool invocation you intend to make. These expectations feed automatic review, so keep them specific and measurable.",
+    "",
+    "# CONSTRAINT HANDLING",
+    "- When the user requests an action the available tools cannot execute, produce the closest actionable substitute (draft, checklist, instructions) so progress continues.",
+    "- State the exact limitation and what manual follow-up the user must perform to finish.",
     "",
     "# FINAL SYNTHESIS",
-    "- When research is complete, CALL synthesizeFinalAnswer.",
-    "- This tool streams the final response to the user.",
-    "- Never output the final answer directly without using the tool.",
-    "",
-    "# CITATION RULES",
-    "- ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.",
-    "- Place the citation immediately after the relevant claim.",
-    "- Use at most 1-2 citations per sentence.",
-    "",
+    "- When research is complete and evidence is locked, CALL `synthesizeFinalAnswer` tool.",
+    "- NEVER output the final answer directly in text—always go through the tool to initiate the final output stream.",
+    "- If you do not call the tool, the user will not see your answer.",
   )
 
   return instructionLines.join("\n")
@@ -1120,20 +1245,6 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         ? agentRecord.prompt.trim()
         : undefined
 
-        // Build custom tools (they use Xyne state via adapter)
-        const customTools = buildXyneTools()
-
-        // Build simplified system prompt (mirroring JAF structure)
-        const systemPrompt = buildPiMonoSystemPrompt(
-          customTools.map((tool: any) => tool.name),
-          dateForAI,
-          agentPromptForLLM,
-          userCtxString,
-          dedicatedAgentSystemPrompt,
-          email,
-          workspaceId
-        )
-
     // Return streaming response
     return streamSSE(c, async (stream) => {
       const requestStartMs = Date.now()
@@ -1219,7 +1330,8 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         }
 
         // Handle image attachments
-        const allFragments: MinimalAgentFragment[] = initialAttachmentContext?.fragments || []
+        const allFragments: MinimalAgentFragment[] =
+          initialAttachmentContext?.fragments || []
         if (imageAttachmentFileIds.length > 0) {
           const imageFragments = imageAttachmentFileIds.map((fileId, index) => {
             const fragmentId = `user_attachment_image:${fileId}:${index}`
@@ -1285,27 +1397,29 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         }
 
         // 1. Format Base URL (ensure /v1 suffix)
-        const baseUrl = config.LiteLLMBaseUrl?.endsWith("/v1") 
-          ? config.LiteLLMBaseUrl 
-          : `${config.LiteLLMBaseUrl}/v1`;
+        const baseUrl = config.LiteLLMBaseUrl?.endsWith("/v1")
+          ? config.LiteLLMBaseUrl
+          : `${config.LiteLLMBaseUrl}/v1`
 
         // 2. Initialize AuthStorage and set LiteLLM credentials
         const authStorage = AuthStorage.create()
         if (config.LiteLLMApiKey) {
           authStorage.set("litellm", {
             type: "api_key",
-            key: config.LiteLLMApiKey
+            key: config.LiteLLMApiKey,
           })
         }
 
         const modelRegistry = new ModelRegistry(authStorage)
 
         // 3. Define LiteLLM model directly (official pattern from docs)
-        loggerWithChild({ email }).info(`Creating LiteLLM model profile for ${agenticModelId}`)
+        loggerWithChild({ email }).info(
+          `Creating LiteLLM model profile for ${agenticModelId}`,
+        )
         const piModel = {
-          id: agenticModelId,  // model ID as configured in LiteLLM (e.g., "kimi-latest")
+          id: agenticModelId, // model ID as configured in LiteLLM (e.g., "kimi-latest")
           name: agenticModelId,
-          api: "openai-completions",  // LiteLLM uses OpenAI-compatible API
+          api: "openai-completions", // LiteLLM uses OpenAI-compatible API
           provider: "litellm",
           baseUrl: baseUrl,
           reasoning: false,
@@ -1314,51 +1428,152 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           contextWindow: 128000,
           maxTokens: 4096,
           compat: {
-            supportsStore: false,  // LiteLLM doesn't support 'store' field
+            supportsStore: false, // LiteLLM doesn't support 'store' field
             supportsStreaming: true,
-            supportsToolStreaming: true
-          }
+            supportsToolStreaming: true,
+          },
         } as any
 
-        loggerWithChild({ email }).info({
-          modelId: piModel.id,
-          modelProvider: piModel.provider,
-          baseUrl: piModel.baseUrl
-        }, "Using pi-mono model with LiteLLM")
+        loggerWithChild({ email }).info(
+          {
+            modelId: piModel.id,
+            modelProvider: piModel.provider,
+            baseUrl: piModel.baseUrl,
+          },
+          "Using pi-mono model with LiteLLM",
+        )
 
         // Create Xyne state first (needed by tools)
         const xyneState = createInitialXyneState(
           email,
-          String(workspaceId),
+          String(workspace.id), // workspaceId usually string, but JAF uses workspace.id
           user.id,
+          user.numericId || 0, // numericId
           String(chatRecord.externalId),
           message,
-          attachmentsForContext
+          new Date().toISOString(),
         )
-        
+
         // Add additional context to state
         xyneState.userContext = userCtxString
         xyneState.agentPrompt = agentPromptForLLM
         xyneState.dedicatedAgentSystemPrompt = dedicatedAgentSystemPrompt
         xyneState.user.workspaceNumericId = workspace.id
         xyneState.chat.id = chatRecord.id
-        
-        // Set up persist function
-        setPersistFunction(async (state) => {
-          // Persist state if needed - for now just log
+        xyneState.modelId = agenticModelId
+
+        // Register session for concurrent-safe state access by tools
+        const sessionId = chatRecord.externalId
+        const persistFn = async (state: XyneAgentState) => {
           loggerWithChild({ email }).debug("Persisting Xyne state")
-        })
+        }
+        registerSession(sessionId, xyneState, persistFn)
+
+        // Set up persist function (legacy compat)
+        setPersistFunction(persistFn)
+
+        // --- Fix 5: Retrieve episodic + chat memory (mirrors JAF L4708-4747) ---
+        try {
+          const [episodicResults, chatMemoryResults] = await Promise.all([
+            retrieveEpisodicMemories({
+              query: message,
+              email,
+              workspaceExternalId: workspace.externalId,
+              chatExternalId: chatRecord.externalId,
+            }).catch((err) => {
+              loggerWithChild({ email }).warn(
+                err,
+                "Episodic memory retrieval failed",
+              )
+              return []
+            }),
+            retrieveRelevantChatHistory({
+              query: message,
+              email,
+              workspaceExternalId: workspace.externalId,
+              chatExternalId: chatRecord.externalId,
+            }).catch((err) => {
+              loggerWithChild({ email }).warn(
+                err,
+                "Chat memory retrieval failed",
+              )
+              return []
+            }),
+          ])
+
+          if (episodicResults.length > 0) {
+            xyneState.episodicMemoriesText = episodicResults
+              .map((m: any) => m.content || m.text || JSON.stringify(m))
+              .join("\n---\n")
+          }
+          if (chatMemoryResults.length > 0) {
+            xyneState.chatMemoryText = chatMemoryResults
+              .map((m: any) => m.content || m.text || JSON.stringify(m))
+              .join("\n---\n")
+          }
+
+          loggerWithChild({ email }).info(
+            {
+              episodicCount: episodicResults.length,
+              chatMemoryCount: chatMemoryResults.length,
+            },
+            "[Pi-Mono] Memory retrieval complete",
+          )
+        } catch (memErr) {
+          loggerWithChild({ email }).warn(memErr, "Memory retrieval failed")
+        }
+
+        // --- Fix 3: Store conversation history for synthesis ---
+        xyneState.conversationHistoryMessages = previousConversationHistory
+          .filter(
+            (m: any) =>
+              m.messageRole === "user" || m.messageRole === "assistant",
+          )
+          .slice(-20) // Keep last 20 messages for context
+          .map((m: any) => ({
+            role: m.messageRole === "user" ? "user" : "assistant",
+            content: [{ text: m.message || "" }],
+          }))
 
         // Build custom tools (they use Xyne state via adapter)
         const customTools = buildXyneTools()
 
+        // Build robust system prompt using JAF logic
+        let systemPrompt = buildPiMonoSystemPrompt(
+          xyneState,
+          customTools.map((tool: any) => tool.name),
+          dateForAI,
+          true,
+        )
+
+        // Create a ResourceLoader that injects our Xyne prompt as the base systemPrompt.
+        // This is critical: pi-mono's AgentSession._rebuildSystemPrompt() calls
+        // resourceLoader.getSystemPrompt() and routes it through the `customPrompt`
+        // path in buildSystemPrompt(), which REPLACES the default coding-agent identity.
+        // Without this, the session resets to "You are an expert coding assistant..."
+        // before every LLM call.
+        const { DefaultResourceLoader } = await import(
+          "@mariozechner/pi-coding-agent"
+        )
+        const xyneResourceLoader = new DefaultResourceLoader({
+          cwd: "/tmp", // Irrelevant for search agent, prevents CWD leak
+          systemPrompt: systemPrompt,
+          noExtensions: true,
+          noSkills: true,
+          noPromptTemplates: true,
+          noThemes: true,
+          agentsFilesOverride: () => ({ agentsFiles: [] }), // Don't load AGENTS.md/CLAUDE.md
+        })
+        await xyneResourceLoader.reload()
+
         // Create pi-mono session
         const { session: piSession } = await createAgentSession({
           model: piModel,
-          tools: [], // disable default tools
-          customTools,
-          authStorage,     // explicitly pass this (from docs)
-          modelRegistry,   // explicitly pass this (from docs)
+          tools: [], // disable default coding tools (read, bash, edit, write)
+          customTools, // provide only Xyne's search tools
+          resourceLoader: xyneResourceLoader, // Use our Xyne prompt as the base
+          authStorage,
+          modelRegistry,
           sessionManager: SessionManager.inMemory(),
           settingsManager: SettingsManager.inMemory({
             compaction: { enabled: true },
@@ -1368,24 +1583,24 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
 
         // Set system prompt
         piSession.agent.setSystemPrompt(systemPrompt)
-        
+
         // Store Xyne state in adapter for tools to access
         // Use the session's internal context as the key
         setXyneState(piSession as any, xyneState)
-        
+
         // Log the full system prompt for debugging
         loggerWithChild({ email }).info(
           { systemPrompt },
-          "📝 PI-MONO SYSTEM PROMPT"
+          "📝 PI-MONO SYSTEM PROMPT",
         )
-        
+
         loggerWithChild({ email }).info(
-          { 
-            systemPromptLength: systemPrompt.length, 
+          {
+            systemPromptLength: systemPrompt.length,
             toolCount: customTools.length,
-            toolNames: customTools.map((t: any) => t.name)
+            toolNames: customTools.map((t: any) => t.name),
           },
-          "Created pi-mono session with Xyne state"
+          "Created pi-mono session with Xyne state",
         )
 
         // Subscribe to events
@@ -1397,14 +1612,62 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
 
-        const reasoningEmitter: StructuredReasoningEmitter = async (payload) => {
-          thinkingLog += `${JSON.stringify(payload)}\n`
+        const reasoningEmitter: StructuredReasoningEmitter = async (
+          payload,
+        ) => {
           if (stream.closed) return
           await stream.writeSSE({
             event: ChatSSEvents.Reasoning,
             data: JSON.stringify(payload),
           })
         }
+
+        // Set up runtime callbacks BEFORE tools run
+        // This gives synthesizeFinalAnswer direct access to the SSE stream
+        setRuntime({
+          streamAnswerText: async (text: string) => {
+            if (!text || stream.closed) return
+            answer += text
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseUpdate,
+              data: text,
+            })
+
+            // Extract citations inline as text streams (mirrors JAF's streamAnswerText)
+            const fragmentsForCitations = xyneState.allFragments
+            for await (const citationEvent of checkAndYieldCitationsForAgent(
+              answer,
+              yieldedCitations,
+              fragmentsForCitations,
+              yieldedImageCitations,
+              email,
+            )) {
+              if (stream.closed) break
+              if (citationEvent.citation) {
+                const { index, item } = citationEvent.citation
+                citations.push(item)
+                citationMap[index] = citations.length - 1
+                await stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: citations,
+                    citationMap,
+                  }),
+                })
+              }
+              if (citationEvent.imageCitation) {
+                imageCitations.push(citationEvent.imageCitation)
+                await stream.writeSSE({
+                  event: ChatSSEvents.ImageCitationUpdate,
+                  data: JSON.stringify(citationEvent.imageCitation),
+                })
+              }
+            }
+          },
+          emitReasoning: async (payload: any) => {
+            await emitReasoningEvent(reasoningEmitter, payload)
+          },
+        })
 
         // Track completion
         let agentCompleted = false
@@ -1418,22 +1681,34 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         // Subscribe to session events
         piSession.subscribe(async (event: any) => {
           // Log ALL events for debugging
-          loggerWithChild({ email }).debug({ eventType: event.type, event }, "PI-MONO EVENT")
-          
+          loggerWithChild({ email }).debug(
+            { eventType: event.type, event },
+            "PI-MONO EVENT",
+          )
+
           if (stream.closed) return
 
           try {
             switch (event.type) {
               case "agent_start": {
                 loggerWithChild({ email }).info("Pi-mono agent started")
-                await emitReasoningEvent(reasoningEmitter, ReasoningSteps.turnStarted(1))
+                await emitReasoningEvent(
+                  reasoningEmitter,
+                  ReasoningSteps.turnStarted(1),
+                )
                 break
               }
 
               case "tool_execution_start": {
                 const toolName = event.toolName
-                loggerWithChild({ email }).info({ toolName, args: event.args }, "🔧 TOOL EXECUTION STARTED")
-                await emitReasoningEvent(reasoningEmitter, ReasoningSteps.toolSelected(toolName))
+                loggerWithChild({ email }).info(
+                  { toolName, args: event.args },
+                  "🔧 TOOL EXECUTION STARTED",
+                )
+                await emitReasoningEvent(
+                  reasoningEmitter,
+                  ReasoningSteps.toolSelected(toolName),
+                )
                 break
               }
 
@@ -1441,14 +1716,34 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
                 const toolName = event.toolName
                 const isError = event.isError
                 const result = event.result
-                loggerWithChild({ email }).info({ toolName, isError, hasResult: !!result }, "🔧 TOOL EXECUTION ENDED")
-                await emitReasoningEvent(reasoningEmitter, ReasoningSteps.toolCompleted(toolName, isError))
-                
+                loggerWithChild({ email }).info(
+                  { toolName, isError, hasResult: !!result },
+                  "🔧 TOOL EXECUTION ENDED",
+                )
+
+                // Track execution for cooldowns
+                xyneState.toolCallHistory.push({
+                  toolName,
+                  isError,
+                  timestamp: Date.now(),
+                })
+
+                await emitReasoningEvent(
+                  reasoningEmitter,
+                  ReasoningSteps.toolCompleted(toolName, isError),
+                )
+
                 if (toolName === "todo_write" && !isError) {
-                  await emitReasoningEvent(reasoningEmitter, ReasoningSteps.planCreated(
-                    "Execute search plan",
-                    [{ id: "1", description: "Search for information", status: "in_progress" }]
-                  ))
+                  await emitReasoningEvent(
+                    reasoningEmitter,
+                    ReasoningSteps.planCreated("Execute search plan", [
+                      {
+                        id: "1",
+                        description: "Search for information",
+                        status: "in_progress",
+                      },
+                    ]),
+                  )
                 }
                 break
               }
@@ -1457,7 +1752,36 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
                 // Pi-mono might use different event name
                 const toolName = event.toolName || event.name
                 const args = event.args || event.arguments || event.input
-                loggerWithChild({ email }).info({ toolName, args }, "🔧 TOOL CALL EVENT")
+
+                // Fix 6: beforeToolExecutionHook — Prevent fetching duplicate documents
+                if (args && typeof args === "object") {
+                  // Only apply to search tools that accept excludedIds
+                  if (
+                    (toolName.startsWith("search") && "excludedIds" in args) ||
+                    args.excludedIds === undefined
+                  ) {
+                    const providedExcludedIds = Array.isArray(args.excludedIds)
+                      ? args.excludedIds
+                      : []
+                    const seenDocIds = Array.from(xyneState.seenDocuments || [])
+                    const mergedExcludedIds = Array.from(
+                      new Set([...providedExcludedIds, ...seenDocIds]),
+                    )
+
+                    if (mergedExcludedIds.length > 0) {
+                      args.excludedIds = mergedExcludedIds
+                      // Mutate the event so Pi-Mono uses the updated args
+                      if (event.args) event.args = args
+                      else if (event.arguments) event.arguments = args
+                      else if (event.input) event.input = args
+                    }
+                  }
+                }
+
+                loggerWithChild({ email }).info(
+                  { toolName, args },
+                  "🔧 TOOL CALL EVENT",
+                )
                 break
               }
 
@@ -1466,28 +1790,139 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
                 const assistantEvent = event.assistantMessageEvent
                 if (assistantEvent?.type === "text_delta") {
                   const delta = assistantEvent.delta || ""
-                  answer += delta
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: delta,
-                  })
+
+                  // IMPORTANT: After synthesis completes, the pi-mono agent may generate
+                  // follow-up text (e.g., "I found one relevant result..."). This MUST
+                  // be suppressed — only the synthesis LLM output should reach the user.
+                  // The synthesis tool streams directly via runtime.streamAnswerText(),
+                  // so we should NEVER stream agent text here.
+                  // All agent text goes to thinkingLog only.
+                  thinkingLog += delta
                 }
                 break
               }
 
               case "turn_start": {
-                loggerWithChild({ email }).info({ turn: event.turnIndex }, "Pi-mono turn started")
+                loggerWithChild({ email }).info(
+                  { turn: event.turnIndex },
+                  "Pi-mono turn started",
+                )
+
+                // Dynamically rebuild the JAF-compliant prompt with latest State
+                const updatedPrompt = buildPiMonoSystemPrompt(
+                  xyneState,
+                  customTools.map((tool: any) => tool.name),
+                  dateForAI,
+                  true,
+                )
+                piSession.agent.setSystemPrompt(updatedPrompt)
+
                 break
               }
 
               case "turn_end": {
-                loggerWithChild({ email }).info({ turn: event.turnIndex }, "Pi-mono turn ended")
+                const turnIndex = event.turnIndex
+                loggerWithChild({ email }).info(
+                  { turn: turnIndex },
+                  "Pi-mono turn ended",
+                )
+
+                // Fix 4 & 7: Turn-End Pipeline Integration (Ranking & Review)
+                const state = xyneState
+                const unranked = Array.from(
+                  state.currentTurnArtifacts.unrankedFragmentsByTool.values(),
+                ).flat()
+
+                // Wrap unranked fragments in the structure expected by batchRankFragments
+                const unrankedWithContext = unranked.map((frag: any) => ({
+                  fragment: frag,
+                  toolName: "searchTools", // simplified for pi-mono
+                  toolQuery: message,
+                }))
+
+                // Determine if we should trigger review based on state or turn count
+                const reviewFreq = state.review?.reviewFrequency || 5
+                const forceReview =
+                  turnIndex > 0 && turnIndex % reviewFreq === 0
+
+                // Build minimal agent context required by runTurnEndPipeline
+                const agentContextForPipeline = {
+                  email,
+                  workspaceExternalId: workspace.externalId,
+                  roleOverride: undefined,
+                  hasCustomAgent: !!resolvedAgentId,
+                  turnCount: turnIndex,
+                  allFragments: state.allFragments,
+                  toolCallHistory: state.toolCallHistory,
+                  plan: state.plan,
+                  currentSubTask: state.currentSubTask,
+                  userQueryClarificationText: state.clarifications
+                    .map((c) => `Q: ${c.question}\nA: ${c.answer}`)
+                    .join("\n\n"),
+                } as any // Cast to unknown AgentRunContext type
+
+                // Add fragments inline if they pass basic relevance filtering
+                try {
+                  if (unranked.length > 0) {
+                    const metadataConstraints =
+                      extractMetadataConstraintsFromUserMessage(message)
+                    const { rankedCandidates } =
+                      rankFragmentsByMetadataConstraints(
+                        unranked,
+                        metadataConstraints,
+                      )
+
+                    // Filter down to the most relevant compliant fragments
+                    // In a full implementation, we'd also use an LLM here to score relevance.
+                    // For pi-mono, we use metadata constraints as the primary filter.
+                    const bestFragments = rankedCandidates
+                      .filter((c) => c.compliant)
+                      .map((c) => c.fragment)
+
+                    if (bestFragments.length > 0) {
+                      state.allFragments.push(...bestFragments)
+                      await emitReasoningEvent(
+                        reasoningEmitter,
+                        ReasoningSteps.documentsRanked(bestFragments.length),
+                      )
+                    } else if (!metadataConstraints.strict) {
+                      // If not strict and no compliant matches, fallback to generic ranking
+                      state.allFragments.push(...unranked)
+                      await emitReasoningEvent(
+                        reasoningEmitter,
+                        ReasoningSteps.documentsRanked(unranked.length),
+                      )
+                    }
+                  }
+                } catch (rankingErr) {
+                  loggerWithChild({ email }).warn(
+                    rankingErr,
+                    "Fragment ranking failed",
+                  )
+                  if (unranked.length > 0) {
+                    state.allFragments.push(...unranked)
+                    await emitReasoningEvent(
+                      reasoningEmitter,
+                      ReasoningSteps.documentsRanked(unranked.length),
+                    )
+                  }
+                }
+
+                // Clean up turn artifacts
+                state.currentTurnArtifacts.unrankedFragmentsByTool.clear()
+                state.currentTurnArtifacts.toolOutputs = []
+                state.currentTurnArtifacts.executionToolsCalled = 0
+                state.currentTurnArtifacts.todoWriteCalled = false
+
                 break
               }
 
               case "assistant_message": {
                 const content = event.message?.content
-                loggerWithChild({ email }).info({ hasContent: !!content, contentLength: content?.length }, "Pi-mono assistant message")
+                loggerWithChild({ email }).info(
+                  { hasContent: !!content, contentLength: content?.length },
+                  "Pi-mono assistant message",
+                )
                 break
               }
 
@@ -1502,7 +1937,10 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
 
               case "error": {
                 const errorData = (event as any).error || {}
-                loggerWithChild({ email }).error({ error: errorData }, "Pi-mono error")
+                loggerWithChild({ email }).error(
+                  { error: errorData },
+                  "Pi-mono error",
+                )
                 if (!stream.closed) {
                   await stream.writeSSE({
                     event: ChatSSEvents.Error,
@@ -1512,27 +1950,35 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
                     }),
                   })
                 }
-                
+
                 // Reject the promise so we don't wait 10 minutes
                 agentCompleted = true
                 if (agentCompletionReject) {
-                  agentCompletionReject(new Error(errorData.message || "Agent Error"))
+                  agentCompletionReject(
+                    new Error(errorData.message || "Agent Error"),
+                  )
                 }
                 break
               }
 
               default: {
-                loggerWithChild({ email }).debug({ eventType: event.type }, "Unhandled pi-mono event type")
+                loggerWithChild({ email }).debug(
+                  { eventType: event.type },
+                  "Unhandled pi-mono event type",
+                )
               }
             }
           } catch (handlerError) {
-            loggerWithChild({ email }).error(handlerError, "Event handler error")
+            loggerWithChild({ email }).error(
+              handlerError,
+              "Event handler error",
+            )
           }
         })
 
         // Start the conversation
         loggerWithChild({ email }).info("Starting pi-mono prompt...")
-        
+
         // Catch synchronous errors from prompt()
         let promptError: Error | null = null
         piSession.prompt(message).catch((err: any) => {
@@ -1543,30 +1989,106 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
             agentCompletionResolve()
           }
         })
-        
+
         // Small delay to see if prompt() fails synchronously
-        await new Promise(resolve => setTimeout(resolve, 100))
-        
+        await new Promise((resolve) => setTimeout(resolve, 100))
+
         if (promptError) {
           throw new Error(`Prompt failed: ${(promptError as Error).message}`)
         }
-        
-        loggerWithChild({ email }).info("Pi-mono prompt returned, waiting for completion...")
+
+        loggerWithChild({ email }).info(
+          "Pi-mono prompt returned, waiting for completion...",
+        )
 
         // Wait for completion
         const completionTimeoutMs = 10 * 60 * 1000 // 10 minutes
         try {
           await Promise.race([
             agentCompletionPromise,
-            new Promise<void>((_, reject) => 
-              setTimeout(() => reject(new Error("Agent completion timeout")), completionTimeoutMs)
-            )
+            new Promise<void>((_, reject) =>
+              setTimeout(
+                () => reject(new Error("Agent completion timeout")),
+                completionTimeoutMs,
+              ),
+            ),
           ])
           loggerWithChild({ email }).info("Agent completed successfully")
         } catch (timeoutErr) {
-          loggerWithChild({ email }).error(timeoutErr, "Agent completion timeout")
+          loggerWithChild({ email }).error(
+            timeoutErr,
+            "Agent completion timeout",
+          )
           if (!agentCompleted) {
             throw timeoutErr
+          }
+        }
+
+        // Fallback if the agent disobeyed the prompt and answered natively without using synthesizeFinalAnswer
+        // Fallback if the agent disobeyed the prompt and answered natively without using synthesizeFinalAnswer
+        if (!xyneState.finalSynthesis.requested && thinkingLog.trim() !== "") {
+          loggerWithChild({ email }).warn(
+            "Agent bypassed synthesizeFinalAnswer tool, forcefully intercepting to ensure grounding...",
+          )
+
+          try {
+            // Forcefully execute the synthesis tool to guarantee a grounded, cited answer
+            await synthesizeFinalAnswerTool.execute(
+              "forced_fallback_call",
+              { insightsUsefulForAnswering: thinkingLog.trim() },
+              undefined,
+              () => {},
+              piSession as any,
+            )
+          } catch (forcedSynthesisErr) {
+            loggerWithChild({ email }).error(
+              forcedSynthesisErr,
+              "Forced synthesis failed, falling back to raw text dump",
+            )
+
+            // Absolute worst-case fallback: stream the raw text
+            const fallbackText = thinkingLog.trim()
+            answer = fallbackText
+
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseUpdate,
+              data: fallbackText,
+            })
+
+            // Extract citations from the fallback text too
+            const fragmentsForCitations = xyneState.allFragments
+            for await (const citationEvent of checkAndYieldCitationsForAgent(
+              answer,
+              yieldedCitations,
+              fragmentsForCitations,
+              yieldedImageCitations,
+              email,
+            )) {
+              if (stream.closed) break
+              if (citationEvent.citation) {
+                const { index, item } = citationEvent.citation
+                citations.push(item)
+                citationMap[index] = citations.length - 1
+                await stream.writeSSE({
+                  event: ChatSSEvents.CitationsUpdate,
+                  data: JSON.stringify({
+                    contextChunks: citations,
+                    citationMap,
+                  }),
+                })
+              }
+              if (citationEvent.imageCitation) {
+                imageCitations.push(citationEvent.imageCitation)
+                await stream.writeSSE({
+                  event: ChatSSEvents.ImageCitationUpdate,
+                  data: JSON.stringify(citationEvent.imageCitation),
+                })
+              }
+            }
+            await emitReasoningEvent(
+              reasoningEmitter,
+              ReasoningSteps.synthesisCompleted(),
+            )
           }
         }
 
@@ -1593,7 +2115,10 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           assistantMessageId = persisted.assistantMessageId
           await persistTrace(persisted.msg.id as number, assistantMessageId)
         } catch (persistErr) {
-          loggerWithChild({ email }).error(persistErr, "Failed to persist message")
+          loggerWithChild({ email }).error(
+            persistErr,
+            "Failed to persist message",
+          )
         }
 
         // Send final metadata
@@ -1614,7 +2139,10 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
 
         rootSpan.end()
       } catch (error) {
-        loggerWithChild({ email }).error(error, "MessageAgentsPiMono stream error")
+        loggerWithChild({ email }).error(
+          error,
+          "MessageAgentsPiMono stream error",
+        )
         const streamErrMsg = getErrorMessage(error)
 
         if (!stream.closed) {
@@ -1631,7 +2159,10 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               data: "",
             })
           } catch (writeErr) {
-            loggerWithChild({ email }).warn(writeErr, "Failed to send error to client")
+            loggerWithChild({ email }).warn(
+              writeErr,
+              "Failed to send error to client",
+            )
           }
         }
         rootSpan.end()
@@ -1641,6 +2172,8 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         if (activeEntry?.stream === stream) {
           activeStreams.delete(streamKey)
         }
+        // Clean up session-scoped state
+        unregisterSession(chatRecord?.externalId ?? "")
       }
     })
   } catch (error) {

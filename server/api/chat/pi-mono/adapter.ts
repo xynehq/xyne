@@ -3,6 +3,8 @@
  *
  * Bridges JAF-style tools to pi-mono ToolDefinition format
  * Maintains XyneAgentState alongside pi-mono's internal state
+ *
+ * Uses session-scoped storage to prevent state corruption across concurrent requests.
  */
 
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent"
@@ -76,6 +78,16 @@ export interface XyneAgentState {
     timestamp: string
   }
 
+  // Conversation history for synthesis
+  conversationHistoryMessages?: any[]
+
+  // Memory
+  episodicMemoriesText?: string
+  chatMemoryText?: string
+
+  // Seen documents (for dedup across turns)
+  seenDocuments?: Set<string>
+
   // Stop/abort control
   stopController?: AbortController
   stopSignal?: AbortSignal
@@ -99,15 +111,113 @@ export interface XyneToolContext {
 
   // Helpers
   persistState: () => Promise<void>
+
+  // Runtime callbacks for streaming output (used by synthesizeFinalAnswer)
+  runtime?: {
+    streamAnswerText: (text: string) => Promise<void>
+    emitReasoning: (payload: any) => Promise<void>
+  }
+}
+
+// ============================================================================
+// SESSION-SCOPED STATE STORAGE
+// Prevents concurrent request corruption by keying state/runtime/persist per session.
+// ============================================================================
+
+interface SessionContext {
+  state: XyneAgentState
+  runtime?: XyneToolContext["runtime"]
+  persistFn: PersistXyneStateFn
+}
+
+/** Session-scoped storage keyed by chatExternalId */
+const sessionStore = new Map<string, SessionContext>()
+
+/** Currently active session ID (set when a request starts processing) */
+let activeSessionId: string | null = null
+
+/**
+ * Register a session with its state, persist function, and runtime
+ */
+export function registerSession(
+  sessionId: string,
+  state: XyneAgentState,
+  persistFn: PersistXyneStateFn,
+  runtime?: XyneToolContext["runtime"],
+): void {
+  sessionStore.set(sessionId, { state, runtime, persistFn })
+  activeSessionId = sessionId
+}
+
+/**
+ * Update runtime for an active session
+ */
+export function setSessionRuntime(
+  sessionId: string,
+  runtime: XyneToolContext["runtime"],
+): void {
+  const session = sessionStore.get(sessionId)
+  if (session) {
+    session.runtime = runtime
+  }
+}
+
+/**
+ * Clean up session when request completes
+ */
+export function unregisterSession(sessionId: string): void {
+  sessionStore.delete(sessionId)
+  if (activeSessionId === sessionId) {
+    activeSessionId = null
+  }
+}
+
+/**
+ * Get session context by session ID or active session fallback
+ */
+function getSessionContext(sessionId?: string): SessionContext {
+  const id = sessionId || activeSessionId
+  if (id && sessionStore.has(id)) {
+    return sessionStore.get(id)!
+  }
+  throw new Error(`Xyne session not found: ${id || "no active session"}`)
+}
+
+// Legacy API — delegates to session store for backward compatibility
+const stateMap = new WeakMap<any, string>() // maps pi-mono ctx → sessionId
+
+export function getXyneState(ctx: any): XyneAgentState {
+  // Try to get sessionId from WeakMap mapping either the ExtensionContext or SessionManager
+  const lookupCtx = ctx && ctx.session ? ctx.session : ctx
+  if (lookupCtx && stateMap.has(lookupCtx)) {
+    const sessionId = stateMap.get(lookupCtx)!
+    return getSessionContext(sessionId).state
+  }
+  // Fallback to active session
+  return getSessionContext().state
+}
+
+export function setXyneState(ctx: any, state: XyneAgentState): void {
+  const sessionId = state.chat.externalId
+  stateMap.set(ctx, sessionId)
+}
+
+// Legacy compat — these now delegate to active session
+export function setPersistFunction(fn: PersistXyneStateFn): void {
+  if (activeSessionId) {
+    const session = sessionStore.get(activeSessionId)
+    if (session) session.persistFn = fn
+  }
+}
+
+export function setRuntime(runtime: XyneToolContext["runtime"]): void {
+  if (activeSessionId) {
+    setSessionRuntime(activeSessionId, runtime)
+  }
 }
 
 /**
  * Convert JAF-style tool to pi-mono ToolDefinition
- *
- * @param name Tool name
- * @param description Tool description
- * @param parameters TypeBox schema for parameters
- * @param execute Execute function with Xyne context
  */
 export function createXyneTool<TParams extends TSchema>(
   name: string,
@@ -127,16 +237,19 @@ export function createXyneTool<TParams extends TSchema>(
     description,
     parameters,
     execute: async (toolCallId, params, signal, onUpdate, extCtx) => {
-      // Get Xyne state from extension context
+      // Get Xyne state from extension context (resolves via session store)
       const xyneState = getXyneState(extCtx)
+      const sessionId = xyneState.chat.externalId
+      const session = getSessionContext(sessionId)
 
-      // Create Xyne tool context
+      // Create Xyne tool context with session-scoped runtime and persist
       const xyneCtx: XyneToolContext = {
         events: (extCtx as any).events || { emit: () => {} },
         xyneState,
         persistState: async () => {
-          await persistXyneState(xyneState)
+          await session.persistFn(xyneState)
         },
+        runtime: session.runtime,
       }
 
       // Execute with Xyne context
@@ -151,58 +264,11 @@ export function createXyneTool<TParams extends TSchema>(
   }
 }
 
-/**
- * Get Xyne state from extension context
- * Uses WeakMap to associate state with context object
- */
-const stateMap = new WeakMap<any, XyneAgentState>()
+// ============================================================================
+// TYPES
+// ============================================================================
 
-// Global reference for tools that can't access the context
-let globalXyneState: XyneAgentState | null = null
-
-/**
- * Persist function - will be set during initialization
- */
-let persistXyneState: PersistXyneStateFn = async () => {
-  // Default no-op, should be overridden
-  console.warn("persistXyneState not initialized")
-}
-
-export function getXyneState(ctx: any): XyneAgentState {
-  // First try to get from context
-  if (stateMap.has(ctx)) {
-    return stateMap.get(ctx)!
-  }
-  // Fall back to global state
-  if (globalXyneState) {
-    return globalXyneState
-  }
-  throw new Error("Xyne state not initialized")
-}
-
-export function setXyneState(ctx: any, state: XyneAgentState): void {
-  stateMap.set(ctx, state)
-  // Also set globally as fallback
-  globalXyneState = state
-}
-
-/**
- * Set the persist function
- */
-export function setPersistFunction(fn: PersistXyneStateFn): void {
-  persistXyneState = fn
-}
-
-/**
- * Persist Xyne state to database
- * NOTE: Implement this based on your database schema
- */
 export type PersistXyneStateFn = (state: XyneAgentState) => Promise<void>
-
-/**
- * Load Xyne state from database
- * NOTE: Implement this based on your database schema
- */
 export type LoadXyneStateFn = (
   chatExternalId: string,
 ) => Promise<XyneAgentState | null>
@@ -213,25 +279,20 @@ export type LoadXyneStateFn = (
 export function createInitialXyneState(
   email: string,
   workspaceId: string,
-  userId: number,
+  userId: string,
+  numericId: number,
   chatExternalId: string,
   messageText: string,
-  attachments: Array<{ fileId: string; isImage: boolean }>,
+  messageTimestamp: string,
 ): XyneAgentState {
   return {
     clarifications: [],
-    ambiguityResolved: true,
+    ambiguityResolved: false,
     plan: null,
     currentSubTask: null,
     allFragments: [],
     toolCallHistory: [],
     review: {
-      lastReviewTurn: null,
-      reviewFrequency: 5,
-      lastReviewedFragmentIndex: 0,
-      lastReviewResult: null,
-      outstandingAnomalies: [],
-      clarificationQuestions: [],
       lockedByFinalSynthesis: false,
       lockedAtTurn: null,
     },
@@ -240,7 +301,6 @@ export function createInitialXyneState(
       completed: false,
       suppressAssistantStreaming: false,
       streamedText: "",
-      ackReceived: false,
     },
     currentTurnArtifacts: {
       fragments: [],
@@ -257,8 +317,8 @@ export function createInitialXyneState(
     user: {
       email,
       workspaceId,
-      id: String(userId),
-      numericId: userId,
+      id: userId,
+      numericId,
     },
     chat: {
       externalId: chatExternalId,
@@ -266,8 +326,9 @@ export function createInitialXyneState(
     },
     message: {
       text: messageText,
-      attachments,
-      timestamp: new Date().toISOString(),
+      attachments: [],
+      timestamp: messageTimestamp,
     },
+    seenDocuments: new Set(),
   }
 }
