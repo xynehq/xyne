@@ -3021,7 +3021,7 @@ export const ChatMessage = ({
                       a: createCitationLink(
                         citations,
                         handleCitationWithContext,
-                        true,
+                        false,
                         new Map(),
                         0,
                       ),

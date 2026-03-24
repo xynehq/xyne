@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/api"
-import { TextTokenizer } from "@/utils/textHighlighting"
+import { getTopUniqueTokens, TextTokenizer } from "@/utils/textHighlighting"
 
 /**
  * Vespa highlight search result chunk interface
@@ -32,25 +32,6 @@ export interface UseVespaHighlightOptions {
   chunkId?: number
   enabled?: boolean
   caseSensitive?: boolean
-}
-
-/**
- * Get top N longest unique tokens for better keyword matching
- * Longer tokens are more specific and provide better highlights
- * 
- * @param tokens - Array of tokens to filter
- * @param maxCount - Maximum number of tokens to return (default: 5)
- * @returns Array of top tokens sorted by length
- */
-function getTopUniqueTokens(tokens: string[], maxCount: number = 5): string[] {
-  // Remove duplicates while preserving order
-  const unique = [...new Set(tokens)]
-
-  // Sort by length (longest first) - longer tokens = more specific
-  const sorted = unique.sort((a, b) => b.length - a.length)
-
-  // Return top N
-  return sorted.slice(0, maxCount)
 }
 
 /**
@@ -206,7 +187,7 @@ export function prefetchVespaHighlight(
 export function invalidateVespaHighlightCache(
   queryClient: ReturnType<typeof useQueryClient>,
   docId: string,
-  chunkId?: string,
+  chunkId?: number,
 ): void {
   queryClient.invalidateQueries({
     queryKey: ["vespa-highlight"],
@@ -214,7 +195,7 @@ export function invalidateVespaHighlightCache(
       const key = query.queryKey[1] as string
       if (!key) return false
 
-      if (chunkId) {
+      if (chunkId !== undefined) {
         return key.includes(`vespa-highlight:${docId}:${chunkId}:`)
       }
       return key.includes(`vespa-highlight:${docId}:`)

@@ -2090,7 +2090,12 @@ export const GetChunkContentApi = async (c: Context) => {
     
     // Add previous chunk if it exists (for context)
     if (index > 0 && chunksArray[index - 1]) {
-      const prevChunkLastLineStart = Math.max(chunksArray[index - 1].lastIndexOf("\n"), chunksArray[index - 1].lastIndexOf(" "), chunksArray[index - 1].length - 100) // Get last line of previous chunk for better context, with a fallback to last 100 chars if no newline or tab found
+      const newlineIdx = chunksArray[index - 1].lastIndexOf("\n")
+      const spaceIdx = chunksArray[index - 1].lastIndexOf(" ")
+      const candidates = [Math.max(0, chunksArray[index - 1].length - 100)]
+      if (newlineIdx >= 0) candidates.push(newlineIdx)
+      if (spaceIdx >= 0) candidates.push(spaceIdx)
+      const prevChunkLastLineStart = Math.max(...candidates)
       chunkParts.push(chunksArray[index - 1].substring(prevChunkLastLineStart, chunksArray[index - 1].length)) // Get last line of previous chunk for better context
     }
     
@@ -2101,7 +2106,12 @@ export const GetChunkContentApi = async (c: Context) => {
     
     // Add next chunk if it exists (for context)
     if (index < chunksArray.length - 1 && chunksArray[index + 1]) {
-      const nextChunkFirstLineEnd = Math.max(chunksArray[index + 1].indexOf("\n"), chunksArray[index + 1].indexOf(" "), 100) // Get first line of next chunk for better context, with a fallback to 100 chars if no newline or tab found
+      const newlineIdx = chunksArray[index + 1].indexOf("\n")
+      const spaceIdx = chunksArray[index + 1].indexOf(" ")
+      const candidates: number[] = []
+      if (newlineIdx >= 0) candidates.push(newlineIdx)
+      if (spaceIdx >= 0) candidates.push(spaceIdx)
+      const nextChunkFirstLineEnd = candidates.length > 0 ? Math.min(...candidates) : 100
       chunkParts.push(chunksArray[index + 1].substring(0, nextChunkFirstLineEnd)) // Get first line of next chunk for better context
     }
     

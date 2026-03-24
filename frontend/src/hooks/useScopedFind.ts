@@ -905,8 +905,8 @@ export function useScopedFind(
         const vespaId = vespaChunkIdRef.current
         const vespaTokens = vespaKeywordTokensRef.current
         const vespaAligned =
-          !!chunkIndex &&
-          !!vespaId &&
+          chunkIndex != null &&
+          vespaId != null &&
           vespaId === chunkIndex &&
           vespaTokens.length > 0
 
@@ -965,10 +965,6 @@ export function useScopedFind(
               mark.setAttribute("data-match-index", globalIdx.toString())
             })
             allMarks.push(...marks)
-            if (km.length > longestMatchLength) {
-              longestMatchLength = km.length
-              longestMatchIndex = allMarks.length - marks.length
-            }
           })
 
           if (debug) {
@@ -1050,7 +1046,7 @@ export function useScopedFind(
     if (!last) return
     if (!vespaTokensKey || !vespaChunkId) return
     const expected = last.chunkIndex
-    if (!expected || vespaChunkId !== expected) {
+    if (expected == null || vespaChunkId !== expected) {
       if (
         debug &&
         vespaChunkId &&
