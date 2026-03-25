@@ -93,6 +93,9 @@ export interface XyneAgentState {
   stopSignal?: AbortSignal
   stopRequested?: boolean
 
+  // Thinking log for fallback synthesis
+  thinkingLog?: string
+
   // ... other fields from AgentRunContext
 }
 
