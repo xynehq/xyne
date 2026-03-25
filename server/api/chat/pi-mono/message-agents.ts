@@ -31,7 +31,7 @@ import {
   type SelectMessage,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
-import { getLogger, getLoggerWithChild } from "@/logger"
+import { getLogger } from "@/logger"
 import { Subsystem, type UserMetadataType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { getDateForAI } from "@/utils/index"
@@ -151,7 +151,6 @@ import { ToolCooldownManager } from "@/api/chat/tool-cooldown"
 const { defaultBestModel, defaultBestModelAgenticMode, JwtPayloadKey } = config
 
 const Logger = getLogger(Subsystem.Chat)
-const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
 // ============================================================================
 // TYPES
@@ -329,7 +328,7 @@ async function storeAttachmentSafely(
     await storeAttachmentMetadata(tx, messageExternalId, attachments, email)
     return null
   } catch (error) {
-    loggerWithChild({ email }).error(
+    Logger.error(
       error,
       `Failed to store attachment metadata for message ${messageExternalId}`,
     )
@@ -923,7 +922,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
   const { sub: email, workspaceId } = c.get(JwtPayloadKey)
 
   try {
-    loggerWithChild({ email }).info("MessageAgentsPiMono starting")
+    Logger.info("MessageAgentsPiMono starting")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
@@ -984,11 +983,11 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           }
         }
 
-        loggerWithChild({ email }).debug(
+        Logger.debug(
           `Parsed model config for MessageAgentsPiMono: model="${parsedModelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
         )
       } catch (error) {
-        loggerWithChild({ email }).warn(
+        Logger.warn(
           error,
           "Failed to parse selectedModelConfig JSON in MessageAgentsPiMono. Using defaults.",
         )
@@ -996,7 +995,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
       }
     } else {
       parsedModelId = config.defaultBestModel
-      loggerWithChild({ email }).debug(
+      Logger.debug(
         "No model config provided to MessageAgentsPiMono, using default",
       )
     }
@@ -1006,27 +1005,22 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
       const convertedModelId = getModelValueFromLabel(parsedModelId)
       if (convertedModelId) {
         actualModelId = convertedModelId as string
-        loggerWithChild({ email }).debug(
+        Logger.debug(
           `Converted model label "${parsedModelId}" to value "${actualModelId}" for MessageAgentsPiMono`,
         )
       } else if (parsedModelId in Models) {
         actualModelId = parsedModelId
-        loggerWithChild({ email }).debug(
+        Logger.debug(
           `Using model ID "${parsedModelId}" directly for MessageAgentsPiMono`,
         )
       } else {
-        loggerWithChild({ email }).error(
+        Logger.error(
           `Invalid model: ${parsedModelId}. Model not found in label mappings or Models enum for MessageAgentsPiMono.`,
         )
       }
     }
 
     const agenticModelId = resolveAgenticModelId(actualModelId)
-    rootSpan.setAttribute("selectedModelId", actualModelId)
-    rootSpan.setAttribute("agenticModelId", agenticModelId)
-    rootSpan.setAttribute("reasoningEnabled", isReasoningEnabled)
-    rootSpan.setAttribute("webSearchEnabled", enableWebSearch)
-    rootSpan.setAttribute("deepResearchEnabled", isDeepResearchEnabled)
 
     if (typeof toolsList === "string") {
       try {
@@ -1035,7 +1029,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           tools: string[]
         }>
       } catch (error) {
-        loggerWithChild({ email }).warn(
+        Logger.warn(
           { err: error },
           "Unable to parse toolsList payload; skipping MCP connectors.",
         )
@@ -1115,7 +1109,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
     try {
       connectorState = await getUserConnectorState(db, email)
     } catch (error) {
-      loggerWithChild({ email }).warn(
+      Logger.warn(
         error,
         "Failed to load user connector state; assuming no connectors",
       )
@@ -1198,10 +1192,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         resolvedAgentId = chatAgentId
       }
     } catch (error) {
-      loggerWithChild({ email }).error(
-        error,
-        "Failed to persist user turn for MessageAgentsPiMono",
-      )
+      Logger.error(error, "Failed to persist user turn for MessageAgentsPiMono")
       const errMsg =
         error instanceof Error ? error.message : "Unknown persistence error"
       if (errMsg.includes("Chat not found")) {
@@ -1282,10 +1273,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
             traceJson,
           })
         } catch (traceError) {
-          loggerWithChild({ email }).error(
-            traceError,
-            "Failed to persist chat trace",
-          )
+          Logger.error(traceError, "Failed to persist chat trace")
         }
       }
 
@@ -1413,9 +1401,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         const modelRegistry = new ModelRegistry(authStorage)
 
         // 3. Define LiteLLM model directly (official pattern from docs)
-        loggerWithChild({ email }).info(
-          `Creating LiteLLM model profile for ${agenticModelId}`,
-        )
+        Logger.info(`Creating LiteLLM model profile for ${agenticModelId}`)
         const piModel = {
           id: agenticModelId, // model ID as configured in LiteLLM (e.g., "kimi-latest")
           name: agenticModelId,
@@ -1432,9 +1418,9 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
             supportsStreaming: true,
             supportsToolStreaming: true,
           },
-        } as any
+        }
 
-        loggerWithChild({ email }).info(
+        Logger.info(
           {
             modelId: piModel.id,
             modelProvider: piModel.provider,
@@ -1465,7 +1451,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         // Register session for concurrent-safe state access by tools
         const sessionId = chatRecord.externalId
         const persistFn = async (state: XyneAgentState) => {
-          loggerWithChild({ email }).debug("Persisting Xyne state")
+          Logger.debug("Persisting Xyne state")
         }
         registerSession(sessionId, xyneState, persistFn)
 
@@ -1481,10 +1467,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               workspaceExternalId: workspace.externalId,
               chatExternalId: chatRecord.externalId,
             }).catch((err) => {
-              loggerWithChild({ email }).warn(
-                err,
-                "Episodic memory retrieval failed",
-              )
+              Logger.warn(err, "Episodic memory retrieval failed")
               return []
             }),
             retrieveRelevantChatHistory({
@@ -1493,10 +1476,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               workspaceExternalId: workspace.externalId,
               chatExternalId: chatRecord.externalId,
             }).catch((err) => {
-              loggerWithChild({ email }).warn(
-                err,
-                "Chat memory retrieval failed",
-              )
+              Logger.warn(err, "Chat memory retrieval failed")
               return []
             }),
           ])
@@ -1512,7 +1492,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               .join("\n---\n")
           }
 
-          loggerWithChild({ email }).info(
+          Logger.info(
             {
               episodicCount: episodicResults.length,
               chatMemoryCount: chatMemoryResults.length,
@@ -1520,7 +1500,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
             "[Pi-Mono] Memory retrieval complete",
           )
         } catch (memErr) {
-          loggerWithChild({ email }).warn(memErr, "Memory retrieval failed")
+          Logger.warn(memErr, "Memory retrieval failed")
         }
 
         // --- Fix 3: Store conversation history for synthesis ---
@@ -1541,7 +1521,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         // Build robust system prompt using JAF logic
         let systemPrompt = buildPiMonoSystemPrompt(
           xyneState,
-          customTools.map((tool: any) => tool.name),
+          customTools.map((tool) => tool.name),
           dateForAI,
           true,
         )
@@ -1589,12 +1569,9 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         setXyneState(piSession as any, xyneState)
 
         // Log the full system prompt for debugging
-        loggerWithChild({ email }).info(
-          { systemPrompt },
-          "📝 PI-MONO SYSTEM PROMPT",
-        )
+        Logger.info({ systemPrompt }, "📝 PI-MONO SYSTEM PROMPT")
 
-        loggerWithChild({ email }).info(
+        Logger.info(
           {
             systemPromptLength: systemPrompt.length,
             toolCount: customTools.length,
@@ -1681,17 +1658,14 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         // Subscribe to session events
         piSession.subscribe(async (event: any) => {
           // Log ALL events for debugging
-          loggerWithChild({ email }).debug(
-            { eventType: event.type, event },
-            "PI-MONO EVENT",
-          )
+          Logger.debug({ eventType: event.type, event }, "PI-MONO EVENT")
 
           if (stream.closed) return
 
           try {
             switch (event.type) {
               case "agent_start": {
-                loggerWithChild({ email }).info("Pi-mono agent started")
+                Logger.info("Pi-mono agent started")
                 await emitReasoningEvent(
                   reasoningEmitter,
                   ReasoningSteps.turnStarted(1),
@@ -1701,7 +1675,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
 
               case "tool_execution_start": {
                 const toolName = event.toolName
-                loggerWithChild({ email }).info(
+                Logger.info(
                   { toolName, args: event.args },
                   "🔧 TOOL EXECUTION STARTED",
                 )
@@ -1716,7 +1690,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
                 const toolName = event.toolName
                 const isError = event.isError
                 const result = event.result
-                loggerWithChild({ email }).info(
+                Logger.info(
                   { toolName, isError, hasResult: !!result },
                   "🔧 TOOL EXECUTION ENDED",
                 )
@@ -1778,10 +1752,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
                   }
                 }
 
-                loggerWithChild({ email }).info(
-                  { toolName, args },
-                  "🔧 TOOL CALL EVENT",
-                )
+                Logger.info({ toolName, args }, "🔧 TOOL CALL EVENT")
                 break
               }
 
@@ -1803,10 +1774,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               }
 
               case "turn_start": {
-                loggerWithChild({ email }).info(
-                  { turn: event.turnIndex },
-                  "Pi-mono turn started",
-                )
+                Logger.info({ turn: event.turnIndex }, "Pi-mono turn started")
 
                 // Dynamically rebuild the JAF-compliant prompt with latest State
                 const updatedPrompt = buildPiMonoSystemPrompt(
@@ -1822,10 +1790,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
 
               case "turn_end": {
                 const turnIndex = event.turnIndex
-                loggerWithChild({ email }).info(
-                  { turn: turnIndex },
-                  "Pi-mono turn ended",
-                )
+                Logger.info({ turn: turnIndex }, "Pi-mono turn ended")
 
                 // Fix 4 & 7: Turn-End Pipeline Integration (Ranking & Review)
                 const state = xyneState
@@ -1844,22 +1809,6 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
                 const reviewFreq = state.review?.reviewFrequency || 5
                 const forceReview =
                   turnIndex > 0 && turnIndex % reviewFreq === 0
-
-                // Build minimal agent context required by runTurnEndPipeline
-                const agentContextForPipeline = {
-                  email,
-                  workspaceExternalId: workspace.externalId,
-                  roleOverride: undefined,
-                  hasCustomAgent: !!resolvedAgentId,
-                  turnCount: turnIndex,
-                  allFragments: state.allFragments,
-                  toolCallHistory: state.toolCallHistory,
-                  plan: state.plan,
-                  currentSubTask: state.currentSubTask,
-                  userQueryClarificationText: state.clarifications
-                    .map((c) => `Q: ${c.question}\nA: ${c.answer}`)
-                    .join("\n\n"),
-                } as any // Cast to unknown AgentRunContext type
 
                 // Add fragments inline if they pass basic relevance filtering
                 try {
@@ -1895,10 +1844,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
                     }
                   }
                 } catch (rankingErr) {
-                  loggerWithChild({ email }).warn(
-                    rankingErr,
-                    "Fragment ranking failed",
-                  )
+                  Logger.warn(rankingErr, "Fragment ranking failed")
                   if (unranked.length > 0) {
                     state.allFragments.push(...unranked)
                     await emitReasoningEvent(
@@ -1919,7 +1865,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
 
               case "assistant_message": {
                 const content = event.message?.content
-                loggerWithChild({ email }).info(
+                Logger.info(
                   { hasContent: !!content, contentLength: content?.length },
                   "Pi-mono assistant message",
                 )
@@ -1927,7 +1873,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               }
 
               case "agent_end": {
-                loggerWithChild({ email }).info("Pi-mono agent ended")
+                Logger.info("Pi-mono agent ended")
                 agentCompleted = true
                 if (agentCompletionResolve) {
                   agentCompletionResolve()
@@ -1937,10 +1883,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
 
               case "error": {
                 const errorData = (event as any).error || {}
-                loggerWithChild({ email }).error(
-                  { error: errorData },
-                  "Pi-mono error",
-                )
+                Logger.error({ error: errorData }, "Pi-mono error")
                 if (!stream.closed) {
                   await stream.writeSSE({
                     event: ChatSSEvents.Error,
@@ -1962,28 +1905,25 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               }
 
               default: {
-                loggerWithChild({ email }).debug(
+                Logger.debug(
                   { eventType: event.type },
                   "Unhandled pi-mono event type",
                 )
               }
             }
           } catch (handlerError) {
-            loggerWithChild({ email }).error(
-              handlerError,
-              "Event handler error",
-            )
+            Logger.error(handlerError, "Event handler error")
           }
         })
 
         // Start the conversation
-        loggerWithChild({ email }).info("Starting pi-mono prompt...")
+        Logger.info("Starting pi-mono prompt...")
 
         // Catch synchronous errors from prompt()
         let promptError: Error | null = null
         piSession.prompt(message).catch((err: any) => {
           promptError = err instanceof Error ? err : new Error(String(err))
-          loggerWithChild({ email }).error({ err }, "PI-MONO PROMPT CRASHED")
+          Logger.error({ err }, "PI-MONO PROMPT CRASHED")
           // Force agent completion to unblock the promise
           if (!agentCompleted && agentCompletionResolve) {
             agentCompletionResolve()
@@ -1997,9 +1937,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           throw new Error(`Prompt failed: ${(promptError as Error).message}`)
         }
 
-        loggerWithChild({ email }).info(
-          "Pi-mono prompt returned, waiting for completion...",
-        )
+        Logger.info("Pi-mono prompt returned, waiting for completion...")
 
         // Wait for completion
         const completionTimeoutMs = 10 * 60 * 1000 // 10 minutes
@@ -2013,12 +1951,9 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               ),
             ),
           ])
-          loggerWithChild({ email }).info("Agent completed successfully")
+          Logger.info("Agent completed successfully")
         } catch (timeoutErr) {
-          loggerWithChild({ email }).error(
-            timeoutErr,
-            "Agent completion timeout",
-          )
+          Logger.error(timeoutErr, "Agent completion timeout")
           if (!agentCompleted) {
             throw timeoutErr
           }
@@ -2027,7 +1962,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
         // Fallback if the agent disobeyed the prompt and answered natively without using synthesizeFinalAnswer
         // Fallback if the agent disobeyed the prompt and answered natively without using synthesizeFinalAnswer
         if (!xyneState.finalSynthesis.requested && thinkingLog.trim() !== "") {
-          loggerWithChild({ email }).warn(
+          Logger.warn(
             "Agent bypassed synthesizeFinalAnswer tool, forcefully intercepting to ensure grounding...",
           )
 
@@ -2041,7 +1976,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               piSession as any,
             )
           } catch (forcedSynthesisErr) {
-            loggerWithChild({ email }).error(
+            Logger.error(
               forcedSynthesisErr,
               "Forced synthesis failed, falling back to raw text dump",
             )
@@ -2115,10 +2050,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           assistantMessageId = persisted.assistantMessageId
           await persistTrace(persisted.msg.id as number, assistantMessageId)
         } catch (persistErr) {
-          loggerWithChild({ email }).error(
-            persistErr,
-            "Failed to persist message",
-          )
+          Logger.error(persistErr, "Failed to persist message")
         }
 
         // Send final metadata
@@ -2139,10 +2071,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
 
         rootSpan.end()
       } catch (error) {
-        loggerWithChild({ email }).error(
-          error,
-          "MessageAgentsPiMono stream error",
-        )
+        Logger.error(error, "MessageAgentsPiMono stream error")
         const streamErrMsg = getErrorMessage(error)
 
         if (!stream.closed) {
@@ -2159,10 +2088,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               data: "",
             })
           } catch (writeErr) {
-            loggerWithChild({ email }).warn(
-              writeErr,
-              "Failed to send error to client",
-            )
+            Logger.warn(writeErr, "Failed to send error to client")
           }
         }
         rootSpan.end()
@@ -2177,7 +2103,7 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
       }
     })
   } catch (error) {
-    loggerWithChild({ email }).error(error, "MessageAgentsPiMono failed")
+    Logger.error(error, "MessageAgentsPiMono failed")
     rootSpan.end()
     throw error
   }
