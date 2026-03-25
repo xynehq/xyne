@@ -1,6 +1,4 @@
 export type {
-  AgentState,
-  ToolExecutionContext,
   PiMonoEvent,
   AgentSessionConfig,
   EventHandler,
@@ -11,6 +9,11 @@ export type {
   EventHandlerMap,
 } from "./types"
 
-export { createAgentSessionWrapper, createXyneAgentSession, type XyneSessionConfig } from "./runtime"
+export { 
+  createAgentSessionWrapper, 
+  createXyneAgentSession, 
+  type AgentSessionWrapperConfig,
+  type ModelConfig,
+} from "./runtime"
 export { createEventRouter, createEventHandler, type ExtendedEventRouterConfig } from "./event-router"
 export { createStateManager } from "./state-manager"
