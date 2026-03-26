@@ -37,7 +37,7 @@ export const insertAgentDocument = async (
   const externalId = createId()
 
   // Convert confidence to string for numeric column
-  const confidenceValue = documentData.confidence !== undefined 
+  const confidenceValue = documentData.confidence !== undefined && documentData.confidence !== null
     ? documentData.confidence.toString() 
     : undefined
 
@@ -195,7 +195,7 @@ export const updateAgentDocument = async (
 ): Promise<SelectAgentDocument | undefined> => {
   // Convert confidence to string for numeric column if present
   const updateData: any = { ...updates }
-  if (updates.confidence !== undefined) {
+  if (updates.confidence !== undefined && updates.confidence !== null) {
     updateData.confidence = updates.confidence.toString()
   }
 
