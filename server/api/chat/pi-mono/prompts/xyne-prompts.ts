@@ -1,5 +1,3 @@
-import type { PromptSection } from "./builder"
-import { buildSystemPrompt } from "./builder"
 import type { XyneAgentState } from "../adapter"
 import { buildAgentPromptAddendum } from "@/api/chat/agentPromptCreation"
 
@@ -288,10 +286,23 @@ function buildReviewFeedbackInstructions(): string {
   ].join("\n")
 }
 
-/**
- * Build the full system prompt string for Xyne agent
- * This is a convenience function that combines buildXynePromptSections with buildSystemPrompt
- */
+export interface PromptSection {
+  name: string
+  content: string
+  priority: number
+}
+
+export interface PromptBuilderConfig {
+  sections: PromptSection[]
+  separator?: string
+}
+
+export function buildSystemPrompt(config: PromptBuilderConfig): string {
+  const separator = config.separator || "\n\n"
+  const sorted = [...config.sections].sort((a, b) => a.priority - b.priority)
+  return sorted.map((s) => s.content).join(separator)
+}
+
 export function buildXyneSystemPrompt(config: XynePromptConfig): string {
   const sections = buildXynePromptSections(config)
   return buildSystemPrompt({ sections })
