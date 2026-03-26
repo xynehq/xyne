@@ -82,12 +82,15 @@ export const synthesizeFinalAnswerTool = createXyneTool(
       await persistState()
 
       // Build the full synthesis payload with fragments, plan, and context
-      const { systemPrompt, userMessage } = buildFinalSynthesisPayload(
+      const { systemPrompt, userMessage, citationDocIdMapping } = buildFinalSynthesisPayload(
         xyneState as any,
         {
           insightsUsefulForAnswering: params.insightsUsefulForAnswering,
         },
       )
+
+      // Store citation mapping for reliable citation resolution
+      xyneState.citationDocIdMapping = citationDocIdMapping
 
       const fragmentsCount = xyneState.allFragments.length
       loggerWithChild({ email: xyneState.user.email }).info(
@@ -140,7 +143,7 @@ that can only repeat, summarize, and cite what the fragments say.
 
 HARD CONSTRAINTS (violation = CRITICAL failure):
 1. NEVER use your training data, world knowledge, or any information not explicitly present in the provided fragments.
-2. Every single factual claim MUST have a citation in the format K[docId_chunkIndex]. No citation = delete the sentence.
+2. Every single factual claim MUST have a citation in the format K[citationDocId_chunkIndex]. No citation = delete the sentence.
 3. If the fragments do NOT contain sufficient information to answer the question:
    - Say: "I could not find information about [topic] in the available documents."
    - Then STOP. Do NOT continue. Do NOT add explanations, definitions, or context from your own knowledge.
@@ -153,10 +156,10 @@ FORBIDDEN PATTERNS (if you catch yourself writing any of these, STOP and delete)
 - "While I couldn't find specific documentation, here's what X typically involves..."
 - "Based on my understanding..." / "Generally speaking..."
 - "Here's what I know about..."
-- Any sentence that provides information not traceable to a K[docId_chunkIndex] citation.
+- Any sentence that provides information not traceable to a K[citationDocId_chunkIndex] citation.
 
 SELF-CHECK: Before outputting each sentence, ask: "Does a fragment say this, and can I cite it?"
-→ YES: Output it with the K[docId_chunkIndex] citation.
+→ YES: Output it with the K[citationDocId_chunkIndex] citation.
 → NO: Delete it. No exceptions. No "helpful" additions.
 `.trim()
 

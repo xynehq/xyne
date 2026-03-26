@@ -57,7 +57,10 @@ export const createCitationLink =
         chunkIndex = Math.max(chunkIndex - 1, 0)
       }
       if(showTooltip) {
-        children = (citationIndex + 1).toString()
+        // Show citation with chunk index: "1:5" or just "1" if no chunk
+        children = chunkIndex !== undefined 
+          ? `${citationIndex + 1}:${chunkIndex}` 
+          : (citationIndex + 1).toString()
       } else {
         if (!globalChunkIndexMap.has(`${citationIndex}_${chunkIndex}`)) {
           globalCount = globalCount + 1

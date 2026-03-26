@@ -195,8 +195,8 @@ function buildAttachmentDirective(): string {
     "4. State that information is unavailable only after the attachments and available tools have been used and the answer still cannot be found.",
     "",
     "# Response and citations",
-    "- Use the provided files and chunks as your knowledge base. Treat `Index {docId} ...` as the start of a document and [0], [1], [2] as chunk indices within that document.",
-    '- Cite every factual statement with the exact chunk: K[docId_chunkIndex] (docId from the file header, chunkIndex from the bracketed number). Example: "X is true K[3_12]." Use at most 1-2 citations per sentence; for two chunks use two citations: "... K[3_12] ... K[1_0]."',
+    "- Use the provided files and chunks as your knowledge base. Each document has a header like `index {citationDocId: N}` and content chunks marked with [0], [1], [2], etc.",
+    '- Cite every factual statement using the format K[citationDocId_chunkIndex] where citationDocId is the number from the header and chunkIndex is the bracketed index in the content. Example: "X is true K[3_12]." Use at most 1-2 citations per sentence; for two chunks use two citations: "... K[3_12] ... K[1_0]."',
     "- Place the citation immediately after the claim. Only cite information that appears in or is directly inferable from the cited chunk; if you cannot ground a claim, omit it.",
     "- Keep tone professional and concise; note inconsistencies across chunks when relevant and acknowledge gaps when the chunks lack detail.",
   ].join("\n")

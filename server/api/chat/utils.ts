@@ -44,10 +44,7 @@ import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
 import type { UserQuery, QueryRouterLLMResponse } from "@/ai/types"
-import {
-  OpenAIError,
-  type AttachmentMetadata,
-} from "@/shared/types"
+import { OpenAIError, type AttachmentMetadata } from "@/shared/types"
 import type {
   Citation,
   ImageCitation,
@@ -180,29 +177,40 @@ export function collectReferencedFileIdsUntilCompaction(
         if (a.fileId && !seen.has(`f:${a.fileId}`)) {
           fileIds.push(a.fileId)
           seen.add(`f:${a.fileId}`)
-          if (fileIds.length >= maxFiles) return Array.from(new Set(fileIds)).slice(0, maxFiles)
+          if (fileIds.length >= maxFiles)
+            return Array.from(new Set(fileIds)).slice(0, maxFiles)
         }
       }
     }
 
     // 2) fileIds from user messages
-    if (Array.isArray(m.fileIds) && m.fileIds.length > 0 && fileIds.length < maxFiles) {
+    if (
+      Array.isArray(m.fileIds) &&
+      m.fileIds.length > 0 &&
+      fileIds.length < maxFiles
+    ) {
       for (const fileId of m.fileIds) {
         if (!seen.has(`f:${fileId}`)) {
           fileIds.push(fileId)
           seen.add(`f:${fileId}`)
-          if (fileIds.length >= maxFiles) return Array.from(new Set(fileIds)).slice(0, maxFiles)
+          if (fileIds.length >= maxFiles)
+            return Array.from(new Set(fileIds)).slice(0, maxFiles)
         }
       }
     }
 
     // 3) sourceIds from assistant messages
-    if (Array.isArray(m.sources) && m.sources.length > 0 && fileIds.length < maxFiles) {
+    if (
+      Array.isArray(m.sources) &&
+      m.sources.length > 0 &&
+      fileIds.length < maxFiles
+    ) {
       for (const source of m.sources) {
         if (!seen.has(`f:${source.docId}`)) {
           fileIds.push(source.docId)
           seen.add(`f:${source.docId}`)
-          if (fileIds.length >= maxFiles) return Array.from(new Set(fileIds)).slice(0, maxFiles)
+          if (fileIds.length >= maxFiles)
+            return Array.from(new Set(fileIds)).slice(0, maxFiles)
         }
       }
     }
@@ -686,7 +694,7 @@ export const processMessage = (
   }
 
   text = splitGroupedCitationsWithSpaces(text)
-  
+
   // Process regular citations [N] -> remap to final citation array position
   let processed = text.replace(textToCitationIndex, (_match, num) => {
     const originalIndex = parseInt(num, 10)
@@ -696,16 +704,15 @@ export const processMessage = (
   })
 
   // Process KB citations K[docId_chunkIndex] -> convert to [N_chunkIndex] format
-  processed = processed.replace(
-    textToChunkCitationIndex,
-    (_match, docKey) => {
-      const docIndex = parseInt(docKey.split("_")[0], 10)
-      const chunkIndex = parseInt(docKey.split("_")[1], 10)
-      const finalIndex = citationMap[docIndex]
+  processed = processed.replace(textToChunkCitationIndex, (_match, docKey) => {
+    const docIndex = parseInt(docKey.split("_")[0], 10)
+    const chunkIndex = parseInt(docKey.split("_")[1], 10)
+    const finalIndex = citationMap[docIndex]
 
-      return typeof finalIndex === "number" ? `K[${finalIndex + 1}_${chunkIndex}]` : ""
-    },
-  )
+    return typeof finalIndex === "number"
+      ? `K[${finalIndex + 1}_${chunkIndex}]`
+      : ""
+  })
 
   return processed
 }
@@ -1399,9 +1406,10 @@ export const checkAndYieldCitationsForAgent = async function* (
   results: MinimalAgentFragment[],
   yieldedImageCitations?: Map<number, Set<number>>,
   email: string = "",
+  citationDocIdMapping?: Map<number, string>, // Maps citationDocId -> fragment.id
 ): AsyncGenerator<
   {
-    citation?: { index: number; item: Citation }
+    citation?: { index: number; item: Citation; chunkIndex?: number }
     imageCitation?: ImageCitation
   },
   void,
@@ -1416,6 +1424,12 @@ export const checkAndYieldCitationsForAgent = async function* (
     span.setAttribute("yielded_citations_size", yieldedCitations.size)
     span.setAttribute("has_image_citations", !!yieldedImageCitations)
     span.setAttribute("user_email", email)
+    span.setAttribute("has_citation_mapping", !!citationDocIdMapping)
+
+    const fragmentById = new Map<string, MinimalAgentFragment>()
+    for (const fragment of results) {
+      fragmentById.set(fragment.id, fragment)
+    }
 
     const text = splitGroupedCitationsWithSpaces(textInput)
     let match
@@ -1425,25 +1439,50 @@ export const checkAndYieldCitationsForAgent = async function* (
     let imageCitationsProcessed = 0
     let citationsYielded = 0
     let imageCitationsYielded = 0
+    
+    // Track which (citationDocId, chunkIndex) pairs have been yielded to prevent inline duplicates
+    const yieldedChunkCitations = new Set<string>()
+    
     while (
       (match = textToCitationIndex.exec(text)) !== null ||
       (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
-      ((chunkMatch = textToChunkCitationIndex.exec(text)) !== null)
+      (chunkMatch = textToChunkCitationIndex.exec(text)) !== null
     ) {
       if (match || chunkMatch) {
         citationsProcessed++
-        let citationIndex = 0
+        let citationDocId = 0
+        let chunkIndex: number | undefined
+        
         if (match) {
-          citationIndex = parseInt(match[1], 10)
+          citationDocId = parseInt(match[1], 10)
         } else if (chunkMatch) {
-          citationIndex = parseInt(chunkMatch[1].split("_")[0], 10)
+          const parts = chunkMatch[1].split("_")
+          citationDocId = parseInt(parts[0], 10)
+          chunkIndex = parseInt(parts[1], 10)
         }
-        if (!yieldedCitations.has(citationIndex)) {
-          const item = results[citationIndex - 1]
+        
+        // Create compound key for chunk-level deduplication
+        const citationKey = chunkIndex !== undefined 
+          ? `${citationDocId}_${chunkIndex}` 
+          : String(citationDocId)
+          
+        if (!yieldedChunkCitations.has(citationKey)) {
+          let item: MinimalAgentFragment | undefined
+
+          if (citationDocIdMapping && citationDocIdMapping.size > 0) {
+            // Use citation mapping for reliable lookup
+            const fragmentId = citationDocIdMapping.get(citationDocId)
+            if (fragmentId) {
+              item = fragmentById.get(fragmentId)
+            }
+          } else {
+            // Fallback to old index-based lookup for backward compatibility
+            item = results[citationDocId - 1]
+          }
 
           if (!item) {
             loggerWithChild({ email: email }).warn(
-              `[checkAndYieldCitationsForAgent] Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
+              `[checkAndYieldCitationsForAgent] Found a citation but could not map it to a search result: citationDocId=${citationDocId}, hasMapping=${!!citationDocIdMapping}, resultsCount=${results.length}`,
             )
             continue
           }
@@ -1455,13 +1494,22 @@ export const checkAndYieldCitationsForAgent = async function* (
             continue
           }
 
+          // Yield citation with chunk info if available
+          // Only add to yieldedCitations (for sources dedup) on first occurrence of this doc
+          const isFirstDocOccurrence = !yieldedCitations.has(citationDocId)
+          
           yield {
             citation: {
-              index: citationIndex,
+              index: citationDocId,
               item: item.source,
+              chunkIndex,
             },
           }
-          yieldedCitations.add(citationIndex)
+          
+          yieldedChunkCitations.add(citationKey)
+          if (isFirstDocOccurrence) {
+            yieldedCitations.add(citationDocId)
+          }
           citationsYielded++
         }
       } else if (imgMatch && yieldedImageCitations) {
@@ -1589,7 +1637,10 @@ export const formatAgentScopesText = (agent: SelectAgent): string => {
 
   // Extract apps from appIntegrations
   if (agent.appIntegrations) {
-    if (typeof agent.appIntegrations === "object" && !Array.isArray(agent.appIntegrations)) {
+    if (
+      typeof agent.appIntegrations === "object" &&
+      !Array.isArray(agent.appIntegrations)
+    ) {
       // AppSelectionMap format
       const appNames: string[] = []
       for (const [appKey, selection] of Object.entries(agent.appIntegrations)) {

@@ -209,6 +209,10 @@ export interface XyneAgentState {
   // Seen documents (for dedup across turns)
   seenDocuments: Set<string>
 
+  // Citation mapping for reliable citation resolution
+  // Maps citationDocId (1, 2, 3...) to fragment.id
+  citationDocIdMapping: Map<number, string>
+
   // Stop/abort control
   stopController?: AbortController
   stopSignal?: AbortSignal
@@ -479,6 +483,7 @@ export function createInitialXyneState(
     userContext: "",
     conversationHistoryMessages: [],
     seenDocuments: new Set(),
+    citationDocIdMapping: new Map(),
     stopRequested: false,
     thinkingLog: "",
   }

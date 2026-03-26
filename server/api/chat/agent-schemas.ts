@@ -1,6 +1,6 @@
 /**
  * JAF-Based Agentic Architecture Schemas
- * 
+ *
  * Core data structures for the agentic system with intelligent tool orchestration,
  * automatic review, and adaptive planning.
  */
@@ -8,10 +8,9 @@
 import { z } from "zod"
 import type { Message as JAFMessage } from "@xynehq/jaf"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
-import type {
-  FragmentImageReference,
-  MinimalAgentFragment,
-} from "./types"
+import type { Span } from "@/tracer"
+import type { MinimalAgentFragment, FragmentImageReference } from "./types"
+import type { CitationDocIdMapping } from "./message-agents-metadata"
 import type { ReasoningEventPayload } from "@/shared/types"
 
 export interface ToolExecutionRecordWithResult {
@@ -78,6 +77,7 @@ export interface PlanState {
  * Clarification tracking for ambiguous queries
  */
 export interface Clarification {
+  id: string
   question: string
   answer: string
   timestamp: number
@@ -99,7 +99,11 @@ export interface ToolFailureInfo {
 export interface Decision {
   id: string
   timestamp: number
-  type: "tool_selection" | "plan_modification" | "strategy_change" | "error_recovery"
+  type:
+    | "tool_selection"
+    | "plan_modification"
+    | "strategy_change"
+    | "error_recovery"
   reasoning: string
   outcome: "success" | "failure" | "pending"
   relatedToolCalls: string[]
@@ -205,6 +209,7 @@ export interface AgentRunContext {
   seenDocuments: Set<string> // Vespa doc ids already seen (fed into excludedIds to prevent re-fetch)
   allFragments: MinimalAgentFragment[]
   turnFragments: Map<number, MinimalAgentFragment[]>
+  citationDocIdMapping: CitationDocIdMapping // Maps citationDocId (1, 2, 3...) to fragment.id for reliable citation resolution
   allImages: FragmentImageReference[]
   imagesByTurn: Map<number, FragmentImageReference[]>
   recentImages: FragmentImageReference[]
@@ -360,9 +365,15 @@ export type ListCustomAgentsInput = z.infer<typeof ListCustomAgentsInputSchema>
 
 export const SubTaskSchema = z.object({
   id: z.string(),
-  description: z.string().describe("Clear description of what this sub-goal achieves"),
-  status: z.enum(["pending", "in_progress", "completed", "blocked", "failed"]).default("pending"),
-  toolsRequired: z.array(z.string()).describe("All tools needed to achieve this sub-goal"),
+  description: z
+    .string()
+    .describe("Clear description of what this sub-goal achieves"),
+  status: z
+    .enum(["pending", "in_progress", "completed", "blocked", "failed"])
+    .default("pending"),
+  toolsRequired: z
+    .array(z.string())
+    .describe("All tools needed to achieve this sub-goal"),
   result: z.string().optional(),
   completedAt: z.number().optional(),
   error: z.string().optional(),
@@ -387,7 +398,9 @@ export const RunPublicAgentInputSchema = z.object({
   maxTokens: z
     .number()
     .optional()
-    .describe("Optional upper bound on tokens/cost for the delegated agent output"),
+    .describe(
+      "Optional upper bound on tokens/cost for the delegated agent output",
+    ),
 })
 
 export type RunPublicAgentInput = z.infer<typeof RunPublicAgentInputSchema>

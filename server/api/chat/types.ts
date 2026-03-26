@@ -81,6 +81,8 @@ export const MinimalCitationSchema = z.object({
   closedAt: z.string().optional(), // ISO timestamp for ticket closure
   status: z.string().optional(), // Ticket status (Open, Closed, etc.)
   ticketNumber: z.string().optional(), // Ticket number
+
+  chunkIndices: z.array(z.number()).optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>

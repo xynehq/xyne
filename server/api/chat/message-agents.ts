@@ -29,7 +29,11 @@ import {
   getAgentByExternalIdWithPermissionCheck,
 } from "@/db/agent"
 import { storeAttachmentMetadata } from "@/db/attachment"
-import { getChatExternalIdsByAgentId, insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
+import {
+  getChatExternalIdsByAgentId,
+  insertChat,
+  updateChatByExternalIdWithAuth,
+} from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
 import { db } from "@/db/client"
 import { getConnectorById } from "@/db/connector"
@@ -147,6 +151,7 @@ import {
   rankFragmentsByMetadataConstraints,
   sanitizeAgentSystemPromptSnapshot,
   withAgentSystemPromptMessage,
+  type FormattedFragmentsResult,
 } from "./message-agents-metadata"
 import {
   ReasoningSteps,
@@ -1072,18 +1077,14 @@ function sanitizeChatMemoryForLLMContext(
   if (!chatMemoryText?.trim()) return undefined
   const sanitized = chatMemoryText
     .split("\n")
-    .filter(
-      (line) => !line.trimStart().startsWith("Assistant thinking:"),
-    )
+    .filter((line) => !line.trimStart().startsWith("Assistant thinking:"))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
   return sanitized ? sanitized : undefined
 }
 
-function buildLLMMemoryContextSection(
-  context: AgentRunContext,
-): string {
+function buildLLMMemoryContextSection(context: AgentRunContext): string {
   const parts: string[] = []
   if (context.episodicMemoriesText?.trim()) {
     parts.push(`Relevant Past Experiences:\n${context.episodicMemoriesText}`)
@@ -1101,7 +1102,11 @@ function buildLLMMemoryContextSection(
 export function buildFinalSynthesisPayload(
   context: AgentRunContext,
   options?: FinalSynthesisBuildOptions,
-): { systemPrompt: string; userMessage: string } {
+): {
+  systemPrompt: string
+  userMessage: string
+  citationDocIdMapping: Map<number, string>
+} {
   const fragmentsLimit =
     options?.fragmentsLimit ?? Math.max(12, context.allFragments.length || 1)
   const fragments = context.allFragments
@@ -1111,10 +1116,8 @@ export function buildFinalSynthesisPayload(
   const agentSystemPromptSection = agentSystemPromptBlock
     ? `Agent System Prompt Context:\n${agentSystemPromptBlock}`
     : ""
-  const formattedFragments = formatFragmentsWithMetadata(
-    fragments,
-    fragmentsLimit,
-  )
+  const { formatted: formattedFragments, citationDocIdMapping } =
+    formatFragmentsWithMetadata(fragments, fragmentsLimit)
   const fragmentsSection = formattedFragments
     ? `Context Fragments:\n${formattedFragments}`
     : ""
@@ -1166,17 +1169,17 @@ export function buildFinalSynthesisPayload(
 
 ### Response Construction
 - Lead with the conclusion, then stack proof underneath.
-- Organize output into tight sections (e.g., **Summary**, **Proof**, **Next Steps** when relevant); omit empty sections.
+- Organize output into tight sections (e.g. **Summary**, **Proof**, **Next Steps** when relevant); omit empty sections.
 - Never mention internal tooling, planning logs, or this synthesis process.
 
 ### Constraint Handling
-- When the user asks for an action the system cannot execute (e.g., sending an email), deliver the closest actionable substitute (draft, checklist, explicit next steps) inside the answer.
+- When the user asks for an action the system cannot execute (e.g. sending an email), deliver the closest actionable substitute (draft, checklist, explicit next steps) inside the answer.
 - Pair the substitute with a concise explanation of the limitation and the manual action the user must take.
 
 ### File & Chunk Formatting (CRITICAL)
 - Each file starts with a header line exactly like:
-  index {docId} {file context begins here...}
-- \`docId\` is a unique identifier for that file (e.g., 0, 1, 2, etc.).
+  index {citationDocId: N} {file context begins here...}
+- \`citationDocId\` is a simple serial number (1, 2, 3, etc.) assigned to each document.
 - Inside the file context, text is split into chunks.
 - Each chunk might begin with a bracketed numeric index, e.g.: [0], [1], [2], etc.
 - This is the chunk index within that file, if it exists.
@@ -1184,27 +1187,27 @@ export function buildFinalSynthesisPayload(
 ### Guidelines for Response
 1. Data Interpretation:
    - Use ONLY the provided files and their chunks as your knowledge base.
-   - Treat every file header \`index {docId} ...\` as the start of a new document.
+   - Treat every file header \`index {citationDocId: N} ...\` as the start of a new document.
    - Treat every bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
    - If dates exist, interpret them relative to the user's timezone when paraphrasing.
 2. Response Structure:
    - Start with the most relevant facts from the chunks across files.
    - Keep order chronological when it helps comprehension.
    - Every factual statement MUST cite the exact chunk it came from using the format:
-     K[docId_chunkIndex]
+     K[citationDocId_chunkIndex]
      where:
-       - \`docId\` is taken from the file header line ("index {docId} ...").
+       - \`citationDocId\` is taken from the file header line ("index {citationDocId: N} ...").
        - \`chunkIndex\` is the bracketed number prefixed on that chunk within the same file.
    - Examples:
-     - Single citation: "X is true K[12_3]."
-     - Two citations in one sentence (from different files or chunks): "X K[12_3] and Y K[7_0]."
+     - Single citation: "X is true K[3_12]." (document 3, chunk 12)
+     - Two citations in one sentence (from different files or chunks): "X K[3_12] and Y K[1_0]."
    - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
 3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
-   - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
-   - Every chunk level citation must start with the K prefix eg. K[12_3] K[7_0] correct, but K[12_3] [7_0] is incorrect.
+   - ALWAYS cite at the chunk level with the K[citationDocId_chunkIndex] format.
+   - Every chunk level citation must start with the K prefix eg. K[3_12] K[1_0] correct, but K[3_12] [1_0] is incorrect.
    - Place the citation immediately after the relevant claim.
-   - Do NOT group indices inside one set of brackets (WRONG: "K[12_3,7_1]").
-   - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[12_3] ... K[7_1]".
+   - Do NOT group indices inside one set of brackets (WRONG: "K[3_12,1_7]").
+   - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g. "... K[3_12] ... K[1_7]".
    - Only cite information that appears verbatim or is directly inferable from the cited chunk.
    - If you cannot ground a claim to a specific chunk, do not make the claim.
 4. Quality Assurance:
@@ -1218,15 +1221,15 @@ export function buildFinalSynthesisPayload(
 - Ask one targeted follow-up question only if missing info blocks action.
 
 ### Tool Spotlighting
-- Reference critical tool outputs explicitly, e.g., "**Slack Search:** Ops escalated the RCA at 09:42 [2]."
+- Reference critical tool outputs explicitly, e.g. "**Slack Search:** Ops escalated the RCA at 09:42 [2]."
 - Explain why each highlighted tool mattered so reviewers see coverage breadth.
-- When multiple tools contribute, show the sequence, e.g., "**Vespa Search:** context -> **Sheet Lookup:** metrics."
+- When multiple tools contribute, show the sequence, e.g. "**Vespa Search:** context -> **Sheet Lookup:** metrics."
 
 ### Finish
 - Close with a single sentence confirming completion or the next action you recommend.
 `.trim()
 
-  return { systemPrompt, userMessage }
+  return { systemPrompt, userMessage, citationDocIdMapping }
 }
 
 export function buildFinalSynthesisRequest(
@@ -1345,7 +1348,11 @@ function buildInitialToolMessage(options: {
     )
   }
   if (options.chatMemoryText?.trim()) {
-    parts.push("## Earlier Conversation Context\n", options.chatMemoryText.trim(), "\n")
+    parts.push(
+      "## Earlier Conversation Context\n",
+      options.chatMemoryText.trim(),
+      "\n",
+    )
   }
   if (parts.length === 0) return null
   const content = parts.join("")
@@ -1485,6 +1492,7 @@ function initializeAgentContext(
       options?.stopController?.signal?.aborted ??
       options?.stopSignal?.aborted ??
       false,
+    citationDocIdMapping: new Map(),
   }
   logContextMutation(
     context,
@@ -1624,7 +1632,7 @@ async function handleReviewOutcome(
     )
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.anomaliesDetected(reviewResult.anomalies ?? [])
+      ReasoningSteps.anomaliesDetected(reviewResult.anomalies ?? []),
     )
   }
 }
@@ -1977,7 +1985,9 @@ async function prepareInitialAttachmentContext(
           userMetadata,
           query,
           allowChunkCitations,
-          idx < chunksPerDocument.length ? chunksPerDocument[idx] : maxSummaryChunks,
+          idx < chunksPerDocument.length
+            ? chunksPerDocument[idx]
+            : maxSummaryChunks,
           precomputedDbContext,
         ),
       ),
@@ -2024,7 +2034,7 @@ export async function beforeToolExecutionHook(
   if (!validation.success) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolValidationError(toolName, validation.error.message)
+      ReasoningSteps.toolValidationError(toolName, validation.error.message),
     )
     Logger.warn(
       `Tool input validation failed for ${toolName}: ${validation.error.message}`,
@@ -2044,7 +2054,7 @@ export async function beforeToolExecutionHook(
   if (isDuplicate) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolSkippedDuplicate(toolName)
+      ReasoningSteps.toolSkippedDuplicate(toolName),
     )
     return null // Skip execution
   }
@@ -2057,7 +2067,7 @@ export async function beforeToolExecutionHook(
     const turnsLeft = info.cooldownUntilTurn - context.turnCount
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolSkippedCooldown(toolName, turnsLeft)
+      ReasoningSteps.toolSkippedCooldown(toolName, turnsLeft),
     )
     return null // Skip execution — tool is also removed from tool list
   }
@@ -2251,13 +2261,17 @@ export async function afterToolExecutionHook(
     const enteredCooldown = cooldownMgr.recordFailure(
       toolName,
       record.error!.message,
-      context.turnCount
+      context.turnCount,
     )
     if (enteredCooldown) {
       const info = cooldownMgr.getCooldownInfo(toolName)!
       await emitReasoningEvent(
         reasoningEmitter,
-        ReasoningSteps.toolCooldownApplied(toolName, info.count, info.cooldownUntilTurn - context.turnCount)
+        ReasoningSteps.toolCooldownApplied(
+          toolName,
+          info.count,
+          info.cooldownUntilTurn - context.turnCount,
+        ),
       )
     }
   }
@@ -2323,16 +2337,18 @@ export async function afterToolExecutionHook(
 
       await emitReasoningEvent(
         reasoningEmitter,
-        ReasoningSteps.documentsFound(filteredContexts.length, toolName)
+        ReasoningSteps.documentsFound(filteredContexts.length, toolName),
       )
 
       // Store unranked fragments keyed by tool — one batch per searchGlobal invocation (provenance preserved)
-      const toolQuery = extractToolQuery(toolName, args as Record<string, unknown>) ?? ""
-      const key = toolName+":"+toolQuery
-      const existing = context.currentTurnArtifacts.unrankedFragmentsByTool.get(key)
+      const toolQuery =
+        extractToolQuery(toolName, args as Record<string, unknown>) ?? ""
+      const key = toolName + ":" + toolQuery
+      const existing =
+        context.currentTurnArtifacts.unrankedFragmentsByTool.get(key)
       const mergedFragments = mergeFragmentLists(
         existing?.fragments ?? [],
-        filteredContexts
+        filteredContexts,
       )
       context.currentTurnArtifacts.unrankedFragmentsByTool.set(key, {
         query: toolQuery,
@@ -2343,9 +2359,10 @@ export async function afterToolExecutionHook(
         {
           toolName,
           deferredCount: filteredContexts.length,
-          totalDeferredForTool: (existing?.fragments?.length ?? 0) + filteredContexts.length,
+          totalDeferredForTool:
+            (existing?.fragments?.length ?? 0) + filteredContexts.length,
         },
-        "[afterToolExecutionHook] Fragments deferred to turn-end batch ranking"
+        "[afterToolExecutionHook] Fragments deferred to turn-end batch ranking",
       )
     }
   }
@@ -2372,7 +2389,11 @@ export async function afterToolExecutionHook(
         reasoningEmitter,
         ReasoningSteps.planCreated(
           plan.goal || "Goal not specified",
-          plan.subTasks.map((t) => ({ id: t.id, description: t.description, status: t.status })),
+          plan.subTasks.map((t) => ({
+            id: t.id,
+            description: t.description,
+            status: t.status,
+          })),
         ),
       )
     }
@@ -2390,7 +2411,11 @@ export async function afterToolExecutionHook(
       reasoningEmitter,
       ReasoningSteps.planCreated(
         context.plan.goal || "Goal not specified",
-        context.plan.subTasks.map((t) => ({ id: t.id, description: t.description, status: t.status })),
+        context.plan.subTasks.map((t) => ({
+          id: t.id,
+          description: t.description,
+          status: t.status,
+        })),
       ),
     )
   }
@@ -2401,12 +2426,14 @@ export async function afterToolExecutionHook(
     typeof result === "object" &&
     result.status === "success"
   ) {
-    const agents = (result?.data as { agents?: ListCustomAgentsOutput["agents"] })?.agents
+    const agents = (
+      result?.data as { agents?: ListCustomAgentsOutput["agents"] }
+    )?.agents
     const agentCount = Array.isArray(agents) ? agents.length : 0
     const agentNames = agentCount ? agents?.map((a) => a.agentName) : undefined
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.agentsFound(agentCount, agentNames)
+      ReasoningSteps.agentsFound(agentCount, agentNames),
     )
   }
 
@@ -2441,7 +2468,7 @@ export async function afterToolExecutionHook(
       ?.delegationRunId
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.agentCompleted(agentName, delegationRunId)
+      ReasoningSteps.agentCompleted(agentName, delegationRunId),
     )
   }
 
@@ -2454,7 +2481,7 @@ export async function afterToolExecutionHook(
   ) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.fallbackCompleted()
+      ReasoningSteps.fallbackCompleted(),
     )
   }
 
@@ -2483,7 +2510,7 @@ export async function afterToolExecutionHook(
   if (toolName !== XyneTools.runPublicAgent) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.toolCompleted(toolName, record.status === "error")
+      ReasoningSteps.toolCompleted(toolName, record.status === "error"),
     )
   }
 
@@ -2804,12 +2831,15 @@ async function batchRankFragments(
   userMessage: string,
   messagesWithNoErrResponse: Message[],
   turnNumber: number,
-  reasoningEmitter?: ReasoningEmitter
+  reasoningEmitter?: ReasoningEmitter,
 ): Promise<MinimalAgentFragment[]> {
   if (allUnrankedWithToolContext.length === 0) return []
 
   const allUnranked = allUnrankedWithToolContext.map((e) => e.fragment)
-  const fragmentKeyToToolContext = new Map<string, { toolName: string; toolQuery: string }>()
+  const fragmentKeyToToolContext = new Map<
+    string,
+    { toolName: string; toolQuery: string }
+  >()
   for (const { fragment, toolName, toolQuery } of allUnrankedWithToolContext) {
     const key = getFragmentDedupKey(fragment) || fragment.id || ""
     if (!fragmentKeyToToolContext.has(key)) {
@@ -2817,7 +2847,8 @@ async function batchRankFragments(
     }
   }
 
-  const metadataConstraints = extractMetadataConstraintsFromUserMessage(userMessage)
+  const metadataConstraints =
+    extractMetadataConstraintsFromUserMessage(userMessage)
   const {
     rankedCandidates,
     hasConstraints: hasMetadataConstraints,
@@ -2825,11 +2856,14 @@ async function batchRankFragments(
   } = rankFragmentsByMetadataConstraints(allUnranked, metadataConstraints)
   const rankingCandidates = rankedCandidates.map((c) => c.fragment)
   const strictNoCompliantCandidates =
-    hasMetadataConstraints && metadataConstraints.strict && !hasCompliantCandidates
+    hasMetadataConstraints &&
+    metadataConstraints.strict &&
+    !hasCompliantCandidates
 
   /** Skip ranking LLM when fragments already fit context; use all and record. */
   const RANKING_CONTEXT_WINDOW_CAPACITY = 8
-  const skipRankingLLM = rankingCandidates.length <= RANKING_CONTEXT_WINDOW_CAPACITY
+  const skipRankingLLM =
+    rankingCandidates.length <= RANKING_CONTEXT_WINDOW_CAPACITY
 
   if (!skipRankingLLM) {
     await emitReasoningEvent(
@@ -2838,11 +2872,14 @@ async function batchRankFragments(
     )
     if (hasMetadataConstraints) {
       if (strictNoCompliantCandidates) {
-        await emitReasoningEvent(reasoningEmitter, ReasoningSteps.metadataNoMatch())
+        await emitReasoningEvent(
+          reasoningEmitter,
+          ReasoningSteps.metadataNoMatch(),
+        )
       } else {
         await emitReasoningEvent(
           reasoningEmitter,
-          ReasoningSteps.metadataFilterApplied(hasCompliantCandidates)
+          ReasoningSteps.metadataFilterApplied(hasCompliantCandidates),
         )
       }
     }
@@ -2853,7 +2890,9 @@ async function batchRankFragments(
   if (skipRankingLLM) {
     selectedDocs = strictNoCompliantCandidates
       ? []
-      : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
+      : hasMetadataConstraints &&
+          metadataConstraints.strict &&
+          hasCompliantCandidates
         ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
         : rankingCandidates
   } else {
@@ -2865,89 +2904,101 @@ async function batchRankFragments(
           fragment,
           index,
           toolContext?.toolName,
-          toolContext?.toolQuery
+          toolContext?.toolQuery,
         )
-      }
+      },
     )
 
-  try {
-    const rankingModelId = (context.modelId as Models) || config.defaultBestModel
-    const selectionSpan = getTracer("chat").startSpan("batch_select_best_documents")
-    selectionSpan.setAttribute("total_unranked", allUnrankedWithToolContext.length)
-    selectionSpan.setAttribute("context_count", contextStrings.length)
-
-    let bestDocIndexes: number[] = []
     try {
-      const rankingMessages = withAgentSystemPromptMessage(
-        messagesWithNoErrResponse,
-        context.dedicatedAgentSystemPrompt
+      const rankingModelId =
+        (context.modelId as Models) || config.defaultBestModel
+      const selectionSpan = getTracer("chat").startSpan(
+        "batch_select_best_documents",
       )
       selectionSpan.setAttribute(
-        "has_agent_system_prompt_snapshot",
-        !!sanitizeAgentSystemPromptSnapshot(context.dedicatedAgentSystemPrompt)
+        "total_unranked",
+        allUnrankedWithToolContext.length,
       )
-      bestDocIndexes = await extractBestDocumentIndexes(
-        userMessage,
-        contextStrings,
-        { modelId: rankingModelId, json: false, stream: false },
-        rankingMessages
-      )
-      selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
+      selectionSpan.setAttribute("context_count", contextStrings.length)
+
+      let bestDocIndexes: number[] = []
+      try {
+        const rankingMessages = withAgentSystemPromptMessage(
+          messagesWithNoErrResponse,
+          context.dedicatedAgentSystemPrompt,
+        )
+        selectionSpan.setAttribute(
+          "has_agent_system_prompt_snapshot",
+          !!sanitizeAgentSystemPromptSnapshot(
+            context.dedicatedAgentSystemPrompt,
+          ),
+        )
+        bestDocIndexes = await extractBestDocumentIndexes(
+          userMessage,
+          contextStrings,
+          { modelId: rankingModelId, json: false, stream: false },
+          rankingMessages,
+        )
+        selectionSpan.setAttribute("selected_count", bestDocIndexes.length)
+      } catch (error) {
+        selectionSpan.setAttribute("error", true)
+        selectionSpan.setAttribute("error_message", getErrorMessage(error))
+        throw error
+      } finally {
+        selectionSpan.end()
+      }
+
+      if (bestDocIndexes.length > 0) {
+        bestDocIndexes.forEach((idx) => {
+          if (idx >= 1 && idx <= rankingCandidates.length) {
+            selectedDocs.push(rankingCandidates[idx - 1])
+          }
+        })
+        selectedDocs = enforceMetadataConstraintsOnSelection(
+          selectedDocs,
+          rankedCandidates,
+          metadataConstraints,
+        )
+      }
+
+      if (selectedDocs.length === 0) {
+        // Fallback: use all candidates (or compliant-only if strict)
+        selectedDocs = strictNoCompliantCandidates
+          ? []
+          : hasMetadataConstraints &&
+              metadataConstraints.strict &&
+              hasCompliantCandidates
+            ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
+            : rankingCandidates
+      }
     } catch (error) {
-      selectionSpan.setAttribute("error", true)
-      selectionSpan.setAttribute("error_message", getErrorMessage(error))
-      throw error
-    } finally {
-      selectionSpan.end()
-    }
-
-    if (bestDocIndexes.length > 0) {
-      bestDocIndexes.forEach((idx) => {
-        if (idx >= 1 && idx <= rankingCandidates.length) {
-          selectedDocs.push(rankingCandidates[idx - 1])
-        }
-      })
-      selectedDocs = enforceMetadataConstraintsOnSelection(
-        selectedDocs,
-        rankedCandidates,
-        metadataConstraints
+      loggerWithChild({ email: context.user.email }).error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          totalUnranked: allUnranked.length,
+        },
+        "[batchRankFragments] Ranking failed — falling back to all candidates",
       )
-    }
-
-    if (selectedDocs.length === 0) {
-      // Fallback: use all candidates (or compliant-only if strict)
+      await emitReasoningEvent(
+        reasoningEmitter,
+        ReasoningSteps.rankingFailed(strictNoCompliantCandidates),
+      )
+      // Apply same metadata-based filtering as success-path fallback so strict mode
+      // does not reintroduce non-compliant fragments.
       selectedDocs = strictNoCompliantCandidates
         ? []
-        : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
-        ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
-        : rankingCandidates
+        : hasMetadataConstraints &&
+            metadataConstraints.strict &&
+            hasCompliantCandidates
+          ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
+          : rankingCandidates
     }
-  } catch (error) {
-    loggerWithChild({ email: context.user.email }).error(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        totalUnranked: allUnranked.length,
-      },
-      "[batchRankFragments] Ranking failed — falling back to all candidates"
-    )
-    await emitReasoningEvent(
-      reasoningEmitter,
-      ReasoningSteps.rankingFailed(strictNoCompliantCandidates)
-    )
-    // Apply same metadata-based filtering as success-path fallback so strict mode
-    // does not reintroduce non-compliant fragments.
-    selectedDocs = strictNoCompliantCandidates
-      ? []
-      : hasMetadataConstraints && metadataConstraints.strict && hasCompliantCandidates
-        ? rankedCandidates.filter((c) => c.compliant).map((c) => c.fragment)
-        : rankingCandidates
-  }
   }
 
   if (selectedDocs.length > 0) {
     await emitReasoningEvent(
       reasoningEmitter,
-      ReasoningSteps.documentsFiltered(selectedDocs.length)
+      ReasoningSteps.documentsFiltered(selectedDocs.length),
     )
 
     // Extract images from selected documents
@@ -2960,7 +3011,7 @@ async function batchRankFragments(
       const combinedContext = selectedDocs.map((doc) => doc.content).join("\n")
       const { imageFileNames: extractedImages } = extractImageFileNames(
         combinedContext,
-        vespaLikeResults
+        vespaLikeResults,
       )
       if (extractedImages.length > 0) {
         selectedDocs = attachImagesToFragments(selectedDocs, extractedImages, {
@@ -3041,9 +3092,7 @@ export function buildReviewPromptFromContext(
             r.unmetExpectations?.length
               ? `Unmet expectations: ${r.unmetExpectations.join("; ")}`
               : "",
-            r.anomalies?.length
-              ? `Anomalies: ${r.anomalies.join("; ")}`
-              : "",
+            r.anomalies?.length ? `Anomalies: ${r.anomalies.join("; ")}` : "",
           ].filter(Boolean)
           return `Previous review summary (for continuity):\n${parts.join("\n")}`
         })()
@@ -4047,14 +4096,21 @@ function buildAgentInstructions(
   agentPrompt?: string,
   delegationEnabled = true,
 ): string {
-  const availableToolNames = enabledToolNames.filter((tool) => context.enabledTools.has(tool))
-  const toolDescriptions = availableToolNames.length > 0
-    ? generateToolDescriptions(availableToolNames)
-    : "No tools available yet. "
+  const availableToolNames = enabledToolNames.filter((tool) =>
+    context.enabledTools.has(tool),
+  )
+  const toolDescriptions =
+    availableToolNames.length > 0
+      ? generateToolDescriptions(availableToolNames)
+      : "No tools available yet. "
 
   const cooldownMgr = new ToolCooldownManager(context.failedTools)
   const toolsInCooldown = enabledToolNames
-    .filter((t) => !context.enabledTools.has(t) && cooldownMgr.isInCooldown(t, context.turnCount))
+    .filter(
+      (t) =>
+        !context.enabledTools.has(t) &&
+        cooldownMgr.isInCooldown(t, context.turnCount),
+    )
     .map((name) => ({ name, info: cooldownMgr.getCooldownInfo(name)! }))
   const cooldownBlock =
     toolsInCooldown.length > 0
@@ -4064,25 +4120,26 @@ function buildAgentInstructions(
           "The following tools are temporarily disabled due to repeated failures. Use other tools or data sources instead.",
           ...toolsInCooldown.map(
             ({ name, info }) =>
-              `- ${name}: failed ${info.count}x (last: ${info.lastError || "error"}), ${info.cooldownUntilTurn - context.turnCount} turn(s) remaining.`
+              `- ${name}: failed ${info.count}x (last: ${info.lastError || "error"}), ${info.cooldownUntilTurn - context.turnCount} turn(s) remaining.`,
           ),
           "</tools_in_cooldown>",
           "",
         ].join("\n")
       : ""
 
-  const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
+  const agentSection = agentPrompt
+    ? `\n\nAgent Constraints:\n${agentPrompt}`
+    : ""
   const attachmentDirective = buildAttachmentDirective(context)
   const promptAddendum = buildAgentPromptAddendum()
-  const reviewResultBlock =
-    context.review.lastReviewResult
-      ? [
-          "<last_review_result>",
-          JSON.stringify(context.review.lastReviewResult, null, 2),
-          "</last_review_result>",
-          "",
-        ].join("\n")
-      : ""
+  const reviewResultBlock = context.review.lastReviewResult
+    ? [
+        "<last_review_result>",
+        JSON.stringify(context.review.lastReviewResult, null, 2),
+        "</last_review_result>",
+        "",
+      ].join("\n")
+    : ""
 
   let planSection = "\n<plan>\n"
   if (context.plan) {
@@ -4112,8 +4169,11 @@ function buildAgentInstructions(
     : ""
 
   const isFirstTurn = context.turnCount === 1
-  const workingMemoryMessages = config.MEMORY_CONFIG?.WORKING_MEMORY_MESSAGES ?? 6
-  const conversationContext = isFirstTurn ? `You are given only the last ${workingMemoryMessages} messages of this chat in context. Use \`searchChatHistory\` when you need to recall or search older messages.` : '';
+  const workingMemoryMessages =
+    config.MEMORY_CONFIG?.WORKING_MEMORY_MESSAGES ?? 6
+  const conversationContext = isFirstTurn
+    ? `You are given only the last ${workingMemoryMessages} messages of this chat in context. Use \`searchChatHistory\` when you need to recall or search older messages.`
+    : ""
 
   const instructionLines: string[] = [
     "You are Xyne, an enterprise search assistant with agentic capabilities.",
@@ -4175,7 +4235,8 @@ function buildAgentInstructions(
           "- Track each `clarificationQuestions` entry as its own sub-task or outbound user question until the ambiguity is resolved inside <last_review_result>.",
           "- If review feedback demands a brand-new approach, rebuild the plan; otherwise refine the existing tasks.",
           "- If no plan change is needed, explicitly mark the tasks `in_progress` or `completed` so the reviewer sees momentum.",
-        ] : []),
+        ]
+      : []),
     "- Maintain one sub-task per concrete goal; list only the tools truly needed for that sub-task.",
     "- Only chain subtasks when real dependencies exist—for example, “fetch the people who messaged me today → gather the emails received from them → summarize the combined thread” keeps later steps paused until earlier outputs arrive.",
     "- After every tool run, immediately update the active sub-task’s status, result, and any newly required tasks so the plan mirrors reality.",
@@ -4705,8 +4766,12 @@ export async function MessageAgents(c: Context): Promise<Response> {
             : undefined
 
         // Memory retrieval is best-effort; failures should not block message handling
-        let episodicMemories: Awaited<ReturnType<typeof retrieveEpisodicMemories>> = []
-        let chatMemoryChunks: Awaited<ReturnType<typeof retrieveRelevantChatHistory>> = []
+        let episodicMemories: Awaited<
+          ReturnType<typeof retrieveEpisodicMemories>
+        > = []
+        let chatMemoryChunks: Awaited<
+          ReturnType<typeof retrieveRelevantChatHistory>
+        > = []
         try {
           const [episodicResults, chatMemoryResults] = await Promise.all([
             retrieveEpisodicMemories({
@@ -5051,7 +5116,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         if (allReferencedFileIds.length > 0) {
           await emitReasoningEvent(
             emitReasoningStep,
-            ReasoningSteps.attachmentAnalyzing()
+            ReasoningSteps.attachmentAnalyzing(),
           )
           initialAttachmentContext = await prepareInitialAttachmentContext(
             allReferencedFileIds,
@@ -5064,7 +5129,9 @@ export async function MessageAgents(c: Context): Promise<Response> {
           if (initialAttachmentContext) {
             await emitReasoningEvent(
               emitReasoningStep,
-              ReasoningSteps.attachmentExtracted(initialAttachmentContext.fragments.length)
+              ReasoningSteps.attachmentExtracted(
+                initialAttachmentContext.fragments.length,
+              ),
             )
           }
         }
@@ -5312,7 +5379,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
           await runTurnEndPipeline(agentContext, {
             turn,
             useAgenticFiltering: USE_AGENTIC_FILTERING,
-            reviewFrequency: agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
+            reviewFrequency:
+              agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
             minTurnNumber: MIN_TURN_NUMBER,
             emitter: emitReasoningStep,
 
@@ -5331,14 +5399,19 @@ export async function MessageAgents(c: Context): Promise<Response> {
             getExpectationsForTurn: (t) => expectationHistory.get(t) || [],
 
             // Wiring: batch fragment ranking
-            rankFragments: async (ctx, allUnrankedWithToolContext, t, emitter) => {
+            rankFragments: async (
+              ctx,
+              allUnrankedWithToolContext,
+              t,
+              emitter,
+            ) => {
               return await batchRankFragments(
                 ctx,
                 allUnrankedWithToolContext,
                 message,
                 messagesWithNoErrResponse,
                 t,
-                emitter
+                emitter,
               )
             },
             ingestFragments: (ctx, fragments, t) => {
@@ -5666,12 +5739,15 @@ export async function MessageAgents(c: Context): Promise<Response> {
               if (recovered.length > 0) {
                 await emitReasoningEvent(
                   emitReasoningStep,
-                  ReasoningSteps.toolRecovered(recovered)
+                  ReasoningSteps.toolRecovered(recovered),
                 )
               }
-              const activeTools = cooldown.getAvailableTools(allTools, currentTurn)
+              const activeTools = cooldown.getAvailableTools(
+                allTools,
+                currentTurn,
+              )
               agentContext.enabledTools = new Set(
-                activeTools.map((t) => t.schema.name)
+                activeTools.map((t) => t.schema.name),
               )
 
               Logger.debug(
@@ -5680,14 +5756,14 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentName: evt.data.agentName,
                   chatId: agentContext.chat.externalId,
                   runId,
-                  jafRunState: runState
+                  jafRunState: runState,
                 },
                 "[MessageAgents] Turn start LLM input",
               )
 
               await emitReasoningEvent(
                 emitReasoningStep,
-                ReasoningSteps.turnStarted(currentTurn)
+                ReasoningSteps.turnStarted(currentTurn),
               )
               break
             }
@@ -5737,31 +5813,37 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 // Emit a tool-specific intent message based on the tool being selected.
                 // toolExecutionId is inlined directly in each payload — no shared scalar,
                 // so parallel tool calls never overwrite each other's group key.
-                const toolQuery = extractToolQuery(toolCall.name, (toolCall.args ?? {}) as Record<string, unknown>)
+                const toolQuery = extractToolQuery(
+                  toolCall.name,
+                  (toolCall.args ?? {}) as Record<string, unknown>,
+                )
                 if (toolCall.name === XyneTools.toDoWrite) {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.toolSelected(toolCall.name), toolExecutionId: normalizedCallId }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.toolSelected(toolCall.name),
+                    toolExecutionId: normalizedCallId,
+                  })
                 } else if (toolCall.name === XyneTools.listCustomAgents) {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.agentSearching(), toolExecutionId: normalizedCallId, toolName: XyneTools.listCustomAgents, ...(toolQuery ? { toolQuery } : {}) }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.agentSearching(),
+                    toolExecutionId: normalizedCallId,
+                    toolName: XyneTools.listCustomAgents,
+                    ...(toolQuery ? { toolQuery } : {}),
+                  })
                 } else if (toolCall.name === XyneTools.runPublicAgent) {
                   // agentDelegated emission moved into createRunPublicAgentTool.execute()
                   // so each parallel call generates its own ID in an isolated async scope,
                   // eliminating the shared-scalar overwrite race condition.
                 } else if (toolCall.name === XyneTools.fallBack) {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.fallbackActivated(), toolExecutionId: normalizedCallId, toolName: XyneTools.fallBack }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.fallbackActivated(),
+                    toolExecutionId: normalizedCallId,
+                    toolName: XyneTools.fallBack,
+                  })
                 } else {
-                  await emitReasoningEvent(
-                    emitReasoningStep,
-                    { ...ReasoningSteps.toolSelected(toolCall.name, toolQuery), toolExecutionId: normalizedCallId }
-                  )
+                  await emitReasoningEvent(emitReasoningStep, {
+                    ...ReasoningSteps.toolSelected(toolCall.name, toolQuery),
+                    toolExecutionId: normalizedCallId,
+                  })
                 }
                 selectionSpan?.end()
               }
@@ -5941,7 +6023,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   )
                   pendingExpectations.push(...extractedExpectations)
                   agentContext.currentTurnArtifacts.expectations.push(
-                    ...extractedExpectations
+                    ...extractedExpectations,
                   )
                   if (currentTurn > 0) {
                     recordExpectationsForTurn(
@@ -5967,7 +6049,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   agentContext.finalSynthesis.ackReceived = true
                   await emitReasoningEvent(
                     emitReasoningStep,
-                    ReasoningSteps.synthesisCompleted()
+                    ReasoningSteps.synthesisCompleted(),
                   )
                 }
                 assistantSpan?.end()
@@ -6163,7 +6245,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     )
                     assistantMessageId = persisted.assistantMessageId
                     lastPersistedMessageId = persisted.msg.id as number
-                    lastPersistedMessageExternalId = persisted.assistantMessageId
+                    lastPersistedMessageExternalId =
+                      persisted.assistantMessageId
                   } catch (error) {
                     loggerWithChild({ email }).error(
                       error,
@@ -6849,13 +6932,12 @@ async function runDelegatedAgentWithMessageAgents(
       }
     }
 
-    const runTurnEndReviewAndCleanup = async (
-      turn: number,
-    ): Promise<void> => {
+    const runTurnEndReviewAndCleanup = async (turn: number): Promise<void> => {
       await runTurnEndPipeline(agentContext, {
         turn,
         useAgenticFiltering: USE_AGENTIC_FILTERING,
-        reviewFrequency: agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
+        reviewFrequency:
+          agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY,
         minTurnNumber: MIN_TURN_NUMBER,
         emitter: emitReasoningStep,
 
@@ -6879,7 +6961,7 @@ async function runDelegatedAgentWithMessageAgents(
             message,
             messagesWithNoErrResponse,
             t,
-            emitter
+            emitter,
           )
         },
         ingestFragments: (ctx, fragments, t) => {
