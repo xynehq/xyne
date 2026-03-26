@@ -212,7 +212,6 @@ export const CreateAgentApi = async (c: Context) => {
     // check for intersection of userEmails and ownerEmails
     // owners can't be added in users
     if (validatedBody.userEmails && validatedBody.ownerEmails) {
-      const userEmailsSet = new Set(validatedBody.userEmails)
       const ownerEmailsSet = new Set(validatedBody.ownerEmails)
       const intersection = validatedBody.userEmails.filter((email) =>
         ownerEmailsSet.has(email),
@@ -240,6 +239,7 @@ export const CreateAgentApi = async (c: Context) => {
       isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
       docIds: validatedBody.docIds,
+      userEmails: validatedBody.userEmails,
       ownerEmails: validatedBody.ownerEmails,
       via_apiKey,
     }
@@ -350,7 +350,6 @@ export const UpdateAgentApi = async (c: Context) => {
     // Check for intersection of userEmails and ownerEmails
     // owners can't be added in users
     if (validatedBody.userEmails && validatedBody.ownerEmails) {
-      const userEmailsSet = new Set(validatedBody.userEmails)
       const ownerEmailsSet = new Set(validatedBody.ownerEmails)
       const intersection = validatedBody.userEmails.filter((email) =>
         ownerEmailsSet.has(email),

@@ -255,6 +255,37 @@ function isSystemFile(pathOrName: string): boolean {
   return false
 }
 
+function canViewCollection(collection: Collection, userId: number): boolean {
+  if (collection.ownerId === userId) {
+    return true
+  }
+
+  if (!collection.isPrivate) {
+    return true
+  }
+
+  const permissions = Array.isArray(collection.permissions)
+    ? (collection.permissions as number[])
+    : []
+  return permissions.includes(userId)
+}
+
+function assertCanViewCollection(collection: Collection, userId: number): void {
+  if (!canViewCollection(collection, userId)) {
+    throw new HTTPException(403, {
+      message: "You don't have access to this Collection",
+    })
+  }
+}
+
+function assertIsCollectionOwner(collection: Collection, userId: number): void {
+  if (collection.ownerId !== userId) {
+    throw new HTTPException(403, {
+      message: "You don't have access to this Collection",
+    })
+  }
+}
+
 // Enhanced MIME type detection with extension normalization and magic byte analysis
 async function detectMimeType(
   fileName: string,
@@ -424,7 +455,7 @@ export const CreateCollectionApi = async (c: Context) => {
   }
 }
 
-// List Collections for a user
+// List Collections for a user (only owners can list collections, even if agent has subset of collection access whole collection is listed)
 export const ListCollectionsApi = async (c: Context) => {
   const { email: userEmail, via_apiKey } = getAuth(c)
 
@@ -469,8 +500,8 @@ export const ListCollectionsApi = async (c: Context) => {
       const collectionsWithItems = await Promise.all(
         collections.map(async (collection) => {
           try {
-            // Check access: owner can always access, others only if Collection is public
-            if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
+            // Check access: owner can view/edit, permission users can only view, public is viewable by all
+            if (!canViewCollection(collection, user.id)) {
               return {
                 ...collection,
                 items: [], // Return empty items array for inaccessible collections
@@ -515,7 +546,7 @@ export const ListCollectionsApi = async (c: Context) => {
   }
 }
 
-// Get a specific Collection
+// Get a specific Collection (only owners can get collection details or if collection is public)
 export const GetCollectionApi = async (c: Context) => {
   const { email: userEmail, via_apiKey } = getAuth(c)
 
@@ -545,12 +576,8 @@ export const GetCollectionApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check access: owner can always access, others only if Collection is public
-    if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Collection",
-      })
-    }
+    // Owner can edit, permission users can view, and public collections are viewable by all.
+    assertCanViewCollection(collection, user.id)
 
     return c.json(collection)
   } catch (error) {
@@ -632,7 +659,7 @@ export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
   }
 }
 
-// Update a Collection
+// Update a Collection (only owner of the collection can update it)
 export const UpdateCollectionApi = async (c: Context) => {
   const { email: userEmail, via_apiKey } = getAuth(c)
 
@@ -662,12 +689,8 @@ export const UpdateCollectionApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check ownership
-    if (collection.ownerId !== user.id && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Collection",
-      })
-    }
+    // Only owner can edit.
+    assertIsCollectionOwner(collection, user.id)
 
     const rawData = await c.req.json()
     const validatedData = updateCollectionSchema.parse(rawData)
@@ -702,6 +725,7 @@ export const UpdateCollectionApi = async (c: Context) => {
   }
 }
 
+// Helper function to delete a Collection (only owner of the collection can delete it)
 export const deleteCollection = async (db: TxnOrClient, collectionId: string, userEmail: string): Promise<{ success: boolean, deletedCount: number, deletedFiles: number, deletedFolders: number }> => {
   if (!collectionId) {
     throw new HTTPException(400, { message: "Collection ID is required" })
@@ -719,12 +743,8 @@ export const deleteCollection = async (db: TxnOrClient, collectionId: string, us
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check ownership
-    if (collection.ownerId !== user.id && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Collection",
-      })
-    }
+    // Only owner can delete.
+    assertIsCollectionOwner(collection, user.id)
 
     // Get all items that belong to this collection directly via collectionId
     const collectionItemsToDelete = await db
@@ -867,7 +887,7 @@ export const deleteCollection = async (db: TxnOrClient, collectionId: string, us
   }
 }
 
-// Delete a Collection
+// Delete a Collection (only owner of the collection can delete it)
 export const DeleteCollectionApi = async (c: Context) => {
   const { email: userEmail, via_apiKey } = getAuth(c)
 
@@ -916,7 +936,8 @@ export const DeleteCollectionApi = async (c: Context) => {
   }
 }
 
-// List items in a Collection
+// List items in a Collection (only owner of the collection can list items, or if collection is public)
+// If agentId is provided, check if the collection belongs to that agent
 export const ListCollectionItemsApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const collectionId = c.req.param("clId")
@@ -951,13 +972,8 @@ export const ListCollectionItemsApi = async (c: Context) => {
       
       // Skip the normal ownership/privacy check since the collection belongs to the agent
     } else {
-      // Normal access check: owner can always access, others only if Collection is public
-
-      if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
-        throw new HTTPException(403, {
-          message: "You don't have access to this Collection",
-        })
-      }
+      // Owner can edit, permission users can view, and public collections are viewable by all.
+      assertCanViewCollection(collection, user.id)
     }
 
     const items = await getCollectionItemsByParent(db, collectionId, parentId)
@@ -976,7 +992,7 @@ export const ListCollectionItemsApi = async (c: Context) => {
   }
 }
 
-// Create a folder
+// Create a folder (only owner of the collection can create folders)
 export const CreateFolderApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const collectionId = c.req.param("clId")
@@ -994,12 +1010,8 @@ export const CreateFolderApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check ownership
-    if (collection.ownerId !== user.id) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Collection",
-      })
-    }
+    // Only owner can edit.
+    assertIsCollectionOwner(collection, user.id)
 
     const rawData = await c.req.json()
     const validatedData = createFolderSchema.parse(rawData)
@@ -1218,7 +1230,7 @@ async function ensureFolderPath(
   )
 }
 
-// Upload files
+// Upload files (only owner of the collection can upload files)
 export const UploadFilesApi = async (c: Context) => {
   const { email: userEmail, via_apiKey } = getAuth(c)
 
@@ -1252,12 +1264,8 @@ export const UploadFilesApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check ownership
-    if (collection.ownerId !== user.id) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Collection",
-      })
-    }
+    // Only owner can edit.
+    assertIsCollectionOwner(collection, user.id)
 
     // Handle session completion
     if (isComplete) {
@@ -1736,6 +1744,7 @@ export const UploadFilesApi = async (c: Context) => {
 }
 
 // Delete an item
+// only owner of the collection can delete items
 export const DeleteItemApi = async (c: Context) => {
   const { email: userEmail, via_apiKey } = getAuth(c)
 
@@ -1765,12 +1774,8 @@ export const DeleteItemApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check ownership
-    if (collection.ownerId !== user.id && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Knowledge Base",
-      })
-    }
+    // Only owner can edit.
+    assertIsCollectionOwner(collection, user.id)
 
     const item = await getCollectionItemById(db, itemId)
     if (!item) {
@@ -1933,7 +1938,7 @@ export const DeleteItemApi = async (c: Context) => {
   }
 }
 
-// Get file preview URL
+// Get file preview URL (all users in permissions including owner can get file preview or if collection is public)
 export const GetFilePreviewApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const collectionId = c.req.param("clId")
@@ -1952,12 +1957,8 @@ export const GetFilePreviewApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check access: owner can always access, others only if Collection is public
-    if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Collection",
-      })
-    }
+    // Owner can edit, permission users can view, and public collections are viewable by all.
+    assertCanViewCollection(collection, user.id)
 
     const item = await getCollectionItemById(db, itemId)
     if (!item || item.type !== "file") {
@@ -2010,11 +2011,21 @@ export const GetFilePreviewApi = async (c: Context) => {
   }
 }
 
+// Get chunk content for a file 
+// for collection items (all users in permissions including owner can get chunk content or if collection is public)
+// for attachments (only owner of the file can get chunk content)
 export const GetChunkContentApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const chunkIndex = parseInt(c.req.param("cId"))
   const docId = c.req.param("docId")
   const isAttachment = docId.startsWith("att")
+
+  // Get user from database
+  const users = await getUserByEmail(db, userEmail)
+  if (!users || users.length === 0) {
+    throw new HTTPException(404, { message: "User not found" })
+  }
+  const user = users[0]
 
   try {
     const resp = await GetDocument(isAttachment ? fileSchema : KbItemsSchema, docId)
@@ -2025,16 +2036,31 @@ export const GetChunkContentApi = async (c: Context) => {
       })
     }
 
-    if (resp.fields.sddocname && resp.fields.sddocname !== "kb_items") {
-      throw new HTTPException(404, { message: "Invalid document type" })
-    }
-
-    if (!resp.fields.chunks_pos || !resp.fields.chunks) {
+    if (!("chunks_pos" in resp.fields) || !("chunks" in resp.fields)) {
       throw new HTTPException(404, { message: "Document missing chunk data" })
     }
 
+    if(!isAttachment) {
+      const collectionId = (resp.fields as any).clId
+      const collection = await getCollectionById(db, collectionId)
+      if (!collection) {
+        throw new HTTPException(404, { message: "Collection not found" })
+      }
+
+      // Owner can edit, permission users can view, and public collections are viewable by all.
+      assertCanViewCollection(collection, user.id)
+    } else {
+      const ownerId = Number((resp.fields as any).owner)
+      const email = (resp.fields as any).ownerEmail
+      if(ownerId !== user.id && email !== userEmail) {
+        throw new HTTPException(403, {
+          message: "You don't have access to this file",
+        })
+      }
+    }
+
     // Handle both legacy number[] format and new ChunkMetadata[] format
-    const index = resp.fields.chunks_pos.findIndex(
+    const index = (resp.fields as any).chunks_pos.findIndex(
       (pos: number | ChunkMetadata) => {
         // If it's a number (legacy format), compare directly
         if (typeof pos === "number") {
@@ -2079,11 +2105,17 @@ export const GetChunkContentApi = async (c: Context) => {
     
     let chunkContent = chunkParts.join("")
     let pageIndex: number | undefined
+    let fileName: string | undefined
+    if(("title" in resp.fields) && resp.fields.title) {
+      fileName = resp.fields.title
+    } else if(("fileName" in resp.fields) && resp.fields.fileName) {
+      fileName = resp.fields.fileName
+    }
 
     const isSheetFile =
       getFileType({
         type: resp.fields.mimeType || "",
-        name: resp.fields.fileName || "",
+        name: fileName ?? "",
       }) === FileType.SPREADSHEET
     if (isSheetFile) {
       const sheetIndexMatch = docId.match(/_sheet_(\d+)$/)
@@ -2097,7 +2129,7 @@ export const GetChunkContentApi = async (c: Context) => {
         return line.split("\t").slice(1).join("\t")
       }).join("\n")
     } else {
-      const pageNums = resp.fields.chunks_map?.[index]?.page_numbers
+      const pageNums = (resp.fields as any).chunks_map?.[index]?.page_numbers
       pageIndex =
         Array.isArray(pageNums) && typeof pageNums[0] === "number"
           ? pageNums[0]
@@ -2126,13 +2158,28 @@ export const GetChunkContentApi = async (c: Context) => {
   }
 }
 
-// Get file content for preview
+// Get file content for a file (all users in permissions including owner can get file content or if collection is public)
 export const GetFileContentApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const collectionId = c.req.param("clId")
   const itemId = c.req.param("itemId")
 
+  // Get user from database
+  const users = await getUserByEmail(db, userEmail)
+  if (!users || users.length === 0) {
+    throw new HTTPException(404, { message: "User not found" })
+  }
+  const user = users[0]
+
   try {
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
+    }
+
+    // Owner can edit, permission users can view, and public collections are viewable by all.
+    assertCanViewCollection(collection, user.id)
+
     const collectionFile = await getCollectionFileByItemId(db, itemId)
     if (!collectionFile) {
       throw new HTTPException(404, { message: "File data not found" })
@@ -2166,7 +2213,7 @@ export const GetFileContentApi = async (c: Context) => {
   }
 }
 
-// Poll collection items status for multiple collections
+// Poll collection items status for multiple collections (only owners can poll)
 export const PollCollectionsStatusApi = async (c: Context) => {
   const { email: userEmail, via_apiKey } = getAuth(c)
 
@@ -2225,6 +2272,7 @@ export const PollCollectionsStatusApi = async (c: Context) => {
 }
 
 // Download file (supports all file types with true streaming and range requests)
+// (all users in permissions including owner can download file or if collection is public)
 export const DownloadFileApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const collectionId = c.req.param("clId")
@@ -2244,12 +2292,8 @@ export const DownloadFileApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check access: owner can always access, others only if Collection is public
-    if (collection.ownerId !== user.id && collection.isPrivate && (Array.isArray(collection.permissions) && !collection.permissions.find((permission) => permission === user.id))) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Collection",
-      })
-    }
+    // Owner can edit, permission users can view, and public collections are viewable by all.
+    assertCanViewCollection(collection, user.id)
 
     const item = await getCollectionItemById(db, itemId)
     if (!item || item.type !== "file") {
