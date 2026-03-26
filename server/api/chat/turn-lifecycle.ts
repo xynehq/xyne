@@ -99,6 +99,11 @@ export interface TurnEndPipelineConfig {
   useAgenticFiltering?: boolean
   /** Review frequency (review every N turns) */
   reviewFrequency: number
+  /**
+   * When true, skip the review step entirely (no ReviewStarted/ReviewCompleted reasoning events).
+   * Useful for deterministic deep-reading agents where review doesn't add value.
+   */
+  skipReview?: boolean
   /** Minimum turn number (usually 0) */
   minTurnNumber: number
   /** Build a default "ok" review payload */
@@ -225,7 +230,9 @@ export async function runTurnEndPipeline(
     // Step 3: Review (runs after ranking so context.allFragments is up to date)
     // ────────────────────────────────────────────────────────────────────
 
-    const reviewResult = await buildReviewTask(context, config, turn, emitter)
+    const reviewResult = config.skipReview
+      ? null
+      : await buildReviewTask(context, config, turn, emitter)
 
     if (rankingResult) {
       result.rankingExecuted = true
@@ -410,9 +417,7 @@ async function buildReviewTask(
 ): Promise<{ result: ReviewResult | null } | null> {
   const reviewFreq = normalizeReviewFrequency(config.reviewFrequency)
   const failureTrigger = hasCurrentTurnFailure(context)
-  const timeTrigger =
-    context.review.lastReviewTurn === null ||
-    turn - (context.review.lastReviewTurn ?? 0) >= reviewFreq
+  const timeTrigger = turn - (context.review.lastReviewTurn ?? 0) >= reviewFreq
   const stagnationTrigger = hasStagnation(context, turn)
   const shouldReview = failureTrigger || timeTrigger || stagnationTrigger
 

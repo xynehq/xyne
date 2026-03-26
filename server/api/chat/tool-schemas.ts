@@ -497,6 +497,21 @@ export type ListCustomAgentsOutput = z.infer<
 export type ResourceAccessItem = z.infer<typeof ResourceItemSchema>
 export type ResourceAccessSummary = z.infer<typeof ResourceAccessSummarySchema>
 
+/**
+ * AgentBrief - Summarized view of an agent for selection and routing
+ */
+export interface AgentBrief {
+  agentId: string
+  agentName: string
+  description: string
+  capabilities: string[]
+  domains: string[]
+  estimatedCost: "low" | "medium" | "high"
+  averageLatency: number
+  isPublic: boolean
+  resourceAccess?: ResourceAccessSummary[]
+}
+
 // Review agent input
 export const ReviewAgentInputSchema = z.object({})
 
@@ -847,18 +862,43 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   run_public_agent: {
     name: XyneTools.runPublicAgent,
     description: [
-      "Execute a vetted custom agent using a precise query.",
-      "Arguments: agentId (from list_custom_agents), query (tailored instructions), optional context (extra grounding), optional maxTokens (cap output cost).",
+      "Delegate a task to another specialized agent.",
+      'Use Deep Document Analysis ("deep_document_agent") when you need whole-document understanding, when retrieved fragments are insufficient, or when the user asks for overviews/summaries/full explanations.',
+      "For deep_document_agent, pass query as a JSON string with: userQuery, docId, and optional startingOffsets.",
+      "For all other agents, call list_custom_agents first and pass an agentId returned by it.",
+      "Arguments: agentId, query, optional context (extra grounding), optional maxTokens (cap output cost).",
       "Only call this after ambiguity is resolved and you've logged why this specific agent is the best fit.",
     ].join(" "),
     category: ToolCategory.Agent,
     inputSchema: RunPublicAgentInputSchema,
     outputSchema: ToolOutputSchema,
     prerequisites: [
-      "Must call list_custom_agents first",
+      "Must call list_custom_agents first for non-built-in agents",
       "ambiguityResolved must be true",
     ],
     examples: [
+      {
+        scenario:
+          "Delegate deep reading with some offsets (chunk indices) when fragments are insufficient for a document-level answer",
+        input: {
+          agentId: "deep_document_agent",
+          query: JSON.stringify({
+            userQuery:
+              "Summarize the document and extract all security obligations.",
+            docId: "attf_abc123",
+            startingOffsets: [42, 43],
+          }),
+          maxTokens: 1200,
+        },
+        output: {
+          result:
+            "Deep Document Agent analyzed the target document and returned a structured summary of obligations.",
+          metadata: {
+            agentId: "deep_document_agent",
+            tokensUsed: 910,
+          },
+        },
+      },
       {
         scenario: "Delegate Delta Airlines renewal recap to Renewal Navigator",
         input: {

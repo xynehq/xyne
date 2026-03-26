@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useRef, useMemo } from "react"
-import { X, FileText, ExternalLink, ArrowLeft } from "lucide-react"
+import { X, FileText, ExternalLink, ArrowLeft, Bot } from "lucide-react"
 import { Citation } from "shared/types"
+import AgentDocumentPreviewContent, {
+  type AgentDocumentPayload,
+} from "./AgentDocumentPreviewContent"
 import PdfViewer from "./PdfViewer"
 import DocxViewer from "./DocxViewer"
 import ReadmeViewer from "./ReadmeViewer"
@@ -25,6 +28,10 @@ interface CitationPreviewProps {
   initialPageIndex?: number | null
 }
 
+function isAgentDocumentCitation(c: Citation | null): boolean {
+  return !!c && c.docId.startsWith("delegated_agent:")
+}
+
 // Inner component that has access to DocumentOperations context
 const CitationPreview: React.FC<CitationPreviewProps> = ({
   citation,
@@ -37,6 +44,9 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   initialPageIndex,
 }) => {
   const [documentContent, setDocumentContent] = useState<Blob | null>(null)
+  const [agentDocument, setAgentDocument] = useState<AgentDocumentPayload | null>(
+    null,
+  )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -44,13 +54,41 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   useEffect(() => {
     if (!citation || !isOpen) {
       setDocumentContent(null)
+      setAgentDocument(null)
       setError(null)
+      return
+    }
+
+    if (isAgentDocumentCitation(citation)) {
+      const loadAgentJson = async () => {
+        setLoading(true)
+        setError(null)
+        setDocumentContent(null)
+        setAgentDocument(null)
+        try {
+          const response = await authFetch(citation.url, { method: "GET" })
+          if (!response.ok) {
+            throw new Error(`Failed to fetch document: ${response.statusText}`)
+          }
+          const data = (await response.json()) as AgentDocumentPayload
+          setAgentDocument(data)
+        } catch (err) {
+          console.error("Error loading agent document:", err)
+          setError(
+            err instanceof Error ? err.message : "Failed to load document",
+          )
+        } finally {
+          setLoading(false)
+        }
+      }
+      void loadAgentJson()
       return
     }
 
     const loadDocument = async () => {
       setLoading(true)
       setError(null)
+      setAgentDocument(null)
       try {
         if (
           citation.app === "KnowledgeBase" &&
@@ -67,7 +105,6 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
           const blob = await response.blob()
           setDocumentContent(blob)
         } else if (citation.url) {
-          // For external documents, try to fetch directly
           const response = await authFetch(citation.url, {
             method: "GET",
           })
@@ -89,7 +126,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
       }
     }
 
-    loadDocument()
+    void loadDocument()
   }, [citation, isOpen])
 
   const { highlightText, clearHighlights, scrollToMatch } = useScopedFind(
@@ -191,7 +228,8 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   }
 
   const viewerElement = useMemo(() => {
-    if (!documentContent || !citation) return null
+    if (!documentContent || !citation || isAgentDocumentCitation(citation))
+      return null
 
     const fileName = citation.title || ""
     const extension = getFileExtension(documentContent.type, fileName)
@@ -337,16 +375,23 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
 
   // Notify parent when document is loaded and ready
   useEffect(() => {
-    if (
-      !loading &&
-      !error &&
-      documentContent &&
-      onDocumentLoaded &&
-      viewerElement
-    ) {
+    if (!onDocumentLoaded || loading || error) return
+    if (citation && isAgentDocumentCitation(citation)) {
+      if (agentDocument) onDocumentLoaded()
+      return
+    }
+    if (documentContent && viewerElement) {
       onDocumentLoaded()
     }
-  }, [loading, error, documentContent, onDocumentLoaded, viewerElement])
+  }, [
+    loading,
+    error,
+    documentContent,
+    agentDocument,
+    onDocumentLoaded,
+    viewerElement,
+    citation,
+  ])
 
   if (!isOpen) return null
 
@@ -363,16 +408,29 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
               <ArrowLeft size={20} />
             </button>
           )}
-          <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
-              {citation.title.split("/").pop() || "Document Preview"}
-            </h3>
-            {citation?.app && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Source:{" "}
-                {citation.title.replace(/\/[^/]*$/, "") || "Unknown Source"}
-              </p>
+          <div className="flex-1 min-w-0 flex items-start gap-3">
+            {citation && isAgentDocumentCitation(citation) && (
+              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg shrink-0">
+                <Bot className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
             )}
+            <div className="min-w-0 flex-1">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                {isAgentDocumentCitation(citation) && agentDocument?.agentName
+                  ? agentDocument.agentName
+                  : citation.title.split("/").pop() || "Document Preview"}
+              </h3>
+              {citation && isAgentDocumentCitation(citation) && agentDocument ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {new Date(agentDocument.createdAt).toLocaleString()}
+                </p>
+              ) : citation?.app ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Source:{" "}
+                  {citation.title.replace(/\/[^/]*$/, "") || "Unknown Source"}
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
         <button
@@ -419,9 +477,22 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
           </div>
         )}
 
-        {!loading && !error && documentContent && (
-          <div className="h-full overflow-auto">{viewerElement}</div>
-        )}
+        {!loading &&
+          !error &&
+          citation &&
+          isAgentDocumentCitation(citation) &&
+          agentDocument && (
+            <div className="h-full min-h-0 flex flex-col">
+              <AgentDocumentPreviewContent document={agentDocument} />
+            </div>
+          )}
+
+        {!loading &&
+          !error &&
+          (!citation || !isAgentDocumentCitation(citation)) &&
+          documentContent && (
+            <div className="h-full overflow-auto">{viewerElement}</div>
+          )}
       </div>
     </div>
   )

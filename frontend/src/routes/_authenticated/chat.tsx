@@ -1352,6 +1352,37 @@ export const ChatPage = ({
       chunkIndex?: number,
       fromSources: boolean = false,
     ) => {
+      const delegatedAgent =
+        citation.docId.startsWith("delegated_agent:") &&
+        citation.url
+
+      if (delegatedAgent && citation.url) {
+        const sameDoc =
+          selectedCitation && selectedCitation.docId === citation.docId
+        const previewAlreadyOpenWithSameDoc =
+          isCitationPreviewOpen && sameDoc
+        if (previewAlreadyOpenWithSameDoc) {
+          setShowSources(false)
+          if (!fromSources) {
+            setCurrentCitations([])
+            setCurrentMessageId(null)
+          }
+          return
+        }
+
+        setSelectedChunkIndex(null)
+        setCitationInitialPageIndex(null)
+        setSelectedCitation(citation)
+        setIsCitationPreviewOpen(true)
+        setCameFromSources(fromSources)
+        setShowSources(false)
+        if (!fromSources) {
+          setCurrentCitations([])
+          setCurrentMessageId(null)
+        }
+        return
+      }
+
       const isRegularCitation = citation?.clId && citation?.itemId
       const isAttachment = citation?.app === "attachment"
 
@@ -1370,6 +1401,14 @@ export const ChatPage = ({
       
       // Same document already open: only change chunk; handleChunkIndexChange will fetch and goToPage (no full reload)
       if (previewAlreadyOpenWithSameDoc) {
+        if (delegatedAgent) {
+          setShowSources(false)
+          if (!fromSources) {
+            setCurrentCitations([])
+            setCurrentMessageId(null)
+          }
+          return
+        }
         const nextChunk = chunkIndex ?? null
         const isSameChunkAsSelection =
           (selectedChunkIndex ?? null) === (nextChunk ?? null)

@@ -3,6 +3,7 @@ import type { AgentRunContext } from "@/api/chat/agent-schemas"
 import {
   chunkKeyFromContent,
   createDocumentState,
+  getFragmentsForSynthesis,
   getAllImagesFromDocumentMemory,
 } from "@/api/chat/document-memory"
 import {
@@ -150,10 +151,12 @@ describe("message-agents context tracking", () => {
       context.turnCount,
     )
 
-    // Delegated agent outputs now always produce a delegated attribution fragment
-    // via buildDelegatedAgentFragments (even when there are no citations/rawDocuments),
-    // so the synthetic DocumentState path is no longer used.
-    expect(context.currentTurnArtifacts.syntheticDocs.length).toBe(0)
+    // Delegated agent outputs now always produce a synthetic delegated DocumentState
+    // (even when there are no citations/rawDocuments).
+    expect(context.currentTurnArtifacts.syntheticDocs.length).toBe(1)
+    expect(context.currentTurnArtifacts.syntheticDocs[0].docId).toContain(
+      "delegated_agent:agent-123:turn:1",
+    )
     expect(context.currentTurnArtifacts.toolOutputs.length).toBe(1)
     expect(context.currentTurnArtifacts.toolOutputs[0].toolName).toBe(
       XyneTools.runPublicAgent,
@@ -230,6 +233,68 @@ describe("message-agents context tracking", () => {
     expect(toolOutput?.rawDocuments).toHaveLength(1)
     expect(toolOutput?.query).toBe("ARR")
     expect(context.currentTurnArtifacts.executionToolsCalled).toBe(1)
+  })
+
+  test("getFragmentsForSynthesis normalizes vespaHit to doc.chunks slice", async () => {
+    const doc = createDocumentState(
+      "doc-1",
+      {
+        docId: "doc-1",
+        title: "Doc",
+        url: "https://example.com/doc-1",
+        app: Apps.KnowledgeBase,
+        entity: "file" as any,
+      },
+    )
+
+    // Document state has only B and C (evicted A).
+    doc.chunks.set("seq:1", {
+      content: "CHUNK_B_RELEVANT",
+      firstSeenTurn: 1,
+      lastSeenTurn: 1,
+      confidence: 0, // all-zero chunk scores (important regression case)
+      queries: ["q"],
+    })
+    doc.chunks.set("seq:2", {
+      content: "CHUNK_C_RELEVANT",
+      firstSeenTurn: 1,
+      lastSeenTurn: 1,
+      confidence: 0,
+      queries: ["q"],
+    })
+
+    doc.signals.push({
+      query: "q",
+      confidence: 1,
+      turn: 1,
+      toolName: XyneTools.readDocument,
+    })
+    doc.relevanceScore = 1
+    doc.maxScore = 1
+
+    // The original vespaHit still contains A,B,C.
+    doc.vespaHit = {
+      relevance: 1,
+      fields: {
+        sddocname: "file",
+        docId: "doc-1",
+        metadata: { parents: [{ folderName: "root" }] },
+        chunks_summary: ["CHUNK_A_EVICTED", "CHUNK_B_RELEVANT", "CHUNK_C_RELEVANT"],
+        // Intentionally omit matchfeatures / chunks_pos_summary to force answerContextMap to rely on
+        // chunks_summary selection and verify normalization fixes it.
+      },
+    } as any
+
+    const fragments = await getFragmentsForSynthesis(
+      new Map([[doc.docId, doc]]),
+      { email: "tester@example.com", query: "q" },
+    )
+
+    expect(fragments.length).toBe(1)
+    const content = fragments[0].content
+    expect(content).toContain("CHUNK_B_RELEVANT")
+    expect(content).toContain("CHUNK_C_RELEVANT")
+    expect(content).not.toContain("CHUNK_A_EVICTED")
   })
 
   test("excludedIds injection uses seen source docIds rather than fragment ids", async () => {
@@ -519,11 +584,11 @@ describe("message-agents context tracking", () => {
     )
   })
 
-  test("buildDelegatedAgentFragments adds response fragment only when citations absent", () => {
-    const gathered = new Set<string>()
+  test("buildDelegatedAgentFragments adds response fragment only when citations absent", async () => {
     const turnNumber = 3
 
-    const withCitations = buildDelegatedAgentFragments({
+    const withCitationsContext = createMockContext()
+    const withCitations = (await buildDelegatedAgentFragments({
       result: {
         data: {
           result: "Agent says hi",
@@ -534,11 +599,16 @@ describe("message-agents context tracking", () => {
       agentName: "Test Agent",
       turnNumber,
       sourceToolName: "run_public_agent",
-    })
-    expect(withCitations.length).toBe(1)
-    expect(withCitations[0].id).not.toContain(":response:")
+      rawFragments: [],
+      rawDocuments: [],
+      context: withCitationsContext,
+      toolQuery: "test",
+      resultSummary: "Agent says hi",
+    })).fragments
+    expect(withCitations.length).toBe(0)
 
-    const noCitations = buildDelegatedAgentFragments({
+    const noCitationsContext = createMockContext()
+    const noCitations = (await buildDelegatedAgentFragments({
       result: {
         data: {
           result: "Agent says hi",
@@ -549,10 +619,13 @@ describe("message-agents context tracking", () => {
       agentName: "Test Agent",
       turnNumber,
       sourceToolName: "run_public_agent",
-    })
-    expect(noCitations.length).toBe(1)
-    expect(noCitations[0].id).toContain(":turn:3")
-    expect(noCitations[0].content).toContain("Agent says hi")
+      rawFragments: [],
+      rawDocuments: [],
+      context: noCitationsContext,
+      toolQuery: "test",
+      resultSummary: "Agent says hi",
+    })).fragments
+    expect(noCitations.length).toBe(0)
   })
 
   test("buildConversationHistoryForAgentRun normalizes context JSON and filters invalid turns", () => {

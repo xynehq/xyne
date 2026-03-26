@@ -101,6 +101,12 @@ export interface DocumentState {
   vespaHit?: VespaSearchResults
   /** Cached fragment (built via answerContextMap or joined chunks). Invalidated when doc is updated by merge. */
   cachedFragment?: MinimalAgentFragment
+  /** Whether this is a synthetic document (derived, not from Vespa). */
+  isSynthetic?: boolean
+  /** Type of synthetic document for TTL and handling logic. */
+  syntheticType?: "navigation" | "memory" | "agent"
+  /** Turn number when this synthetic document expires (null = never). */
+  expiresAtTurn?: number | null
 }
 
 /** Limits for document memory eviction (see memory-architecture-across-turns.md). */
@@ -479,7 +485,9 @@ export const RunPublicAgentInputSchema = z.object({
     .describe("Agent identifier returned by list_custom_agents"),
   query: z
     .string()
-    .describe("Fully disambiguated, agent-specific instructions for this run"),
+    .describe(
+      "Fully disambiguated, agent-specific instructions for this run. For Deep Document Analysis agent(deep_document_agent), pass JSON.stringify({ userQuery, docId, startingOffsets? }).",
+    ),
   context: z
     .string()
     .optional()

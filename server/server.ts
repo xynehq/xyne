@@ -304,6 +304,11 @@ import {
   updateAgentSchema,
   GetAgentApi,
 } from "@/api/agent"
+import {
+  GetAgentDocumentApi,
+  GetAgentDocumentContentApi,
+  ListAgentDocumentsApi,
+} from "@/api/agentDocuments"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import {
   CreateWorkflowTemplateApi,
@@ -1620,6 +1625,10 @@ export const AppRoutes = app
   .get("/agent/generate-prompt", GeneratePromptApi)
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
   .get("/agent/:agentExternalId", GetAgentApi)
+  // Agent Documents Routes
+  .get("/agent-documents", ListAgentDocumentsApi)
+  .get("/agent-documents/:externalId", GetAgentDocumentApi)
+  .get("/agent-documents/:externalId/content", GetAgentDocumentContentApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get(
     "/workspace/users/search",

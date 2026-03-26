@@ -175,6 +175,8 @@ export const getName = (app: Apps, entity: Entity): string => {
     } else {
       return "Attachments File"
     }
+  } else if (app === Apps.Xyne) {
+    return "Xyne"
   }
   else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)

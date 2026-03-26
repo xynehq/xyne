@@ -11,7 +11,7 @@ import {
 } from "@xyne/vespa-ts"
 import { getErrorMessage } from "@/utils"
 import { searchSlackMessages, SearchVespaThreads } from "@/search/vespa"
-import { parseAgentAppIntegrations } from "../utils"
+import { parseAgentAppIntegrations, formatSearchToolResponseAsRawDocuments } from "../utils"
 import { searchToCitation } from "@/api/chat/utils"
 import { answerContextMap } from "@/ai/context"
 import { getLogger, Subsystem } from "@/logger"
@@ -239,7 +239,15 @@ export const getSlackRelatedMessagesTool: Tool<
       Logger.info(
         `[getSlackRelatedMessages] retrieved ${fragments.length} messages for user ${email}`,
       )
-      return ToolResponse.success(fragments)
+
+      searchResponse.root.children = allItems
+      // Create rawDocuments for documentMemory persistence
+      const rawDocuments = await formatSearchToolResponseAsRawDocuments(
+        searchResponse,
+        { email },
+      )
+
+      return ToolResponse.success({ fragments, rawDocuments })
     } catch (error) {
       const errMsg = getErrorMessage(error)
       Logger.error(error, `Slack messages retrieval error: ${errMsg}`)

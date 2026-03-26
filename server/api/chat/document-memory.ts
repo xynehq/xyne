@@ -31,6 +31,7 @@ import type { UserMetadataType } from "@/types"
 import { getDateForAI } from "@/utils/index"
 import { getChunkCountPerDoc } from "./chunk-selection"
 import { Apps } from "@xyne/vespa-ts/types"
+import type { VespaSearchResults } from "@xyne/vespa-ts"
 
 /** Stable chunk key when not provided: hash of content. */
 export function chunkKeyFromContent(content: string): string {
@@ -98,6 +99,81 @@ function chunkScoreForOrdering(
       : 0
 
   return c.confidence + recencyBoost + 0.1 * queryMatch + 0.05 * frequency
+}
+
+function parseChunkKeyToCitationIndex(chunkKey: string): number {
+  // Deep reader uses `seq:<absIndex>`; other tools often use `i:<index>`.
+  if (chunkKey.startsWith("seq:")) {
+    const n = Number(chunkKey.slice("seq:".length))
+    return Number.isFinite(n) ? n : 0
+  }
+  if (chunkKey.startsWith("i:")) {
+    const n = Number(chunkKey.slice("i:".length))
+    return Number.isFinite(n) ? n : 0
+  }
+  return 0
+}
+
+/**
+ * Normalize a Vespa hit so `answerContextMap(...)` sees ONLY the chunk slice currently
+ * stored in `doc.chunks`.
+ *
+ * Why:
+ * - Eviction ordering is based on `doc.chunks` state.
+ * - `answerContextMap` instead derives chunk ordering from `vespaHit.fields.matchfeatures`
+ *   and `vespaHit.fields.chunks_summary`.
+ * - If `vespaHit` still contains the original (pre-eviction) chunk set, we build the wrong
+ *   context for the LLM (especially when chunk scores are 0).
+ */
+function normalizeVespaHitForDocumentChunks(
+  doc: DocumentState & { vespaHit: VespaSearchResults },
+  orderedBy: { refTurn: number; builtUserQuery: string },
+): VespaSearchResults {
+  const hit = doc.vespaHit
+
+  const fieldsAny: any = hit.fields ?? {}
+
+  const chunkEntries = Array.from(doc.chunks.entries())
+  // Deterministic ordering even when all chunk scores are 0.
+  const scoredEntries = chunkEntries
+    .map(([chunkKey, chunk]) => {
+      const score = chunkScoreForOrdering(
+        chunk,
+        orderedBy.refTurn,
+        orderedBy.builtUserQuery,
+      )
+      return { index: parseChunkKeyToCitationIndex(chunkKey), chunk, score }
+    })
+
+  const chunks_summary = scoredEntries.map(({ chunk }) => chunk.content)
+  const chunks_pos_summary = scoredEntries.map(({ index }) =>
+    fieldsAny.chunks_pos_summary?.[index] ?? index
+  )
+
+  const chunk_scores_cells: Record<string, number> = {}
+  for (let i = 0; i < scoredEntries.length; i++) {
+    chunk_scores_cells[String(i)] = scoredEntries[i].score
+  }
+
+  const prevMatchfeatures: any = fieldsAny.matchfeatures ?? {}
+  const normalizedMatchfeatures = {
+    ...prevMatchfeatures,
+    chunk_scores: {
+      cells: chunk_scores_cells,
+    },
+  }
+
+  // Shallow-clone the hit and overwrite the chunk-related fields used by answerContextMap.
+  return {
+    ...(hit as any),
+    relevance: doc.relevanceScore,
+    fields: {
+      ...fieldsAny,
+      chunks_summary,
+      chunks_pos_summary,
+      matchfeatures: normalizedMatchfeatures,
+    },
+  } as VespaSearchResults
 }
 
 /** Keep only top K chunks per doc by score; evict the rest. */
@@ -307,6 +383,174 @@ export function getDocsWithSignalsInTurnRange(
   )
 }
 
+/**
+ * Create a synthetic DocumentState from chat memory fragments.
+ * This is for derived conversational memory, not retrievable source documents.
+ * @param fragments - Chat memory fragments
+ * @param options - Metadata including chatId, turnNumber, expiresAtTurn
+ */
+export function createSyntheticDocFromChatMemory(
+  fragments: { content: string; id: string; source: Citation; confidence?: number }[],
+  options: {
+    chatId: string
+    turnNumber: number
+    expiresAtTurn: number
+    query?: string
+  }
+): DocumentState {
+  const docId = `chat-memory:${options.chatId}:${options.turnNumber}`
+  const source: Citation = {
+    docId,
+    title: `Chat Memory for ${options.chatId}`,
+    url: "",
+    app: Apps.ChatMemory,
+    entity: {
+      type: "chat_memory",
+      chatId: options.chatId,
+    } as unknown as Citation["entity"],
+  }
+
+  const doc = createDocumentState(docId, source)
+  doc.isSynthetic = true
+  doc.syntheticType = "memory"
+  doc.expiresAtTurn = options.expiresAtTurn
+
+  // Add all fragments as chunks
+  for (let i = 0; i < fragments.length; i++) {
+    const fragment = fragments[i]
+    const chunkKey = `i:${i}`
+    doc.chunks.set(chunkKey, {
+      content: fragment.content,
+      firstSeenTurn: options.turnNumber,
+      lastSeenTurn: options.turnNumber,
+      confidence: fragment.confidence ?? 0.7,
+      queries: options.query ? [options.query] : [],
+    })
+  }
+
+  // Add a signal for this retrieval
+  doc.signals.push({
+    query: options.query ?? "",
+    confidence: 0.7,
+    turn: options.turnNumber,
+    toolName: "searchChatHistory",
+  })
+
+  updateDocumentScores(doc, options.turnNumber)
+  return doc
+}
+
+/**
+ * Create a synthetic DocumentState from KB ls (navigation) results.
+ * This is for derived navigation info, not retrievable source documents.
+ * @param entries - List of KB entries (files/folders)
+ * @param options - Metadata including target, turnNumber, expiresAtTurn
+ */
+export function createSyntheticDocFromLs(
+  entries: { name: string; type: string; id?: string }[],
+  options: {
+    targetId?: string
+    targetPath?: string
+    turnNumber: number
+    expiresAtTurn: number
+  }
+): DocumentState {
+  const targetId = options.targetId ?? "root"
+  const docId = `kb-ls:${targetId}:${options.turnNumber}`
+  const source: Citation = {
+    docId,
+    title: options.targetPath ?? "Knowledge Base Navigation",
+    url: "",
+    app: Apps.KnowledgeBase,
+    entity: {
+      type: "navigation",
+      targetId,
+    } as unknown as Citation["entity"],
+  }
+
+  const doc = createDocumentState(docId, source)
+  doc.isSynthetic = true
+  doc.syntheticType = "navigation"
+  doc.expiresAtTurn = options.expiresAtTurn
+
+  // Format entries as markdown-style list
+  const content = entries
+    .map((e) => `- ${e.type === "file" ? "📄" : "📁"} ${e.name}`)
+    .join("\n")
+
+  doc.chunks.set("i:0", {
+    content: `Knowledge Base Contents:\n\n${content}`,
+    firstSeenTurn: options.turnNumber,
+    lastSeenTurn: options.turnNumber,
+    confidence: 0.9,
+    queries: [],
+  })
+
+  doc.signals.push({
+    query: "",
+    confidence: 0.9,
+    turn: options.turnNumber,
+    toolName: "ls",
+  })
+
+  updateDocumentScores(doc, options.turnNumber)
+  return doc
+}
+
+/**
+ * Create a synthetic DocumentState from delegated agent response.
+ * This is for derived agent output, not retrievable source documents.
+ * @param resultSummary - The agent's result summary/content
+ * @param options - Metadata including agentId, agentName, turnNumber, expiresAtTurn, toolQuery
+ */
+export function createSyntheticDocFromAgent(
+  resultSummary: string,
+  options: {
+    agentId: string
+    agentName: string
+    turnNumber: number
+    expiresAtTurn: number | null
+    toolQuery?: string
+  }
+): DocumentState {
+  const docId = `delegated_agent:${options.agentId}:turn:${options.turnNumber}`
+  const source: Citation = {
+    docId,
+    title: `Delegated agent (${options.agentName})`,
+    url: "",
+    app: Apps.Xyne,
+    entity: {
+      type: "agent",
+      name: options.agentName,
+    } as unknown as Citation["entity"],
+  }
+
+  const doc = createDocumentState(docId, source)
+  doc.isSynthetic = true
+  doc.syntheticType = "agent"
+  doc.expiresAtTurn = options.expiresAtTurn
+
+  doc.chunks.set(chunkKeyFromContent(resultSummary), {
+    content: resultSummary,
+    firstSeenTurn: options.turnNumber,
+    lastSeenTurn: options.turnNumber,
+    confidence: 0.85,
+    queries: options.toolQuery ? [options.toolQuery] : [],
+  })
+
+  doc.signals.push({
+    query: options.toolQuery ?? "",
+    confidence: 0.85,
+    turn: options.turnNumber,
+    toolName: "runPublicAgent",
+  })
+
+  doc.maxScore = 0.85
+  doc.relevanceScore = 0.85
+
+  return doc
+}
+
 /** Default user metadata for answerContextMap when options do not provide userId/workspaceId. */
 const defaultUserMetadata: UserMetadataType = {
   userTimezone: "Asia/Kolkata",
@@ -329,10 +573,22 @@ async function buildFragmentsForDocList(
     (d): d is DocumentState & { vespaHit: NonNullable<DocumentState["vespaHit"]> } =>
       !d.cachedFragment && !!d.vespaHit,
   )
-  const vespaHitsOrdered = uncachedWithVespa.map((d) => d.vespaHit)
   const builtUserQuery =
     options.query?.trim() ??
     (uncachedWithVespa[0]?.signals[0]?.query ?? sorted[0]?.signals[0]?.query ?? "")
+
+  // Normalize each hit so answerContextMap + getChunkCountPerDoc see the same chunk slice
+  // that `doc.chunks` represents after eviction.
+  const normalizedHitByDocId = new Map<string, VespaSearchResults>()
+  const vespaHitsOrdered = uncachedWithVespa.map((d) => {
+    const refTurn = Math.max(...d.signals.map((s) => s.turn), 1)
+    const normalized = normalizeVespaHitForDocumentChunks(d, {
+      refTurn,
+      builtUserQuery,
+    })
+    normalizedHitByDocId.set(d.docId, normalized)
+    return normalized
+  })
 
   let precomputedDbContext: Map<string, string> = new Map()
   let chunksPerDocument: number[] = []
@@ -373,12 +629,13 @@ async function buildFragmentsForDocList(
         : doc.maxScore
 
     if (doc.vespaHit) {
+      const normalizedHit = normalizedHitByDocId.get(doc.docId) ?? doc.vespaHit
       const chunkCount =
         uncachedVespaIndex < chunksPerDocument.length
           ? chunksPerDocument[uncachedVespaIndex]
           : config.maxDefaultSummary
       content = await answerContextMap(
-        doc.vespaHit,
+        normalizedHit,
         metadataForContext,
         chunkCount,
         undefined,
@@ -542,4 +799,36 @@ export async function getFragmentsForSynthesisForDocs(
     .sort((a, b) => b.relevanceScore - a.relevanceScore)
     .slice(0, DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM)
   return buildFragmentsForDocList(sorted, options)
+}
+
+/**
+ * Clean up expired synthetic documents from document memory.
+ * Synthetic documents with expiresAtTurn <= currentTurn are removed.
+ * Documents with expiresAtTurn = null or undefined persist indefinitely.
+ * @param documentMemory - The document memory map to clean
+ * @param currentTurn - The current turn number
+ * @returns Number of expired synthetic documents removed
+ */
+export function cleanupExpiredSyntheticDocs(
+  documentMemory: Map<string, DocumentState>,
+  currentTurn: number
+): number {
+  let removedCount = 0
+  const docsToRemove: string[] = []
+
+  for (const [docId, doc] of documentMemory.entries()) {
+    // Only check synthetic documents that have a TTL set
+    if (doc.isSynthetic && doc.expiresAtTurn !== null && doc.expiresAtTurn !== undefined) {
+      if (doc.expiresAtTurn <= currentTurn) {
+        docsToRemove.push(docId)
+      }
+    }
+  }
+
+  for (const docId of docsToRemove) {
+    documentMemory.delete(docId)
+    removedCount++
+  }
+
+  return removedCount
 }

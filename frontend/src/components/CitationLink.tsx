@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/tooltip"
 import { getFileType } from "shared/fileUtils"
 import { FileType } from "shared/types"
+import { Bot } from "lucide-react"
 
 export interface Citation {
   url: string
@@ -84,6 +85,89 @@ export const createCitationLink =
     }
 
     const isAttachmentLink = citation && citation.app === "attachment"
+
+    // Delegated agent synthetic docs: open in-app viewer (authFetch), not a new tab to /api/...
+    const isAgentDelegatedCitation =
+      citation &&
+      onCitationClick &&
+      typeof citation.url === "string" &&
+      citation.docId.startsWith("delegated_agent:")
+
+    if (isAgentDelegatedCitation) {
+      const titleParts = citation.title.split("/")
+      const agentTitleLine =
+        titleParts[titleParts.length - 1] || "Delegated agent output"
+      const agentSubtitle =
+        titleParts.length > 1
+          ? titleParts.slice(0, -1).join("/")
+          : "Delegated agent response"
+
+      return (
+        <TooltipProvider delayDuration={200}>
+          <Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen}>
+            <TooltipTrigger asChild>
+              <span
+                {...linkProps}
+                role="button"
+                tabIndex={0}
+                className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  onCitationClick(citation, undefined)
+                  setIsTooltipOpen(false)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onCitationClick(citation, undefined)
+                    setIsTooltipOpen(false)
+                  }
+                }}
+              >
+                {children}
+              </span>
+            </TooltipTrigger>
+            {showTooltip && (
+              <TooltipContent
+                side="top"
+                align="center"
+                className="max-w-sm p-0 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-700 shadow-lg rounded-lg overflow-hidden"
+                onPointerDownOutside={(e) => {
+                  e.preventDefault()
+                }}
+              >
+                <div
+                  className="flex items-start gap-3 p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onCitationClick(citation, undefined)
+                    setIsTooltipOpen(false)
+                  }}
+                >
+                  <div className="flex-shrink-0 mt-0.5">
+                    <Bot
+                      className="w-5 h-5 text-blue-600 dark:text-blue-400"
+                      aria-hidden
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm text-gray-900 dark:text-gray-100 leading-tight truncate">
+                      {agentTitleLine}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-tight truncate">
+                      {agentSubtitle}
+                    </div>
+                  </div>
+                </div>
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
+      )
+    }
 
     if (citation && ((citation.clId && citation.itemId) || isAttachmentLink)) {
       return (

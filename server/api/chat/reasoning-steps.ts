@@ -58,6 +58,7 @@ const TOOL_DISPLAY: Record<string, ToolDisplay> = {
   [XyneTools.fallBack]:            { executing: "Trying fallback search.", completed: "Fallback search complete." },
   [XyneTools.toDoWrite]:           { executing: "Planning next steps.", completed: "Plan created." },
   [XyneTools.synthesizeFinalAnswer]:{ executing: "Composing your answer.", completed: "Answer ready." },
+  [XyneTools.readDocument]:        { executing: "Reading sections of the document.", completed: "Document reading complete." },
 }
 
 function toolExecutingText(toolName: string): string {
@@ -231,6 +232,21 @@ export const ReasoningSteps = {
       stage: "gathering",
       count,
       toolName,
+      timestamp: Date.now(),
+    }
+  },
+
+  /**
+   * Emitted by deep_document_agent when `read_document` returns raw chunks.
+   * This tool is a sequential reader (not a retrieval/ranking step), so the UX
+   * copy must not imply "selection of the most useful documents".
+   */
+  chunksLoaded(count: number): ReasoningEventPayload {
+    return {
+      type: ReasoningEventType.DocumentsFound,
+      displayText: `Reading relevant sections of the document.`,
+      stage: "gathering",
+      count,
       timestamp: Date.now(),
     }
   },

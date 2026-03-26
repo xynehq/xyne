@@ -742,6 +742,7 @@ export enum XyneTools {
   fallBack = "fall_back",
   synthesizeFinalAnswer = "synthesize_final_answer",
   MetadataRetrieval = "metadata_retrieval",
+  readDocument = "read_document",
 }
 
 export enum IngestionType {
