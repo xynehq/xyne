@@ -50,18 +50,19 @@ const KNOWLEDGE_BASE_EXCLUDED_IDS_DESCRIPTION =
   "Previously seen result document `docId`s to suppress on follow-up KB searches. Prefer `fragment.source.docId` values from prior results. Do not pass collection, folder, file, path, or fragment IDs."
 
 export const LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION = [
-  "Browse the caller's accessible knowledge-base namespace.",
-  "Use it to discover collections, inspect folder/file layout, confirm canonical paths, answer inventory or metadata questions directly, or obtain IDs for a later `searchKnowledgeBase.filters.targets` call.",
+  "Browse the caller's current knowledge-base scope.",
+  "When `target` is omitted, `ls` performs root discovery only and returns the current scope roots. In partial agent-scoped KB access this may be folder/file roots rather than collection rows.",
+  "Use it to inspect folder/file layout, confirm canonical paths, answer inventory or metadata questions directly, or obtain collection, folder, or file IDs for a later `searchKnowledgeBase.filters.targets` call.",
   "It is especially useful when the user wants answers constrained by structure or metadata such as a specific folder, collection, file set, or file type like PDFs.",
   "Skip `ls` only when the exact KB scope is already known and browsing will not improve the answer.",
-  "Start shallow with `depth: 1` and `metadata: false` if unsure; but you are always free to enable metadata or deepen traversal only when the task truly needs row details or more hierarchy.",
+  "When `target` is provided, start shallow with `depth: 1` and `metadata: false` if unsure; enable metadata or deepen traversal only when the task truly needs row details or more hierarchy.",
 ].join(" ")
 
 export const SEARCH_KNOWLEDGE_BASE_TOOL_DESCRIPTION = [
   "Search document content inside the caller's accessible knowledge-base scope and return cited fragments.",
   "Use it directly when the task is about document contents and the relevant KB scope is already known or broad KB search is acceptable.",
   "Pair it with `ls` when you need structural scoping, canonical-path confirmation, or file preselection such as searching only .txt files from a folder.",
-  "If the collection, folder, file, or path is known, pass it in `filters.targets`; file targets can come from prior `ls` output.",
+  "If the collection, folder, file, or path is known, pass it in `filters.targets`. When reusing prior `ls` output, match the target type to the row type; do not infer collection-root access from a folder or file row.",
   "`filters.targets` narrows search by location, while `excludedIds` should contain previously seen document/result IDs to avoid rereading the same hits.",
 ].join(" ")
 
@@ -71,7 +72,7 @@ export const KnowledgeBaseTargetSchema = z.discriminatedUnion("type", [
     collectionId: z
       .string()
       .describe(
-        "Knowledge-base collection row ID as a string, typically a UUID. Reuse `ls` output directly here: for a collection row, pass `entries[i].id`; for a previously targeted `ls` response, pass `target.collection_id`. This stays a collection DB ID through KB search and is translated downstream into Vespa `clId` filtering. Do not pass a folder ID, file ID, or path here.",
+        "Knowledge-base collection row ID as a string, typically a UUID. Reuse `ls` output directly here only when the row itself has `type: \"collection\"`: for a collection row, pass `entries[i].id`; for a previously targeted `ls` response, pass `target.collection_id`. A folder or file row does not imply collection-root access. This stays a collection DB ID through KB search and is translated downstream into Vespa `clId` filtering. Do not pass a folder ID, file ID, or path here.",
       ),
   }).describe(
     "Object shape: `{ type: \"collection\", collectionId: string }`. Targets an entire collection root. Best when the user names a known collection or you want to browse/search everything inside it.",
@@ -101,12 +102,12 @@ export const KnowledgeBaseTargetSchema = z.discriminatedUnion("type", [
     collectionId: z
       .string()
       .describe(
-        "Knowledge-base collection row ID as a string, typically a UUID. Required with `type: \"path\"` so the path is resolved inside the correct collection. Reuse `ls` output directly here with `entries[i].collection_id` or `target.collection_id` from a prior targeted `ls` response.",
+        "Knowledge-base collection row ID as a string, typically a UUID. Required with `type: \"path\"` so the path is resolved inside the correct collection. For folder/file `ls` rows, reuse `entries[i].collection_id`; for a collection row, reuse `entries[i].id`; for a previously targeted `ls` response, reuse `target.collection_id`.",
       ),
     path: z
       .string()
       .describe(
-        "Collection-relative path string such as `/`, `/Policies`, `/Policies/Security`, or `/Policies/Security.md`. Reuse `ls` output directly here with `entries[i].path` or `target.path` from a prior targeted `ls` response. A missing leading slash is accepted and will be canonicalized. `path: \"/\"` means the collection root. `.` and `..` path segments are invalid. The resolved path is then translated into collection, folder, or file search scope before Vespa filtering.",
+        "Collection-relative path string such as `/`, `/Policies`, `/Policies/Security`, or `/Policies/Security.md`. For folder/file `ls` rows, reuse `entries[i].path`; for a collection row, use `/`; for a previously targeted `ls` response, reuse `target.path`. A missing leading slash is accepted and will be canonicalized. `path: \"/\"` means the collection root. `.` and `..` path segments are invalid. The resolved path is then translated into collection, folder, or file search scope before Vespa filtering.",
       ),
   }).describe(
     "Object shape: `{ type: \"path\", collectionId: string, path: string }`. Targets a collection-relative path when the location is known or easier to express than raw folder/file IDs.",
@@ -117,7 +118,7 @@ export type KnowledgeBaseTarget = z.infer<typeof KnowledgeBaseTargetSchema>
 
 export const LsKnowledgeBaseInputSchema = z.object({
   target: KnowledgeBaseTargetSchema.optional().describe(
-    "Optional KB location to browse. Omit it to list accessible collections. Provide a collection, folder, file, or path target when you already know where to inspect or when the user asked about a specific location.",
+    "Optional KB location to browse. Omit it to list the current KB roots. In user-owned or full-collection scope this returns collection rows; in partial agent-scoped access it may return folder/file roots instead. Provide a collection, folder, file, or path target when you already know where to inspect or when the user asked about a specific location.",
   ),
   depth: z
     .number()
@@ -127,7 +128,7 @@ export const LsKnowledgeBaseInputSchema = z.object({
     .optional()
     .default(1)
     .describe(
-      "Traversal depth from the target. `1` lists immediate children only. Start shallow and increase depth only when the task truly needs more hierarchy.",
+      "Traversal depth from the target when `target` is provided. `1` lists immediate children only. When `target` is omitted, `ls` stays in root-discovery mode and `depth` has no effect.",
     ),
   limit: z
     .number()
@@ -153,8 +154,34 @@ export const LsKnowledgeBaseInputSchema = z.object({
       "Return persisted row metadata when true. Leave false for normal navigation; enable when you need details like description, mime type for filtering PDFs or other file types, timestamps, or collection metadata.",
     ),
 }).describe(
-  "Browse accessible knowledge-base collections, folders, and files. Use for navigation and scope discovery, not for full-text retrieval.",
+  "Browse the current knowledge-base scope. Untargeted calls discover roots; targeted calls navigate inside a known collection, folder, file, or path.",
 )
+
+export const LsKnowledgeBaseOutputSchema = z.object({
+  target: z
+    .object({
+      type: z.enum(["collection", "folder", "file"]),
+      collection_id: z.string(),
+      id: z.string(),
+      path: z.string(),
+    })
+    .nullable(),
+  entries: z.array(
+    z.object({
+      id: z.string(),
+      type: z.enum(["collection", "folder", "file"]),
+      name: z.string(),
+      path: z.string(),
+      collection_id: z.string().optional(),
+      parent_id: z.string().nullable().optional(),
+      depth: z.number().int().min(0),
+      details: z.record(z.string(), z.unknown()).optional(),
+    }),
+  ),
+  total: z.number().int().min(0),
+  offset: z.number().int().min(0),
+  limit: z.number().int().min(0),
+})
 
 export type LsKnowledgeBaseToolParams = z.infer<
   typeof LsKnowledgeBaseInputSchema
@@ -340,6 +367,12 @@ type NavigationCache = {
   projection: Map<string, KnowledgeBaseNavigationSnapshot>
 }
 
+type UntargetedLsScopeRoots = {
+  fullCollectionIds: Set<string>
+  folderRootIds: Set<string>
+  fileRootIds: Set<string>
+}
+
 // Wires the production DB-backed repository used by the KB flow.
 const defaultKnowledgeBaseRepository: KnowledgeBaseRepository = {
   async getUserByEmail(email) {
@@ -395,6 +428,26 @@ function createNavigationCache(): NavigationCache {
   return {
     direct: new Map(),
     projection: new Map(),
+  }
+}
+
+function collectUntargetedLsScopeRoots(
+  baseSelections: KnowledgeBaseSelection[],
+): UntargetedLsScopeRoots {
+  const fullCollectionIds = new Set<string>()
+  const folderRootIds = new Set<string>()
+  const fileRootIds = new Set<string>()
+
+  for (const selection of baseSelections) {
+    selection.collectionIds?.forEach((id) => fullCollectionIds.add(id))
+    selection.collectionFolderIds?.forEach((id) => folderRootIds.add(id))
+    selection.collectionFileIds?.forEach((id) => fileRootIds.add(id))
+  }
+
+  return {
+    fullCollectionIds,
+    folderRootIds,
+    fileRootIds,
   }
 }
 
@@ -1097,6 +1150,70 @@ function createItemLsEntry(
   return entry
 }
 
+function createTopLevelItemLsEntry(
+  item: CollectionItem,
+  includeMetadata: boolean,
+): LsEntry {
+  const seed = createSeedEntry(buildNavigationNode(item), 0)
+  return createItemLsEntry(seed, includeMetadata ? item : null, includeMetadata)
+}
+
+function compareUntargetedPartialLsEntries(left: LsEntry, right: LsEntry): number {
+  if (left.type !== right.type) {
+    return left.type === "folder" ? -1 : 1
+  }
+
+  const pathCompare = left.path.localeCompare(right.path)
+  if (pathCompare !== 0) return pathCompare
+
+  return left.id.localeCompare(right.id)
+}
+
+async function buildUntargetedLsEntries(
+  scopeState: KnowledgeBaseScopeState,
+  collections: Collection[],
+  includeMetadata: boolean,
+  repo: KnowledgeBaseRepository,
+): Promise<LsEntry[]> {
+  if (scopeState.scope !== KnowledgeBaseScope.AgentScoped) {
+    return collections.map((collection) =>
+      createCollectionLsEntry(collection, includeMetadata),
+    )
+  }
+
+  const { fullCollectionIds, folderRootIds, fileRootIds } =
+    collectUntargetedLsScopeRoots(scopeState.baseSelections)
+
+  const collectionEntries = collections
+    .filter((collection) => fullCollectionIds.has(collection.id))
+    .map((collection) => createCollectionLsEntry(collection, includeMetadata))
+
+  const partialRoots = await Promise.all(
+    [
+      ...Array.from(folderRootIds).map((itemId) => ({
+        itemId,
+        expectedType: "folder" as const,
+      })),
+      ...Array.from(fileRootIds).map((itemId) => ({
+        itemId,
+        expectedType: "file" as const,
+      })),
+    ].map(async ({ itemId, expectedType }) => {
+      const item = await repo.getCollectionItemById(itemId)
+      if (!item || item.type !== expectedType) return null
+      if (fullCollectionIds.has(item.collectionId)) return null
+
+      return createTopLevelItemLsEntry(item, includeMetadata)
+    }),
+  )
+
+  const partialEntries = partialRoots
+    .filter((entry): entry is LsEntry => !!entry)
+    .sort(compareUntargetedPartialLsEntries)
+
+  return [...collectionEntries, ...partialEntries]
+}
+
 function summarizeResolvedTargetForLog(
   resolvedTarget: ResolvedKnowledgeBaseTarget,
 ) {
@@ -1254,8 +1371,11 @@ export async function executeLsKnowledgeBase(
     const limit = params.limit
 
     if (!params.target) {
-      const entries = collections.map((collection) =>
-        createCollectionLsEntry(collection, params.metadata ?? false),
+      const entries = await buildUntargetedLsEntries(
+        scopeState,
+        collections,
+        params.metadata ?? false,
+        repo,
       )
       const paginatedEntries =
         typeof limit === "number"

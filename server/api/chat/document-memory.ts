@@ -585,6 +585,7 @@ async function buildFragmentsForDocList(
   docs: DocumentState[],
   options: GetFragmentsForSynthesisOptions
 ): Promise<MinimalAgentFragment[]> {
+  //Todo: no need for sorting again right? docs are already sorted by relevance before this is called, and we want to preserve that order for synthesis. Only need to slice if docs.length > DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM, but that should be rare since we evict before that.
   const sorted = docs
     .slice()
     .sort((a, b) => b.relevanceScore - a.relevanceScore)
