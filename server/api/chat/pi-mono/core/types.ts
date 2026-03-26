@@ -84,7 +84,7 @@ export interface RuntimeConfig {
 /**
  * Agent session interface - wraps pi-mono session
  */
-export interface AgentSession<TState extends AgentState = AgentState> {
+export interface AgentSession {
   /**
    * Start the agent with a user message
    */
@@ -93,7 +93,7 @@ export interface AgentSession<TState extends AgentState = AgentState> {
   /**
    * Subscribe to events
    */
-  subscribe(handler: (event: any) => void): () => void
+  subscribe(handler: (event: unknown) => void): () => void
 
   /**
    * Force stop the agent
@@ -103,12 +103,17 @@ export interface AgentSession<TState extends AgentState = AgentState> {
   /**
    * Access the underlying pi-mono session
    */
-  getUnderlyingSession(): any
+  getUnderlyingSession(): unknown
 
   /**
    * Update system prompt dynamically
    */
   updateSystemPrompt(prompt: string): void
+
+  /**
+   * Access user state attached to session
+   */
+  getState(): unknown
 }
 
 /**

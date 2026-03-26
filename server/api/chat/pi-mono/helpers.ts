@@ -201,8 +201,7 @@ export async function storeAttachmentSafely(
  * Resolve agentic model ID
  */
 export function resolveAgenticModelId(requestedModelId?: string): string {
-  const hasAgenticOverride =
-    defaultBestModelAgenticMode && defaultBestModelAgenticMode !== ""
+  const hasAgenticOverride = !!defaultBestModelAgenticMode
   const fallback = hasAgenticOverride
     ? defaultBestModelAgenticMode
     : defaultBestModel
