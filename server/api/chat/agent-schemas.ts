@@ -79,6 +79,9 @@ export interface DocumentImageReference {
   isAttachment: boolean
 }
 
+/** How long a synthetic doc stays in document memory. Do not infer this from `expiresAtTurn` alone. */
+export type SyntheticDocLifecycle = "ttl" | "until_review" | "persistent"
+
 /**
  * Document-centric state: one per docId, accumulated across turns.
  * Used for review, synthesis, and stagnation; MinimalAgentFragment[] are built on demand from this.
@@ -103,10 +106,10 @@ export interface DocumentState {
   cachedFragment?: MinimalAgentFragment
   /** Whether this is a synthetic document (derived, not from Vespa). */
   isSynthetic?: boolean
-  /** Type of synthetic document for TTL and handling logic. */
-  syntheticType?: "navigation" | "memory" | "agent"
-  /** Turn number when this synthetic document expires (null = never). */
-  expiresAtTurn?: number | null
+  /** Synthetic docs only: when and how the doc is removed (`ttl` uses `expiresAtTurn`). */
+  lifecycle?: SyntheticDocLifecycle
+  /** When `lifecycle === "ttl"`, removed when `expiresAtTurn <= currentTurn` (see cleanupExpiredSyntheticDocs). */
+  expiresAtTurn?: number
 }
 
 /** Limits for document memory eviction (see memory-architecture-across-turns.md). */

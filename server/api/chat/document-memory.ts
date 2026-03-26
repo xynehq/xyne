@@ -285,6 +285,11 @@ export function mergeDocumentStatesIntoDocumentMemory(
       doc = createDocumentState(src.docId, src.source)
       targetMemory.set(src.docId, doc)
     }
+    if (src.isSynthetic) {
+      doc.isSynthetic = true
+      if (src.lifecycle !== undefined) doc.lifecycle = src.lifecycle
+      if (src.expiresAtTurn !== undefined) doc.expiresAtTurn = src.expiresAtTurn
+    }
     doc.cachedFragment = undefined
     if (src.vespaHit) doc.vespaHit = src.vespaHit
 
@@ -386,15 +391,13 @@ export function getDocsWithSignalsInTurnRange(
 /**
  * Create a synthetic DocumentState from chat memory fragments.
  * This is for derived conversational memory, not retrievable source documents.
- * @param fragments - Chat memory fragments
- * @param options - Metadata including chatId, turnNumber, expiresAtTurn
+ * Lifecycle: removed after the next review (cleanupSyntheticDocsAfterReview).
  */
 export function createSyntheticDocFromChatMemory(
   fragments: { content: string; id: string; source: Citation; confidence?: number }[],
   options: {
     chatId: string
     turnNumber: number
-    expiresAtTurn: number
     query?: string
   }
 ): DocumentState {
@@ -412,8 +415,7 @@ export function createSyntheticDocFromChatMemory(
 
   const doc = createDocumentState(docId, source)
   doc.isSynthetic = true
-  doc.syntheticType = "memory"
-  doc.expiresAtTurn = options.expiresAtTurn
+  doc.lifecycle = "until_review"
 
   // Add all fragments as chunks
   for (let i = 0; i < fragments.length; i++) {
@@ -443,8 +445,7 @@ export function createSyntheticDocFromChatMemory(
 /**
  * Create a synthetic DocumentState from KB ls (navigation) results.
  * This is for derived navigation info, not retrievable source documents.
- * @param entries - List of KB entries (files/folders)
- * @param options - Metadata including target, turnNumber, expiresAtTurn
+ * Lifecycle: removed after the next review (cleanupSyntheticDocsAfterReview).
  */
 export function createSyntheticDocFromLs(
   entries: { name: string; type: string; id?: string }[],
@@ -452,7 +453,6 @@ export function createSyntheticDocFromLs(
     targetId?: string
     targetPath?: string
     turnNumber: number
-    expiresAtTurn: number
   }
 ): DocumentState {
   const targetId = options.targetId ?? "root"
@@ -470,8 +470,7 @@ export function createSyntheticDocFromLs(
 
   const doc = createDocumentState(docId, source)
   doc.isSynthetic = true
-  doc.syntheticType = "navigation"
-  doc.expiresAtTurn = options.expiresAtTurn
+  doc.lifecycle = "until_review"
 
   // Format entries as markdown-style list
   const content = entries
@@ -500,8 +499,7 @@ export function createSyntheticDocFromLs(
 /**
  * Create a synthetic DocumentState from delegated agent response.
  * This is for derived agent output, not retrievable source documents.
- * @param resultSummary - The agent's result summary/content
- * @param options - Metadata including agentId, agentName, turnNumber, expiresAtTurn, toolQuery
+ * Lifecycle: persistent for the run (not removed by review cleanup).
  */
 export function createSyntheticDocFromAgent(
   resultSummary: string,
@@ -509,7 +507,6 @@ export function createSyntheticDocFromAgent(
     agentId: string
     agentName: string
     turnNumber: number
-    expiresAtTurn: number | null
     toolQuery?: string
   }
 ): DocumentState {
@@ -527,8 +524,7 @@ export function createSyntheticDocFromAgent(
 
   const doc = createDocumentState(docId, source)
   doc.isSynthetic = true
-  doc.syntheticType = "agent"
-  doc.expiresAtTurn = options.expiresAtTurn
+  doc.lifecycle = "persistent"
 
   doc.chunks.set(chunkKeyFromContent(resultSummary), {
     content: resultSummary,
@@ -802,12 +798,7 @@ export async function getFragmentsForSynthesisForDocs(
 }
 
 /**
- * Clean up expired synthetic documents from document memory.
- * Synthetic documents with expiresAtTurn <= currentTurn are removed.
- * Documents with expiresAtTurn = null or undefined persist indefinitely.
- * @param documentMemory - The document memory map to clean
- * @param currentTurn - The current turn number
- * @returns Number of expired synthetic documents removed
+ * Clean up synthetic documents with `lifecycle: "ttl"` once `expiresAtTurn <= currentTurn`.
  */
 export function cleanupExpiredSyntheticDocs(
   documentMemory: Map<string, DocumentState>,
@@ -817,11 +808,13 @@ export function cleanupExpiredSyntheticDocs(
   const docsToRemove: string[] = []
 
   for (const [docId, doc] of documentMemory.entries()) {
-    // Only check synthetic documents that have a TTL set
-    if (doc.isSynthetic && doc.expiresAtTurn !== null && doc.expiresAtTurn !== undefined) {
-      if (doc.expiresAtTurn <= currentTurn) {
-        docsToRemove.push(docId)
-      }
+    if (
+      doc.isSynthetic &&
+      doc.lifecycle === "ttl" &&
+      doc.expiresAtTurn !== undefined &&
+      doc.expiresAtTurn <= currentTurn
+    ) {
+      docsToRemove.push(docId)
     }
   }
 
@@ -831,4 +824,24 @@ export function cleanupExpiredSyntheticDocs(
   }
 
   return removedCount
+}
+
+/**
+ * After a review completes, drop synthetic docs with `lifecycle: "until_review"`.
+ * `persistent` and `ttl` synthetics are not removed here.
+ */
+export function cleanupSyntheticDocsAfterReview(
+  documentMemory: Map<string, DocumentState>,
+): number {
+  let removed = 0
+  const ids: string[] = []
+  for (const [docId, doc] of documentMemory.entries()) {
+    if (!doc.isSynthetic || doc.lifecycle !== "until_review") continue
+    ids.push(docId)
+  }
+  for (const docId of ids) {
+    documentMemory.delete(docId)
+    removed++
+  }
+  return removed
 }

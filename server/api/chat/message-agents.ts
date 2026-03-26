@@ -203,6 +203,7 @@ import {
   createSyntheticDocFromLs,
   createSyntheticDocFromAgent,
   cleanupExpiredSyntheticDocs,
+  cleanupSyntheticDocsAfterReview,
 } from "./document-memory"
 import type { Citation, FragmentImageReference, ImageCitation, MinimalAgentFragment } from "./types"
 import {
@@ -1365,6 +1366,14 @@ async function handleReviewOutcome(
     ? reviewResult.clarificationQuestions
     : []
 
+  const removedSynthetics = cleanupSyntheticDocsAfterReview(context.documentMemory)
+  if (removedSynthetics > 0) {
+    logContextMutation(context, "[MessageAgents][Context] Post-review synthetic doc cleanup", {
+      iteration,
+      removedCount: removedSynthetics,
+    })
+  }
+
   const hasAnomalies =
     reviewResult.anomaliesDetected || (reviewResult.anomalies?.length ?? 0) > 0
   const recommendation = reviewResult.recommendation ?? "proceed"
@@ -1994,7 +2003,6 @@ export async function afterToolExecutionHook(
     const syntheticDoc = createSyntheticDocFromChatMemory(toolFragments, {
       chatId,
       turnNumber: effectiveTurnNumber,
-      expiresAtTurn: effectiveTurnNumber + 1, // TTL: expires next turn
       query: toolQuery,
     })
     context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
@@ -2011,7 +2019,6 @@ export async function afterToolExecutionHook(
         targetId: lsData.target?.id,
         targetPath: lsData.target?.path,
         turnNumber: effectiveTurnNumber,
-        expiresAtTurn: effectiveTurnNumber + 1, // TTL: expires next turn
       })
       context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
       loggerWithChild({ email: context.user.email }).info(
@@ -2031,7 +2038,6 @@ export async function afterToolExecutionHook(
       agentId,
       agentName,
       turnNumber: effectiveTurnNumber,
-      expiresAtTurn: null, // persists across run
       toolQuery,
     })
     context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
