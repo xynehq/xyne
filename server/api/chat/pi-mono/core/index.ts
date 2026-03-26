@@ -14,5 +14,8 @@ export {
   createXyneAgentSession,
   type AgentSessionWrapperConfig,
 } from "./runtime"
-export { createEventRouter, createEventHandler, type ExtendedEventRouterConfig } from "./event-router"
-export { createStateManager } from "./state-manager"
+export {
+  createEventRouter,
+  createEventHandler,
+  type ExtendedEventRouterConfig,
+} from "./event-router"
