@@ -51,6 +51,8 @@ const createItem = (overrides: Partial<CollectionItem> = {}): CollectionItem => 
   statusMessage: null,
   retryCount: 0,
   metadata: {},
+  toc: null,
+  tocInfo: null,
   createdAt: new Date("2025-01-01T00:00:00.000Z"),
   updatedAt: new Date("2025-01-02T00:00:00.000Z"),
   deletedAt: null,

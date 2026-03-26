@@ -26,7 +26,12 @@ import {
   LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
   SEARCH_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
   SearchKnowledgeBaseInputSchema,
+  TocKnowledgeBaseInputSchema,
 } from "./tools/knowledgeBaseFlow"
+import {
+  TOC_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
+  TocToolOutputSchema,
+} from "@/knowledgeBase/toc"
 
 export type {
   ListCustomAgentsInput,
@@ -36,6 +41,7 @@ export type {
   KnowledgeBaseTarget,
   LsKnowledgeBaseToolParams,
   SearchKnowledgeBaseToolParams,
+  TocKnowledgeBaseToolParams,
 } from "./tools/knowledgeBaseFlow"
 
 // ============================================================================
@@ -661,6 +667,52 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
         output: {
           result: "Searched only the selected PDF documents from the folder.",
           contexts: [],
+        },
+      },
+    ],
+  },
+
+  toc: {
+    name: XyneTools.toc,
+    description: TOC_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
+    category: ToolCategory.Metadata,
+    inputSchema: TocKnowledgeBaseInputSchema,
+    outputSchema: TocToolOutputSchema,
+    examples: [
+      {
+        scenario: "Read the background-generated TOC for a known PDF file ID",
+        input: {
+          target: {
+            type: "file" as const,
+            fileId: "kb-file-pdf-1",
+          },
+        },
+        output: {
+          fileId: "kb-file-pdf-1",
+          collectionId: "kb-collection-123",
+          status: "completed" as const,
+          toc: [
+            {
+              title: "Introduction",
+              level: 1,
+              page_number: 1,
+            },
+          ],
+        },
+      },
+      {
+        scenario: "Check TOC status for a canonical PDF path",
+        input: {
+          target: {
+            type: "path" as const,
+            collectionId: "kb-collection-123",
+            path: "/Policies/Security.pdf",
+          },
+        },
+        output: {
+          fileId: "kb-file-pdf-1",
+          collectionId: "kb-collection-123",
+          status: "pending" as const,
         },
       },
     ],

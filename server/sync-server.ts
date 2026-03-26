@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { init as initQueue } from "@/queue"
+import { TOC_PROCESSING_WORKER_THREADS } from "@/knowledgeBase/toc"
 import config from "@/config"
 import { getLogger, LogMiddleware } from "@/logger"
 import {
@@ -250,6 +251,7 @@ export const initSyncServer = async () => {
   const workerThreads: Worker[] = []
   const fileWorkerCount = config.fileProcessingWorkerThreads
   const pdfWorkerCount = config.pdfFileProcessingWorkerThreads
+  const tocWorkerCount = TOC_PROCESSING_WORKER_THREADS
 
   // Start workers using the helper function
   startAndMonitorWorkers(
@@ -265,6 +267,13 @@ export const initSyncServer = async () => {
     pdfWorkerCount,
     workerThreads,
     fileWorkerCount,
+  )
+  startAndMonitorWorkers(
+    "tocProcessingWorker.ts",
+    "TOC",
+    tocWorkerCount,
+    workerThreads,
+    fileWorkerCount + pdfWorkerCount,
   )
 
   // Initialize the queue system in background - don't await (excluding file processing)

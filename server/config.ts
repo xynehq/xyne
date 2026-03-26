@@ -51,6 +51,11 @@ let consumerAgentDefaultModel: Models = Object.values(Models).includes(
   : Models.GLM_FLASH
 let defaultDeepResearchModel: Models = Models.o3_Deep_Research
 let defaultWebSearchModel: Models = "" as Models
+const tocLlmModelRaw = process.env["TOC_LLM_MODEL"]?.trim() || ""
+let tocLlmModel: Models = Models.GLM_FLASH
+if (Object.values(Models).includes(tocLlmModelRaw as Models)) {
+  tocLlmModel = tocLlmModelRaw as Models
+}
 let AwsAccessKey = ""
 let AwsSecretKey = ""
 let OpenAIKey = ""
@@ -333,6 +338,8 @@ export default {
   defaultFastModel,
   defaultDeepResearchModel,
   defaultWebSearchModel,
+  tocLlmModel,
+  tocLlmModelRaw,
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,

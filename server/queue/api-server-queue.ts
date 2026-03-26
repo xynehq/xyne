@@ -1,4 +1,5 @@
 import { getLogger } from "@/logger"
+import { TOC_QUEUE_NAME } from "@/knowledgeBase/toc"
 import { Subsystem } from "@/types"
 import { boss as sharedBoss } from "./boss"
 import { CHAT_MEMORY_INDEXING_QUEUE_NAME } from "./chat-memory-indexing"
@@ -13,7 +14,7 @@ export const PdfFileProcessingQueue = `file-processing-pdf`
 /**
  * Initialize pg-boss for API server usage only
  * - Starts the shared pg-boss connection (same instance used by chat memory / episodic memory queues)
- * - Creates FileProcessingQueue, PdfFileProcessingQueue, and chat/episodic memory queues
+ * - Creates FileProcessingQueue, PdfFileProcessingQueue, TOC queue, and chat/episodic memory queues
  * - Does NOT start any workers (workers run in sync-server.ts)
  */
 export const initApiServerQueue = async () => {
@@ -25,6 +26,9 @@ export const initApiServerQueue = async () => {
 
   Logger.info("Creating PdfFileProcessingQueue for API server")
   await sharedBoss.createQueue(PdfFileProcessingQueue)
+
+  Logger.info("Creating TOC queue for API server")
+  await sharedBoss.createQueue(TOC_QUEUE_NAME)
 
   Logger.info("Creating chat memory and episodic memory queues for API server")
   await sharedBoss.createQueue(CHAT_MEMORY_INDEXING_QUEUE_NAME)

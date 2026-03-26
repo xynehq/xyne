@@ -9,11 +9,17 @@ import { insert } from "@/search/vespa"
 import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
 import { db } from "@/db/client"
+import {
+  markCollectionItemTocEnqueueFailed,
+  markCollectionItemTocEnqueued,
+} from "@/db/knowledgeBaseToc"
 import { collectionItems, collections } from "@/db/schema"
 import { eq, and, isNull } from "drizzle-orm"
 import { readFile } from "node:fs/promises"
 import { UploadStatus } from "@/shared/types"
 import { updateParentStatus } from "@/db/knowledgeBase"
+import { boss as queueBoss } from "@/queue/api-server-queue"
+import { enqueueTocGenerationJob } from "@/queue/toc-generation"
 
 const Logger = getLogger(Subsystem.Queue)
 
@@ -396,6 +402,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         pdfProcessingMethod: lastResult.processingMethod,
       }),
     })
+    const isPdfFile = file.mimeType === "application/pdf"
 
     await db
       .update(collectionItems)
@@ -404,6 +411,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         uploadStatus: UploadStatus.COMPLETED,
         statusMessage: `Successfully processed: ${chunksCount} chunks extracted from ${file.fileName}`,
         metadata: dbMetadata,
+        ...(isPdfFile ? { toc: null, tocInfo: null } : {}),
         processedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -414,6 +422,33 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       await updateParentStatus(db, file.parentId, false)
     } else {
       await updateParentStatus(db, file.collectionId, true)
+    }
+
+    if (isPdfFile) {
+      let tocJobEnqueued = false
+
+      try {
+        await enqueueTocGenerationJob(queueBoss, { fileId })
+        tocJobEnqueued = true
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        Logger.error(
+          error,
+          `Failed to enqueue TOC generation for file ${fileId}: ${errorMessage}`,
+        )
+        await markCollectionItemTocEnqueueFailed(db, fileId, errorMessage)
+      }
+
+      if (tocJobEnqueued) {
+        try {
+          await markCollectionItemTocEnqueued(db, fileId)
+        } catch (error) {
+          Logger.warn(
+            error,
+            `Failed to persist TOC pending state for file ${fileId}; leaving worker claim to refetch row state`,
+          )
+        }
+      }
     }
 
     const endTime = Date.now()

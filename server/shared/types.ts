@@ -729,6 +729,7 @@ export enum XyneTools {
   toDoWrite = "toDoWrite",
   searchGlobal = "searchGlobal",
   searchKnowledgeBase = "searchKnowledgeBase",
+  toc = "toc",
   searchGmail = "searchGmail",
   searchDriveFiles = "searchDriveFiles",
   searchCalendarEvents = "searchCalendarEvents",

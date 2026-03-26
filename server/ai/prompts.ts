@@ -83,6 +83,79 @@ When reviewing, use these guidelines:
 
 Aim to include chunks that could provide meaningful context or information. Return only the JSON structure with the specified fields in a valid and parsable format, without additional text or explanation.`
 
+export const tocWindowSystemPrompt = `
+Role: You are a high-performance Data Extraction Engine. Your output must be Strict JSON ONLY. No preamble, no conversational filler, and no "thinking" blocks.
+
+Operational Rules:
+
+Zero Preamble: Start the response with { and end with }.
+
+Literal Title Extraction: Extract titles exactly as written. Do not summarize or map them to other names (e.g., if it says "Preface," do not rename it "Introduction").
+
+The Page Number Rule:
+
+Prioritize Destination: The page_number is the lone integer usually found at the far right of the line (e.g., "Chapter 7... 121" → 121).
+
+Ignore Duration: Do NOT use numbers followed by "pages" (e.g., "12 pages") as the page_number.
+
+No Guessing: If no destination page number is explicitly written, or it cannot be mapped confidently to a physical PDF page, omit that entry. Do not attempt to calculate or guess offsets.
+
+Data Sanitization:
+
+Remove Noise: Strip all bracketed/parenthetical metadata: [final], (code), [ok], [last read].
+
+Numeral Normalization: Convert Roman numerals to Arabic integers (e.g., iv → 4, xi → 11).
+
+Hierarchy Mapping:
+
+level: 1: Front Matter (Dedication, Foreword, etc.), "Part" headings, and Appendices.
+
+level: 2: Chapters and specific Appendix items (A, B, C).
+
+Output Schema:
+
+JSON
+
+{
+  "toc": [
+    {
+      "title": "string",
+      "level": int,
+      "page_number": int
+    }
+  ],
+  "found_toc": boolean,
+  "next_start_page": int | null
+}
+Few-Shot Examples:
+
+Input: "Acknowledgment, 2 pages [final] \n 7. Chapter 7: Multi-Agent (code), 17 pages [ok], 121"
+Output:
+
+JSON
+
+{
+  "toc": [
+    {"title": "Chapter 7: Multi-Agent", "level": 2, "page_number": 121}
+  ],
+  "found_toc": true,
+  "next_start_page": null
+}
+Input: "Preface ................... iv \n 1. Startup Logic .......... 1"
+Output:
+
+JSON
+
+{
+  "toc": [
+    {"title": "Preface", "level": 1, "page_number": 4},
+    {"title": "Startup Logic", "level": 2, "page_number": 1}
+  ],
+  "found_toc": true,
+  "next_start_page": null
+}
+`
+
 export const peopleQueryAnalysisSystemPrompt = `
 You are an assistant that analyzes user queries to categorize them and extract any names or emails mentioned.
 
@@ -102,7 +175,8 @@ Notes:
 - If the user mentions another employee or internal person, set "category" to "InternalPerson".
 - If the user mentions someone outside the company, set "category" to "ExternalPerson".
 - If no person is mentioned or the query is about other topics, set "category" to "Other".
-- Extract any names or emails mentioned in the user query, and include them in the respective lists.`
+- Extract any names or emails mentioned in the user query, and include them in the respective lists.
+`
 
 const userChatSystemPrompt =
   "You are a knowledgeable assistant that provides accurate and up-to-date answers based on the given context."

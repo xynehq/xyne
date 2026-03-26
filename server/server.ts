@@ -96,6 +96,10 @@ import {
   CreateZohoDeskConnector,
   GetAgentQueryResponsePairs,
 } from "@/api/admin"
+import {
+  AdminKbTocRequeueApi,
+  adminKbTocRequeueSchema,
+} from "@/api/admin/kbToc"
 import { ProxyUrl } from "@/api/proxy"
 import { initApiServerQueue } from "@/queue/api-server-queue"
 import { createBunWebSocket } from "hono/bun"
@@ -1957,6 +1961,11 @@ export const AppRoutes = app
     "/kb/vespa-data",
     zValidator("json", getDocumentSchema),
     GetKbVespaContent,
+  )
+  .post(
+    "/kb/toc/requeue",
+    zValidator("json", adminKbTocRequeueSchema),
+    AdminKbTocRequeueApi,
   )
 
   // Admin Dashboard Routes

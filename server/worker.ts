@@ -1,9 +1,14 @@
 import { getLogger } from "@/logger"
+import {
+  TOC_PROCESSING_TEAM_SIZE,
+  TOC_QUEUE_NAME,
+} from "@/knowledgeBase/toc"
 import { Subsystem, ProcessingJobType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { boss } from "@/queue"
 import { FileProcessingQueue, PdfFileProcessingQueue } from "@/queue/api-server-queue"
 import { processJob, type ProcessingJob } from "@/queue/fileProcessor"
+import { processTocJob } from "@/queue/tocProcessor"
 import config from "@/config"
 
 const Logger = getLogger(Subsystem.Queue)
@@ -90,4 +95,33 @@ export const initPdfFileProcessingWorker = async () => {
   })
 
   Logger.info("PDF file processing worker initialized successfully")
+}
+
+export const initTocProcessingWorker = async () => {
+  Logger.info("Initializing TOC processing worker...")
+  Logger.info(
+    `Using batch size of ${TOC_PROCESSING_TEAM_SIZE} for concurrent TOC processing`,
+  )
+
+  await boss.work(
+    TOC_QUEUE_NAME,
+    { batchSize: TOC_PROCESSING_TEAM_SIZE },
+    async (jobs) => {
+      const jobPromises = jobs.map(async (job) => {
+        try {
+          Logger.info(`Processing TOC job: ${JSON.stringify(job.data)}`)
+          await processTocJob(job as { data: { fileId: string; force?: boolean } })
+          Logger.info("✅ TOC job processed successfully")
+        } catch (error) {
+          const errorMessage = getErrorMessage(error)
+          Logger.error(error, `❌ TOC job failed: ${errorMessage}`)
+          throw error
+        }
+      })
+
+      await Promise.all(jobPromises)
+    },
+  )
+
+  Logger.info("TOC processing worker initialized successfully")
 }

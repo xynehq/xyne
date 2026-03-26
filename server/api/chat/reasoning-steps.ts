@@ -46,6 +46,7 @@ interface ToolDisplay {
 const TOOL_DISPLAY: Record<string, ToolDisplay> = {
   [XyneTools.searchGlobal]:        { executing: "Searching across all connected data sources.", completed: "Found results from your data sources." },
   [XyneTools.searchKnowledgeBase]: { executing: "Searching internal knowledge base.", completed: "Found relevant documents." },
+  [XyneTools.toc]:                 { executing: "Reading the PDF table of contents.", completed: "Toc tool completed." },
   [XyneTools.searchGmail]:         { executing: "Searching Gmail.", completed: "Found relevant emails." },
   [XyneTools.searchDriveFiles]:    { executing: "Searching Google Drive.", completed: "Found relevant files." },
   [XyneTools.searchCalendarEvents]:{ executing: "Searching calendar.", completed: "Found calendar events." },

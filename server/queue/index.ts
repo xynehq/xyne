@@ -42,6 +42,7 @@ import {
 import { startSummaryWorker } from "@/workers/summary-worker"
 import { startEpisodicMemoryWorker } from "@/workers/episodic-memory-worker"
 import { startChatMemoryWorker } from "@/workers/chat-memory-worker"
+import { TOC_QUEUE_NAME } from "@/knowledgeBase/toc"
 import { SUMMARY_QUEUE_NAME } from "./summary-generation"
 import { EPISODIC_MEMORY_QUEUE_NAME } from "./episodic-memory-extraction"
 import { CHAT_MEMORY_INDEXING_QUEUE_NAME } from "./chat-memory-indexing"
@@ -100,6 +101,7 @@ export const init = async () => {
   await boss.createQueue(ProcessZohoDeskAttachmentQueue)
   await boss.createQueue(SyncToolsQueue)
   await boss.createQueue(CleanupAttachmentsQueue)
+  await boss.createQueue(TOC_QUEUE_NAME)
   await boss.createQueue(SUMMARY_QUEUE_NAME)
   await boss.createQueue(EPISODIC_MEMORY_QUEUE_NAME)
   await boss.createQueue(CHAT_MEMORY_INDEXING_QUEUE_NAME)

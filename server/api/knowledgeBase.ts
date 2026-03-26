@@ -63,6 +63,12 @@ import { ApiKeyScopes, FileType, UploadStatus } from "@/shared/types"
 import { expandSheetIds } from "@/search/utils"
 import { checkFileSize } from "@/integrations/dataSource"
 import { getFileType } from "@/shared/fileUtils"
+import {
+  serializePublicCollection,
+  serializePublicCollectionItem,
+  serializePublicCollectionItems,
+  serializePublicCollectionWithItems,
+} from "./knowledgeBase/public"
 
 const EXTENSION_MIME_MAP: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -403,7 +409,7 @@ export const CreateCollectionApi = async (c: Context) => {
       `Created Collection: ${collection.id} for user ${userEmail}`,
     )
 
-    return c.json(collection)
+    return c.json(serializePublicCollection(collection))
   } catch (error) {
     if (error instanceof z.ZodError) {
       loggerWithChild({ email: userEmail }).error(
@@ -499,10 +505,12 @@ export const ListCollectionsApi = async (c: Context) => {
         }),
       )
 
-      return c.json(collectionsWithItems)
+      return c.json(
+        collectionsWithItems.map(serializePublicCollectionWithItems),
+      )
     }
 
-    return c.json(collections)
+    return c.json(collections.map(serializePublicCollection))
   } catch (error) {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: userEmail }).error(
@@ -552,7 +560,7 @@ export const GetCollectionApi = async (c: Context) => {
       })
     }
 
-    return c.json(collection)
+    return c.json(serializePublicCollection(collection))
   } catch (error) {
     if (error instanceof HTTPException) throw error
 
@@ -682,7 +690,7 @@ export const UpdateCollectionApi = async (c: Context) => {
       `Updated Collection: ${collectionId}`,
     )
 
-    return c.json(updatedCollection)
+    return c.json(serializePublicCollection(updatedCollection))
   } catch (error) {
     if (error instanceof HTTPException) throw error
     if (error instanceof z.ZodError) {
@@ -961,7 +969,7 @@ export const ListCollectionItemsApi = async (c: Context) => {
     }
 
     const items = await getCollectionItemsByParent(db, collectionId, parentId)
-    return c.json(items)
+    return c.json(serializePublicCollectionItems(items))
   } catch (error) {
     if (error instanceof HTTPException) throw error
 
@@ -1050,7 +1058,7 @@ export const CreateFolderApi = async (c: Context) => {
       `Created folder: ${folder.id} in Collection: ${collectionId} with Vespa doc: ${folder.vespaDocId}`,
     )
 
-    return c.json(folder)
+    return c.json(serializePublicCollectionItem(folder))
   } catch (error) {
     if (error instanceof HTTPException) throw error
     if (error instanceof z.ZodError) {

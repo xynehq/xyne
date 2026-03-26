@@ -23,6 +23,7 @@ import {
   type CollectionItem,
   type CollectionLsProjection,
 } from "@/db/schema"
+import { TOC_KNOWLEDGE_BASE_TOOL_DESCRIPTION } from "@/knowledgeBase/toc"
 import { getUserByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -159,6 +160,45 @@ export const LsKnowledgeBaseInputSchema = z.object({
 export type LsKnowledgeBaseToolParams = z.infer<
   typeof LsKnowledgeBaseInputSchema
 >
+
+export const TocKnowledgeBaseTargetSchema = z
+  .discriminatedUnion("type", [
+    z.object({
+      type: z.literal("file"),
+      fileId: z
+        .string()
+        .describe(
+          "Knowledge-base file row ID as a string, typically a UUID. Reuse `ls` output directly here when an entry has `type: \"file\"`.",
+        ),
+    }),
+    z.object({
+      type: z.literal("path"),
+      collectionId: z
+        .string()
+        .describe(
+          "Knowledge-base collection row ID as a string, typically a UUID. Required with `type: \"path\"` so the file path is resolved inside the correct collection.",
+        ),
+      path: z
+        .string()
+        .describe(
+          "Collection-relative path to one exact file, such as `/Policies/Security.pdf`. A missing leading slash is accepted and will be canonicalized.",
+        ),
+    }),
+  ])
+  .describe(
+    "Exactly one knowledge-base file target for TOC retrieval, either by file ID or by collection-relative path.",
+  )
+
+export const TocKnowledgeBaseInputSchema = z.object({
+  target: TocKnowledgeBaseTargetSchema.describe(
+    "One exact knowledge-base file target. Folder and collection targets are not allowed for TOC lookup.",
+  ),
+})
+
+export type TocKnowledgeBaseToolParams = z.infer<
+  typeof TocKnowledgeBaseInputSchema
+>
+
 export const SearchKnowledgeBaseInputSchema = z.object({
   query: z
     .string()
@@ -1465,6 +1505,137 @@ export async function executeSearchKnowledgeBase(
     )
   }
 }
+
+export async function executeTocKnowledgeBase(
+  params: TocKnowledgeBaseToolParams,
+  context: Ctx,
+  repo: KnowledgeBaseRepository = defaultKnowledgeBaseRepository,
+) {
+  const email = context.user.email
+  if (!email) {
+    return ToolResponse.error(
+      ToolErrorCodes.MISSING_REQUIRED_FIELD,
+      "User email not found while executing toc",
+      { toolName: "toc" },
+    )
+  }
+
+  try {
+    const scopeState = await buildScopeState(context)
+    const collections = await listScopedCollections(repo, scopeState)
+    if (!collections.length) {
+      return ToolResponse.error(
+        ToolErrorCodes.EXECUTION_FAILED,
+        "No accessible knowledge base collections found for this user",
+        { toolName: "toc" },
+      )
+    }
+
+    const scopedCollectionIds = new Set(
+      collections.map((collection) => collection.id),
+    )
+    if (
+      !(await isTargetCollectionPreAuthorized(
+        params.target,
+        scopedCollectionIds,
+        repo,
+      ))
+    ) {
+      return ToolResponse.error(
+        ToolErrorCodes.PERMISSION_DENIED,
+        "Requested knowledge base target is outside the current KB scope",
+        { toolName: "toc" },
+      )
+    }
+
+    const cache = createNavigationCache()
+    const resolvedTarget = await resolveKnowledgeBaseTarget(
+      params.target,
+      repo,
+      cache,
+    )
+    if (
+      !isResolvedTargetAllowed(resolvedTarget, scopeState, scopedCollectionIds)
+    ) {
+      return ToolResponse.error(
+        ToolErrorCodes.PERMISSION_DENIED,
+        "Requested knowledge base target is outside the current KB scope",
+        { toolName: "toc" },
+      )
+    }
+
+    if (resolvedTarget.kind !== "node" || resolvedTarget.node.type !== "file") {
+      return ToolResponse.error(
+        ToolErrorCodes.EXECUTION_FAILED,
+        "TOC is only available for one exact file target",
+        { toolName: "toc" },
+      )
+    }
+
+    const file = await repo.getCollectionItemById(resolvedTarget.node.id)
+    if (!file || file.type !== "file") {
+      return ToolResponse.error(
+        ToolErrorCodes.EXECUTION_FAILED,
+        "Knowledge base file target could not be resolved",
+        { toolName: "toc" },
+      )
+    }
+
+    if (file.mimeType !== "application/pdf") {
+      return ToolResponse.error(
+        ToolErrorCodes.EXECUTION_FAILED,
+        "TOC is only available for PDF files",
+        { toolName: "toc" },
+      )
+    }
+
+    const response = !file.tocInfo
+      ? {
+          fileId: file.id,
+          collectionId: file.collectionId,
+          status: "missing" as const,
+        }
+      : file.tocInfo.status === "completed"
+        ? {
+            fileId: file.id,
+            collectionId: file.collectionId,
+            status: "completed" as const,
+            toc: file.toc ?? [],
+          }
+        : file.tocInfo.status === "not_found"
+          ? {
+              fileId: file.id,
+              collectionId: file.collectionId,
+              status: "not_found" as const,
+              toc: null,
+            }
+          : {
+              fileId: file.id,
+              collectionId: file.collectionId,
+              status: file.tocInfo.status,
+            }
+
+    Logger.info(
+      {
+        email,
+        scope: scopeState.scope,
+        requestedTarget: params.target,
+        resolvedTarget: summarizeResolvedTargetForLog(resolvedTarget),
+        result: response,
+      },
+      "[KnowledgeBase][toc] Returning TOC lookup result",
+    )
+
+    return ToolResponse.success(response)
+  } catch (error) {
+    return ToolResponse.error(
+      ToolErrorCodes.EXECUTION_FAILED,
+      `Knowledge base TOC lookup failed: ${getErrorMessage(error)}`,
+      { toolName: "toc" },
+    )
+  }
+}
+
 export const lsKnowledgeBaseTool: Tool<LsKnowledgeBaseToolParams, Ctx> = {
   schema: {
     name: "ls",
@@ -1484,6 +1655,16 @@ export const searchKnowledgeBaseTool: Tool<SearchKnowledgeBaseToolParams, Ctx> =
     },
     execute: executeSearchKnowledgeBase,
   }
+export const tocKnowledgeBaseTool: Tool<TocKnowledgeBaseToolParams, Ctx> = {
+  schema: {
+    name: "toc",
+    description: TOC_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
+    parameters: toToolSchemaParameters<TocKnowledgeBaseToolParams>(
+      TocKnowledgeBaseInputSchema,
+    ),
+  },
+  execute: executeTocKnowledgeBase,
+}
 
 export const __knowledgeBaseFlowInternals = {
   buildCollectionLsProjection,

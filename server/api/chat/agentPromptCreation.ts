@@ -19,8 +19,14 @@ export const agentPromptSections: AgentPromptSections = {
 ### Knowledge Base Workflow
 - Decide first whether the ask actually needs knowledge-base evidence; skip both \`ls\` and \`searchKnowledgeBase\` when other tools or existing context already cover the answer.
 - Treat \`ls\` as the structure and metadata tool for KB: use it when the user asks what exists, where something lives, which files match a constraint such as PDF, or when a quick browse will make the next search materially sharper.
+˝- Treat \`toc\` as a file-only PDF outline lookup: use it only when the exact PDF file is already known and the user needs the document's table of contents or chapter structure.
+- Use \`toc\` for outline/navigation questions such as "what are the sections in this PDF?", "show me the chapter list", or "does this file have a TOC?".
+- Do not use \`toc\` as a substitute for document-content retrieval; if the user needs the text, facts, or policy details inside the document, use \`searchKnowledgeBase\` instead.
 - Use \`ls\` alone when the question is about inventory, hierarchy, paths, or metadata rather than document contents.
 	- Use \`searchKnowledgeBase\` directly when the relevant collection, folder, file, or path is already known from the user query, agent prompt, prior tool output, or previously discovered IDs.
+	- Use \`toc\` only after resolving one exact PDF file by \`fileId\` or canonical \`path\`; if the file is not known yet, use \`ls\` first.
+	- Treat \`toc\` status carefully: \`completed\` means a usable TOC is available, \`not_found\` means no usable TOC was found, \`missing\` means TOC enrichment has not been initialized yet, and \`pending\` / \`processing\` / \`failed\` are workflow states rather than document answers.
+	- When \`toc\` is not \`completed\`, do not invent section names or infer a TOC from the file path alone.
 	- Use \`ls\` before \`searchKnowledgeBase\` when you need to discover accessible collections, confirm a canonical path, inspect folder/file layout, collect file or folder IDs, or narrow the search to a metadata-defined subset such as PDFs inside a folder.
 	- \`ls\` and \`searchKnowledgeBase\` are complementary, not a mandatory pair; chain them only when browsing will materially improve the next search.
 	- Feel free to call \`ls\` in between turns or anytime if you think it would help sharpen scope, confirm structure, or avoid wasted KB searching.
@@ -30,6 +36,7 @@ export const agentPromptSections: AgentPromptSections = {
   - Structure-only ask: answer "what is inside \`/Policies\`?" with \`ls({ target: { type: "path", collectionId: "kb-1", path: "/Policies" }, depth: 1, metadata: false })\`; do not call \`searchKnowledgeBase\` if the user only needs the listing.
   - Filtered content ask: for "answer only from PDF files in Security policies", first call \`ls({ target: { type: "path", collectionId: "kb-1", path: "/Policies/Security" }, depth: 2, metadata: true })\`, keep only rows whose \`mime_type\` is PDF, then call \`searchKnowledgeBase({ query: "exception approval workflow", filters: { targets: [{ type: "file", fileId: "file-pdf-1" }, { type: "file", fileId: "file-pdf-2" }] }, limit: 5 })\`.
   - Known scope ask: if the ask already names the exact KB location, call \`searchKnowledgeBase({ query: "contractor onboarding steps", filters: { targets: [{ type: "path", collectionId: "kb-1", path: "/HR/Onboarding/Checklist.md" }] }, limit: 5 })\`; skip \`ls\`.
+  - TOC ask: for "show me the section list for \`/Policies/Security.pdf\`", call \`toc({ target: { type: "path", collectionId: "kb-1", path: "/Policies/Security.pdf" } })\`; if the file is not known yet, use \`ls\` first to resolve it.
   - \`ls\` not useful: if the ask is not about KB, or the exact KB scope is already known and browsing will not improve precision, skip \`ls\`.
   `.trim(),
   publicAgentDiscipline: `

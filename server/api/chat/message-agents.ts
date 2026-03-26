@@ -179,6 +179,7 @@ import googleTools from "./tools/google"
 import {
   lsKnowledgeBaseTool,
   searchKnowledgeBaseTool,
+  tocKnowledgeBaseTool,
 } from "./tools/knowledgeBaseFlow"
 import { getSlackRelatedMessagesTool } from "./tools/slack/getSlackMessages"
 import {
@@ -734,6 +735,22 @@ function extractToolQuery(
       return typeof args.query === "string" && args.query.trim()
         ? args.query.trim()
         : undefined
+    case XyneTools.toc: {
+      const target =
+        typeof args.target === "object" && args.target !== null
+          ? (args.target as Record<string, unknown>)
+          : null
+      if (!target) {
+        return undefined
+      }
+      if (target.type === "path" && typeof target.path === "string") {
+        return target.path.trim() || undefined
+      }
+      if (target.type === "file" && typeof target.fileId === "string") {
+        return target.fileId.trim() || undefined
+      }
+      return undefined
+    }
     case XyneTools.getSlackRelatedMessages:
     case XyneTools.getSlackThreads:
       return typeof args.filter_query === "string" && args.filter_query.trim()
@@ -3178,6 +3195,7 @@ function buildInternalToolAdapters(): Tool<unknown, AgentRunContext>[] {
     createToDoWriteTool(),
     searchGlobalTool,
     lsKnowledgeBaseTool,
+    tocKnowledgeBaseTool,
     searchKnowledgeBaseTool,
     searchChatHistoryTool,
     ...googleTools,
@@ -3205,6 +3223,7 @@ const TOOL_ACCESS_REQUIREMENTS: Record<string, ToolAccessRequirement> = {
     connectorFlag: "googleCalendarSynced",
   },
   ls: { requiredApp: Apps.KnowledgeBase },
+  toc: { requiredApp: Apps.KnowledgeBase },
   searchKnowledgeBase: { requiredApp: Apps.KnowledgeBase },
   searchGoogleContacts: {
     requiredApp: Apps.GoogleWorkspace,

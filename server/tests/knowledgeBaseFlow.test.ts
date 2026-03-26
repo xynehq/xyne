@@ -17,6 +17,8 @@ const {
   canonicalizeKnowledgeBasePath,
   executeLsKnowledgeBase,
   executeSearchKnowledgeBase,
+  executeTocKnowledgeBase,
+  TocKnowledgeBaseInputSchema,
 } = await import("@/api/chat/tools/knowledgeBaseFlow")
 const { mergeCollectionItemMetadata } = await import("@/queue/fileProcessor")
 
@@ -72,6 +74,8 @@ const createItem = (overrides: Partial<CollectionItem>): CollectionItem => ({
   statusMessage: null,
   retryCount: 0,
   metadata: {},
+  toc: null,
+  tocInfo: null,
   createdAt: new Date("2025-01-01T00:00:00.000Z"),
   updatedAt: new Date("2025-01-02T00:00:00.000Z"),
   deletedAt: null,
@@ -1005,6 +1009,175 @@ describe("searchKnowledgeBase", () => {
         rawDocuments: [],
       },
     })
+  })
+})
+
+describe("tocKnowledgeBase", () => {
+  test("returns identical curated output for fileId and path targets", async () => {
+    const repo = createRepo()
+    const pdfFile = createItem({
+      id: "file-security-pdf",
+      collectionId: collectionAlpha.id,
+      name: "Security.pdf",
+      type: "file",
+      path: "/",
+      position: 2,
+      vespaDocId: "clf-security-pdf",
+      originalName: "Security.pdf",
+      mimeType: "application/pdf",
+      toc: [
+        { title: "Overview", level: 1, page_number: 1 },
+        { title: "Controls", level: 1, page_number: 4 },
+      ],
+      tocInfo: {
+        status: "completed",
+        attempts: 1,
+        lastError: null,
+      },
+    })
+    repo.items.push({
+      ...pdfFile,
+      metadata: cloneMetadata(pdfFile.metadata),
+    })
+
+    const byFileId = await executeTocKnowledgeBase(
+      {
+        target: {
+          type: "file",
+          fileId: pdfFile.id,
+        },
+      },
+      createContext([`cl-${collectionAlpha.id}`]),
+      repo,
+    )
+    const byPath = await executeTocKnowledgeBase(
+      {
+        target: {
+          type: "path",
+          collectionId: collectionAlpha.id,
+          path: "/Security.pdf",
+        },
+      },
+      createContext([`cl-${collectionAlpha.id}`]),
+      repo,
+    )
+
+    expect(byFileId.status).toBe("success")
+    expect(byPath.status).toBe("success")
+    expect((byFileId as any).data).toEqual((byPath as any).data)
+    expect((byFileId as any).data).toEqual({
+      fileId: pdfFile.id,
+      collectionId: collectionAlpha.id,
+      status: "completed",
+      toc: [
+        { title: "Overview", level: 1, page_number: 1 },
+        { title: "Controls", level: 1, page_number: 4 },
+      ],
+    })
+  })
+
+  test("maps missing and not_found states and rejects non-file targets", async () => {
+    const repo = createRepo()
+    const missingPdf = createItem({
+      id: "file-missing-pdf",
+      collectionId: collectionAlpha.id,
+      name: "Missing.pdf",
+      type: "file",
+      path: "/",
+      position: 3,
+      vespaDocId: "clf-missing-pdf",
+      originalName: "Missing.pdf",
+      mimeType: "application/pdf",
+      toc: null,
+      tocInfo: null,
+    })
+    const noTocPdf = createItem({
+      id: "file-not-found-pdf",
+      collectionId: collectionAlpha.id,
+      name: "NoToc.pdf",
+      type: "file",
+      path: "/",
+      position: 4,
+      vespaDocId: "clf-not-found-pdf",
+      originalName: "NoToc.pdf",
+      mimeType: "application/pdf",
+      toc: null,
+      tocInfo: {
+        status: "not_found",
+        attempts: 1,
+        lastError: null,
+      },
+    })
+    repo.items.push(
+      {
+        ...missingPdf,
+        metadata: cloneMetadata(missingPdf.metadata),
+      },
+      {
+        ...noTocPdf,
+        metadata: cloneMetadata(noTocPdf.metadata),
+      },
+    )
+
+    const missingResult = await executeTocKnowledgeBase(
+      {
+        target: {
+          type: "file",
+          fileId: missingPdf.id,
+        },
+      },
+      createContext([`cl-${collectionAlpha.id}`]),
+      repo,
+    )
+    const notFoundResult = await executeTocKnowledgeBase(
+      {
+        target: {
+          type: "path",
+          collectionId: collectionAlpha.id,
+          path: "/NoToc.pdf",
+        },
+      },
+      createContext([`cl-${collectionAlpha.id}`]),
+      repo,
+    )
+    const folderTargetResult = await executeTocKnowledgeBase(
+      {
+        target: {
+          type: "path",
+          collectionId: collectionAlpha.id,
+          path: "/Projects",
+        },
+      },
+      createContext([`cl-${collectionAlpha.id}`]),
+      repo,
+    )
+
+    expect(missingResult.status).toBe("success")
+    expect((missingResult as any).data).toEqual({
+      fileId: missingPdf.id,
+      collectionId: collectionAlpha.id,
+      status: "missing",
+    })
+    expect(notFoundResult.status).toBe("success")
+    expect((notFoundResult as any).data).toEqual({
+      fileId: noTocPdf.id,
+      collectionId: collectionAlpha.id,
+      status: "not_found",
+      toc: null,
+    })
+    expect(folderTargetResult.status).toBe("error")
+    expect((folderTargetResult as any).error.message).toContain(
+      "exact file target",
+    )
+
+    expect(
+      TocKnowledgeBaseInputSchema.safeParse({
+        target: {
+          type: "collection",
+          collectionId: collectionAlpha.id,
+        },
+      }).success,
+    ).toBe(false)
   })
 })
 

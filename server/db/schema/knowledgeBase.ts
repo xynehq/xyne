@@ -15,6 +15,7 @@ import { relations, sql } from "drizzle-orm"
 import { users } from "./users"
 import { UploadStatus } from "@/shared/types"
 import { workspaces } from "./workspaces"
+import type { Toc, TocInfo } from "@/knowledgeBase/toc"
 
 // Collections table - stores collections within the knowledge base feature
 export const collections = pgTable(
@@ -113,6 +114,8 @@ export const collectionItems = pgTable(
     statusMessage: text("status_message"), // Stores error messages, processing details, or success info
     retryCount: integer("retry_count").default(0).notNull(), // Track processing retry attempts
     metadata: jsonb("metadata").default({}).notNull(),
+    toc: jsonb("toc").$type<Toc>(),
+    tocInfo: jsonb("toc_info").$type<TocInfo>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
