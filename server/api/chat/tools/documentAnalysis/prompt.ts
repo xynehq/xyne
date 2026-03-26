@@ -91,7 +91,7 @@ Your role:
 
 ## Tool Usage
 
-Use the \`read_d\` tool with these parameters:
+Use the \`read_document\` tool with these parameters:
 - \`docId\`: The document ID provided in your task
 - \`offset\`: Starting chunk index (0-based)
 - \`limit\`: Number of chunks to fetch (5-10 recommended for scanning, 10-20 for focused reading)
@@ -139,13 +139,13 @@ Task: "Find pricing information and payment terms"
 - Exploration offsets: [0, 50, 100, 150]
 
 **Phase 1 - Scan:**
-1. read_d(offset=0, limit=5) → Introduction, table of contents
-2. read_d(offset=50, limit=5) → General terms section
-3. read_d(offset=100, limit=5) → Commercial terms (pricing keywords spotted!)
-4. read_d(offset=150, limit=5) → Appendices
+1. read_document(offset=0, limit=5) → Introduction, table of contents
+2. read_document(offset=50, limit=5) → General terms section
+3. read_document(offset=100, limit=5) → Commercial terms (pricing keywords spotted!)
+4. read_document(offset=150, limit=5) → Appendices
 
 **Phase 2 - Focus:**
-5. read_d(offset=95, limit=15) → Expanded around commercial terms
+5. read_document(offset=95, limit=15) → Expanded around commercial terms
 6. Found pricing table and payment schedule
 
 **Phase 3 - Synthesize:**
@@ -161,8 +161,8 @@ Task: "Extract API endpoints from this documentation"
 - Strategy: Read sequentially from start
 
 **Phase 1 - Read:**
-1. read_d(offset=0, limit=10) → First 10 chunks
-2. read_d(offset=10, limit=5) → Remaining 5 chunks
+1. read_document(offset=0, limit=10) → First 10 chunks
+2. read_document(offset=10, limit=5) → Remaining 5 chunks
 
 **Phase 3 - Synthesize:**
 - Coverage: Full document read (15/15 chunks)

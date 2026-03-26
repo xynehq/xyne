@@ -9,6 +9,7 @@ import {
   numeric,
   index,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -48,6 +49,7 @@ export const agentDocuments = pgTable(
       table.externalId,
     ),
     agentDocAgentIdIndex: index("agent_doc_agent_id_index").on(table.agentId),
+    confidenceCheck: check("agent_doc_confidence_check", sql`${table.confidence} >= 0 AND ${table.confidence} <= 1`),
   }),
 )
 

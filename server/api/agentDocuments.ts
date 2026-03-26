@@ -97,37 +97,16 @@ export const GetAgentDocumentContentApi = async (c: Context) => {
     const externalId = c.req.param("externalId")
     const { sub: email } = c.get(JwtPayloadKey)
 
-    // Get document content
+    // Get document content with permission check fields
     const document = await getAgentDocumentContent(externalId)
 
     if (!document) {
       throw new HTTPException(404, { message: "Agent document not found" })
     }
 
-    // Verify user has access to the chat this document belongs to
-    const { agentDocuments } = await import("@/db/schema")
-    const { eq } = await import("drizzle-orm")
-
-    const fullDoc = await db
-      .select({ chatId: agentDocuments.chatId })
-      .from(agentDocuments)
-      .where(eq(agentDocuments.externalId, externalId))
-      .limit(1)
-
-    if (!fullDoc[0]) {
-      throw new HTTPException(404, { message: "Document not found" })
-    }
-
-    const chat = await getChatById(db, fullDoc[0].chatId)
-
-    const userWorkspace = await getUserAndWorkspaceByEmail(
-      db,
-      chat.workspaceExternalId,
-      email,
-    )
-    if (!userWorkspace || userWorkspace.workspace.id !== chat.workspaceId) {
-      throw new HTTPException(403, { message: "Access denied" })
-    }
+    // Verify user has access to the workspace this document belongs to
+    // This will throw if user doesn't have access
+    await getUserAndWorkspaceByEmail(db, document.workspaceExternalId, email)
 
     loggerWithChild().info(
       { externalId, userEmail: email },

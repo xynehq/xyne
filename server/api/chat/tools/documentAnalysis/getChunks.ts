@@ -3,7 +3,6 @@ import type { Tool } from "@xynehq/jaf"
 import { GetDocumentsByDocIds } from "@/search/vespa"
 import type { ToolRawDocument, RawChunkWithScore } from "@/api/chat/agent-schemas"
 import type { AgentRunContext } from "@/api/chat/agent-schemas"
-import { parseAgentAppIntegrations } from "@/api/chat/tools/utils"
 import { getTracer, type Span } from "@/tracer"
 import { Apps } from "@xyne/vespa-ts/types"
 import type { GetChunksInput } from "./types"
@@ -14,8 +13,8 @@ import { z } from "zod"
  */
 const getChunksInputSchema = z.object({
   docId: z.string().describe("Document ID to read from"),
-  offset: z.number().describe("Starting chunk index (0-based)"),
-  limit: z.number().describe("Number of chunks to fetch (5-10 recommended)"),
+  offset: z.number().int().min(0).describe("Starting chunk index (0-based)"),
+  limit: z.number().int().min(1).describe("Number of chunks to fetch (5-10 recommended)"),
 })
 
 /**
@@ -42,10 +41,8 @@ const getChunksInputSchema = z.object({
   async execute(args, context) {
     const { docId, offset, limit } = args
 
-    // Check if this agent has access to read_document tools
-    const { agentAppEnums } = parseAgentAppIntegrations(context.agentPrompt)
-    const hasDocumentAnalysisAccess = agentAppEnums?.includes(Apps.Xyne) || 
-      context.agentPrompt?.includes("read_document")
+    // Check if this agent has access to read_document tools via runtime tool state
+    const hasDocumentAnalysisAccess = context.enabledTools?.has("read_document")
     
     if (!hasDocumentAnalysisAccess) {
       return ToolResponse.error(

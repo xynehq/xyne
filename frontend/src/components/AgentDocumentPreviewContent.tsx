@@ -31,6 +31,23 @@ interface AgentDocumentPreviewContentProps {
 }
 
 /**
+ * Validates and normalizes a URL string to ensure it's safe to use as an href.
+ * Only allows http: and https: schemes. Returns null if unsafe or invalid.
+ */
+function normalizeSafeHref(url: string | undefined): string | null {
+  if (!url) return null
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null
+    }
+    return parsed.href
+  } catch {
+    return null
+  }
+}
+
+/**
  * Tables for agent preview: avoid `minWidth: 100%` + `dark:bg-slate-800` on `<table>` from
  * createTableComponents — that combo leaves a wide slate strip on the right in narrow panels
  * when column content is shorter than the container.
@@ -72,19 +89,19 @@ function AgentResponseMarkdown({ source }: { source: string }) {
         />
       ),
       h2: ({ node, ...props }: any) => (
-        <h1 style={{ fontSize: "1.2em" }} {...props} />
+        <h2 style={{ fontSize: "1.2em" }} {...props} />
       ),
       h3: ({ node, ...props }: any) => (
-        <h1 style={{ fontSize: "1em" }} {...props} />
+        <h3 style={{ fontSize: "1em" }} {...props} />
       ),
       h4: ({ node, ...props }: any) => (
-        <h1 style={{ fontSize: "0.8em" }} {...props} />
+        <h4 style={{ fontSize: "0.8em" }} {...props} />
       ),
       h5: ({ node, ...props }: any) => (
-        <h1 style={{ fontSize: "0.7em" }} {...props} />
+        <h5 style={{ fontSize: "0.7em" }} {...props} />
       ),
       h6: ({ node, ...props }: any) => (
-        <h1 style={{ fontSize: "0.68em" }} {...props} />
+        <h6 style={{ fontSize: "0.68em" }} {...props} />
       ),
       ul: ({ node, ...props }: any) => (
         <ul
@@ -269,16 +286,19 @@ const AgentDocumentPreviewContent: React.FC<AgentDocumentPreviewContentProps> = 
                       </p>
                     ) : null}
                   </div>
-                  {c.url ? (
-                    <a
-                      href={c.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-2 text-gray-400 hover:text-blue-600 shrink-0"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
-                  ) : null}
+                  {(() => {
+                    const safeUrl = normalizeSafeHref(c.url)
+                    return safeUrl ? (
+                      <a
+                        href={safeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 text-gray-400 hover:text-blue-600 shrink-0"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    ) : null
+                  })()}
                 </div>
               </div>
             ))}

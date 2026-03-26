@@ -228,6 +228,7 @@ import {
   requiresAmbiguityResolution,
   getAllInternalAgentCapabilities,
   getAllInternalAgentBriefs,
+  formatInternalAgentsForPrompt,
 } from "./agent-registry"
 
 export { __messageAgentsMetadataInternals } from "./message-agents-metadata"
@@ -3943,15 +3944,17 @@ Attachment handling:
 
    → Instead:
      - create a plan using toDoWrite
-     - use tools (including deep_document_agent via run_public_agent if available) to read the full document
+     - use tools or delegate to an appropriate internal agent via "run_public_agent"
 
-4. Prefer using Deep Document Analysis (deep_document_agent) when:
-   - the user asks for "summary", "overview", "full explanation"
-   - the document appears long or structured
-   - chunks look incomplete or disconnected
+4. Prefer delegating to an INTERNAL AGENT when:
+   - the task requires full-document or long-context understanding
+   - the answer depends on information not present in visible chunks
+   - the query asks for "summary", "overview", or "complete explanation"
 
-5. Only state that information is unavailable AFTER:
-   - attempting deeper retrieval
+5. Select the agent based on capabilities (e.g., document understanding, long-context analysis), NOT by name.
+
+6. Only state that information is unavailable AFTER:
+   - attempting deeper retrieval or delegation
    - and confirming the data cannot be found
 
 # Response and citations
@@ -3995,7 +3998,8 @@ function buildAgentInstructions(
 
   const agentSection = agentPrompt ? `\n\nAgent Constraints:\n${agentPrompt}` : ""
   const attachmentDirective = buildAttachmentDirective(context)
-  const promptAddendum = buildAgentPromptAddendum()
+  const internalAgentsContent = formatInternalAgentsForPrompt()
+  const promptAddendum = buildAgentPromptAddendum(internalAgentsContent)
   const reviewResultBlock =
     context.review.lastReviewResult
       ? [
@@ -4030,7 +4034,12 @@ function buildAgentInstructions(
   }
 
   const delegationGuidance = delegationEnabled
-    ? `- Before calling ANY search, calendar, Gmail, Drive, or other research tools, you MUST invoke \`list_custom_agents\` once per run. Treat the workflow as: plan -> list agents -> (maybe) run_public_agent -> other tools. If the selector returns \`null\`, explicitly log that no agent was suitable, then proceed with core tools.\n- Before calling \`run_public_agent\`, invoke \`list_custom_agents\`, compare every candidate, and respect a \`null\` result as "no delegate—continue with built-in tools."\n- Use \`run_custom_agent\` (the execution surface for selected specialists) immediately after choosing an agent from \`list_custom_agents\`; pass the specific agentId plus a rewritten query tailored to that agent.\n- When \`list_custom_agents\` returns high-confidence candidates, pause to assess the current sub-task and explicitly decide whether running one now accelerates the goal; document the rationale either way.\n- Only delegate when a specific agent's documented capabilities make it unquestionably suitable; otherwise keep iterating yourself.`
+    ? `### Agent Delegation Guidelines
+- For INTERNAL agents (listed in system prompt): Use \`run_public_agent\` directly without calling \`list_custom_agents\`.
+- For CUSTOM agents (user-defined): MUST call \`list_custom_agents\` first to discover available agents.
+- If \`list_custom_agents\` returns \`null\`, explicitly log that no custom agent was suitable, then proceed with core tools or internal agents.
+- When selecting an agent, compare capabilities and justify why this specific agent is the best fit.
+- Only delegate when a specific agent's documented capabilities make it unquestionably suitable; otherwise keep iterating yourself.`
     : ""
 
   const isFirstTurn = context.turnCount === 1
@@ -6309,8 +6318,9 @@ export async function listCustomAgentsSuitable(
     isPublic: true,
     resourceAccess: [],
   }))
-  const internalBriefs = getAllInternalAgentBriefs()
-  const combinedBriefs = [...internalBriefs, ...briefs, ...mcpBriefs]
+  // Note: Internal agents are NOT included here - they are exposed via system prompt
+  // This function returns only user-defined (custom) agents and MCP agents
+  const combinedBriefs = [...briefs, ...mcpBriefs]
   const totalEvaluated = combinedBriefs.length
 
   const systemPrompt = [

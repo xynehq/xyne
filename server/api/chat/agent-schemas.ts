@@ -485,11 +485,11 @@ export const PlanStateSchema = z.object({
 export const RunPublicAgentInputSchema = z.object({
   agentId: z
     .string()
-    .describe("Agent identifier returned by list_custom_agents"),
+    .describe("Agent identifier. For internal agents, use the ID from the system prompt. For custom agents, use the ID returned by list_custom_agents."),
   query: z
     .string()
     .describe(
-      "Fully disambiguated, agent-specific instructions for this run. For Deep Document Analysis agent(deep_document_agent), pass JSON.stringify({ userQuery, docId, startingOffsets? }).",
+      "Fully disambiguated, agent-specific instructions for this run. Must match the expected input format described for the selected agent in the system prompt.",
     ),
   context: z
     .string()

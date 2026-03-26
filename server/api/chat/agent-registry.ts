@@ -184,6 +184,41 @@ export function getAllInternalAgentCapabilities(): AgentCapability[] {
 }
 
 /**
+ * Format internal agents for inclusion in the system prompt.
+ * Returns a structured string describing all internal agents and their capabilities.
+ */
+export function formatInternalAgentsForPrompt(): string {
+  const agents = Object.values(INTERNAL_AGENTS)
+  
+  if (agents.length === 0) {
+    return "No internal agents available."
+  }
+  
+  const agentDescriptions = agents.map((agent) => {
+    const inputFormat = getAgentInputFormat(agent.id)
+    return `- agentId: ${agent.id}
+  name: ${agent.name}
+  capabilities: ${agent.capability.capabilities.join(", ")}
+  when_to_use: ${agent.description}
+  input_format: ${inputFormat}`
+  })
+  
+  return agentDescriptions.join("\n\n")
+}
+
+/**
+ * Get the expected input format for an internal agent.
+ */
+function getAgentInputFormat(agentId: string): string {
+  switch (agentId) {
+    case "deep_document_agent":
+      return 'JSON { userQuery: string, docId: string, startingOffsets?: number[] }'
+    default:
+      return "string (agent-specific query)"
+  }
+}
+
+/**
  * Returns true if the agent requires ambiguity resolution before delegation.
  * Falls back to true for unknown/external agents.
  */

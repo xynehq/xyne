@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from "react"
 import { X, FileText, ExternalLink, ArrowLeft, Bot } from "lucide-react"
+import { z } from "zod"
 import { Citation } from "shared/types"
 import AgentDocumentPreviewContent, {
   type AgentDocumentPayload,
@@ -29,8 +30,30 @@ interface CitationPreviewProps {
 }
 
 function isAgentDocumentCitation(c: Citation | null): boolean {
-  return !!c && c.docId.startsWith("delegated_agent:")
+  return !!c && c.docId.startsWith("delegated_agent:") && !!c.url
 }
+
+// Zod schema for validating AgentDocumentPayload
+const AgentSourceCitationSchema = z.object({
+  docId: z.string(),
+  title: z.string(),
+  url: z.string().optional(),
+  app: z.string(),
+  entity: z.string(),
+  chunkContent: z.string().optional(),
+})
+
+const AgentDocumentPayloadSchema = z.object({
+  externalId: z.string().optional(),
+  title: z.string().optional(),
+  agentName: z.string(),
+  content: z.string(),
+  summary: z.string().nullable().optional(),
+  reasoning: z.string().nullable().optional(),
+  citations: z.array(AgentSourceCitationSchema).optional(),
+  confidence: z.number().nullable().optional(),
+  createdAt: z.string(),
+})
 
 // Inner component that has access to DocumentOperations context
 const CitationPreview: React.FC<CitationPreviewProps> = ({
@@ -70,8 +93,13 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
           if (!response.ok) {
             throw new Error(`Failed to fetch document: ${response.statusText}`)
           }
-          const data = (await response.json()) as AgentDocumentPayload
-          setAgentDocument(data)
+          const jsonData = await response.json()
+          const validationResult = AgentDocumentPayloadSchema.safeParse(jsonData)
+          if (!validationResult.success) {
+            console.error("API response validation error:", validationResult.error)
+            throw new Error("Invalid document data received from server.")
+          }
+          setAgentDocument(validationResult.data)
         } catch (err) {
           console.error("Error loading agent document:", err)
           setError(
@@ -483,7 +511,10 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
           isAgentDocumentCitation(citation) &&
           agentDocument && (
             <div className="h-full min-h-0 flex flex-col">
-              <AgentDocumentPreviewContent document={agentDocument} />
+              <AgentDocumentPreviewContent
+                key={agentDocument.externalId || agentDocument.createdAt}
+                document={agentDocument}
+              />
             </div>
           )}
 

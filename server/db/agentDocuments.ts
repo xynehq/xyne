@@ -4,6 +4,7 @@ import {
   type InsertAgentDocument,
   type SelectAgentDocument,
   type AgentCitationReference,
+  chats,
 } from "@/db/schema"
 import { createId } from "@paralleldrive/cuid2"
 import { and, eq, isNull, desc } from "drizzle-orm"
@@ -134,7 +135,7 @@ export const getAgentDocumentsByChatExternalId = async (
 
 /**
  * Get agent document content by external ID
- * Returns just the fields needed for displaying the document
+ * Returns just the fields needed for displaying the document along with permission check fields
  */
 export const getAgentDocumentContent = async (
   externalId: string,
@@ -148,6 +149,8 @@ export const getAgentDocumentContent = async (
       citations: AgentCitationReference[]
       confidence: number | null
       createdAt: Date
+      chatId: number
+      workspaceExternalId: string
     }
   | undefined
 > => {
@@ -161,8 +164,11 @@ export const getAgentDocumentContent = async (
       citations: agentDocuments.citations,
       confidence: agentDocuments.confidence,
       createdAt: agentDocuments.createdAt,
+      chatId: agentDocuments.chatId,
+      workspaceExternalId: chats.workspaceExternalId,
     })
     .from(agentDocuments)
+    .innerJoin(chats, eq(agentDocuments.chatId, chats.id))
     .where(
       and(eq(agentDocuments.externalId, externalId), isNull(agentDocuments.deletedAt)),
     )

@@ -5,6 +5,7 @@ export type AgentPromptSections = {
   agentQueryCrafting: string
   generalExecution: string
   chainOfThought: string
+  internalAgentDiscipline: string
 }
 
 export const agentPromptSections: AgentPromptSections = {
@@ -64,9 +65,34 @@ export const agentPromptSections: AgentPromptSections = {
   - "What does Alex say about Q4?" — enumerate Alex identities first, gather IDs, then in one turn query Slack and Gmail with OR-expanded senders plus Q4 synonyms and bounded dates.
   - "Build an RCA timeline for last night's outage" — skim Slack for SEV markers to extract incident keys, then in dependent turns hit Jira with exact keys and Calendar ±2h to stitch the timeline.
 `.trim(),
+  internalAgentDiscipline: `
+### Internal Agent Discipline
+- Internal agents are built-in system agents that are ALWAYS available and do NOT require calling list_custom_agents.
+- Each internal agent provides specific capabilities beyond what core tools can offer.
+- Select internal agents based on capability match, not name familiarity.
+- Use internal agents when core tools or fragment-based retrieval are insufficient.
+- Always follow the expected input format defined for each agent.
+
+### Available Internal Agents
+{{INTERNAL_AGENTS_PLACEHOLDER}}
+
+### Usage Guidelines
+- For internal agents: Use run_public_agent directly with the agentId from above.
+- Choose agents based on their capabilities and your task requirements.
+`.trim(),
 }
 
-export function buildAgentPromptAddendum(): string {
+export function buildAgentPromptAddendum(internalAgentsContent?: string): string {
+  const internalAgentSection = internalAgentsContent
+    ? agentPromptSections.internalAgentDiscipline.replace(
+        "{{INTERNAL_AGENTS_PLACEHOLDER}}",
+        internalAgentsContent,
+      )
+    : agentPromptSections.internalAgentDiscipline.replace(
+        "{{INTERNAL_AGENTS_PLACEHOLDER}}",
+        "No internal agents configured.",
+      )
+
   return [
     agentPromptSections.toolCoordination,
     agentPromptSections.knowledgeBaseWorkflow,
@@ -74,5 +100,6 @@ export function buildAgentPromptAddendum(): string {
     agentPromptSections.agentQueryCrafting,
     agentPromptSections.generalExecution,
     agentPromptSections.chainOfThought,
+    internalAgentSection,
   ].join("\n\n")
 }

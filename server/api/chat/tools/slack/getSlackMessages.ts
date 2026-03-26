@@ -240,10 +240,20 @@ export const getSlackRelatedMessagesTool: Tool<
         `[getSlackRelatedMessages] retrieved ${fragments.length} messages for user ${email}`,
       )
 
-      searchResponse.root.children = allItems
+      const responseForRawDocuments: VespaSearchResponse | null =
+        searchResponse?.root
+          ? {
+              ...searchResponse,
+              root: {
+                ...searchResponse.root,
+                children: allItems,
+              },
+            }
+          : null
+
       // Create rawDocuments for documentMemory persistence
       const rawDocuments = await formatSearchToolResponseAsRawDocuments(
-        searchResponse,
+        responseForRawDocuments,
         { email },
       )
 

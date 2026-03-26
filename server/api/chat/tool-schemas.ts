@@ -798,13 +798,13 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
     description: [
       "Find relevant custom agents for a query.",
       "Parameters: query (user intent), requiredCapabilities (capabilities string[]), maxAgents (upper bound).",
-      "Always run this before calling run_public_agent; it returns null when no agent is confident enough.",
+      "Call this before delegating to custom agents; returns null when no agent is confident enough.",
       "Use the output to compare multiple candidates before choosing one.",
     ].join(" "),
     category: ToolCategory.Agent,
     inputSchema: ListCustomAgentsInputSchema,
     outputSchema: ListCustomAgentsOutputSchema,
-    prerequisites: ["Must be called before run_public_agent"],
+    prerequisites: ["Must be called before run_public_agent for custom agents"],
     examples: [
       {
         scenario: "Identify renewal-focused agents for ACME Q4 blockers",
@@ -862,12 +862,13 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   run_public_agent: {
     name: XyneTools.runPublicAgent,
     description: [
-      "Delegate a task to another specialized agent.",
-      'Use Deep Document Analysis ("deep_document_agent") when you need whole-document understanding, when retrieved fragments are insufficient, or when the user asks for overviews/summaries/full explanations.',
-      "For deep_document_agent, pass query as a JSON string with: userQuery, docId, and optional startingOffsets.",
-      "For all other agents, call list_custom_agents first and pass an agentId returned by it.",
-      "Arguments: agentId, query, optional context (extra grounding), optional maxTokens (cap output cost).",
-      "Only call this after ambiguity is resolved and you've logged why this specific agent is the best fit.",
+      "Delegate a task to another agent (internal or custom).",
+      "Use when specialized capabilities are required beyond available tools.",
+      "Internal agents are always available and described in the system prompt; use directly without calling list_custom_agents.",
+      "For custom agents, you MUST call list_custom_agents first.",
+      "Arguments: agentId, query, optional context, optional maxTokens.",
+      "Ensure the query matches the expected input format of the selected agent.",
+      "Only call after ambiguity is resolved and agent selection is justified.",
     ].join(" "),
     category: ToolCategory.Agent,
     inputSchema: RunPublicAgentInputSchema,
