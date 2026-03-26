@@ -7,42 +7,153 @@
 
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent"
 import type { Static, TSchema } from "@sinclair/typebox"
-import type { AgentRunContext } from "../agent-schemas"
-import { createStateManager } from "./core/state-manager"
-import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import type {
+  AgentRunContext,
+  Clarification,
+  Decision,
+  ToolExecutionRecord,
+} from "../agent-schemas"
+import type { Message } from "@aws-sdk/client-bedrock-runtime"
+import type { FragmentImageReference, MinimalAgentFragment } from "../types"
 
-const Logger = getLogger(Subsystem.Chat)
-
-export interface XyneAgentState {
-  clarifications: Array<{
-    id: string
-    question: string
-    answer?: string
-    timestamp: number
+/**
+ * MCP Virtual Agent Runtime
+ */
+export interface MCPVirtualAgentRuntime {
+  agentId: string
+  connectorId: string
+  connectorName?: string
+  description?: string
+  tools: Array<{
+    toolName: string
+    toolSchema?: string | null
+    description?: string
   }>
+  client: {
+    callTool: (args: { name: string; arguments: unknown }) => Promise<unknown>
+    close?: () => Promise<void>
+  }
+}
+
+/**
+ * Tool expectation for review system
+ */
+export interface ToolExpectation {
+  goal: string
+  successCriteria: string[]
+  failureSignals?: string[]
+  stopCondition?: string
+  evidencePlan?: string
+}
+
+export interface ToolFailureInfo {
+  count: number
+  lastError: string
+  lastAttempt: number
+  cooldownUntilTurn: number
+}
+
+/**
+ * Assignment of expectation to a tool call
+ */
+export interface ToolExpectationAssignment {
+  toolName: string
+  expectation: ToolExpectation
+}
+
+/**
+ * Review result from automatic turn-end review
+ */
+export interface ReviewResult {
+  status: "ok" | "needs_attention"
+  notes: string
+  toolFeedback: Array<{
+    toolName: string
+    outcome: "met" | "missed" | "error"
+    summary: string
+    expectationGoal?: string
+    followUp?: string
+  }>
+  unmetExpectations: string[]
+  planChangeNeeded: boolean
+  planChangeReason?: string
+  anomaliesDetected: boolean
+  anomalies: string[]
+  recommendation: "proceed" | "gather_more" | "clarify_query" | "replan"
+  ambiguityResolved: boolean
+  clarificationQuestions?: string[]
+}
+
+/**
+ * Xyne-specific state maintained alongside pi-mono session
+ */
+export interface XyneAgentState {
+  // Turn tracking
+  turnCount: number
+
+  // Clarification tracking
+  clarifications: Clarification[]
   ambiguityResolved: boolean
   pendingClarificationId?: string
+
+  // Existing context fields
   plan: any | null
   currentSubTask: string | null
-  allFragments: any[]
-  toolCallHistory: any[]
-  review: any
+  allFragments: MinimalAgentFragment[]
+  turnFragments: Map<number, MinimalAgentFragment[]>
+  allImages: FragmentImageReference[]
+  imagesByTurn: Map<number, FragmentImageReference[]>
+  recentImages: FragmentImageReference[]
+  toolCallHistory: ToolExecutionRecord[]
+
+  // Failed tools tracking (for cooldowns)
+  failedTools: Map<string, ToolFailureInfo>
+
+  // Review and expectation tracking (ported from JAF)
+  review: {
+    lastReviewTurn: number | null
+    reviewFrequency: number
+    lastReviewedFragmentIndex: number
+    outstandingAnomalies: string[]
+    clarificationQuestions: string[]
+    lastReviewResult: ReviewResult | null
+    lockedByFinalSynthesis: boolean
+    lockedAtTurn: number | null
+    pendingReview?: Promise<void>
+  }
+
+  // Expectation tracking
+  pendingExpectations: ToolExpectationAssignment[]
+  expectationHistory: Map<number, ToolExpectationAssignment[]>
+  expectedResultsByCallId: Map<string, ToolExpectation>
+
   finalSynthesis: any
   agentPrompt?: string
-  userContext?: string
+  userContext: string
   dedicatedAgentSystemPrompt?: string
   modelId?: string
+
+  // Delegation
+  delegationEnabled: boolean
+  maxOutputTokens?: number
+  mcpAgents: MCPVirtualAgentRuntime[]
+
+  // Turn artifacts
   currentTurnArtifacts: {
-    fragments: any[]
-    unrankedFragmentsByTool: Map<string, any>
-    expectations: any[]
+    fragments: MinimalAgentFragment[]
+    unrankedFragmentsByTool: Map<
+      string,
+      { query: string; fragments: MinimalAgentFragment[] }
+    >
+    expectations: ToolExpectationAssignment[]
     toolOutputs: any[]
-    images: any[]
+    images: FragmentImageReference[]
     executionToolsCalled: number
     todoWriteCalled: boolean
     turnStartedAt: number
   }
+
+  // Agent delegation
   availableAgents: Array<{
     agentId: string
     agentName: string
@@ -50,6 +161,26 @@ export interface XyneAgentState {
     capabilities?: string[]
   }>
   usedAgents: string[]
+
+  // Performance metrics
+  totalLatency: number
+  totalCost: number
+  tokenUsage: {
+    input: number
+    output: number
+  }
+
+  // Agent & tool tracking
+  enabledTools: Set<string>
+
+  // Error & retry tracking
+  retryCount: number
+  maxRetries: number
+
+  // Decision log (for debugging)
+  decisions: Decision[]
+
+  // User context
   user: {
     email: string
     workspaceId: string
@@ -67,121 +198,125 @@ export interface XyneAgentState {
     attachments: Array<{ fileId: string; isImage: boolean }>
     timestamp: string
   }
-  conversationHistoryMessages?: any[]
+
+  // Conversation history for synthesis
+  conversationHistoryMessages: Message[]
+
+  // Memory
   episodicMemoriesText?: string
   chatMemoryText?: string
-  seenDocuments?: Set<string>
+
+  // Seen documents (for dedup across turns)
+  seenDocuments: Set<string>
+
+  // Stop/abort control
   stopController?: AbortController
   stopSignal?: AbortSignal
-  stopRequested?: boolean
+  stopRequested: boolean
+
+  // Thinking log for fallback synthesis
   thinkingLog?: string
 }
 
+/**
+ * Context passed to tool execute functions
+ * Combines pi-mono ExtensionContext with Xyne state
+ */
 export interface XyneToolContext {
+  // pi-mono provided
   events: {
     emit: (event: string, payload: any) => void
   }
+
+  // Xyne-specific state (stored separately)
   xyneState: XyneAgentState
+
+  // Helpers
   persistState: () => Promise<void>
+
+  // Runtime callbacks for streaming output (used by synthesizeFinalAnswer)
   runtime?: {
     streamAnswerText: (text: string) => Promise<void>
     emitReasoning: (payload: any) => Promise<void>
   }
 }
 
-function createDefaultInitialState(): XyneAgentState {
-  return {
-    clarifications: [],
-    ambiguityResolved: false,
-    plan: null,
-    currentSubTask: null,
-    allFragments: [],
-    toolCallHistory: [],
-    review: {
-      lockedByFinalSynthesis: false,
-      lockedAtTurn: null,
-    },
-    finalSynthesis: {
-      requested: false,
-      completed: false,
-      suppressAssistantStreaming: false,
-      streamedText: "",
-    },
-    currentTurnArtifacts: {
-      fragments: [],
-      unrankedFragmentsByTool: new Map(),
-      expectations: [],
-      toolOutputs: [],
-      images: [],
-      executionToolsCalled: 0,
-      todoWriteCalled: false,
-      turnStartedAt: Date.now(),
-    },
-    availableAgents: [],
-    usedAgents: [],
-    user: {
-      email: "",
-      workspaceId: "",
-      id: "",
-    },
-    chat: {
-      externalId: "",
-      metadata: {},
-    },
-    message: {
-      text: "",
-      attachments: [],
-      timestamp: "",
-    },
-    seenDocuments: new Set(),
-  }
+// ============================================================================
+// SESSION-SCOPED STATE STORAGE
+// Prevents concurrent request corruption by keying state/runtime/persist per session.
+// ============================================================================
+
+interface SessionContext {
+  state: XyneAgentState
+  runtime?: XyneToolContext["runtime"]
+  persistFn: PersistXyneStateFn
 }
 
-export const xyneStateManager = createStateManager<XyneAgentState>({
-  initialState: createDefaultInitialState(),
-  onPersist: async (state) => {
-    Logger.debug({ chatId: state.chat.externalId }, "Persisting Xyne state via state-manager")
-  },
-})
+/** Session-scoped storage keyed by chatExternalId */
+const sessionStore = new Map<string, SessionContext>()
 
-const runtimeStore = new Map<string, XyneToolContext["runtime"]>()
-const persistFnStore = new Map<string, PersistXyneStateFn>()
+/** Currently active session ID (set when a request starts processing) */
+let activeSessionId: string | null = null
 
+/**
+ * Register a session with its state, persist function, and runtime
+ */
 export function registerSession(
   sessionId: string,
   state: XyneAgentState,
   persistFn: PersistXyneStateFn,
   runtime?: XyneToolContext["runtime"],
 ): void {
-  xyneStateManager.register(sessionId)
-  const registeredState = xyneStateManager.get(sessionId)
-  Object.assign(registeredState, state)
-  runtimeStore.set(sessionId, runtime)
-  persistFnStore.set(sessionId, persistFn)
+  sessionStore.set(sessionId, { state, runtime, persistFn })
+  activeSessionId = sessionId
 }
 
+/**
+ * Update runtime for an active session
+ */
 export function setSessionRuntime(
   sessionId: string,
   runtime: XyneToolContext["runtime"],
 ): void {
-  runtimeStore.set(sessionId, runtime)
+  const session = sessionStore.get(sessionId)
+  if (session) {
+    session.runtime = runtime
+  }
 }
 
+/**
+ * Clean up session when request completes
+ */
 export function unregisterSession(sessionId: string): void {
-  xyneStateManager.unregister(sessionId)
-  runtimeStore.delete(sessionId)
-  persistFnStore.delete(sessionId)
+  sessionStore.delete(sessionId)
+  if (activeSessionId === sessionId) {
+    activeSessionId = null
+  }
 }
 
-const stateMap = new WeakMap<any, string>()
+/**
+ * Get session context by session ID or active session fallback
+ */
+function getSessionContext(sessionId?: string): SessionContext {
+  const id = sessionId || activeSessionId
+  if (id && sessionStore.has(id)) {
+    return sessionStore.get(id)!
+  }
+  throw new Error(`Xyne session not found: ${id || "no active session"}`)
+}
 
-export function getXyneState(ctx?: any): XyneAgentState {
+// Legacy API — delegates to session store for backward compatibility
+const stateMap = new WeakMap<any, string>() // maps pi-mono ctx → sessionId
+
+export function getXyneState(ctx: any): XyneAgentState {
+  // Try to get sessionId from WeakMap mapping either the ExtensionContext or SessionManager
   const lookupCtx = ctx && ctx.session ? ctx.session : ctx
   if (lookupCtx && stateMap.has(lookupCtx)) {
     const sessionId = stateMap.get(lookupCtx)!
-    return xyneStateManager.get(sessionId)
+    return getSessionContext(sessionId).state
   }
-  return xyneStateManager.get()
+  // Fallback to active session
+  return getSessionContext().state
 }
 
 export function setXyneState(ctx: any, state: XyneAgentState): void {
@@ -189,20 +324,23 @@ export function setXyneState(ctx: any, state: XyneAgentState): void {
   stateMap.set(ctx, sessionId)
 }
 
+// Legacy compat — these now delegate to active session
 export function setPersistFunction(fn: PersistXyneStateFn): void {
-  const activeSessionId = xyneStateManager.getActiveSessionId()
   if (activeSessionId) {
-    persistFnStore.set(activeSessionId, fn)
+    const session = sessionStore.get(activeSessionId)
+    if (session) session.persistFn = fn
   }
 }
 
 export function setRuntime(runtime: XyneToolContext["runtime"]): void {
-  const activeSessionId = xyneStateManager.getActiveSessionId()
   if (activeSessionId) {
     setSessionRuntime(activeSessionId, runtime)
   }
 }
 
+/**
+ * Convert JAF-style tool to pi-mono ToolDefinition
+ */
 export function createXyneTool<TParams extends TSchema>(
   name: string,
   description: string,
@@ -221,23 +359,22 @@ export function createXyneTool<TParams extends TSchema>(
     description,
     parameters,
     execute: async (toolCallId, params, signal, onUpdate, extCtx) => {
+      // Get Xyne state from extension context (resolves via session store)
       const xyneState = getXyneState(extCtx)
       const sessionId = xyneState.chat.externalId
-      const runtime = runtimeStore.get(sessionId)
-      const persistFn = persistFnStore.get(sessionId)
+      const session = getSessionContext(sessionId)
 
+      // Create Xyne tool context with session-scoped runtime and persist
       const xyneCtx: XyneToolContext = {
         events: (extCtx as any).events || { emit: () => {} },
         xyneState,
         persistState: async () => {
-          if (persistFn) {
-            await persistFn(xyneState)
-          }
-          await xyneStateManager.persist(sessionId)
+          await session.persistFn(xyneState)
         },
-        runtime,
+        runtime: session.runtime,
       }
 
+      // Execute with Xyne context
       return execute(
         toolCallId,
         params as Static<TParams>,
@@ -249,11 +386,18 @@ export function createXyneTool<TParams extends TSchema>(
   }
 }
 
+// ============================================================================
+// TYPES
+// ============================================================================
+
 export type PersistXyneStateFn = (state: XyneAgentState) => Promise<void>
 export type LoadXyneStateFn = (
   chatExternalId: string,
 ) => Promise<XyneAgentState | null>
 
+/**
+ * Initialize fresh Xyne state
+ */
 export function createInitialXyneState(
   email: string,
   workspaceId: string,
@@ -263,22 +407,39 @@ export function createInitialXyneState(
   messageTimestamp: string,
 ): XyneAgentState {
   return {
+    turnCount: 0,
     clarifications: [],
     ambiguityResolved: false,
     plan: null,
     currentSubTask: null,
     allFragments: [],
+    turnFragments: new Map(),
+    allImages: [],
+    imagesByTurn: new Map(),
+    recentImages: [],
     toolCallHistory: [],
+    failedTools: new Map(),
     review: {
+      lastReviewTurn: null,
+      reviewFrequency: 5,
+      lastReviewedFragmentIndex: 0,
+      outstandingAnomalies: [],
+      clarificationQuestions: [],
+      lastReviewResult: null,
       lockedByFinalSynthesis: false,
       lockedAtTurn: null,
     },
+    pendingExpectations: [],
+    expectationHistory: new Map(),
+    expectedResultsByCallId: new Map(),
     finalSynthesis: {
       requested: false,
       completed: false,
       suppressAssistantStreaming: false,
       streamedText: "",
     },
+    delegationEnabled: true, // Default to enabled for main agent
+    mcpAgents: [],
     currentTurnArtifacts: {
       fragments: [],
       unrankedFragmentsByTool: new Map(),
@@ -291,6 +452,16 @@ export function createInitialXyneState(
     },
     availableAgents: [],
     usedAgents: [],
+    totalLatency: 0,
+    totalCost: 0,
+    tokenUsage: {
+      input: 0,
+      output: 0,
+    },
+    enabledTools: new Set(),
+    retryCount: 0,
+    maxRetries: 3,
+    decisions: [],
     user: {
       email,
       workspaceId,
@@ -305,6 +476,10 @@ export function createInitialXyneState(
       attachments: [],
       timestamp: messageTimestamp,
     },
+    userContext: "",
+    conversationHistoryMessages: [],
     seenDocuments: new Set(),
+    stopRequested: false,
+    thinkingLog: "",
   }
 }

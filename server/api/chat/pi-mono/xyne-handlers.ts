@@ -82,8 +82,14 @@ export function createXyneEventHandlers(config: XyneHandlerConfig) {
 
         state.toolCallHistory.push({
           toolName,
-          isError,
-          timestamp: Date.now(),
+          connectorId: null,
+          agentName: "pi-mono",
+          arguments: {},
+          turnNumber: 0,
+          startedAt: new Date(),
+          durationMs: 0,
+          estimatedCostUsd: 0,
+          status: isError ? "error" : "success",
         })
 
         await emitReasoningEvent(
@@ -169,7 +175,7 @@ export function createXyneEventHandlers(config: XyneHandlerConfig) {
 
         const unranked = Array.from(
           state.currentTurnArtifacts.unrankedFragmentsByTool.values(),
-        ).flat()
+        ).flatMap((entry) => entry.fragments)
 
         try {
           if (unranked.length > 0) {
