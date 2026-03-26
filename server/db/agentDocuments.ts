@@ -118,12 +118,11 @@ export const getAgentDocumentsByChatId = async (
 export const getAgentDocumentsByChatExternalId = async (
   chatExternalId: string,
 ): Promise<SelectAgentDocument[]> => {
-  const { chats } = await import("@/db/schema")
 
   const chat = await db
     .select({ id: chats.id })
     .from(chats)
-    .where(eq(chats.externalId, chatExternalId))
+    .where(and(eq(chats.externalId, chatExternalId), isNull(chats.deletedAt)))
     .limit(1)
 
   if (!chat[0]) {
@@ -202,7 +201,9 @@ export const updateAgentDocument = async (
   const result = await db
     .update(agentDocuments)
     .set(updateData)
-    .where(eq(agentDocuments.externalId, externalId))
+    .where(
+      and(eq(agentDocuments.externalId, externalId), isNull(agentDocuments.deletedAt)),
+    )
     .returning()
 
   if (!result[0]) {
@@ -225,7 +226,9 @@ export const deleteAgentDocument = async (
   const result = await db
     .update(agentDocuments)
     .set({ deletedAt: new Date() })
-    .where(eq(agentDocuments.externalId, externalId))
+    .where(
+      and(eq(agentDocuments.externalId, externalId), isNull(agentDocuments.deletedAt)),
+    )
     .returning()
 
   return result.length > 0
