@@ -19,7 +19,6 @@ import {
   checkUserAgentAccessByExternalId,
   getAgentsMadeByMe,
   getAgentsSharedToMe,
-  getAgentUsers,
 } from "@/db/userAgentPermission"
 import { db } from "./client"
 import { getLoggerWithChild } from "@/logger"
@@ -29,6 +28,71 @@ import { getCollectionById, getCollectionItemById, updateCollection } from "./kn
 export { getAgentsMadeByMe, getAgentsSharedToMe }
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Db)
+
+// Helper to update collection permissions based on ownerEmails
+async function updateCollectionsWithSharedEmails(
+  trx: TxnOrClient,
+  agentData: any,
+  newAgent: SelectAgent,
+) {
+  const agentSharedEmails = [...(agentData.ownerEmails || []), ...(agentData.userEmails || [])]
+  if (!agentSharedEmails.length) return
+
+  const collectionIds = await getAgentCollectionIds(trx, newAgent)
+  if (!collectionIds.length) return
+
+  for (const collectionId of collectionIds) {
+    try {
+      const collection = await getCollectionById(trx, collectionId)
+      if (collection) {
+        // permissions is an array of userIds (numbers)
+        const currentPermissions: number[] = Array.isArray(
+          collection.permissions,
+        )
+          ? (collection.permissions as number[])
+          : []
+        const newPermissions = [...currentPermissions]
+        let permissionsUpdated = false
+
+        // Get userIds from emails
+        const userIds: number[] = []
+        for (const email of agentSharedEmails) {
+          try {
+            const users = await getUserByEmail(trx, email)
+            if (users && users.length > 0) {
+              userIds.push(users[0].id)
+            }
+          } catch (error) {
+            loggerWithChild().warn(
+              `Failed to fetch userId for email ${email}: ${error}`,
+            )
+          }
+        }
+        // Add new userIds to permissions if not already present
+        for (const id of userIds) {
+          if (!newPermissions.includes(id)) {
+            newPermissions.push(id)
+            permissionsUpdated = true
+          }
+        }
+
+        if (permissionsUpdated) {
+          await updateCollection(trx, collectionId, {
+            permissions: newPermissions,
+            updatedAt: new Date(),
+          })
+          loggerWithChild().info(
+            `Updated permissions for collection ${collectionId}: added ${agentSharedEmails.length} emails`,
+          )
+        }
+      }
+    } catch (error) {
+      loggerWithChild().warn(
+        `Failed to update permissions for collection ${collectionId}: ${error}`,
+      )
+    }
+  }
+}
 
 export const insertAgent = async (
   trx: TxnOrClient,
@@ -71,7 +135,7 @@ export const insertAgent = async (
 
     // Handle collection permissions for agent's knowledge base integrations
     try {
-      await syncCollectionPermissionsForAgent(tx, newAgent)
+      await updateCollectionsWithSharedEmails(tx, agentData, newAgent)
     } catch (error) {
       loggerWithChild().warn(
         `Failed to process collection permissions for agent ${newAgent.externalId}: ${error}`,
@@ -204,9 +268,12 @@ export const updateAgentByExternalId = async (
   }
   const updatedAgent = selectAgentSchema.parse(agentArr[0])
 
-  // Sync collection permissions (handles both additions and removals)
   try {
-    await syncCollectionPermissionsForAgent(trx, updatedAgent)
+    await updateCollectionsWithSharedEmails(
+      trx,
+      agentData,
+      updatedAgent,
+    )
   } catch (error) {
     loggerWithChild().warn(
       `Failed to process collection permissions for agent ${updatedAgent.externalId}: ${error}`,
@@ -711,79 +778,4 @@ export const getAgentCollections = async (
   }
 
   return collections
-}
-
-/**
- * Sync collection permissions for an agent
- * Adds all agent users (owners + shared) to collection permissions
- * Removes users who no longer have access (unless they have access via other agents)
- */
-export const syncCollectionPermissionsForAgent = async (
-  trx: TxnOrClient,
-  agent: SelectAgent,
-): Promise<void> => {
-  try {
-    // Get all collections attached to this agent
-    const collectionIds = await getAgentCollectionIds(trx, agent)
-    if (!collectionIds.length) return
-    
-    // Get all users who have access to this agent
-    const agentUsers = await getAgentUsers(trx, agent.id)
-    const agentUserIds = new Set(agentUsers.map((u) => u.userId))
-    
-    loggerWithChild().info(
-      `Syncing collection permissions for agent ${agent.externalId}: found ${collectionIds.length} collections and ${agentUsers.length} users`,
-    )
-    
-    for (const collectionId of collectionIds) {
-      try {
-        const collection = await getCollectionById(trx, collectionId)
-        if (!collection) {
-          loggerWithChild().warn(
-            `Collection ${collectionId} not found during permission sync for agent ${agent.externalId}`,
-          )
-          continue
-        }
-        
-        // Get current permissions
-        const currentPermissions: number[] = Array.isArray(collection.permissions)
-          ? (collection.permissions as number[])
-          : []
-
-        // Build new permissions list
-        const newPermissions = currentPermissions
-        let permissionsChanged = false
-        
-        // Always include owner (ownerId is separate from permissions array, but we track for consistency)
-        // Note: We don't add owner to permissions array since owner has implicit access
-        
-        // Add all agent users to permissions
-        for (const userId of agentUserIds) {
-          if (!newPermissions.includes(userId)) {
-            permissionsChanged = true
-            newPermissions.push(userId)
-          }
-        }
-        
-        if (permissionsChanged) {
-          await updateCollection(trx, collectionId, {
-            permissions: newPermissions,
-            updatedAt: new Date(),
-          })
-          
-          loggerWithChild().info(
-            `Updated permissions for collection ${collectionId}: added ${newPermissions.length - currentPermissions.length} users, removed ${currentPermissions.length - newPermissions.length} users`,
-          )
-        }
-      } catch (error) {
-        loggerWithChild().warn(
-          `Failed to sync permissions for collection ${collectionId} in agent ${agent.externalId}: ${error}`,
-        )
-      }
-    }
-  } catch (error) {
-    loggerWithChild().warn(
-      `Failed to sync collection permissions for agent ${agent.externalId}: ${error}`,
-    )
-  }
 }
