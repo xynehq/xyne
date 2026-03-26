@@ -82,38 +82,54 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
       return
     }
 
+    const abortController = new AbortController()
+    const { signal } = abortController
+
     if (isAgentDocumentCitation(citation)) {
       const loadAgentJson = async () => {
+        if (signal.aborted) return
         setLoading(true)
         setError(null)
         setDocumentContent(null)
         setAgentDocument(null)
         try {
-          const response = await authFetch(citation.url, { method: "GET" })
+          const response = await authFetch(citation.url, {
+            method: "GET",
+            signal,
+          })
+          if (signal.aborted) return
           if (!response.ok) {
             throw new Error(`Failed to fetch document: ${response.statusText}`)
           }
           const jsonData = await response.json()
+          if (signal.aborted) return
           const validationResult = AgentDocumentPayloadSchema.safeParse(jsonData)
           if (!validationResult.success) {
             console.error("API response validation error:", validationResult.error)
             throw new Error("Invalid document data received from server.")
           }
+          if (signal.aborted) return
           setAgentDocument(validationResult.data)
         } catch (err) {
+          if (signal.aborted) return
           console.error("Error loading agent document:", err)
           setError(
             err instanceof Error ? err.message : "Failed to load document",
           )
         } finally {
-          setLoading(false)
+          if (!signal.aborted) {
+            setLoading(false)
+          }
         }
       }
       void loadAgentJson()
-      return
+      return () => {
+        abortController.abort()
+      }
     }
 
     const loadDocument = async () => {
+      if (signal.aborted) return
       setLoading(true)
       setError(null)
       setAgentDocument(null)
@@ -126,35 +142,46 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
           const response =
             await api.cl[citation.clId].files[citation.itemId].content.$get()
 
+          if (signal.aborted) return
           if (!response.ok) {
             throw new Error(`Failed to fetch document: ${response.statusText}`)
           }
 
           const blob = await response.blob()
+          if (signal.aborted) return
           setDocumentContent(blob)
         } else if (citation.url) {
           const response = await authFetch(citation.url, {
             method: "GET",
+            signal,
           })
 
+          if (signal.aborted) return
           if (!response.ok) {
             throw new Error(`Failed to fetch document: ${response.statusText}`)
           }
 
           const blob = await response.blob()
+          if (signal.aborted) return
           setDocumentContent(blob)
         } else {
           throw new Error("No document source available")
         }
       } catch (err) {
+        if (signal.aborted) return
         console.error("Error loading document:", err)
         setError(err instanceof Error ? err.message : "Failed to load document")
       } finally {
-        setLoading(false)
+        if (!signal.aborted) {
+          setLoading(false)
+        }
       }
     }
 
     void loadDocument()
+    return () => {
+      abortController.abort()
+    }
   }, [citation, isOpen])
 
   const { highlightText, clearHighlights, scrollToMatch } = useScopedFind(
@@ -446,7 +473,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
                 {isAgentDocumentCitation(citation) && agentDocument?.agentName
                   ? agentDocument.agentName
-                  : citation.title.split("/").pop() || "Document Preview"}
+                  : citation?.title?.split("/").pop() || "Document Preview"}
               </h3>
               {citation && isAgentDocumentCitation(citation) && agentDocument ? (
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">

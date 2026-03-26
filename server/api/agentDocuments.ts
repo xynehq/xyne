@@ -105,8 +105,14 @@ export const GetAgentDocumentContentApi = async (c: Context) => {
     }
 
     // Verify user has access to the workspace this document belongs to
-    // This will throw if user doesn't have access
-    await getUserAndWorkspaceByEmail(db, document.workspaceExternalId, email)
+    const workspaceUser = await getUserAndWorkspaceByEmail(
+      db,
+      document.workspaceExternalId,
+      email,
+    )
+    if (!workspaceUser) {
+      throw new HTTPException(403, { message: "Access denied" })
+    }
 
     loggerWithChild().info(
       { externalId, userEmail: email },

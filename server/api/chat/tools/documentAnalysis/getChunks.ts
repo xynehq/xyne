@@ -14,7 +14,7 @@ import { z } from "zod"
 const getChunksInputSchema = z.object({
   docId: z.string().describe("Document ID to read from"),
   offset: z.number().int().min(0).describe("Starting chunk index (0-based)"),
-  limit: z.number().int().min(1).describe("Number of chunks to fetch (5-10 recommended)"),
+  limit: z.number().int().min(1).max(20).describe("Number of chunks to fetch (5-10 recommended)"),
 })
 
 /**

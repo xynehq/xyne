@@ -67,8 +67,8 @@ export type AgentCitationReference = z.infer<typeof agentCitationReferenceSchema
 
 // Insert schema
 export const insertAgentDocumentSchema = createInsertSchema(agentDocuments, {
-  citations: z.array(agentCitationReferenceSchema).optional().default([]),
-  confidence: z.number().min(0).max(1).optional(),
+  citations: z.array(agentCitationReferenceSchema).nullable().optional().default([]),
+  confidence: z.number().min(0).max(1).nullable().optional(),
 }).omit({
   id: true,
   createdAt: true,
@@ -78,8 +78,8 @@ export type InsertAgentDocument = z.infer<typeof insertAgentDocumentSchema>
 
 // Select schema
 export const selectAgentDocumentSchema = createSelectSchema(agentDocuments, {
-  citations: z.array(agentCitationReferenceSchema).optional().default([]),
-  confidence: z.number().min(0).max(1).optional(),
+  citations: z.array(agentCitationReferenceSchema).nullable().optional().default([]),
+  confidence: z.number().min(0).max(1).nullable().optional(),
 })
 
 export type SelectAgentDocument = z.infer<typeof selectAgentDocumentSchema>
