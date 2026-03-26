@@ -103,9 +103,10 @@ export const insertAgent = async (
   userId: number,
   workspaceId: number,
 ): Promise<SelectAgent> => {
+  const { ownerEmails, userEmails, ...dbFields } = agentData
   const externalId = createId()
   const agentWithIds = {
-    ...agentData,
+    ...dbFields,
     externalId,
     userId,
     workspaceId,
@@ -246,7 +247,8 @@ export const updateAgentByExternalId = async (
     }
   >,
 ): Promise<SelectAgent | null> => {
-  const updateData = { ...agentData, updatedAt: new Date() }
+  const { ownerEmails, userEmails, ...dbFields } = agentData
+  const updateData = { ...dbFields, updatedAt: new Date() }
   // Validate partial update data - Drizzle Zod doesn't directly support partial insert schemas for updates
   // We can manually pick keys or ensure the input is structured correctly.
   // For simplicity, we assume agentData contains valid updatable fields.
