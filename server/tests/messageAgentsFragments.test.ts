@@ -153,8 +153,8 @@ describe("message-agents context tracking", () => {
     // Delegated agent outputs now always produce a synthetic delegated DocumentState
     // (even when there are no citations/rawDocuments).
     expect(context.currentTurnArtifacts.syntheticDocs.length).toBe(1)
-    expect(context.currentTurnArtifacts.syntheticDocs[0].docId).toContain(
-      "delegated_agent:agent-123:turn:1",
+    expect(context.currentTurnArtifacts.syntheticDocs[0].docId).toBe(
+      "delegated_agent:agent-123:call-delegate-1",
     )
     expect(context.currentTurnArtifacts.toolOutputs.length).toBe(1)
     expect(context.currentTurnArtifacts.toolOutputs[0].toolName).toBe(

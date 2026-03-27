@@ -33,6 +33,10 @@ import { getChunkCountPerDoc } from "./chunk-selection"
 import { Apps } from "@xyne/vespa-ts/types"
 import type { VespaSearchResults } from "@xyne/vespa-ts"
 
+let syntheticLsDocSequence = 0
+let syntheticDelegatedDocSequence = 0
+let syntheticChatMemoryDocSequence = 0
+
 /** Create an empty DocumentState. */
 export function createDocumentState(docId: string, source: Citation): DocumentState {
   return {
@@ -388,9 +392,17 @@ export function createSyntheticDocFromChatMemory(
     chatId: string
     turnNumber: number
     query?: string
+    toolCallId?: string
   }
 ): DocumentState {
-  const docId = `chat-memory:${options.chatId}:${options.turnNumber}`
+  const normalizedToolCallId =
+    typeof options.toolCallId === "string" && options.toolCallId.trim().length > 0
+      ? options.toolCallId.trim()
+      : null
+  const uniqueInvocationId =
+    normalizedToolCallId ??
+    `seq:${options.turnNumber}:${syntheticChatMemoryDocSequence++}`
+  const docId = `chat-memory:${options.chatId}:${uniqueInvocationId}`
   const source: Citation = {
     docId,
     title: `Chat Memory for ${options.chatId}`,
@@ -442,10 +454,18 @@ export function createSyntheticDocFromLs(
     targetId?: string
     targetPath?: string
     turnNumber: number
+    toolCallId?: string
   }
 ): DocumentState {
   const targetId = options.targetId ?? "root"
-  const docId = `kb-ls:${targetId}:${options.turnNumber}`
+  const normalizedToolCallId =
+    typeof options.toolCallId === "string" && options.toolCallId.trim().length > 0
+      ? options.toolCallId.trim()
+      : null
+  const uniqueInvocationId =
+    normalizedToolCallId ??
+    `seq:${options.turnNumber}:${syntheticLsDocSequence++}`
+  const docId = `kb-ls:${targetId}:${uniqueInvocationId}`
   const source: Citation = {
     docId,
     title: options.targetPath ?? "Knowledge Base Navigation",
@@ -497,9 +517,24 @@ export function createSyntheticDocFromAgent(
     agentName: string
     turnNumber: number
     toolQuery?: string
+    delegationRunId?: string
+    toolCallId?: string
   }
 ): DocumentState {
-  const docId = `delegated_agent:${options.agentId}:turn:${options.turnNumber}`
+  const normalizedDelegationRunId =
+    typeof options.delegationRunId === "string" &&
+    options.delegationRunId.trim().length > 0
+      ? options.delegationRunId.trim()
+      : null
+  const normalizedToolCallId =
+    typeof options.toolCallId === "string" && options.toolCallId.trim().length > 0
+      ? options.toolCallId.trim()
+      : null
+  const uniqueInvocationId =
+    normalizedDelegationRunId ??
+    normalizedToolCallId ??
+    `seq:${options.turnNumber}:${syntheticDelegatedDocSequence++}`
+  const docId = `delegated_agent:${options.agentId}:${uniqueInvocationId}`
   const source: Citation = {
     docId,
     title: `Delegated agent (${options.agentName})`,

@@ -10,7 +10,8 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pin 22.04 so DuckDB’s prebuilt native binary matches GLIBCXX (avoid slow/flaky --build-from-source).
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,10 +25,6 @@ jobs:
         working-directory: ./server
         run: bun install
 
-      - name: Rebuild DuckDB native binding
-        working-directory: ./server
-        run: npm rebuild duckdb --build-from-source
-        
       - name: Clear test cache
         working-directory: ./server
         run: rm -rf node_modules/.cache

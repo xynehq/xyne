@@ -2011,16 +2011,22 @@ export async function afterToolExecutionHook(
     (result?.data && typeof result.data === "object" && typeof (result.data as { resultSummary?: string }).resultSummary === "string")
       ? (result.data as { resultSummary: string }).resultSummary
       : summarizeToolResultPayload(result)
-
+  const toolCallId =
+    hookContext.toolCall?.id !== undefined &&
+    hookContext.toolCall?.id !== null
+      ? String(hookContext.toolCall.id)
+      : undefined
 
   // 5b. Handle synthetic documents for non-Vespa tools (chat memory, ls)
   // These are derived documents, not retrievable truth sources
   if (toolName === XyneTools.searchChatHistory && toolFragments.length > 0) {
     const chatId = (args as { chatId?: string })?.chatId ?? context.chat?.externalId ?? "unknown"
+
     const syntheticDoc = createSyntheticDocFromChatMemory(toolFragments, {
       chatId,
       turnNumber: effectiveTurnNumber,
       query: toolQuery,
+      toolCallId,
     })
     context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
     loggerWithChild({ email: context.user.email }).info(
@@ -2036,6 +2042,7 @@ export async function afterToolExecutionHook(
         targetId: lsData.target?.id,
         targetPath: lsData.target?.path,
         turnNumber: effectiveTurnNumber,
+        toolCallId,
       })
       context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
       loggerWithChild({ email: context.user.email }).info(
@@ -2050,12 +2057,16 @@ export async function afterToolExecutionHook(
       (resultData as { agentId?: string })?.agentId ||
       (args as { agentId?: string })?.agentId ||
       "unknown"
+    const delegationRunId =
+      (resultData as { delegationRunId?: string })?.delegationRunId
     const agentName = resolveDelegatedAgentName(context, agentId)
     const syntheticDoc = createSyntheticDocFromAgent(resultSummary, {
       agentId,
       agentName,
       turnNumber: effectiveTurnNumber,
       toolQuery,
+      delegationRunId,
+      toolCallId,
     })
     context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
     loggerWithChild({ email: context.user.email }).info(
@@ -2325,14 +2336,20 @@ export async function buildDelegatedAgentFragments(opts: {
     typeof resultData.resultSummary === "string"
       ? resultData.resultSummary.trim()
       : ""
+  const delegationRunId =
+    typeof resultData.delegationRunId === "string"
+      ? resultData.delegationRunId.trim()
+      : ""
+  const syntheticFragmentIdSuffix =
+    delegationRunId.length > 0 ? `${agentId}:${delegationRunId}` : agentId
 
   const syntheticDelegatedAgentFragment: MinimalAgentFragment | null =
     resultSummary.length > 0
       ? {
-          id: agentId,
+          id: syntheticFragmentIdSuffix,
           content: resultSummary,
           source: {
-            docId: `delegated_agent:${agentId}:response`,
+            docId: `delegated_agent:${syntheticFragmentIdSuffix}:response`,
             title: `Delegated agent (${agentName})`,
             url: "",
             app: Apps.Xyne,

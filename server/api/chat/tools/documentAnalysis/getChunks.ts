@@ -20,19 +20,52 @@ const getChunksInputSchema = z.object({
   limit: z.number().int().min(1).max(10).describe("Number of chunks to fetch (2-5 recommended)"),
 })
 
+function getValidatedChunkFields(fields: Record<string, unknown>): {
+  chunksSummary: string[]
+  chunkPositions: number[]
+} | null {
+  const chunksSummaryRaw = fields.chunks_summary
+  const chunkPositionsRaw = fields.chunks_pos_summary
+
+  const chunksSummary =
+    Array.isArray(chunksSummaryRaw) &&
+    chunksSummaryRaw.every((chunk) => typeof chunk === "string")
+      ? chunksSummaryRaw
+      : null
+
+  if (!chunksSummary) {
+    return null
+  }
+
+  const chunkPositions =
+    Array.isArray(chunkPositionsRaw) &&
+    chunkPositionsRaw.every((pos) => typeof pos === "number")
+      ? chunkPositionsRaw
+      : null
+
+  if (chunkPositions) {
+    return { chunksSummary, chunkPositions }
+  }
+
+  return {
+    chunksSummary,
+    chunkPositions: chunksSummary.map((_, idx) => idx),
+  }
+}
+
 function normalizeWindowedVespaHit(
   doc: VespaSearchResult,
+  chunksSummary: string[],
+  chunkPositions: number[],
   offset: number,
   endOffset: number,
 ): VespaSearchResult {
   const fields = doc.fields as Record<string, unknown>
-  const chunksSummary = fields.chunks_summary as string[]
 
   const windowedChunks = chunksSummary.slice(offset, endOffset)
-  const windowedPositions = []
-  const chunkPositions = fields.chunks_pos_summary as number[]
+  const windowedPositions: number[] = []
   for(let i = offset; i < endOffset; i++) {
-    windowedPositions.push(chunkPositions[i])
+    windowedPositions.push(chunkPositions[i] ?? i)
   }
   const chunkScoresCells: Record<string, number> = {}
   for (let i = 0; i < windowedChunks.length; i++) {
@@ -118,7 +151,15 @@ function normalizeWindowedVespaHit(
 
       // Extract chunks from document fields to validate requested window.
       const fields = doc.fields as Record<string, unknown>
-      const chunksSummary = fields.chunks_summary as string[]
+      const validatedChunkFields = getValidatedChunkFields(fields)
+      if (!validatedChunkFields) {
+        return ToolResponse.error(
+          ToolErrorCodes.INVALID_INPUT,
+          "Document has invalid or missing chunk summaries",
+          { toolName: "read_document", docId }
+        )
+      }
+      const { chunksSummary, chunkPositions } = validatedChunkFields
       const totalChunks = chunksSummary.length
 
       // Validate offset
@@ -133,6 +174,8 @@ function normalizeWindowedVespaHit(
       const endOffset = Math.min(offset + limit, totalChunks)
       const updatedDoc = normalizeWindowedVespaHit(
         doc,
+        chunksSummary,
+        chunkPositions,
         offset,
         endOffset,
       )
