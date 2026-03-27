@@ -13,17 +13,4 @@ export const MAX_CITATIONS_PER_SENTENCE = 2
 
 export const CHAT_V2_FEATURE_FLAG = "CHAT_V2_ENABLED"
 
-export enum ChatSSEvents {
-  Start = "START",
-  ResponseMetadata = "RESPONSE_METADATA",
-  Reasoning = "REASONING",
-  ResponseUpdate = "RESPONSE_UPDATE",
-  CitationsUpdate = "CITATIONS_UPDATE",
-  ImageCitationUpdate = "IMAGE_CITATION_UPDATE",
-  ToolCall = "TOOL_CALL",
-  ToolResult = "TOOL_RESULT",
-  Error = "ERROR",
-  End = "END",
-  AttachmentUpdate = "ATTACHMENT_UPDATE",
-  ChatTitleUpdate = "CHAT_TITLE_UPDATE",
-}
+// Event codes must match frontend expectations (short codes from shared/types.ts

@@ -3,16 +3,33 @@
  *
  * Bridges the existing GET /message/create endpoint to the new Chat V2 architecture
  * Maintains backward compatibility with existing request/response formats
+ *
+ * CRITICAL: This must replicate the exact behavior of the legacy MessageApi including:
+ * - Database operations (create chat, save messages)
+ * - SSE event sequence
+ * - Response format
  */
 
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
+import { streamSSE } from "hono/streaming"
 import { getGlobalOrchestrator } from "../../core/orchestrator/orchestrator-factory"
-import { toSSEEvent, type ChatEvent } from "../../shared/events"
+import type { ChatEvent } from "../../shared/events"
 import type { ChatRequest, ModelConfig } from "../../models"
-import type { AttachmentMetadata } from "@/shared/types"
+import { ChatSSEvents, type AttachmentMetadata } from "@/shared/types"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import config from "@/config"
+import { db } from "@/db/client"
+import {
+  insertChat,
+  getChatByExternalId,
+  updateChatByExternalIdWithAuth,
+} from "@/db/chat"
+import { insertMessage, getChatMessagesWithAuth } from "@/db/message"
+import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { createId } from "@paralleldrive/cuid2"
+import { MessageRole } from "@/types"
+import { ChatType } from "@/db/schema"
 
 // JwtPayloadKey is exported from config
 const { JwtPayloadKey } = config
@@ -31,9 +48,15 @@ export function isChatV2Enabled(): boolean {
  *
  * This handler wraps the new Chat V2 orchestrator to work with the existing
  * GET /message/create endpoint format (query parameters instead of JSON body)
+ *
+ * REPLICATES: All database operations from legacy MessageApi
+ * - Creates/gets chat
+ * - Saves user message
+ * - Streams response
+ * - Saves assistant message
  */
 export async function MessageApiV2(c: Context) {
-  console.log("MessageApiV2 started")
+  console.log("[MessageApiV2] ========== Starting request ==========")
   const startTime = Date.now()
 
   try {
@@ -42,6 +65,9 @@ export async function MessageApiV2(c: Context) {
     if (!jwtPayload) {
       throw new HTTPException(401, { message: "Unauthorized" })
     }
+
+    const email = jwtPayload.sub
+    const workspaceId = jwtPayload.workspaceId
 
     // Parse query parameters (same as legacy MessageApi)
     const query = c.req.query()
@@ -61,11 +87,95 @@ export async function MessageApiV2(c: Context) {
     // Parse attachments from query (same as legacy)
     const attachmentMetadata = parseAttachmentMetadata(c)
 
+    // Get user and workspace
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+    const user = userAndWorkspace.user
+    const workspace = userAndWorkspace.workspace
+
+    // Create or get existing chat and save user message
+    let chat: any
+    let userMessage: any
+
+    if (!chatId) {
+      // New chat - create chat with "Untitled" and insert user message
+      // (Matches legacy behavior - title is updated later)
+      console.log("[MessageApiV2] Creating new chat...")
+
+      // Create chat and insert user message in transaction
+      const result = await db.transaction(async (tx) => {
+        const newChat = await insertChat(tx, {
+          workspaceId: workspace.id,
+          workspaceExternalId: workspace.externalId,
+          userId: user.id,
+          email: user.email,
+          title: "Untitled", // Initially untitled, like legacy
+          attachments: [],
+          chatType: ChatType.Default,
+        })
+
+        const insertedMsg = await insertMessage(tx, {
+          chatId: newChat.id,
+          userId: user.id,
+          workspaceExternalId: workspace.externalId,
+          chatExternalId: newChat.externalId,
+          messageRole: MessageRole.User,
+          email: user.email,
+          sources: [],
+          message,
+          modelId: config.defaultBestModel,
+        })
+
+        return { chat: newChat, userMessage: insertedMsg }
+      })
+
+      chat = result.chat
+      userMessage = result.userMessage
+      console.log(`[MessageApiV2] Created new chat: ${chat.externalId}`)
+    } else {
+      // Existing chat - get chat and insert user message
+      console.log(`[MessageApiV2] Using existing chat: ${chatId}`)
+
+      const result = await db.transaction(async (tx) => {
+        const existingChat = await updateChatByExternalIdWithAuth(
+          db,
+          chatId,
+          email,
+          {},
+        )
+
+        const insertedMsg = await insertMessage(tx, {
+          chatId: existingChat.id,
+          userId: user.id,
+          workspaceExternalId: workspace.externalId,
+          chatExternalId: existingChat.externalId,
+          messageRole: MessageRole.User,
+          email: user.email,
+          sources: [],
+          message,
+          modelId: config.defaultBestModel,
+        })
+
+        return { chat: existingChat, userMessage: insertedMsg }
+      })
+
+      chat = result.chat
+      userMessage = result.userMessage
+      console.log(`[MessageApiV2] Added user message to existing chat`)
+    }
+
+    // Check if agentic mode is enabled from query params
+    const isAgentic = query.agentic === "true"
+
     // Convert to Chat V2 request format
     const chatRequest: ChatRequest = {
       message: message as string,
-      chatId: chatId as string | undefined,
+      chatId: chat.externalId,
       agentId: agentId as string | undefined,
+      isAgentic,
       modelConfig: (selectedModelConfig
         ? parseModelConfig(selectedModelConfig as string)
         : undefined) as ModelConfig,
@@ -93,63 +203,121 @@ export async function MessageApiV2(c: Context) {
 
     // Get orchestrator
     const orchestrator = getGlobalOrchestrator()
+    console.log("[MessageApiV2] Got orchestrator, starting streamSSE...")
 
-    // Set up SSE stream (compatible with legacy format)
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          // Process request through orchestrator
-          for await (const event of orchestrator.process(
-            chatRequest,
-            jwtPayload,
-          )) {
-            // Convert to legacy SSE format
-            const legacyEvent = convertToLegacyEvent(event)
+    // Use Hono's streamSSE like the legacy code
+    return streamSSE(c, async (stream) => {
+      let eventCount = 0
+      let assistantContent = ""
+      let assistantMessageId: string | null = null
 
-            // Send event
-            controller.enqueue(
-              new TextEncoder().encode(
-                `event: ${legacyEvent.event}\ndata: ${legacyEvent.data}\n\n`,
-              ),
-            )
+      console.log("[MessageApiV2] streamSSE started")
 
-            // Stop if complete or error
-            if (event.type === "complete" || event.type === "error") {
-              controller.close()
-              break
+      try {
+        // Send ResponseMetadata with chatId (same as legacy)
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({ chatId: chat.externalId }),
+        })
+        console.log("[MessageApiV2] Sent ResponseMetadata")
+
+        // Send START event
+        await stream.writeSSE({
+          event: ChatSSEvents.Start,
+          data: "",
+        })
+        console.log("[MessageApiV2] Sent START")
+
+        // Process request through orchestrator
+        for await (const event of orchestrator.process(
+          chatRequest,
+          jwtPayload,
+        )) {
+          eventCount++
+
+          // Accumulate assistant content for saving to DB
+          if (event.type === "token") {
+            assistantContent += event.content
+
+            // Send token immediately (frontend expects plain text, not JSON)
+            await stream.writeSSE({
+              event: ChatSSEvents.ResponseUpdate,
+              data: event.content, // Direct string, not JSON.stringify
+            })
+          }
+
+          // When complete, save message and send final metadata
+          else if (event.type === "complete") {
+            console.log("[MessageApiV2] Got complete event")
+
+            // Save assistant message to DB
+            if (assistantContent) {
+              console.log("[MessageApiV2] Saving assistant message to DB...")
+              const assistantMsg = await insertMessage(db, {
+                chatId: chat.id,
+                userId: user.id,
+                workspaceExternalId: workspace.externalId,
+                chatExternalId: chat.externalId,
+                messageRole: MessageRole.Assistant,
+                email: user.email,
+                sources: [],
+                message: assistantContent,
+                modelId: config.defaultBestModel,
+              })
+              assistantMessageId = assistantMsg.externalId
+              console.log(
+                `[MessageApiV2] Assistant message saved: ${assistantMessageId}`,
+              )
+
+              // Send final ResponseMetadata with both chatId and messageId
+              await stream.writeSSE({
+                event: ChatSSEvents.ResponseMetadata,
+                data: JSON.stringify({
+                  chatId: chat.externalId,
+                  messageId: assistantMessageId,
+                }),
+              })
+              console.log("[MessageApiV2] Sent final ResponseMetadata")
             }
-          }
-        } catch (error) {
-          // Send error event in legacy format
-          const errorEvent = {
-            event: "ERROR",
-            data: JSON.stringify({
-              error: error instanceof Error ? error.message : String(error),
-            }),
+
+            // Send END event (legacy sends empty string, not JSON)
+            await stream.writeSSE({
+              event: ChatSSEvents.End,
+              data: "",
+            })
+            console.log("[MessageApiV2] Sent END")
+
+            break
           }
 
-          controller.enqueue(
-            new TextEncoder().encode(
-              `event: ${errorEvent.event}\ndata: ${errorEvent.data}\n\n`,
-            ),
-          )
-          controller.close()
+          // Handle error
+          else if (event.type === "error") {
+            await stream.writeSSE({
+              event: ChatSSEvents.Error,
+              data: JSON.stringify({
+                message: event.error.message,
+                code: event.error.code,
+              }),
+            })
+            console.log("[MessageApiV2] Sent Error")
+            break
+          }
         }
-      },
 
-      cancel() {
-        console.log("[MessageApiV2] Client disconnected")
-      },
-    })
+        console.log(
+          `[MessageApiV2] Stream completed. Total events: ${eventCount}`,
+        )
+      } catch (error) {
+        console.error("[MessageApiV2] Stream error:", error)
 
-    // Return SSE response with same headers as legacy
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-      },
+        // Send error event
+        await stream.writeSSE({
+          event: ChatSSEvents.Error,
+          data: JSON.stringify({
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        })
+      }
     })
   } catch (error) {
     console.error("[MessageApiV2] Error:", error)
@@ -203,98 +371,5 @@ function parseToolsList(toolsStr: string): Array<{
     return JSON.parse(toolsStr)
   } catch {
     return []
-  }
-}
-
-/**
- * Convert Chat V2 event to legacy SSE format
- *
- * Legacy format:
- * - event: "RESPONSE_UPDATE", data: string
- * - event: "CITATIONS_UPDATE", data: { index, item }
- * - event: "REASONING", data: { stage, message }
- * - event: "ERROR", data: { message }
- * - event: "END", data: {}
- */
-function convertToLegacyEvent(event: ChatEvent): {
-  event: string
-  data: string
-} {
-  switch (event.type) {
-    case "token":
-      return {
-        event: "RESPONSE_UPDATE",
-        data: JSON.stringify(event.content),
-      }
-
-    case "citation":
-      return {
-        event: "CITATIONS_UPDATE",
-        data: JSON.stringify({
-          index: event.citation.index,
-          item: event.citation,
-        }),
-      }
-
-    case "reasoning":
-      return {
-        event: "REASONING",
-        data: JSON.stringify({
-          stage: event.step.stage,
-          message: event.step.message,
-          details: event.step.details,
-        }),
-      }
-
-    case "tool-call":
-      return {
-        event: "REASONING",
-        data: JSON.stringify({
-          stage: "tool_execution",
-          message: `Calling tool: ${event.tool}`,
-          details: { tool: event.tool, arguments: event.arguments },
-        }),
-      }
-
-    case "tool-result":
-      return {
-        event: "REASONING",
-        data: JSON.stringify({
-          stage: "tool_result",
-          message: `Tool ${event.tool} completed`,
-          details: { tool: event.tool, success: event.success },
-        }),
-      }
-
-    case "error":
-      return {
-        event: "ERROR",
-        data: JSON.stringify({
-          message: event.error.message,
-          code: event.error.code,
-        }),
-      }
-
-    case "complete":
-      return {
-        event: "END",
-        data: JSON.stringify({}),
-      }
-
-    case "start":
-      // Legacy doesn't have a start event, map to reasoning
-      return {
-        event: "REASONING",
-        data: JSON.stringify({
-          stage: "start",
-          message: "Starting chat processing",
-        }),
-      }
-
-    default:
-      return {
-        event: "RESPONSE_UPDATE",
-        data: JSON.stringify(""),
-      }
   }
 }

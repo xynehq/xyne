@@ -1,12 +1,15 @@
 /**
  * Orchestrator Factory
- * 
+ *
  * Creates configured orchestrator instances
  * Centralizes configuration and strategy registration
  */
 
 import { ChatOrchestrator } from "./chat-orchestrator"
-import { createDependencyContainer } from "./dependency-container"
+import {
+  createDependencyContainer,
+  type DependencyContainer,
+} from "./dependency-container"
 import { StrategyRegistry } from "../strategies/strategy-registry"
 import { NormalChatStrategy } from "../strategies/normal-chat.strategy"
 import { AgenticChatStrategy } from "../strategies/agentic-chat.strategy"
@@ -19,13 +22,15 @@ export interface OrchestratorFactoryConfig {
   /** Custom strategy registry */
   strategyRegistry?: StrategyRegistry
   /** Custom dependencies */
-  dependencies?: import("./dependency-container.types").DependencyContainer
+  dependencies?: DependencyContainer
 }
 
 /**
  * Create a fully configured orchestrator
  */
-export function createOrchestrator(config: OrchestratorFactoryConfig = {}): ChatOrchestrator {
+export function createOrchestrator(
+  config: OrchestratorFactoryConfig = {},
+): ChatOrchestrator {
   const registry = config.strategyRegistry ?? createDefaultStrategyRegistry()
   const dependencies = config.dependencies ?? createDependencyContainer()
 
@@ -45,13 +50,13 @@ function createDefaultStrategyRegistry(): StrategyRegistry {
   // Register strategies in priority order (first matching strategy wins)
   // KnowledgeBase is checked first because it's most specific
   registry.register(new KnowledgeBaseChatStrategy())
-  
+
   // Attachment mode handles file uploads
   registry.register(new AttachmentChatStrategy())
-  
+
   // Agentic mode for tool-using agents
   registry.register(new AgenticChatStrategy())
-  
+
   // Normal chat is the default
   const normalStrategy = new NormalChatStrategy()
   registry.register(normalStrategy)

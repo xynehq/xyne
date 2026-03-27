@@ -26,6 +26,7 @@ import {
   type WebSearchSource,
 } from "@/ai/types"
 import config from "@/config"
+import { MessageApiV2, isChatV2Enabled } from "@/api/chat-v2/api/handlers/legacy-adapter.handler"
 import { getModelValueFromLabel } from "@/ai/modelConfig"
 import { getAvailableModels } from "@/ai/fetchModels"
 import {
@@ -4982,6 +4983,12 @@ function buildTopicConversationThread(
  * @throws HTTPException(500) - Server errors or model failures
  */
 export const MessageApi = async (c: Context) => {
+  // Check if Chat V2 is enabled via feature flag
+  if (isChatV2Enabled()) {
+    // Route to new Chat V2 implementation
+    return MessageApiV2(c)
+  }
+
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
 

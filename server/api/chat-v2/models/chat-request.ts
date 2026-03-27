@@ -9,19 +9,22 @@ import type { Fragment } from "./fragment"
 export interface ChatRequest {
   /** User's message text */
   message: string
-  
+
   /** Existing chat ID (optional for new chats) */
   chatId?: string
-  
+
   /** Agent ID for agentic mode */
   agentId?: string
-  
+
+  /** Whether to use agentic mode (tool-based retrieval) */
+  isAgentic?: boolean
+
   /** Model and capability configuration */
   modelConfig?: ModelConfig
-  
+
   /** File attachments */
   attachments?: AttachmentMetadata[]
-  
+
   /** MCP connector tool configurations */
   toolsList?: MCPConnectorConfig[]
 }
@@ -29,21 +32,23 @@ export interface ChatRequest {
 export interface ModelConfig {
   /** Model identifier */
   model: string
-  
+
   /** Enable reasoning/thinking mode */
   reasoning?: boolean
-  
+
   /** Enable web search capability */
   webSearch?: boolean
-  
+
   /** Enable deep research mode */
   deepResearch?: boolean
-  
+
   /** Sampling temperature */
   temperature?: number
-  
+
   /** Maximum tokens to generate */
   maxTokens?: number
+
+  metadata?: any
 }
 
 export interface MCPConnectorConfig {

@@ -23,6 +23,7 @@ export { runPublicAgentTool } from "./run-public-agent"
 export { toDoWriteTool } from "./to-do-write"
 export { fallBackTool } from "./fall-back"
 export { synthesizeFinalAnswerTool } from "./synthesize-final-answer"
+export { askForClarificationTool } from "./ask-for-clarification"
 
 // Re-export types
 export type { XyneToolContext, XyneAgentState } from "../adapter"

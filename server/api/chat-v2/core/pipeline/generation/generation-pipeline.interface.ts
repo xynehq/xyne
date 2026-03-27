@@ -9,6 +9,14 @@ import type { RequestContextLike as RequestContext } from "../../orchestrator/re
 import type { Tool } from "../../../plugins/tools/tool.interface"
 
 /**
+ * Generation options for tool-enabled generation
+ */
+export interface GenerateOptions {
+  /** Tools available for this generation */
+  tools?: Tool[]
+}
+
+/**
  * Generation Pipeline - Produces LLM responses
  */
 export interface GenerationPipeline {
@@ -17,12 +25,14 @@ export interface GenerationPipeline {
    * @param context - Assembled chat context
    * @param fragments - Retrieved fragments for context
    * @param requestContext - Request-scoped dependencies
+   * @param options - Optional generation settings including tools
    * @yields Generation events (tokens, tool calls, citations)
    */
   generate(
     context: AssembledChatContext,
     fragments: Fragment[],
-    requestContext: RequestContext
+    requestContext: RequestContext,
+    options?: GenerateOptions
   ): AsyncIterable<GenerationEvent>
   
   /**

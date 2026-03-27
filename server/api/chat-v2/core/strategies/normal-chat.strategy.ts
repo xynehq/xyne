@@ -1,22 +1,26 @@
 /**
  * Normal Chat Strategy
- * 
+ *
  * Simple chat without agentic loop
  * - Direct LLM generation
  * - No tool calling
  * - Basic context assembly (history, memories)
  * - Streaming response
- * 
+ *
  * REPLACES: Direct generation logic in chat.ts (lines 1000-1200)
  */
 
-import { BaseChatModeStrategy, type StrategyCapability } from "./base-chat-mode-strategy"
+import {
+  BaseChatModeStrategy,
+  type StrategyCapability,
+} from "./base-chat-mode-strategy"
 import { ChatMode } from "./chat-mode-strategy"
 import type { ChatRequest, AssembledChatContext, Fragment } from "../../models"
 import type { ChatEvent } from "../../shared/events"
 import type { RequestContextLike as RequestContext } from "../orchestrator/request-context.types"
 import { NormalContextAssembler } from "../pipeline/context-assembly"
 import type { ContextAssembler } from "../pipeline/context-assembly"
+import { UnifiedVespaRetriever } from "../../plugins/retrievers"
 
 export interface NormalChatStrategyOptions {
   /** Max tokens for response */
@@ -54,19 +58,15 @@ export class NormalChatStrategy extends BaseChatModeStrategy {
     // Lowest priority - only handles basic requests
     // Other strategies should handle specialized cases first
     const hasAgent = !!request.agentId
-    const hasAttachments = !!request.attachments && request.attachments.length > 0
+    const hasAttachments =
+      !!request.attachments && request.attachments.length > 0
     const hasKBCollections = this.hasKBCollections(request)
 
     return !hasAgent && !hasAttachments && !hasKBCollections
   }
 
   getCapabilities(): StrategyCapability[] {
-    return [
-      "streaming",
-      "citations",
-      "multi-turn",
-      "reasoning",
-    ]
+    return ["streaming", "citations", "multi-turn", "reasoning"]
   }
 
   getContextAssembler(): ContextAssembler {
@@ -79,29 +79,41 @@ export class NormalChatStrategy extends BaseChatModeStrategy {
 
   async *execute(
     request: ChatRequest,
-    context: RequestContext
+    context: RequestContext,
   ): AsyncIterable<ChatEvent> {
     const startTime = Date.now()
+    console.log("[NormalChatStrategy] Starting execution...")
 
     try {
       // 1. Assemble context
+      console.log("[NormalChatStrategy] Assembling context...")
       const assembler = this.getContextAssembler()
       await assembler.validate(context)
       const chatContext = await assembler.assemble(context)
+      console.log(
+        `[NormalChatStrategy] Context assembled: ${chatContext.userMessage.substring(0, 50)}...`,
+      )
 
       yield this.createStartEvent()
 
       // 2. Retrieve relevant documents for RAG
+      console.log("[NormalChatStrategy] Retrieving documents...")
       const fragments = yield* this.retrieveDocuments(chatContext, context)
+      console.log(
+        `[NormalChatStrategy] Retrieved ${fragments.length} fragments`,
+      )
 
       // 3. Generate response
+      console.log("[NormalChatStrategy] Generating response...")
       yield* this.generateResponse(chatContext, fragments, context)
+      console.log("[NormalChatStrategy] Response generation complete")
 
       yield this.createCompleteEvent({
         durationMs: Date.now() - startTime,
         mode: this.mode,
       })
     } catch (error) {
+      console.error("[NormalChatStrategy] Error:", error)
       yield* this.handleError(error, "NORMAL_STRATEGY_ERROR")
     }
   }
@@ -111,9 +123,9 @@ export class NormalChatStrategy extends BaseChatModeStrategy {
    */
   private async *retrieveDocuments(
     chatContext: AssembledChatContext,
-    requestContext: RequestContext
+    requestContext: RequestContext,
   ): AsyncIterable<ChatEvent> {
-    const retriever = requestContext.retrievers.get()
+    const retriever = new UnifiedVespaRetriever()
 
     if (!retriever) {
       yield this.createReasoningEvent("No retriever available")
@@ -121,7 +133,7 @@ export class NormalChatStrategy extends BaseChatModeStrategy {
     }
 
     const results: Fragment[] = []
-    
+
     try {
       for await (const result of retriever.search(
         chatContext.normalizedUserMessage,
@@ -129,7 +141,7 @@ export class NormalChatStrategy extends BaseChatModeStrategy {
           limit: 10,
           minConfidence: 0.5,
         },
-        requestContext
+        requestContext,
       )) {
         results.push(...result.fragments)
       }
@@ -152,43 +164,57 @@ export class NormalChatStrategy extends BaseChatModeStrategy {
   private async *generateResponse(
     chatContext: AssembledChatContext,
     fragments: Fragment[],
-    requestContext: RequestContext
+    requestContext: RequestContext,
   ): AsyncIterable<ChatEvent> {
+    console.log("[NormalChatStrategy] generateResponse started")
     const promptBuilder = requestContext.promptBuilder
 
     // Build system prompt
-    const systemPrompt = this.buildSystemPrompt(chatContext, fragments, promptBuilder)
+    const systemPrompt = this.buildSystemPrompt(
+      chatContext,
+      fragments,
+      promptBuilder,
+    )
+    console.log(
+      `[NormalChatStrategy] System prompt built: ${systemPrompt.substring(0, 100)}...`,
+    )
 
     // Build messages
     const messages = this.buildMessages(
       systemPrompt,
       chatContext.conversationHistory,
-      chatContext.userMessage
+      chatContext.userMessage,
     )
+    console.log(`[NormalChatStrategy] Built ${messages.length} messages`)
 
     // Stream generation
     const generator = requestContext.dependencies.generation
-    
+    console.log(`[NormalChatStrategy] Generator available: ${!!generator}`)
+
     if (!generator) {
+      console.error("[NormalChatStrategy] Generator is not available!")
       yield this.createErrorEvent(
         "GENERATION_NOT_AVAILABLE",
         "Generation pipeline not available",
-        false
+        false,
       )
       return
     }
 
     // Use streaming generator
-    const stream = generator.generate(
-      chatContext,
-      fragments,
-      requestContext
-    )
+    console.log("[NormalChatStrategy] Calling generator.generate()...")
+    const stream = generator.generate(chatContext, fragments, requestContext)
 
     // Track citations
     let accumulatedText = ""
+    let eventCount = 0
 
+    console.log("[NormalChatStrategy] Starting to read generator stream...")
     for await (const event of stream) {
+      eventCount++
+      console.log(
+        `[NormalChatStrategy] Generator event #${eventCount}: ${event.type}`,
+      )
       switch (event.type) {
         case "token":
           accumulatedText += event.content
@@ -197,7 +223,7 @@ export class NormalChatStrategy extends BaseChatModeStrategy {
           yield* this.extractCitations(
             accumulatedText,
             fragments,
-            requestContext
+            requestContext,
           )
 
           yield {
@@ -248,7 +274,7 @@ export class NormalChatStrategy extends BaseChatModeStrategy {
   private buildSystemPrompt(
     chatContext: AssembledChatContext,
     fragments: Fragment[],
-    promptBuilder: import("../../services").PromptBuilderService
+    promptBuilder: import("../../services").PromptBuilderService,
   ): string {
     const sections: string[] = []
 
@@ -267,7 +293,9 @@ export class NormalChatStrategy extends BaseChatModeStrategy {
     }
 
     // Citation format
-    sections.push("Cite sources using [1], [2], etc. format when referencing information.")
+    sections.push(
+      "Cite sources using [1], [2], etc. format when referencing information.",
+    )
 
     return sections.join("\n\n")
   }

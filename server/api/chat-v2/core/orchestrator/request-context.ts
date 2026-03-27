@@ -161,9 +161,10 @@ export class RequestContext {
     const requestId = generateRequestId()
     
     // Extract user context from JWT
+    // Note: JWT payload uses 'sub' for email (standard JWT claim)
     const user: UserContext = {
       id: String(jwtPayload.userId),
-      email: jwtPayload.email,
+      email: jwtPayload.sub, // 'sub' contains the email
       workspaceId: String(jwtPayload.workspaceId),
       workspaceNumericId: jwtPayload.workspaceNumericId,
       timeZone: jwtPayload.timeZone || "UTC",
@@ -190,12 +191,11 @@ export class RequestContext {
  * JWT payload structure
  */
 export interface JWTPayload {
-  sub: string // email
+  sub: string // email (standard JWT claim)
   userId: number
   workspaceId: number
   workspaceNumericId?: number
   timeZone?: string
-  email: string
 }
 
 function generateRequestId(): RequestId {

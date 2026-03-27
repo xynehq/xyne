@@ -1,4 +1,3 @@
-
 import { type Context, Hono, type Next } from "hono"
 import {
   AnswerApi,
@@ -1984,10 +1983,7 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentAnalysis,
   )
-  .get(
-    "/agents/:agentId/queries",
-    GetAgentQueryResponsePairs,
-  )
+  .get("/agents/:agentId/queries", GetAgentQueryResponsePairs)
   .get(
     "/agents/:agentId/feedback",
     zValidator("query", agentAnalysisQuerySchema),
@@ -2482,7 +2478,9 @@ export const init = async () => {
   // Preload LiteLLM model info cache if configured
   if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
     if (!config.LiteLLMModelInfoUrl) {
-      console.error("LiteLLM model info URL not configured. Server cannot start without this configuration.")
+      console.error(
+        "LiteLLM model info URL not configured. Server cannot start without this configuration.",
+      )
       process.exit(1)
     }
     try {

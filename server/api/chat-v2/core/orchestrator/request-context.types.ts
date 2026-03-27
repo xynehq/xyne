@@ -16,12 +16,11 @@ export type RequestId = string
  * JWT payload structure
  */
 export interface JWTPayload {
-  sub: string // email
+  sub: string // email (standard JWT claim)
   userId: number
   workspaceId: number
   workspaceNumericId?: number
   timeZone?: string
-  email: string
 }
 
 /**
@@ -35,6 +34,7 @@ export interface RequestContextLike {
   readonly request: ChatRequest
   readonly isAborted: boolean
   readonly elapsedMs: number
+  readonly dependencies: any
   
   getAgentState(): AgentState
   setAgentState(state: AgentState): void

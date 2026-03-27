@@ -19,7 +19,7 @@ import type {
 } from "../../models"
 import type { ChatEvent } from "../../shared/events"
 import type { RequestContextLike as RequestContext } from "../orchestrator/request-context.types"
-import { AgentContextAssembler, NormalContextAssembler } from "../pipeline/context-assembly"
+import { AgenticContextAssembler, NormalContextAssembler } from "../pipeline/context-assembly"
 import type { ContextAssembler } from "../pipeline/context-assembly"
 import { AgenticChatStrategy } from "./agentic-chat.strategy"
 import { NormalChatStrategy } from "./normal-chat.strategy"
@@ -79,7 +79,7 @@ export class AttachmentChatStrategy extends BaseChatModeStrategy {
   getContextAssembler(): ContextAssembler {
     // Use agentic assembler if delegating to agentic, otherwise normal
     if (this.options.delegateTo === "agentic") {
-      return new AgentContextAssembler(
+      return new AgenticContextAssembler(
         {
           includeHistory: true,
           includeEpisodicMemory: true,

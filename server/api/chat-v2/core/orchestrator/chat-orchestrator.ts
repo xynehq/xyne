@@ -1,6 +1,6 @@
 /**
  * ChatOrchestrator - Central coordination layer
- * 
+ *
  * REPLACES: message-agents.ts (both legacy and pi-mono versions)
  * BENEFITS:
  *   - Single entry point for all chat requests
@@ -48,7 +48,7 @@ export interface OrchestratorError {
 
 /**
  * ChatOrchestrator - Main entry point for chat processing
- * 
+ *
  * Responsibilities:
  * 1. Request validation
  * 2. Context creation
@@ -73,7 +73,7 @@ export class ChatOrchestrator {
 
   /**
    * Process a chat request
-   * 
+   *
    * This is the main entry point. It:
    * 1. Creates isolated RequestContext
    * 2. Selects appropriate strategy
@@ -83,28 +83,40 @@ export class ChatOrchestrator {
    */
   async *process(
     request: ChatRequest,
-    jwtPayload: import("./request-context").JWTPayload
+    jwtPayload: import("./request-context").JWTPayload,
   ): AsyncIterable<ChatEvent> {
     const startTime = Date.now()
     let requestContext: RequestContext | undefined
     let eventsEmitted = 0
 
+    console.log(
+      `[ChatOrchestrator] ========== Starting request processing ==========`,
+    )
+    console.log(`[ChatOrchestrator] Request message: ${request.message}`)
+    console.log(
+      `[ChatOrchestrator] JWT userId: ${jwtPayload.userId}, workspaceId: ${jwtPayload.workspaceId}`,
+    )
+
     try {
       // Phase 1: Create request context
       this.log("Creating request context...")
+      console.log("[ChatOrchestrator] Phase 1: Creating request context...")
       requestContext = await RequestContext.create(
         request,
         jwtPayload,
-        this.dependencies
+        this.dependencies,
+      )
+      console.log(
+        `[ChatOrchestrator] Request context created: ${requestContext.requestId}`,
       )
 
       yield { type: "start" }
       eventsEmitted++
 
       // Phase 2: Select strategy
-      this.log("Selecting strategy...")
+      console.log("[ChatOrchestrator] Phase 2: Selecting strategy...")
       const strategy = this.selectStrategy(request)
-      this.log(`Selected strategy: ${strategy.mode}`)
+      console.log(`[ChatOrchestrator] Selected strategy: ${strategy.mode}`)
 
       // Phase 3: Optional strategy preparation
       if (strategy.prepare) {
@@ -139,7 +151,6 @@ export class ChatOrchestrator {
       eventsEmitted++
 
       this.log(`Request completed. Events emitted: ${eventsEmitted}`)
-
     } catch (error) {
       this.log(`Error processing request: ${error}`)
 
@@ -161,7 +172,6 @@ export class ChatOrchestrator {
           this.log(`Cleanup error: ${cleanupError}`)
         }
       }
-
     } finally {
       // Always dispose context
       if (requestContext) {
@@ -191,9 +201,15 @@ export class ChatOrchestrator {
     }
 
     const { NormalChatStrategy } = require("../strategies/normal-chat.strategy")
-    const { AgenticChatStrategy } = require("../strategies/agentic-chat.strategy")
-    const { AttachmentChatStrategy } = require("../strategies/attachment-chat.strategy")
-    const { KnowledgeBaseChatStrategy } = require("../strategies/knowledge-base-chat.strategy")
+    const {
+      AgenticChatStrategy,
+    } = require("../strategies/agentic-chat.strategy")
+    const {
+      AttachmentChatStrategy,
+    } = require("../strategies/attachment-chat.strategy")
+    const {
+      KnowledgeBaseChatStrategy,
+    } = require("../strategies/knowledge-base-chat.strategy")
 
     this.strategyRegistry.register(new KnowledgeBaseChatStrategy())
     this.strategyRegistry.register(new AttachmentChatStrategy())
@@ -201,7 +217,9 @@ export class ChatOrchestrator {
     this.strategyRegistry.register(new NormalChatStrategy())
 
     // Set default
-    this.strategyRegistry.setDefault(this.strategyRegistry.get(ChatMode.Normal)!)
+    this.strategyRegistry.setDefault(
+      this.strategyRegistry.get(ChatMode.Normal)!,
+    )
   }
 
   /**
@@ -209,7 +227,7 @@ export class ChatOrchestrator {
    */
   private async handleEventPersistence(
     event: ChatEvent,
-    context: RequestContext
+    context: RequestContext,
   ): Promise<void> {
     switch (event.type) {
       case "citation":
@@ -225,7 +243,9 @@ export class ChatOrchestrator {
   /**
    * Normalize error to standard format
    */
-  private normalizeError(error: unknown): import("../../shared/events").ChatError {
+  private normalizeError(
+    error: unknown,
+  ): import("../../shared/events").ChatError {
     if (error instanceof Error) {
       return {
         code: "ORCHESTRATOR_ERROR",

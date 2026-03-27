@@ -47,17 +47,19 @@ export class StreamingGenerator implements GenerationPipeline {
   async *generate(
     context: AssembledChatContext,
     fragments: Fragment[],
-    requestContext: RequestContext
+    requestContext: RequestContext,
+    options?: { tools?: Tool[] }
   ): AsyncIterable<GenerationEvent> {
     const { llmProvider, citationRegistry } = this.config
     
     // Build messages from context
     const messages = this.buildMessages(context, fragments)
     
-    // Build tools if agent mode
-    const tools = context.agentConfig
-      ? this.buildTools(context, requestContext)
-      : undefined
+    // Build tools if provided in options or if agent config has tools
+    let tools = options?.tools
+    if (!tools && context.agentConfig?.tools) {
+      tools = this.buildTools(context, requestContext)
+    }
     
     // Get model from config
     const model = context.agentConfig?.model || requestContext.config.defaultModel
