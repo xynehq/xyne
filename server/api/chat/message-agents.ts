@@ -10,12 +10,10 @@
  */
 
 import {
-  answerContextMap,
   answerContextMapFromFragments,
   userContext,
 } from "@/ai/context"
 import { getModelValueFromLabel } from "@/ai/modelConfig"
-import { extractBestDocumentsPrompt } from "@/ai/prompts"
 import {
   extractBestDocumentIndexes,
   getProviderByModel,
@@ -51,7 +49,6 @@ import {
 import { getToolsByConnectorId } from "@/db/tool"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getUserAccessibleAgents } from "@/db/userAgentPermission"
-import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { expandSheetIds } from "@/search/utils"
 import {
@@ -65,8 +62,6 @@ import {
   ChatSSEvents,
   DEFAULT_TEST_AGENT_ID,
   type ReasoningEventPayload,
-  ReasoningEventType,
-  type ReasoningStage,
   XyneTools,
 } from "@/shared/types"
 import { type Span, getTracer } from "@/tracer"
@@ -89,11 +84,8 @@ import {
 import { isCuid } from "@paralleldrive/cuid2"
 import {
   Apps,
-  AttachmentEntity,
-  KnowledgeBaseEntity,
   SearchModes,
   type VespaSearchResult,
-  type VespaSearchResults,
 } from "@xyne/vespa-ts/types"
 import {
   type Agent as JAFAgent,
@@ -140,7 +132,6 @@ import { ReviewResultSchema, ToolExpectationSchema } from "./agent-schemas"
 import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
 import { buildAgentPromptAddendum } from "./agentPromptCreation"
 import { parseMessageText } from "./chat"
-import { getChunkCountPerDoc } from "./chunk-selection"
 import { type FinalToolsList, buildMCPJAFTools } from "./jaf-adapter"
 import { logJAFTraceEvent } from "./jaf-logging"
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -191,8 +182,6 @@ import {
 } from "./tools/utils"
 import {
   documentMemoryToRawDocuments,
-  chunkKeyFromContent,
-  createDocumentState,
   getFragmentsForSynthesis,
   getFragmentsForSynthesisForDocs,
   getDocsWithSignalsInTurnRange,
@@ -205,7 +194,7 @@ import {
   cleanupExpiredSyntheticDocs,
   cleanupSyntheticDocsAfterReview,
 } from "./document-memory"
-import type { Citation, FragmentImageReference, ImageCitation, MinimalAgentFragment } from "./types"
+import type { Citation, ImageCitation, MinimalAgentFragment } from "./types"
 import {
   checkAndYieldCitationsForAgent,
   collectReferencedFileIdsUntilCompaction,
@@ -224,10 +213,7 @@ import { maybeCompactAndIndex } from "@/services/chatMemoryIndexer"
 import { runTurnEndPipeline } from "./turn-lifecycle"
 import {
   getInternalAgentConfig,
-  isInternalAgent,
   requiresAmbiguityResolution,
-  getAllInternalAgentCapabilities,
-  getAllInternalAgentBriefs,
   formatInternalAgentsForPrompt,
 } from "./agent-registry"
 
@@ -269,6 +255,32 @@ function resolveDelegatedAgentName(
     context.availableAgents.find((agent) => agent.agentId === agentId)?.agentName ||
     agentId
   )
+}
+
+function mapCitationsForAgentDocument(citations: unknown): Array<{
+  docId: string
+  title: string
+  url?: string
+  app: string
+  entity: string
+  chunkContent?: string
+}> {
+  if (!Array.isArray(citations)) return []
+  return citations
+    .filter((citation): citation is Citation => !!citation && typeof citation === "object")
+    .map((citation) => {
+      const entityValue =
+        citation.entity && typeof citation.entity === "object"
+          ? JSON.stringify(citation.entity)
+          : String(citation.entity ?? "")
+      return {
+        docId: citation.docId,
+        title: citation.title ?? citation.docId,
+        url: citation.url,
+        app: String(citation.app),
+        entity: entityValue,
+      }
+    })
 }
 
 const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
@@ -1186,6 +1198,8 @@ function initializeAgentContext(
     stopController?: AbortController
     stopSignal?: AbortSignal
     modelId?: string
+    userMessageId?: number
+    userMessageExternalId?: string
   },
 ): AgentRunContext {
   const finalSynthesis: FinalSynthesisState = {
@@ -1210,6 +1224,8 @@ function initializeAgentContext(
       metadata: {},
     },
     message: {
+      id: options?.userMessageId,
+      externalId: options?.userMessageExternalId,
       text: messageText,
       attachments,
       timestamp: new Date().toISOString(),
@@ -2046,6 +2062,39 @@ export async function afterToolExecutionHook(
       { toolName, agentId, agentName, docId: syntheticDoc.docId },
       "[afterToolExecutionHook] Created synthetic doc from delegated agent",
     )
+
+    const chatId = context.chat?.id
+    if (chatId) {
+      try {
+        const citations = mapCitationsForAgentDocument(
+          (resultData as { citations?: unknown }).citations,
+        )
+        const persistedDocument = await insertAgentDocument({
+          chatId,
+          messageId: context.message?.id,
+          agentId,
+          agentName,
+          content: resultSummary,
+          citations,
+          confidence: 0.85, // For now it's hardcoded
+        })
+        syntheticDoc.source.url = `/api/v1/agent-documents/${persistedDocument.externalId}/content`
+      } catch (error) {
+        loggerWithChild({ email: context.user.email }).error(
+          {
+            chatId,
+            agentId,
+            error: getErrorMessage(error),
+          },
+          "[afterToolExecutionHook] Failed to persist delegated agent document",
+        )
+      }
+    } else {
+      loggerWithChild({ email: context.user.email }).warn(
+        { agentId, chatExternalId: context.chat?.externalId },
+        "[afterToolExecutionHook] Skipping delegated agent document persistence because chat id is unavailable",
+      )
+    }
   }
 
   loggerWithChild({ email: context.user.email }).info(
@@ -2142,15 +2191,10 @@ export async function afterToolExecutionHook(
     const agentName = resolveDelegatedAgentName(context, agentId)
     const delegationArtifacts = await buildDelegatedAgentFragments({
       result,
-      agentId,
-      agentName,
-      turnNumber: effectiveTurnNumber,
-      sourceToolName: toolName,
       rawFragments: toolFragments,
       rawDocuments,
-      context,
-      toolQuery,
-      resultSummary,
+      agentId: agentId ?? `${agentName}:${effectiveTurnNumber}`,
+      agentName,
     })
     rawDocuments = delegationArtifacts.rawDocuments
     toolFragments = delegationArtifacts.fragments
@@ -2213,39 +2257,23 @@ export async function afterToolExecutionHook(
 
 export async function buildDelegatedAgentFragments(opts: {
   result: any
-  agentId?: string
-  agentName?: string
-  turnNumber: number
-  sourceToolName: string
   rawFragments: MinimalAgentFragment[]
   rawDocuments: ToolRawDocument[]
-  context: AgentRunContext
-  toolQuery: string
-  resultSummary: string
+  agentId: string
+  agentName: string
 }): Promise<{ rawDocuments: ToolRawDocument[]; fragments: MinimalAgentFragment[] }> {
   const {
     result,
-    agentId,
-    agentName,
-    turnNumber,
-    sourceToolName,
     rawFragments,
     rawDocuments,
-    context,
-    toolQuery,
-    resultSummary,
+    agentId,
+    agentName,
   } = opts
   const resultData = (result?.data as Record<string, unknown>) || {}
   const citations = resultData.citations as Citation[] | undefined
   const imageCitations = resultData.imageCitations as
     | ImageCitation[]
     | undefined
-  const fragmentTurn = Math.max(turnNumber, MIN_TURN_NUMBER)
-  const resolvedAgentId =
-    agentId || (resultData as { agentId?: string }).agentId || "unknown"
-  const normalizedAgentName =
-    agentName || resolvedAgentId || sourceToolName || "delegated_agent"
-
   const citedDocIds = new Set(
     Array.isArray(citations)
       ? citations.map((c) => c?.docId).filter((id): id is string => !!id)
@@ -2293,10 +2321,35 @@ export async function buildDelegatedAgentFragments(opts: {
           : [],
     }
   })
+  const resultSummary =
+    typeof resultData.resultSummary === "string"
+      ? resultData.resultSummary.trim()
+      : ""
+
+  const syntheticDelegatedAgentFragment: MinimalAgentFragment | null =
+    resultSummary.length > 0
+      ? {
+          id: agentId,
+          content: resultSummary,
+          source: {
+            docId: `delegated_agent:${agentId}:response`,
+            title: `Delegated agent (${agentName})`,
+            url: "",
+            app: Apps.Xyne,
+            entity: {
+              type: "agent",
+              name: agentName,
+            } as unknown as Citation["entity"],
+          },
+          confidence: 0.85,
+        }
+      : null
 
   return {
     rawDocuments: filteredRawDocuments,
-    fragments: filteredFragmentsWithImages,
+    fragments: syntheticDelegatedAgentFragment
+      ? [...filteredFragmentsWithImages, syntheticDelegatedAgentFragment]
+      : filteredFragmentsWithImages,
   }
 }
 
@@ -3375,9 +3428,6 @@ function createListCustomAgentsTool(): Tool<unknown, AgentRunContext> {
         requiredCapabilities: validation.data.requiredCapabilities,
         maxAgents: validation.data.maxAgents,
         mcpAgents: context.mcpAgents,
-        // Always expose deep_document_agent; expose other agents only in delegated mode.
-        includeBuiltInDeepAgent: true,
-        allowNonBuiltInAgents: context.delegationEnabled,
       })
       Logger.debug(
         { params: validation.data, email: context.user.email },
@@ -3573,19 +3623,7 @@ function createRunPublicAgentTool(): Tool<unknown, AgentRunContext> {
                 } as MinimalAgentFragment
               })
             : []
-      const rawDocumentsUnfiltered = Array.isArray((metadata as any).rawDocuments)
-        ? ((metadata as any).rawDocuments as ToolRawDocument[])
-        : []
-      const citations = Array.isArray((metadata as any).citations)
-        ? ((metadata as any).citations as Citation[])
-        : []
-      const citedDocIds = new Set(
-        citations.map((c) => c?.docId).filter((id): id is string => !!id),
-      )
-      const rawDocuments =
-        citedDocIds.size === 0
-          ? []
-          : rawDocumentsUnfiltered.filter((d) => citedDocIds.has(d.docId))
+      const rawDocuments = (metadata as any).rawDocuments as ToolRawDocument[]
       const resultSummary =
         typeof toolOutput.result === "string"
           ? toolOutput.result
@@ -4607,6 +4645,8 @@ export async function MessageAgents(c: Context): Promise<Response> {
             chatId: chatRecord.id as number,
             stopController,
             modelId: agenticModelId,
+            userMessageId: lastPersistedMessageId,
+            userMessageExternalId: lastPersistedMessageExternalId,
           },
         )
         agentContextRef = agentContext
@@ -6236,20 +6276,15 @@ type ListAgentsParams = {
   requiredCapabilities?: string[]
   maxAgents?: number
   mcpAgents?: MCPVirtualAgentRuntime[]
-  allowNonBuiltInAgents?: boolean
-  /** @deprecated This is now controlled by the agent registry. Internal agents are always included. */
-  includeBuiltInDeepAgent?: boolean
 }
 
 export async function listCustomAgentsSuitable(
   params: ListAgentsParams,
 ): Promise<ListCustomAgentsOutput> {
   const maxAgents = Math.min(Math.max(params.maxAgents ?? 5, 1), 10)
-  const allowNonBuiltInAgents = params.allowNonBuiltInAgents ?? true
-  const includeBuiltInDeepAgent = params.includeBuiltInDeepAgent ?? true
   let workspaceDbId = params.workspaceNumericId
   let userDbId = params.userId
-  const mcpAgentsFromContext = allowNonBuiltInAgents ? (params.mcpAgents ?? []) : []
+  const mcpAgentsFromContext = params.mcpAgents ?? []
 
   if (!workspaceDbId || !userDbId) {
     const userAndWorkspace: InternalUserWorkspace =
@@ -6262,18 +6297,20 @@ export async function listCustomAgentsSuitable(
     userDbId = Number(userAndWorkspace.user.id)
   }
 
-  const accessibleAgents = allowNonBuiltInAgents
-    ? await getUserAccessibleAgents(
-        db,
-        userDbId!,
-        workspaceDbId!,
-        25,
-        0,
-      )
-    : []
+  const accessibleAgents = await getUserAccessibleAgents(
+    db,
+    userDbId!,
+    workspaceDbId!,
+    25,
+    0,
+  )
 
-  // Note: internal agents from the registry are always included, so there's always something to evaluate
-
+  if (!accessibleAgents.length && mcpAgentsFromContext.length === 0) {
+    return {
+      agents: [],
+      totalEvaluated: 0,
+    }
+  }
   let connectorState = createEmptyConnectorState()
   try {
     connectorState = await getUserConnectorState(db, params.userEmail)
@@ -6318,10 +6355,8 @@ export async function listCustomAgentsSuitable(
     isPublic: true,
     resourceAccess: [],
   }))
-  // Note: Internal agents are NOT included here - they are exposed via system prompt
-  // This function returns only user-defined (custom) agents and MCP agents
   const combinedBriefs = [...briefs, ...mcpBriefs]
-  const totalEvaluated = combinedBriefs.length
+  const totalEvaluated = accessibleAgents.length + mcpBriefs.length
 
   const systemPrompt = [
     "You are routing queries to the best custom agent.",
@@ -6891,13 +6926,9 @@ async function runDelegatedAgentWithMessageAgents(
       mergeToolOutputsIntoCurrentTurnMemory(agentContext, turn)
       await runTurnEndPipeline(agentContext, {
         turn,
-        // Deep document agent reads a single doc with a single tool (get_chunks).
-        // Ranking/filtering and review loops add latency and cost without improving quality.
         useAgenticFiltering: internalCfg
           ? internalCfg.enableAgenticFiltering
           : USE_AGENTIC_FILTERING,
-        // Keep the pipeline structure for consistent cleanup + documentMemory merging, but
-        // avoid review LLM calls inside deep_document_agent.
         reviewFrequency: internalCfg?.enableReview === false
           ? MAX_REVIEW_FREQUENCY
           : (agentContext.review.reviewFrequency ?? DEFAULT_REVIEW_FREQUENCY),

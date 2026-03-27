@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentRunContext } from "@/api/chat/agent-schemas"
 import {
-  chunkKeyFromContent,
   createDocumentState,
   getFragmentsForSynthesis,
   getAllImagesFromDocumentMemory,
@@ -584,48 +583,42 @@ describe("message-agents context tracking", () => {
     )
   })
 
-  test("buildDelegatedAgentFragments adds response fragment only when citations absent", async () => {
-    const turnNumber = 3
-
-    const withCitationsContext = createMockContext()
+  test("buildDelegatedAgentFragments appends synthetic delegated response fragment", async () => {
     const withCitations = (await buildDelegatedAgentFragments({
       result: {
         data: {
-          result: "Agent says hi",
+          resultSummary: "Agent says hi",
           citations: [baseFragment.source],
         },
       },
-      agentId: "agent-123",
-      agentName: "Test Agent",
-      turnNumber,
-      sourceToolName: "run_public_agent",
       rawFragments: [],
       rawDocuments: [],
-      context: withCitationsContext,
-      toolQuery: "test",
-      resultSummary: "Agent says hi",
+      agentId: "agent-123",
+      agentName: "Test Agent",
     })).fragments
-    expect(withCitations.length).toBe(0)
+    expect(withCitations.length).toBe(1)
+    expect(withCitations[0]?.id).toBe("agent-123")
+    expect(withCitations[0]?.content).toBe("Agent says hi")
+    expect(withCitations[0]?.source.docId).toBe("delegated_agent:agent-123:response")
+    expect(withCitations[0]?.source.title).toBe("Delegated agent (Test Agent)")
 
-    const noCitationsContext = createMockContext()
     const noCitations = (await buildDelegatedAgentFragments({
       result: {
         data: {
-          result: "Agent says hi",
+          resultSummary: "Agent says hi",
           citations: [],
         },
       },
-      agentId: "agent-123",
-      agentName: "Test Agent",
-      turnNumber,
-      sourceToolName: "run_public_agent",
       rawFragments: [],
       rawDocuments: [],
-      context: noCitationsContext,
-      toolQuery: "test",
-      resultSummary: "Agent says hi",
+      agentId: "agent-123",
+      agentName: "Test Agent",
     })).fragments
-    expect(noCitations.length).toBe(0)
+    expect(noCitations.length).toBe(1)
+    expect(noCitations[0]?.id).toBe("agent-123")
+    expect(noCitations[0]?.content).toBe("Agent says hi")
+    expect(noCitations[0]?.source.docId).toBe("delegated_agent:agent-123:response")
+    expect(noCitations[0]?.source.title).toBe("Delegated agent (Test Agent)")
   })
 
   test("buildConversationHistoryForAgentRun normalizes context JSON and filters invalid turns", () => {
@@ -762,7 +755,7 @@ describe("message-agents context tracking", () => {
       status: "Open",
     }
     const doc = createDocumentState(baseFragment.id, fragmentSource)
-    doc.chunks.set(chunkKeyFromContent(baseFragment.content), {
+    doc.chunks.set("i:0", {
       content: baseFragment.content,
       firstSeenTurn: 1,
       lastSeenTurn: 1,

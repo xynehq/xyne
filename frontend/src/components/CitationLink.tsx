@@ -94,6 +94,7 @@ export const createCitationLink =
       citation.docId.startsWith("delegated_agent:")
 
     if (isAgentDelegatedCitation) {
+      children = `${citationIndex + 1}.0`
       const titleParts = citation.title.split("/")
       const agentTitleLine =
         titleParts[titleParts.length - 1] || "Delegated agent output"

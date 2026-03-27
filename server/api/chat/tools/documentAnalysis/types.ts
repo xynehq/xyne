@@ -1,4 +1,5 @@
 import type { ToolRawDocument } from "@/api/chat/agent-schemas"
+import type { MinimalAgentFragment } from "@/api/chat/types"
 
 /**
  * Input parameters for the get_chunks tool
@@ -16,6 +17,8 @@ export interface GetChunksInput {
  * Output from the get_chunks tool
  */
 export interface GetChunksOutput {
+  /** Citable fragments derived from the requested window */
+  fragments: MinimalAgentFragment[]
   /** Raw documents with chunks */
   rawDocuments: ToolRawDocument[]
   /** Summary of what was fetched */
@@ -38,7 +41,7 @@ export const GetChunksInputSchema = {
     },
     limit: {
       type: "number",
-      description: "Number of chunks to fetch (5-10 recommended)",
+      description: "Number of chunks to fetch (2-5 recommended)",
     },
   },
   required: ["docId", "offset", "limit"],

@@ -33,17 +33,6 @@ import { getChunkCountPerDoc } from "./chunk-selection"
 import { Apps } from "@xyne/vespa-ts/types"
 import type { VespaSearchResults } from "@xyne/vespa-ts"
 
-/** Stable chunk key when not provided: hash of content. */
-export function chunkKeyFromContent(content: string): string {
-  let h = 0
-  const s = content.trim()
-  for (let i = 0; i < s.length; i++) {
-    h = (h << 5) - h + s.charCodeAt(i)
-    h |= 0
-  }
-  return `c:${h}`
-}
-
 /** Create an empty DocumentState. */
 export function createDocumentState(docId: string, source: Citation): DocumentState {
   return {
@@ -526,7 +515,7 @@ export function createSyntheticDocFromAgent(
   doc.isSynthetic = true
   doc.lifecycle = "persistent"
 
-  doc.chunks.set(chunkKeyFromContent(resultSummary), {
+  doc.chunks.set("i:0", {
     content: resultSummary,
     firstSeenTurn: options.turnNumber,
     lastSeenTurn: options.turnNumber,

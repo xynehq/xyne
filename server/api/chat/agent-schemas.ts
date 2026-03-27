@@ -285,6 +285,8 @@ export interface AgentRunContext {
     metadata: Record<string, unknown>
   }
   message: {
+    id?: number
+    externalId?: string
     text: string
     attachments: Array<{ fileId: string; isImage: boolean }>
     timestamp: string

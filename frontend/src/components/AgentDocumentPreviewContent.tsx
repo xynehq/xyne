@@ -10,7 +10,6 @@ export interface AgentDocumentPayload {
   title?: string
   agentName: string
   content: string
-  summary?: string | null
   reasoning?: string | null
   citations?: AgentSourceCitation[]
   confidence?: number | null
@@ -219,16 +218,6 @@ const AgentDocumentPreviewContent: React.FC<AgentDocumentPreviewContentProps> = 
       <div className="flex-1 overflow-auto p-6 min-h-0">
         {activeTab === "content" && (
           <div className="max-w-none">
-            {doc.summary ? (
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6 border-l-4 border-blue-400">
-                <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">
-                  Summary
-                </h4>
-                <div className="text-sm text-blue-800 dark:text-blue-200">
-                  <AgentResponseMarkdown source={doc.summary} />
-                </div>
-              </div>
-            ) : null}
             <AgentResponseMarkdown source={doc.content} />
             {doc.confidence != null ? (
               <div className="mt-6 pt-4 border-t dark:border-gray-700">
