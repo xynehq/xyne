@@ -19,4 +19,4 @@ export {
   createEventHandler,
   type ExtendedEventRouterConfig,
 } from "./event-router"
-export { createStateManager } from "./state-manager"
+
