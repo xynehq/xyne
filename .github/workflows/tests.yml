@@ -23,6 +23,10 @@ jobs:
       - name: Install Dependencies (Server)
         working-directory: ./server
         run: bun install
+
+      - name: Rebuild DuckDB native binding
+        working-directory: ./server
+        run: npm rebuild duckdb --build-from-source
         
       - name: Clear test cache
         working-directory: ./server
