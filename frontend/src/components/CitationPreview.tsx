@@ -16,6 +16,7 @@ import { DocumentOperations } from "@/contexts/DocumentOperationsContext"
 import TxtViewer from "./TxtViewer"
 import { useScopedFind } from "@/hooks/useScopedFind"
 import JsonViewer from "./JsonViewer"
+import useVespaHighlight from "@/hooks/useVespaHighlight"
 
 interface CitationPreviewProps {
   citation: Citation | null
@@ -73,9 +74,8 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   selectedChunkIndex: selectedChunkIndexProp,
 }) => {
   const [documentContent, setDocumentContent] = useState<Blob | null>(null)
-  const [agentDocument, setAgentDocument] = useState<AgentDocumentPayload | null>(
-    null,
-  )
+  const [agentDocument, setAgentDocument] =
+    useState<AgentDocumentPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -109,9 +109,13 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
           }
           const jsonData = await response.json()
           if (signal.aborted) return
-          const validationResult = AgentDocumentPayloadSchema.safeParse(jsonData)
+          const validationResult =
+            AgentDocumentPayloadSchema.safeParse(jsonData)
           if (!validationResult.success) {
-            console.error("API response validation error:", validationResult.error)
+            console.error(
+              "API response validation error:",
+              validationResult.error,
+            )
             throw new Error("Invalid document data received from server.")
           }
           if (signal.aborted) return
@@ -327,9 +331,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     })
 
     const initialPageOrSheetIndex =
-      initialPageIndex != null && initialPageIndex >= 0
-        ? initialPageIndex
-        : 0
+      initialPageIndex != null && initialPageIndex >= 0 ? initialPageIndex : 0
 
     switch (extension) {
       case "pdf":
@@ -507,7 +509,9 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
                   ? agentDocument.agentName
                   : citation?.title?.split("/").pop() || "Document Preview"}
               </h3>
-              {citation && isAgentDocumentCitation(citation) && agentDocument ? (
+              {citation &&
+              isAgentDocumentCitation(citation) &&
+              agentDocument ? (
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                   {new Date(agentDocument.createdAt).toLocaleString()}
                 </p>
