@@ -185,6 +185,7 @@ export interface XyneAgentState {
     email: string
     workspaceId: string
     id: string
+    numericId?: number
     workspaceNumericId?: number
     timeZone?: string
   }
@@ -306,6 +307,7 @@ function getSessionContext(sessionId?: string): SessionContext {
   if (id && sessionStore.has(id)) {
     return sessionStore.get(id)!
   }
+
   throw new Error(`Xyne session not found: ${id || "no active session"}`)
 }
 
@@ -406,6 +408,7 @@ export function createInitialXyneState(
   email: string,
   workspaceId: string,
   userId: string,
+  numericId: number,
   chatExternalId: string,
   messageText: string,
   messageTimestamp: string,
@@ -470,6 +473,7 @@ export function createInitialXyneState(
       email,
       workspaceId,
       id: userId,
+      numericId,
     },
     chat: {
       externalId: chatExternalId,
@@ -485,6 +489,5 @@ export function createInitialXyneState(
     seenDocuments: new Set(),
     citationDocIdMapping: new Map(),
     stopRequested: false,
-    thinkingLog: "",
   }
 }

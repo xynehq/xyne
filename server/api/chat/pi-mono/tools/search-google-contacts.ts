@@ -118,6 +118,19 @@ export const searchGoogleContactsTool = createXyneTool(
       })
 
       xyneState.allFragments.push(...fragments)
+
+      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
+      const toolKey = `searchGoogleContacts:${params.query || "default"}`
+      const existing =
+        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
+      const mergedFragments = existing
+        ? [...existing.fragments, ...fragments]
+        : fragments
+      xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
+        query: params.query || "",
+        fragments: mergedFragments,
+      })
+
       await persistState()
 
       return {

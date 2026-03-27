@@ -167,6 +167,19 @@ export const searchGlobalTool = createXyneTool(
 
       // Store fragments in Xyne state
       xyneState.allFragments.push(...fragments)
+
+      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
+      const toolKey = `searchGlobal:${params.query || "default"}`
+      const existing =
+        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
+      const mergedFragments = existing
+        ? [...existing.fragments, ...fragments]
+        : fragments
+      xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
+        query: params.query || "",
+        fragments: mergedFragments,
+      })
+
       await persistState()
 
       return {

@@ -19,6 +19,11 @@ import {
 import type { TSchema } from "@sinclair/typebox"
 import type { AgentSession } from "./types"
 import type { XyneAgentState } from "../adapter"
+import {
+  setExtensionState,
+  default as piMonoTurnProcessor,
+} from "../pi-mono-extension"
+import type { ReasoningEmitter } from "@/api/chat/reasoning-steps"
 
 /**
  * SDK Tool type using pi-coding-agent's ToolDefinition
@@ -33,6 +38,12 @@ export interface AgentSessionWrapperConfig
   state?: XyneAgentState
   baseUrl?: string
   apiKey?: string
+  // Extension state for pi-mono turn processor
+  xyneState?: XyneAgentState
+  agenticModelId?: string
+  message?: string
+  email?: string
+  emitReasoningStep?: ReasoningEmitter
 }
 
 /**
@@ -48,6 +59,7 @@ export async function createAgentSessionWrapper(
 
   const sessionOptions: CreateAgentSessionOptions = {
     model,
+    tools: [],
     customTools: config.customTools ?? config.tools,
     resourceLoader: config.resourceLoader,
     authStorage: config.authStorage,
@@ -151,17 +163,41 @@ export async function createXyneAgentSession(
   // Create ModelRegistry
   const modelRegistry = config.modelRegistry ?? new ModelRegistry(authStorage)
 
+  // Create a ResourceLoader that injects our Xyne prompt as the base systemPrompt.
+  // This is critical: pi-mono's AgentSession._rebuildSystemPrompt() calls
+  // resourceLoader.getSystemPrompt() and routes it through the `customPrompt`
+  // path in buildSystemPrompt(), which REPLACES the default coding-agent identity.
+  // Without this, the session resets to "You are an expert coding assistant..."
+  // before every LLM call.
   const resourceLoader =
     config.resourceLoader ??
     new DefaultResourceLoader({
-      cwd: "/tmp",
+      cwd: "/tmp", // Irrelevant for search agent, prevents CWD leak
       systemPrompt: config.systemPrompt,
-      noExtensions: true,
+      noExtensions: false, // Enable extensions
       noSkills: true,
       noPromptTemplates: true,
       noThemes: true,
-      agentsFilesOverride: () => ({ agentsFiles: [] }),
+      agentsFilesOverride: () => ({ agentsFiles: [] }), // Don't load AGENTS.md/CLAUDE.md
+      extensionFactories: [piMonoTurnProcessor], // Register the turn-end extension
     })
+
+  // Set up extension state BEFORE creating session (if all required fields are present)
+  // if (
+  //   config.xyneState &&
+  //   config.agenticModelId &&
+  //   config.message &&
+  //   config.email &&
+  //   config.emitReasoningStep
+  // ) {
+  //   setExtensionState({
+  //     xyneState: config.xyneState,
+  //     agenticModelId: config.agenticModelId,
+  //     message: config.message,
+  //     email: config.email,
+  //     emitReasoningStep: config.emitReasoningStep,
+  //   })
+  // }
 
   if (!config.resourceLoader) {
     await resourceLoader.reload()

@@ -82,12 +82,10 @@ export const synthesizeFinalAnswerTool = createXyneTool(
       await persistState()
 
       // Build the full synthesis payload with fragments, plan, and context
-      const { systemPrompt, userMessage, citationDocIdMapping } = buildFinalSynthesisPayload(
-        xyneState as any,
-        {
+      const { systemPrompt, userMessage, citationDocIdMapping } =
+        buildFinalSynthesisPayload(xyneState as any, {
           insightsUsefulForAnswering: params.insightsUsefulForAnswering,
-        },
-      )
+        })
 
       // Store citation mapping for reliable citation resolution
       xyneState.citationDocIdMapping = citationDocIdMapping

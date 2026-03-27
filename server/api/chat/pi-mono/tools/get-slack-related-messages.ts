@@ -278,7 +278,13 @@ export const getSlackRelatedMessagesTool = createXyneTool(
       )
 
       if (!items.length) {
-        xyneState.allFragments.push([])
+        // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
+        const toolKey = `getSlackRelatedMessages:${params.query || "default"}`
+        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
+          query: params.query || "",
+          fragments: [],
+        })
+
         await persistState()
         return {
           content: [{ type: "text", text: "Found 0 Slack messages" }],
@@ -364,6 +370,19 @@ export const getSlackRelatedMessagesTool = createXyneTool(
       )
 
       xyneState.allFragments.push(...fragments)
+
+      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
+      const toolKey = `getSlackRelatedMessages:${params.query || "default"}`
+      const existing =
+        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
+      const mergedFragments = existing
+        ? [...existing.fragments, ...fragments]
+        : fragments
+      xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
+        query: params.query || "",
+        fragments: mergedFragments,
+      })
+
       await persistState()
 
       Logger.info(
