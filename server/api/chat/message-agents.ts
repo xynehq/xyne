@@ -132,6 +132,7 @@ import { ReviewResultSchema, ToolExpectationSchema } from "./agent-schemas"
 import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
 import { buildAgentPromptAddendum } from "./agentPromptCreation"
 import { parseMessageText } from "./chat"
+import { normalizeKnowledgeBaseToolArgs } from "./knowledgeBaseToolArgs"
 import { type FinalToolsList, buildMCPJAFTools } from "./jaf-adapter"
 import { logJAFTraceEvent } from "./jaf-logging"
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -1796,15 +1797,18 @@ export async function beforeToolExecutionHook(
   context: AgentRunContext,
   reasoningEmitter?: ReasoningEmitter,
 ): Promise<any | null> {
-  const incomingExcludedIds = normalizeExcludedIdsForLogging(args?.excludedIds)
+  const normalizedArgs = normalizeKnowledgeBaseToolArgs(toolName, args)
+  const incomingExcludedIds = normalizeExcludedIdsForLogging(
+    (normalizedArgs as any)?.excludedIds,
+  )
   logContextMutation(context, "[beforeToolExecutionHook] Received tool args", {
     toolName,
-    args,
+    args: normalizedArgs,
     incomingExcludedIds,
     incomingExcludedIdsCount: incomingExcludedIds.length,
   })
   // 0. Validate input against schema
-  const validation = validateToolInput(toolName, args)
+  const validation = validateToolInput(toolName, normalizedArgs)
   if (!validation.success) {
     await emitReasoningEvent(
       reasoningEmitter,
@@ -1820,7 +1824,7 @@ export async function beforeToolExecutionHook(
   const isDuplicate = context.toolCallHistory.some(
     (record) =>
       record.toolName === toolName &&
-      JSON.stringify(record.arguments) === JSON.stringify(args) &&
+      JSON.stringify(record.arguments) === JSON.stringify(normalizedArgs) &&
       record.status === "success" &&
       Date.now() - record.startedAt.getTime() < 60000, // 1 minute
   )
@@ -1846,7 +1850,7 @@ export async function beforeToolExecutionHook(
     return null // Skip execution — tool is also removed from tool list
   }
 
-  return args
+  return normalizedArgs
 }
 
 /**

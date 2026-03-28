@@ -41,7 +41,7 @@ const toToolSchemaParameters = <T>(
 ): ToolSchemaParameters<T> => schema as unknown as ToolSchemaParameters<T>
 
 const KNOWLEDGE_BASE_TARGET_DESCRIPTION =
-  "A discriminated knowledge-base target object for browse/search. Set `type` to one of `collection`, `folder`, `file`, or `path`, then provide only the matching ID/path fields for that variant."
+  "A discriminated knowledge-base target object for browse/search. Pass a JSON object, not a quoted JSON string. Set `type` to one of `collection`, `folder`, `file`, or `path`, then provide only the matching ID/path fields for that variant."
 
 const KNOWLEDGE_BASE_OFFSET_DESCRIPTION =
   "Pagination offset. Use it after reviewing the current page to continue from the next unseen rows or fragments."
@@ -118,7 +118,7 @@ export type KnowledgeBaseTarget = z.infer<typeof KnowledgeBaseTargetSchema>
 
 export const LsKnowledgeBaseInputSchema = z.object({
   target: KnowledgeBaseTargetSchema.optional().describe(
-    "Optional KB location to browse. Omit it to list the current KB roots. In user-owned or full-collection scope this returns collection rows; in partial agent-scoped access it may return folder/file roots instead. Provide a collection, folder, file, or path target when you already know where to inspect or when the user asked about a specific location.",
+    "Optional KB location to browse. Omit it to list the current KB roots. In user-owned or full-collection scope this returns collection rows; in partial agent-scoped access it may return folder/file roots instead. Provide a collection, folder, file, or path target when you already know where to inspect or when the user asked about a specific location. `target` itself must be an object, not a quoted JSON string.",
   ),
   depth: z
     .number()
@@ -200,7 +200,7 @@ export const SearchKnowledgeBaseInputSchema = z.object({
         .min(1)
         .optional()
         .describe(
-          "Optional union of KB locations to search inside the current allowed scope. Each target may be a collection root, folder subtree, exact file, or collection-relative path. Use this when the user query or prior `ls` output tells you where to search; file targets are especially useful after `ls` identifies a subset such as PDFs.",
+          "Optional union of KB locations to search inside the current allowed scope. Each target may be a collection root, folder subtree, exact file, or collection-relative path. Use this when the user query or prior `ls` output tells you where to search; file targets are especially useful after `ls` identifies a subset such as PDFs. Each `filters.targets[]` entry must be an object, not a quoted JSON string.",
         ),
     })
     .optional()

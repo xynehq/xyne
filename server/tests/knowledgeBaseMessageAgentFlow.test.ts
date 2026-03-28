@@ -512,6 +512,97 @@ async function runScriptedKnowledgeBaseFlow(params: {
 }
 
 describe("knowledge-base message agent flow", () => {
+  test("beforeToolExecutionHook normalizes stringified KB target objects from weaker tool callers", async () => {
+    const context = createAgentRunContext({
+      message: "Inspect the KB scope.",
+      selectedKnowledgeItemIds: [`cl-${collectionAlpha.id}`],
+    })
+
+    const preparedLsArgs = await beforeToolExecutionHook(
+      "ls",
+      {
+        target: JSON.stringify({
+          type: "collection",
+          collectionId: collectionAlpha.id,
+        }),
+        depth: 1,
+      },
+      context,
+    )
+
+    expect(preparedLsArgs).toEqual({
+      target: {
+        type: "collection",
+        collectionId: collectionAlpha.id,
+      },
+      depth: 1,
+    })
+
+    const preparedSearchArgs = await beforeToolExecutionHook(
+      "searchKnowledgeBase",
+      {
+        query: "API spec",
+        filters: JSON.stringify({
+          targets: [
+            JSON.stringify({
+              type: "folder",
+              folderId: projectsFolder.id,
+            }),
+            {
+              type: "file",
+              fileId: specFile.id,
+            },
+          ],
+        }),
+      },
+      context,
+    )
+
+    expect(preparedSearchArgs).toEqual({
+      query: "API spec",
+      filters: {
+        targets: [
+          {
+            type: "folder",
+            folderId: projectsFolder.id,
+          },
+          {
+            type: "file",
+            fileId: specFile.id,
+          },
+        ],
+      },
+    })
+
+    const preparedSearchArgsWithStringifiedTargets = await beforeToolExecutionHook(
+      "searchKnowledgeBase",
+      {
+        query: "spec chunk",
+        filters: {
+          targets: JSON.stringify([
+            JSON.stringify({
+              type: "file",
+              fileId: specFile.id,
+            }),
+          ]),
+        },
+      },
+      context,
+    )
+
+    expect(preparedSearchArgsWithStringifiedTargets).toEqual({
+      query: "spec chunk",
+      filters: {
+        targets: [
+          {
+            type: "file",
+            fileId: specFile.id,
+          },
+        ],
+      },
+    })
+  })
+
   test("partial folder scope syncs untargeted ls roots into a folder-scoped KB search and chunk memory", async () => {
     const providerSnapshots: string[] = []
     const searchCalls: Array<Record<string, unknown>> = []
@@ -652,6 +743,171 @@ describe("knowledge-base message agent flow", () => {
     expect(
       await collectResolvedCitations(result.answer, result.synthesisFragments),
     ).toEqual([specFile.id])
+  })
+
+  test("stringified KB target objects still complete the browse-then-search loop", async () => {
+    const searchCalls: Array<Record<string, unknown>> = []
+
+    const provider = createScriptedProvider([
+      () => ({
+        message: {
+          tool_calls: [createToolCall("call-ls-1", "ls", {})],
+        },
+      }),
+      () => ({
+        message: {
+          tool_calls: [
+            createToolCall("call-ls-2", "ls", {
+              target: JSON.stringify({
+                type: "collection",
+                collectionId: collectionAlpha.id,
+              }),
+              depth: 1,
+            }),
+          ],
+        },
+      }),
+      () => ({
+        message: {
+          tool_calls: [
+            createToolCall("call-search-1", "searchKnowledgeBase", {
+              query: "API spec",
+              filters: {
+                targets: [
+                  JSON.stringify({
+                    type: "folder",
+                    folderId: projectsFolder.id,
+                  }),
+                ],
+              },
+            }),
+          ],
+        },
+      }),
+      () => ({
+        message: {
+          content:
+            "Projects contains the API folder, and the search stayed scoped to that folder K[file-spec_0].",
+        },
+      }),
+    ])
+
+    const searchExecutor: SearchExecutor = async (options: any) => {
+      searchCalls.push({
+        collectionSelections: options.collectionSelections,
+        query: options.query,
+      })
+
+      const fragment: MinimalAgentFragment = {
+        id: specFile.id,
+        content: "Spec chunk 0",
+        confidence: 0.9,
+        source: {
+          docId: specFile.id,
+          title: specFile.name,
+          url: "",
+          app: Apps.KnowledgeBase,
+          entity: KnowledgeBaseEntity.File,
+        },
+      }
+
+      return {
+        fragments: [fragment],
+        rawDocuments: [
+          {
+            docId: specFile.id,
+            relevance: 0.9,
+            source: fragment.source,
+            chunks: [
+              {
+                chunkKey: "i:0",
+                content: "Spec chunk 0",
+                score: 0.9,
+              },
+            ],
+            vespaHit: {
+              relevance: 0.9,
+              fields: {
+                sddocname: "kb_items",
+                docId: specFile.id,
+              },
+            } as any,
+          },
+        ],
+      }
+    }
+
+    const result = await runScriptedKnowledgeBaseFlow({
+      message:
+        "Start at the KB root, navigate into the collection, then search the folder that contains the API spec.",
+      selectedKnowledgeItemIds: [`cl-${collectionAlpha.id}`],
+      provider,
+      searchExecutor,
+    })
+
+    expect(result.context.toolCallHistory).toHaveLength(3)
+    expect(result.context.toolCallHistory[0]).toMatchObject({
+      toolName: "ls",
+      status: "success",
+      arguments: {
+        depth: 1,
+        offset: 0,
+        metadata: false,
+      },
+    })
+    expect(result.context.toolCallHistory[1]).toMatchObject({
+      toolName: "ls",
+      status: "success",
+      arguments: {
+        target: {
+          type: "collection",
+          collectionId: collectionAlpha.id,
+        },
+        depth: 1,
+        offset: 0,
+        metadata: false,
+      },
+    })
+    expect(result.context.toolCallHistory[2]).toMatchObject({
+      toolName: "searchKnowledgeBase",
+      status: "success",
+      arguments: {
+        query: "API spec",
+        filters: {
+          targets: [
+            {
+              type: "folder",
+              folderId: projectsFolder.id,
+            },
+          ],
+        },
+      },
+    })
+
+    expect(result.toolResults[0]?.data).toMatchObject({
+      target: null,
+      entries: [
+        {
+          type: "collection",
+          id: collectionAlpha.id,
+        },
+      ],
+    })
+    expect(result.toolResults[1]?.data).toMatchObject({
+      target: {
+        type: "collection",
+        collection_id: collectionAlpha.id,
+        id: collectionAlpha.id,
+        path: "/",
+      },
+    })
+    expect(searchCalls).toEqual([
+      {
+        collectionSelections: [{ collectionFolderIds: [projectsFolder.id] }],
+        query: "API spec",
+      },
+    ])
+    expect(result.answer).toContain("K[file-spec_0]")
   })
 
   test("full collection scope keeps collection-row reuse valid across the agent loop", async () => {

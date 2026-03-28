@@ -19,6 +19,7 @@ import { dispatchOCRBatches } from "../lib/chunkByOCR"
 
 const PAGES_PER_BATCH = 100
 const MAX_BATCHES_TO_TEST = 100
+const TEST_STATUS_ENDPOINT = "http://localhost:8081/instance_status"
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -304,6 +305,7 @@ describe("OCR Dispatcher", () => {
 
     try {
       const options: DispatchOptions = {
+        statusEndpoint: TEST_STATUS_ENDPOINT,
         logger,
         metrics,
         sendBatch: mockProcessor.sendBatch,
@@ -335,6 +337,7 @@ describe("OCR Dispatcher", () => {
 
     try {
       const options: DispatchOptions = {
+        statusEndpoint: TEST_STATUS_ENDPOINT,
         logger,
         metrics,
         sendBatch: mockProcessor.sendBatch,
@@ -366,6 +369,7 @@ describe("OCR Dispatcher", () => {
 
     try {
       const options: DispatchOptions = {
+        statusEndpoint: TEST_STATUS_ENDPOINT,
         logger,
         metrics,
         sendBatch: mockProcessor.sendBatch,
@@ -396,6 +400,7 @@ describe("OCR Dispatcher", () => {
 
     try {
       const options: DispatchOptions = {
+        statusEndpoint: TEST_STATUS_ENDPOINT,
         logger,
         metrics,
         sendBatch: mockProcessor.sendBatch,
@@ -426,6 +431,7 @@ describe("OCR Dispatcher", () => {
 
     try {
       const options: DispatchOptions = {
+        statusEndpoint: TEST_STATUS_ENDPOINT,
         logger,
         metrics,
         sendBatch: mockProcessor.sendBatch,
@@ -457,6 +463,7 @@ describe("OCR Dispatcher", () => {
 
     try {
       const options: DispatchOptions = {
+        statusEndpoint: TEST_STATUS_ENDPOINT,
         logger,
         metrics,
         sendBatch: mockProcessor.sendBatch,
@@ -490,6 +497,7 @@ describe("OCR Dispatcher", () => {
 
     try {
       const options: DispatchOptions = {
+        statusEndpoint: TEST_STATUS_ENDPOINT,
         logger,
         metrics,
         sendBatch: mockProcessor.sendBatch,
@@ -523,6 +531,7 @@ describe("OCR Dispatcher", () => {
 
     try {
       const options: DispatchOptions = {
+        statusEndpoint: TEST_STATUS_ENDPOINT,
         logger,
         metrics,
         sendBatch: mockProcessor.sendBatch,
