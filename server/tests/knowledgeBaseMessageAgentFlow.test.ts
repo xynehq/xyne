@@ -746,7 +746,6 @@ describe("knowledge-base message agent flow", () => {
   })
   test("stringified KB target objects still complete the browse-then-search loop", async () => {
     const searchCalls: Array<Record<string, unknown>> = []
-
     const provider = createScriptedProvider([
       () => ({
         message: {

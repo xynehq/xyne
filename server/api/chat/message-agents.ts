@@ -132,6 +132,7 @@ import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
 import { buildAgentPromptAddendum } from "./agentPromptCreation"
 import { parseMessageText } from "./chat"
 import { normalizeKnowledgeBaseToolArgs } from "./knowledgeBaseToolArgs"
+import { getChunkCountPerDoc } from "./chunk-selection"
 import { type FinalToolsList, buildMCPJAFTools } from "./jaf-adapter"
 import { logJAFTraceEvent } from "./jaf-logging"
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -1828,16 +1829,12 @@ export async function beforeToolExecutionHook(
   const incomingExcludedIds = normalizeExcludedIdsForLogging(
     (normalizedArgs as any)?.excludedIds,
   )
-  loggerWithChild({ email: context.user.email }).debug(
-    {
-      ...buildContextTraceSnapshot(context),
-      toolName,
-      args: normalizedArgs,
-      incomingExcludedIds,
-      incomingExcludedIdsCount: incomingExcludedIds.length,
-    },
-    "[beforeToolExecutionHook] Received tool args",
-  )
+  logContextMutation(context, "[beforeToolExecutionHook] Received tool args", {
+    toolName,
+    args: normalizedArgs,
+    incomingExcludedIds,
+    incomingExcludedIdsCount: incomingExcludedIds.length,
+  })
   // 0. Validate input against schema
   const validation = validateToolInput(toolName, normalizedArgs)
   if (!validation.success) {
