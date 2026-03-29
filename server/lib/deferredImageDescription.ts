@@ -250,13 +250,20 @@ export class DeferredImageDescriptionBatch {
   }
 
   /**
-   * Deletes every file recorded in savedPathsByHash, then clears savedPathsByHash,
-   * pendingPathByHash, and rejectedHashes. Use when extraction fails before a
-   * successful return so temporary images are not left on disk.
+   * Clears savedPathsByHash, pendingPathByHash, and rejectedHashes. When
+   * unlinkFiles is true (default), also deletes every file recorded for tracking
+   * — use on failed extraction so scratch files are not left on disk. On
+   * success, pass unlinkFiles: false so persisted images under IMAGE_DIR remain
+   * available while in-memory tracking is still released.
    */
-  async disposeTrackedImageFiles(): Promise<void> {
-    const hashes = [...this.savedPathsByHash.keys()]
-    await Promise.all(hashes.map((h) => this.deleteSavedFilesForHash(h)))
+  async disposeTrackedImageFiles(options?: {
+    unlinkFiles?: boolean
+  }): Promise<void> {
+    const unlinkFiles = options?.unlinkFiles !== false
+    if (unlinkFiles) {
+      const hashes = [...this.savedPathsByHash.keys()]
+      await Promise.all(hashes.map((h) => this.deleteSavedFilesForHash(h)))
+    }
     this.savedPathsByHash.clear()
     this.pendingPathByHash.clear()
     this.rejectedHashes.clear()

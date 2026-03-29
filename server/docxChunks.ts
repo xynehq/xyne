@@ -2652,6 +2652,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
               image_chunk_pos.push(globalSeq)
               imageSeqToHash.set(globalSeq, imageHash)
               globalSeq++
+              textStartPos = globalSeq
 
               Logger.debug(`Successfully processed image: ${imagePath}`)
             } else {
@@ -2756,12 +2757,10 @@ export async function extractTextAndImagesWithChunksFromDocx(
       image_chunk_pos,
     }
   } finally {
-    if (
-      imageDescribeBatch &&
-      !extractionSucceeded &&
-      extractImages
-    ) {
-      await imageDescribeBatch.disposeTrackedImageFiles()
+    if (imageDescribeBatch && extractImages) {
+      await imageDescribeBatch.disposeTrackedImageFiles({
+        unlinkFiles: !extractionSucceeded,
+      })
     }
     // @ts-ignore
     zip = null

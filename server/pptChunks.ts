@@ -955,12 +955,10 @@ export async function extractTextAndImagesWithChunksFromPptx(
       image_chunk_pos,
     }
   } finally {
-    if (
-      imageDescribeBatch &&
-      !extractionSucceeded &&
-      extractImages
-    ) {
-      await imageDescribeBatch.disposeTrackedImageFiles()
+    if (imageDescribeBatch && extractImages) {
+      await imageDescribeBatch.disposeTrackedImageFiles({
+        unlinkFiles: !extractionSucceeded,
+      })
     }
     //@ts-ignore
     zip = null

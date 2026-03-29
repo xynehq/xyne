@@ -1227,8 +1227,10 @@ export async function extractTextAndImagesWithChunksFromPDF(
       image_chunks_map,
     }
   } finally {
-    if (!extractionSucceeded && extractImages) {
-      await imageDescribeBatch.disposeTrackedImageFiles()
+    if (extractImages) {
+      await imageDescribeBatch.disposeTrackedImageFiles({
+        unlinkFiles: !extractionSucceeded,
+      })
     }
     Logger.debug("Calling PDF document destroy")
     await pdfDocument.destroy()

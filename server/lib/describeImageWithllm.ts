@@ -87,10 +87,10 @@ export const describeImageWithllm = async (
     const params = buildOpenAiImageDescribePayload(image, modelId, imageName, prompt)
 
     Logger.debug("Sending image description via OpenAI client (LiteLLM baseURL)")
-    const response = await client.chat.completions.create({
-      ...params,
-      ...(signal ? { signal } : {}),
-    })
+    const response = await client.chat.completions.create(
+      params,
+      signal ? { signal } : undefined,
+    )
 
     const content = response.choices[0]?.message?.content
     if (typeof content !== "string" || !content.trim()) {
@@ -98,7 +98,9 @@ export const describeImageWithllm = async (
     }
 
     const result = content.trim()
-    Logger.debug(`LLM API response: ${result.substring(0, 100)}...`)
+    Logger.debug("Image description completed", {
+      responseChars: result.length,
+    })
     return result
   } catch (err) {
     Logger.error(err, "Error calling LLM API for image description")
