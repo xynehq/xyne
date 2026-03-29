@@ -10,8 +10,7 @@ on:
 
 jobs:
   test:
-    # Pin 22.04 so DuckDB’s prebuilt native binary matches GLIBCXX (avoid slow/flaky --build-from-source).
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,10 +19,21 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Ensure system libstdc++ (GLIBCXX for native modules)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libstdc++6
+          strings /usr/lib/x86_64-linux-gnu/libstdc++.so.6 | grep GLIBCXX || true
+
+      - name: Prefer system libstdc++ for dynamic linker
+        run: echo "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
       
       - name: Install Dependencies (Server)
         working-directory: ./server
-        run: bun install
+        run: |
+          rm -rf node_modules
+          bun install --no-cache
 
       - name: Clear test cache
         working-directory: ./server
