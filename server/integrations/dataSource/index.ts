@@ -38,6 +38,7 @@ import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import imageType from "image-type"
 import { NAMESPACE } from "@/config"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
+import config from "@/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "dataSourceIntegration",
@@ -181,6 +182,7 @@ const processImageContent = async (
   try {
     const image_chunk: string = await describeImageWithllm(
       imageBuffer,
+      options.fileName,
       "provide only a concise and detailed description of the image",
     )
     return createVespaDataSourceFile(
@@ -480,7 +482,7 @@ export const handleDataSourceFileUpload = async (
 
     let processedFiles: VespaDataSourceFile[] = []
     if (isImageFile(mimeType)) {
-      if (!process.env.LLM_API_ENDPOINT) {
+      if (!config.LiteLLMBaseUrl) {
         throw new FileProcessingError(
           `LLM API endpoint is not set. Skipping image: ${options.fileName}`,
         )
