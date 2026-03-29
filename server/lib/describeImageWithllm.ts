@@ -78,11 +78,11 @@ export const describeImageWithllm = async (
   const baseURL = config.LiteLLMBaseUrl
   const modelId = config.defaultFastModel
   const apiKey = config.LiteLLMApiKey
-  if (!baseURL || !modelId || !apiKey) {
-    throw new Error("LiteLLM API endpoint, model ID, or API key is not set")
-  }
 
   try {
+    if (!baseURL || !modelId || !apiKey) {
+      throw new Error("LiteLLM API endpoint, model ID, or API key is not set")
+    }
     const client = createLiteLLMOpenAIClient(apiKey, baseURL)
     const params = buildOpenAiImageDescribePayload(image, modelId, imageName, prompt)
 
