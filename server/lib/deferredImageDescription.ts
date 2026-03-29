@@ -20,8 +20,7 @@ const DEFAULT_PLACEHOLDER = "This is an image."
 function resolveConcurrency(explicit?: number): number {
   if (explicit != null && explicit > 0) return explicit
   const fromEnv = parseInt(
-    process.env.IMAGE_DESCRIBE_CONCURRENCY ||
-      "8",
+    process.env.IMAGE_DESCRIBE_CONCURRENCY || "8",
     10,
   )
   return Math.max(1, Number.isFinite(fromEnv) ? fromEnv : 8)
@@ -65,32 +64,42 @@ function promiseWithTimeout<T>(
   })
 }
 
+/** LLM / pipeline signals: drop file and chunk rows (not indexed). */
+function isRejectedImageDescription(raw: string): boolean {
+  if (raw == null) return true
+  const s = raw.trim()
+  if (!s) return true
+  return (
+    s === "No description returned." ||
+    s === "Image is not worth describing."
+  )
+}
+
 export type DescribeImageFn = (
   buffer: Buffer,
   imageName: string,
 ) => Promise<string>
 
 export type DeferredImageDescriptionOptions = {
-  /** Defaults to sharedImageDescriptionByHash */
   hashDescriptions?: Map<string, string>
   concurrency?: number
-  /** Per LLM call; default from IMAGE_DESCRIBE_TIMEOUT_MS or 60s */
   describeTimeoutMs?: number
-  /** Extra attempts after the first; default from IMAGE_DESCRIBE_RETRIES or 2 */
   describeRetries?: number
   describeImage?: DescribeImageFn
-  /** While waiting for flush; default "This is an image." */
   placeholderText?: string
 }
 
 /**
  * Queue image paths during extraction (deduped by hash), then run parallel
  * single-image LLM calls and map results back onto image chunk arrays.
- * Use one instance per document / extraction pass.
+ * Rejected descriptions drop files from disk and rows via stripRejectedImageRows.
  */
 export class DeferredImageDescriptionBatch {
   private readonly hashDescriptions: Map<string, string>
   private readonly pendingPathByHash = new Map<string, string>()
+  /** Every on-disk file for a hash (duplicate visuals → multiple paths). */
+  private readonly savedPathsByHash = new Map<string, string[]>()
+  private readonly rejectedHashes = new Set<string>()
   private readonly concurrency: number
   private readonly describeTimeoutMs: number
   private readonly describeRetries: number
@@ -98,7 +107,7 @@ export class DeferredImageDescriptionBatch {
   private readonly placeholderText: string
 
   constructor(opts: DeferredImageDescriptionOptions = {}) {
-    this.hashDescriptions = opts.hashDescriptions ?? new Map()
+    this.hashDescriptions = opts.hashDescriptions ?? new Map<string, string>()
     this.concurrency = resolveConcurrency(opts.concurrency)
     this.describeTimeoutMs = resolveTimeoutMs(opts.describeTimeoutMs)
     this.describeRetries = resolveRetries(opts.describeRetries)
@@ -106,15 +115,40 @@ export class DeferredImageDescriptionBatch {
     this.placeholderText = opts.placeholderText ?? DEFAULT_PLACEHOLDER
   }
 
+  private noteSavedPathForHash(imageHash: string, absoluteImagePath: string) {
+    let list = this.savedPathsByHash.get(imageHash)
+    if (!list) {
+      list = []
+      this.savedPathsByHash.set(imageHash, list)
+    }
+    if (!list.includes(absoluteImagePath)) list.push(absoluteImagePath)
+  }
+
+  private async deleteSavedFilesForHash(hash: string): Promise<void> {
+    const paths = this.savedPathsByHash.get(hash)
+    if (!paths?.length) return
+    await Promise.all(
+      paths.map((p) =>
+        fs.unlink(p).catch((err) => {
+          Logger.debug(
+            `deferredImageDescription: unlink failed ${p}: ${err instanceof Error ? err.message : err}`,
+          )
+        }),
+      ),
+    )
+  }
+
   /**
    * Call after the image file exists on disk. Returns text to push to image_chunks now.
-   * Queues at most one path per hash when describeEnabled.
+   * Queues at most one path per hash when describeEnabled (for a single LLM call).
    */
   registerImagePathForLaterDescribe(
     imageHash: string,
     absoluteImagePath: string,
     describeEnabled: boolean,
   ): string {
+    this.noteSavedPathForHash(imageHash, absoluteImagePath)
+
     const cached = this.hashDescriptions.get(imageHash)
     if (cached !== undefined) return cached
     if (!describeEnabled) return this.placeholderText
@@ -124,21 +158,9 @@ export class DeferredImageDescriptionBatch {
     return this.placeholderText
   }
 
-  private normalizeDescription(raw: string): string {
-    if (raw == null) return this.placeholderText
-    const s = raw.trim()
-    if (
-      !s ||
-      s === "No description returned." ||
-      s === "Image is not worth describing."
-    ) {
-      return this.placeholderText
-    }
-    return s
-  }
-
   /**
    * Run queued describe calls (concurrency-limited). No-op if describeEnabled is false.
+   * Rejected hashes: files removed from disk; not written to hashDescriptions.
    */
   async flushDescribeQueue(describeEnabled: boolean): Promise<void> {
     if (!describeEnabled || this.pendingPathByHash.size === 0) return
@@ -147,13 +169,13 @@ export class DeferredImageDescriptionBatch {
       [...this.pendingPathByHash.entries()].map(([hash, filePath]) =>
         limit(async () => {
           if (this.hashDescriptions.has(hash)) return
-          let description = this.placeholderText
+          let rawDescription = "No description returned."
           try {
             const buf = await fs.readFile(filePath)
             let lastErr: unknown
             for (let attempt = 0; attempt <= this.describeRetries; attempt++) {
               try {
-                description = await promiseWithTimeout(
+                rawDescription = await promiseWithTimeout(
                   this.describeImage(buf, path.basename(filePath)),
                   this.describeTimeoutMs,
                   `describeImage hash=${hash.slice(0, 8)}`,
@@ -170,17 +192,30 @@ export class DeferredImageDescriptionBatch {
               }
             }
             if (lastErr != null) {
-              throw lastErr
+              Logger.warn(
+                `describeImage failed (deferred) for hash ${hash.slice(0, 8)}: ${lastErr instanceof Error ? lastErr.message : lastErr}`,
+              )
+              rawDescription = "No description returned."
             }
           } catch (e) {
             Logger.warn(
-              `describeImage failed (deferred) for hash ${hash.slice(0, 8)}: ${e instanceof Error ? e.message : e}`,
+              `describeImage read/process failed for hash ${hash.slice(0, 8)}: ${e instanceof Error ? e.message : e}`,
             )
-            description = this.placeholderText
+            rawDescription = "No description returned."
           }
+
+          if (isRejectedImageDescription(rawDescription)) {
+            this.rejectedHashes.add(hash)
+            await this.deleteSavedFilesForHash(hash)
+            Logger.info(
+              `Dropping useless image(s) for hash ${hash.slice(0, 12)}… (${rawDescription.trim() || "empty"})`,
+            )
+            return
+          }
+
           this.hashDescriptions.set(
             hash,
-            this.normalizeDescription(description),
+            rawDescription.trim(),
           )
         }),
       ),
@@ -189,7 +224,44 @@ export class DeferredImageDescriptionBatch {
   }
 
   /**
-   * Replace placeholder / pending entries in image_chunks using hashDescriptions +
+   * Remove image chunk rows whose content hash was rejected after flushDescribeQueue.
+   */
+  stripRejectedImageRows(
+    image_chunks: string[],
+    image_chunk_pos: number[],
+    chunkIndexToImageHash: Map<number, string>,
+    image_chunks_map?: unknown[],
+  ): void {
+    if (this.rejectedHashes.size === 0) return
+
+    let writeIdx = 0
+
+    for (let readIdx = 0; readIdx < image_chunks.length; readIdx++) {
+      const seq = image_chunk_pos[readIdx]
+      const h = chunkIndexToImageHash.get(seq)
+
+      if (h !== undefined && this.rejectedHashes.has(h)) {
+        chunkIndexToImageHash.delete(seq)
+        continue
+      }
+
+      image_chunks[writeIdx] = image_chunks[readIdx]
+      image_chunk_pos[writeIdx] = seq
+
+      if (image_chunks_map) {
+        image_chunks_map[writeIdx] = image_chunks_map[readIdx]
+      }
+
+      writeIdx++
+    }
+
+    image_chunks.length = writeIdx
+    image_chunk_pos.length = writeIdx
+    if (image_chunks_map) image_chunks_map.length = writeIdx
+  }
+
+  /**
+   * Replace placeholder entries in image_chunks using hashDescriptions +
    * chunkIndex → content hash (same chunk_index as image_chunk_pos entries).
    */
   applyResolvedDescriptions(

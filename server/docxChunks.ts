@@ -2649,8 +2649,6 @@ export async function extractTextAndImagesWithChunksFromDocx(
               image_chunks.push(description)
               image_chunk_pos.push(globalSeq)
               imageSeqToHash.set(globalSeq, imageHash)
-              // Add image placeholder to existing overlap text for continuity
-              crossImageOverlap += ` [[IMG#${globalSeq}]] `
               globalSeq++
 
               Logger.debug(`Successfully processed image: ${imagePath}`)
@@ -2677,7 +2675,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
         : textContent
 
       if (combinedText.trim()) {
-        const { nextPos, overlapText } = processTextItems(
+        const { nextPos } = processTextItems(
           [combinedText],
           text_chunks,
           text_chunk_pos,
@@ -2698,7 +2696,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
       const finalContent = crossImageOverlap
         ? crossImageOverlap + " " + postProcessedContent
         : postProcessedContent
-      const { nextPos, overlapText } = processTextItems(
+      const { nextPos } = processTextItems(
         [finalContent],
         text_chunks,
         text_chunk_pos,
@@ -2717,7 +2715,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
       const finalContent = crossImageOverlap
         ? crossImageOverlap + " " + postProcessed
         : postProcessed
-      const { nextPos, overlapText } = processTextItems(
+      const { nextPos } = processTextItems(
         [finalContent],
         text_chunks,
         text_chunk_pos,
@@ -2728,6 +2726,11 @@ export async function extractTextAndImagesWithChunksFromDocx(
     }
 
     await imageDescribeBatch.flushDescribeQueue(describeImages)
+    imageDescribeBatch.stripRejectedImageRows(
+      image_chunks,
+      image_chunk_pos,
+      imageSeqToHash,
+    )
     imageDescribeBatch.applyResolvedDescriptions(
       image_chunks,
       image_chunk_pos,

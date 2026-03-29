@@ -35,7 +35,9 @@ function mimeFromFileName(imageName: string): string {
   const lower = imageName.trim().toLowerCase()
   const dot = lower.lastIndexOf(".")
   if (dot === -1) return "image/png"
-  return extToMime[lower.slice(dot)]
+  const ext = lower.slice(dot)
+  const mime = extToMime[ext]
+  return mime || "image/png"
 }
 
 export function buildOpenAiImageDescribePayload(

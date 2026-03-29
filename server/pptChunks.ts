@@ -887,8 +887,6 @@ export async function extractTextAndImagesWithChunksFromPptx(
                 image_chunks.push(description)
                 image_chunk_pos.push(globalSeq)
                 imageSeqToHash.set(globalSeq, imageHash)
-                // Add image placeholder to existing overlap text for continuity
-                crossImageOverlap += ` [[IMG#${globalSeq}]] `
                 globalSeq++
 
                 Logger.debug(
@@ -932,6 +930,11 @@ export async function extractTextAndImagesWithChunksFromPptx(
     }
 
     await imageDescribeBatch.flushDescribeQueue(describeImages)
+    imageDescribeBatch.stripRejectedImageRows(
+      image_chunks,
+      image_chunk_pos,
+      imageSeqToHash,
+    )
     imageDescribeBatch.applyResolvedDescriptions(
       image_chunks,
       image_chunk_pos,

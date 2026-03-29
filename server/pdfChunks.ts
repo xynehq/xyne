@@ -295,7 +295,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
   describeImages: boolean = true,
-  includeImageMarkersInText: boolean = true,
 ): Promise<{
   text_chunks: string[]
   image_chunks: string[]
@@ -308,7 +307,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
     docid,
     extractImages,
     describeImages,
-    includeImageMarkersInText,
     dataSize: data.length,
   })
 
@@ -407,15 +405,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
         page_numbers: [pageNum - 1],
         block_labels: ["image"],
       })
-      if (includeImageMarkersInText) {
-        text_chunks.push(`[[IMG#${globalSeq.value}]]`)
-        text_chunk_pos.push(globalSeq.value)
-        text_chunks_map.push({
-          chunk_index: globalSeq.value,
-          page_numbers: [pageNum - 1],
-          block_labels: ["image"],
-        })
-      }
       Logger.debug("Added image chunk at position", {
         position: globalSeq.value,
         imageName,
@@ -1196,6 +1185,12 @@ export async function extractTextAndImagesWithChunksFromPDF(
     }
 
     await imageDescribeBatch.flushDescribeQueue(describeImages)
+    imageDescribeBatch.stripRejectedImageRows(
+      image_chunks,
+      image_chunk_pos,
+      imageSeqToHash,
+      image_chunks_map,
+    )
     imageDescribeBatch.applyResolvedDescriptions(
       image_chunks,
       image_chunk_pos,
