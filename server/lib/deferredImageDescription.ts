@@ -41,22 +41,39 @@ function resolveRetries(explicit?: number): number {
   return Math.max(0, Number.isFinite(fromEnv) ? fromEnv : 2)
 }
 
-function promiseWithTimeout<T>(
-  promise: Promise<T>,
+/**
+ * Runs fn with an AbortSignal; on timeout aborts the signal so the underlying
+ * request can cancel, then rejects with a timeout Error.
+ */
+function withAbortTimeout<T>(
+  fn: (signal: AbortSignal) => Promise<T>,
   ms: number,
   label: string,
 ): Promise<T> {
-  if (!Number.isFinite(ms) || ms <= 0) return promise
+  if (!Number.isFinite(ms) || ms <= 0) {
+    const controller = new AbortController()
+    return fn(controller.signal)
+  }
+  const controller = new AbortController()
+  const { signal } = controller
   return new Promise<T>((resolve, reject) => {
+    let settled = false
     const t = setTimeout(() => {
+      if (settled) return
+      settled = true
+      controller.abort()
       reject(new Error(`${label} timed out after ${ms}ms`))
     }, ms)
-    promise.then(
+    fn(signal).then(
       (v) => {
+        if (settled) return
+        settled = true
         clearTimeout(t)
         resolve(v)
       },
       (err) => {
+        if (settled) return
+        settled = true
         clearTimeout(t)
         reject(err)
       },
@@ -78,6 +95,7 @@ function isRejectedImageDescription(raw: string): boolean {
 export type DescribeImageFn = (
   buffer: Buffer,
   imageName: string,
+  signal?: AbortSignal,
 ) => Promise<string>
 
 export type DeferredImageDescriptionOptions = {
@@ -111,7 +129,10 @@ export class DeferredImageDescriptionBatch {
     this.concurrency = resolveConcurrency(opts.concurrency)
     this.describeTimeoutMs = resolveTimeoutMs(opts.describeTimeoutMs)
     this.describeRetries = resolveRetries(opts.describeRetries)
-    this.describeImage = opts.describeImage ?? describeImageWithllm
+    this.describeImage =
+      opts.describeImage ??
+      ((buffer, imageName, signal) =>
+        describeImageWithllm(buffer, imageName, undefined, signal))
     this.placeholderText = opts.placeholderText ?? DEFAULT_PLACEHOLDER
   }
 
@@ -175,8 +196,13 @@ export class DeferredImageDescriptionBatch {
             let lastErr: unknown
             for (let attempt = 0; attempt <= this.describeRetries; attempt++) {
               try {
-                rawDescription = await promiseWithTimeout(
-                  this.describeImage(buf, path.basename(filePath)),
+                rawDescription = await withAbortTimeout(
+                  (signal) =>
+                    this.describeImage(
+                      buf,
+                      path.basename(filePath),
+                      signal,
+                    ),
                   this.describeTimeoutMs,
                   `describeImage hash=${hash.slice(0, 8)}`,
                 )
@@ -221,6 +247,19 @@ export class DeferredImageDescriptionBatch {
       ),
     )
     this.pendingPathByHash.clear()
+  }
+
+  /**
+   * Deletes every file recorded in savedPathsByHash, then clears savedPathsByHash,
+   * pendingPathByHash, and rejectedHashes. Use when extraction fails before a
+   * successful return so temporary images are not left on disk.
+   */
+  async disposeTrackedImageFiles(): Promise<void> {
+    const hashes = [...this.savedPathsByHash.keys()]
+    await Promise.all(hashes.map((h) => this.deleteSavedFilesForHash(h)))
+    this.savedPathsByHash.clear()
+    this.pendingPathByHash.clear()
+    this.rejectedHashes.clear()
   }
 
   /**

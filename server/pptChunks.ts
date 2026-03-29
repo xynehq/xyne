@@ -677,6 +677,8 @@ export async function extractTextAndImagesWithChunksFromPptx(
     }
   }
 
+  let imageDescribeBatch: DeferredImageDescriptionBatch | undefined
+  let extractionSucceeded = false
   try {
     const parser = new XMLParser({
       ignoreAttributes: false,
@@ -693,7 +695,7 @@ export async function extractTextAndImagesWithChunksFromPptx(
     let crossImageOverlap = "" // Track overlap across images
 
     const imageSeqToHash = new Map<number, string>()
-    const imageDescribeBatch = new DeferredImageDescriptionBatch()
+    imageDescribeBatch = new DeferredImageDescriptionBatch()
 
     // Find all slide files
     const slideFiles = Object.keys(zip.files).filter(
@@ -945,6 +947,7 @@ export async function extractTextAndImagesWithChunksFromPptx(
       `PPTX processing completed. Total text chunks: ${text_chunks.length}, Total image chunks: ${image_chunks.length}`,
     )
 
+    extractionSucceeded = true
     return {
       text_chunks,
       image_chunks,
@@ -952,6 +955,13 @@ export async function extractTextAndImagesWithChunksFromPptx(
       image_chunk_pos,
     }
   } finally {
+    if (
+      imageDescribeBatch &&
+      !extractionSucceeded &&
+      extractImages
+    ) {
+      await imageDescribeBatch.disposeTrackedImageFiles()
+    }
     //@ts-ignore
     zip = null
   }

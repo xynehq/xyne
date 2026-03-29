@@ -2457,6 +2457,8 @@ export async function extractTextAndImagesWithChunksFromDocx(
     }
   }
 
+  let imageDescribeBatch: DeferredImageDescriptionBatch | undefined
+  let extractionSucceeded = false
   try {
     // Parse the main document
     const documentXml = await zip.file("word/document.xml")?.async("text")
@@ -2532,7 +2534,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
     let crossImageOverlap = "" // Track overlap across images
 
     const imageSeqToHash = new Map<number, string>()
-    const imageDescribeBatch = new DeferredImageDescriptionBatch()
+    imageDescribeBatch = new DeferredImageDescriptionBatch()
 
     // Process items sequentially, handling overlap properly
     let textBuffer: string[] = []
@@ -2746,6 +2748,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
       warningCollector.logSummary()
     }
 
+    extractionSucceeded = true
     return {
       text_chunks,
       image_chunks,
@@ -2753,6 +2756,13 @@ export async function extractTextAndImagesWithChunksFromDocx(
       image_chunk_pos,
     }
   } finally {
+    if (
+      imageDescribeBatch &&
+      !extractionSucceeded &&
+      extractImages
+    ) {
+      await imageDescribeBatch.disposeTrackedImageFiles()
+    }
     // @ts-ignore
     zip = null
   }

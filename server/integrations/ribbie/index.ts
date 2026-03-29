@@ -19,6 +19,7 @@ import {
     generateCollectionVespaDocId,
 } from '@/db/knowledgeBase';
 import { db } from '@/db/client';
+import { IMAGE_CONTEXT_CONFIG } from '@/config.js';
 
 
 // Knowledge Base storage path
@@ -494,8 +495,8 @@ class RIBBIECircularDownloader {
                 fileName,
                 vespaDocId,
                 undefined,  // No storage path needed for processing
-                true,       // Extract images
-                false       // Don't describe images
+                IMAGE_CONTEXT_CONFIG.enabled,       // Extract images
+                IMAGE_CONTEXT_CONFIG.enabled,       // Describe images
             );
 
             // For PDFs, we expect only one result, but handle array for consistency

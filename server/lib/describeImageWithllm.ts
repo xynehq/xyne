@@ -11,7 +11,6 @@ function createLiteLLMOpenAIClient(apiKey: string, baseURL: string): OpenAI {
   return new OpenAI({
     apiKey,
     baseURL,
-    dangerouslyAllowBrowser: true,
   })
 }
 
@@ -74,6 +73,7 @@ export const describeImageWithllm = async (
   image: Buffer,
   imageName: string,
   prompt?: string,
+  signal?: AbortSignal,
 ): Promise<string> => {
   const baseURL = config.LiteLLMBaseUrl
   const modelId = config.defaultFastModel
@@ -87,7 +87,10 @@ export const describeImageWithllm = async (
     const params = buildOpenAiImageDescribePayload(image, modelId, imageName, prompt)
 
     Logger.debug("Sending image description via OpenAI client (LiteLLM baseURL)")
-    const response = await client.chat.completions.create(params)
+    const response = await client.chat.completions.create({
+      ...params,
+      ...(signal ? { signal } : {}),
+    })
 
     const content = response.choices[0]?.message?.content
     if (typeof content !== "string" || !content.trim()) {

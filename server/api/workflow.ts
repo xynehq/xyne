@@ -187,7 +187,7 @@ export {
 export { listWorkflowExecutionsQuerySchema }
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
-import config from "@/config"
+import config, { IMAGE_CONTEXT_CONFIG } from "@/config"
 import { HTTPException } from "hono/http-exception"
 import { getErrorMessage } from "@/utils"
 import { handleAttachmentUpload } from "@/api/files"
@@ -1244,8 +1244,8 @@ const uploadQAResultsToVespa = async (
       fileName,
       fileId,
       undefined,
-      true,
-      false,
+      IMAGE_CONTEXT_CONFIG.enabled,
+      IMAGE_CONTEXT_CONFIG.enabled,
     )
 
     let vespaId = fileId

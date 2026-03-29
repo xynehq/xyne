@@ -19,7 +19,7 @@ import {
   GetDocument,
 } from "../search/vespa"
 import { NoUserFound } from "@/errors"
-import config from "@/config"
+import config, { IMAGE_CONTEXT_CONFIG } from "@/config"
 import { HTTPException } from "hono/http-exception"
 import { isValidFile, isImageFile, getFileType } from "shared/fileUtils"
 import { generateThumbnail, getThumbnailPath } from "@/utils/image"
@@ -323,8 +323,8 @@ export const handleAttachmentUpload = async (c: Context) => {
             file.name,
             fileId,
             undefined,
-            true,
-            false,
+            IMAGE_CONTEXT_CONFIG.enabled,
+            IMAGE_CONTEXT_CONFIG.enabled,
             false,
           )
 

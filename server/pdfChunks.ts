@@ -339,6 +339,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
     }
   }
 
+  const imageDescribeBatch = new DeferredImageDescriptionBatch()
+  let extractionSucceeded = false
   try {
     let text_chunks: string[] = []
     let image_chunks: string[] = []
@@ -347,7 +349,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
     let text_chunks_map: ChunkMetadata[] = []
     let image_chunks_map: ChunkMetadata[] = []
     const imageSeqToHash = new Map<number, string>()
-    const imageDescribeBatch = new DeferredImageDescriptionBatch()
 
     // Use object to pass by reference for sequence counter
     let globalSeq = { value: 0 }
@@ -1216,6 +1217,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
     Logger.debug("All text chunk positions", { text_chunk_pos })
     Logger.debug("All image chunks", { image_chunks })
     Logger.debug("All image chunk positions", { image_chunk_pos })
+    extractionSucceeded = true
     return {
       text_chunks,
       image_chunks,
@@ -1225,6 +1227,9 @@ export async function extractTextAndImagesWithChunksFromPDF(
       image_chunks_map,
     }
   } finally {
+    if (!extractionSucceeded && extractImages) {
+      await imageDescribeBatch.disposeTrackedImageFiles()
+    }
     Logger.debug("Calling PDF document destroy")
     await pdfDocument.destroy()
   }
