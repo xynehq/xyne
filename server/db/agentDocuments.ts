@@ -22,10 +22,24 @@ const numericToNumber = (val: NumericColumn): number | undefined => {
 }
 
 // Helper function to convert citations from DB
+const isAgentCitationReference = (
+  value: unknown,
+): value is AgentCitationReference => {
+  if (!value || typeof value !== "object") return false
+  const citation = value as Record<string, unknown>
+  return (
+    typeof citation.docId === "string" &&
+    typeof citation.title === "string" &&
+    typeof citation.app === "string" &&
+    typeof citation.entity === "string" &&
+    (citation.url === undefined || typeof citation.url === "string") &&
+    (citation.chunkContent === undefined || typeof citation.chunkContent === "string")
+  )
+}
+
 const parseCitations = (val: unknown): AgentCitationReference[] => {
-  if (!val) return []
-  if (Array.isArray(val)) return val as AgentCitationReference[]
-  return []
+  if (!Array.isArray(val)) return []
+  return val.filter(isAgentCitationReference)
 }
 
 /**
@@ -143,7 +157,6 @@ export const getAgentDocumentContent = async (
       externalId: string
       agentName: string
       content: string
-      summary: string | null
       reasoning: string | null
       citations: AgentCitationReference[]
       confidence: number | null
@@ -158,7 +171,6 @@ export const getAgentDocumentContent = async (
       externalId: agentDocuments.externalId,
       agentName: agentDocuments.agentName,
       content: agentDocuments.content,
-      summary: agentDocuments.summary,
       reasoning: agentDocuments.reasoning,
       citations: agentDocuments.citations,
       confidence: agentDocuments.confidence,
@@ -169,7 +181,11 @@ export const getAgentDocumentContent = async (
     .from(agentDocuments)
     .innerJoin(chats, eq(agentDocuments.chatId, chats.id))
     .where(
-      and(eq(agentDocuments.externalId, externalId), isNull(agentDocuments.deletedAt)),
+      and(
+        eq(agentDocuments.externalId, externalId),
+        isNull(agentDocuments.deletedAt),
+        isNull(chats.deletedAt),
+      ),
     )
     .limit(1)
 

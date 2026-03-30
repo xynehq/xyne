@@ -17,7 +17,7 @@ import type {
 } from "./agent-schemas"
 import type { AgentBrief } from "./tool-schemas"
 import type { UserConnectorState } from "./resource-access"
-import { Apps, type VespaSearchResults } from "@xyne/vespa-ts/types"
+import { Apps } from "@xyne/vespa-ts/types"
 import { DOCUMENT_ANALYSIS_AGENT_PROMPT } from "./tools/documentAnalysis/prompt"
 
 // ============================================================================
@@ -199,7 +199,7 @@ export function formatInternalAgentsForPrompt(): string {
     return `- agentId: ${agent.id}
   name: ${agent.name}
   capabilities: ${agent.capability.capabilities.join(", ")}
-  when_to_use: ${agent.description}
+  description: ${agent.description}
   input_format: ${inputFormat}`
   })
   

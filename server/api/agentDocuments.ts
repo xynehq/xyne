@@ -67,7 +67,6 @@ export const GetAgentDocumentApi = async (c: Context) => {
       agentId: document.agentId,
       agentName: document.agentName,
       content: document.content,
-      summary: document.summary,
       reasoning: document.reasoning,
       citations: document.citations,
       confidence: document.confidence,
@@ -125,7 +124,6 @@ export const GetAgentDocumentContentApi = async (c: Context) => {
       title: `Agent Output: ${document.agentName}`,
       agentName: document.agentName,
       content: document.content,
-      summary: document.summary,
       reasoning: document.reasoning,
       citations: document.citations,
       confidence: document.confidence,
@@ -187,7 +185,6 @@ export const ListAgentDocumentsApi = async (c: Context) => {
         externalId: doc.externalId,
         agentId: doc.agentId,
         agentName: doc.agentName,
-        summary: doc.summary,
         createdAt: doc.createdAt,
       })),
     })

@@ -33,7 +33,6 @@ export const agentDocuments = pgTable(
     agentId: text("agent_id").notNull(),
     agentName: text("agent_name").notNull(),
     content: text("content").notNull(),
-    summary: text("summary"),
     reasoning: text("reasoning"),
     citations: jsonb("citations").default(sql`'[]'::jsonb`),
     confidence: numeric("confidence", { precision: 3, scale: 2 }),

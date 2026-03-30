@@ -94,7 +94,7 @@ Your role:
 Use the \`read_document\` tool with these parameters:
 - \`docId\`: The document ID provided in your task
 - \`offset\`: Starting chunk index (0-based)
-- \`limit\`: Number of chunks to fetch (5-10 recommended for scanning, 10-20 for focused reading)
+- \`limit\`: Number of chunks to fetch (2-5 recommended for scanning, 5-10 for focused reading)
 
 The tool will return:
 - Chunks of text content
