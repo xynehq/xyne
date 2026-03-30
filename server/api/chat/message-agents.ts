@@ -1143,28 +1143,24 @@ function buildAttachmentToolMessage(
   type AttachmentRef = Pick<
     Citation,
     "docId" | "title" | "page_title" | "app" | "entity"
-  >
-  const attachmentRefs = Array.from(
-    new Map(
-      fragments.flatMap((fragment) => {
-          const source = fragment.source
-          const docId = source?.docId
-          if (!docId) return []
-          return [
-            [
-              docId,
-              {
-                docId,
-                title: source?.title ?? "",
-                page_title: source?.page_title,
-                app: source?.app,
-                entity: source?.entity,
-              } satisfies AttachmentRef,
-            ] as const,
-          ]
-        }),
-    ).values(),
-  )
+  > & {
+    sourceIndex: number
+  }
+  const refsByDocId = new Map<string, AttachmentRef>()
+  fragments.forEach((fragment, index) => {
+    const source = fragment.source
+    const docId = source?.docId
+    if (!docId || refsByDocId.has(docId)) return
+    refsByDocId.set(docId, {
+      docId,
+      title: source?.title ?? "",
+      page_title: source?.page_title,
+      app: source?.app,
+      entity: source?.entity,
+      sourceIndex: index,
+    })
+  })
+  const attachmentRefs = Array.from(refsByDocId.values())
   const attachmentEvidence = formatFragmentsWithMetadata(fragments)
   const resultPayload = ToolResponse.success({
     summary:
@@ -1832,12 +1828,16 @@ export async function beforeToolExecutionHook(
   const incomingExcludedIds = normalizeExcludedIdsForLogging(
     (normalizedArgs as any)?.excludedIds,
   )
-  logContextMutation(context, "[beforeToolExecutionHook] Received tool args", {
-    toolName,
-    args: normalizedArgs,
-    incomingExcludedIds,
-    incomingExcludedIdsCount: incomingExcludedIds.length,
-  })
+  loggerWithChild({ email: context.user.email }).debug(
+    {
+      ...buildContextTraceSnapshot(context),
+      toolName,
+      args: normalizedArgs,
+      incomingExcludedIds,
+      incomingExcludedIdsCount: incomingExcludedIds.length,
+    },
+    "[beforeToolExecutionHook] Received tool args",
+  )
   // 0. Validate input against schema
   const validation = validateToolInput(toolName, normalizedArgs)
   if (!validation.success) {
@@ -2769,6 +2769,9 @@ async function batchRankFragments(
         "has_agent_system_prompt_snapshot",
         !!sanitizeAgentSystemPromptSnapshot(context.dedicatedAgentSystemPrompt)
       )
+      // TODO: Rank against a resolved/disambiguated query instead of the raw top-level `message`.
+      // Keep tool-level subqueries as retrieval provenance, and remove duplicate injection of the
+      // same current query inside `extractBestDocumentIndexes`.
       bestDocIndexes = await extractBestDocumentIndexes(
         userMessage,
         contextStrings,
