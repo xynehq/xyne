@@ -1540,10 +1540,11 @@ export const checkAndYieldCitationsForAgent = async function* (
           citationTextIndex = chunkMatch.index
         } else if (chunkDocKeyMatch) {
           const docKey = chunkDocKeyMatch[1]
+          const chunkIndex = chunkDocKeyMatch[2]
           if (/^\d+$/.test(docKey)) {
             continue
           }
-          rawChunkKey = `${chunkDocKeyMatch[1]}_${chunkDocKeyMatch[2]}`
+          rawChunkKey = `${docKey}_${chunkIndex}`
           warnedKbChunkCitationKey = `docKey:${rawChunkKey}`
           citationText = chunkDocKeyMatch[0]
           citationTextIndex = chunkDocKeyMatch.index
@@ -1552,7 +1553,13 @@ export const checkAndYieldCitationsForAgent = async function* (
           const docPos = results.findIndex(
             (r) => r?.source?.docId === docKey || r.id === docKey,
           )
-          citationIndex = docPos >= 0 ? docPos + 1 : null
+          if (docPos >= 0) {
+            rawChunkKey = `${docPos + 1}_${chunkIndex}`
+            warnedKbChunkCitationKey = `docKey:${rawChunkKey}`
+            citationIndex = docPos + 1
+          } else {
+            citationIndex = null
+          }
         }
         if (
           citationIndex == null ||

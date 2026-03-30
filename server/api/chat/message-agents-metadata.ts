@@ -241,7 +241,6 @@ export function formatFragmentWithMetadata(
   const source = (fragment.source || {}) as Record<string, unknown>
   const hiddenKeys = new Set([
     "docId",
-    "url",
     "threadId",
     "itemId",
     "clId",

@@ -1,5 +1,15 @@
 import { XyneTools } from "@/shared/types"
 
+type RawLsArgs = Record<string, unknown> & {
+  target?: unknown
+}
+type RawSearchFilters = Record<string, unknown> & {
+  targets?: unknown
+}
+type RawSearchArgs = Record<string, unknown> & {
+  filters?: unknown
+}
+
 function isPlainObject(
   value: unknown,
 ): value is Record<string, unknown> {
@@ -35,63 +45,35 @@ export function normalizeKnowledgeBaseToolArgs(
   if (!isPlainObject(args)) return args
 
   if (toolName === "ls") {
-    const normalizedTarget = tryParseStructuredJsonString(args.target)
-    return normalizedTarget === args.target
-      ? args
-      : { ...args, target: normalizedTarget }
+    const normalizedArgs = { ...args } as RawLsArgs
+    normalizedArgs.target = tryParseStructuredJsonString(
+      normalizedArgs.target,
+    )
+    return normalizedArgs
   }
 
   if (toolName !== XyneTools.searchKnowledgeBase) {
     return args
   }
 
-  let normalizedArgs = args
-  const normalizedFilters = tryParseStructuredJsonString(normalizedArgs.filters)
-  if (normalizedFilters !== normalizedArgs.filters) {
-    normalizedArgs = {
-      ...normalizedArgs,
-      filters: normalizedFilters,
-    }
-  }
+  const normalizedArgs = { ...args } as RawSearchArgs
+  normalizedArgs.filters = tryParseStructuredJsonString(
+    normalizedArgs.filters,
+  )
 
   if (!isPlainObject(normalizedArgs.filters)) {
     return normalizedArgs
   }
 
-  let filters = normalizedArgs.filters
-  const normalizedTargets = tryParseStructuredJsonString(filters.targets)
-  if (normalizedTargets !== filters.targets) {
-    filters = {
-      ...filters,
-      targets: normalizedTargets,
-    }
+  const filters = { ...normalizedArgs.filters } as RawSearchFilters
+  filters.targets = tryParseStructuredJsonString(filters.targets)
+
+  if (Array.isArray(filters.targets)) {
+    filters.targets = filters.targets.map((target) =>
+      tryParseStructuredJsonString(target),
+    )
   }
 
-  if (!Array.isArray(filters.targets)) {
-    return filters === normalizedArgs.filters
-      ? normalizedArgs
-      : {
-          ...normalizedArgs,
-          filters,
-        }
-  }
-
-  const parsedTargets = filters.targets.map((target) =>
-    tryParseStructuredJsonString(target),
-  )
-  const targetsChanged = parsedTargets.some(
-    (target, index) => target !== filters.targets[index],
-  )
-
-  if (!targetsChanged && filters === normalizedArgs.filters) {
-    return normalizedArgs
-  }
-
-  return {
-    ...normalizedArgs,
-    filters: {
-      ...filters,
-      targets: targetsChanged ? parsedTargets : filters.targets,
-    },
-  }
+  normalizedArgs.filters = filters
+  return normalizedArgs
 }
