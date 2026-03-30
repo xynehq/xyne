@@ -5,7 +5,10 @@ import { XMLParser } from "fast-xml-parser"
 import { promises as fsPromises } from "fs"
 import crypto from "crypto"
 import path from "path"
-import { describeImageWithllm } from "./lib/describeImageWithllm"
+import {
+  DeferredImageDescriptionBatch,
+  md5ImageBuffer,
+} from "./lib/deferredImageDescription"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 import { chunkTextByParagraph } from "./chunks"
 
@@ -2454,6 +2457,8 @@ export async function extractTextAndImagesWithChunksFromDocx(
     }
   }
 
+  let imageDescribeBatch: DeferredImageDescriptionBatch | undefined
+  let extractionSucceeded = false
   try {
     // Parse the main document
     const documentXml = await zip.file("word/document.xml")?.async("text")
@@ -2528,8 +2533,8 @@ export async function extractTextAndImagesWithChunksFromDocx(
     let globalSeq = 0
     let crossImageOverlap = "" // Track overlap across images
 
-    // Initialize a Set for duplicate image detection
-    const seenHashDescriptions = new Map<string, string>()
+    const imageSeqToHash = new Map<number, string>()
+    imageDescribeBatch = new DeferredImageDescriptionBatch()
 
     // Process items sequentially, handling overlap properly
     let textBuffer: string[] = []
@@ -2611,35 +2616,8 @@ export async function extractTextAndImagesWithChunksFromDocx(
                 continue
               }
 
-              const imageHash = crypto
-                .createHash("md5")
-                .update(new Uint8Array(imageBuffer))
-                .digest("hex")
-
-              let description: string
-
-              if (seenHashDescriptions.has(imageHash)) {
-                description = seenHashDescriptions.get(imageHash)!
-                Logger.warn(
-                  `Reusing description for repeated image ${imagePath}`,
-                )
-              } else {
-                if (describeImages) {
-                  description = await describeImageWithllm(imageBuffer)
-                } else {
-                  description = "This is an image."
-                }
-                if (
-                  description === "No description returned." ||
-                  description === "Image is not worth describing."
-                ) {
-                  Logger.warn(`${description} ${imagePath}`)
-                  continue
-                }
-                seenHashDescriptions.set(imageHash, description)
-              }
-
-              // Save image to disk
+              const imageHash = md5ImageBuffer(imageBuffer)
+              let outputPath: string
               try {
                 const baseDir = path.resolve(
                   process.env.IMAGE_DIR || "downloads/xyne_images_db",
@@ -2647,9 +2625,9 @@ export async function extractTextAndImagesWithChunksFromDocx(
                 const outputDir = path.join(baseDir, docid)
                 await fsPromises.mkdir(outputDir, { recursive: true })
 
-                const imageExtension = path.extname(imagePath) || ".png"
-                const imageFilename = `${globalSeq}${imageExtension}`
-                const outputPath = path.join(outputDir, imageFilename)
+                const saveExtension = path.extname(imagePath) || ".png"
+                const imageFilename = `${globalSeq}${saveExtension}`
+                outputPath = path.join(outputDir, imageFilename)
 
                 await fsPromises.writeFile(
                   outputPath,
@@ -2663,11 +2641,18 @@ export async function extractTextAndImagesWithChunksFromDocx(
                 continue
               }
 
+              const description =
+                imageDescribeBatch.registerImagePathForLaterDescribe(
+                  imageHash,
+                  path.resolve(outputPath),
+                  describeImages,
+                )
+
               image_chunks.push(description)
               image_chunk_pos.push(globalSeq)
-              // Add image placeholder to existing overlap text for continuity
-              crossImageOverlap += ` [[IMG#${globalSeq}]] `
+              imageSeqToHash.set(globalSeq, imageHash)
               globalSeq++
+              textStartPos = globalSeq
 
               Logger.debug(`Successfully processed image: ${imagePath}`)
             } else {
@@ -2693,7 +2678,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
         : textContent
 
       if (combinedText.trim()) {
-        const { nextPos, overlapText } = processTextItems(
+        const { nextPos } = processTextItems(
           [combinedText],
           text_chunks,
           text_chunk_pos,
@@ -2714,7 +2699,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
       const finalContent = crossImageOverlap
         ? crossImageOverlap + " " + postProcessedContent
         : postProcessedContent
-      const { nextPos, overlapText } = processTextItems(
+      const { nextPos } = processTextItems(
         [finalContent],
         text_chunks,
         text_chunk_pos,
@@ -2733,7 +2718,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
       const finalContent = crossImageOverlap
         ? crossImageOverlap + " " + postProcessed
         : postProcessed
-      const { nextPos, overlapText } = processTextItems(
+      const { nextPos } = processTextItems(
         [finalContent],
         text_chunks,
         text_chunk_pos,
@@ -2742,6 +2727,18 @@ export async function extractTextAndImagesWithChunksFromDocx(
       globalSeq = nextPos
       //   crossImageOverlap = "" // Clear after final processing
     }
+
+    await imageDescribeBatch.flushDescribeQueue(describeImages)
+    imageDescribeBatch.stripRejectedImageRows(
+      image_chunks,
+      image_chunk_pos,
+      imageSeqToHash,
+    )
+    imageDescribeBatch.applyResolvedDescriptions(
+      image_chunks,
+      image_chunk_pos,
+      imageSeqToHash,
+    )
 
     Logger.info(
       `DOCX processing completed. Total text chunks: ${text_chunks.length}, Total image chunks: ${image_chunks.length}`,
@@ -2752,6 +2749,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
       warningCollector.logSummary()
     }
 
+    extractionSucceeded = true
     return {
       text_chunks,
       image_chunks,
@@ -2759,6 +2757,11 @@ export async function extractTextAndImagesWithChunksFromDocx(
       image_chunk_pos,
     }
   } finally {
+    if (imageDescribeBatch && extractImages) {
+      await imageDescribeBatch.disposeTrackedImageFiles({
+        unlinkFiles: !extractionSucceeded,
+      })
+    }
     // @ts-ignore
     zip = null
   }

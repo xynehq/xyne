@@ -6,7 +6,10 @@ import path from "path"
 import imageType from "image-type"
 import { promises as fsPromises } from "fs"
 import crypto from "crypto"
-import { describeImageWithllm } from "./lib/describeImageWithllm"
+import {
+  DeferredImageDescriptionBatch,
+  md5ImageBuffer,
+} from "./lib/deferredImageDescription"
 import { DATASOURCE_CONFIG } from "./integrations/dataSource/config"
 import { chunkTextByParagraph } from "./chunks"
 
@@ -14,9 +17,7 @@ const openjpegWasmPath =
   path.join(__dirname, "../node_modules/pdfjs-dist/wasm/") + "/"
 const qcmsWasmPath =
   path.join(__dirname, "../node_modules/pdfjs-dist/wasm/") + "/"
-const seenHashDescriptions = new Map<string, string>()
 const MIN_IMAGE_DIM_PX = parseInt(process.env.MIN_IMAGE_DIM_PX || "150", 10)
-
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "pdfChunks",
@@ -294,7 +295,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
   describeImages: boolean = true,
-  includeImageMarkersInText: boolean = true,
 ): Promise<{
   text_chunks: string[]
   image_chunks: string[]
@@ -307,7 +307,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
     docid,
     extractImages,
     describeImages,
-    includeImageMarkersInText,
     dataSize: data.length,
   })
 
@@ -340,6 +339,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
     }
   }
 
+  const imageDescribeBatch = new DeferredImageDescriptionBatch()
+  let extractionSucceeded = false
   try {
     let text_chunks: string[] = []
     let image_chunks: string[] = []
@@ -347,6 +348,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
     let image_chunk_pos: number[] = []
     let text_chunks_map: ChunkMetadata[] = []
     let image_chunks_map: ChunkMetadata[] = []
+    const imageSeqToHash = new Map<number, string>()
 
     // Use object to pass by reference for sequence counter
     let globalSeq = { value: 0 }
@@ -354,6 +356,65 @@ export async function extractTextAndImagesWithChunksFromPDF(
     let pageOverlap = ""
 
     // Overlap is now tracked page-to-page only
+
+    async function commitPngImage(
+      buffer: Buffer,
+      type: { mime: string; ext?: string },
+      imageHash: string,
+      imageName: string,
+      pageNum: number,
+      imagesOnPage: { n: number },
+      savedLogLabel?: string,
+    ): Promise<boolean> {
+      let imagePath: string
+      try {
+        const baseDir = path.resolve(
+          process.env.IMAGE_DIR || "downloads/xyne_images_db",
+        )
+        const outputDir = path.join(baseDir, docid)
+        await fsPromises.mkdir(outputDir, { recursive: true })
+        const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
+        imagePath = path.join(outputDir, imageFilename)
+        await fsPromises.writeFile(
+          imagePath,
+          buffer as NodeJS.ArrayBufferView,
+        )
+        Logger.info(
+          savedLogLabel
+            ? `Saved image (${savedLogLabel}) to: ${imagePath}`
+            : `Saved image to: ${imagePath}`,
+        )
+      } catch (e) {
+        Logger.error(
+          `Failed to save image for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`,
+        )
+        return false
+      }
+
+      const description =
+        imageDescribeBatch.registerImagePathForLaterDescribe(
+          imageHash,
+          path.resolve(imagePath),
+          describeImages,
+        )
+
+      image_chunks.push(description)
+      image_chunk_pos.push(globalSeq.value)
+      imageSeqToHash.set(globalSeq.value, imageHash)
+      image_chunks_map.push({
+        chunk_index: globalSeq.value,
+        page_numbers: [pageNum - 1],
+        block_labels: ["image"],
+      })
+      Logger.debug("Added image chunk at position", {
+        position: globalSeq.value,
+        imageName,
+        description,
+      })
+      globalSeq.value++
+      imagesOnPage.n += 1
+      return true
+    }
 
     Logger.info(`PDF has ${pdfDocument.numPages} pages`)
 
@@ -479,7 +540,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
         ]
         const ctmStack: [number, number, number, number, number, number][] = []
 
-        let imagesOnPage = 0
+        const imagesOnPage = { n: 0 }
         let vectorOpsDetected = false
         for (let i = 0; i < opList.fnArray.length; i++) {
           const fnId = opList.fnArray[i]
@@ -736,83 +797,21 @@ export async function extractTextAndImagesWithChunksFromPDF(
                         if (
                           DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
                         ) {
-                          const imageHash = crypto
-                            .createHash("md5")
-                            .update(new Uint8Array(buffer))
-                            .digest("hex")
-                          let description = "This is an image."
-                          if (seenHashDescriptions.has(imageHash)) {
-                            description = seenHashDescriptions.get(imageHash)!
-                          } else {
-                            try {
-                              description = describeImages
-                                ? await describeImageWithllm(buffer)
-                                : description
-                            } catch {
-                              // ignore
-                            }
-                            // Check description quality after LLM call
-                            if (
-                              !description ||
-                              description === "No description returned." ||
-                              description === "Image is not worth describing."
-                            ) {
-                              Logger.warn(
-                                `Skipping image with poor description: ${imageName} on page ${pageNum}`,
-                              )
-                              break
-                            }
-                            seenHashDescriptions.set(imageHash, description)
-                          }
-                          try {
-                            const baseDir = path.resolve(
-                              process.env.IMAGE_DIR ||
-                                "downloads/xyne_images_db",
-                            )
-                            const outputDir = path.join(baseDir, docid)
-                            await fsPromises.mkdir(outputDir, {
-                              recursive: true,
-                            })
-                            const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
-                            const imagePath = path.join(
-                              outputDir,
-                              imageFilename,
-                            )
-                            await fsPromises.writeFile(
-                              imagePath,
-                              buffer as NodeJS.ArrayBufferView,
-                            )
-                            Logger.info(
-                              `Saved image (objs/canvas) to: ${imagePath}`,
-                            )
-                          } catch (e) {
-                            Logger.error(
-                              `Failed to save objs/canvas image for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`,
-                            )
-                            // Skip on failure
-                            break
-                          }
-                          image_chunks.push(description)
-                          image_chunk_pos.push(globalSeq.value)
-                          image_chunks_map.push({
-                            chunk_index: globalSeq.value,
-                            page_numbers: [pageNum - 1],
-                            block_labels: ["image"],
-                          })
-                          if (includeImageMarkersInText) {
-                            text_chunks.push(`[[IMG#${globalSeq.value}]]`)
-                            text_chunk_pos.push(globalSeq.value)
-                            text_chunks_map.push({
-                              chunk_index: globalSeq.value,
-                              page_numbers: [pageNum - 1],
-                              block_labels: ["image"],
-                            })
-                          }
-                          globalSeq.value++
-                          imagesOnPage += 1
-                          Logger.debug(
-                            `Successfully processed objs/canvas image ${imageName} on page ${pageNum}`,
+                          const imageHash = md5ImageBuffer(buffer)
+                          const ok = await commitPngImage(
+                            buffer,
+                            type,
+                            imageHash,
+                            String(imageName),
+                            pageNum,
+                            imagesOnPage,
+                            "objs/canvas",
                           )
+                          if (ok) {
+                            Logger.debug(
+                              `Successfully processed objs/canvas image ${imageName} on page ${pageNum}`,
+                            )
+                          }
                           break
                         }
                       }
@@ -855,82 +854,21 @@ export async function extractTextAndImagesWithChunksFromPDF(
                         if (
                           DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
                         ) {
-                          const imageHash = crypto
-                            .createHash("md5")
-                            .update(new Uint8Array(buffer))
-                            .digest("hex")
-                          let description = "This is an image."
-                          if (seenHashDescriptions.has(imageHash)) {
-                            description = seenHashDescriptions.get(imageHash)!
-                          } else {
-                            try {
-                              description = describeImages
-                                ? await describeImageWithllm(buffer)
-                                : description
-                            } catch {
-                              // ignore
-                            }
-                            // Check description quality after LLM call
-                            if (
-                              !description ||
-                              description === "No description returned." ||
-                              description === "Image is not worth describing."
-                            ) {
-                              Logger.warn(
-                                `Skipping image with poor description: ${imageName} on page ${pageNum}`,
-                              )
-                              break
-                            }
-                            seenHashDescriptions.set(imageHash, description)
-                          }
-                          try {
-                            const baseDir = path.resolve(
-                              process.env.IMAGE_DIR ||
-                                "downloads/xyne_images_db",
-                            )
-                            const outputDir = path.join(baseDir, docid)
-                            await fsPromises.mkdir(outputDir, {
-                              recursive: true,
-                            })
-                            const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
-                            const imagePath = path.join(
-                              outputDir,
-                              imageFilename,
-                            )
-                            await fsPromises.writeFile(
-                              imagePath,
-                              buffer as NodeJS.ArrayBufferView,
-                            )
-                            Logger.info(
-                              `Saved image (objs/image) to: ${imagePath}`,
-                            )
-                          } catch (e) {
-                            Logger.error(
-                              `Failed to save objs/image image for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`,
-                            )
-                            break
-                          }
-                          image_chunks.push(description)
-                          image_chunk_pos.push(globalSeq.value)
-                          image_chunks_map.push({
-                            chunk_index: globalSeq.value,
-                            page_numbers: [pageNum - 1],
-                            block_labels: ["image"],
-                          })
-                          if (includeImageMarkersInText) {
-                            text_chunks.push(`[[IMG#${globalSeq.value}]]`)
-                            text_chunk_pos.push(globalSeq.value)
-                            text_chunks_map.push({
-                              chunk_index: globalSeq.value,
-                              page_numbers: [pageNum - 1],
-                              block_labels: ["image"],
-                            })
-                          }
-                          globalSeq.value++
-                          imagesOnPage += 1
-                          Logger.debug(
-                            `Successfully processed objs/image image ${imageName} on page ${pageNum}`,
+                          const imageHash = md5ImageBuffer(buffer)
+                          const ok = await commitPngImage(
+                            buffer,
+                            type,
+                            imageHash,
+                            String(imageName),
+                            pageNum,
+                            imagesOnPage,
+                            "objs/image",
                           )
+                          if (ok) {
+                            Logger.debug(
+                              `Successfully processed objs/image image ${imageName} on page ${pageNum}`,
+                            )
+                          }
                           break
                         }
                       } catch (e) {
@@ -1176,140 +1114,40 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     }
 
                     Logger.debug(
-                      "All filters passed, proceeding with image description",
+                      "All filters passed, proceeding with image extract + deferred description",
                       {
                         imageName,
                       },
                     )
 
-                    // buffer already created above
-                    const imageHash = crypto
-                      .createHash("md5")
-                      .update(new Uint8Array(buffer))
-                      .digest("hex")
+                    const imageHash = md5ImageBuffer(buffer)
 
-                    let description: string
-
-                    if (seenHashDescriptions.has(imageHash)) {
-                      description = seenHashDescriptions.get(imageHash)!
-                      Logger.debug("Reusing cached description for image", {
-                        imageName,
-                        description,
-                      })
-                      Logger.warn(
-                        `Reusing description for repeated image ${imageName} on page ${pageNum}`,
+                    if (describeImages) {
+                      Logger.debug(
+                        "Scheduling deferred LLM description for image",
+                        {
+                          imageName,
+                        },
                       )
                     } else {
-                      Logger.debug("Generating new description for image", {
-                        imageName,
-                        describeImages,
-                      })
-                      if (describeImages) {
-                        try {
-                          Logger.debug(
-                            "Calling describeImageWithllm for image",
-                            {
-                              imageName,
-                            },
-                          )
-                          description = await describeImageWithllm(buffer)
-                          Logger.debug("Got description from AI for image", {
-                            imageName,
-                            description,
-                          })
-                        } catch (e) {
-                          Logger.warn(
-                            `describeImageWithllm failed for ${imageName}: ${e instanceof Error ? e.message : e}`,
-                          )
-                          description = "This is an image from the PDF."
-                          Logger.debug(
-                            "Using fallback description due to AI error",
-                          )
-                        }
-                      } else {
-                        description = "This is an image."
-                        Logger.debug(
-                          "Using default description (describeImages=false)",
-                        )
-                      }
-                      
-                      // Check description quality after LLM call
-                      if (
-                        !description ||
-                        description === "No description returned." ||
-                        description === "Image is not worth describing."
-                      ) {
-                        Logger.debug(
-                          "Skipping image with insufficient description",
-                          {
-                            imageName,
-                            previousDescription: description,
-                          },
-                        )
-                        Logger.warn(
-                          `Skipping image with poor description: ${imageName} on page ${pageNum}`,
-                        )
-                        continue
-                      }
-                      seenHashDescriptions.set(imageHash, description)
-                      Logger.debug("Cached new description for image", {
-                        imageName,
-                        description,
-                      })
+                      Logger.debug(
+                        "Using default description (describeImages=false)",
+                      )
                     }
 
-                    try {
-                      // Save image to Downloads/xyne_images_db with improved error handling
-                      const baseDir = path.resolve(
-                        process.env.IMAGE_DIR || "downloads/xyne_images_db",
-                      )
-                      const outputDir = path.join(baseDir, docid)
-                      await fsPromises.mkdir(outputDir, { recursive: true })
-
-                      const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
-                      const imagePath = path.join(outputDir, imageFilename)
-
-                      await fsPromises.writeFile(
-                        imagePath,
-                        buffer as NodeJS.ArrayBufferView,
-                      )
-                      Logger.info(`Saved image to: ${imagePath}`)
-                    } catch (saveError) {
-                      Logger.error(
-                        `Failed to save image for ${imageName} on page ${pageNum}: ${saveError instanceof Error ? saveError.message : saveError}`,
-                      )
-                      // Skip adding to chunks if save failed
-                      continue
-                    }
-
-                    image_chunks.push(description)
-                    image_chunk_pos.push(globalSeq.value)
-                    image_chunks_map.push({
-                      chunk_index: globalSeq.value,
-                      page_numbers: [pageNum - 1],
-                      block_labels: ["image"],
-                    })
-                    if (includeImageMarkersInText) {
-                      text_chunks.push(`[[IMG#${globalSeq.value}]]`)
-                      text_chunk_pos.push(globalSeq.value)
-                      // Add metadata for image marker in text stream
-                      text_chunks_map.push({
-                        chunk_index: globalSeq.value,
-                        page_numbers: [pageNum - 1],
-                        block_labels: ["image"],
-                      })
-                    }
-                    // Removed cross-image overlap placeholder handling
-                    Logger.debug("Added image chunk at position", {
-                      position: globalSeq.value,
-                      imageName,
-                      description,
-                    })
-                    globalSeq.value++
-                    imagesOnPage += 1
-                    Logger.debug(
-                      `Successfully processed image ${imageName} on page ${pageNum}`,
+                    const ok = await commitPngImage(
+                      buffer,
+                      type,
+                      imageHash,
+                      String(imageName),
+                      pageNum,
+                      imagesOnPage,
                     )
+                    if (ok) {
+                      Logger.debug(
+                        `Successfully processed image ${imageName} on page ${pageNum}`,
+                      )
+                    }
                   }
                 } catch (error) {
                   Logger.warn(
@@ -1347,6 +1185,19 @@ export async function extractTextAndImagesWithChunksFromPDF(
       }
     }
 
+    await imageDescribeBatch.flushDescribeQueue(describeImages)
+    imageDescribeBatch.stripRejectedImageRows(
+      image_chunks,
+      image_chunk_pos,
+      imageSeqToHash,
+      image_chunks_map,
+    )
+    imageDescribeBatch.applyResolvedDescriptions(
+      image_chunks,
+      image_chunk_pos,
+      imageSeqToHash,
+    )
+
     Logger.info(
       `PDF processing completed. Total text chunks: ${text_chunks.length}, Total image chunks: ${image_chunks.length}`,
     )
@@ -1366,6 +1217,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
     Logger.debug("All text chunk positions", { text_chunk_pos })
     Logger.debug("All image chunks", { image_chunks })
     Logger.debug("All image chunk positions", { image_chunk_pos })
+    extractionSucceeded = true
     return {
       text_chunks,
       image_chunks,
@@ -1375,6 +1227,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
       image_chunks_map,
     }
   } finally {
+    if (extractImages) {
+      await imageDescribeBatch.disposeTrackedImageFiles({
+        unlinkFiles: !extractionSucceeded,
+      })
+    }
     Logger.debug("Calling PDF document destroy")
     await pdfDocument.destroy()
   }

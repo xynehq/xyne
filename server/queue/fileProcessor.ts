@@ -14,6 +14,7 @@ import { eq, and, isNull } from "drizzle-orm"
 import { readFile } from "node:fs/promises"
 import { UploadStatus } from "@/shared/types"
 import { updateParentStatus } from "@/db/knowledgeBase"
+import { IMAGE_CONTEXT_CONFIG } from "@/config"
 
 const Logger = getLogger(Subsystem.Queue)
 
@@ -262,8 +263,8 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       file.fileName,
       file.vespaDocId || "",
       file.storagePath,
-      false, // extractImages
-      false, // describeImages
+      IMAGE_CONTEXT_CONFIG.enabled, // extractImages
+      IMAGE_CONTEXT_CONFIG.enabled, // describeImages
       useOCR, // useOCR option
     )
 

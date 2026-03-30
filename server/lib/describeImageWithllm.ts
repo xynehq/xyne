@@ -1,109 +1,106 @@
-import fs from "fs"
-import path from "path"
+import OpenAI from "openai"
 import { getLogger } from "@/logger"
+import config from "@/config"
 import { Subsystem } from "@/types"
-import { v4 as uuidv4 } from "uuid"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "describeImageUtil",
 })
 
-async function callLLMWithPayload(payload: object): Promise<string> {
-  const endpoint = process.env.LLM_API_ENDPOINT!
+function createLiteLLMOpenAIClient(apiKey: string, baseURL: string): OpenAI {
+  return new OpenAI({
+    apiKey,
+    baseURL,
+  })
+}
 
-  try {
-    Logger.debug(`Calling LLM API at: ${endpoint}`)
+const defaultVisionPrompt =
+  "If the image contains a meaningful object, diagram, or visual content worth describing, provide only a concise and detailed description. Otherwise, if the image appears to be a logo, icon, background, watermark, or contains no significant content, respond exactly with: Image is not worth describing."
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+const extToMime: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".jpe": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+  ".svg": "image/svg+xml",
+}
+
+function mimeFromFileName(imageName: string): string {
+  const lower = imageName.trim().toLowerCase()
+  const dot = lower.lastIndexOf(".")
+  if (dot === -1) return "image/png"
+  const ext = lower.slice(dot)
+  const mime = extToMime[ext]
+  return mime || "image/png"
+}
+
+export function buildOpenAiImageDescribePayload(
+  image: Buffer,
+  modelId: string,
+  imageName: string,
+  prompt?: string,
+): OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming {
+  const mime = mimeFromFileName(imageName)
+  const base64 = image.toString("base64")
+  const text = prompt ?? defaultVisionPrompt
+
+  return {
+    model: modelId,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text },
+          {
+            type: "image_url",
+            image_url: { url: `data:${mime};base64,${base64}` },
+          },
+        ],
       },
-      body: JSON.stringify(payload),
-    })
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-    }
-
-    if (!response.body) {
-      throw new Error("No response body received from LLM API")
-    }
-
-    // Handle streaming response by reading the response body
-    const responseText = await response.text()
-
-    if (!responseText.trim()) {
-      throw new Error("Empty response received from LLM API")
-    }
-
-    return responseText
-  } catch (error) {
-    if (error instanceof TypeError && error.message.includes("fetch")) {
-      throw new Error(
-        `Network error connecting to LLM API at ${endpoint}: ${error.message}`,
-      )
-    }
-
-    if (error instanceof Error) {
-      throw new Error(`LLM API request failed: ${error.message}`)
-    }
-
-    throw new Error(`Unknown error calling LLM API: ${String(error)}`)
+    ],
+    temperature: 0.2,
+    max_tokens: 512,
+    stream: false,
   }
 }
 
 export const describeImageWithllm = async (
   image: Buffer,
+  imageName: string,
   prompt?: string,
+  signal?: AbortSignal,
 ): Promise<string> => {
-  // Check if LLM endpoint is provided in environment variables
-  if (!process.env.LLM_API_ENDPOINT) {
-    Logger.debug(
-      "LLM_API_ENDPOINT not provided in environment variables, skipping image description",
-    )
-    return "No description returned."
-  }
+  const baseURL = config.LiteLLMBaseUrl
+  const modelId = config.defaultFastModel
+  const apiKey = config.LiteLLMApiKey
 
   try {
-    const base64Image = image.toString("base64")
+    if (!baseURL || !modelId || !apiKey) {
+      throw new Error("LiteLLM API endpoint, model ID, or API key is not set")
+    }
+    const client = createLiteLLMOpenAIClient(apiKey, baseURL)
+    const params = buildOpenAiImageDescribePayload(image, modelId, imageName, prompt)
 
-    const payload = {
-      model: process.env.LLM_MODEL_NAME || "gemma3:12b",
-      prompt:
-        prompt ||
-        "If the image contains a meaningful object, diagram, or visual content worth describing, provide only a concise and detailed description. Otherwise, if the image appears to be a logo, icon, background, watermark, or contains no significant content, respond exactly with: Image is not worth describing.",
-      images: [base64Image],
-      temperature: 0.2,
-      num_predict: 512,
+    Logger.debug("Sending image description via OpenAI client (LiteLLM baseURL)")
+    const response = await client.chat.completions.create(
+      params,
+      signal ? { signal } : undefined,
+    )
+
+    const content = response.choices[0]?.message?.content
+    if (typeof content !== "string" || !content.trim()) {
+      throw new Error("No message content in chat completions response")
     }
 
-    Logger.debug("Sending image description request to LLM API")
-    const responseText = await callLLMWithPayload(payload)
-
-    let fullResponse = ""
-    const lines = responseText.trim().split("\n")
-
-    for (const line of lines) {
-      if (line.trim()) {
-        try {
-          const jsonObj = JSON.parse(line)
-          if (jsonObj.response) {
-            fullResponse += jsonObj.response
-          }
-          if (jsonObj.done) {
-            break
-          }
-        } catch (parseError) {
-          Logger.warn(`Failed to parse JSON line: ${line}`, parseError)
-          // Continue processing other lines
-        }
-      }
-    }
-
-    const result = fullResponse.trim() || "No description returned."
-    Logger.debug(`LLM API response: ${result.substring(0, 100)}...`)
-
+    const result = content.trim()
+    Logger.debug("Image description completed", {
+      responseChars: result.length,
+    })
     return result
   } catch (err) {
     Logger.error(err, "Error calling LLM API for image description")

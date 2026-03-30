@@ -1712,7 +1712,6 @@ export async function chunkByOCR(
         })
         globalSeq.value += 1
 
-        currentTextBuffer += `${currentTextBuffer ? " " : ""}[IMG#${block.image_index}]`
         currentPageNumbers.add(pageNumber)
       } else {
         const normalizedText = normalizeBlockContent(block)
