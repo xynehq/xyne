@@ -12,10 +12,12 @@
  */
 
 import type {
+  AgentRunContext,
   ChunkState,
-  DocumentImageReference,
   DocumentState,
+  ImageMemoryEntry,
   RawChunkWithScore,
+  ToolOutputExtractedImage,
   ToolRawDocument,
 } from "./agent-schemas"
 import {
@@ -23,7 +25,7 @@ import {
   DOCUMENT_MEMORY_MAX_DOCS,
   DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM,
 } from "./agent-schemas"
-import type { Citation, MinimalAgentFragment } from "./types"
+import type { Citation, ImageCitation, MinimalAgentFragment } from "./types"
 import {
   answerContextMap,
   type AnswerContextRenderMetadata,
@@ -35,6 +37,7 @@ import { getDateForAI } from "@/utils/index"
 import { getChunkCountPerDoc } from "./chunk-selection"
 import { Apps } from "@xyne/vespa-ts/types"
 import type { VespaSearchResults } from "@xyne/vespa-ts"
+import { contextWithoutImageBlocksFromMatches, imageFileNamesBlockMatches } from "./utils"
 
 let syntheticLsDocSequence = 0
 let syntheticDelegatedDocSequence = 0
@@ -49,7 +52,6 @@ export function createDocumentState(docId: string, source: Citation): DocumentSt
     signals: [],
     maxScore: 0,
     relevanceScore: 0,
-    images: [],
   }
 }
 
@@ -671,6 +673,7 @@ async function buildFragmentsForDocList(
         builtUserQuery || undefined,
         precomputedDbContext,
         renderMetadata,
+        false,
       )
       visibleChunkIndices = renderMetadata.visibleChunkIndices
       uncachedVespaIndex++
@@ -700,35 +703,51 @@ async function buildFragmentsForDocList(
       visibleChunkIndices,
     }
     doc.cachedFragment = fragment
-    const extractedImages = extractImagesFromFragmentContent(
-      fragment.content,
-      doc.source.app === Apps.Attachment,
-    )
-    if (extractedImages.length > 0) {
-      doc.images = extractedImages
-    } else if (!Array.isArray(doc.images)) {
-      doc.images = []
-    }
     out.push(fragment)
   }
 
   return out
 }
 
-function extractImagesFromFragmentContent(
-  content: string,
-  isAttachment: boolean,
-): DocumentImageReference[] {
-  if (!content) return []
+/** Position suffix in labels from answerContextMap: `{docId}_{image_chunks_pos[i]}` (optional extension). */
+function imageChunkPosFromContextFileName(fileName: string): number | undefined {
+  const m = fileName.match(/_(\d+)(?:\.[A-Za-z0-9]+)?$/)
+  return m ? Number(m[1]) : undefined
+}
 
-  // answerContextMap emits an "Image File Names:" section. We store raw file names
-  // (without docIndex prefix); callers can map docId→index later when constructing
-  // the model image list.
-  const imageContentRegex =
-    /Image File Names:\s*([\s\S]*?)(?=\n[A-Z][a-zA-Z ]*:|vespa relevance score:|$)/g
-  const matches = [...content.matchAll(imageContentRegex)]
+export function extractImagesFromFragmentContent(
+  fragment: MinimalAgentFragment,
+  vespaHit: VespaSearchResults | undefined,
+  isUserAttachment: boolean,
+): { images: ToolOutputExtractedImage[], fragmentWithoutImageBlocks: MinimalAgentFragment } {
+  if (!fragment.content || !vespaHit) return { images: [], fragmentWithoutImageBlocks: fragment }
 
-  const out: DocumentImageReference[] = []
+  const content = fragment.content
+
+  const matches = imageFileNamesBlockMatches(content)
+
+  const fields = vespaHit.fields as Record<string, unknown> & {
+    matchfeatures?: typeof vespaHit.fields.matchfeatures
+  }
+  const imageChunksPos = (fields.image_chunks_pos_summary as number[]) || []
+  const matchfeatures = fields.matchfeatures
+  const imageChunkScores =
+    matchfeatures &&
+    "image_chunk_scores" in matchfeatures &&
+    "cells" in
+      (
+        matchfeatures as {
+          image_chunk_scores: { cells: Record<string, number> }
+        }
+      ).image_chunk_scores
+      ? (
+          matchfeatures as {
+            image_chunk_scores: { cells: Record<string, number> }
+          }
+        ).image_chunk_scores.cells
+      : {}
+
+  const out: ToolOutputExtractedImage[] = []
   const seen = new Set<string>()
 
   for (const match of matches) {
@@ -739,56 +758,147 @@ function extractImagesFromFragmentContent(
       imageContent.match(/[A-Za-z0-9._-]+_\d+(?:\.[A-Za-z0-9]+)?/g) || []
     for (const fileName of tokens) {
       if (seen.has(fileName)) continue
-      seen.add(fileName)
-      out.push({ fileName, isAttachment })
-    }
-  }
-
-  return out
-}
-
-export function getAllImagesFromDocumentMemory(
-  documentMemory: Map<string, DocumentState>,
-  options?: {
-    /** Order docs by relevance for the current turn */
-    docOrder?: string[]
-    maxImages?: number
-  },
-): { imageFileNamesForModel: string[]; total: number; dropped: number } {
-  const maxImages = options?.maxImages ?? Number.POSITIVE_INFINITY
-
-  // Determine doc ordering: if provided, use it (usually synthesis doc order).
-  // Otherwise fall back to relevanceScore desc.
-  const docs: DocumentState[] = Array.from(documentMemory.values())
-  let orderedDocs = docs
-  if (options?.docOrder && options.docOrder.length > 0) {
-    const byId = new Map(docs.map((d) => [d.docId, d]))
-    orderedDocs = options.docOrder
-      .map((id) => byId.get(id))
-      .filter((d): d is DocumentState => d != null)
-  } else {
-    orderedDocs = docs.slice().sort((a, b) => b.relevanceScore - a.relevanceScore)
-  }
-
-  const seen = new Set<string>()
-  const selected: string[] = []
-  let total = 0
-
-  for (let docIndex = 0; docIndex < orderedDocs.length; docIndex++) {
-    const doc = orderedDocs[docIndex]
-    for (const img of doc.images ?? []) {
-      total++
-      if (seen.has(img.fileName)) continue
-      seen.add(img.fileName)
-      if (selected.length < maxImages) {
-        // Model expects docIndex-prefixed file name.
-        selected.push(`${docIndex}_${img.fileName}`)
+      const pos = imageChunkPosFromContextFileName(fileName)
+      if (pos === undefined) continue
+      const chunkIndex = imageChunksPos.findIndex((p) => p === pos)
+      if (chunkIndex !== -1) {
+        seen.add(fileName)
+        out.push({
+          fileName,
+          isUserAttachment,
+          vespaImageScore: imageChunkScores[chunkIndex] ?? 0,
+          docId: fragment.source.docId ?? fragment.id,
+        })
       }
     }
   }
 
+  const contentWithoutImageBlocks = contextWithoutImageBlocksFromMatches(
+    content,
+    matches,
+  )
+
+  const fragmentWithoutImageBlocks: MinimalAgentFragment = {
+    ...fragment,
+    content: contentWithoutImageBlocks,
+  }
+
+  return { images: out, fragmentWithoutImageBlocks }
+}
+
+function mergeExtractedImagesByFileName(
+  entries: ToolOutputExtractedImage[],
+): ToolOutputExtractedImage[] {
+  const byName = new Map<string, ToolOutputExtractedImage>()
+  for (const e of entries) {
+    const prev = byName.get(e.fileName)
+    if (!prev || e.vespaImageScore > prev.vespaImageScore) {
+      byName.set(e.fileName, e)
+    }
+  }
+  return [...byName.values()]
+}
+
+/**
+ * Collect images for one tool invocation: Vespa-scored names from fragment text plus any
+ * `fragment.images` (e.g. delegation) and optional citation paths.
+ */
+export function gatherToolOutputExtractedImages(
+  rawDocuments: ToolRawDocument[],
+  toolFragments: MinimalAgentFragment[],
+  imageCitations: ImageCitation[] | undefined,
+): { images: ToolOutputExtractedImage[], fragmentsWithoutImageBlocks: MinimalAgentFragment[] } {
+  if (!toolFragments && !imageCitations) return { images: [], fragmentsWithoutImageBlocks: [] }
+  const rawById = new Map(rawDocuments.map((d) => [d.docId, d]))
+  const out: ToolOutputExtractedImage[] = []
+  const fragmentsWithoutImageBlocks: MinimalAgentFragment[] = []
+
+  for (const fragment of toolFragments) {
+    const raw = rawById.get(fragment.id)
+    const fromVespa = extractImagesFromFragmentContent(
+      fragment,
+      raw?.vespaHit,
+      fragment.source.app === Apps.Attachment,
+    )
+    out.push(...fromVespa.images)
+    fragmentsWithoutImageBlocks.push(fromVespa.fragmentWithoutImageBlocks)
+  }
+
+  for (const ic of imageCitations ?? []) {
+    if (!ic.imagePath) continue
+    const docId = ic.item?.docId
+    out.push({
+      fileName: ic.imagePath,
+      vespaImageScore: 0.85, // Default score for image citations same as agent response confidence
+      isUserAttachment: false,
+      docId,
+    })
+  }
+
+  return { images: mergeExtractedImagesByFileName(out), fragmentsWithoutImageBlocks }
+}
+
+/** Persist this turn's tool-extracted images into cross-turn image memory (best score wins). */
+export function mergeCurrentTurnToolOutputImagesIntoImageMemory(
+  context: AgentRunContext,
+): void {
+  const turn = context.turnCount ?? 0
+  for (const out of context.currentTurnArtifacts.toolOutputs) {
+    for (const img of out.extractedImages ?? []) {
+      const prev = context.imageMemory.get(img.fileName)
+      if (!prev || img.vespaImageScore > prev.vespaImageScore) {
+        context.imageMemory.set(img.fileName, {
+          fileName: img.fileName,
+          vespaImageScore: img.vespaImageScore,
+          isUserAttachment: img.isUserAttachment,
+          docId: img.docId,
+          lastMergedTurn: turn,
+        })
+      }
+    }
+  }
+}
+
+export interface GetImageFileNamesForLlmOptions {
+  /**
+   * Doc ids in display/relevance order (e.g. fragment ids from synthesis/review).
+   * When set, model paths are `{index}_{fileName}` where `index` is this doc's position in the list.
+   */
+  docOrder?: string[]
+  maxImages?: number
+}
+
+function docIndexPrefix(
+  entry: ImageMemoryEntry,
+  docOrder: string[] | undefined,
+): number {
+  if (!docOrder?.length || !entry.docId) return 0
+  const i = docOrder.indexOf(entry.docId)
+  return i >= 0 ? i : 0
+}
+
+/**
+ * Vespa-ranked image list for LLM: merges `imageMemory` with `toolOutputs[].extractedImages`,
+ * dedupes by fileName (max vespaImageScore), sorts by score desc.
+ * Paths are `{docIndex}_{fileName}` for `buildLanguageModelImageParts` (docIndex from `docOrder`, or 0).
+ */
+export function getImageFileNamesForLlmFromStores(
+  imageMemory: Map<string, ImageMemoryEntry>,
+  options?: GetImageFileNamesForLlmOptions,
+): { imageFileNamesForModel: string[]; total: number; dropped: number } {
+  const maxImages = options?.maxImages ?? 5 // Default to 5 images
+  const docOrder = options?.docOrder
+
+  const all = [...imageMemory.values()].sort(
+    (a, b) => b.vespaImageScore - a.vespaImageScore,
+  )
+  const total = all.length
+  const selected = all.slice(0, maxImages)
+  const imageFileNamesForModel = selected.map(
+    (e) => `${docIndexPrefix(e, docOrder)}_${e.fileName}`,
+  )
   const dropped = Math.max(total - selected.length, 0)
-  return { imageFileNamesForModel: selected, total, dropped }
+  return { imageFileNamesForModel, total, dropped }
 }
 
 /**

@@ -34,7 +34,7 @@ import OpenAI from "openai"
 import type { AgentRunContext } from "./agent-schemas"
 import { raceWithStop, throwIfStopRequested } from "./agent-stop"
 import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
-import { getImagesFromDocumentMemory } from "./runContextUtils"
+import { getImageFileNamesForLlmFromStores } from "./document-memory"
 const { IMAGE_CONTEXT_CONFIG } = config
 const IMAGE_BASE_DIR = path.resolve(
   process.env.IMAGE_DIR || "downloads/xyne_images_db",
@@ -296,7 +296,18 @@ export const makeXyneJAFProvider = <Ctx>(
         // Inject multimodal image parts for the last user message.
         // This mirrors the AI-SDK branch, but uses OpenAI-compatible `image_url`
         // content parts (data URL).
-        const selectedImages = await getImagesFromDocumentMemory(runContext)
+        const imageBudget =
+        IMAGE_CONTEXT_CONFIG.maxImagesPerCall && IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0
+          ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
+          : 5
+        const { imageFileNamesForModel: selectedImages } = 
+        IMAGE_CONTEXT_CONFIG.enabled 
+        ?
+          getImageFileNamesForLlmFromStores(
+            runContext.imageMemory,
+            { maxImages: imageBudget },
+          )
+        : { imageFileNamesForModel: [] }
         const userEmail = runContext?.user?.email || "unknown"
         if (selectedImages.length > 0) {
           const lastUserIndex = (() => {
@@ -470,7 +481,18 @@ export const makeXyneJAFProvider = <Ctx>(
       //   model,
       //   agentName: agent.name,
       // })
-      const selectedImages = await getImagesFromDocumentMemory(runContext)
+      const imageBudget =
+        IMAGE_CONTEXT_CONFIG.maxImagesPerCall && IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0
+          ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
+          : 5
+      const { imageFileNamesForModel: selectedImages } =
+        IMAGE_CONTEXT_CONFIG.enabled 
+        ?
+          getImageFileNamesForLlmFromStores(
+            runContext.imageMemory,
+            { maxImages: imageBudget },
+          )
+        : { imageFileNamesForModel: [] }
       Logger.debug(
         {
           email: runContext?.user?.email,

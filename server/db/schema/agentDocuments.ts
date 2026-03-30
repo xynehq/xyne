@@ -6,10 +6,8 @@ import {
   integer,
   timestamp,
   jsonb,
-  numeric,
   index,
   uniqueIndex,
-  check,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -35,7 +33,6 @@ export const agentDocuments = pgTable(
     content: text("content").notNull(),
     reasoning: text("reasoning"),
     citations: jsonb("citations").default(sql`'[]'::jsonb`),
-    confidence: numeric("confidence", { precision: 3, scale: 2 }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
@@ -48,7 +45,6 @@ export const agentDocuments = pgTable(
       table.externalId,
     ),
     agentDocAgentIdIndex: index("agent_doc_agent_id_index").on(table.agentId),
-    confidenceCheck: check("agent_doc_confidence_check", sql`${table.confidence} >= 0 AND ${table.confidence} <= 1`),
   }),
 )
 
@@ -67,7 +63,6 @@ export type AgentCitationReference = z.infer<typeof agentCitationReferenceSchema
 // Insert schema
 export const insertAgentDocumentSchema = createInsertSchema(agentDocuments, {
   citations: z.array(agentCitationReferenceSchema).nullable().optional().default([]),
-  confidence: z.number().min(0).max(1).nullable().optional(),
 }).omit({
   id: true,
   createdAt: true,
@@ -78,7 +73,6 @@ export type InsertAgentDocument = z.infer<typeof insertAgentDocumentSchema>
 // Select schema
 export const selectAgentDocumentSchema = createSelectSchema(agentDocuments, {
   citations: z.array(agentCitationReferenceSchema).nullable().optional().default([]),
-  confidence: z.number().min(0).max(1).nullable().optional(),
 })
 
 export type SelectAgentDocument = z.infer<typeof selectAgentDocumentSchema>

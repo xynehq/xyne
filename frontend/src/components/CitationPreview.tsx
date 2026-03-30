@@ -50,7 +50,6 @@ const AgentDocumentPayloadSchema = z.object({
   content: z.string(),
   reasoning: z.string().nullable().optional(),
   citations: z.array(AgentSourceCitationSchema).optional(),
-  confidence: z.number().nullable().optional(),
   createdAt: z.string(),
 })
 

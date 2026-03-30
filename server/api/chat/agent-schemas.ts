@@ -10,7 +10,6 @@ import type { Message as JAFMessage } from "@xynehq/jaf"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import type {
   Citation,
-  FragmentImageReference,
   MinimalAgentFragment,
 } from "./types"
 import type { ReasoningEventPayload } from "@/shared/types"
@@ -72,11 +71,22 @@ export interface RetrievalSignal {
   toolName?: string
 }
 
-export interface DocumentImageReference {
-  /** Raw image file name stored on disk (without docIndex prefix). */
+/** One image extracted from a tool result; Vespa-sourced rows carry BM25 image_chunk scores. */
+export interface ToolOutputExtractedImage {
   fileName: string
-  /** True when the source document is an attachment document. */
-  isAttachment: boolean
+  /** Vespa `image_chunk_scores` for this image index; 0 when not from Vespa (e.g. delegation). */
+  vespaImageScore: number
+  isUserAttachment: boolean
+  docId?: string
+}
+
+/** Cross-turn image store: keyed by fileName; highest vespaImageScore wins on merge. */
+export interface ImageMemoryEntry {
+  fileName: string
+  vespaImageScore: number
+  isUserAttachment: boolean
+  docId?: string
+  lastMergedTurn?: number
 }
 
 /** How long a synthetic doc stays in document memory. Do not infer this from `expiresAtTurn` alone. */
@@ -98,8 +108,6 @@ export interface DocumentState {
   maxScore: number
   /** Aggregated relevance (e.g. max + multi-query bonus + recency). */
   relevanceScore: number
-  /** Image references extracted from the document fragment content. */
-  images: DocumentImageReference[]
   /** Last Vespa hit for this doc; used to build fragment content via answerContextMap at filter/review/synthesis. */
   vespaHit?: VespaSearchResults
   /** Cached fragment (built via answerContextMap or joined chunks). Invalidated when doc is updated by merge. */
@@ -132,6 +140,8 @@ export interface ToolExecutionRecordWithResult {
   query?: string
   /** Raw Vespa documents (doc + chunks + scores + vespaHit). Used for merge and for building fragments via answerContextMap at filter/review/synthesis. */
   rawDocuments?: ToolRawDocument[]
+  /** Images parsed from tool fragments / citations for this invocation; merged into `imageMemory` at turn end. */
+  extractedImages?: ToolOutputExtractedImage[]
 }
 
 export interface CurrentTurnArtifacts {
@@ -316,6 +326,11 @@ export interface AgentRunContext {
   /** Current-turn document memory: raw Vespa docs from tool calls this turn only; used for filtering (reranking); merged into documentMemory after ranking, then cleared. */
   currentTurnDocumentMemory: Map<string, DocumentState>
   currentTurnArtifacts: CurrentTurnArtifacts
+  /**
+   * Cross-turn retrieved images (deduped by fileName, ranked by vespaImageScore).
+   * Populated at turn end from `toolOutputs[].extractedImages`; also read with current-turn outputs for mid-turn LLM calls.
+   */
+  imageMemory: Map<string, ImageMemoryEntry>
   turnCount: number
 
   // Performance metrics

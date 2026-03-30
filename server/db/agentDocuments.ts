@@ -13,14 +13,6 @@ import { Subsystem } from "@/types"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Db)
 
-// Helper function to convert numeric DB column to number
-type NumericColumn = string | null
-const numericToNumber = (val: NumericColumn): number | undefined => {
-  if (val === null || val === undefined) return undefined
-  const num = Number(val)
-  return isNaN(num) ? undefined : num
-}
-
 // Helper function to convert citations from DB
 const isAgentCitationReference = (
   value: unknown,
@@ -42,6 +34,11 @@ const parseCitations = (val: unknown): AgentCitationReference[] => {
   return val.filter(isAgentCitationReference)
 }
 
+const mapRow = (row: typeof agentDocuments.$inferSelect): SelectAgentDocument => ({
+  ...row,
+  citations: parseCitations(row.citations),
+})
+
 /**
  * Insert a new agent document
  */
@@ -50,17 +47,11 @@ export const insertAgentDocument = async (
 ): Promise<SelectAgentDocument> => {
   const externalId = createId()
 
-  // Convert confidence to string for numeric column
-  const confidenceValue = documentData.confidence !== undefined && documentData.confidence !== null
-    ? documentData.confidence.toString() 
-    : undefined
-
   const result = await db
     .insert(agentDocuments)
     .values({
       ...documentData,
       externalId,
-      confidence: confidenceValue,
     })
     .returning()
 
@@ -73,11 +64,7 @@ export const insertAgentDocument = async (
     "Agent document inserted successfully",
   )
 
-  return {
-    ...result[0],
-    citations: parseCitations(result[0].citations),
-    confidence: numericToNumber(result[0].confidence as NumericColumn),
-  }
+  return mapRow(result[0])
 }
 
 /**
@@ -98,11 +85,7 @@ export const getAgentDocumentByExternalId = async (
     return undefined
   }
 
-  return {
-    ...result[0],
-    citations: parseCitations(result[0].citations),
-    confidence: numericToNumber(result[0].confidence as NumericColumn),
-  }
+  return mapRow(result[0])
 }
 
 /**
@@ -119,11 +102,7 @@ export const getAgentDocumentsByChatId = async (
     )
     .orderBy(desc(agentDocuments.createdAt))
 
-  return result.map(doc => ({
-    ...doc,
-    citations: parseCitations(doc.citations),
-    confidence: numericToNumber(doc.confidence as NumericColumn),
-  }))
+  return result.map(mapRow)
 }
 
 /**
@@ -159,7 +138,6 @@ export const getAgentDocumentContent = async (
       content: string
       reasoning: string | null
       citations: AgentCitationReference[]
-      confidence: number | null
       createdAt: Date
       chatId: number
       workspaceExternalId: string
@@ -173,7 +151,6 @@ export const getAgentDocumentContent = async (
       content: agentDocuments.content,
       reasoning: agentDocuments.reasoning,
       citations: agentDocuments.citations,
-      confidence: agentDocuments.confidence,
       createdAt: agentDocuments.createdAt,
       chatId: agentDocuments.chatId,
       workspaceExternalId: chats.workspaceExternalId,
@@ -196,7 +173,6 @@ export const getAgentDocumentContent = async (
   return {
     ...result[0],
     citations: parseCitations(result[0].citations),
-    confidence: numericToNumber(result[0].confidence as NumericColumn) ?? null,
   }
 }
 
@@ -208,15 +184,9 @@ export const updateAgentDocument = async (
   externalId: string,
   updates: Partial<InsertAgentDocument>,
 ): Promise<SelectAgentDocument | undefined> => {
-  // Convert confidence to string for numeric column if present
-  const updateData: any = { ...updates }
-  if (updates.confidence !== undefined && updates.confidence !== null) {
-    updateData.confidence = updates.confidence.toString()
-  }
-
   const result = await db
     .update(agentDocuments)
-    .set(updateData)
+    .set(updates)
     .where(
       and(eq(agentDocuments.externalId, externalId), isNull(agentDocuments.deletedAt)),
     )
@@ -226,11 +196,7 @@ export const updateAgentDocument = async (
     return undefined
   }
 
-  return {
-    ...result[0],
-    citations: parseCitations(result[0].citations),
-    confidence: numericToNumber(result[0].confidence as NumericColumn),
-  }
+  return mapRow(result[0])
 }
 
 /**
