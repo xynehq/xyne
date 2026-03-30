@@ -1425,6 +1425,47 @@ export const cleanCitationsFromResponse = (text: string): string => {
     .trim()
 }
 
+const extractChunkIndicesFromFragmentContent = (
+  content: string | undefined,
+): Set<number> => {
+  if (!content) return new Set()
+  const chunkIndices = new Set<number>()
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trimStart()
+    const match =
+      line.match(/^Content:\s*\[(\d+)\]/) ?? line.match(/^\[(\d+)\]/)
+    if (!match) {
+      continue
+    }
+    const chunkIndex = parseInt(match[1], 10)
+    if (!Number.isNaN(chunkIndex)) {
+      chunkIndices.add(chunkIndex)
+    }
+  }
+  return chunkIndices
+}
+
+// Streaming callers rescan the full accumulated answer on each update.
+// Keep a per-response set of KB chunk warnings so malformed citations are
+// logged once instead of once per streamed chunk.
+const warnedKbChunkCitationsByYieldedSet = new WeakMap<
+  Set<number>,
+  Set<string>
+>()
+
+function buildCitationFailureExcerpt(
+  text: string,
+  matchIndex: number,
+  matchLength: number,
+  radius = 120,
+): string {
+  const start = Math.max(0, matchIndex - radius)
+  const end = Math.min(text.length, matchIndex + matchLength + radius)
+  const prefix = start > 0 ? "..." : ""
+  const suffix = end < text.length ? "..." : ""
+  return `${prefix}${text.slice(start, end).replace(/\s+/g, " ").trim()}${suffix}`
+}
+
 export const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
@@ -1448,11 +1489,21 @@ export const checkAndYieldCitationsForAgent = async function* (
     span.setAttribute("yielded_citations_size", yieldedCitations.size)
     span.setAttribute("has_image_citations", !!yieldedImageCitations)
     span.setAttribute("user_email", email)
+    let warnedKbChunkCitations =
+      warnedKbChunkCitationsByYieldedSet.get(yieldedCitations)
+    if (!warnedKbChunkCitations) {
+      warnedKbChunkCitations = new Set<string>()
+      warnedKbChunkCitationsByYieldedSet.set(
+        yieldedCitations,
+        warnedKbChunkCitations,
+      )
+    }
 
     // Reset global RegExp state so this function can be called repeatedly per request.
     textToCitationIndex.lastIndex = 0
     textToImageCitationIndex.lastIndex = 0
     textToChunkCitationIndex.lastIndex = 0
+    textToChunkCitationIndexWithDocKey.lastIndex = 0
 
     const text = splitGroupedCitationsWithSpaces(textInput)
 
@@ -1474,47 +1525,110 @@ export const checkAndYieldCitationsForAgent = async function* (
         citationsProcessed++
         let citationIndex: number | null = null
         let rawChunkKey: string | undefined
+        let warnedKbChunkCitationKey: string | undefined
+        let citationText: string | undefined
+        let citationTextIndex: number | undefined
         if (match) {
           citationIndex = parseInt(match[1], 10)
+          citationText = match[0]
+          citationTextIndex = match.index
         } else if (chunkMatch) {
           rawChunkKey = chunkMatch[1]
+          warnedKbChunkCitationKey = `numeric:${rawChunkKey}`
           citationIndex = parseInt(chunkMatch[1].split("_")[0], 10)
+          citationText = chunkMatch[0]
+          citationTextIndex = chunkMatch.index
         } else if (chunkDocKeyMatch) {
-          rawChunkKey = chunkDocKeyMatch[1]
           const docKey = chunkDocKeyMatch[1]
           if (/^\d+$/.test(docKey)) {
-            citationIndex = parseInt(docKey, 10)
-          } else {
-            // Map docKey (docId) -> numeric doc index (1-based) in `results`.
-            // We accept either `source.docId` or the fragment `id` as the possible emitter.
-            const docPos = results.findIndex(
-              (r) => r?.source?.docId === docKey || r.id === docKey,
-            )
-            citationIndex = docPos >= 0 ? docPos + 1 : null
+            continue
           }
+          rawChunkKey = `${chunkDocKeyMatch[1]}_${chunkDocKeyMatch[2]}`
+          warnedKbChunkCitationKey = `docKey:${rawChunkKey}`
+          citationText = chunkDocKeyMatch[0]
+          citationTextIndex = chunkDocKeyMatch.index
+          // Map docKey (docId) -> numeric doc index (1-based) in `results`.
+          // We accept either `source.docId` or the fragment `id` as the possible emitter.
+          const docPos = results.findIndex(
+            (r) => r?.source?.docId === docKey || r.id === docKey,
+          )
+          citationIndex = docPos >= 0 ? docPos + 1 : null
         }
         if (
           citationIndex == null ||
           Number.isNaN(citationIndex) ||
           citationIndex <= 0
         ) {
-          loggerWithChild({ email }).warn(
-            "[checkAndYieldCitationsForAgent] Found KB citation but could not resolve numeric index",
-            { rawChunkKey },
-          )
+          if (
+            warnedKbChunkCitationKey &&
+            !warnedKbChunkCitations.has(warnedKbChunkCitationKey)
+          ) {
+            warnedKbChunkCitations.add(warnedKbChunkCitationKey)
+            loggerWithChild({ email }).warn(
+              "[checkAndYieldCitationsForAgent] Found KB citation but could not resolve numeric index",
+              { rawChunkKey },
+            )
+          }
           continue
         }
 
-        if (!yieldedCitations.has(citationIndex)) {
-          const item = results[citationIndex - 1]
-
-          if (!item) {
+        const item = results[citationIndex - 1]
+        if (!item) {
+          if (
+            warnedKbChunkCitationKey &&
+            !warnedKbChunkCitations.has(warnedKbChunkCitationKey)
+          ) {
+            warnedKbChunkCitations.add(warnedKbChunkCitationKey)
             loggerWithChild({ email: email }).warn(
               `[checkAndYieldCitationsForAgent] Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
             )
+          }
+          continue
+        }
+
+        if (chunkMatch || chunkDocKeyMatch) {
+          const chunkIndexRaw = chunkMatch
+            ? chunkMatch[1].split("_")[1]
+            : chunkDocKeyMatch?.[2]
+          const chunkIndex = parseInt(chunkIndexRaw ?? "", 10)
+          const availableChunkIndices = extractChunkIndicesFromFragmentContent(
+            item.content,
+          )
+          if (
+            Number.isNaN(chunkIndex) ||
+            !availableChunkIndices.has(chunkIndex)
+          ) {
+            if (
+              warnedKbChunkCitationKey &&
+              !warnedKbChunkCitations.has(warnedKbChunkCitationKey)
+            ) {
+              warnedKbChunkCitations.add(warnedKbChunkCitationKey)
+              loggerWithChild({ email }).warn(
+                "[checkAndYieldCitationsForAgent] Dropping KB chunk citation with missing chunk marker",
+                {
+                  rawChunkKey,
+                  citationText,
+                  answerExcerpt:
+                    typeof citationTextIndex === "number" && citationText
+                      ? buildCitationFailureExcerpt(
+                          text,
+                          citationTextIndex,
+                          citationText.length,
+                        )
+                      : undefined,
+                  citationIndex,
+                  chunkIndex,
+                  availableChunkIndices: Array.from(
+                    availableChunkIndices.values(),
+                  ),
+                },
+              )
+            }
             continue
           }
+        }
 
+        if (!yieldedCitations.has(citationIndex)) {
           if (!item?.source?.docId && !item?.source?.url) {
             loggerWithChild({ email: email }).info(
               "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",

@@ -26,7 +26,6 @@ import {
   type SelectAgent,
   getAgentByExternalIdWithPermissionCheck,
 } from "@/db/agent"
-import { insertAgentDocument } from "@/db/agentDocuments"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { getChatExternalIdsByAgentId, insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
@@ -108,7 +107,6 @@ import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
 import type { ZodTypeAny } from "zod"
 import type {
-  AgentCapability,
   AgentRunContext,
   AutoReviewInput,
   CurrentTurnArtifacts,
@@ -199,6 +197,7 @@ import {
 import type { Citation, ImageCitation, MinimalAgentFragment } from "./types"
 import {
   checkAndYieldCitationsForAgent,
+  cleanCitationsFromResponse,
   collectReferencedFileIdsUntilCompaction,
   extractFileIdsFromMessage,
   isMessageWithContext,
@@ -455,6 +454,8 @@ function buildReviewSystemPrompt(options: {
 
 export const __messageAgentsPromptInternals = {
   buildReviewSystemPrompt,
+  buildAttachmentDirective,
+  buildAttachmentToolMessage,
 }
 
 function normalizeExcludedIdsForLogging(excludedIds: unknown): string[] {
@@ -957,7 +958,7 @@ export async function buildFinalSynthesisPayload(
 - Only draw on context that directly answers the user's question; ignore unrelated fragments even if they were retrieved earlier.
 - Treat delegated-agent outputs as citeable fragments; reference them like any other context entry.
 - Describe evidence gaps plainly before concluding; never guess.
-- Extract actionable details from provided images and cite them via their fragment indices.
+- Extract actionable details from provided images and cite image-grounded claims as \`[sourceIndex_imageIndex]\`.
 - Respect user-imposed constraints using fragment metadata (any metadata field). If compliant evidence is missing, state that clearly.
 - Treat "Agent Insights for Final Answer" as important agent-provided context that may include material information not repeated elsewhere. Consider it seriously, use it when consistent with the broader evidence, and note any unsupported or conflicting points explicitly
 - If "This is the system prompt of agent:" is present, analyse for instructions relevant for answering and strictly bind by them .
@@ -973,8 +974,8 @@ export async function buildFinalSynthesisPayload(
 
 ### File & Chunk Formatting (CRITICAL)
 - Each file starts with a header line exactly like:
-  index {docId} {file context begins here...}
-- \`docId\` is a unique identifier for that file (e.g., 0, 1, 2, etc.).
+  index {sourceIndex} {file context begins here...}
+- \`sourceIndex\` is the numeric source index for that file (e.g., 1, 2, 3, etc.).
 - Inside the file context, text is split into chunks.
 - Each chunk might begin with a bracketed numeric index, e.g.: [0], [1], [2], etc.
 - This is the chunk index within that file, if it exists.
@@ -982,29 +983,31 @@ export async function buildFinalSynthesisPayload(
 ### Guidelines for Response
 1. Data Interpretation:
    - Use ONLY the provided files and their chunks as your knowledge base.
-   - Treat every file header \`index {docId} ...\` as the start of a new document.
+   - Treat every file header \`index {sourceIndex} ...\` as the start of a new document.
    - Treat every bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
    - If dates exist, interpret them relative to the user's timezone when paraphrasing.
 2. Response Structure:
    - Start with the most relevant facts from the chunks across files.
    - Keep order chronological when it helps comprehension.
-   - Every factual statement MUST cite the exact chunk it came from using the format:
-     K[docId_chunkIndex]
-     where:
-       - \`docId\` is taken from the file header line ("index {docId} ...").
-       - \`chunkIndex\` is the bracketed number prefixed on that chunk within the same file.
+   - Cite chunk-grounded text claims as \`K[sourceIndex_chunkIndex]\`.
+   - Cite source-level or non-chunked text claims as \`[sourceIndex]\`.
+   - Cite image-grounded claims as \`[sourceIndex_imageIndex]\`.
    - Examples:
-     - Single citation: "X is true K[12_3]."
-     - Two citations in one sentence (from different files or chunks): "X K[12_3] and Y K[7_0]."
+     - Source-level citation: "The delegated summary confirms the handoff[2]."
+     - Chunk citation: "X is true K[12_3]."
+     - Image citation: "The screenshot shows the submitted form [5_0]."
+     - Two citations in one sentence: "X K[12_3] and Y[7]."
    - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
-3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
-   - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
-   - Every chunk level citation must start with the K prefix eg. K[12_3] K[7_0] correct, but K[12_3] [7_0] is incorrect.
+3. Citation Rules:
+   - Use only these forms: \`[N]\` for source-level text, \`K[N_chunkIndex]\` for text chunks, and \`[N_imageIndex]\` for images.
+   - Use \`K[sourceIndex_chunkIndex]\` only when a chunk marker exists for the supporting text evidence.
+   - Use \`[sourceIndex]\` when the text claim is source-level metadata or the source has no chunk markers.
+   - Never use bare \`[N_chunkIndex]\` for text claims. If unsure, use \`[N]\`.
    - Place the citation immediately after the relevant claim.
-   - Do NOT group indices inside one set of brackets (WRONG: "K[12_3,7_1]").
-   - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[12_3] ... K[7_1]".
-   - Only cite information that appears verbatim or is directly inferable from the cited chunk.
-   - If you cannot ground a claim to a specific chunk, do not make the claim.
+   - Do NOT group indices inside one set of brackets (WRONG: "K[12_3,7_1]" or "[2,7]").
+   - If a sentence draws on two distinct sources/chunks, include two separate citations inline.
+   - Only cite information that appears verbatim or is directly inferable from the cited source/chunk.
+   - If you cannot ground a claim, do not make the claim.
 4. Quality Assurance:
    - Cross-check across multiple chunks/files when available and briefly note inconsistencies if they exist.
    - Keep tone professional and concise.
@@ -1136,11 +1139,38 @@ function buildAttachmentToolMessage(
   summary: string,
   toolCallId: string,
 ): JAFMessage {
+  type AttachmentRef = Pick<
+    Citation,
+    "docId" | "title" | "page_title" | "app" | "entity"
+  >
+  const attachmentRefs = Array.from(
+    new Map(
+      fragments.flatMap((fragment) => {
+          const source = fragment.source
+          const docId = source?.docId
+          if (!docId) return []
+          return [
+            [
+              docId,
+              {
+                docId,
+                title: source?.title ?? "",
+                page_title: source?.page_title,
+                app: source?.app,
+                entity: source?.entity,
+              } satisfies AttachmentRef,
+            ] as const,
+          ]
+        }),
+    ).values(),
+  )
+  const attachmentEvidence = formatFragmentsWithMetadata(fragments)
   const resultPayload = ToolResponse.success({
     summary:
       summary ||
       "Attachment content retrieved and ready for answering the user query. Use these fragments directly; no further retrieval is needed unless they are irrelevant.",
-    fragments,
+    attachmentRefs,
+    attachmentEvidence,
   })
   const envelope = {
     status: "executed",
@@ -2039,7 +2069,8 @@ export async function afterToolExecutionHook(
     const delegationRunId =
       (resultData as { delegationRunId?: string })?.delegationRunId
     const agentName = resolveDelegatedAgentName(context, agentId)
-    const syntheticDoc = createSyntheticDocFromAgent(resultSummary, {
+    const citationCleanSummary = cleanCitationsFromResponse(resultSummary)
+    const syntheticDoc = createSyntheticDocFromAgent(citationCleanSummary, {
       agentId,
       agentName,
       turnNumber: effectiveTurnNumber,
@@ -3992,9 +4023,18 @@ Attachment handling:
    - and confirming the data cannot be found
 
 # Response and citations
-- Use the provided files and chunks as your knowledge base. Treat \`Index {docId} ...\` as the start of a document and [0], [1], [2] as chunk indices within that document.
-- Cite every factual statement with the exact chunk: K[docId_chunkIndex] (docId from the file header, chunkIndex from the bracketed number). Example: "X is true K[3_12]." Use at most 1-2 citations per sentence; for two chunks use two citations: "... K[3_12] ... K[1_0]".
-- Place the citation immediately after the claim. Only cite information that appears in or is directly inferable from the cited chunk; if you cannot ground a claim, omit it.
+- The attachment tool result contains:
+  - \`attachmentRefs\` for tool orchestration
+  - \`attachmentEvidence\` for answering
+- Use \`attachmentRefs[].docId\` only when calling tools such as \`run_public_agent\` or downstream document-reading workflows.
+- Do NOT use \`docId\` as citation identity in your answer.
+- Treat every \`index N {file context begins here...}\` block in \`attachmentEvidence\` as source \`N\`.
+- Use only these forms: \`[N]\` for source-level text, \`K[N_chunkIndex]\` for text chunks, and \`[N_imageIndex]\` for images.
+- If a source shows chunk markers like [0], [1], [2], cite text claims from those chunks as \`K[N_chunkIndex]\`.
+- If a claim is grounded in an image, cite it as \`[N_imageIndex]\`.
+- If a source does not show chunk markers, or the claim is source-level metadata, cite it as \`[N]\`.
+- Never use bare \`[N_chunkIndex]\` for text claims; if unsure, use \`[N]\`.
+- Place the citation immediately after the claim. Only cite information that appears in or is directly inferable from the cited source/chunk; if you cannot ground a claim, omit it.
 - Keep tone professional and concise; note inconsistencies across chunks when relevant and acknowledge gaps when the chunks lack detail.
 `.trim()
 }

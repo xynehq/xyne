@@ -17,13 +17,14 @@ import {
   buildReviewRequest,
   buildReviewPromptFromContext,
 } from "@/api/chat/message-agents"
+import { agentBaselineKbContextPromptJson } from "@/ai/agentPrompts"
 import { SynthesizeFinalAnswerInputSchema } from "@/api/chat/tool-schemas"
 import { buildMCPJAFTools } from "@/api/chat/jaf-adapter"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import { Apps } from "@xyne/vespa-ts/types"
 import { XyneTools } from "@/shared/types"
-import { createRunId, createTraceId } from "@xynehq/jaf"
+import { createRunId, createTraceId, getTextContent } from "@xynehq/jaf"
 
 const baseFragment: MinimalAgentFragment = {
   id: "doc-1",
@@ -163,6 +164,71 @@ describe("message-agents context tracking", () => {
     expect(context.currentTurnArtifacts.toolOutputs[0].resultSummary).toContain(
       "Delegate found something",
     )
+  })
+
+  test("run_public_agent keeps underlying cited rawDocuments and strips child-local citations from the synthetic summary", async () => {
+    const context = createMockContext()
+    const rawDocuments = [
+      {
+        docId: baseFragment.id,
+        relevance: 0.8,
+        source: baseFragment.source,
+        chunks: [
+          {
+            chunkKey: "c:1",
+            content: baseFragment.content,
+            score: 0.8,
+          },
+        ],
+        vespaHit: {
+          relevance: 0.8,
+          fields: { sddocname: "file", docId: baseFragment.id },
+        },
+      } as any,
+    ]
+
+    await afterToolExecutionHook(
+      XyneTools.runPublicAgent,
+      {
+        status: "success",
+        data: {
+          resultSummary: "Delegate found the answer K[1_0] and confirmed it [2].",
+          rawDocuments,
+          citations: [baseFragment.source],
+          agentId: "agent-123",
+        },
+      },
+      {
+        toolCall: { id: "call-delegate-2" } as any,
+        args: { agentId: "agent-123", query: "test" },
+        state: {
+          context,
+          messages: [],
+          runId: createRunId("run-delegate-2"),
+          traceId: createTraceId("trace-delegate-2"),
+          currentAgentName: "xyne-agent",
+          turnCount: 1,
+        },
+        agentName: "xyne-agent",
+        executionTime: 10,
+        status: "success",
+      },
+      context.message.text,
+      [],
+      undefined,
+      context.turnCount,
+    )
+
+    expect(context.currentTurnArtifacts.syntheticDocs.length).toBe(1)
+    expect(context.currentTurnArtifacts.toolOutputs).toHaveLength(1)
+    expect(context.currentTurnArtifacts.toolOutputs[0].rawDocuments).toHaveLength(1)
+
+    const syntheticSummary = Array.from(
+      context.currentTurnArtifacts.syntheticDocs[0].chunks.values(),
+    )[0]?.content
+    expect(syntheticSummary).toContain("Delegate found the answer")
+    expect(syntheticSummary).not.toContain("K[1_0]")
+    expect(syntheticSummary).not.toContain("[2]")
   })
 
   test("afterToolExecutionHook stores rawDocuments in documentMemory and toolOutputs", async () => {
@@ -621,6 +687,75 @@ describe("message-agents context tracking", () => {
     expect(noCitations[0]?.source.title).toBe("Delegated agent (Test Agent)")
   })
 
+  test("attachment prompt internals serialize evidence separately from attachment refs", () => {
+    const message = __messageAgentsPromptInternals.buildAttachmentToolMessage(
+      [
+        {
+          ...baseFragment,
+          content: "[0] Quarterly ARR grew 12%",
+          source: {
+            ...baseFragment.source,
+            page_title: "Quarterly Planning Sheet",
+          },
+        },
+      ],
+      "Attachment summary",
+      "tool-call-1",
+    )
+
+    const envelope = JSON.parse(getTextContent(message.content) || "")
+    const resultPayload = JSON.parse(envelope.result)
+    const payload = resultPayload.data
+
+    expect(payload.summary).toBe("Attachment summary")
+    expect(payload.attachmentRefs).toEqual([
+      {
+        docId: "doc-1",
+        title: "ARR Summary",
+        page_title: "Quarterly Planning Sheet",
+        app: Apps.KnowledgeBase,
+        entity: "file",
+      },
+    ])
+    expect(payload.attachmentEvidence).toContain("index 1 {file context begins here...}")
+    expect(payload.attachmentEvidence).toContain("[0] Quarterly ARR grew 12%")
+    expect(payload.attachmentEvidence).not.toContain("docId")
+    expect(payload.fragments).toBeUndefined()
+  })
+
+  test("attachment directive distinguishes tool docIds from citation indices", () => {
+    const context = createMockContext()
+    context.chat.metadata = {
+      initialAttachmentPhase: true,
+      initialAttachmentSummary: "Use the attachment first.",
+    }
+
+    const directive = __messageAgentsPromptInternals.buildAttachmentDirective(
+      context,
+    )
+
+    expect(directive).toContain("attachmentRefs")
+    expect(directive).toContain("attachmentEvidence")
+    expect(directive).toContain("Use `attachmentRefs[].docId` only when calling tools")
+    expect(directive).toContain("Treat every `index N {file context begins here...}` block")
+    expect(directive).toContain("K[N_chunkIndex]")
+    expect(directive).toContain("[N]")
+    expect(directive).not.toContain("K[docId_chunkIndex]")
+  })
+
+  test("legacy KB agent prompt uses numeric source citations", () => {
+    const prompt = agentBaselineKbContextPromptJson(
+      "User context",
+      "2026-03-28",
+      "Index 1 {file context begins here...}\nContent:\n[0] Quarterly ARR grew 12%",
+    )
+
+    expect(prompt).toContain("Index {sourceIndex}")
+    expect(prompt).toContain("K[sourceIndex_chunkIndex]")
+    expect(prompt).toContain("[sourceIndex]")
+    expect(prompt).not.toContain("K[docId_chunkIndex]")
+  })
+
   test("buildConversationHistoryForAgentRun normalizes context JSON and filters invalid turns", () => {
     const { buildConversationHistoryForAgentRun } =
       __messageAgentsHistoryInternals
@@ -787,8 +922,13 @@ describe("message-agents context tracking", () => {
     expect(payload.userMessage).toContain("index 1 {file context begins here...}")
     expect(payload.userMessage).toContain("- title: ARR Summary")
     expect(payload.userMessage).toContain("- page_title: Quarterly Planning Sheet")
+    expect(payload.userMessage).not.toContain("docId")
     expect(payload.userMessage).toContain("Content:")
     expect(payload.userMessage).toContain("Quarterly ARR grew 12%")
+    expect(payload.systemPrompt).toContain("K[sourceIndex_chunkIndex]")
+    expect(payload.systemPrompt).toContain("[sourceIndex]")
+    expect(payload.systemPrompt).not.toContain("K[docId_chunkIndex]")
+    expect(payload.systemPrompt).not.toContain("ALWAYS cite at the chunk level")
   })
 
   test("final synthesis request keeps prior conversation as separate messages", async () => {

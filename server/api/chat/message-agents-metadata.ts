@@ -238,10 +238,41 @@ export function formatFragmentWithMetadata(
   fragment: MinimalAgentFragment,
   index: number
 ): string {
-  const metadataEntries = collectFragmentMetadataEntries(fragment)
-  if (typeof fragment.confidence === "number" && Number.isFinite(fragment.confidence)) {
-    metadataEntries.push(["confidence", fragment.confidence.toFixed(3)])
+  const source = (fragment.source || {}) as Record<string, unknown>
+  const hiddenKeys = new Set([
+    "docId",
+    "url",
+    "threadId",
+    "itemId",
+    "clId",
+    "parentThreadId",
+    "fragmentId",
+    "confidence",
+  ])
+  const preferredOrder = [
+    "title",
+    "page_title",
+    "app",
+    "entity",
+    "createdAt",
+    "resolvedAt",
+    "closedAt",
+    "status",
+    "ticketNumber",
+  ]
+  const keys = Object.keys(source).filter((key) => !hiddenKeys.has(key))
+  const orderedKeys = [
+    ...preferredOrder.filter((key) => keys.includes(key)),
+    ...keys.filter((key) => !preferredOrder.includes(key)).sort(),
+  ]
+
+  const metadataEntries: Array<[string, string]> = []
+  for (const key of orderedKeys) {
+    const normalized = normalizeMetadataValue(source[key])
+    if (!normalized) continue
+    metadataEntries.push([key, normalized])
   }
+
   const metadataBlock = metadataEntries.length
     ? metadataEntries.map(([key, value]) => `- ${key}: ${value}`).join("\n")
     : "- unavailable"
