@@ -100,6 +100,7 @@ export interface MinimalAgentFragment {
   content: string
   source: Citation
   confidence: number
+  visibleChunkIndices: number[]
   imageFileNames?: string[]
   images?: FragmentImageReference[]
 }

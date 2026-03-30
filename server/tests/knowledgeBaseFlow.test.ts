@@ -1142,6 +1142,7 @@ describe("searchKnowledgeBase", () => {
           entity: KnowledgeBaseEntity.File,
         },
         confidence: 0.91,
+        visibleChunkIndices: [],
       },
     ]
 
@@ -1225,6 +1226,7 @@ describe("searchKnowledgeBase", () => {
                 entity: KnowledgeBaseEntity.File,
               },
               confidence: 0.9,
+              visibleChunkIndices: [],
             },
           ],
           rawDocuments: [],
@@ -1285,6 +1287,7 @@ describe("searchKnowledgeBase", () => {
                 entity: KnowledgeBaseEntity.File,
               },
               confidence: 0.9,
+              visibleChunkIndices: [],
             },
           ],
           rawDocuments: [],

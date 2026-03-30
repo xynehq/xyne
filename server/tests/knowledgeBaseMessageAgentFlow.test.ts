@@ -603,6 +603,53 @@ describe("knowledge-base message agent flow", () => {
     })
   })
 
+  test("beforeToolExecutionHook deduplicates semantically identical KB args after normalization", async () => {
+    const context = createAgentRunContext({
+      message: "Search the API spec once.",
+      selectedKnowledgeItemIds: [`cl-${collectionAlpha.id}`],
+    })
+
+    context.toolCallHistory.push({
+      toolName: "searchKnowledgeBase",
+      connectorId: null,
+      agentName: "test-agent",
+      arguments: {
+        query: "API spec",
+        filters: {
+          targets: [
+            {
+              type: "folder",
+              folderId: projectsFolder.id,
+            },
+          ],
+        },
+      },
+      turnNumber: 1,
+      startedAt: new Date(),
+      durationMs: 25,
+      estimatedCostUsd: 0,
+      status: "success",
+    })
+
+    const preparedSearchArgs = await beforeToolExecutionHook(
+      "searchKnowledgeBase",
+      {
+        query: "API spec",
+        filters: JSON.stringify({
+          targets: [
+            {
+              folderId: projectsFolder.id,
+              type: "folder",
+            },
+          ],
+        }),
+      },
+      context,
+    )
+
+    expect(preparedSearchArgs).toBeNull()
+  })
+
   test("partial folder scope syncs untargeted ls roots into a folder-scoped KB search and chunk memory", async () => {
     const providerSnapshots: string[] = []
     const searchCalls: Array<Record<string, unknown>> = []
@@ -654,6 +701,7 @@ describe("knowledge-base message agent flow", () => {
         id: specFile.id,
         content: "Spec chunk 0",
         confidence: 0.91,
+        visibleChunkIndices: [],
         source: {
           docId: specFile.id,
           title: specFile.name,
@@ -802,6 +850,7 @@ describe("knowledge-base message agent flow", () => {
         id: specFile.id,
         content: "Spec chunk 0",
         confidence: 0.9,
+        visibleChunkIndices: [],
         source: {
           docId: specFile.id,
           title: specFile.name,
@@ -960,6 +1009,7 @@ describe("knowledge-base message agent flow", () => {
             id: specFile.id,
             content: "README overview chunk",
             confidence: 0.8,
+            visibleChunkIndices: [],
             source: {
               docId: specFile.id,
               title: specFile.name,

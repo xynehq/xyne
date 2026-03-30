@@ -227,7 +227,7 @@ export function formatFragmentWithMetadataForRanking(
       : toolName
         ? `Retrieved by: ${toolName}${toolQuery ? ` | Query: "${toolQuery}"` : ""}\n`
         : ""
-  return `index ${index + 1} {file context begins here...}
+  return `Index ${index + 1} {file context begins here...}
 ${toolContext}Metadata:
 ${metadataBlock}
 Content:
@@ -276,7 +276,7 @@ export function formatFragmentWithMetadata(
     ? metadataEntries.map(([key, value]) => `- ${key}: ${value}`).join("\n")
     : "- unavailable"
   const content = fragment.content?.trim() || "No content."
-  return `index ${index + 1} {file context begins here...}
+  return `Index ${index + 1} {file context begins here...}
 Metadata:
 ${metadataBlock}
 Content:

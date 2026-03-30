@@ -17,7 +17,10 @@ import {
   searchToCitation,
 } from "@/api/chat/utils"
 
-import { answerContextMap } from "@/ai/context"
+import {
+  answerContextMap,
+  type AnswerContextRenderMetadata,
+} from "@/ai/context"
 import type { UserMetadataType } from "@/types"
 import { getDateForAI } from "@/utils/index"
 import type {
@@ -86,6 +89,9 @@ export async function formatSearchToolResponse(
       const citation = searchToCitation(r)
       // One child = one document (Vespa returns docs with chunks scored); use docId as fragment id.
       const fragmentId = citation.docId
+      const renderMetadata: AnswerContextRenderMetadata = {
+        visibleChunkIndices: [],
+      }
       return {
         id: fragmentId,
         content: await answerContextMap(
@@ -96,9 +102,11 @@ export async function formatSearchToolResponse(
           r.fields?.sddocname === KbItemsSchema,
           builtUserQuery || undefined,
           precomputedDbContext,
+          renderMetadata,
         ),
         source: citation,
         confidence: r.relevance || 0.7,
+        visibleChunkIndices: renderMetadata.visibleChunkIndices,
       }
     }),
   )
@@ -200,6 +208,7 @@ export function formatChatMemoryToolResponse(
       content: contentParts.join("\n"),
       source,
       confidence: f.relevance ?? 0.7,
+      visibleChunkIndices: [],
     }
   })
 }

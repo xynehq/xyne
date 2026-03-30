@@ -923,7 +923,7 @@ This is the context of the agent, it is very important to follow this. You MUST 
 
 ## File & Chunk Formatting (CRITICAL)
 - Each file starts with a header line exactly like:
-  index {sourceIndex} {file context begins here...}
+  Index {sourceIndex} {file context begins here...}
 - \`sourceIndex\` is the numeric source index for that file (e.g., 1, 2, 3, etc.).
 - Inside the file context, text is split into chunks.
 - Each chunk should have a square bracketed numeric index, e.g.: [0], [1], [2], etc. This is the chunk index within that file.
@@ -973,7 +973,7 @@ ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
    - Use ONLY the provided files and their chunks as your knowledge base.
-   - Treat every file header \`index {sourceIndex} {file context begins here...}\` as the start of a new document.
+   - Treat every file header \`Index {sourceIndex} {file context begins here...}\` as the start of a new document.
    - Treat every square bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
    - If dates exist, interpret them relative to the user's timezone when paraphrasing.
 2. Response Structure:

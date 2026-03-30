@@ -1425,24 +1425,15 @@ export const cleanCitationsFromResponse = (text: string): string => {
     .trim()
 }
 
-const extractChunkIndicesFromFragmentContent = (
-  content: string | undefined,
+const extractChunkIndicesFromFragment = (
+  item: MinimalAgentFragment,
 ): Set<number> => {
-  if (!content) return new Set()
-  const chunkIndices = new Set<number>()
-  for (const rawLine of content.split("\n")) {
-    const line = rawLine.trimStart()
-    const match =
-      line.match(/^Content:\s*\[(\d+)\]/) ?? line.match(/^\[(\d+)\]/)
-    if (!match) {
-      continue
-    }
-    const chunkIndex = parseInt(match[1], 10)
-    if (!Number.isNaN(chunkIndex)) {
-      chunkIndices.add(chunkIndex)
-    }
-  }
-  return chunkIndices
+  return new Set(
+    item.visibleChunkIndices.filter(
+      (chunkIndex): chunkIndex is number =>
+        typeof chunkIndex === "number" && Number.isFinite(chunkIndex),
+    ),
+  )
 }
 
 // Streaming callers rescan the full accumulated answer on each update.
@@ -1598,9 +1589,7 @@ export const checkAndYieldCitationsForAgent = async function* (
             ? chunkMatch[1].split("_")[1]
             : chunkDocKeyMatch?.[2]
           const chunkIndex = parseInt(chunkIndexRaw ?? "", 10)
-          const availableChunkIndices = extractChunkIndicesFromFragmentContent(
-            item.content,
-          )
+          const availableChunkIndices = extractChunkIndicesFromFragment(item)
           if (
             Number.isNaN(chunkIndex) ||
             !availableChunkIndices.has(chunkIndex)

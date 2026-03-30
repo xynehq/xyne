@@ -975,7 +975,7 @@ export async function buildFinalSynthesisPayload(
 
 ### File & Chunk Formatting (CRITICAL)
 - Each file starts with a header line exactly like:
-  index {sourceIndex} {file context begins here...}
+  Index {sourceIndex} {file context begins here...}
 - \`sourceIndex\` is the numeric source index for that file (e.g., 1, 2, 3, etc.).
 - Inside the file context, text is split into chunks.
 - Each chunk might begin with a bracketed numeric index, e.g.: [0], [1], [2], etc.
@@ -984,7 +984,7 @@ export async function buildFinalSynthesisPayload(
 ### Guidelines for Response
 1. Data Interpretation:
    - Use ONLY the provided files and their chunks as your knowledge base.
-   - Treat every file header \`index {sourceIndex} ...\` as the start of a new document.
+   - Treat every file header \`Index {sourceIndex} ...\` as the start of a new document.
    - Treat every bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
    - If dates exist, interpret them relative to the user's timezone when paraphrasing.
 2. Response Structure:
@@ -1857,7 +1857,7 @@ export async function beforeToolExecutionHook(
       record.toolName === toolName &&
       JSON.stringify(record.arguments) === JSON.stringify(normalizedArgs) &&
       record.status === "success" &&
-      Date.now() - record.startedAt.getTime() < 60000, // 1 minute
+      Date.now() - record.startedAt.getTime() < 60000,
   )
 
   if (isDuplicate) {
@@ -2370,6 +2370,7 @@ export async function buildDelegatedAgentFragments(opts: {
             } as unknown as Citation["entity"],
           },
           confidence: 0.85,
+          visibleChunkIndices: [],
         }
       : null
 
@@ -2769,9 +2770,7 @@ async function batchRankFragments(
         "has_agent_system_prompt_snapshot",
         !!sanitizeAgentSystemPromptSnapshot(context.dedicatedAgentSystemPrompt)
       )
-      // TODO: Rank against a resolved/disambiguated query instead of the raw top-level `message`.
-      // Keep tool-level subqueries as retrieval provenance, and remove duplicate injection of the
-      // same current query inside `extractBestDocumentIndexes`.
+
       bestDocIndexes = await extractBestDocumentIndexes(
         userMessage,
         contextStrings,
@@ -4032,7 +4031,7 @@ Attachment handling:
   - \`attachmentEvidence\` for answering
 - Use \`attachmentRefs[].docId\` only when calling tools such as \`run_public_agent\` or downstream document-reading workflows.
 - Do NOT use \`docId\` as citation identity in your answer.
-- Treat every \`index N {file context begins here...}\` block in \`attachmentEvidence\` as source \`N\`.
+- Treat every \`Index N {file context begins here...}\` block in \`attachmentEvidence\` as source \`N\`.
 - Use only these forms: \`[N]\` for source-level text, \`K[N_chunkIndex]\` for text chunks, and \`[N_imageIndex]\` for images.
 - If a source shows chunk markers like [0], [1], [2], cite text claims from those chunks as \`K[N_chunkIndex]\`.
 - If a claim is grounded in an image, cite it as \`[N_imageIndex]\`.

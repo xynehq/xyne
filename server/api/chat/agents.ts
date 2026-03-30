@@ -201,6 +201,7 @@ const vespaResultToMinimalAgentFragment = async (
   ),
   source: searchToCitation(child as VespaSearchResults),
   confidence: 1.0,
+  visibleChunkIndices: [],
 })
 
 async function* nonRagIterator(
