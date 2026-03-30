@@ -192,6 +192,7 @@ import {
   mergeCurrentTurnToolOutputImagesIntoImageMemory,
   mergeDocumentStatesIntoDocumentMemory,
   mergeRawDocumentsIntoDocumentMemory,
+  seedImageMemoryFromImages,
   createSyntheticDocFromChatMemory,
   createSyntheticDocFromLs,
   createSyntheticDocFromAgent,
@@ -242,6 +243,7 @@ const USE_AGENTIC_FILTERING = config.useAgenticFiltering ?? true
 
 const DEFAULT_REVIEW_FREQUENCY = 5
 const MAX_REVIEW_FREQUENCY = 50
+export const AgentResponseConfidence = 0.85
 
 const mutableAgentContext = (
   context: Readonly<AgentRunContext>,
@@ -534,7 +536,6 @@ function resetCurrentTurnArtifacts(context: AgentRunContext): void {
   const currentTurnDocCount = context.currentTurnDocumentMemory.size
   context.currentTurnArtifacts = createEmptyTurnArtifacts()
   context.currentTurnDocumentMemory = new Map<string, DocumentState>()
-  context.imageMemory = new Map<string, ImageMemoryEntry>()
   logContextMutation(
     context,
     "[MessageAgents][Context] Reset current turn artifacts",
@@ -5139,9 +5140,24 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     email: agentContext.user.email,
                     userId: agentContext.user.numericId ?? undefined,
                     workspaceId: agentContext.user.workspaceNumericId ?? undefined,
+                    includeImageBlocks: true,
                   },
                 )
               : []
+          // Extract images from attachment fragments and seed into imageMemory
+          // so they are available for the first review
+          const { images: attachmentImages, fragmentsWithoutImageBlocks } = gatherToolOutputExtractedImages(
+            initialAttachmentContext.rawDocuments,
+            attachmentFragments,
+            [],
+          )
+          if (attachmentImages.length > 0) {
+            seedImageMemoryFromImages(
+              agentContext.imageMemory,
+              attachmentImages,
+              MIN_TURN_NUMBER,
+            )
+          }
           const attachmentToolCallId = `synthetic-${ATTACHMENT_TOOL_MESSAGE}-${MIN_TURN_NUMBER}`
           initialSyntheticMessages.push(
             buildSyntheticAssistantToolCallMessage({
@@ -5150,7 +5166,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               arguments: { source: "user_attachment" },
             }),
             buildAttachmentToolMessage(
-              attachmentFragments,
+              fragmentsWithoutImageBlocks,
               initialAttachmentContext.summary,
               attachmentToolCallId,
             ),
@@ -6971,6 +6987,7 @@ async function runDelegatedAgentWithMessageAgents(
       turn: number,
     ): Promise<void> => {
       mergeToolOutputsIntoCurrentTurnMemory(agentContext, turn)
+      mergeCurrentTurnToolOutputImagesIntoImageMemory(agentContext)
       await runTurnEndPipeline(agentContext, {
         turn,
         useAgenticFiltering: internalCfg

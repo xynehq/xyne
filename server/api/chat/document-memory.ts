@@ -30,7 +30,7 @@ import {
   answerContextMap,
   type AnswerContextRenderMetadata,
 } from "@/ai/context"
-import config from "@/config"
+import config, { IMAGE_CONTEXT_CONFIG } from "@/config"
 import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 import type { UserMetadataType } from "@/types"
 import { getDateForAI } from "@/utils/index"
@@ -38,6 +38,7 @@ import { getChunkCountPerDoc } from "./chunk-selection"
 import { Apps } from "@xyne/vespa-ts/types"
 import type { VespaSearchResults } from "@xyne/vespa-ts"
 import { contextWithoutImageBlocksFromMatches, imageFileNamesBlockMatches } from "./utils"
+import { AgentResponseConfidence } from "./message-agents"
 
 let syntheticLsDocSequence = 0
 let syntheticDelegatedDocSequence = 0
@@ -341,6 +342,7 @@ export interface GetFragmentsForSynthesisOptions {
   userId?: number | null
   workspaceId?: number | null
   query?: string
+  includeImageBlocks?: boolean
 }
 
 /**
@@ -559,19 +561,19 @@ export function createSyntheticDocFromAgent(
     content: resultSummary,
     firstSeenTurn: options.turnNumber,
     lastSeenTurn: options.turnNumber,
-    confidence: 0.85,
+    confidence: AgentResponseConfidence,
     queries: options.toolQuery ? [options.toolQuery] : [],
   })
 
   doc.signals.push({
     query: options.toolQuery ?? "",
-    confidence: 0.85,
+    confidence: AgentResponseConfidence,
     turn: options.turnNumber,
     toolName: "runPublicAgent",
   })
 
-  doc.maxScore = 0.85
-  doc.relevanceScore = 0.85
+  doc.maxScore = AgentResponseConfidence
+  doc.relevanceScore = AgentResponseConfidence
 
   return doc
 }
@@ -673,7 +675,7 @@ async function buildFragmentsForDocList(
         builtUserQuery || undefined,
         precomputedDbContext,
         renderMetadata,
-        false,
+        options.includeImageBlocks ?? false,
       )
       visibleChunkIndices = renderMetadata.visibleChunkIndices
       uncachedVespaIndex++
@@ -829,13 +831,50 @@ export function gatherToolOutputExtractedImages(
     const docId = ic.item?.docId
     out.push({
       fileName: ic.imagePath,
-      vespaImageScore: 0.85, // Default score for image citations same as agent response confidence
+      vespaImageScore: AgentResponseConfidence,
       isUserAttachment: false,
       docId,
     })
   }
 
   return { images: mergeExtractedImagesByFileName(out), fragmentsWithoutImageBlocks }
+}
+
+/**
+ * Seed image memory directly from ToolOutputExtractedImage entries.
+ * Used for initial attachment bootstrap where images are extracted from fragments
+ * but not yet in toolOutputs (since they predate the tool execution phase).
+ */
+export function seedImageMemoryFromImages(
+  imageMemory: Map<string, ImageMemoryEntry>,
+  images: ToolOutputExtractedImage[],
+  turn: number,
+): void {
+  for (const img of images) {
+    const prev = imageMemory.get(img.fileName)
+    if (!prev) {
+      imageMemory.set(img.fileName, {
+        fileName: img.fileName,
+        vespaImageScore: img.vespaImageScore,
+        isUserAttachment: img.isUserAttachment,
+        docId: img.docId,
+        lastMergedTurn: turn,
+      })
+      continue
+    }
+
+    imageMemory.set(img.fileName, {
+      ...prev,
+      ...(img.vespaImageScore > prev.vespaImageScore
+        ? {
+            vespaImageScore: img.vespaImageScore,
+            isUserAttachment: img.isUserAttachment,
+            docId: img.docId,
+          }
+        : {}),
+      lastMergedTurn: turn,
+    })
+  }
 }
 
 /** Persist this turn's tool-extracted images into cross-turn image memory (best score wins). */
@@ -846,7 +885,7 @@ export function mergeCurrentTurnToolOutputImagesIntoImageMemory(
   for (const out of context.currentTurnArtifacts.toolOutputs) {
     for (const img of out.extractedImages ?? []) {
       const prev = context.imageMemory.get(img.fileName)
-      if (!prev || img.vespaImageScore > prev.vespaImageScore) {
+      if (!prev) {
         context.imageMemory.set(img.fileName, {
           fileName: img.fileName,
           vespaImageScore: img.vespaImageScore,
@@ -854,7 +893,20 @@ export function mergeCurrentTurnToolOutputImagesIntoImageMemory(
           docId: img.docId,
           lastMergedTurn: turn,
         })
+        continue
       }
+
+      context.imageMemory.set(img.fileName, {
+        ...prev,
+        ...(img.vespaImageScore > prev.vespaImageScore
+          ? {
+              vespaImageScore: img.vespaImageScore,
+              isUserAttachment: img.isUserAttachment,
+              docId: img.docId,
+            }
+          : {}),
+        lastMergedTurn: turn,
+      })
     }
   }
 }
@@ -886,7 +938,7 @@ export function getImageFileNamesForLlmFromStores(
   imageMemory: Map<string, ImageMemoryEntry>,
   options?: GetImageFileNamesForLlmOptions,
 ): { imageFileNamesForModel: string[]; total: number; dropped: number } {
-  const maxImages = options?.maxImages ?? 5 // Default to 5 images
+  const maxImages = options?.maxImages ?? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
   const docOrder = options?.docOrder
 
   const all = [...imageMemory.values()].sort(

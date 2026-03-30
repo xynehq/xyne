@@ -297,9 +297,9 @@ export const makeXyneJAFProvider = <Ctx>(
         // This mirrors the AI-SDK branch, but uses OpenAI-compatible `image_url`
         // content parts (data URL).
         const imageBudget =
-        IMAGE_CONTEXT_CONFIG.maxImagesPerCall && IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0
-          ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
-          : 5
+          IMAGE_CONTEXT_CONFIG.maxImagesPerCall !== undefined && IMAGE_CONTEXT_CONFIG.maxImagesPerCall >= 0
+            ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
+            : 5
         const { imageFileNamesForModel: selectedImages } = 
         IMAGE_CONTEXT_CONFIG.enabled 
         ?
@@ -351,7 +351,8 @@ export const makeXyneJAFProvider = <Ctx>(
                   selectedImagesCount: selectedImages.length,
                   turn: normalizeTurnNumber(runContext?.turnCount),
                   imageBaseDir: IMAGE_BASE_DIR,
-                  firstSelectedImage: selectedImages[0],
+                  // Avoid logging raw image filenames/identifiers.
+                  firstSelectedImageRedacted: true,
                 },
                 "No valid image parts built for selected images (LiteLLM path)",
               )
@@ -482,22 +483,25 @@ export const makeXyneJAFProvider = <Ctx>(
       //   agentName: agent.name,
       // })
       const imageBudget =
-        IMAGE_CONTEXT_CONFIG.maxImagesPerCall && IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0
+        IMAGE_CONTEXT_CONFIG.maxImagesPerCall !== undefined && IMAGE_CONTEXT_CONFIG.maxImagesPerCall >= 0
           ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
           : 5
-      const { imageFileNamesForModel: selectedImages } =
+      const { imageFileNamesForModel: selectedImages, total, dropped } =
         IMAGE_CONTEXT_CONFIG.enabled 
         ?
           getImageFileNamesForLlmFromStores(
             runContext.imageMemory,
             { maxImages: imageBudget },
           )
-        : { imageFileNamesForModel: [] }
+        : { imageFileNamesForModel: [], total: 0, dropped: 0 }
       Logger.debug(
         {
           email: runContext?.user?.email,
           turn: normalizeTurnNumber(runContext?.turnCount),
-          selectedImages,
+          selectedImagesCount: selectedImages.length,
+          imageBudget,
+          totalImages: total,
+          droppedImages: dropped,
         },
         "[JAF Provider] Prepared image attachments for agent call",
       )

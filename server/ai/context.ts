@@ -454,7 +454,7 @@ const constructFileContext = (
   isSelectedFiles?: boolean,
   allowChunkCitations?: boolean,
   renderMetadata: AnswerContextRenderMetadata | null = null,
-  inculdeImageBlock?: boolean,
+  includeImageBlock?: boolean,
 ): string => {
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
@@ -512,7 +512,7 @@ const constructFileContext = (
 
   let imageContent = ""
 
-  if (inculdeImageBlock) {
+  if (includeImageBlock) {
     let imageChunks: ScoredChunk[] = []
     const maxImageChunks =
       fields.image_chunks_summary?.length &&
@@ -562,7 +562,7 @@ ${fields.metadata ? `parent FolderName: ${folderName}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
-${inculdeImageBlock && fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
+${includeImageBlock && fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
 }
 
 // TODO: tell if workspace that this is an employee
@@ -884,7 +884,7 @@ const constructDataSourceFileContext = (
   userTimeZone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
-  inculdeImageBlock?: boolean,
+  includeImageBlock?: boolean,
 ): string => {
   let chunks: ScoredChunk[] = []
   if (fields.matchfeatures && fields.chunks_summary) {
@@ -921,7 +921,7 @@ const constructDataSourceFileContext = (
   }
 
   let imageContent = ""
-  if (inculdeImageBlock) {
+  if (includeImageBlock) {
     let imageChunks: ScoredChunk[] = []
     const maxImageChunks =
       fields.image_chunks_summary?.length &&
@@ -979,7 +979,7 @@ const constructDataSourceFileContext = (
   }
   ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
   ${content ? `Content: ${content}` : ""}
-  ${inculdeImageBlock && fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
+  ${includeImageBlock && fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
 }
 
 const constructCollectionFileContext = (
@@ -988,7 +988,7 @@ const constructCollectionFileContext = (
   isSelectedFiles?: boolean,
   allowChunkCitations?: boolean,
   renderMetadata: AnswerContextRenderMetadata | null = null,
-  inculdeImageBlock?: boolean,
+  includeImageBlock?: boolean,
 ): string => {
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
@@ -1049,7 +1049,7 @@ const constructCollectionFileContext = (
   }
 
   let imageContent = ""
-  if (inculdeImageBlock) {
+  if (includeImageBlock) {
     let imageChunks: ScoredChunk[] = []
     const maxImageChunks =
       fields.image_chunks_summary?.length &&
@@ -1096,7 +1096,7 @@ Mime Type: ${fields.mimeType || "N/A"}
 ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.createdBy ? `Uploaded By: ${fields.createdBy}` : ""}
 ${content ? `Content: ${content}` : ""}
-${inculdeImageBlock && fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
+${includeImageBlock && fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
 }
 
 type AiMetadataContext = string
@@ -1148,7 +1148,7 @@ export const answerContextMap = async (
   query?: string,
   precomputedDbContext?: Map<string, string>,
   renderMetadata: AnswerContextRenderMetadata | null = null,
-  inculdeImageBlock?: boolean,
+  includeImageBlock?: boolean,
 ): Promise<AiContext> => {
   if (
     searchResult.fields.sddocname === fileSchema ||
@@ -1227,7 +1227,7 @@ export const answerContextMap = async (
       isSelectedFiles,
       allowChunkCitations,
       renderMetadata,
-      inculdeImageBlock,
+      includeImageBlock,
     )
   } else if (searchResult.fields.sddocname === userSchema) {
     return constructUserContext(searchResult.fields)
@@ -1267,7 +1267,7 @@ export const answerContextMap = async (
       userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
-      inculdeImageBlock,
+      includeImageBlock,
     )
   } else if (searchResult.fields.sddocname === KbItemsSchema) {
     const kbFields = searchResult.fields as VespaKbFileSearch
@@ -1295,7 +1295,7 @@ export const answerContextMap = async (
       isSelectedFiles,
       allowChunkCitations,
       renderMetadata,
-      inculdeImageBlock,
+      includeImageBlock,
     )
   } else if (searchResult.fields.sddocname === ticketSchema) {
     return constructTicketContext(searchResult.fields)
