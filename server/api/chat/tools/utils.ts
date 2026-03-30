@@ -285,3 +285,29 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
     selectedItems: selectedItem,
   }
 }
+
+export function mapCitationsForAgentDocument(citations: unknown): Array<{
+  docId: string
+  title: string
+  url?: string
+  app: string
+  entity: string
+  chunkContent?: string
+}> {
+  if (!Array.isArray(citations)) return []
+  return citations
+    .filter((citation): citation is Citation => !!citation && typeof citation === "object")
+    .map((citation) => {
+      const entityValue =
+        citation.entity && typeof citation.entity === "object"
+          ? JSON.stringify(citation.entity)
+          : String(citation.entity ?? "")
+      return {
+        docId: citation.docId,
+        title: citation.title ?? citation.docId,
+        url: citation.url,
+        app: String(citation.app),
+        entity: entityValue,
+      }
+    })
+}

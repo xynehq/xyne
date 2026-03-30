@@ -31,9 +31,7 @@ jobs:
       
       - name: Install Dependencies (Server)
         working-directory: ./server
-        run: |
-          rm -rf node_modules
-          bun install --no-cache
+        run: bun install
 
       - name: Clear test cache
         working-directory: ./server
