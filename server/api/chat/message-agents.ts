@@ -26,6 +26,7 @@ import {
   type SelectAgent,
   getAgentByExternalIdWithPermissionCheck,
 } from "@/db/agent"
+import { insertAgentDocument } from "@/db/agentDocuments"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { getChatExternalIdsByAgentId, insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
 import { insertChatTrace } from "@/db/chatTrace"
