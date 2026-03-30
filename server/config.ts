@@ -76,7 +76,10 @@ const allowOpus46 = process.env.ALLOW_OPUS_4_6 === "true"
 const allowHaiku45 = process.env.ALLOW_HAIKU_4_5 === "true"
 const useAgenticFiltering = process.env.USE_AGENTIC_FILTERING === "true"
 const modelList = process.env.MODELS_LIST
-const enableImages = process.env.ENABLE_IMAGES === "true"
+// Image context is enabled by default.
+// Set `ENABLE_IMAGES=false` to explicitly disable in environments where you want to
+// avoid image ingestion/citation overhead.
+const enableImages = process.env.ENABLE_IMAGES !== "false"
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
   process.env.FILE_PROCESSING_WORKER_THREADS || "4",
