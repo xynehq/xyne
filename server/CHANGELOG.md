@@ -1,3 +1,10 @@
+# [3.45.0](https://github.com/xynehq/xyne/compare/v3.44.6...v3.45.0) (2026-03-30)
+
+
+### Features
+
+* added concurrenty to image ingestion across all chunking ([#1298](https://github.com/xynehq/xyne/issues/1298)) ([b65d033](https://github.com/xynehq/xyne/commit/b65d0335c92a6f5581bd6714316976872b09abaf))
+
 ## [3.44.6](https://github.com/xynehq/xyne/compare/v3.44.5...v3.44.6) (2026-03-30)
 
 
