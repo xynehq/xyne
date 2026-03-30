@@ -1,3 +1,10 @@
+## [3.44.6](https://github.com/xynehq/xyne/compare/v3.44.5...v3.44.6) (2026-03-30)
+
+
+### Bug Fixes
+
+* agent response saved to table and some bug fixes ([#1297](https://github.com/xynehq/xyne/issues/1297)) ([4e9da13](https://github.com/xynehq/xyne/commit/4e9da13c9d3f882968c6a28e96a527d1c3421ff4))
+
 ## [3.44.5](https://github.com/xynehq/xyne/compare/v3.44.4...v3.44.5) (2026-03-26)
 
 
