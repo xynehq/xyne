@@ -301,7 +301,7 @@ export const makeXyneJAFProvider = <Ctx>(
             ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
             : 5
         const { imageFileNamesForModel: selectedImages } = 
-        IMAGE_CONTEXT_CONFIG.enabled 
+        IMAGE_CONTEXT_CONFIG.enabled && runContext?.imageMemory
         ?
           getImageFileNamesForLlmFromStores(
             runContext.imageMemory,
@@ -487,7 +487,7 @@ export const makeXyneJAFProvider = <Ctx>(
           ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
           : 5
       const { imageFileNamesForModel: selectedImages, total, dropped } =
-        IMAGE_CONTEXT_CONFIG.enabled 
+        IMAGE_CONTEXT_CONFIG.enabled && runContext?.imageMemory
         ?
           getImageFileNamesForLlmFromStores(
             runContext.imageMemory,
