@@ -1926,6 +1926,12 @@ export async function afterToolExecutionHook(
 ): Promise<string | ToolResult | null> {
   const { state, executionTime, status, args } = hookContext
   const context = state.context as AgentRunContext
+  const resolvedToolCallId =
+    toolCallId ??
+    (hookContext.toolCall?.id != null &&
+    String(hookContext.toolCall.id).trim() !== ""
+      ? String(hookContext.toolCall.id)
+      : undefined)
 
   logContextMutation(
     context,
@@ -2045,7 +2051,7 @@ export async function afterToolExecutionHook(
       chatId,
       turnNumber: effectiveTurnNumber,
       query: toolQuery,
-      toolCallId,
+      toolCallId: resolvedToolCallId,
     })
     context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
     loggerWithChild({ email: context.user.email }).info(
@@ -2061,7 +2067,7 @@ export async function afterToolExecutionHook(
         targetId: lsData.target?.id,
         targetPath: lsData.target?.path,
         turnNumber: effectiveTurnNumber,
-        toolCallId,
+        toolCallId: resolvedToolCallId,
       })
       context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
       loggerWithChild({ email: context.user.email }).info(
@@ -2086,7 +2092,7 @@ export async function afterToolExecutionHook(
       turnNumber: effectiveTurnNumber,
       toolQuery,
       delegationRunId,
-      toolCallId,
+      toolCallId: resolvedToolCallId,
     })
     context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
     loggerWithChild({ email: context.user.email }).info(
@@ -2256,7 +2262,7 @@ export async function afterToolExecutionHook(
   toolFragments = fragmentsWithoutImageBlocks
 
   context.currentTurnArtifacts.toolOutputs.push({
-    toolCallId,
+    toolCallId: resolvedToolCallId,
     toolName,
     arguments: args,
     status: record.status,

@@ -288,9 +288,10 @@ export function mergeRawDocumentsIntoDocumentMemory(
   for (const raw of rawDocuments) {
     // Query-derived documents are never merged - they are immutable snapshots
     if (isQueryDependentDoc(raw.vespaHit)) {
-      const doc = createDocumentState(raw.docId, raw.source)
+      const docId = `${raw.docId}::q::${toolCallId}`
+      const doc = createDocumentState(docId, raw.source)
       doc.isQueryDoc = true
-      doc.baseDocId = `${raw.docId}::q::${toolCallId}`
+      doc.baseDocId = raw.docId
       doc.vespaHit = raw.vespaHit
 
       for (const ch of raw.chunks) {
@@ -729,12 +730,7 @@ async function buildFragmentsForDocList(
   docs: DocumentState[],
   options: GetFragmentsForSynthesisOptions
 ): Promise<MinimalAgentFragment[]> {
-  //Todo: no need for sorting again right? docs are already sorted by relevance before this is called, and we want to preserve that order for synthesis. Only need to slice if docs.length > DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM, but that should be rare since we evict before that.
-  const sorted = docs
-    .slice()
-    .sort((a, b) => b.relevanceScore - a.relevanceScore)
-
-  const uncachedWithVespa = sorted.filter(
+  const uncachedWithVespa = docs.filter(
     (d): d is DocumentState & { vespaHit: NonNullable<DocumentState["vespaHit"]> } =>
       !d.cachedFragment && !!d.vespaHit,
   )
@@ -779,7 +775,7 @@ async function buildFragmentsForDocList(
   const out: MinimalAgentFragment[] = []
   let uncachedVespaIndex = 0
 
-  for (const doc of sorted) {
+  for (const doc of docs) {
     if (doc.cachedFragment) {
       out.push(doc.cachedFragment)
       continue
