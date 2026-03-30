@@ -290,6 +290,7 @@ function mergeToolOutputsIntoCurrentTurnMemory(
       turnNumber,
       output.query ?? "",
       output.toolName,
+      output.toolCallId,
     )
   }
 
@@ -1921,6 +1922,7 @@ export async function afterToolExecutionHook(
   expectedResult: ToolExpectation | undefined,
   turnNumber: number,
   reasoningEmitter?: ReasoningEmitter,
+  toolCallId?: string,
 ): Promise<string | ToolResult | null> {
   const { state, executionTime, status, args } = hookContext
   const context = state.context as AgentRunContext
@@ -2033,11 +2035,6 @@ export async function afterToolExecutionHook(
     (result?.data && typeof result.data === "object" && typeof (result.data as { resultSummary?: string }).resultSummary === "string")
       ? (result.data as { resultSummary: string }).resultSummary
       : summarizeToolResultPayload(result)
-  const toolCallId =
-    hookContext.toolCall?.id !== undefined &&
-    hookContext.toolCall?.id !== null
-      ? String(hookContext.toolCall.id)
-      : undefined
 
   // 5b. Handle synthetic documents for non-Vespa tools (chat memory, ls)
   // These are derived documents, not retrievable truth sources
@@ -2259,6 +2256,7 @@ export async function afterToolExecutionHook(
   toolFragments = fragmentsWithoutImageBlocks
 
   context.currentTurnArtifacts.toolOutputs.push({
+    toolCallId,
     toolName,
     arguments: args,
     status: record.status,
@@ -5086,24 +5084,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
             }
           }
         }
-        if (initialAttachmentContext) {
-          const { rawDocuments, summary: attachmentSummary } =
-            initialAttachmentContext
-          if (rawDocuments.length > 0) {
-            mergeRawDocumentsIntoDocumentMemory(
-              agentContext.documentMemory,
-              rawDocuments,
-              MIN_TURN_NUMBER,
-              message,
-              "initial_attachment",
-            )
-          }
-          agentContext.chat.metadata = {
-            ...agentContext.chat.metadata,
-            initialAttachmentPhase: true,
-            initialAttachmentSummary: attachmentSummary,
-          }
-        }
 
         // Pass memory then attachments as low-privilege synthetic tool results.
         // We must also simulate the preceding assistant tool_call so JAF can
@@ -5125,7 +5105,24 @@ export async function MessageAgents(c: Context): Promise<Response> {
           )
         }
         if (initialAttachmentContext) {
-          const attachmentDocIds = initialAttachmentContext.rawDocuments.map(
+          const attachmentToolCallId = `synthetic-${ATTACHMENT_TOOL_MESSAGE}-${MIN_TURN_NUMBER}`
+          const { rawDocuments, summary: attachmentSummary } = initialAttachmentContext
+          if (rawDocuments.length > 0) {
+            mergeRawDocumentsIntoDocumentMemory(
+              agentContext.documentMemory,
+              rawDocuments,
+              MIN_TURN_NUMBER,
+              message,
+              "initial_attachment",
+              attachmentToolCallId,
+            )
+          }
+          agentContext.chat.metadata = {
+            ...agentContext.chat.metadata,
+            initialAttachmentPhase: true,
+            initialAttachmentSummary: attachmentSummary,
+          }
+          const attachmentDocIds = rawDocuments.map(
             (d) => d.docId,
           )
           const attachmentDocs = attachmentDocIds
@@ -5158,7 +5155,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
               MIN_TURN_NUMBER,
             )
           }
-          const attachmentToolCallId = `synthetic-${ATTACHMENT_TOOL_MESSAGE}-${MIN_TURN_NUMBER}`
           initialSyntheticMessages.push(
             buildSyntheticAssistantToolCallMessage({
               toolCallId: attachmentToolCallId,
@@ -5553,6 +5549,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               expectationForCall,
               turnForCall,
               toolScopedEmitter,
+              normalizedCallId,
             )
 
             return content

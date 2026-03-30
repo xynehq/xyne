@@ -118,6 +118,10 @@ export interface DocumentState {
   lifecycle?: SyntheticDocLifecycle
   /** When `lifecycle === "ttl"`, removed when `expiresAtTurn <= currentTurn` (see cleanupExpiredSyntheticDocs). */
   expiresAtTurn?: number
+  /** Whether this is a query-derived document (materialized view of query results). Query docs are never merged. */
+  isQueryDoc?: boolean
+  /** For query-derived docs: the original/base document ID this query result came from. */
+  baseDocId?: string
 }
 
 /** Limits for document memory eviction (see memory-architecture-across-turns.md). */
@@ -126,12 +130,16 @@ export const DOCUMENT_MEMORY_MAX_DOCS = 30
 export const DOCUMENT_MEMORY_MAX_CHUNKS_PER_DOC = 10
 /** Max documents to pass to LLM (context budget). */
 export const DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM = 10
+/** Max query-derived documents per base document to prevent explosion. */
+export const MAX_QUERY_DOCS_PER_BASE_DOC = 5
 
 // ============================================================================
 // TOOL OUTPUTS & TURN ARTIFACTS
 // ============================================================================
 
 export interface ToolExecutionRecordWithResult {
+  /** Tool call ID for this invocation. Used to create unique query document IDs. */
+  toolCallId?: string
   toolName: string
   arguments: Record<string, unknown>
   status: "success" | "error"

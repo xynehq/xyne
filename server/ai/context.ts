@@ -1151,10 +1151,11 @@ export const answerContextMap = async (
   includeImageBlock?: boolean,
 ): Promise<AiContext> => {
   if (
-    searchResult.fields.sddocname === fileSchema ||
+    query && 
+    (searchResult.fields.sddocname === fileSchema ||
     searchResult.fields.sddocname === dataSourceFileSchema ||
     searchResult.fields.sddocname === KbItemsSchema ||
-    searchResult.fields.sddocname === mailAttachmentSchema
+    searchResult.fields.sddocname === mailAttachmentSchema)
   ) {
     let mimeType
     let sheetName
@@ -1183,29 +1184,26 @@ export const answerContextMap = async (
       if (result.matchfeatures) {
         searchResult.fields.matchfeatures = result.matchfeatures
       }
-
-      if (query) {
-        const sheetResult = await processSheetQuery(
-          sheetName || "sheet",
-          searchResult.fields.chunks_summary,
-          query,
-          searchResult.fields.matchfeatures,
+      const sheetResult = await processSheetQuery(
+        sheetName || "sheet",
+        searchResult.fields.chunks_summary,
+        query,
+        searchResult.fields.matchfeatures,
+      )
+      if (sheetResult) {
+        const {
+          chunks_summary,
+          matchfeatures,
+          maxSummaryChunks: newMaxSummaryChunks,
+        } = sheetResult
+        searchResult.fields.chunks_summary = chunks_summary
+        searchResult.fields.matchfeatures = matchfeatures
+        maxSummaryChunks = newMaxSummaryChunks
+      } else {
+        maxSummaryChunks = Math.min(
+          searchResult.fields.chunks_summary?.length || 0,
+          maxSummaryChunks ?? 10,
         )
-        if (sheetResult) {
-          const {
-            chunks_summary,
-            matchfeatures,
-            maxSummaryChunks: newMaxSummaryChunks,
-          } = sheetResult
-          searchResult.fields.chunks_summary = chunks_summary
-          searchResult.fields.matchfeatures = matchfeatures
-          maxSummaryChunks = newMaxSummaryChunks
-        } else {
-          maxSummaryChunks = Math.min(
-            searchResult.fields.chunks_summary?.length || 0,
-            maxSummaryChunks ?? 10,
-          )
-        }
       }
     } else if (mimeType === "application/pdf") {
       const result = aggregateTableChunksForPdf(
