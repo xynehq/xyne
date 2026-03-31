@@ -56,24 +56,53 @@ export function normalizeKnowledgeBaseToolArgs(
     return args
   }
 
-  const normalizedArgs = { ...args } as RawSearchArgs
-  normalizedArgs.filters = tryParseStructuredJsonString(
-    normalizedArgs.filters,
-  )
+  let normalizedArgs = args as RawSearchArgs
+  const normalizedFilters = tryParseStructuredJsonString(normalizedArgs.filters)
+  if (normalizedFilters !== normalizedArgs.filters) {
+    normalizedArgs = {
+      ...normalizedArgs,
+      filters: normalizedFilters,
+    }
+  }
 
   if (!isPlainObject(normalizedArgs.filters)) {
     return normalizedArgs
   }
 
-  const filters = { ...normalizedArgs.filters } as RawSearchFilters
-  filters.targets = tryParseStructuredJsonString(filters.targets)
-
-  if (Array.isArray(filters.targets)) {
-    filters.targets = filters.targets.map((target) =>
-      tryParseStructuredJsonString(target),
-    )
+  let filters = normalizedArgs.filters as RawSearchFilters
+  const normalizedTargets = tryParseStructuredJsonString(filters.targets)
+  if (normalizedTargets !== filters.targets) {
+    filters = {
+      ...filters,
+      targets: normalizedTargets,
+    }
   }
 
-  normalizedArgs.filters = filters
-  return normalizedArgs
+  if (!Array.isArray(filters.targets)) {
+    return filters === normalizedArgs.filters
+      ? normalizedArgs
+      : {
+          ...normalizedArgs,
+          filters,
+        }
+  }
+
+  const parsedTargets = filters.targets.map((target) =>
+    tryParseStructuredJsonString(target),
+  )
+  const targetsChanged = parsedTargets.some(
+    (target, index) => target !== filters.targets[index],
+  )
+
+  if (!targetsChanged && filters === normalizedArgs.filters) {
+    return normalizedArgs
+  }
+
+  return {
+    ...normalizedArgs,
+    filters: {
+      ...filters,
+      targets: targetsChanged ? parsedTargets : filters.targets,
+    },
+  }
 }
