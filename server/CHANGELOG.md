@@ -1,3 +1,10 @@
+# [3.46.0](https://github.com/xynehq/xyne/compare/v3.45.0...v3.46.0) (2026-03-31)
+
+
+### Features
+
+* ls tool fixes ([#1296](https://github.com/xynehq/xyne/issues/1296)) ([b58ac6b](https://github.com/xynehq/xyne/commit/b58ac6b2f4f146b853c53ae3aef662db84fe7eb2)), closes [#1300](https://github.com/xynehq/xyne/issues/1300)
+
 # [3.45.0](https://github.com/xynehq/xyne/compare/v3.44.6...v3.45.0) (2026-03-30)
 
 
