@@ -14,10 +14,16 @@ process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY ??=
 
 const {
   __knowledgeBaseFlowInternals,
+  LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
+  LsKnowledgeBaseInputSchema,
   canonicalizeKnowledgeBasePath,
   executeLsKnowledgeBase,
   executeSearchKnowledgeBase,
 } = await import("@/api/chat/tools/knowledgeBaseFlow")
+const { buildAgentPromptAddendum } = await import(
+  "@/api/chat/agentPromptCreation"
+)
+const { getToolSchema } = await import("@/api/chat/tool-schemas")
 const { mergeCollectionItemMetadata } = await import("@/queue/fileProcessor")
 
 const createCollection = (overrides: Partial<Collection>): Collection => ({
@@ -335,6 +341,17 @@ function createContext(itemIds: string[]) {
   } as any
 }
 
+function createUserScopedContext() {
+  return {
+    user: {
+      email: "tester@example.com",
+      numericId: 7,
+      workspaceNumericId: 9,
+    },
+    agentPrompt: undefined,
+  } as any
+}
+
 describe("canonicalizeKnowledgeBasePath", () => {
   test("normalizes root, repeated separators, trailing separators, and preserves case", () => {
     expect(canonicalizeKnowledgeBasePath("")).toBe("/")
@@ -452,6 +469,129 @@ describe("lsKnowledgeBase", () => {
     })
   })
 
+  test("lists user-owned collections without scanning collection trees", async () => {
+    const repo = createRepo()
+    const result = await executeLsKnowledgeBase(
+      withLsDefaults({
+        metadata: true,
+      }),
+      createUserScopedContext(),
+      repo,
+    )
+
+    expect(result.status).toBe("success")
+    expect(repo.counters.listCollectionItems).toBe(0)
+    expect(
+      (result as any).data.entries.map((entry: any) => entry.name),
+    ).toEqual(["Alpha", "Beta"])
+  })
+
+  test("lists exact folder roots for partial agent-scoped access", async () => {
+    const repo = createRepo()
+    const result = await executeLsKnowledgeBase(
+      withLsDefaults({
+        depth: 3,
+        metadata: true,
+      }),
+      createContext([`clfd-${projectsFolder.id}`]),
+      repo,
+    )
+
+    expect(result.status).toBe("success")
+    expect(repo.counters.listCollectionItems).toBe(0)
+    expect((result as any).data.entries).toEqual([
+      {
+        id: projectsFolder.id,
+        type: "folder",
+        name: "Projects",
+        path: "/Projects",
+        collection_id: collectionAlpha.id,
+        parent_id: null,
+        depth: 0,
+        details: {
+          type: "folder",
+          name: "Projects",
+          collection_id: collectionAlpha.id,
+          mime_type: null,
+          updated_at: projectsFolder.updatedAt,
+          created_at: projectsFolder.createdAt,
+          metadata: { section: "root" },
+          total_file_count: 2,
+        },
+      },
+    ])
+  })
+
+  test("lists exact file roots for partial agent-scoped access", async () => {
+    const repo = createRepo()
+    const result = await executeLsKnowledgeBase(
+      withLsDefaults({
+        depth: 4,
+      }),
+      createContext([`clf-${specFile.id}`]),
+      repo,
+    )
+
+    expect(result.status).toBe("success")
+    expect(repo.counters.listCollectionItems).toBe(0)
+    expect((result as any).data.entries).toEqual([
+      {
+        id: specFile.id,
+        type: "file",
+        name: "spec.md",
+        path: "/Projects/API/spec.md",
+        collection_id: collectionAlpha.id,
+        parent_id: apiFolder.id,
+        depth: 0,
+      },
+    ])
+  })
+
+  test("keeps full collection roots and exact partial roots in untargeted agent-scoped ls", async () => {
+    const repo = createRepo()
+    const result = await executeLsKnowledgeBase(
+      withLsDefaults({
+        metadata: true,
+      }),
+      createContext([
+        `cl-${collectionBeta.id}`,
+        `clfd-${projectsFolder.id}`,
+        `clf-${specFile.id}`,
+      ]),
+      repo,
+    )
+
+    expect(result.status).toBe("success")
+    expect((result as any).data.entries.map((entry: any) => entry.id)).toEqual([
+      collectionBeta.id,
+      projectsFolder.id,
+      specFile.id,
+    ])
+    expect((result as any).data.entries.map((entry: any) => entry.type)).toEqual(
+      ["collection", "folder", "file"],
+    )
+    expect((result as any).data.entries[1].depth).toBe(0)
+    expect((result as any).data.entries[2].depth).toBe(0)
+  })
+
+  test("suppresses narrower partial roots when a full collection root exists", async () => {
+    const repo = createRepo()
+    const result = await executeLsKnowledgeBase(
+      withLsDefaults({}),
+      createContext([
+        `cl-${collectionAlpha.id}`,
+        `clfd-${projectsFolder.id}`,
+        `clf-${specFile.id}`,
+      ]),
+      repo,
+    )
+
+    expect(result.status).toBe("success")
+    expect((result as any).data.entries.map((entry: any) => entry.id)).toEqual([
+      collectionAlpha.id,
+    ])
+  })
+
   test("lists collection contents with depth, pagination, and metadata", async () => {
     const repo = createRepo()
     const result = await executeLsKnowledgeBase(
@@ -490,6 +630,7 @@ describe("lsKnowledgeBase", () => {
       repo,
     )
     expect(folderResult.status).toBe("success")
+    expect((folderResult as any).data.target.type).toBe("folder")
     expect(
       (folderResult as any).data.entries.map((entry: any) => entry.id),
     ).toEqual([apiFolder.id, specFile.id])
@@ -503,6 +644,7 @@ describe("lsKnowledgeBase", () => {
       repo,
     )
     expect(fileResult.status).toBe("success")
+    expect((fileResult as any).data.target.type).toBe("file")
     expect((fileResult as any).data.entries).toHaveLength(1)
     expect((fileResult as any).data.entries[0]).toMatchObject({
       id: specFile.id,
@@ -522,9 +664,54 @@ describe("lsKnowledgeBase", () => {
       repo,
     )
     expect(pathResult.status).toBe("success")
+    expect((pathResult as any).data.target.type).toBe("folder")
     expect(
       (pathResult as any).data.entries.map((entry: any) => entry.id),
     ).toEqual([specFile.id])
+
+    const rootPathResult = await executeLsKnowledgeBase(
+      withLsDefaults({
+        target: {
+          type: "path",
+          collectionId: collectionAlpha.id,
+          path: "/",
+        },
+      }),
+      createContext([`cl-${collectionAlpha.id}`]),
+      repo,
+    )
+    expect(rootPathResult.status).toBe("success")
+    expect((rootPathResult as any).data.target.type).toBe("collection")
+
+    const filePathResult = await executeLsKnowledgeBase(
+      withLsDefaults({
+        target: {
+          type: "path",
+          collectionId: collectionAlpha.id,
+          path: "/Projects/API/spec.md",
+        },
+      }),
+      createContext([`cl-${collectionAlpha.id}`]),
+      repo,
+    )
+    expect(filePathResult.status).toBe("success")
+    expect((filePathResult as any).data.target.type).toBe("file")
+  })
+
+  test("partial folder scope does not imply collection-root browse access", async () => {
+    const repo = createRepo()
+    const result = await executeLsKnowledgeBase(
+      withLsDefaults({
+        target: { type: "collection", collectionId: collectionAlpha.id },
+      }),
+      createContext([`clfd-${projectsFolder.id}`]),
+      repo,
+    )
+
+    expect(result.status).toBe("error")
+    expect((result as any).error.message).toContain(
+      "outside the current KB scope",
+    )
   })
 
   test("rejects out-of-scope collection and path targets before loading projections", async () => {
@@ -955,6 +1142,7 @@ describe("searchKnowledgeBase", () => {
           entity: KnowledgeBaseEntity.File,
         },
         confidence: 0.91,
+        visibleChunkIndices: [],
       },
     ]
 
@@ -1005,6 +1193,190 @@ describe("searchKnowledgeBase", () => {
         rawDocuments: [],
       },
     })
+  })
+
+  test("reuses a returned folder root row directly as a folder search target", async () => {
+    const repo = createRepo()
+    const lsResult = await executeLsKnowledgeBase(
+      withLsDefaults({}),
+      createContext([`clfd-${projectsFolder.id}`]),
+      repo,
+    )
+
+    expect(lsResult.status).toBe("success")
+    const folderRow = (lsResult as any).data.entries[0]
+
+    let capturedSelections: unknown = null
+    const searchExecutor = mock(
+      async (options: any): Promise<{
+        fragments: MinimalAgentFragment[]
+        rawDocuments: any[]
+      }> => {
+        capturedSelections = options.collectionSelections
+        return {
+          fragments: [
+            {
+              id: "folder-hit",
+              content: "API search hit",
+              source: {
+                docId: "file-spec",
+                title: "spec.md",
+                url: "",
+                app: Apps.KnowledgeBase,
+                entity: KnowledgeBaseEntity.File,
+              },
+              confidence: 0.9,
+              visibleChunkIndices: [],
+            },
+          ],
+          rawDocuments: [],
+        }
+      },
+    ) as unknown as SearchExecutor
+
+    const searchResult = await executeSearchKnowledgeBase(
+      {
+        query: "api",
+        filters: {
+          targets: [{ type: "folder", folderId: folderRow.id }],
+        },
+      },
+      createContext([`clfd-${projectsFolder.id}`]),
+      {
+        repo,
+        searchExecutor,
+      },
+    )
+
+    expect(searchResult.status).toBe("success")
+    expect(capturedSelections).toEqual([
+      {
+        collectionFolderIds: [projectsFolder.id],
+      },
+    ])
+  })
+
+  test("reuses a returned file root row directly as a file search target", async () => {
+    const repo = createRepo()
+    const lsResult = await executeLsKnowledgeBase(
+      withLsDefaults({}),
+      createContext([`clf-${specFile.id}`]),
+      repo,
+    )
+
+    expect(lsResult.status).toBe("success")
+    const fileRow = (lsResult as any).data.entries[0]
+
+    let capturedSelections: unknown = null
+    const searchExecutor = mock(
+      async (options: any): Promise<{
+        fragments: MinimalAgentFragment[]
+        rawDocuments: any[]
+      }> => {
+        capturedSelections = options.collectionSelections
+        return {
+          fragments: [
+            {
+              id: "file-hit",
+              content: "spec hit",
+              source: {
+                docId: "file-spec",
+                title: "spec.md",
+                url: "",
+                app: Apps.KnowledgeBase,
+                entity: KnowledgeBaseEntity.File,
+              },
+              confidence: 0.9,
+              visibleChunkIndices: [],
+            },
+          ],
+          rawDocuments: [],
+        }
+      },
+    ) as unknown as SearchExecutor
+
+    const searchResult = await executeSearchKnowledgeBase(
+      {
+        query: "spec",
+        filters: {
+          targets: [{ type: "file", fileId: fileRow.id }],
+        },
+      },
+      createContext([`clf-${specFile.id}`]),
+      {
+        repo,
+        searchExecutor,
+      },
+    )
+
+    expect(searchResult.status).toBe("success")
+    expect(capturedSelections).toEqual([
+      {
+        collectionFileIds: [specFile.id],
+      },
+    ])
+  })
+})
+
+describe("ls contract metadata", () => {
+  test("uses a dedicated ls output schema and rejects unresolved path target types", async () => {
+    const schema = getToolSchema("ls")
+    expect(schema?.outputSchema).not.toBeUndefined()
+
+    const validOutput = await executeLsKnowledgeBase(
+      withLsDefaults({
+        target: {
+          type: "path",
+          collectionId: collectionAlpha.id,
+          path: "/Projects/API",
+        },
+      }),
+      createContext([`cl-${collectionAlpha.id}`]),
+      createRepo(),
+    )
+
+    expect(validOutput.status).toBe("success")
+    expect(schema?.outputSchema.safeParse((validOutput as any).data).success).toBe(
+      true,
+    )
+    expect(
+      schema?.outputSchema.safeParse({
+        ...(validOutput as any).data,
+        target: {
+          ...(validOutput as any).data.target,
+          type: "path",
+        },
+      }).success,
+    ).toBe(false)
+
+    expect(
+      schema?.outputSchema.safeParse(schema?.examples?.[0]?.output).success,
+    ).toBe(true)
+    expect(
+      schema?.outputSchema.safeParse(schema?.examples?.[1]?.output).success,
+    ).toBe(true)
+  })
+
+  test("describes ls as root discovery when target is omitted", () => {
+    expect(LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION).toContain(
+      "current knowledge-base scope",
+    )
+    expect(LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION).toContain(
+      "root discovery only",
+    )
+    expect(LsKnowledgeBaseInputSchema.shape.target.description).toContain(
+      "current KB roots",
+    )
+    expect(LsKnowledgeBaseInputSchema.shape.depth.description).toContain(
+      "When `target` is omitted",
+    )
+
+    const prompt = buildAgentPromptAddendum()
+    expect(prompt).toContain("current KB roots")
+    expect(prompt).toContain("folder/file roots")
+    expect(prompt).toContain(
+      "Do not promote a returned folder/file row into a collection target",
+    )
   })
 })
 

@@ -368,6 +368,7 @@ async function runSearchAndCapture(params: any) {
             entity: KnowledgeBaseEntity.File,
           },
           confidence: 0.9,
+          visibleChunkIndices: [],
         },
       ],
       rawDocuments: [],

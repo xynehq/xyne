@@ -154,6 +154,7 @@ export function buildMCPJAFTools(
                 content: formattedContent,
                 source: syntheticSource,
                 confidence: 0.7,
+                visibleChunkIndices: [],
               })
             }
 

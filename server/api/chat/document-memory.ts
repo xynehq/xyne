@@ -24,7 +24,10 @@ import {
   DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM,
 } from "./agent-schemas"
 import type { Citation, MinimalAgentFragment } from "./types"
-import { answerContextMap } from "@/ai/context"
+import {
+  answerContextMap,
+  type AnswerContextRenderMetadata,
+} from "@/ai/context"
 import config from "@/config"
 import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
 import type { UserMetadataType } from "@/types"
@@ -585,6 +588,7 @@ async function buildFragmentsForDocList(
   docs: DocumentState[],
   options: GetFragmentsForSynthesisOptions
 ): Promise<MinimalAgentFragment[]> {
+  //Todo: no need for sorting again right? docs are already sorted by relevance before this is called, and we want to preserve that order for synthesis. Only need to slice if docs.length > DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM, but that should be rare since we evict before that.
   const sorted = docs
     .slice()
     .sort((a, b) => b.relevanceScore - a.relevanceScore)
@@ -643,6 +647,7 @@ async function buildFragmentsForDocList(
     }
 
     let content: string
+    let visibleChunkIndices: number[] = []
     const confidence =
       doc.chunks.size > 0
         ? Math.max(...Array.from(doc.chunks.values()).map((c) => c.confidence))
@@ -654,6 +659,9 @@ async function buildFragmentsForDocList(
         uncachedVespaIndex < chunksPerDocument.length
           ? chunksPerDocument[uncachedVespaIndex]
           : config.maxDefaultSummary
+      const renderMetadata: AnswerContextRenderMetadata = {
+        visibleChunkIndices: [],
+      }
       content = await answerContextMap(
         normalizedHit,
         metadataForContext,
@@ -662,7 +670,9 @@ async function buildFragmentsForDocList(
         true,
         builtUserQuery || undefined,
         precomputedDbContext,
+        renderMetadata,
       )
+      visibleChunkIndices = renderMetadata.visibleChunkIndices
       uncachedVespaIndex++
     } else {
       // Non-Vespa docs use default chunk budget (Vespa-specific budgets don't apply here)
@@ -687,6 +697,7 @@ async function buildFragmentsForDocList(
       content,
       source: doc.source,
       confidence,
+      visibleChunkIndices,
     }
     doc.cachedFragment = fragment
     const extractedImages = extractImagesFromFragmentContent(

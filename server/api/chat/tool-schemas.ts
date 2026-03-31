@@ -23,6 +23,7 @@ import { timeRangeSchema } from "./tools/schemas"
 import { XyneTools } from "@/shared/types"
 import {
   LsKnowledgeBaseInputSchema,
+  LsKnowledgeBaseOutputSchema,
   LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
   SEARCH_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
   SearchKnowledgeBaseInputSchema,
@@ -686,7 +687,7 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
     description: LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
     category: ToolCategory.Metadata,
     inputSchema: LsKnowledgeBaseInputSchema,
-    outputSchema: ToolOutputSchema,
+    outputSchema: LsKnowledgeBaseOutputSchema,
     examples: [
       {
         scenario: "Inspect a known collection root before deciding whether to search inside it",
@@ -700,27 +701,61 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
           metadata: false,
         },
         output: {
-          result: "Listed the top-level folders and files in the collection.",
-          contexts: [],
+          target: {
+            type: "collection" as const,
+            collection_id: "kb-collection-123",
+            id: "kb-collection-123",
+            path: "/",
+          },
+          entries: [
+            {
+              id: "kb-folder-1",
+              type: "folder" as const,
+              name: "Policies",
+              path: "/Policies",
+              collection_id: "kb-collection-123",
+              parent_id: null,
+              depth: 1,
+            },
+          ],
+          total: 1,
+          offset: 0,
+          limit: 1,
         },
       },
       {
         scenario:
-          "Inspect a folder with metadata so you can keep only PDF files for a later KB search",
+          "Discover roots in partial agent-scoped access before targeting a folder or file directly",
         input: {
-          target: {
-            type: "path" as const,
-            collectionId: "kb-collection-123",
-            path: "/Policies/Security",
-          },
-          depth: 2,
-          limit: 50,
+          limit: 20,
           metadata: true,
         },
         output: {
-          result:
-            "Listed files with mime types and timestamps so PDF rows can be selected for targeted search.",
-          contexts: [],
+          target: null,
+          entries: [
+            {
+              id: "kb-folder-security",
+              type: "folder" as const,
+              name: "Security",
+              path: "/Policies/Security",
+              collection_id: "kb-collection-123",
+              parent_id: "kb-folder-policies",
+              depth: 0,
+              details: {
+                type: "folder",
+                name: "Security",
+                collection_id: "kb-collection-123",
+                mime_type: null,
+                updated_at: "2025-01-02T00:00:00.000Z",
+                created_at: "2025-01-01T00:00:00.000Z",
+                metadata: {},
+                total_file_count: 4,
+              },
+            },
+          ],
+          total: 1,
+          offset: 0,
+          limit: 1,
         },
       },
     ],

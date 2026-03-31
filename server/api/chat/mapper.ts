@@ -62,6 +62,7 @@ export const mapGithubToolResponse = (
           url: issueData.html_url,
         },
         confidence: 1.0,
+        visibleChunkIndices: [],
       })
       break
     }
@@ -81,6 +82,7 @@ export const mapGithubToolResponse = (
               url: item.html_url,
             },
             confidence: 0.9,
+            visibleChunkIndices: [],
           })
         })
         formattedContent = `Found ${searchData.total_count} repositories. Displaying top ${searchData.items.length}.`
@@ -103,6 +105,7 @@ export const mapGithubToolResponse = (
           url: prData.html_url,
         },
         confidence: 1.0,
+        visibleChunkIndices: [],
       })
       break
     }
@@ -126,6 +129,7 @@ export const mapGithubToolResponse = (
           url: commitData.html_url,
         },
         confidence: 1.0,
+        visibleChunkIndices: [],
       })
       break
     }
@@ -143,6 +147,7 @@ export const mapGithubToolResponse = (
           url: meData.html_url,
         },
         confidence: 1.0,
+        visibleChunkIndices: [],
       })
       break
     }
@@ -160,6 +165,7 @@ export const mapGithubToolResponse = (
           url: "",
         },
         confidence: 1.0,
+        visibleChunkIndices: [],
       })
       break
     }
@@ -179,6 +185,7 @@ export const mapGithubToolResponse = (
               url: item.html_url,
             },
             confidence: 0.9,
+            visibleChunkIndices: [],
           })
         })
         formattedContent = `Found ${searchData.total_count} issues. Displaying top ${searchData.items.length}.`
@@ -203,6 +210,7 @@ export const mapGithubToolResponse = (
               url: file.blob_url,
             },
             confidence: 1.0,
+            visibleChunkIndices: [],
           })
         })
         formattedContent = `Found ${filesData.length} files in PR. Displaying up to ${filesData.length}.`
@@ -228,6 +236,7 @@ export const mapGithubToolResponse = (
               url: tag.commit.url,
             },
             confidence: 1.0,
+            visibleChunkIndices: [],
           })
         })
         formattedContent = `Found ${tagsData.length} tags. Displaying up to ${tagsData.length}.`
@@ -252,6 +261,7 @@ export const mapGithubToolResponse = (
               url: branch.commit.url,
             },
             confidence: 1.0,
+            visibleChunkIndices: [],
           })
         })
         formattedContent = `Found ${branchesData.length} branches. Displaying up to ${branchesData.length}.`
@@ -276,6 +286,7 @@ export const mapGithubToolResponse = (
               url: comment.html_url,
             },
             confidence: 1.0,
+            visibleChunkIndices: [],
           })
         })
         formattedContent = `Found ${commentsData.length} comments. Displaying up to ${commentsData.length}.`
@@ -304,6 +315,7 @@ export const mapGithubToolResponse = (
               url: user.html_url,
             },
             confidence: 0.9,
+            visibleChunkIndices: [],
           })
         })
         formattedContent = `Found ${usersData.total_count} users. Displaying top ${parsedJson.items.length}.`
@@ -328,6 +340,7 @@ export const mapGithubToolResponse = (
               url: item.html_url,
             },
             confidence: 0.9,
+            visibleChunkIndices: [],
           })
         })
         formattedContent = `Found ${codeData.total_count} code results. Displaying top ${codeData.items.length}.`
@@ -352,6 +365,7 @@ export const mapGithubToolResponse = (
               url: item.html_url,
             },
             confidence: 1.0,
+            visibleChunkIndices: [],
           })
         })
         formattedContent = `Listed ${dirData.length} items in directory.`
@@ -380,6 +394,7 @@ export const mapGithubToolResponse = (
             url: fileData.html_url,
           },
           confidence: 1.0,
+          visibleChunkIndices: [],
         })
       } else {
         formattedContent = "File content not available or unexpected format."
@@ -402,6 +417,7 @@ export const mapGithubToolResponse = (
               url: review.html_url,
             },
             confidence: 1.0,
+            visibleChunkIndices: [],
           })
         })
         formattedContent = `Found ${reviewsData.length} reviews. Displaying up to ${reviewsData.length}.`
@@ -440,6 +456,7 @@ export const mapGithubToolResponse = (
           url: parsedJson.html_url || parsedJson.url || undefined,
         },
         confidence: 0.8,
+        visibleChunkIndices: [],
       })
   }
   return { formattedContent, newFragments }

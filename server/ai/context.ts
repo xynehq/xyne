@@ -38,6 +38,26 @@ import { chunkSheetWithHeaders } from "@/sheetChunk"
 import { MIME_DATABASE_SCHEMA } from "@/integrations/database"
 import { IMAGE_CONTEXT_CONFIG } from "@/config"
 
+export interface AnswerContextRenderMetadata {
+  visibleChunkIndices: number[]
+}
+
+const assignVisibleChunkIndices = (
+  renderMetadata: AnswerContextRenderMetadata | null,
+  chunks: ScoredChunk[],
+  maxSummaryChunks: number,
+  chunkPositions: number[],
+) => {
+  if (!renderMetadata) return
+  renderMetadata.visibleChunkIndices = chunks
+    .slice(0, maxSummaryChunks)
+    .map((v) => chunkPositions?.[v.index] ?? v.index)
+    .filter(
+      (chunkIndex): chunkIndex is number =>
+        typeof chunkIndex === "number" && Number.isFinite(chunkIndex),
+    )
+}
+
 // Utility function to extract header from chunks and remove headers from each chunk
 const extractHeaderAndDataChunks = (
   chunks_summary:
@@ -433,6 +453,7 @@ const constructFileContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
   allowChunkCitations?: boolean,
+  renderMetadata: AnswerContextRenderMetadata | null = null,
 ): string => {
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
@@ -460,6 +481,12 @@ const constructFileContext = (
 
   let content = ""
   if (allowChunkCitations && fields.chunks_pos_summary) {
+    assignVisibleChunkIndices(
+      renderMetadata,
+      chunks,
+      maxSummaryChunks ?? chunks.length,
+      fields.chunks_pos_summary as number[],
+    )
     content = chunks
       .map((v) => {
         const originalIndex = fields.chunks_pos_summary?.[v.index] ?? v.index
@@ -953,6 +980,7 @@ const constructCollectionFileContext = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
   allowChunkCitations?: boolean,
+  renderMetadata: AnswerContextRenderMetadata | null = null,
 ): string => {
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
@@ -981,6 +1009,12 @@ const constructCollectionFileContext = (
 
   let content = ""
   if (allowChunkCitations && fields.chunks_pos_summary) {
+    assignVisibleChunkIndices(
+      renderMetadata,
+      chunks,
+      maxSummaryChunks ?? chunks.length,
+      fields.chunks_pos_summary as number[],
+    )
     content = chunks
       .map((v) => {
         const originalIndex = fields.chunks_pos_summary?.[v.index] ?? v.index
@@ -1103,6 +1137,7 @@ export const answerContextMap = async (
   allowChunkCitations?: boolean,
   query?: string,
   precomputedDbContext?: Map<string, string>,
+  renderMetadata: AnswerContextRenderMetadata | null = null,
 ): Promise<AiContext> => {
   if (
     searchResult.fields.sddocname === fileSchema ||
@@ -1180,6 +1215,7 @@ export const answerContextMap = async (
       maxSummaryChunks,
       isSelectedFiles,
       allowChunkCitations,
+      renderMetadata,
     )
   } else if (searchResult.fields.sddocname === userSchema) {
     return constructUserContext(searchResult.fields)
@@ -1245,6 +1281,7 @@ export const answerContextMap = async (
       maxSummaryChunks,
       isSelectedFiles,
       allowChunkCitations,
+      renderMetadata,
     )
   } else if (searchResult.fields.sddocname === ticketSchema) {
     return constructTicketContext(searchResult.fields)

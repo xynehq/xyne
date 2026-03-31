@@ -923,8 +923,8 @@ This is the context of the agent, it is very important to follow this. You MUST 
 
 ## File & Chunk Formatting (CRITICAL)
 - Each file starts with a header line exactly like:
-  Index {docId} {file context begins here...}
-- \`docId\` is a unique identifier for that file (e.g., 0, 1, 2, etc.).
+  Index {sourceIndex} {file context begins here...}
+- \`sourceIndex\` is the numeric source index for that file (e.g., 1, 2, 3, etc.).
 - Inside the file context, text is split into chunks.
 - Each chunk should have a square bracketed numeric index, e.g.: [0], [1], [2], etc. This is the chunk index within that file.
 - If a chunk does not include an explicit [n], assign a deterministic 0-based fallback chunkIndex by chunk order in that file.
@@ -973,31 +973,29 @@ ${retrievedContext}
 # Guidelines for Response
 1. Data Interpretation:
    - Use ONLY the provided files and their chunks as your knowledge base.
-   - Treat every file header \`Index {docId} ...\` as the start of a new document.
+   - Treat every file header \`Index {sourceIndex} {file context begins here...}\` as the start of a new document.
    - Treat every square bracketed number like [0], [1], [2] as the authoritative chunk index within that document.
    - If dates exist, interpret them relative to the user's timezone when paraphrasing.
 2. Response Structure:
    - Start with the most relevant facts from the chunks across files.
    - Keep order chronological when it helps comprehension.
-   - Every factual statement MUST cite the exact chunk it came from using the format:
-     K[docId_chunkIndex]
-     where:
-       - \`docId\` is taken from the file header line ("Index {docId} ...").
-       - \`chunkIndex\` is the square bracketed number prefixed on that chunk within the same file; if absent, use the deterministic fallback chunkIndex by chunk order.
+   - Cite chunk-grounded claims as \`K[sourceIndex_chunkIndex]\`.
+   - Cite source-level or non-chunked claims as \`[sourceIndex]\`.
    - Examples:
-     - Single citation: "X is true K[12_3]."
-     - Two citations in one sentence (from different files or chunks): "X K[12_3] and Y K[7_0]."
+     - Single source-level citation: "The file title confirms the source[2]."
+     - Chunk citation: "X is true K[12_3]."
+     - Two citations in one sentence: "X K[12_3] and Y[7]."
    - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
-3. Citation Rules (DOCUMENT+CHUNK LEVEL ONLY):
-   - ALWAYS cite at the chunk level with the K[docId_chunkIndex] format.
-   - Don't change the format of the citation; it must be exactly K[docId_chunkIndex]. docId first then chunkIndex, separated by an underscore, all within square brackets and prefixed with K.
-   - Even if there is only one document index (e.g., Index 0), you must still include the document index in the citation (e.g., K[0_3]).
-   - Never cite only the document index or only the chunk index; both must be included in the citation.
+3. Citation Rules:
+   - Use \`K[sourceIndex_chunkIndex]\` only when a chunk marker exists for the supporting evidence.
+   - Use \`[sourceIndex]\` when the source has no chunk markers or the claim is source-level metadata.
+   - Don't change the format of the citation; chunk citations must be exactly K[sourceIndex_chunkIndex].
+   - Even if there is only one document index, keep the source index in the citation.
    - Place the citation immediately after the relevant claim.
    - Do NOT group indices inside one set of brackets (WRONG: "K[12_3,7_1]").
-   - If a sentence draws on two distinct chunks (possibly from different files), include two separate citations inline, e.g., "... K[12_3] ... K[7_1]".
-   - Only cite information that appears verbatim or is directly inferable from the cited chunk.
-   - If you cannot ground a claim to a specific chunk, do not make the claim.
+   - If a sentence draws on two distinct sources/chunks, include two separate citations inline.
+   - Only cite information that appears verbatim or is directly inferable from the cited source/chunk.
+   - If you cannot ground a claim, do not make the claim.
 
 4. Quality Assurance:
    - Cross-check across multiple chunks/files when available and briefly note inconsistencies if they exist.
@@ -1006,7 +1004,7 @@ ${retrievedContext}
 # Response Format
 You must respond in valid JSON format with the following structure:
 {
-  "answer": "Your detailed answer to the query based ONLY on the provided files, with citations in K[docId_chunkIndex] format, or null if not found. This can be well formatted markdown inside the answer field."
+  "answer": "Your detailed answer to the query based ONLY on the provided files, with citations in [N] or K[N_chunk] format, or null if not found. This can be well formatted markdown inside the answer field."
 }
 
 If NO relevant items are found in Retrieved Context or the context doesn't match the query:
@@ -1022,7 +1020,7 @@ If NO relevant items are found in Retrieved Context or the context doesn't match
 - Consider relationships between pieces of content across files.
 - If no clear answer is found in the provided chunks, set "answer" to null.
 - Do not explain why an answer wasn't found; simply set it to null.
-- Citations must use the exact K[docId_chunkIndex] format.
+- Citations must use the exact [N] or K[N_chunk] formats described above.
 - Keep citations natural and relevant—don't overcite.
 - Ensure all mentions of dates/times are expressed in the user's local time zone.
 # Error Handling
@@ -2189,4 +2187,3 @@ REMEMBER:
 # FINAL VALIDATION CHECKPOINT
 Before responding, verify that EVERY item in your response includes the [Index]. If any item is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
 `
-

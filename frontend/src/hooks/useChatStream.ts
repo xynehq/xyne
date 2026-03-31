@@ -12,6 +12,7 @@ import {
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
 import { CharacterAnimationManager } from "@/utils/streamRenderer"
+import { appendImageCitation } from "./imageCitationState"
 
 interface DeepResearchStep {
   id: string
@@ -587,7 +588,10 @@ export const startStream = async (
 
   streamState.es.addEventListener(ChatSSEvents.ImageCitationUpdate, (event) => {
     const imageCitation: ImageCitation = JSON.parse(event.data)
-    streamState.imageCitations = imageCitation
+    streamState.imageCitations = appendImageCitation(
+      streamState.imageCitations,
+      imageCitation,
+    )
 
     notifySubscribers(streamKey)
   })
@@ -1325,7 +1329,10 @@ export const useChatStream = (
         ChatSSEvents.ImageCitationUpdate,
         (event) => {
           const imageCitation: ImageCitation = JSON.parse(event.data)
-          streamState.imageCitations = imageCitation
+          streamState.imageCitations = appendImageCitation(
+            streamState.imageCitations,
+            imageCitation,
+          )
         },
       )
 

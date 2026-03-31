@@ -231,6 +231,7 @@ export const getSlackRelatedMessagesTool: Tool<
               content: content,
               source: citation,
               confidence: item.relevance || 0.7,
+              visibleChunkIndices: [],
             }
           },
         ),
