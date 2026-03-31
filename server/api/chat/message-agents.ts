@@ -223,6 +223,7 @@ import {
   requiresAmbiguityResolution,
   formatInternalAgentsForPrompt,
 } from "./agent-registry"
+import { AgentResponseConfidence } from "./utils"
 
 export { __messageAgentsMetadataInternals } from "./message-agents-metadata"
 
@@ -244,8 +245,6 @@ const USE_AGENTIC_FILTERING = config.useAgenticFiltering ?? true
 
 const DEFAULT_REVIEW_FREQUENCY = 5
 const MAX_REVIEW_FREQUENCY = 50
-export const AgentResponseConfidence = 0.85
-
 const mutableAgentContext = (
   context: Readonly<AgentRunContext>,
 ): AgentRunContext => context as AgentRunContext

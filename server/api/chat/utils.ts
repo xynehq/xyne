@@ -82,6 +82,8 @@ export type WorkingSet = {
 
 const MAX_FILES = 12
 
+export const AgentResponseConfidence = 0.85
+
 /**
  * Deduplication key for fragments: Vespa document id when present, otherwise fragment id.
  * Used so the same document is not stored or re-fetched under different synthetic ids.
