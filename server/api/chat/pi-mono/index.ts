@@ -9,15 +9,21 @@ export {
   createXyneTool,
   getXyneState,
   setXyneState,
-  setPersistFunction,
   createInitialXyneState,
+  registerSession,
+  unregisterSession,
 } from "./adapter"
 export type {
   XyneAgentState,
   XyneToolContext,
   PersistXyneStateFn,
-  LoadXyneStateFn,
+  ReviewResult,
+  ToolExpectation,
+  ToolExpectationAssignment,
 } from "./adapter"
+
+// Core runtime
+export { createXyneRuntime, type XyneRuntimeConfig } from "./core"
 
 // Tools
 export * from "./tools"
@@ -27,3 +33,23 @@ export * from "./tools/constants"
 
 // Utils
 export * from "./tools/utils"
+
+// Review
+export {
+  extractExpectedResults,
+  consumePendingExpectation,
+  recordExpectationsForTurn,
+  buildTurnReviewInput,
+  performAutomaticReview,
+  handleReviewOutcome,
+} from "./review"
+
+// Extension
+export {
+  setExtensionState,
+  getExtensionState,
+  clearExtensionState,
+} from "./pi-mono-extension"
+
+// KB Agentic RAG (simplified knowledge base focused RAG)
+export { KBAgenticRAG } from "./kb-agentic-rag"

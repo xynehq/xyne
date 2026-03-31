@@ -1,23 +1,34 @@
-import { splitGroupedCitationsWithSpaces, getErrorMessage } from "@/utils"
+import type { QueryRouterLLMResponse, UserQuery } from "@/ai/types"
+import type {
+  Citation,
+  ImageCitation,
+  MinimalAgentFragment,
+} from "@/api/chat/types"
+import config from "@/config"
+import type { SelectAgent, SelectMessage } from "@/db/schema"
+import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
+import { getLogger, getLoggerWithChild } from "@/logger"
+import { SearchEmailThreads, getFolderItems } from "@/search/vespa"
+import { type AttachmentMetadata, OpenAIError } from "@/shared/types"
+import { type Span, getTracer } from "@/tracer"
+import { Subsystem } from "@/types"
+import { MessageRole } from "@/types"
+import { getErrorMessage, splitGroupedCitationsWithSpaces } from "@/utils"
 import {
   Apps,
+  AttachmentEntity,
   CalendarEntity,
-  chatContainerSchema,
-  chatMessageSchema,
   DataSourceEntity,
-  dataSourceFileSchema,
   DriveEntity,
-  entitySchema,
-  eventSchema,
-  fileSchema,
+  type Entity,
   GooglePeopleEntity,
-  mailAttachmentSchema,
+  KbItemsSchema,
+  KnowledgeBaseEntity,
+  MailAttachmentEntity,
   MailEntity,
-  mailSchema,
+  type MailParticipant,
   SlackEntity,
   SystemEntity,
-  userSchema,
-  type Entity,
   type VespaChatContainer,
   type VespaChatMessage,
   type VespaDataSourceFile,
@@ -33,42 +44,31 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
-  KbItemsSchema,
-  KnowledgeBaseEntity,
-  MailAttachmentEntity,
   WebSearchEntity,
-  type MailParticipant,
-  AttachmentEntity,
+  chatContainerSchema,
+  chatMessageSchema,
+  dataSourceFileSchema,
+  entitySchema,
+  eventSchema,
+  fileSchema,
+  mailAttachmentSchema,
+  mailSchema,
+  userSchema,
 } from "@xyne/vespa-ts/types"
 import type { z } from "zod"
-import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
-import config from "@/config"
-import type { UserQuery, QueryRouterLLMResponse } from "@/ai/types"
-import { OpenAIError, type AttachmentMetadata } from "@/shared/types"
-import type {
-  Citation,
-  ImageCitation,
-  MinimalAgentFragment,
-} from "@/api/chat/types"
-import { getFolderItems, SearchEmailThreads } from "@/search/vespa"
-import { getLoggerWithChild, getLogger } from "@/logger"
-import { getTracer, type Span } from "@/tracer"
-import { Subsystem } from "@/types"
-import type { SelectAgent, SelectMessage } from "@/db/schema"
-import { MessageRole } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
+import { get } from "http"
 import path from "path"
+import { updateMessageByExternalId } from "@/db/chat"
+import { db } from "@/db/client"
 import {
   getAllCollectionAndFolderItems,
   getCollectionFilesVespaIds,
   getCollectionFoldersItemIds,
 } from "@/db/knowledgeBase"
-import { db } from "@/db/client"
-import { collections, collectionItems } from "@/db/schema"
+import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull } from "drizzle-orm"
-import { get } from "http"
-import { updateMessageByExternalId } from "@/db/chat"
 
 // Follow-up context types and utilities
 export type WorkingSet = {
@@ -657,6 +657,7 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       entity: clFields.entity,
       itemId: clFields.itemId,
       clId: clFields.clId,
+      chunkIndices: clFields.chunks_pos_summary,
     }
   } else if (result.fields.sddocname === chatContainerSchema) {
     return {
@@ -684,6 +685,56 @@ export const textToCitationIndex = /\[(\d+)\]/g
 export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
 export const textToChunkCitationIndex = /K\[(\d+_\d+)\]/g
 
+// Regex to detect malformed citations like (Indices13_[115],14_[114],15_[129]) or [Indices1,2,3]
+// Matches patterns like: Indices13_[115], 14_[114], Index4_5, etc.
+const malformedCitationRegex =
+  /\(?(?:Indices?|Index)?(\d+)_(?:\[?(\d+)\]?)?,?\s*/g
+const malformedGroupRegex = /\(Indices?[^)]+\)/g
+
+/**
+ * Convert malformed citations like (Indices13_[115],14_[114],15_[129]) to proper K[13_115] K[14_114] K[15_129] format
+ * Also handles patterns like [Indices1,2,3], Index4_5, etc.
+ */
+export function convertMalformedCitations(text: string): string {
+  if (!text) return text
+
+  // First, handle grouped malformed citations like (Indices13_[115],14_[114],15_[129])
+  let processed = text.replace(malformedGroupRegex, (match) => {
+    const citations: string[] = []
+    let innerMatch
+
+    // Reset regex state
+    malformedCitationRegex.lastIndex = 0
+
+    // Extract individual citations from the group
+    while ((innerMatch = malformedCitationRegex.exec(match)) !== null) {
+      const docId = innerMatch[1]
+      const chunkIndex = innerMatch[2]
+      if (docId && chunkIndex) {
+        citations.push(`K[${docId}_${chunkIndex}]`)
+      }
+    }
+
+    return citations.join(" ")
+  })
+
+  // Handle individual malformed citations that weren't in groups
+  // Reset regex state
+  malformedCitationRegex.lastIndex = 0
+
+  processed = processed.replace(
+    /Indices?(\d+)_(?:\[?(\d+)\]?)/g,
+    (_match, docId, chunkIndex) => {
+      if (docId && chunkIndex) {
+        return `K[${docId}_${chunkIndex}]`
+      }
+      return _match
+    },
+  )
+
+  return processed
+}
+
 export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
@@ -693,6 +744,8 @@ export const processMessage = (
     return ""
   }
 
+  // Convert malformed citations to proper format first
+  text = convertMalformedCitations(text)
   text = splitGroupedCitationsWithSpaces(text)
 
   // Process regular citations [N] -> remap to final citation array position
@@ -1431,7 +1484,7 @@ export const checkAndYieldCitationsForAgent = async function* (
       fragmentById.set(fragment.id, fragment)
     }
 
-    const text = splitGroupedCitationsWithSpaces(textInput)
+    let text = splitGroupedCitationsWithSpaces(textInput)
     let match
     let imgMatch
     let chunkMatch
@@ -1439,10 +1492,10 @@ export const checkAndYieldCitationsForAgent = async function* (
     let imageCitationsProcessed = 0
     let citationsYielded = 0
     let imageCitationsYielded = 0
-    
+
     // Track which (citationDocId, chunkIndex) pairs have been yielded to prevent inline duplicates
     const yieldedChunkCitations = new Set<string>()
-    
+
     while (
       (match = textToCitationIndex.exec(text)) !== null ||
       (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
@@ -1452,7 +1505,7 @@ export const checkAndYieldCitationsForAgent = async function* (
         citationsProcessed++
         let citationDocId = 0
         let chunkIndex: number | undefined
-        
+
         if (match) {
           citationDocId = parseInt(match[1], 10)
         } else if (chunkMatch) {
@@ -1460,12 +1513,13 @@ export const checkAndYieldCitationsForAgent = async function* (
           citationDocId = parseInt(parts[0], 10)
           chunkIndex = parseInt(parts[1], 10)
         }
-        
+
         // Create compound key for chunk-level deduplication
-        const citationKey = chunkIndex !== undefined 
-          ? `${citationDocId}_${chunkIndex}` 
-          : String(citationDocId)
-          
+        const citationKey =
+          chunkIndex !== undefined
+            ? `${citationDocId}_${chunkIndex}`
+            : String(citationDocId)
+
         if (!yieldedChunkCitations.has(citationKey)) {
           let item: MinimalAgentFragment | undefined
 
@@ -1476,7 +1530,6 @@ export const checkAndYieldCitationsForAgent = async function* (
               item = fragmentById.get(fragmentId)
             }
           } else {
-            // Fallback to old index-based lookup for backward compatibility
             item = results[citationDocId - 1]
           }
 
@@ -1497,7 +1550,7 @@ export const checkAndYieldCitationsForAgent = async function* (
           // Yield citation with chunk info if available
           // Only add to yieldedCitations (for sources dedup) on first occurrence of this doc
           const isFirstDocOccurrence = !yieldedCitations.has(citationDocId)
-          
+
           yield {
             citation: {
               index: citationDocId,
@@ -1505,7 +1558,7 @@ export const checkAndYieldCitationsForAgent = async function* (
               chunkIndex,
             },
           }
-          
+
           yieldedChunkCitations.add(citationKey)
           if (isFirstDocOccurrence) {
             yieldedCitations.add(citationDocId)
@@ -1625,7 +1678,11 @@ export const checkAndYieldCitationsForAgent = async function* (
       stack: (error as Error).stack || "",
     })
     span.end()
-    throw error
+    loggerWithChild({ email: email }).error(
+      error,
+      "Error in checkAndYieldCitationsForAgent",
+      { textInputLength: textInput.length, resultsCount: results.length },
+    )
   }
 }
 

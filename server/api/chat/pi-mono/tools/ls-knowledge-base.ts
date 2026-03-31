@@ -212,7 +212,7 @@ export const lsKnowledgeBaseTool = createXyneTool(
       const entries = result.data?.entries || []
 
       return {
-        content: [{ type: "text", text: `Found ${entries.length} KB items` }],
+        content: [{ type: "text", text: JSON.stringify(entries) }],
         details: {
           entries,
           total: result.data?.total || 0,

@@ -1,10 +1,10 @@
+import type { ConverseResponse } from "@/ai/types"
 import config from "@/config"
 import { messageFeedbackEnum } from "@/db/schema"
-import { Apps, type Entity } from "@xyne/vespa-ts/types"
-import type { Span } from "@/tracer"
-import { z } from "zod"
 import { entitySchema } from "@/shared/types"
-import type { ConverseResponse } from "@/ai/types"
+import type { Span } from "@/tracer"
+import { Apps, type Entity } from "@xyne/vespa-ts/types"
+import { z } from "zod"
 
 const {
   JwtPayloadKey,
@@ -83,6 +83,9 @@ export const MinimalCitationSchema = z.object({
   ticketNumber: z.string().optional(), // Ticket number
 
   chunkIndices: z.array(z.number()).optional(),
+  // Chunks actually returned in the search result (subset of chunkIndices)
+  // This tracks which specific chunks from the document are present in the content
+  returnedChunkIndices: z.array(z.number()).optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>

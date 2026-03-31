@@ -30,9 +30,7 @@ const Logger = getLogger(Subsystem.Chat)
 // ─── Emitter type ─────────────────────────────────────────────────────────────
 
 /** Thin async function that forwards a structured event to the SSE stream. */
-export type ReasoningEmitter = (
-  payload: ReasoningEventPayload
-) => Promise<void>
+export type ReasoningEmitter = (payload: ReasoningEventPayload) => Promise<void>
 
 // ─── Tool display map ─────────────────────────────────────────────────────────
 // Centralised display names for every tool.  Replacing getToolIntentLabel /
@@ -44,20 +42,62 @@ interface ToolDisplay {
 }
 
 const TOOL_DISPLAY: Record<string, ToolDisplay> = {
-  [XyneTools.searchGlobal]:        { executing: "Searching across all connected data sources.", completed: "Found results from your data sources." },
-  [XyneTools.searchKnowledgeBase]: { executing: "Searching internal knowledge base.", completed: "Found relevant documents." },
-  [XyneTools.searchGmail]:         { executing: "Searching Gmail.", completed: "Found relevant emails." },
-  [XyneTools.searchDriveFiles]:    { executing: "Searching Google Drive.", completed: "Found relevant files." },
-  [XyneTools.searchCalendarEvents]:{ executing: "Searching calendar.", completed: "Found calendar events." },
-  [XyneTools.searchGoogleContacts]:{ executing: "Searching contacts.", completed: "Found contacts." },
-  [XyneTools.getSlackRelatedMessages]: { executing: "Searching Slack conversations.", completed: "Found Slack messages." },
-  [XyneTools.getSlackThreads]:     { executing: "Searching Slack threads.", completed: "Found Slack threads." },
-  [XyneTools.getSlackUserProfile]: { executing: "Looking up Slack profile.", completed: "Found Slack profile." },
-  [XyneTools.listCustomAgents]:    { executing: "Searching for specialized agents.", completed: "Agent search complete." },
-  [XyneTools.runPublicAgent]:      { executing: "Consulting a specialized agent.", completed: "Specialist returned results." },
-  [XyneTools.fallBack]:            { executing: "Trying fallback search.", completed: "Fallback search complete." },
-  [XyneTools.toDoWrite]:           { executing: "Planning next steps.", completed: "Plan created." },
-  [XyneTools.synthesizeFinalAnswer]:{ executing: "Composing your answer.", completed: "Answer ready." },
+  [XyneTools.searchGlobal]: {
+    executing: "Searching across all connected data sources.",
+    completed: "Found results from your data sources.",
+  },
+  [XyneTools.searchKnowledgeBase]: {
+    executing: "Searching internal knowledge base.",
+    completed: "Found relevant documents.",
+  },
+  [XyneTools.searchGmail]: {
+    executing: "Searching Gmail.",
+    completed: "Found relevant emails.",
+  },
+  [XyneTools.searchDriveFiles]: {
+    executing: "Searching Google Drive.",
+    completed: "Found relevant files.",
+  },
+  [XyneTools.searchCalendarEvents]: {
+    executing: "Searching calendar.",
+    completed: "Found calendar events.",
+  },
+  [XyneTools.searchGoogleContacts]: {
+    executing: "Searching contacts.",
+    completed: "Found contacts.",
+  },
+  [XyneTools.getSlackRelatedMessages]: {
+    executing: "Searching Slack conversations.",
+    completed: "Found Slack messages.",
+  },
+  [XyneTools.getSlackThreads]: {
+    executing: "Searching Slack threads.",
+    completed: "Found Slack threads.",
+  },
+  [XyneTools.getSlackUserProfile]: {
+    executing: "Looking up Slack profile.",
+    completed: "Found Slack profile.",
+  },
+  [XyneTools.listCustomAgents]: {
+    executing: "Searching for specialized agents.",
+    completed: "Agent search complete.",
+  },
+  [XyneTools.runPublicAgent]: {
+    executing: "Consulting a specialized agent.",
+    completed: "Specialist returned results.",
+  },
+  [XyneTools.fallBack]: {
+    executing: "Trying fallback search.",
+    completed: "Fallback search complete.",
+  },
+  [XyneTools.toDoWrite]: {
+    executing: "Planning next steps.",
+    completed: "Plan created.",
+  },
+  [XyneTools.synthesizeFinalAnswer]: {
+    executing: "Composing your answer.",
+    completed: "Answer ready.",
+  },
 }
 
 function toolExecutingText(toolName: string): string {
@@ -80,7 +120,10 @@ export const ReasoningSteps = {
   turnStarted(turnNumber: number): ReasoningEventPayload {
     return {
       type: ReasoningEventType.TurnStarted,
-      displayText: turnNumber === 0 ? "Starting research." : `Starting search pass ${turnNumber + 1}.`,
+      displayText:
+        turnNumber === 0
+          ? "Starting research."
+          : `Starting search pass ${turnNumber + 1}.`,
       stage: "understanding",
       turnNumber,
       timestamp: Date.now(),
@@ -99,7 +142,11 @@ export const ReasoningSteps = {
 
   planCreated(
     goal: string,
-    subTasks: Array<{ id: string; description: string; status: PlanSubTask["status"] }>,
+    subTasks: Array<{
+      id: string
+      description: string
+      status: PlanSubTask["status"]
+    }>,
   ): ReasoningEventPayload {
     const firstStep = subTasks[0]?.description
     return {
@@ -146,7 +193,10 @@ export const ReasoningSteps = {
     }
   },
 
-  toolCompleted(toolName: string, hadError: boolean = false): ReasoningEventPayload {
+  toolCompleted(
+    toolName: string,
+    hadError: boolean = false,
+  ): ReasoningEventPayload {
     return {
       type: ReasoningEventType.ToolCompleted,
       displayText: hadError
@@ -179,7 +229,10 @@ export const ReasoningSteps = {
     }
   },
 
-  toolSkippedCooldown(toolName: string, turnsLeft: number): ReasoningEventPayload {
+  toolSkippedCooldown(
+    toolName: string,
+    turnsLeft: number,
+  ): ReasoningEventPayload {
     return {
       type: ReasoningEventType.ToolSkippedCooldown,
       displayText: "Skipping this tool for now. Trying a different approach.",
@@ -190,7 +243,10 @@ export const ReasoningSteps = {
     }
   },
 
-  toolValidationError(toolName: string, errorMessage?: string): ReasoningEventPayload {
+  toolValidationError(
+    toolName: string,
+    errorMessage?: string,
+  ): ReasoningEventPayload {
     return {
       type: ReasoningEventType.ToolValidationError,
       displayText: "Skipping this step due to invalid input.",
@@ -201,7 +257,11 @@ export const ReasoningSteps = {
     }
   },
 
-  toolCooldownApplied(toolName: string, failCount: number, turnsLeft: number): ReasoningEventPayload {
+  toolCooldownApplied(
+    toolName: string,
+    failCount: number,
+    turnsLeft: number,
+  ): ReasoningEventPayload {
     return {
       type: ReasoningEventType.ToolCooldownApplied,
       displayText: "Skipping this tool for now. Trying a different approach.",
@@ -267,7 +327,36 @@ export const ReasoningSteps = {
     }
   },
 
-  metadataFilterApplied(hasCompliantCandidates: boolean, toolName?: string): ReasoningEventPayload {
+  /**
+   * Emitted when KB search is completed with detailed results.
+   * Shows the query and top fragments found.
+   */
+  searchCompleted(
+    query: string,
+    fragmentCount: number,
+    topFragments: Array<{ title: string; source?: string }>,
+    toolName: string,
+  ): ReasoningEventPayload {
+    const fragmentList = topFragments
+      .slice(0, 3)
+      .map((f, i) => `${i + 1}. ${f.title}${f.source ? ` (${f.source})` : ""}`)
+      .join("\n")
+
+    return {
+      type: ReasoningEventType.ToolCompleted,
+      displayText: `Searched for: "${query}"\nFound ${fragmentCount} relevant ${plural(fragmentCount, "document")}.\n\nTop results:\n${fragmentList}`,
+      stage: "gathering",
+      toolName,
+      toolQuery: query,
+      count: fragmentCount,
+      timestamp: Date.now(),
+    }
+  },
+
+  metadataFilterApplied(
+    hasCompliantCandidates: boolean,
+    toolName?: string,
+  ): ReasoningEventPayload {
     return {
       type: ReasoningEventType.MetadataFilterApplied,
       displayText: hasCompliantCandidates
@@ -289,7 +378,10 @@ export const ReasoningSteps = {
     }
   },
 
-  rankingFailed(strictNoMatch: boolean, toolName?: string): ReasoningEventPayload {
+  rankingFailed(
+    strictNoMatch: boolean,
+    toolName?: string,
+  ): ReasoningEventPayload {
     return {
       type: ReasoningEventType.RankingFailed,
       displayText: strictNoMatch
@@ -315,9 +407,10 @@ export const ReasoningSteps = {
   agentsFound(count: number, agentNames?: string[]): ReasoningEventPayload {
     return {
       type: ReasoningEventType.AgentsFound,
-      displayText: count > 0
-        ? `Found ${count} specialized ${plural(count, "agent")}. Evaluating options.`
-        : "No specialized agents found. Continuing with built-in tools.",
+      displayText:
+        count > 0
+          ? `Found ${count} specialized ${plural(count, "agent")}. Evaluating options.`
+          : "No specialized agents found. Continuing with built-in tools.",
       stage: "consulting",
       count,
       detail: agentNames?.join(", "),
@@ -328,13 +421,17 @@ export const ReasoningSteps = {
   agentNoMatch(): ReasoningEventPayload {
     return {
       type: ReasoningEventType.AgentNoMatch,
-      displayText: "No specialized agents found. Continuing with built-in tools.",
+      displayText:
+        "No specialized agents found. Continuing with built-in tools.",
       stage: "consulting",
       timestamp: Date.now(),
     }
   },
 
-  agentDelegated(agentName: string, delegationRunId?: string): ReasoningEventPayload {
+  agentDelegated(
+    agentName: string,
+    delegationRunId?: string,
+  ): ReasoningEventPayload {
     return {
       type: ReasoningEventType.AgentDelegated,
       displayText: `Consulting ${agentName} for deeper analysis.`,
@@ -348,7 +445,10 @@ export const ReasoningSteps = {
     }
   },
 
-  agentCompleted(agentName: string, delegationRunId?: string): ReasoningEventPayload {
+  agentCompleted(
+    agentName: string,
+    delegationRunId?: string,
+  ): ReasoningEventPayload {
     return {
       type: ReasoningEventType.AgentCompleted,
       displayText: `${agentName} completed its analysis. Reviewing its findings.`,
@@ -394,7 +494,10 @@ export const ReasoningSteps = {
     }
   },
 
-  reviewCompleted(recommendation: string, turnNumber?: number): ReasoningEventPayload {
+  reviewCompleted(
+    recommendation: string,
+    turnNumber?: number,
+  ): ReasoningEventPayload {
     return {
       type: ReasoningEventType.ReviewCompleted,
       displayText: "Review complete.",
@@ -509,7 +612,7 @@ export const ReasoningSteps = {
  */
 export async function emitReasoningEvent(
   emitter: ReasoningEmitter | undefined,
-  payload: ReasoningEventPayload
+  payload: ReasoningEventPayload,
 ): Promise<void> {
   if (!emitter) return
   try {
@@ -517,7 +620,7 @@ export async function emitReasoningEvent(
   } catch (error) {
     Logger.warn(
       { err: error instanceof Error ? error.message : String(error) },
-      "Failed to emit reasoning event"
+      "Failed to emit reasoning event",
     )
   }
 }

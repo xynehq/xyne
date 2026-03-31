@@ -231,6 +231,7 @@ import { getChunkCountPerDoc } from "./chunk-selection"
 import { handleAttachmentDelete } from "../files"
 import { expandSheetIds } from "@/search/utils"
 import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
+import { KBAgenticRAG } from "./pi-mono/kb-agentic-rag"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -499,34 +500,34 @@ const checkAndYieldCitations = async function* (
       (chunkMatch = textToChunkCitationIndex.exec(text)) !== null)
   ) {
     if (match || chunkMatch) {
-        let citationIndex = 0
-        if (match) {
-          citationIndex = parseInt(match[1], 10)
-        } else if (chunkMatch) {
-          citationIndex = parseInt(chunkMatch[1].split("_")[0], 10)
-        }
-        if (!yieldedCitations.has(citationIndex)) {
-          const item = results[citationIndex - baseIndex]
-          if (item) {
-            // TODO: fix this properly, empty citations making streaming broke
-            const f = (item as any)?.fields
-            if (f?.sddocname === dataSourceFileSchema) {
-              // Skip datasource files from citations
-              continue
-            }
-            yield {
-              citation: {
-                index: citationIndex,
-                item: searchToCitation(item as VespaSearchResults),
-              },
-            }
-            yieldedCitations.add(citationIndex)
-          } else {
-            loggerWithChild({ email: email }).error(
-              `Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
-            )
+      let citationIndex = 0
+      if (match) {
+        citationIndex = parseInt(match[1], 10)
+      } else if (chunkMatch) {
+        citationIndex = parseInt(chunkMatch[1].split("_")[0], 10)
+      }
+      if (!yieldedCitations.has(citationIndex)) {
+        const item = results[citationIndex - baseIndex]
+        if (item) {
+          // TODO: fix this properly, empty citations making streaming broke
+          const f = (item as any)?.fields
+          if (f?.sddocname === dataSourceFileSchema) {
+            // Skip datasource files from citations
+            continue
           }
+          yield {
+            citation: {
+              index: citationIndex,
+              item: searchToCitation(item as VespaSearchResults),
+            },
+          }
+          yieldedCitations.add(citationIndex)
+        } else {
+          loggerWithChild({ email: email }).error(
+            `Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
+          )
         }
+      }
     } else if (imgMatch) {
       const parts = imgMatch[1].split("_")
       if (parts.length >= 2) {
@@ -1145,7 +1146,9 @@ export async function buildContext(
       `Index ${i + startIndex} \n ${await answerContextMap(
         v as VespaSearchResults,
         userMetadata,
-        chunksPerDoc && i < chunksPerDoc.length ? chunksPerDoc[i] : maxSummaryCount,
+        chunksPerDoc && i < chunksPerDoc.length
+          ? chunksPerDoc[i]
+          : maxSummaryCount,
         undefined,
         isMsgWithKbItems,
         builtUserQuery,
@@ -1295,7 +1298,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       agentAppFilters = appFilters || {}
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
-
     }
   }
 
@@ -1404,7 +1406,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     userPermissionId = permissionIds?.[0]
   }
 
-
   if (
     classification.filters.ticketParticipants &&
     Object.keys(classification.filters.ticketParticipants).length > 0 &&
@@ -1434,7 +1435,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     )
   } else {
     loggerWithChild({ email: email }).info(
-      `[Iterative RAG] ❌ Skipping ticketParticipants conversion - ticketParticipants: ${!!classification.filters.ticketParticipants}, ZohoDesk in apps: ${classification.filters.apps?.includes(Apps.ZohoDesk) || agentAppEnums.includes(Apps.ZohoDesk)}`
+      `[Iterative RAG] ❌ Skipping ticketParticipants conversion - ticketParticipants: ${!!classification.filters.ticketParticipants}, ZohoDesk in apps: ${classification.filters.apps?.includes(Apps.ZohoDesk) || agentAppEnums.includes(Apps.ZohoDesk)}`,
     )
   }
 
@@ -1457,7 +1458,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         ", ",
       )}, channelIds: ${channelIds.join(", ")}`,
     )
-    Logger.info((`agentSpecificDataSourceIds is as follows: ${JSON.stringify(agentSpecificDataSourceIds)}, channelIds is as ${JSON.stringify(channelIds)} `)  )
+    Logger.info(
+      `agentSpecificDataSourceIds is as follows: ${JSON.stringify(agentSpecificDataSourceIds)}, channelIds is as ${JSON.stringify(channelIds)} `,
+    )
     searchResults = await searchVespaAgent(
       message,
       email,
@@ -1567,7 +1570,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           ) || [],
         ),
       )
-      
+
       // Apply intelligent chunk selection based on document relevance and chunk scores
       const chunksPerDocument = await getChunkCountPerDoc(
         results?.root?.children,
@@ -1584,7 +1587,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         0,
         message,
         agentSpecificCollectionSelections.length > 0,
-        chunksPerDocument
+        chunksPerDocument,
       )
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
@@ -1735,7 +1738,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           0,
           message,
           agentSpecificCollectionSelections.length > 0,
-          chunksPerDocument
+          chunksPerDocument,
         )
 
         const { imageFileNames } = extractImageFileNames(
@@ -1949,7 +1952,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       startIndex,
       message,
       agentSpecificCollectionSelections.length > 0,
-      chunksPerDocument
+      chunksPerDocument,
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -2349,7 +2352,8 @@ async function* generateAnswerFromGivenContext(
   initialContextSpan?.end()
 
   loggerWithChild({ email: email }).info(
-    `[Selected Context Path] Number of contextual chunks being passed: ${combinedSearchResponse?.length || 0
+    `[Selected Context Path] Number of contextual chunks being passed: ${
+      combinedSearchResponse?.length || 0
     }`,
   )
 
@@ -2415,13 +2419,13 @@ export async function* generateAnswerFromDualRag(
   userCtx: string,
   userMetadata: UserMetadataType,
   alpha: number = 0.5,
-  fileIds: string[],// contains all attachement fileids
+  fileIds: string[], // contains all attachement fileids
   agentAppEnums: Apps[],
   userRequestsReasoning: boolean,
   agentPrompt?: string,
   passedSpan?: Span,
   threadIds?: string[],
-  attachmentFileIds?: string[],// contains image attachments 
+  attachmentFileIds?: string[], // contains image attachments
   allowChunkCitations?: boolean,
   modelId?: string,
   isValidPath?: boolean,
@@ -2505,7 +2509,6 @@ export async function* generateAnswerFromDualRag(
   //Total budget of chunks
   const targetChunks = maxChunksPerPage
 
-
   if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
     allowChunkCitations = true // if user is explicitly providing kb files, we can allow chunk citations for kb files
     const fileSearchSpan = generateAnswerSpan?.startSpan("file_search")
@@ -2542,8 +2545,9 @@ export async function* generateAnswerFromDualRag(
         )}`,
       )
 
-      const allAttachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
-
+      const allAttachmentFileIds = fileIds.filter((fid) =>
+        fid.startsWith("attf_"),
+      )
 
       loggerWithChild({ email }).info(
         `[Dual RAG ] Attachment file IDs identified: ${JSON.stringify(
@@ -2603,7 +2607,6 @@ export async function* generateAnswerFromDualRag(
       }
     }
 
-
     fileSearchSpan?.end()
   }
   loggerWithChild({ email: email }).info(
@@ -2612,7 +2615,6 @@ export async function* generateAnswerFromDualRag(
 
   // now query the KB if agentAppEnums is provided
   if (agentAppEnums && agentAppEnums.length > 0) {
- 
     // Step 1: Initialize variables to store parsed data
     let agentSpecificCollectionSelections: Array<{
       collectionIds?: string[]
@@ -2629,7 +2631,6 @@ export async function* generateAnswerFromDualRag(
 
       let agentPromptData: { appIntegrations?: any } = {}
 
-
       try {
         agentPromptData = JSON.parse(agentPrompt)
       } catch (error) {
@@ -2641,7 +2642,6 @@ export async function* generateAnswerFromDualRag(
       loggerWithChild({ email }).info(
         `[generateAnswerFromDualRag] Is app selection map: ${isAppSelectionMap(agentPromptData.appIntegrations)}`,
       )
-
 
       // Step 3: Extract collection selections
       if (isAppSelectionMap(agentPromptData.appIntegrations)) {
@@ -2683,7 +2683,9 @@ export async function* generateAnswerFromDualRag(
     )
 
     const kbSearchSpan = generateAnswerSpan?.startSpan("kb_search")
-    const channelIds = agentPrompt ? getChannelIdsFromAgentPrompt(agentPrompt) : []
+    const channelIds = agentPrompt
+      ? getChannelIdsFromAgentPrompt(agentPrompt)
+      : []
     kbSearchSpan?.setAttribute("apps", agentAppEnums.join(","))
     loggerWithChild({ email: email }).info(
       `[DUAL RAG] Starting KB search. Apps to search: ${agentAppEnums.join(", ")}`,
@@ -2702,9 +2704,9 @@ export async function* generateAnswerFromDualRag(
           alpha: userAlpha, // Use personalized alpha
           collectionSelections: agentSpecificCollectionSelections,
           selectedItem: selectedItem,
-          dataSourceIds: [],        // Empty array (todo: support data sources later)
+          dataSourceIds: [], // Empty array (todo: support data sources later)
           channelIds: channelIds,
-          span: kbSearchSpan,       // Pass the span for tracing
+          span: kbSearchSpan, // Pass the span for tracing
         },
       )
 
@@ -2737,7 +2739,6 @@ export async function* generateAnswerFromDualRag(
 
     kbSearchSpan?.end()
   }
-
 
   // STEP 5: THREAD/SLACK HANDLING
   loggerWithChild({ email: email }).info(
@@ -2811,7 +2812,9 @@ export async function* generateAnswerFromDualRag(
       v.fields.sddocname === chatContainerSchema
     ) {
       const channelId = (v.fields as any).docId
-      loggerWithChild({ email: email }).info(`Processing chat container with docId: ${channelId}`)
+      loggerWithChild({ email: email }).info(
+        `Processing chat container with docId: ${channelId}`,
+      )
 
       if (channelId) {
         const searchResults = await searchSlackInVespa(messageText, email, {
@@ -2833,9 +2836,6 @@ export async function* generateAnswerFromDualRag(
     }
   }
 
-
-  
-
   // Right now, combinedSearchResponse has:
   // [attachment1, attachment2, kb1, kb2, kb3, kb4]
   // Sort all results (both attachments and KB) by relevance score
@@ -2844,14 +2844,17 @@ export async function* generateAnswerFromDualRag(
       (a, b) => Number(b.relevance ?? 0) - Number(a.relevance ?? 0),
     )
 
-    const topScore = Number(combinedSearchResponse[0]?.relevance ?? 0).toFixed(3)
-    const bottomScore = Number(combinedSearchResponse.at(-1)?.relevance ?? 0).toFixed(3)
+    const topScore = Number(combinedSearchResponse[0]?.relevance ?? 0).toFixed(
+      3,
+    )
+    const bottomScore = Number(
+      combinedSearchResponse.at(-1)?.relevance ?? 0,
+    ).toFixed(3)
 
     loggerWithChild({ email }).info(
       `[generateAnswerFromDualRag] Sorted ${combinedSearchResponse.length} results by relevance. Top: ${topScore}, Bottom: ${bottomScore}`,
     )
   }
-
 
   // STEP 6: CONTEXT BUILDING
   const startIndex = isReasoning ? previousResultsLength : 0
@@ -2922,7 +2925,6 @@ export async function* generateAnswerFromDualRag(
     )
   }
 
-
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
   initialContextSpan?.setAttribute(
     "context_length",
@@ -2938,7 +2940,6 @@ export async function* generateAnswerFromDualRag(
     combinedSearchResponse?.length || 0,
   )
   initialContextSpan?.end()
-
 
   loggerWithChild({ email: email }).info(
     `[DUAL RAG] Number of contextual chunks being passed: ${
@@ -3247,7 +3248,6 @@ async function* generatePointQueryTimeExpansion(
       agentAppFilters = appFilters || {}
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
-
     }
   }
 
@@ -3875,7 +3875,6 @@ async function* generateMetadataQueryAnswer(
       selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
-
     }
   }
 
@@ -4091,7 +4090,7 @@ async function* generateMetadataQueryAnswer(
           0,
           input,
           agentSpecificCollectionSelections.length > 0,
-          chunksPerDocument
+          chunksPerDocument,
         ),
       )
       if (!items.length) {
@@ -4121,7 +4120,7 @@ async function* generateMetadataQueryAnswer(
         agentPrompt,
         modelId,
         agentSpecificCollectionSelections.length > 0,
-        chunksPerDocument
+        chunksPerDocument,
       )
 
       if (answer == null) {
@@ -4330,7 +4329,7 @@ async function* generateMetadataQueryAnswer(
         0,
         input,
         agentSpecificCollectionSelections.length > 0,
-        chunksPerDocument
+        chunksPerDocument,
       ),
     )
     span?.end()
@@ -4362,7 +4361,7 @@ async function* generateMetadataQueryAnswer(
       agentPrompt,
       modelId,
       agentSpecificCollectionSelections.length > 0,
-      chunksPerDocument
+      chunksPerDocument,
     )
     return
   } else if (
@@ -4530,7 +4529,7 @@ async function* generateMetadataQueryAnswer(
           0,
           input,
           agentSpecificCollectionSelections.length > 0,
-          chunksPerDocument
+          chunksPerDocument,
         ),
       )
       iterationSpan?.end()
@@ -4565,7 +4564,7 @@ async function* generateMetadataQueryAnswer(
         agentPrompt,
         modelId,
         agentSpecificCollectionSelections.length > 0,
-        chunksPerDocument
+        chunksPerDocument,
       )
 
       if (answer == null) {
@@ -4666,8 +4665,6 @@ const fallbackText = (classification: QueryRouterLLMResponse): string => {
 
   return `${searchDescription}${timeDescription}`
 }
-
-
 
 export async function* UnderstandMessageAndAnswer(
   email: string,
@@ -5005,7 +5002,10 @@ export const MessageApi = async (c: Context) => {
     const body = c.req.valid("query")
     const isAgentic = c.req.query("agentic") === "true"
     let { message, chatId, selectedModelConfig, agentId }: MessageReqType = body
-
+    if (isAgentic) {
+      Logger.info(`Routing to MessageAgentsPiMono (pi-mono agentic flow)`)
+      return KBAgenticRAG(c)
+    }
     // Parse selectedModelConfig JSON to extract individual values
     let modelId: string | undefined = undefined
     let isReasoningEnabled = false
@@ -5083,13 +5083,13 @@ export const MessageApi = async (c: Context) => {
       agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID)
         ? agentId
         : undefined // Use undefined if not a valid CUID
-    
+
     const shouldUseMessageAgents =
       isAgentic && !enableWebSearch && !deepResearchEnabled
 
     if (shouldUseMessageAgents) {
       Logger.info(`Routing to MessageAgentsPiMono (pi-mono agentic flow)`)
-      return MessageAgentsPiMono(c)
+      return KBAgenticRAG(c)
     }
 
     let attachmentMetadata = parseAttachmentMetadata(c)
@@ -6170,7 +6170,9 @@ export const MessageApi = async (c: Context) => {
                   loggerWithChild({ email: email }).info(
                     `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
                   )
-                  const allowChunkCitations = fileIds.some((fileId) => fileId.startsWith("clf-")) || fileIds.some((fileId) => fileId.startsWith("attf_"))
+                  const allowChunkCitations =
+                    fileIds.some((fileId) => fileId.startsWith("clf-")) ||
+                    fileIds.some((fileId) => fileId.startsWith("attf_"))
                   iterator = UnderstandMessageAndAnswerForGivenContext(
                     email,
                     ctx,
@@ -6712,13 +6714,17 @@ export const MessageRetryApi = async (c: Context) => {
     let attachmentMetadata: AttachmentMetadata[] = []
     let nonImageAttachmentFileIds: string[] = []
     let imageAttachmentFileIds: string[] = []
-    let isMsgWithAttachments = false  
+    let isMsgWithAttachments = false
 
     if (isUserMessage) {
       // If retrying a user message, get attachments from that message
       attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
-      nonImageAttachmentFileIds = attachmentMetadata.filter((m) => !m.isImage).flatMap((m) => expandSheetIds(m.fileId))
-      imageAttachmentFileIds = attachmentMetadata.filter((m) => m.isImage).map((m) => m.fileId)
+      nonImageAttachmentFileIds = attachmentMetadata
+        .filter((m) => !m.isImage)
+        .flatMap((m) => expandSheetIds(m.fileId))
+      imageAttachmentFileIds = attachmentMetadata
+        .filter((m) => m.isImage)
+        .map((m) => m.fileId)
       isMsgWithAttachments = nonImageAttachmentFileIds.length > 0
     }
 
@@ -6773,8 +6779,12 @@ export const MessageRetryApi = async (c: Context) => {
           prevUserMessage.externalId,
           email,
         )
-        nonImageAttachmentFileIds = attachmentMetadata.filter((m) => !m.isImage).flatMap((m) => expandSheetIds(m.fileId))
-        imageAttachmentFileIds = attachmentMetadata.filter((m) => m.isImage).map((m) => m.fileId)
+        nonImageAttachmentFileIds = attachmentMetadata
+          .filter((m) => !m.isImage)
+          .flatMap((m) => expandSheetIds(m.fileId))
+        imageAttachmentFileIds = attachmentMetadata
+          .filter((m) => m.isImage)
+          .map((m) => m.fileId)
         isMsgWithAttachments = nonImageAttachmentFileIds.length > 0
       }
     }
@@ -8177,11 +8187,11 @@ export const GenerateFollowUpQuestionsApi = async (c: Context) => {
       .join("\n\n")
 
     // Extract last user message and last assistant message for focus
-    const reversedMessages = [...contextMessages].reverse();
-    const lastUserMsg = reversedMessages.find((m) => m.messageRole === "user");
+    const reversedMessages = [...contextMessages].reverse()
+    const lastUserMsg = reversedMessages.find((m) => m.messageRole === "user")
     const lastAssistantMsg = reversedMessages.find(
       (m) => m.messageRole === "assistant",
-    );
+    )
 
     // Generate user context
     const ctx = userContext(userAndWorkspace)

@@ -4,10 +4,12 @@
  * Fully wired to existing JAF implementation
  */
 
+import { answerContextMapFromFragments } from "@/ai/context"
+import type { MinimalAgentFragment } from "@/api/chat/types"
 import { Type } from "@sinclair/typebox"
+import { executeSearchKnowledgeBase } from "../../tools/knowledgeBaseFlow"
 import { createXyneTool } from "../adapter"
 import type { XyneToolContext } from "../adapter"
-import { executeSearchKnowledgeBase } from "../../tools/knowledgeBaseFlow"
 
 const KNOWLEDGE_BASE_TARGET_DESCRIPTION =
   "A discriminated knowledge-base target object for browse/search. Set `type` to one of `collection`, `folder`, `file`, or `path`, then provide only the matching ID/path fields for that variant."
@@ -29,8 +31,9 @@ const SEARCH_KNOWLEDGE_BASE_TOOL_DESCRIPTION = [
 const searchKnowledgeBaseParams = Type.Object({
   query: Type.String({
     description:
-      "Short, content-focused KB retrieval query. Use the semantic terms you expect inside documents, not navigation instructions. If the scope is known, narrow with `filters.targets` instead of stuffing paths or folder names into the query.",
+      "Short, content-focused KB retrieval query using 3-4 important keywords maximum. Example: 'ESG rating withdrawal' or 'minimum rating period'. Do NOT use long phrases or sentences - keep it to essential keywords only for optimal Vespa search results.",
     minLength: 1,
+    maxLength: 100,
   }),
   filters: Type.Optional(
     Type.Object(
@@ -141,7 +144,6 @@ export const searchKnowledgeBaseTool = createXyneTool(
           }
         })
       }
-
       const result = await executeSearchKnowledgeBase(
         {
           query: params.query,
@@ -163,9 +165,26 @@ export const searchKnowledgeBaseTool = createXyneTool(
         }
       }
 
-      const fragments = result.data || []
-      xyneState.allFragments.push(...fragments)
+      const allFragments = result.data || []
+      const fragments = allFragments.filter(
+        (fragment: MinimalAgentFragment) => {
+          const docId = fragment.source?.docId
+          const returnedChunkIndices = fragment.source?.returnedChunkIndices
 
+          if (!returnedChunkIndices || returnedChunkIndices.length === 0) {
+            if (!docId) return true
+            return !xyneState.seenDocIds?.has(docId)
+          }
+          return returnedChunkIndices.some((chunkIdx: number) => {
+            const chunkKey = `${docId}_${chunkIdx}`
+            return !xyneState.seenChunks.has(chunkKey)
+          })
+        },
+      )
+
+      const startIndex = xyneState.allFragments.length + 1
+
+      xyneState.allFragments.push(...fragments)
       // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
       const toolKey = `searchKnowledgeBase:${params.query || "default"}`
       const existing =
@@ -179,15 +198,18 @@ export const searchKnowledgeBaseTool = createXyneTool(
       })
 
       await persistState()
-
+      const context = answerContextMapFromFragments(
+        fragments,
+        undefined,
+        startIndex,
+      )
       return {
-        content: [
-          { type: "text", text: `Found ${fragments.length} KB results` },
-        ],
+        content: [{ type: "text", text: context }],
         details: {
           fragments,
           query: params.query,
           toolName: "searchKnowledgeBase",
+          startIndex, // Used by pi-mono-extension for citation mapping
         },
       }
     } catch (error) {

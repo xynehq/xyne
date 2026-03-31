@@ -1,8 +1,7 @@
 /**
- * Runtime Wrapper for Pi-Mono Agent Sessions
+ * Simplified Runtime for Pi-Mono Agent Sessions
  *
- * Provides a clean abstraction over pi-mono's createAgentSession with
- * proper type safety using pi-coding-agent's exported types.
+ * Creates pi-mono sessions with Xyne extension and state.
  */
 
 import {
@@ -10,204 +9,98 @@ import {
   SessionManager,
   SettingsManager,
   AuthStorage,
-  ModelRegistry,
   DefaultResourceLoader,
   type CreateAgentSessionOptions,
   type AgentSession as PiMonoAgentSession,
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent"
 import type { TSchema } from "@sinclair/typebox"
-import type { AgentSession } from "./types"
 import type { XyneAgentState } from "../adapter"
 import {
   setExtensionState,
-  default as piMonoTurnProcessor,
+  default as xyneExtension,
 } from "../pi-mono-extension"
 import type { ReasoningEmitter } from "@/api/chat/reasoning-steps"
 
-/**
- * SDK Tool type using pi-coding-agent's ToolDefinition
- */
 export type Tool = ToolDefinition<TSchema, unknown, any>
 
-export interface AgentSessionWrapperConfig
-  extends Omit<CreateAgentSessionOptions, "model" | "customTools"> {
-  model: CreateAgentSessionOptions["model"] | string
+export interface XyneRuntimeConfig {
+  model: string
   systemPrompt: string
-  customTools?: Tool[]
-  state?: XyneAgentState
-  baseUrl?: string
+  tools: Tool[]
+  baseUrl: string
   apiKey?: string
-  // Extension state for pi-mono turn processor
-  xyneState?: XyneAgentState
-  agenticModelId?: string
-  message?: string
-  email?: string
-  emitReasoningStep?: ReasoningEmitter
+  xyneState: XyneAgentState
+  currentTurn: { value: number }
+  agenticModelId: string
+  message: string
+  email: string
+  emitReasoningStep: ReasoningEmitter
 }
 
 /**
- * Create an agent session with full SDK configuration support
- *
- * @param config - Session configuration
- * @returns Wrapped agent session with unified interface
+ * Create pi-mono runtime with Xyne extension
  */
-export async function createAgentSessionWrapper(
-  config: AgentSessionWrapperConfig,
-): Promise<AgentSession> {
-  const model = resolveModel(config.model, config.baseUrl)
-
-  const sessionOptions: CreateAgentSessionOptions = {
-    model,
-    tools: [],
-    customTools: config.customTools ?? config.tools,
-    resourceLoader: config.resourceLoader,
-    authStorage: config.authStorage,
-    modelRegistry: config.modelRegistry,
-    sessionManager: config.sessionManager ?? SessionManager.inMemory(),
-    settingsManager:
-      config.settingsManager ??
-      SettingsManager.inMemory({
-        compaction: { enabled: true },
-        retry: { enabled: false, maxRetries: 3, baseDelayMs: 1000 },
-      }),
-    thinkingLevel: config.thinkingLevel,
-    scopedModels: config.scopedModels,
-  }
-
-  const { session: piSession } = await createAgentSession(sessionOptions)
-
-  if (config.systemPrompt) {
-    piSession.agent.setSystemPrompt(config.systemPrompt)
-  }
-
-  return wrapSession(piSession, config.state)
-}
-
-function resolveModel(
-  modelInput: CreateAgentSessionOptions["model"] | string,
-  baseUrl?: string,
-): CreateAgentSessionOptions["model"] {
-  if (typeof modelInput === "string") {
-    // Return a Model-compatible object
-    return {
-      id: modelInput,
-      name: modelInput,
-      api: "openai-completions",
-      provider: "litellm",
-      baseUrl: baseUrl ?? "",
-      reasoning: false,
-      input: ["text", "image"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128000,
-      maxTokens: 4096,
-      compat: {
-        supportsStore: false,
-        supportsStreaming: true,
-        supportsToolStreaming: true,
-      },
-    } as CreateAgentSessionOptions["model"]
-  }
-  return modelInput
-}
-
-function wrapSession(
-  piSession: PiMonoAgentSession,
-  userState?: XyneAgentState,
-): AgentSession {
-  return {
-    async start(message: string) {
-      await piSession.prompt(message)
-    },
-
-    subscribe(handler) {
-      return piSession.subscribe(handler)
-    },
-
-    stop() {
-      // Check for stop method using type-safe approach
-      const sessionWithStop = piSession as unknown as {
-        stop?: () => void
-      }
-      if (typeof sessionWithStop.stop === "function") {
-        sessionWithStop.stop()
-      }
-    },
-
-    getUnderlyingSession() {
-      return piSession
-    },
-
-    updateSystemPrompt(prompt: string) {
-      piSession.agent.setSystemPrompt(prompt)
-    },
-
-    getState() {
-      return userState
-    },
-  }
-}
-
-export async function createXyneAgentSession(
-  config: AgentSessionWrapperConfig,
-): Promise<AgentSession> {
-  // Initialize AuthStorage
-  const authStorage = config.authStorage ?? AuthStorage.create()
-  if (config.apiKey && !config.authStorage) {
-    authStorage.set("litellm", {
-      type: "api_key",
-      key: config.apiKey,
-    })
-  }
-
-  // Create ModelRegistry
-  const modelRegistry = config.modelRegistry ?? new ModelRegistry(authStorage)
-
-  // Create a ResourceLoader that injects our Xyne prompt as the base systemPrompt.
-  // This is critical: pi-mono's AgentSession._rebuildSystemPrompt() calls
-  // resourceLoader.getSystemPrompt() and routes it through the `customPrompt`
-  // path in buildSystemPrompt(), which REPLACES the default coding-agent identity.
-  // Without this, the session resets to "You are an expert coding assistant..."
-  // before every LLM call.
-  const resourceLoader =
-    config.resourceLoader ??
-    new DefaultResourceLoader({
-      cwd: "/tmp", // Irrelevant for search agent, prevents CWD leak
-      systemPrompt: config.systemPrompt,
-      noExtensions: false, // Enable extensions
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-      agentsFilesOverride: () => ({ agentsFiles: [] }), // Don't load AGENTS.md/CLAUDE.md
-      extensionFactories: [piMonoTurnProcessor], // Register the turn-end extension
-    })
-
-  // Set up extension state BEFORE creating session (if all required fields are present)
-  // if (
-  //   config.xyneState &&
-  //   config.agenticModelId &&
-  //   config.message &&
-  //   config.email &&
-  //   config.emitReasoningStep
-  // ) {
-  //   setExtensionState({
-  //     xyneState: config.xyneState,
-  //     agenticModelId: config.agenticModelId,
-  //     message: config.message,
-  //     email: config.email,
-  //     emitReasoningStep: config.emitReasoningStep,
-  //   })
-  // }
-
-  if (!config.resourceLoader) {
-    await resourceLoader.reload()
-  }
-
-  // Create session with all dependencies
-  return createAgentSessionWrapper({
-    ...config,
-    authStorage,
-    modelRegistry,
-    resourceLoader,
+export async function createXyneRuntime(config: XyneRuntimeConfig) {
+  // Set extension state BEFORE creating session (required SDK pattern)
+  setExtensionState({
+    xyneState: config.xyneState,
+    currentTurn: config.currentTurn,
+    agenticModelId: config.agenticModelId,
+    message: config.message,
+    email: config.email,
+    emitReasoningStep: config.emitReasoningStep,
   })
+
+  // Configure auth
+  const authStorage = AuthStorage.create()
+  if (config.apiKey) {
+    authStorage.set("litellm", { type: "api_key", key: config.apiKey })
+  }
+
+  // Create resource loader with Xyne extension
+  const resourceLoader = new DefaultResourceLoader({
+    systemPrompt: config.systemPrompt,
+    extensionFactories: [xyneExtension],
+  })
+  await resourceLoader.reload()
+
+  // Build model config
+  const model = buildModel(config.model, config.baseUrl)
+
+  // Create session with settings
+  const { session } = await createAgentSession({
+    model,
+    customTools: config.tools,
+    tools: [],
+    resourceLoader,
+    sessionManager: SessionManager.inMemory(),
+    settingsManager: SettingsManager.inMemory({
+      compaction: { enabled: true },
+      retry: { enabled: false },
+    }),
+  })
+
+  session.agent.setSystemPrompt(config.systemPrompt)
+  return { session, xyneState: config.xyneState }
+}
+
+function buildModel(modelId: string, baseUrl: string) {
+  return {
+    id: modelId,
+    name: modelId,
+    api: "openai-completions" as const,
+    provider: "litellm",
+    baseUrl,
+    reasoning: false,
+    input: ["text", "image"] as ("text" | "image")[],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128000,
+    maxTokens: 4096,
+    compat: {
+      supportsStore: false,
+      supportsStreaming: true,
+      supportsToolStreaming: true,
+    },
+  }
 }

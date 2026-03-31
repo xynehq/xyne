@@ -40,10 +40,9 @@ import type { XyneAgentState } from "./adapter"
 import {
   createInitialXyneState,
   registerSession,
-  unregisterSession,
-  setPersistFunction,
-  setRuntime,
   setXyneState,
+  unregisterSession,
+  setRuntime,
 } from "./adapter"
 import {
   executeMcpVirtualAgent,
@@ -335,12 +334,9 @@ export async function runDelegatedAgentWithPiMono(
     // Add MCP tools if available
     const allTools = [...toolsWithoutDelegation]
 
-    // Register session
-    const sessionId = chatExternalId
     const persistFn = async (state: XyneAgentState) => {
       logger.debug("[DelegatedAgent] Persisting state")
     }
-    registerSession(sessionId, agentState, persistFn)
 
     // Build system prompt
     const systemPrompt = buildDelegatedAgentSystemPrompt(
@@ -416,6 +412,8 @@ export async function runDelegatedAgentWithPiMono(
       }),
     })
 
+    const sessionId = piSession.sessionManager.getSessionId()
+    registerSession(sessionId, agentState, persistFn)
     piSession.agent.setSystemPrompt(systemPrompt)
     setXyneState(piSession as any, agentState)
 
@@ -581,7 +579,18 @@ export async function runDelegatedAgentWithPiMono(
       contexts: fragments.map((f) => ({
         id: f.id,
         content: f.content,
-        source: f.source,
+        source: {
+          docId: f.source?.docId || f.id,
+          title: f.source?.title || "Document",
+          url: f.source?.url || "",
+          app: String(f.source?.app || "unknown"),
+          entity: f.source?.entity,
+          itemId: f.source?.itemId,
+          clId: f.source?.clId,
+          page_title: f.source?.page_title,
+          threadId: f.source?.threadId,
+          parentThreadId: f.source?.parentThreadId,
+        },
         confidence: f.confidence,
       })),
       metadata: {
@@ -750,7 +759,7 @@ function buildDelegatedAgentSystemPrompt(
     "- Focus on your specific domain and expertise.",
     "- Use available tools to gather information and complete tasks.",
     "- Do not delegate to other agents - you are the final executor.",
-    "- Call synthesizeFinalAnswer when you have completed your task.",
+    "- Respond directly with your answer when you have completed your task.",
     "- Cite sources using the format K[docId_chunkIndex] when referencing documents.",
     "",
     "# TASK",
@@ -777,6 +786,6 @@ function buildXyneTools(): any[] {
     tools.searchChatHistoryTool,
     tools.toDoWriteTool,
     tools.fallBackTool,
-    tools.synthesizeFinalAnswerTool,
+    // Note: synthesizeFinalAnswerTool removed - agent now responds directly
   ].filter(Boolean)
 }

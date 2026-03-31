@@ -1259,6 +1259,7 @@ export const answerContextMap = async (
 export const answerContextMapFromFragments = (
   fragments: MinimalAgentFragment[],
   maxSummaryChunks?: number,
+  startIndex: number = 1,
 ): string => {
   if (!fragments || fragments.length === 0) {
     return ""
@@ -1267,7 +1268,7 @@ export const answerContextMapFromFragments = (
   return fragments
     .slice(0, maxSummaryChunks)
     .map((fragment, index) => {
-      const citationIndex = index + 1
+      const citationIndex = startIndex + index
       return `Index ${citationIndex} \n ${fragment.content}`
     })
     .join("\n\n")
