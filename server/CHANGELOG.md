@@ -1,3 +1,10 @@
+# [3.47.0](https://github.com/xynehq/xyne/compare/v3.46.0...v3.47.0) (2026-03-31)
+
+
+### Features
+
+* unified image handling in agentic ([#1299](https://github.com/xynehq/xyne/issues/1299)) ([4636e15](https://github.com/xynehq/xyne/commit/4636e151f49d8e55f4e12b33e8e0cf1305bf6e9b))
+
 # [3.46.0](https://github.com/xynehq/xyne/compare/v3.45.0...v3.46.0) (2026-03-31)
 
 
