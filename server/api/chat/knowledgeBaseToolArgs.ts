@@ -87,11 +87,12 @@ export function normalizeKnowledgeBaseToolArgs(
         }
   }
 
-  const parsedTargets = filters.targets.map((target) =>
+  const originalTargets = filters.targets
+  const parsedTargets = originalTargets.map((target) =>
     tryParseStructuredJsonString(target),
   )
   const targetsChanged = parsedTargets.some(
-    (target, index) => target !== filters.targets[index],
+    (target, index) => target !== originalTargets[index],
   )
 
   if (!targetsChanged && filters === normalizedArgs.filters) {
@@ -102,7 +103,7 @@ export function normalizeKnowledgeBaseToolArgs(
     ...normalizedArgs,
     filters: {
       ...filters,
-      targets: targetsChanged ? parsedTargets : filters.targets,
+      targets: targetsChanged ? parsedTargets : originalTargets,
     },
   }
 }

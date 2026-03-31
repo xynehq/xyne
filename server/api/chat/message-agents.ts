@@ -1829,6 +1829,7 @@ export async function beforeToolExecutionHook(
   const incomingExcludedIds = normalizeExcludedIdsForLogging(
     (normalizedArgs as any)?.excludedIds,
   )
+  //Todo: santizie args for logging to avoid logging sensitive info; for now we just log excludedIds which are less likely to contain sensitive info and are important for debugging retrieval issues.
   logContextMutation(context, "[beforeToolExecutionHook] Received tool args", {
     toolName,
     args: normalizedArgs,
