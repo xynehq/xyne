@@ -1200,7 +1200,12 @@ async function buildUntargetedLsEntries(
       })),
     ].map(async ({ itemId, expectedType }) => {
       const item = await repo.getCollectionItemById(itemId)
-      if (!item || item.type !== expectedType) return null
+      const candidateItem =
+        item as (CollectionItem & { deleted_at?: Date | null }) | null
+      if (!item || candidateItem?.deletedAt || candidateItem?.deleted_at) {
+        return null
+      }
+      if (item.type !== expectedType) return null
       if (fullCollectionIds.has(item.collectionId)) return null
 
       return createTopLevelItemLsEntry(item, includeMetadata)

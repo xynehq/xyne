@@ -69,7 +69,8 @@ export function normalizeKnowledgeBaseToolArgs(
   filters.targets = tryParseStructuredJsonString(filters.targets)
 
   if (Array.isArray(filters.targets)) {
-    filters.targets = filters.targets.map((target) =>
+    const targets = filters.targets
+    filters.targets = targets.map((target) =>
       tryParseStructuredJsonString(target),
     )
   }
