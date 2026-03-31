@@ -1,3 +1,10 @@
+## [3.47.1](https://github.com/xynehq/xyne/compare/v3.47.0...v3.47.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* circular dependency fix ([#1302](https://github.com/xynehq/xyne/issues/1302)) ([1bea7d5](https://github.com/xynehq/xyne/commit/1bea7d576af4bd04277e090fcd2924e2619d675a))
+
 # [3.47.0](https://github.com/xynehq/xyne/compare/v3.46.0...v3.47.0) (2026-03-31)
 
 
