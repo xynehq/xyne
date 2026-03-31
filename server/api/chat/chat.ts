@@ -1868,13 +1868,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           chunksPerDocument
         )
 
-        const { imageFileNames } = extractImageFileNames(
-          initialContext,
-          totalResults,
-        )
+        const { imageFileNames, contextWithoutImageBlocks } =
+          extractImageFileNames(initialContext, totalResults)
 
-        contextSpan?.setAttribute("context_length", initialContext?.length || 0)
-        contextSpan?.setAttribute("context", initialContext || "")
+        contextSpan?.setAttribute(
+          "context_length",
+          contextWithoutImageBlocks?.length || 0,
+        )
+        contextSpan?.setAttribute("context", contextWithoutImageBlocks || "")
         contextSpan?.setAttribute("number_of_chunks", totalResults.length)
         loggerWithChild({ email: email }).info(
           `[Query Rewrite Path] Number of contextual chunks being passed: ${totalResults.length}`,
@@ -1887,7 +1888,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           query,
           userCtx,
           userMetadata,
-          initialContext,
+          contextWithoutImageBlocks,
           // pageNumber,
           // maxPageNumber,
           {
@@ -2082,13 +2083,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       chunksPerDocument
     )
 
-    const { imageFileNames } = extractImageFileNames(
-      initialContext,
-      results?.root?.children,
-    )
+    const { imageFileNames, contextWithoutImageBlocks } =
+      extractImageFileNames(initialContext, results?.root?.children)
 
-    contextSpan?.setAttribute("context_length", initialContext?.length || 0)
-    contextSpan?.setAttribute("context", initialContext || "")
+    contextSpan?.setAttribute(
+      "context_length",
+      contextWithoutImageBlocks?.length || 0,
+    )
+    contextSpan?.setAttribute("context", contextWithoutImageBlocks || "")
     contextSpan?.setAttribute(
       "number_of_chunks",
       results?.root?.children?.length || 0,
@@ -2106,7 +2108,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       input,
       userCtx,
       userMetadata,
-      initialContext,
+      contextWithoutImageBlocks,
       {
         stream: true,
         modelId: modelId || defaultBestModel,
@@ -2480,7 +2482,7 @@ async function* generateAnswerFromGivenContext(
     : []
 
   const initialContext = cleanContext(resolvedContexts.join("\n"))
-  const { imageFileNames } = extractImageFileNames(
+  const { imageFileNames, contextWithoutImageBlocks } = extractImageFileNames(
     initialContext,
     combinedSearchResponse,
   )
@@ -2496,9 +2498,9 @@ async function* generateAnswerFromGivenContext(
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
   initialContextSpan?.setAttribute(
     "context_length",
-    initialContext?.length || 0,
+    contextWithoutImageBlocks?.length || 0,
   )
-  initialContextSpan?.setAttribute("context", initialContext || "")
+  initialContextSpan?.setAttribute("context", contextWithoutImageBlocks || "")
   initialContextSpan?.setAttribute(
     "number_of_chunks",
     combinedSearchResponse?.length || 0,
@@ -2514,7 +2516,7 @@ async function* generateAnswerFromGivenContext(
     builtUserQuery,
     userCtx,
     userMetadata,
-    initialContext,
+    contextWithoutImageBlocks,
     {
       stream: true,
       modelId: modelId ? (modelId as Models) : defaultBestModel,
@@ -3066,7 +3068,7 @@ export async function* generateAnswerFromDualRag(
     : []
 
   const initialContext = cleanContext(resolvedContexts.join("\n"))
-  const { imageFileNames } = extractImageFileNames(
+  const { imageFileNames, contextWithoutImageBlocks } = extractImageFileNames(
     initialContext,
     combinedSearchResponse,
   )
@@ -3083,12 +3085,12 @@ export async function* generateAnswerFromDualRag(
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
   initialContextSpan?.setAttribute(
     "context_length",
-    initialContext?.length || 0,
+    contextWithoutImageBlocks?.length || 0,
   )
   // Do not log raw context; log size/hash only
   initialContextSpan?.setAttribute(
     "context_length_only",
-    initialContext?.length || 0,
+    contextWithoutImageBlocks?.length || 0,
   )
   initialContextSpan?.setAttribute(
     "number_of_chunks",
@@ -3108,7 +3110,7 @@ export async function* generateAnswerFromDualRag(
     builtUserQuery,
     userCtx,
     userMetadata,
-    initialContext,
+    contextWithoutImageBlocks,
     {
       stream: true,
       modelId: modelId ? (modelId as Models) : defaultBestModel,
@@ -3702,13 +3704,16 @@ async function* generatePointQueryTimeExpansion(
       chunksPerDocument,
     )
 
-    const { imageFileNames } = extractImageFileNames(
+    const { imageFileNames, contextWithoutImageBlocks } = extractImageFileNames(
       initialContext,
       combinedResults?.root?.children,
     )
 
-    contextSpan?.setAttribute("context_length", initialContext?.length || 0)
-    contextSpan?.setAttribute("context", initialContext || "")
+    contextSpan?.setAttribute(
+      "context_length",
+      contextWithoutImageBlocks?.length || 0,
+    )
+    contextSpan?.setAttribute("context", contextWithoutImageBlocks || "")
     contextSpan?.setAttribute(
       "number_of_chunks",
       combinedResults?.root?.children?.length || 0,
@@ -3722,7 +3727,7 @@ async function* generatePointQueryTimeExpansion(
       input,
       userCtx,
       userMetadata.dateForAI,
-      initialContext,
+      contextWithoutImageBlocks,
       {
         stream: true,
         modelId: modelId || defaultBestModel,
@@ -3847,7 +3852,10 @@ async function* processResultsForMetadata(
     isMsgWithKbItems,
     chunksCountPerDoc,
   )
-  const { imageFileNames } = extractImageFileNames(context, items)
+  const { imageFileNames, contextWithoutImageBlocks } = extractImageFileNames(
+    context,
+    items,
+  )
   const streamOptions = {
     stream: true,
     modelId: modelId ? (modelId as Models) : defaultBestModel,
@@ -3863,7 +3871,7 @@ async function* processResultsForMetadata(
       input,
       userCtx,
       userMetadata.dateForAI,
-      context,
+      contextWithoutImageBlocks,
       streamOptions,
     )
   } else {
@@ -3872,7 +3880,7 @@ async function* processResultsForMetadata(
       input,
       userCtx,
       userMetadata,
-      context,
+      contextWithoutImageBlocks,
       streamOptions,
       isMsgWithKbItems,
       isMsgWithKbItems,

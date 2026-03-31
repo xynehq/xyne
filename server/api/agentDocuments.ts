@@ -69,7 +69,6 @@ export const GetAgentDocumentApi = async (c: Context) => {
       content: document.content,
       reasoning: document.reasoning,
       citations: document.citations,
-      confidence: document.confidence,
       createdAt: document.createdAt,
     })
   } catch (error) {
@@ -126,7 +125,6 @@ export const GetAgentDocumentContentApi = async (c: Context) => {
       content: document.content,
       reasoning: document.reasoning,
       citations: document.citations,
-      confidence: document.confidence,
       createdAt: document.createdAt,
     })
   } catch (error) {

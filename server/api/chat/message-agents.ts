@@ -126,6 +126,7 @@ import type {
   ToolRawDocument,
   RetrievalSignal,
   UnrankedFragmentWithToolContext,
+  ImageMemoryEntry,
 } from "./agent-schemas"
 import { ReviewResultSchema, ToolExpectationSchema } from "./agent-schemas"
 import { isMessageAgentStopError, throwIfStopRequested } from "./agent-stop"
@@ -187,9 +188,12 @@ import {
   getFragmentsForSynthesis,
   getFragmentsForSynthesisForDocs,
   getDocsWithSignalsInTurnRange,
-  getAllImagesFromDocumentMemory,
+  gatherToolOutputExtractedImages,
+  getImageFileNamesForLlmFromStores,
+  mergeCurrentTurnToolOutputImagesIntoImageMemory,
   mergeDocumentStatesIntoDocumentMemory,
   mergeRawDocumentsIntoDocumentMemory,
+  seedImageMemoryFromImages,
   createSyntheticDocFromChatMemory,
   createSyntheticDocFromLs,
   createSyntheticDocFromAgent,
@@ -240,6 +244,7 @@ const USE_AGENTIC_FILTERING = config.useAgenticFiltering ?? true
 
 const DEFAULT_REVIEW_FREQUENCY = 5
 const MAX_REVIEW_FREQUENCY = 50
+export const AgentResponseConfidence = 0.85
 
 const mutableAgentContext = (
   context: Readonly<AgentRunContext>,
@@ -286,6 +291,7 @@ function mergeToolOutputsIntoCurrentTurnMemory(
       turnNumber,
       output.query ?? "",
       output.toolName,
+      output.toolCallId,
     )
   }
 
@@ -488,6 +494,7 @@ function buildContextTraceSnapshot(
     turnCount: context.turnCount,
     currentSubTask: context.currentSubTask,
     documentMemoryDocCount: context.documentMemory.size,
+    imageMemorySize: context.imageMemory.size,
     currentTurnDocumentMemoryDocCount: context.currentTurnDocumentMemory.size,
     currentTurnToolOutputCount: context.currentTurnArtifacts.toolOutputs.length,
     currentTurnExpectationCount:
@@ -523,6 +530,10 @@ function resetCurrentTurnArtifacts(context: AgentRunContext): void {
     (sum, o) => sum + (o.rawDocuments?.length ?? 0),
     0,
   )
+  const clearedExtractedImagesCount = previousArtifacts.toolOutputs.reduce(
+    (sum, o) => sum + (o.extractedImages?.length ?? 0),
+    0,
+  )
   const clearedSyntheticDocsCount = previousArtifacts.syntheticDocs.length
   const currentTurnDocCount = context.currentTurnDocumentMemory.size
   context.currentTurnArtifacts = createEmptyTurnArtifacts()
@@ -532,6 +543,7 @@ function resetCurrentTurnArtifacts(context: AgentRunContext): void {
     "[MessageAgents][Context] Reset current turn artifacts",
     {
       clearedRawCount,
+      clearedExtractedImagesCount,
       clearedSyntheticDocsCount,
       clearedExpectationCount: previousArtifacts.expectations.length,
       clearedToolOutputCount: previousArtifacts.toolOutputs.length,
@@ -1251,6 +1263,7 @@ function initializeAgentContext(
     turnRankedCount: new Map(),
     turnNewChunksCount: new Map(),
     currentTurnArtifacts,
+    imageMemory: new Map(),
     turnCount: MIN_TURN_NUMBER,
     totalLatency: 0,
     totalCost: 0,
@@ -1907,9 +1920,16 @@ export async function afterToolExecutionHook(
   expectedResult: ToolExpectation | undefined,
   turnNumber: number,
   reasoningEmitter?: ReasoningEmitter,
+  toolCallId?: string,
 ): Promise<string | ToolResult | null> {
   const { state, executionTime, status, args } = hookContext
   const context = state.context as AgentRunContext
+  const resolvedToolCallId =
+    toolCallId ??
+    (hookContext.toolCall?.id != null &&
+    String(hookContext.toolCall.id).trim() !== ""
+      ? String(hookContext.toolCall.id)
+      : undefined)
 
   logContextMutation(
     context,
@@ -2019,11 +2039,6 @@ export async function afterToolExecutionHook(
     (result?.data && typeof result.data === "object" && typeof (result.data as { resultSummary?: string }).resultSummary === "string")
       ? (result.data as { resultSummary: string }).resultSummary
       : summarizeToolResultPayload(result)
-  const toolCallId =
-    hookContext.toolCall?.id !== undefined &&
-    hookContext.toolCall?.id !== null
-      ? String(hookContext.toolCall.id)
-      : undefined
 
   // 5b. Handle synthetic documents for non-Vespa tools (chat memory, ls)
   // These are derived documents, not retrievable truth sources
@@ -2034,7 +2049,7 @@ export async function afterToolExecutionHook(
       chatId,
       turnNumber: effectiveTurnNumber,
       query: toolQuery,
-      toolCallId,
+      toolCallId: resolvedToolCallId,
     })
     context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
     loggerWithChild({ email: context.user.email }).info(
@@ -2050,7 +2065,7 @@ export async function afterToolExecutionHook(
         targetId: lsData.target?.id,
         targetPath: lsData.target?.path,
         turnNumber: effectiveTurnNumber,
-        toolCallId,
+        toolCallId: resolvedToolCallId,
       })
       context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
       loggerWithChild({ email: context.user.email }).info(
@@ -2075,7 +2090,7 @@ export async function afterToolExecutionHook(
       turnNumber: effectiveTurnNumber,
       toolQuery,
       delegationRunId,
-      toolCallId,
+      toolCallId: resolvedToolCallId,
     })
     context.currentTurnArtifacts.syntheticDocs.push(syntheticDoc)
     loggerWithChild({ email: context.user.email }).info(
@@ -2096,7 +2111,6 @@ export async function afterToolExecutionHook(
           agentName,
           content: resultSummary,
           citations,
-          confidence: 0.85, // For now it's hardcoded
         })
         syntheticDoc.source.url = `/api/v1/agent-documents/${persistedDocument.externalId}/content`
       } catch (error) {
@@ -2241,13 +2255,20 @@ export async function afterToolExecutionHook(
     )
   }
 
+  const imageCitationsForGather = toolName === XyneTools.runPublicAgent ? (resultData as { imageCitations?: ImageCitation[] })?.imageCitations : undefined
+  const { images: extractedImages, fragmentsWithoutImageBlocks } = gatherToolOutputExtractedImages(rawDocuments, toolFragments, imageCitationsForGather)
+  toolFragments = fragmentsWithoutImageBlocks
+
   context.currentTurnArtifacts.toolOutputs.push({
+    toolCallId: resolvedToolCallId,
     toolName,
     arguments: args,
     status: record.status,
     resultSummary,
     query: toolQuery,
     rawDocuments: rawDocuments.length > 0 ? rawDocuments : undefined,
+    extractedImages:
+      extractedImages.length > 0 ? extractedImages : undefined,
   })
   logContextMutation(
     context,
@@ -2327,20 +2348,6 @@ export async function buildDelegatedAgentFragments(opts: {
     filteredFragments.map((f) => f?.id).filter((id): id is string => !!id),
   )
 
-  const filteredFragmentsWithImages = filteredFragments.map((f) => {
-    if (!Array.isArray(f.images) || f.images.length === 0) return f
-    return {
-      ...f,
-      images:
-        allowedImagePaths.size > 0
-          ? f.images.filter(
-              (img) =>
-                allowedImagePaths.has(img.fileName) &&
-                filteredFragmentIds.has(img.sourceFragmentId),
-            )
-          : [],
-    }
-  })
   const resultSummary =
     typeof resultData.resultSummary === "string"
       ? resultData.resultSummary.trim()
@@ -2375,8 +2382,8 @@ export async function buildDelegatedAgentFragments(opts: {
   return {
     rawDocuments: filteredRawDocuments,
     fragments: syntheticDelegatedAgentFragment
-      ? [...filteredFragmentsWithImages, syntheticDelegatedAgentFragment]
-      : filteredFragmentsWithImages,
+      ? [...filteredFragments, syntheticDelegatedAgentFragment]
+      : filteredFragments,
   }
 }
 
@@ -2947,13 +2954,18 @@ export async function buildReviewPromptFromContext(
     IMAGE_CONTEXT_CONFIG.maxImagesPerCall && IMAGE_CONTEXT_CONFIG.maxImagesPerCall > 0
       ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
       : 8
-  const { imageFileNamesForModel: currentImages, total: totalImages } =
-    getAllImagesFromDocumentMemory(context.documentMemory ?? new Map(), {
-      docOrder: docOrderForImages,
-      maxImages: reviewImageBudget,
-    })
-  const additionalImages = Math.max(totalImages - currentImages.length, 0)
-  const imageSection = `Attachments in this window: ${currentImages.length}\nFrom prior turns: ${additionalImages}`
+  const { imageFileNamesForModel: currentImages, total: totalImages, dropped } = 
+    IMAGE_CONTEXT_CONFIG.enabled 
+    ?
+      getImageFileNamesForLlmFromStores(
+        context.imageMemory ?? new Map(),
+        {
+          docOrder: docOrderForImages,
+          maxImages: reviewImageBudget,
+        },
+      ) 
+    : { imageFileNamesForModel: [], total: 0, dropped: 0 }
+  const imageSection = `Images available (Vespa-ranked, top ${reviewImageBudget} shown to model): ${currentImages.length} of ${totalImages} (${dropped} omitted by budget)`
   const reviewFocus = `Review Focus: ${options?.focus ?? "turn_end"} (evaluating through turn ${
     options?.turnNumber ?? context.turnCount
   })`
@@ -3068,10 +3080,7 @@ async function runReviewLLM(
   const hasChatMemory = !!sanitizeChatMemoryForLLMContext(
     context.chatMemoryText,
   )
-  const totalImagesAll = Array.from(context.documentMemory?.values?.() ?? []).reduce(
-    (sum, doc) => sum + (doc.images?.length ?? 0),
-    0,
-  )
+  const totalImagesAll = context.imageMemory.size
   Logger.debug(
     {
       email: context.user.email,
@@ -3768,15 +3777,18 @@ function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
         total,
         dropped,
       } = IMAGE_CONTEXT_CONFIG.enabled
-        ? getAllImagesFromDocumentMemory(context.documentMemory, {
-            docOrder,
-            maxImages: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
-          })
+        ? getImageFileNamesForLlmFromStores(
+            context.imageMemory,
+            {
+              docOrder,
+              maxImages: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
+            },
+          )
         : { imageFileNamesForModel: [], total: 0, dropped: 0 }
 
-      const attachmentImageCount = Array.from(context.documentMemory.values())
-        .flatMap((d) => d.images ?? [])
-        .filter((img) => img.isAttachment).length
+      const attachmentImageCount = [...context.imageMemory.values()].filter(
+        (e) => e.isUserAttachment,
+      ).length
 
       loggerWithChild({ email: context.user.email }).debug(
         {
@@ -5076,24 +5088,6 @@ export async function MessageAgents(c: Context): Promise<Response> {
             }
           }
         }
-        if (initialAttachmentContext) {
-          const { rawDocuments, summary: attachmentSummary } =
-            initialAttachmentContext
-          if (rawDocuments.length > 0) {
-            mergeRawDocumentsIntoDocumentMemory(
-              agentContext.documentMemory,
-              rawDocuments,
-              MIN_TURN_NUMBER,
-              message,
-              "initial_attachment",
-            )
-          }
-          agentContext.chat.metadata = {
-            ...agentContext.chat.metadata,
-            initialAttachmentPhase: true,
-            initialAttachmentSummary: attachmentSummary,
-          }
-        }
 
         // Pass memory then attachments as low-privilege synthetic tool results.
         // We must also simulate the preceding assistant tool_call so JAF can
@@ -5115,7 +5109,24 @@ export async function MessageAgents(c: Context): Promise<Response> {
           )
         }
         if (initialAttachmentContext) {
-          const attachmentDocIds = initialAttachmentContext.rawDocuments.map(
+          const attachmentToolCallId = `synthetic-${ATTACHMENT_TOOL_MESSAGE}-${MIN_TURN_NUMBER}`
+          const { rawDocuments, summary: attachmentSummary } = initialAttachmentContext
+          if (rawDocuments.length > 0) {
+            mergeRawDocumentsIntoDocumentMemory(
+              agentContext.documentMemory,
+              rawDocuments,
+              MIN_TURN_NUMBER,
+              message,
+              "initial_attachment",
+              attachmentToolCallId,
+            )
+          }
+          agentContext.chat.metadata = {
+            ...agentContext.chat.metadata,
+            initialAttachmentPhase: true,
+            initialAttachmentSummary: attachmentSummary,
+          }
+          const attachmentDocIds = rawDocuments.map(
             (d) => d.docId,
           )
           const attachmentDocs = attachmentDocIds
@@ -5130,10 +5141,24 @@ export async function MessageAgents(c: Context): Promise<Response> {
                     email: agentContext.user.email,
                     userId: agentContext.user.numericId ?? undefined,
                     workspaceId: agentContext.user.workspaceNumericId ?? undefined,
+                    includeImageBlocks: true,
                   },
                 )
               : []
-          const attachmentToolCallId = `synthetic-${ATTACHMENT_TOOL_MESSAGE}-${MIN_TURN_NUMBER}`
+          // Extract images from attachment fragments and seed into imageMemory
+          // so they are available for the first review
+          const { images: attachmentImages, fragmentsWithoutImageBlocks } = gatherToolOutputExtractedImages(
+            initialAttachmentContext.rawDocuments,
+            attachmentFragments,
+            [],
+          )
+          if (attachmentImages.length > 0) {
+            seedImageMemoryFromImages(
+              agentContext.imageMemory,
+              attachmentImages,
+              MIN_TURN_NUMBER,
+            )
+          }
           initialSyntheticMessages.push(
             buildSyntheticAssistantToolCallMessage({
               toolCallId: attachmentToolCallId,
@@ -5141,7 +5166,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               arguments: { source: "user_attachment" },
             }),
             buildAttachmentToolMessage(
-              attachmentFragments,
+              fragmentsWithoutImageBlocks,
               initialAttachmentContext.summary,
               attachmentToolCallId,
             ),
@@ -5320,6 +5345,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
           turn: number,
         ): Promise<void> => {
           mergeToolOutputsIntoCurrentTurnMemory(agentContext, turn)
+          mergeCurrentTurnToolOutputImagesIntoImageMemory(agentContext)
           await runTurnEndPipeline(agentContext, {
             turn,
             useAgenticFiltering: USE_AGENTIC_FILTERING,
@@ -5527,6 +5553,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               expectationForCall,
               turnForCall,
               toolScopedEmitter,
+              normalizedCallId,
             )
 
             return content
@@ -6961,6 +6988,7 @@ async function runDelegatedAgentWithMessageAgents(
       turn: number,
     ): Promise<void> => {
       mergeToolOutputsIntoCurrentTurnMemory(agentContext, turn)
+      mergeCurrentTurnToolOutputImagesIntoImageMemory(agentContext)
       await runTurnEndPipeline(agentContext, {
         turn,
         useAgenticFiltering: internalCfg

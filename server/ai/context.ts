@@ -454,6 +454,7 @@ const constructFileContext = (
   isSelectedFiles?: boolean,
   allowChunkCitations?: boolean,
   renderMetadata: AnswerContextRenderMetadata | null = null,
+  includeImageBlock?: boolean,
 ): string => {
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
@@ -509,45 +510,48 @@ const constructFileContext = (
       .join("\n")
   }
 
-  let imageChunks: ScoredChunk[] = []
-  const maxImageChunks =
-    fields.image_chunks_summary?.length &&
-    fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
-      ? fields.image_chunks_summary?.length
-      : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
+  let imageContent = ""
 
-  if (fields.matchfeatures) {
-    const summaryStrings =
-      fields.image_chunks_summary?.map((c) =>
-        typeof c === "string" ? c : c.chunk,
-      ) || []
+  if (includeImageBlock) {
+    let imageChunks: ScoredChunk[] = []
+    const maxImageChunks =
+      fields.image_chunks_summary?.length &&
+      fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
+        ? fields.image_chunks_summary?.length
+        : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
 
-    imageChunks = getSortedScoredImageChunks(
-      fields.matchfeatures,
-      fields.image_chunks_pos_summary as number[],
-      summaryStrings as string[],
-      fields.docId,
-    )
-  } else {
-    const imageChunksPos =
-      (fields.image_chunks_pos_summary as number[]) || []
+    if (fields.matchfeatures) {
+      const summaryStrings =
+        fields.image_chunks_summary?.map((c) =>
+          typeof c === "string" ? c : c.chunk,
+        ) || []
 
-    imageChunks =
-      fields.image_chunks_summary?.map((chunk, idx) => {
-        const result = {
-          chunk: `${fields.docId}_${imageChunksPos[idx]}`,
-          index: idx,
-          score: 0,
-        }
-        return result
-      }) || []
+      imageChunks = getSortedScoredImageChunks(
+        fields.matchfeatures,
+        fields.image_chunks_pos_summary as number[],
+        summaryStrings as string[],
+        fields.docId,
+      )
+    } else {
+      const imageChunksPos =
+        (fields.image_chunks_pos_summary as number[]) || []
+
+      imageChunks =
+        fields.image_chunks_summary?.map((chunk, idx) => {
+          const result = {
+            chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+            index: idx,
+            score: 0,
+          }
+          return result
+        }) || []
+    }
+
+    imageContent = imageChunks
+      .slice(0, maxImageChunks)
+      .map((v) => v.chunk)
+      .join("\n")
   }
-
-  let imageContent = imageChunks
-    .slice(0, maxImageChunks)
-    .map((v) => v.chunk)
-    .join("\n")
-
   return `App: ${fields.app}
 Entity: ${fields.entity}
 Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}
@@ -558,7 +562,7 @@ ${fields.metadata ? `parent FolderName: ${folderName}` : ""}
 ${fields.mimeType ? `Mime Type: ${fields.mimeType}` : ""}
 ${fields.permissions ? `Permissions: ${fields.permissions.join(", ")}` : ""}
 ${fields.chunks_summary && fields.chunks_summary.length ? `Content: ${content}` : ""}
-${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
+${includeImageBlock && fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
 }
 
 // TODO: tell if workspace that this is an employee
@@ -880,6 +884,7 @@ const constructDataSourceFileContext = (
   userTimeZone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
+  includeImageBlock?: boolean,
 ): string => {
   let chunks: ScoredChunk[] = []
   if (fields.matchfeatures && fields.chunks_summary) {
@@ -915,44 +920,46 @@ const constructDataSourceFileContext = (
       .join("\n")
   }
 
-  let imageChunks: ScoredChunk[] = []
-  const maxImageChunks =
-    fields.image_chunks_summary?.length &&
-    fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
-      ? fields.image_chunks_summary?.length
-      : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
-  if (fields.matchfeatures) {
-    imageChunks = getSortedScoredImageChunks(
-      fields.matchfeatures,
-      fields.image_chunks_pos_summary as number[],
-      fields.image_chunks_summary as string[],
-      fields.docId,
-    )
-  } else {
-    const imageChunksPos =
-      (fields.image_chunks_pos_summary as number[]) || []
-    imageChunks =
-      fields.image_chunks_summary?.map((chunk, idx) => ({
-        chunk: `${fields.docId}_${imageChunksPos[idx]}`,
-        index: idx,
-        score: 0,
-      })) || []
-  }
-
   let imageContent = ""
-  if (isSelectedFiles && fields?.matchfeatures) {
-    imageContent = imageChunks
-      .slice(0, maxImageChunks)
-      .sort((a, b) => a.index - b.index)
-      .map((v) => v.chunk)
-      .join("\n")
-  } else if (isSelectedFiles) {
-    imageContent = imageChunks.map((v) => v.chunk).join("\n")
-  } else {
-    imageContent = imageChunks
-      .slice(0, maxImageChunks)
-      .map((v) => v.chunk)
-      .join("\n")
+  if (includeImageBlock) {
+    let imageChunks: ScoredChunk[] = []
+    const maxImageChunks =
+      fields.image_chunks_summary?.length &&
+      fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
+        ? fields.image_chunks_summary?.length
+        : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
+    if (fields.matchfeatures) {
+      imageChunks = getSortedScoredImageChunks(
+        fields.matchfeatures,
+        fields.image_chunks_pos_summary as number[],
+        fields.image_chunks_summary as string[],
+        fields.docId,
+      )
+    } else {
+      const imageChunksPos =
+        (fields.image_chunks_pos_summary as number[]) || []
+      imageChunks =
+        fields.image_chunks_summary?.map((chunk, idx) => ({
+          chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+          index: idx,
+          score: 0,
+        })) || []
+    }
+
+    if (isSelectedFiles && fields?.matchfeatures) {
+      imageContent = imageChunks
+        .slice(0, maxImageChunks)
+        .sort((a, b) => a.index - b.index)
+        .map((v) => v.chunk)
+        .join("\n")
+    } else if (isSelectedFiles) {
+      imageContent = imageChunks.map((v) => v.chunk).join("\n")
+    } else {
+      imageContent = imageChunks
+        .slice(0, maxImageChunks)
+        .map((v) => v.chunk)
+        .join("\n")
+    }
   }
 
   return `Title: ${fields.fileName || "N/A"}
@@ -972,7 +979,7 @@ const constructDataSourceFileContext = (
   }
   ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
   ${content ? `Content: ${content}` : ""}
-  ${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
+  ${includeImageBlock && fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
 }
 
 const constructCollectionFileContext = (
@@ -981,6 +988,7 @@ const constructCollectionFileContext = (
   isSelectedFiles?: boolean,
   allowChunkCitations?: boolean,
   renderMetadata: AnswerContextRenderMetadata | null = null,
+  includeImageBlock?: boolean,
 ): string => {
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
@@ -1040,45 +1048,47 @@ const constructCollectionFileContext = (
       .join("\n")
   }
 
-  let imageChunks: ScoredChunk[] = []
-  const maxImageChunks =
-    fields.image_chunks_summary?.length &&
-    fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
-      ? fields.image_chunks_summary?.length
-      : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
+  let imageContent = ""
+  if (includeImageBlock) {
+    let imageChunks: ScoredChunk[] = []
+    const maxImageChunks =
+      fields.image_chunks_summary?.length &&
+      fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
+        ? fields.image_chunks_summary?.length
+        : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
 
-  if (fields.matchfeatures) {
-    const summaryStrings =
-      fields.image_chunks_summary?.map((c) =>
-        typeof c === "string" ? c : c.chunk,
-      ) || []
+    if (fields.matchfeatures) {
+      const summaryStrings =
+        fields.image_chunks_summary?.map((c) =>
+          typeof c === "string" ? c : c.chunk,
+        ) || []
 
-    imageChunks = getSortedScoredImageChunks(
-      fields.matchfeatures,
-      fields.image_chunks_pos_summary as number[],
-      summaryStrings as string[],
-      fields.docId,
-    )
-  } else {
-    const imageChunksPos =
-      (fields.image_chunks_pos_summary as number[]) || []
+      imageChunks = getSortedScoredImageChunks(
+        fields.matchfeatures,
+        fields.image_chunks_pos_summary as number[],
+        summaryStrings as string[],
+        fields.docId,
+      )
+    } else {
+      const imageChunksPos =
+        (fields.image_chunks_pos_summary as number[]) || []
 
-    imageChunks =
-      fields.image_chunks_summary?.map((chunk, idx) => {
-        const result = {
-          chunk: `${fields.docId}_${imageChunksPos[idx]}`,
-          index: idx,
-          score: 0,
-        }
-        return result
-      }) || []
+      imageChunks =
+        fields.image_chunks_summary?.map((chunk, idx) => {
+          const result = {
+            chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+            index: idx,
+            score: 0,
+          }
+          return result
+        }) || []
+    }
+
+    imageContent = imageChunks
+      .slice(0, maxImageChunks)
+      .map((v) => v.chunk)
+      .join("\n")
   }
-
-  let imageContent = imageChunks
-    .slice(0, maxImageChunks)
-    .map((v) => v.chunk)
-    .join("\n")
-
   return `Source: Knowledge Base
 File: ${fields.fileName || "N/A"}
 Knowledge Base ID: ${fields.clId || "N/A"}
@@ -1086,7 +1096,7 @@ Mime Type: ${fields.mimeType || "N/A"}
 ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.createdBy ? `Uploaded By: ${fields.createdBy}` : ""}
 ${content ? `Content: ${content}` : ""}
-${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
+${includeImageBlock && fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}`
 }
 
 type AiMetadataContext = string
@@ -1138,12 +1148,14 @@ export const answerContextMap = async (
   query?: string,
   precomputedDbContext?: Map<string, string>,
   renderMetadata: AnswerContextRenderMetadata | null = null,
+  includeImageBlock?: boolean,
 ): Promise<AiContext> => {
   if (
-    searchResult.fields.sddocname === fileSchema ||
+    query && 
+    (searchResult.fields.sddocname === fileSchema ||
     searchResult.fields.sddocname === dataSourceFileSchema ||
     searchResult.fields.sddocname === KbItemsSchema ||
-    searchResult.fields.sddocname === mailAttachmentSchema
+    searchResult.fields.sddocname === mailAttachmentSchema)
   ) {
     let mimeType
     let sheetName
@@ -1172,29 +1184,26 @@ export const answerContextMap = async (
       if (result.matchfeatures) {
         searchResult.fields.matchfeatures = result.matchfeatures
       }
-
-      if (query) {
-        const sheetResult = await processSheetQuery(
-          sheetName || "sheet",
-          searchResult.fields.chunks_summary,
-          query,
-          searchResult.fields.matchfeatures,
+      const sheetResult = await processSheetQuery(
+        sheetName || "sheet",
+        searchResult.fields.chunks_summary,
+        query,
+        searchResult.fields.matchfeatures,
+      )
+      if (sheetResult) {
+        const {
+          chunks_summary,
+          matchfeatures,
+          maxSummaryChunks: newMaxSummaryChunks,
+        } = sheetResult
+        searchResult.fields.chunks_summary = chunks_summary
+        searchResult.fields.matchfeatures = matchfeatures
+        maxSummaryChunks = newMaxSummaryChunks
+      } else {
+        maxSummaryChunks = Math.min(
+          searchResult.fields.chunks_summary?.length || 0,
+          maxSummaryChunks ?? 10,
         )
-        if (sheetResult) {
-          const {
-            chunks_summary,
-            matchfeatures,
-            maxSummaryChunks: newMaxSummaryChunks,
-          } = sheetResult
-          searchResult.fields.chunks_summary = chunks_summary
-          searchResult.fields.matchfeatures = matchfeatures
-          maxSummaryChunks = newMaxSummaryChunks
-        } else {
-          maxSummaryChunks = Math.min(
-            searchResult.fields.chunks_summary?.length || 0,
-            maxSummaryChunks ?? 10,
-          )
-        }
       }
     } else if (mimeType === "application/pdf") {
       const result = aggregateTableChunksForPdf(
@@ -1216,6 +1225,7 @@ export const answerContextMap = async (
       isSelectedFiles,
       allowChunkCitations,
       renderMetadata,
+      includeImageBlock,
     )
   } else if (searchResult.fields.sddocname === userSchema) {
     return constructUserContext(searchResult.fields)
@@ -1255,6 +1265,7 @@ export const answerContextMap = async (
       userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
+      includeImageBlock,
     )
   } else if (searchResult.fields.sddocname === KbItemsSchema) {
     const kbFields = searchResult.fields as VespaKbFileSearch
@@ -1282,6 +1293,7 @@ export const answerContextMap = async (
       isSelectedFiles,
       allowChunkCitations,
       renderMetadata,
+      includeImageBlock,
     )
   } else if (searchResult.fields.sddocname === ticketSchema) {
     return constructTicketContext(searchResult.fields)

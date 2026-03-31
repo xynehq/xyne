@@ -615,19 +615,21 @@ export const AgentMessageApiRagOff = async (c: Context) => {
                 maxDefaultSummary,
               )
 
-              const { imageFileNames } = extractImageFileNames(
-                context,
-                fragments.map(
-                  (v) =>
-                    ({
-                      fields: {
-                        docId: v.source.docId,
-                        title: v.source.title,
-                        url: v.source.url,
-                      },
-                    }) as any,
-                ),
-              )
+              const { imageFileNames, contextWithoutImageBlocks } =
+                extractImageFileNames(
+                  context,
+                  fragments.map(
+                    (v) =>
+                      ({
+                        fields: {
+                          docId: v.source.docId,
+                          title: v.source.title,
+                          url: v.source.url,
+                        },
+                      }) as any,
+                  ),
+                )
+              context = contextWithoutImageBlocks
               Logger.info(`Image file names in RAG offffff: ${imageFileNames}`)
               finalImageFileNames = imageFileNames || []
               // context = initialContext;
@@ -905,20 +907,22 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
         let finalImageFileNames: string[] = []
         if (context && fragments.length) {
-          const { imageFileNames } = extractImageFileNames(
-            context,
-            fragments.map(
-              (v) =>
-                ({
-                  fields: {
-                    docId: v.source.docId,
-                    title: v.source.title,
-                    url: v.source.url,
-                  },
-                }) as any,
-            ),
-          )
+          const { imageFileNames, contextWithoutImageBlocks } =
+            extractImageFileNames(
+              context,
+              fragments.map(
+                (v) =>
+                  ({
+                    fields: {
+                      docId: v.source.docId,
+                      title: v.source.title,
+                      url: v.source.url,
+                    },
+                  }) as any,
+              ),
+            )
           finalImageFileNames = imageFileNames || []
+          context = contextWithoutImageBlocks
         }
 
         // Helper: persist & return JSON once ----------------------------------------

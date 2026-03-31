@@ -526,14 +526,37 @@ export async function mergeThreadResults(
   }
 }
 
+/** Pattern for `Image File Names:` blocks (fresh RegExp per matchAll — avoid shared /g lastIndex). */
+const imageFileNamesBlockPattern =
+  "Image File Names:\\s*([\\s\\S]*?)(?=\\n[A-Z][a-zA-Z ]*:|vespa relevance score:|$)"
+
+export function imageFileNamesBlockMatches(text: string): RegExpMatchArray[] {
+  return [...text.matchAll(new RegExp(imageFileNamesBlockPattern, "g"))]
+}
+
+export function contextWithoutImageBlocksFromMatches(
+  context: string,
+  matches: RegExpMatchArray[],
+): string {
+  if (matches.length === 0) return context
+  const sorted = [...matches].sort(
+    (a, b) => (a.index ?? 0) - (b.index ?? 0),
+  )
+  let out = ""
+  let lastEnd = 0
+  for (const m of sorted) {
+    const start = m.index ?? 0
+    out += context.slice(lastEnd, start)
+    lastEnd = start + m[0].length
+  }
+  return (out + context.slice(lastEnd)).replace(/\n{3,}/g, "\n\n")
+}
+
 export const extractImageFileNames = (
   context: string,
   results?: VespaSearchResult[],
-): { imageFileNames: string[] } => {
-  // This matches "Image File Names:" followed by content until the next field (starting with a capital letter and colon) or "vespa relevance score:"
-  const imageContentRegex =
-    /Image File Names:\s*([\s\S]*?)(?=\n[A-Z][a-zA-Z ]*:|vespa relevance score:|$)/g
-  const matches = [...context.matchAll(imageContentRegex)]
+): { imageFileNames: string[]; contextWithoutImageBlocks: string } => {
+  const matches = imageFileNamesBlockMatches(context)
 
   let imageFileNames: string[] = []
   for (const match of matches) {
@@ -576,7 +599,13 @@ export const extractImageFileNames = (
       continue
     }
   }
-  return { imageFileNames }
+
+  const contextWithoutImageBlocks = contextWithoutImageBlocksFromMatches(
+    context,
+    matches,
+  )
+
+  return { imageFileNames, contextWithoutImageBlocks }
 }
 
 export const searchToCitation = (result: VespaSearchResults): Citation => {

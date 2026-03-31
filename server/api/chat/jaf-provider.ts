@@ -34,7 +34,7 @@ import OpenAI from "openai"
 import type { AgentRunContext } from "./agent-schemas"
 import { raceWithStop, throwIfStopRequested } from "./agent-stop"
 import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
-import { getImagesFromDocumentMemory } from "./runContextUtils"
+import { getImageFileNamesForLlmFromStores } from "./document-memory"
 const { IMAGE_CONTEXT_CONFIG } = config
 const IMAGE_BASE_DIR = path.resolve(
   process.env.IMAGE_DIR || "downloads/xyne_images_db",
@@ -296,7 +296,18 @@ export const makeXyneJAFProvider = <Ctx>(
         // Inject multimodal image parts for the last user message.
         // This mirrors the AI-SDK branch, but uses OpenAI-compatible `image_url`
         // content parts (data URL).
-        const selectedImages = await getImagesFromDocumentMemory(runContext)
+        const imageBudget =
+          IMAGE_CONTEXT_CONFIG.maxImagesPerCall !== undefined && IMAGE_CONTEXT_CONFIG.maxImagesPerCall >= 0
+            ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
+            : 5
+        const { imageFileNamesForModel: selectedImages } = 
+        IMAGE_CONTEXT_CONFIG.enabled && runContext?.imageMemory
+        ?
+          getImageFileNamesForLlmFromStores(
+            runContext.imageMemory,
+            { maxImages: imageBudget },
+          )
+        : { imageFileNamesForModel: [] }
         const userEmail = runContext?.user?.email || "unknown"
         if (selectedImages.length > 0) {
           const lastUserIndex = (() => {
@@ -340,7 +351,8 @@ export const makeXyneJAFProvider = <Ctx>(
                   selectedImagesCount: selectedImages.length,
                   turn: normalizeTurnNumber(runContext?.turnCount),
                   imageBaseDir: IMAGE_BASE_DIR,
-                  firstSelectedImage: selectedImages[0],
+                  // Avoid logging raw image filenames/identifiers.
+                  firstSelectedImageRedacted: true,
                 },
                 "No valid image parts built for selected images (LiteLLM path)",
               )
@@ -470,12 +482,26 @@ export const makeXyneJAFProvider = <Ctx>(
       //   model,
       //   agentName: agent.name,
       // })
-      const selectedImages = await getImagesFromDocumentMemory(runContext)
+      const imageBudget =
+        IMAGE_CONTEXT_CONFIG.maxImagesPerCall !== undefined && IMAGE_CONTEXT_CONFIG.maxImagesPerCall >= 0
+          ? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
+          : 5
+      const { imageFileNamesForModel: selectedImages, total, dropped } =
+        IMAGE_CONTEXT_CONFIG.enabled && runContext?.imageMemory
+        ?
+          getImageFileNamesForLlmFromStores(
+            runContext.imageMemory,
+            { maxImages: imageBudget },
+          )
+        : { imageFileNamesForModel: [], total: 0, dropped: 0 }
       Logger.debug(
         {
           email: runContext?.user?.email,
           turn: normalizeTurnNumber(runContext?.turnCount),
-          selectedImages,
+          selectedImagesCount: selectedImages.length,
+          imageBudget,
+          totalImages: total,
+          droppedImages: dropped,
         },
         "[JAF Provider] Prepared image attachments for agent call",
       )

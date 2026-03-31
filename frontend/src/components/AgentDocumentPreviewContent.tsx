@@ -12,7 +12,6 @@ export interface AgentDocumentPayload {
   content: string
   reasoning?: string | null
   citations?: AgentSourceCitation[]
-  confidence?: number | null
   createdAt: string
 }
 
@@ -219,22 +218,6 @@ const AgentDocumentPreviewContent: React.FC<AgentDocumentPreviewContentProps> = 
         {activeTab === "content" && (
           <div className="max-w-none">
             <AgentResponseMarkdown source={doc.content} />
-            {doc.confidence != null ? (
-              <div className="mt-6 pt-4 border-t dark:border-gray-700">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">Confidence:</span>
-                  <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-green-500 rounded-full"
-                      style={{ width: `${Number(doc.confidence) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-sm font-medium">
-                    {Math.round(Number(doc.confidence) * 100)}%
-                  </span>
-                </div>
-              </div>
-            ) : null}
           </div>
         )}
 

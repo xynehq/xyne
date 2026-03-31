@@ -12,10 +12,12 @@
  */
 
 import type {
+  AgentRunContext,
   ChunkState,
-  DocumentImageReference,
   DocumentState,
+  ImageMemoryEntry,
   RawChunkWithScore,
+  ToolOutputExtractedImage,
   ToolRawDocument,
 } from "./agent-schemas"
 import {
@@ -23,18 +25,23 @@ import {
   DOCUMENT_MEMORY_MAX_DOCS,
   DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM,
 } from "./agent-schemas"
-import type { Citation, MinimalAgentFragment } from "./types"
+import type { Citation, ImageCitation, MinimalAgentFragment } from "./types"
 import {
   answerContextMap,
   type AnswerContextRenderMetadata,
 } from "@/ai/context"
-import config from "@/config"
-import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
+import config, { IMAGE_CONTEXT_CONFIG } from "@/config"
 import type { UserMetadataType } from "@/types"
 import { getDateForAI } from "@/utils/index"
 import { getChunkCountPerDoc } from "./chunk-selection"
-import { Apps } from "@xyne/vespa-ts/types"
+import { Apps, dataSourceFileSchema, fileSchema, KbItemsSchema, mailAttachmentSchema } from "@xyne/vespa-ts/types"
 import type { VespaSearchResults } from "@xyne/vespa-ts"
+import { contextWithoutImageBlocksFromMatches, imageFileNamesBlockMatches } from "./utils"
+import { AgentResponseConfidence } from "./message-agents"
+import { MAX_QUERY_DOCS_PER_BASE_DOC } from "./agent-schemas"
+import { getPrecomputedDbContextIfNeeded } from "@/lib/databaseContext"
+import { randomUUID } from "crypto"
+import { MIME_DATABASE_SCHEMA } from "@/integrations/database"
 
 let syntheticLsDocSequence = 0
 let syntheticDelegatedDocSequence = 0
@@ -49,7 +56,6 @@ export function createDocumentState(docId: string, source: Citation): DocumentSt
     signals: [],
     maxScore: 0,
     relevanceScore: 0,
-    images: [],
   }
 }
 
@@ -78,23 +84,14 @@ function updateDocumentScores(doc: DocumentState, currentTurn?: number): void {
 function chunkScoreForOrdering(
   c: ChunkState,
   refTurn: number,
-  targetQuery?: string,
 ): number {
   const recencyBoost = refTurn > 0 ? 0.1 * (c.lastSeenTurn / refTurn) : 0
 
   const norm = (v: string) => v.toLowerCase().trim()
-  const target = targetQuery?.trim() ? norm(targetQuery) : ""
   const uniqueChunkQueries = Array.from(new Set((c.queries ?? []).map(norm)))
   const frequency = uniqueChunkQueries.length
 
-  // Binary query match: boosts when any retrieved query overlaps the active query.
-  const queryMatch =
-    target.length > 0 &&
-    uniqueChunkQueries.some((q) => q === target || q.includes(target) || target.includes(q))
-      ? 1
-      : 0
-
-  return c.confidence + recencyBoost + 0.1 * queryMatch + 0.05 * frequency
+  return c.confidence + recencyBoost + 0.05 * frequency
 }
 
 function parseChunkKeyToCitationIndex(chunkKey: string): number {
@@ -123,7 +120,7 @@ function parseChunkKeyToCitationIndex(chunkKey: string): number {
  */
 function normalizeVespaHitForDocumentChunks(
   doc: DocumentState & { vespaHit: VespaSearchResults },
-  orderedBy: { refTurn: number; builtUserQuery: string },
+  orderedBy: { refTurn: number },
 ): VespaSearchResults {
   const hit = doc.vespaHit
 
@@ -136,7 +133,6 @@ function normalizeVespaHitForDocumentChunks(
       const score = chunkScoreForOrdering(
         chunk,
         orderedBy.refTurn,
-        orderedBy.builtUserQuery,
       )
       return { index: parseChunkKeyToCitationIndex(chunkKey), chunk, score }
     })
@@ -206,6 +202,77 @@ function evictDocumentMemoryIfNeeded(
 }
 
 /**
+ * Evict excess query-derived documents per base document.
+ * Query docs are grouped by baseDocId and only the top MAX_QUERY_DOCS_PER_BASE_DOC are kept.
+ */
+function evictQueryDocsIfNeeded(
+  documentMemory: Map<string, DocumentState>,
+): void {
+  // Group query docs by baseDocId
+  const queryDocsByBase = new Map<string, DocumentState[]>()
+  
+  for (const doc of documentMemory.values()) {
+    if (doc.isQueryDoc && doc.baseDocId) {
+      const list = queryDocsByBase.get(doc.baseDocId) ?? []
+      list.push(doc)
+      queryDocsByBase.set(doc.baseDocId, list)
+    }
+  }
+  
+  // For each base doc, keep only top MAX_QUERY_DOCS_PER_BASE_DOC by relevanceScore, then recency
+  for (const [_, queryDocs] of queryDocsByBase) {
+    if (queryDocs.length <= MAX_QUERY_DOCS_PER_BASE_DOC) continue
+    
+    // Sort by relevanceScore desc, then by most recent turn desc
+    const sorted = queryDocs.sort((a, b) => {
+      if (b.relevanceScore !== a.relevanceScore) {
+        return b.relevanceScore - a.relevanceScore
+      }
+      const maxTurnA = Math.max(...a.signals.map((s) => s.turn), 0)
+      const maxTurnB = Math.max(...b.signals.map((s) => s.turn), 0)
+      return maxTurnB - maxTurnA
+    })
+    
+    // Evict the excess
+    const toEvict = sorted.slice(MAX_QUERY_DOCS_PER_BASE_DOC)
+    for (const doc of toEvict) {
+      documentMemory.delete(doc.docId)
+    }
+  }
+}
+
+
+/**
+ * Check if a document is query-dependent (sheets, CSV, Excel, DB schemas).
+ * These documents need query-based processing during tool execution.
+ */
+export function isQueryDependentDoc(result: VespaSearchResults): boolean {
+  const fields = result.fields as Record<string, unknown>
+  
+  // Check for spreadsheet types
+  if (fields.sddocname === fileSchema || fields.sddocname === KbItemsSchema || fields.sddocname === mailAttachmentSchema || fields.sddocname === dataSourceFileSchema) {
+    const mimeType = fields.sddocname === mailAttachmentSchema 
+      ? fields.fileType 
+      : fields.mimeType
+    
+    if (
+      mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      mimeType === "application/vnd.ms-excel" ||
+      mimeType === "text/csv"
+    ) {
+      return true
+    }
+    
+    // Check for database schema
+    if (fields.mimeType === MIME_DATABASE_SCHEMA) {
+      return true
+    }
+  }
+  
+  return false
+}
+
+/**
  * Merge raw Vespa documents (doc + chunks + scores) into document memory.
  * Preserves chunk-level scores; stores vespaHit on doc for answerContextMap at filter/review/synthesis.
  * toolName is stored on each signal so we can pass (tool, query, confidence) for filtering.
@@ -215,9 +282,40 @@ export function mergeRawDocumentsIntoDocumentMemory(
   rawDocuments: ToolRawDocument[],
   turnNumber: number,
   query: string,
-  toolName: string
+  toolName: string,
+  toolCallId: string = randomUUID()
 ): void {
   for (const raw of rawDocuments) {
+    // Query-derived documents are never merged - they are immutable snapshots
+    if (isQueryDependentDoc(raw.vespaHit)) {
+      const docId = `${raw.docId}::q::${toolCallId}`
+      const doc = createDocumentState(docId, raw.source)
+      doc.isQueryDoc = true
+      doc.baseDocId = raw.docId
+      doc.vespaHit = raw.vespaHit
+
+      for (const ch of raw.chunks) {
+        doc.chunks.set(ch.chunkKey, {
+          content: ch.content,
+          firstSeenTurn: turnNumber,
+          lastSeenTurn: turnNumber,
+          confidence: ch.score,
+          queries: query ? [query] : [],
+        })
+      }
+
+      doc.signals.push({
+        query,
+        confidence: raw.relevance,
+        turn: turnNumber,
+        toolName,
+      })
+      updateDocumentScores(doc, turnNumber)
+      documentMemory.set(raw.docId, doc)
+      continue
+    }
+
+    // Regular documents: use existing merge logic
     let doc = documentMemory.get(raw.docId)
     if (!doc) {
       doc = createDocumentState(raw.docId, raw.source)
@@ -260,12 +358,14 @@ export function mergeRawDocumentsIntoDocumentMemory(
   }
 
   evictDocumentMemoryIfNeeded(documentMemory)
+  evictQueryDocsIfNeeded(documentMemory)
 }
 
 /**
  * Merge DocumentStates from a source list into the target document memory (e.g. merge ranked
  * current-turn docs into cross-turn memory after filtering). Preserves chunks (by chunkKey)
  * and appends signals (deduped by query+turn); recomputes scores and runs eviction.
+ * Query-derived documents are never merged - they are inserted as immutable snapshots.
  * @param currentTurn - The actual current turn number for accurate recency scoring.
  * @returns Number of new chunks added to the target memory (for stagnation tracking).
  */
@@ -276,6 +376,43 @@ export function mergeDocumentStatesIntoDocumentMemory(
 ): number {
   let newChunksCount = 0
   for (const src of sourceDocs) {
+    // Query-derived documents are never merged - they are immutable snapshots
+    if (src.isQueryDoc) {
+      if (!targetMemory.has(src.docId)) {
+        // Create a deep copy of the query doc
+        const queryDoc = createDocumentState(src.docId, src.source)
+        queryDoc.isQueryDoc = true
+        queryDoc.baseDocId = src.baseDocId
+        queryDoc.vespaHit = src.vespaHit
+        queryDoc.relevanceScore = src.relevanceScore
+        queryDoc.maxScore = src.maxScore
+        
+        for (const [chunkKey, ch] of src.chunks) {
+          queryDoc.chunks.set(chunkKey, {
+            content: ch.content,
+            firstSeenTurn: ch.firstSeenTurn,
+            lastSeenTurn: ch.lastSeenTurn,
+            confidence: ch.confidence,
+            queries: [...ch.queries],
+          })
+          newChunksCount++
+        }
+        
+        for (const sig of src.signals) {
+          queryDoc.signals.push({
+            query: sig.query,
+            confidence: sig.confidence,
+            turn: sig.turn,
+            toolName: sig.toolName,
+          })
+        }
+        
+        targetMemory.set(src.docId, queryDoc)
+      }
+      continue
+    }
+
+    // Regular documents: use existing merge logic
     let doc = targetMemory.get(src.docId)
     if (!doc) {
       doc = createDocumentState(src.docId, src.source)
@@ -329,6 +466,7 @@ export function mergeDocumentStatesIntoDocumentMemory(
   }
 
   evictDocumentMemoryIfNeeded(targetMemory)
+  evictQueryDocsIfNeeded(targetMemory)
   return newChunksCount
 }
 
@@ -339,6 +477,7 @@ export interface GetFragmentsForSynthesisOptions {
   userId?: number | null
   workspaceId?: number | null
   query?: string
+  includeImageBlocks?: boolean
 }
 
 /**
@@ -557,19 +696,19 @@ export function createSyntheticDocFromAgent(
     content: resultSummary,
     firstSeenTurn: options.turnNumber,
     lastSeenTurn: options.turnNumber,
-    confidence: 0.85,
+    confidence: AgentResponseConfidence,
     queries: options.toolQuery ? [options.toolQuery] : [],
   })
 
   doc.signals.push({
     query: options.toolQuery ?? "",
-    confidence: 0.85,
+    confidence: AgentResponseConfidence,
     turn: options.turnNumber,
     toolName: "runPublicAgent",
   })
 
-  doc.maxScore = 0.85
-  doc.relevanceScore = 0.85
+  doc.maxScore = AgentResponseConfidence
+  doc.relevanceScore = AgentResponseConfidence
 
   return doc
 }
@@ -583,47 +722,43 @@ const defaultUserMetadata: UserMetadataType = {
 /**
  * Build MinimalAgentFragment[] for a given list of docs (shared logic for synthesis/review).
  * Uses doc.cachedFragment when set (invalidated on merge); otherwise builds via answerContextMap or joined chunks and caches.
+ * Note: Query is NOT passed to answerContextMap during synthesis/review to avoid incorrect recomputation of query-dependent results.
+ * Query-dependent docs should have been processed during tool execution and stored as immutable snapshots. except for attachments where query is present for the first time
+ * in which case the query is passed to answerContextMap to build the context for the attachments.
  */
 async function buildFragmentsForDocList(
   docs: DocumentState[],
   options: GetFragmentsForSynthesisOptions
 ): Promise<MinimalAgentFragment[]> {
-  //Todo: no need for sorting again right? docs are already sorted by relevance before this is called, and we want to preserve that order for synthesis. Only need to slice if docs.length > DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM, but that should be rare since we evict before that.
-  const sorted = docs
-    .slice()
-    .sort((a, b) => b.relevanceScore - a.relevanceScore)
-
-  const uncachedWithVespa = sorted.filter(
+  const uncachedWithVespa = docs.filter(
     (d): d is DocumentState & { vespaHit: NonNullable<DocumentState["vespaHit"]> } =>
       !d.cachedFragment && !!d.vespaHit,
   )
-  const builtUserQuery =
-    options.query?.trim() ??
-    (uncachedWithVespa[0]?.signals[0]?.query ?? sorted[0]?.signals[0]?.query ?? "")
-
+  const builtUserQuery = options.query?.trim()
   // Normalize each hit so answerContextMap + getChunkCountPerDoc see the same chunk slice
   // that `doc.chunks` represents after eviction.
   const normalizedHitByDocId = new Map<string, VespaSearchResults>()
   const vespaHitsOrdered = uncachedWithVespa.map((d) => {
     const refTurn = Math.max(...d.signals.map((s) => s.turn), 1)
-    const normalized = normalizeVespaHitForDocumentChunks(d, {
+    const normalized = d.isQueryDoc ? d.vespaHit : normalizeVespaHitForDocumentChunks(d, {
       refTurn,
-      builtUserQuery,
     })
     normalizedHitByDocId.set(d.docId, normalized)
     return normalized
   })
 
-  let precomputedDbContext: Map<string, string> = new Map()
+  let precomputedDbContext: Map<string, string> | undefined = undefined
   let chunksPerDocument: number[] = []
 
   if (vespaHitsOrdered.length > 0) {
-    precomputedDbContext = await getPrecomputedDbContextIfNeeded(
-      vespaHitsOrdered,
-      builtUserQuery || undefined,
-      options.userId,
-      options.workspaceId,
-    )
+    if(builtUserQuery) {
+      precomputedDbContext = await getPrecomputedDbContextIfNeeded(
+        vespaHitsOrdered,
+        builtUserQuery,
+        options.userId,
+        options.workspaceId,
+      )
+    }
     chunksPerDocument = await getChunkCountPerDoc(
       vespaHitsOrdered,
       config.maxChunksPerTool,
@@ -640,7 +775,7 @@ async function buildFragmentsForDocList(
   const out: MinimalAgentFragment[] = []
   let uncachedVespaIndex = 0
 
-  for (const doc of sorted) {
+  for (const doc of docs) {
     if (doc.cachedFragment) {
       out.push(doc.cachedFragment)
       continue
@@ -662,15 +797,18 @@ async function buildFragmentsForDocList(
       const renderMetadata: AnswerContextRenderMetadata = {
         visibleChunkIndices: [],
       }
+      // Note: query is NOT passed here - query-dependent processing should have happened during tool execution
+      // and results stored as query docs with processed content in chunks except for attachments where query is present for the first time
       content = await answerContextMap(
         normalizedHit,
         metadataForContext,
         chunkCount,
         undefined,
         true,
-        builtUserQuery || undefined,
-        precomputedDbContext,
+        builtUserQuery, // query is present for attachments only as this is first time we are building the context for the attachments
+        precomputedDbContext, // only for attachments when query is present
         renderMetadata,
+        options.includeImageBlocks ?? false,
       )
       visibleChunkIndices = renderMetadata.visibleChunkIndices
       uncachedVespaIndex++
@@ -682,8 +820,8 @@ async function buildFragmentsForDocList(
       const topChunks = chunkEntries
         .sort(
           (a, b) =>
-            chunkScoreForOrdering(b[1], refTurn, builtUserQuery) -
-            chunkScoreForOrdering(a[1], refTurn, builtUserQuery),
+            chunkScoreForOrdering(b[1], refTurn) -
+            chunkScoreForOrdering(a[1], refTurn),
         )
         .slice(0, maxChunks)
       content =
@@ -700,35 +838,51 @@ async function buildFragmentsForDocList(
       visibleChunkIndices,
     }
     doc.cachedFragment = fragment
-    const extractedImages = extractImagesFromFragmentContent(
-      fragment.content,
-      doc.source.app === Apps.Attachment,
-    )
-    if (extractedImages.length > 0) {
-      doc.images = extractedImages
-    } else if (!Array.isArray(doc.images)) {
-      doc.images = []
-    }
     out.push(fragment)
   }
 
   return out
 }
 
-function extractImagesFromFragmentContent(
-  content: string,
-  isAttachment: boolean,
-): DocumentImageReference[] {
-  if (!content) return []
+/** Position suffix in labels from answerContextMap: `{docId}_{image_chunks_pos[i]}` (optional extension). */
+function imageChunkPosFromContextFileName(fileName: string): number | undefined {
+  const m = fileName.match(/_(\d+)(?:\.[A-Za-z0-9]+)?$/)
+  return m ? Number(m[1]) : undefined
+}
 
-  // answerContextMap emits an "Image File Names:" section. We store raw file names
-  // (without docIndex prefix); callers can map docId→index later when constructing
-  // the model image list.
-  const imageContentRegex =
-    /Image File Names:\s*([\s\S]*?)(?=\n[A-Z][a-zA-Z ]*:|vespa relevance score:|$)/g
-  const matches = [...content.matchAll(imageContentRegex)]
+export function extractImagesFromFragmentContent(
+  fragment: MinimalAgentFragment,
+  vespaHit: VespaSearchResults | undefined,
+  isUserAttachment: boolean,
+): { images: ToolOutputExtractedImage[], fragmentWithoutImageBlocks: MinimalAgentFragment } {
+  if (!fragment.content || !vespaHit) return { images: [], fragmentWithoutImageBlocks: fragment }
 
-  const out: DocumentImageReference[] = []
+  const content = fragment.content
+
+  const matches = imageFileNamesBlockMatches(content)
+
+  const fields = vespaHit.fields as Record<string, unknown> & {
+    matchfeatures?: typeof vespaHit.fields.matchfeatures
+  }
+  const imageChunksPos = (fields.image_chunks_pos_summary as number[]) || []
+  const matchfeatures = fields.matchfeatures
+  const imageChunkScores =
+    matchfeatures &&
+    "image_chunk_scores" in matchfeatures &&
+    "cells" in
+      (
+        matchfeatures as {
+          image_chunk_scores: { cells: Record<string, number> }
+        }
+      ).image_chunk_scores
+      ? (
+          matchfeatures as {
+            image_chunk_scores: { cells: Record<string, number> }
+          }
+        ).image_chunk_scores.cells
+      : {}
+
+  const out: ToolOutputExtractedImage[] = []
   const seen = new Set<string>()
 
   for (const match of matches) {
@@ -739,63 +893,226 @@ function extractImagesFromFragmentContent(
       imageContent.match(/[A-Za-z0-9._-]+_\d+(?:\.[A-Za-z0-9]+)?/g) || []
     for (const fileName of tokens) {
       if (seen.has(fileName)) continue
-      seen.add(fileName)
-      out.push({ fileName, isAttachment })
-    }
-  }
-
-  return out
-}
-
-export function getAllImagesFromDocumentMemory(
-  documentMemory: Map<string, DocumentState>,
-  options?: {
-    /** Order docs by relevance for the current turn */
-    docOrder?: string[]
-    maxImages?: number
-  },
-): { imageFileNamesForModel: string[]; total: number; dropped: number } {
-  const maxImages = options?.maxImages ?? Number.POSITIVE_INFINITY
-
-  // Determine doc ordering: if provided, use it (usually synthesis doc order).
-  // Otherwise fall back to relevanceScore desc.
-  const docs: DocumentState[] = Array.from(documentMemory.values())
-  let orderedDocs = docs
-  if (options?.docOrder && options.docOrder.length > 0) {
-    const byId = new Map(docs.map((d) => [d.docId, d]))
-    orderedDocs = options.docOrder
-      .map((id) => byId.get(id))
-      .filter((d): d is DocumentState => d != null)
-  } else {
-    orderedDocs = docs.slice().sort((a, b) => b.relevanceScore - a.relevanceScore)
-  }
-
-  const seen = new Set<string>()
-  const selected: string[] = []
-  let total = 0
-
-  for (let docIndex = 0; docIndex < orderedDocs.length; docIndex++) {
-    const doc = orderedDocs[docIndex]
-    for (const img of doc.images ?? []) {
-      total++
-      if (seen.has(img.fileName)) continue
-      seen.add(img.fileName)
-      if (selected.length < maxImages) {
-        // Model expects docIndex-prefixed file name.
-        selected.push(`${docIndex}_${img.fileName}`)
+      const pos = imageChunkPosFromContextFileName(fileName)
+      if (pos === undefined) continue
+      const chunkIndex = imageChunksPos.findIndex((p) => p === pos)
+      if (chunkIndex !== -1) {
+        seen.add(fileName)
+        out.push({
+          fileName,
+          isUserAttachment,
+          vespaImageScore: imageChunkScores[chunkIndex] ?? 0,
+          docId: fragment.source.docId ?? fragment.id,
+        })
       }
     }
   }
 
+  const contentWithoutImageBlocks = contextWithoutImageBlocksFromMatches(
+    content,
+    matches,
+  )
+
+  const fragmentWithoutImageBlocks: MinimalAgentFragment = {
+    ...fragment,
+    content: contentWithoutImageBlocks,
+  }
+
+  return { images: out, fragmentWithoutImageBlocks }
+}
+
+function mergeExtractedImagesByFileName(
+  entries: ToolOutputExtractedImage[],
+): ToolOutputExtractedImage[] {
+  const byName = new Map<string, ToolOutputExtractedImage>()
+  for (const e of entries) {
+    const prev = byName.get(e.fileName)
+    if (!prev || e.vespaImageScore > prev.vespaImageScore) {
+      byName.set(e.fileName, e)
+    }
+  }
+  return [...byName.values()]
+}
+
+/**
+ * Collect images for one tool invocation: Vespa-scored names from fragment text plus any
+ * `fragment.images` (e.g. delegation) and optional citation paths.
+ */
+export function gatherToolOutputExtractedImages(
+  rawDocuments: ToolRawDocument[],
+  toolFragments: MinimalAgentFragment[],
+  imageCitations: ImageCitation[] | undefined,
+): { images: ToolOutputExtractedImage[], fragmentsWithoutImageBlocks: MinimalAgentFragment[] } {
+  if (!toolFragments && !imageCitations) return { images: [], fragmentsWithoutImageBlocks: [] }
+  const rawById = new Map(rawDocuments.map((d) => [d.docId, d]))
+  const out: ToolOutputExtractedImage[] = []
+  const fragmentsWithoutImageBlocks: MinimalAgentFragment[] = []
+
+  for (const fragment of toolFragments) {
+    const raw = rawById.get(fragment.id)
+    const fromVespa = extractImagesFromFragmentContent(
+      fragment,
+      raw?.vespaHit,
+      fragment.source.app === Apps.Attachment,
+    )
+    out.push(...fromVespa.images)
+    fragmentsWithoutImageBlocks.push(fromVespa.fragmentWithoutImageBlocks)
+  }
+
+  for (const ic of imageCitations ?? []) {
+    if (!ic.imagePath) continue
+    const docId = ic.item?.docId
+    out.push({
+      fileName: ic.imagePath,
+      vespaImageScore: AgentResponseConfidence,
+      isUserAttachment: false,
+      docId,
+    })
+  }
+
+  return { images: mergeExtractedImagesByFileName(out), fragmentsWithoutImageBlocks }
+}
+
+/**
+ * Seed image memory directly from ToolOutputExtractedImage entries.
+ * Used for initial attachment bootstrap where images are extracted from fragments
+ * but not yet in toolOutputs (since they predate the tool execution phase).
+ */
+export function seedImageMemoryFromImages(
+  imageMemory: Map<string, ImageMemoryEntry>,
+  images: ToolOutputExtractedImage[],
+  turn: number,
+): void {
+  for (const img of images) {
+    const prev = imageMemory.get(img.fileName)
+    if (!prev) {
+      imageMemory.set(img.fileName, {
+        fileName: img.fileName,
+        vespaImageScore: img.vespaImageScore,
+        isUserAttachment: img.isUserAttachment,
+        docId: img.docId,
+        lastMergedTurn: turn,
+      })
+      continue
+    }
+
+    imageMemory.set(img.fileName, {
+      ...prev,
+      ...(img.vespaImageScore > prev.vespaImageScore
+        ? {
+            vespaImageScore: img.vespaImageScore,
+            isUserAttachment: img.isUserAttachment,
+            docId: img.docId,
+          }
+        : {}),
+      lastMergedTurn: turn,
+    })
+  }
+}
+
+/** Persist this turn's tool-extracted images into cross-turn image memory (best score wins). */
+export function mergeCurrentTurnToolOutputImagesIntoImageMemory(
+  context: AgentRunContext,
+): void {
+  const turn = context.turnCount ?? 0
+  for (const out of context.currentTurnArtifacts.toolOutputs) {
+    for (const img of out.extractedImages ?? []) {
+      const prev = context.imageMemory.get(img.fileName)
+      if (!prev) {
+        context.imageMemory.set(img.fileName, {
+          fileName: img.fileName,
+          vespaImageScore: img.vespaImageScore,
+          isUserAttachment: img.isUserAttachment,
+          docId: img.docId,
+          lastMergedTurn: turn,
+        })
+        continue
+      }
+
+      context.imageMemory.set(img.fileName, {
+        ...prev,
+        ...(img.vespaImageScore > prev.vespaImageScore
+          ? {
+              vespaImageScore: img.vespaImageScore,
+              isUserAttachment: img.isUserAttachment,
+              docId: img.docId,
+            }
+          : {}),
+        lastMergedTurn: turn,
+      })
+    }
+  }
+}
+
+export interface GetImageFileNamesForLlmOptions {
+  /**
+   * Doc ids in display/relevance order (e.g. fragment ids from synthesis/review).
+   * When set, model paths are `{index}_{fileName}` where `index` is this doc's position in the list.
+   */
+  docOrder?: string[]
+  maxImages?: number
+}
+
+function docIndexPrefix(
+  entry: ImageMemoryEntry,
+  docOrder: string[] | undefined,
+): number {
+  if (!docOrder?.length || !entry.docId) return 0
+  const i = docOrder.indexOf(entry.docId)
+  return i >= 0 ? i : 0
+}
+
+/**
+ * Vespa-ranked image list for LLM: merges `imageMemory` with `toolOutputs[].extractedImages`,
+ * dedupes by fileName (max vespaImageScore), sorts by score desc.
+ * Paths are `{docIndex}_{fileName}` for `buildLanguageModelImageParts` (docIndex from `docOrder`, or 0).
+ */
+export function getImageFileNamesForLlmFromStores(
+  imageMemory: Map<string, ImageMemoryEntry>,
+  options?: GetImageFileNamesForLlmOptions,
+): { imageFileNamesForModel: string[]; total: number; dropped: number } {
+  const maxImages = options?.maxImages ?? IMAGE_CONTEXT_CONFIG.maxImagesPerCall
+  const docOrder = options?.docOrder
+
+  const all = [...imageMemory.values()].sort(
+    (a, b) => b.vespaImageScore - a.vespaImageScore,
+  )
+  const total = all.length
+  const selected = all.slice(0, maxImages)
+  const imageFileNamesForModel = selected.map(
+    (e) => `${docIndexPrefix(e, docOrder)}_${e.fileName}`,
+  )
   const dropped = Math.max(total - selected.length, 0)
-  return { imageFileNamesForModel: selected, total, dropped }
+  return { imageFileNamesForModel, total, dropped }
+}
+
+/**
+ * Filters out raw documents that have query-derived variants.
+ * When a query doc exists for a base document, the raw doc is suppressed to avoid duplication.
+ */
+function filterOutRawDocsWithQueryVariants(docs: DocumentState[]): DocumentState[] {
+  // Collect all base doc IDs that have query variants
+  const baseDocsWithQueries = new Set<string>()
+  for (const doc of docs) {
+    if (doc.isQueryDoc && doc.baseDocId) {
+      baseDocsWithQueries.add(doc.baseDocId)
+    }
+  }
+  
+  // Filter: keep query docs and raw docs that don't have query variants
+  return docs.filter((doc) => {
+    if (doc.isQueryDoc) return true // Always keep query docs
+    // For raw docs, suppress if there's a query variant
+    return !baseDocsWithQueries.has(doc.docId)
+  })
 }
 
 /**
  * Build MinimalAgentFragment[] from document memory: one fragment per document (not per chunk).
  * Uses the same logic as formatSearchToolResponse: when doc.vespaHit is present, content is built
- * via answerContextMap(vespaHit, ...) with precomputed DB context and per-doc chunk counts.
+ * via answerContextMap(vespaHit, ...) with per-doc chunk counts.
  * When vespaHit is missing, falls back to joined top chunks by confidence.
+ * Raw documents with query-derived variants are filtered out to avoid duplication.
  */
 export async function getFragmentsForSynthesis(
   documentMemory: Map<string, DocumentState>,
@@ -805,7 +1122,9 @@ export async function getFragmentsForSynthesis(
     return []
   }
   const docs = Array.from(documentMemory.values())
-  const sorted = docs
+  // Filter out raw docs that have query variants to avoid duplication
+  const filteredDocs = filterOutRawDocsWithQueryVariants(docs)
+  const sorted = filteredDocs
     .slice()
     .sort((a, b) => b.relevanceScore - a.relevanceScore)
     .slice(0, DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM)
@@ -815,6 +1134,7 @@ export async function getFragmentsForSynthesis(
 /**
  * Build fragments only for the given list of docs (e.g. docs with signals in a turn range).
  * Use for review: "new context since last review" = docs with signals in (lastReviewTurn, currentTurn].
+ * Raw documents with query-derived variants are filtered out to avoid duplication.
  */
 export async function getFragmentsForSynthesisForDocs(
   documentMemory: Map<string, DocumentState>,
@@ -825,7 +1145,9 @@ export async function getFragmentsForSynthesisForDocs(
     return []
   }
 
-  const sorted = docs
+  // Filter out raw docs that have query variants to avoid duplication
+  const filteredDocs = filterOutRawDocsWithQueryVariants(docs)
+  const sorted = filteredDocs
     .slice()
     .sort((a, b) => b.relevanceScore - a.relevanceScore)
     .slice(0, DOCUMENT_MEMORY_MAX_DOCS_FOR_LLM)
