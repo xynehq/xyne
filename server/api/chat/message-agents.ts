@@ -478,6 +478,10 @@ export const __messageAgentsPromptInternals = {
   requiresFinalSynthesis,
 }
 
+export const __messageAgentsRunInternals = {
+  finalizeMainRunResponse,
+}
+
 function normalizeExcludedIdsForLogging(excludedIds: unknown): string[] {
   if (Array.isArray(excludedIds)) {
     return excludedIds
@@ -886,8 +890,18 @@ async function finalizeMainRunResponse(args: {
   chatExternalId: string
   state: MainRunFinalizeState
 }): Promise<MainRunFinalizeState> {
-  if (args.state.responseFinalized || !args.persistData.answer) {
+  if (args.state.responseFinalized) {
     return args.state
+  }
+
+  if (!args.persistData.answer) {
+    if (!args.stream.closed) {
+      await args.stream.writeSSE({
+        event: ChatSSEvents.End,
+        data: "",
+      })
+    }
+    return { ...args.state, responseFinalized: true }
   }
 
   let assistantMessageId = args.state.assistantMessageId
