@@ -740,7 +740,7 @@ export enum XyneTools {
   listCustomAgents = "list_custom_agents",
   runPublicAgent = "run_public_agent",
   fallBack = "fall_back",
-  synthesizeFinalAnswer = "synthesize_final_answer",
+  deliverFinalAnswer = "deliver_final_answer",
   MetadataRetrieval = "metadata_retrieval",
   readDocument = "read_document",
 }

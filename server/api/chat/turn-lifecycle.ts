@@ -349,7 +349,7 @@ async function buildRankingTask(
 /** Non-critical tools whose failures should not trigger review. */
 const NON_CRITICAL_TOOLS = new Set([
   XyneTools.toDoWrite,
-  XyneTools.synthesizeFinalAnswer,
+  XyneTools.deliverFinalAnswer,
 ])
 
 const MAX_TOOL_FAILURES_PER_TURN = 3

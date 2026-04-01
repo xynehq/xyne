@@ -273,6 +273,18 @@ const createEmptyTurnArtifacts = (): CurrentTurnArtifacts => ({
   turnStartedAt: Date.now(),
 })
 
+function requiresFinalSynthesis(context: AgentRunContext): boolean {
+  return Boolean(
+    context.plan ||
+      context.currentTurnArtifacts.todoWriteCalled ||
+      context.currentTurnArtifacts.executionToolsCalled > 0 ||
+      context.currentTurnArtifacts.toolOutputs.length > 0 ||
+      context.currentTurnArtifacts.syntheticDocs.length > 0 ||
+      context.toolCallHistory.length > 0 ||
+      context.usedAgents.length > 0,
+  )
+}
+
 function mergeToolOutputsIntoCurrentTurnMemory(
   context: AgentRunContext,
   turnNumber: number,
@@ -463,6 +475,7 @@ export const __messageAgentsPromptInternals = {
   buildReviewSystemPrompt,
   buildAttachmentDirective,
   buildAttachmentToolMessage,
+  requiresFinalSynthesis,
 }
 
 function normalizeExcludedIdsForLogging(excludedIds: unknown): string[] {
@@ -741,7 +754,7 @@ function initializePlanState(plan: PlanState): string | null {
 /**
  * Extract a human-readable query string from tool arguments to surface in the
  * reasoning UI alongside each tool call.  Returns undefined for tools that have
- * no meaningful search term (e.g. synthesizeFinalAnswer, toDoWrite).
+ * no meaningful search term (e.g. deliverFinalAnswer, toDoWrite).
  */
 function extractToolQuery(
   toolName: string,
@@ -818,9 +831,21 @@ type PersistAssistantMessageData = {
   thinkingLog: string
 }
 
+type MainRunFinalizeState = {
+  responseFinalized: boolean
+  assistantMessageId: string | null
+  lastPersistedMessageId: number
+  lastPersistedMessageExternalId: string
+}
+
+type MainRunSSEStream = {
+  closed: boolean
+  writeSSE: (event: { event: string; data: string }) => Promise<unknown>
+}
+
 /**
  * Inserts an assistant message and persists trace. Shared by tool_call_end
- * (synthesizeFinalAnswer) and run_end (direct-answer path). Caller is responsible
+ * (deliverFinalAnswer) and run_end (direct-answer path). Caller is responsible
  * for updating lastPersistedMessageId, lastPersistedMessageExternalId, and
  * assistantMessageId, and for sending SSE (ResponseMetadata, End) if needed.
  */
@@ -850,6 +875,63 @@ async function persistAssistantMessage(
   const msg = await insertMessage(db, assistantInsert)
   await persistTrace(msg.id as number, msg.externalId)
   return { msg, assistantMessageId: String(msg.externalId) }
+}
+
+async function finalizeMainRunResponse(args: {
+  db: Parameters<typeof insertMessage>[0]
+  persistContext: PersistAssistantMessageContext
+  persistData: PersistAssistantMessageData
+  persistTrace: (messageId: number, messageExternalId: string) => Promise<void>
+  stream: MainRunSSEStream
+  chatExternalId: string
+  state: MainRunFinalizeState
+}): Promise<MainRunFinalizeState> {
+  if (args.state.responseFinalized || !args.persistData.answer) {
+    return args.state
+  }
+
+  let assistantMessageId = args.state.assistantMessageId
+  let lastPersistedMessageId = args.state.lastPersistedMessageId
+  let lastPersistedMessageExternalId = args.state.lastPersistedMessageExternalId
+
+  try {
+    const persisted = await persistAssistantMessage(
+      args.db,
+      args.persistContext,
+      args.persistData,
+      args.persistTrace,
+    )
+    assistantMessageId = persisted.assistantMessageId
+    lastPersistedMessageId = persisted.msg.id as number
+    lastPersistedMessageExternalId = persisted.assistantMessageId
+  } catch (error) {
+    loggerWithChild({ email: args.persistContext.user.email }).error(
+      error,
+      "Failed to persist assistant response",
+    )
+  }
+
+  if (!args.stream.closed) {
+    await args.stream.writeSSE({
+      event: ChatSSEvents.ResponseMetadata,
+      data: JSON.stringify({
+        chatId: args.chatExternalId,
+        messageId: assistantMessageId || "temp-message-id",
+        timeTakenMs: Date.now() - args.persistContext.requestStartMs,
+      }),
+    })
+    await args.stream.writeSSE({
+      event: ChatSSEvents.End,
+      data: "",
+    })
+  }
+
+  return {
+    responseFinalized: true,
+    assistantMessageId,
+    lastPersistedMessageId,
+    lastPersistedMessageExternalId,
+  }
 }
 
 function formatClarificationsForPrompt(
@@ -2178,23 +2260,6 @@ export async function afterToolExecutionHook(
         ),
       )
     }
-  }
-
-  // Re-emit the plan after synthesis so the frontend has the latest snapshot.
-  // Plan status (including completed tasks) is owned by the LLM via toDoWrite;
-  // the server does not auto-complete tasks after tool runs.
-  if (
-    toolName === XyneTools.synthesizeFinalAnswer &&
-    status === "success" &&
-    context.plan
-  ) {
-    await emitReasoningEvent(
-      reasoningEmitter,
-      ReasoningSteps.planCreated(
-        context.plan.goal || "Goal not specified",
-        context.plan.subTasks.map((t) => ({ id: t.id, description: t.description, status: t.status })),
-      ),
-    )
   }
 
   if (
@@ -3704,281 +3769,304 @@ function autoCompleteRemainingTasks(context: AgentRunContext): boolean {
   return updated
 }
 
+async function runFinalSynthesisCall(
+  context: AgentRunContext,
+  options?: {
+    insightsUsefulForAnswering?: string
+    textSink?: (text: string) => Promise<void>
+  },
+) {
+  const insightsUsefulForAnswering = sanitizeInsightsUsefulForAnswering(
+    options?.insightsUsefulForAnswering,
+  )
+  const mutableContext = mutableAgentContext(context)
+  if (!mutableContext.review.lockedByFinalSynthesis) {
+    mutableContext.review.lockedByFinalSynthesis = true
+    mutableContext.review.lockedAtTurn =
+      mutableContext.turnCount ?? MIN_TURN_NUMBER
+    logContextMutation(
+      mutableContext,
+      "[MessageAgents][FinalSynthesis] Locked review state for synthesis",
+      {
+        lockedAtTurn: mutableContext.review.lockedAtTurn,
+      },
+    )
+    loggerWithChild({ email: context.user.email }).info(
+      {
+        chatId: context.chat.externalId,
+        turn: mutableContext.review.lockedAtTurn,
+      },
+      "[MessageAgents][FinalSynthesis] Review lock activated after synthesis tool call.",
+    )
+  }
+  if (
+    mutableContext.finalSynthesis.requested &&
+    mutableContext.finalSynthesis.completed
+  ) {
+    return ToolResponse.error(
+      "EXECUTION_FAILED",
+      "Final synthesis already completed for this run.",
+    )
+  }
+
+  const textSink = options?.textSink ?? mutableContext.runtime?.streamAnswerText
+  if (!textSink) {
+    return ToolResponse.error(
+      "EXECUTION_FAILED",
+      "Streaming channel unavailable. Cannot deliver final answer.",
+    )
+  }
+
+  const synthesisRequest = await buildFinalSynthesisRequest(context, {
+    insightsUsefulForAnswering,
+  })
+  const { systemPrompt, userMessage, messages } = synthesisRequest
+  const fragments = await getFragmentsForSynthesis(context.documentMemory, {
+    email: context.user.email,
+    userId: context.user.numericId ?? undefined,
+    workspaceId: context.user.workspaceNumericId ?? undefined,
+  })
+  const docOrder = fragments.map((f) => f.id)
+  const {
+    imageFileNamesForModel: selected,
+    total,
+    dropped,
+  } = IMAGE_CONTEXT_CONFIG.enabled
+    ? getImageFileNamesForLlmFromStores(
+        context.imageMemory,
+        {
+          docOrder,
+          maxImages: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
+        },
+      )
+    : { imageFileNamesForModel: [], total: 0, dropped: 0 }
+
+  const attachmentImageCount = [...context.imageMemory.values()].filter(
+    (entry) => entry.isUserAttachment,
+  ).length
+
+  loggerWithChild({ email: context.user.email }).debug(
+    {
+      chatId: context.chat.externalId,
+      selectedImages: selected,
+      totalImages: total,
+      droppedImages: dropped,
+      attachmentImageCount,
+    },
+    "[MessageAgents][FinalSynthesis] Image payload",
+  )
+  const fragmentsCount = fragments.length
+  const hasEpisodicMemories = !!context.episodicMemoriesText?.trim()
+  const hasChatMemory = !!sanitizeChatMemoryForLLMContext(
+    context.chatMemoryText,
+  )
+  loggerWithChild({ email: context.user.email }).debug(
+    {
+      chatId: context.chat.externalId,
+      finalSynthesisSystemPrompt: systemPrompt,
+      finalSynthesisUserMessage: userMessage,
+      conversationHistoryCount: context.conversationHistoryMessages.length,
+      hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+      hasEpisodicMemories,
+      hasChatMemory,
+    },
+    "[MessageAgents][FinalSynthesis] Full context payload",
+  )
+
+  mutableContext.finalSynthesis.requested = true
+  mutableContext.finalSynthesis.suppressAssistantStreaming = true
+  mutableContext.finalSynthesis.completed = false
+  mutableContext.finalSynthesis.streamedText = ""
+  logContextMutation(
+    mutableContext,
+    "[MessageAgents][FinalSynthesis] Updated final synthesis state to requested",
+    {
+      fragmentsCount,
+      selectedImages: selected,
+      totalImages: total,
+      droppedImages: dropped,
+      conversationHistoryCount: context.conversationHistoryMessages.length,
+      hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+      hasEpisodicMemories,
+      hasChatMemory,
+    },
+  )
+
+  await mutableContext.runtime?.emitReasoning?.(
+    ReasoningSteps.synthesisStarted(fragmentsCount),
+  )
+
+  const logger = loggerWithChild({ email: context.user.email })
+  if (dropped > 0) {
+    logger.info(
+      {
+        droppedCount: dropped,
+        limit: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
+        totalImages: total,
+      },
+      "Final synthesis image limit enforced; dropped oldest references.",
+    )
+  }
+
+  const modelId =
+    (context.modelId as Models) ||
+    (defaultBestModel as Models) ||
+    Models.Gpt_4o
+  const modelParams: ModelParams = {
+    modelId,
+    systemPrompt,
+    stream: true,
+    temperature: 0.2,
+    max_new_tokens: context.maxOutputTokens ?? 8192,
+    imageFileNames: selected,
+  }
+
+  Logger.debug(
+    {
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      fragmentsCount: fragments.length,
+      planPresent: !!context.plan,
+      clarificationsCount: context.clarifications.length,
+      toolOutputsThisTurn: context.currentTurnArtifacts.toolOutputs.length,
+      imageNames: selected,
+      conversationHistoryCount: context.conversationHistoryMessages.length,
+      hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+      hasEpisodicMemories,
+      hasChatMemory,
+    },
+    "[MessageAgents][FinalSynthesis] Context summary for synthesis call",
+  )
+
+  Logger.debug(
+    {
+      email: context.user.email,
+      chatId: context.chat.externalId,
+      modelId,
+      systemPrompt,
+      messagesCount: messages.length,
+      imagesProvided: selected.length,
+      conversationHistoryCount: context.conversationHistoryMessages.length,
+      hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+      hasEpisodicMemories,
+      hasChatMemory,
+    },
+    "[MessageAgents][FinalSynthesis] LLM call parameters",
+  )
+
+  const provider = getProviderByModel(modelId)
+  let streamedCharacters = 0
+  let estimatedCostUsd = 0
+
+  try {
+    const iterator = provider.converseStream(messages, modelParams)
+    for await (const chunk of iterator) {
+      if (chunk.text) {
+        streamedCharacters += chunk.text.length
+        context.finalSynthesis.streamedText += chunk.text
+        await textSink(chunk.text)
+      }
+      const chunkCost = chunk.metadata?.cost
+      if (typeof chunkCost === "number" && !Number.isNaN(chunkCost)) {
+        estimatedCostUsd += chunkCost
+      }
+    }
+
+    context.finalSynthesis.completed = true
+    logContextMutation(
+      context,
+      "[MessageAgents][FinalSynthesis] Marked final synthesis as completed",
+      {
+        streamedCharacters,
+        estimatedCostUsd,
+        imagesProvided: selected,
+      },
+    )
+    loggerWithChild({ email: context.user.email }).debug(
+      {
+        chatId: context.chat.externalId,
+        streamedCharacters,
+        estimatedCostUsd,
+        imagesProvided: selected,
+      },
+      "[MessageAgents][FinalSynthesis] LLM call completed",
+    )
+
+    autoCompleteRemainingTasks(context)
+
+    await context.runtime?.emitReasoning?.(
+      ReasoningSteps.synthesisCompleted(),
+    )
+    if (context.plan) {
+      await context.runtime?.emitReasoning?.(
+        ReasoningSteps.planCreated(
+          context.plan.goal || "Goal not specified",
+          context.plan.subTasks.map((task) => ({
+            id: task.id,
+            description: task.description,
+            status: task.status,
+          })),
+        ),
+      )
+    }
+
+    return ToolResponse.success(
+      {
+        result: "Final answer streamed to user.",
+        streamed: true,
+        metadata: {
+          textLength: streamedCharacters,
+          totalImagesAvailable: total,
+          imagesProvided: selected.length,
+        },
+      },
+      {
+        estimatedCostUsd,
+      },
+    )
+  } catch (error) {
+    context.finalSynthesis.suppressAssistantStreaming = false
+    context.finalSynthesis.requested = false
+    context.finalSynthesis.completed = false
+    logContextMutation(
+      context,
+      "[MessageAgents][FinalSynthesis] Reset final synthesis state after failure",
+      {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    )
+    logger.error(
+      { err: error instanceof Error ? error.message : String(error) },
+      "Final synthesis tool failed.",
+    )
+    return ToolResponse.error(
+      "EXECUTION_FAILED",
+      `Failed to synthesize final answer: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
+  }
+}
+
 function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
   return {
     schema: {
-      name: XyneTools.synthesizeFinalAnswer,
-      description: TOOL_SCHEMAS.synthesize_final_answer.description,
+      name: XyneTools.deliverFinalAnswer,
+      description: TOOL_SCHEMAS.deliver_final_answer.description,
       parameters: toToolParameters(
-        TOOL_SCHEMAS.synthesize_final_answer.inputSchema,
+        TOOL_SCHEMAS.deliver_final_answer.inputSchema,
       ),
     },
     async execute(args, context) {
       const validation = validateToolInput<{
         insightsUsefulForAnswering?: string
-      }>(XyneTools.synthesizeFinalAnswer, args)
+      }>(XyneTools.deliverFinalAnswer, args)
       if (!validation.success) {
         return ToolResponse.error("INVALID_INPUT", validation.error.message)
       }
-      const insightsUsefulForAnswering = sanitizeInsightsUsefulForAnswering(
-        validation.data.insightsUsefulForAnswering,
-      )
-      const mutableContext = mutableAgentContext(context)
-      if (!mutableContext.review.lockedByFinalSynthesis) {
-        mutableContext.review.lockedByFinalSynthesis = true
-        mutableContext.review.lockedAtTurn =
-          mutableContext.turnCount ?? MIN_TURN_NUMBER
-        logContextMutation(
-          mutableContext,
-          "[MessageAgents][FinalSynthesis] Locked review state for synthesis",
-          {
-            lockedAtTurn: mutableContext.review.lockedAtTurn,
-          },
-        )
-        loggerWithChild({ email: context.user.email }).info(
-          {
-            chatId: context.chat.externalId,
-            turn: mutableContext.review.lockedAtTurn,
-          },
-          "[MessageAgents][FinalSynthesis] Review lock activated after synthesis tool call.",
-        )
-      }
-      if (
-        mutableContext.finalSynthesis.requested &&
-        mutableContext.finalSynthesis.completed
-      ) {
-        return ToolResponse.error(
-          "EXECUTION_FAILED",
-          "Final synthesis already completed for this run.",
-        )
-      }
-
-      const streamAnswer = mutableContext.runtime?.streamAnswerText
-      if (!streamAnswer) {
-        return ToolResponse.error(
-          "EXECUTION_FAILED",
-          "Streaming channel unavailable. Cannot deliver final answer.",
-        )
-      }
-
-      const synthesisRequest = await buildFinalSynthesisRequest(context, {
-        insightsUsefulForAnswering,
+      return runFinalSynthesisCall(context, {
+        insightsUsefulForAnswering: validation.data.insightsUsefulForAnswering,
       })
-      const { systemPrompt, userMessage, messages } = synthesisRequest
-      const fragments = await getFragmentsForSynthesis(context.documentMemory, {
-        email: context.user.email,
-        userId: context.user.numericId ?? undefined,
-        workspaceId: context.user.workspaceNumericId ?? undefined,
-      })
-      const docOrder = fragments.map((f) => f.id)
-      const {
-        imageFileNamesForModel: selected,
-        total,
-        dropped,
-      } = IMAGE_CONTEXT_CONFIG.enabled
-        ? getImageFileNamesForLlmFromStores(
-            context.imageMemory,
-            {
-              docOrder,
-              maxImages: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
-            },
-          )
-        : { imageFileNamesForModel: [], total: 0, dropped: 0 }
-
-      const attachmentImageCount = [...context.imageMemory.values()].filter(
-        (e) => e.isUserAttachment,
-      ).length
-
-      loggerWithChild({ email: context.user.email }).debug(
-        {
-          chatId: context.chat.externalId,
-          selectedImages: selected,
-          totalImages: total,
-          droppedImages: dropped,
-          attachmentImageCount,
-        },
-        "[MessageAgents][FinalSynthesis] Image payload",
-      )
-      const fragmentsCount = fragments.length
-      const hasEpisodicMemories = !!context.episodicMemoriesText?.trim()
-      const hasChatMemory = !!sanitizeChatMemoryForLLMContext(
-        context.chatMemoryText,
-      )
-      loggerWithChild({ email: context.user.email }).debug(
-        {
-          chatId: context.chat.externalId,
-          finalSynthesisSystemPrompt: systemPrompt,
-          finalSynthesisUserMessage: userMessage,
-          conversationHistoryCount: context.conversationHistoryMessages.length,
-          hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
-          hasEpisodicMemories,
-          hasChatMemory,
-        },
-        "[MessageAgents][FinalSynthesis] Full context payload",
-      )
-
-      mutableContext.finalSynthesis.requested = true
-      mutableContext.finalSynthesis.suppressAssistantStreaming = true
-      mutableContext.finalSynthesis.completed = false
-      mutableContext.finalSynthesis.streamedText = ""
-      logContextMutation(
-        mutableContext,
-        "[MessageAgents][FinalSynthesis] Updated final synthesis state to requested",
-        {
-          fragmentsCount,
-          selectedImages: selected,
-          totalImages: total,
-          droppedImages: dropped,
-          conversationHistoryCount: context.conversationHistoryMessages.length,
-          hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
-          hasEpisodicMemories,
-          hasChatMemory,
-        },
-      )
-
-      await mutableContext.runtime?.emitReasoning?.(
-        ReasoningSteps.synthesisStarted(fragmentsCount),
-      )
-
-      const logger = loggerWithChild({ email: context.user.email })
-      if (dropped > 0) {
-        logger.info(
-          {
-            droppedCount: dropped,
-            limit: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
-            totalImages: total,
-          },
-          "Final synthesis image limit enforced; dropped oldest references.",
-        )
-      }
-
-      const modelId =
-        (context.modelId as Models) ||
-        (defaultBestModel as Models) ||
-        Models.Gpt_4o
-      const modelParams: ModelParams = {
-        modelId,
-        systemPrompt,
-        stream: true,
-        temperature: 0.2,
-        max_new_tokens: context.maxOutputTokens ?? 8192,
-        imageFileNames: selected,
-      }
-
-      Logger.debug(
-        {
-          email: context.user.email,
-          chatId: context.chat.externalId,
-          fragmentsCount: fragments.length,
-          planPresent: !!context.plan,
-          clarificationsCount: context.clarifications.length,
-          toolOutputsThisTurn: context.currentTurnArtifacts.toolOutputs.length,
-          imageNames: selected,
-          conversationHistoryCount: context.conversationHistoryMessages.length,
-          hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
-          hasEpisodicMemories,
-          hasChatMemory,
-        },
-        "[MessageAgents][FinalSynthesis] Context summary for synthesis call",
-      )
-
-      Logger.debug(
-        {
-          email: context.user.email,
-          chatId: context.chat.externalId,
-          modelId,
-          systemPrompt,
-          messagesCount: messages.length,
-          imagesProvided: selected.length,
-          conversationHistoryCount: context.conversationHistoryMessages.length,
-          hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
-          hasEpisodicMemories,
-          hasChatMemory,
-        },
-        "[MessageAgents][FinalSynthesis] LLM call parameters",
-      )
-
-      const provider = getProviderByModel(modelId)
-      let streamedCharacters = 0
-      let estimatedCostUsd = 0
-
-      try {
-        const iterator = provider.converseStream(messages, modelParams)
-        for await (const chunk of iterator) {
-          if (chunk.text) {
-            streamedCharacters += chunk.text.length
-            context.finalSynthesis.streamedText += chunk.text
-            await streamAnswer(chunk.text)
-          }
-          const chunkCost = chunk.metadata?.cost
-          if (typeof chunkCost === "number" && !Number.isNaN(chunkCost)) {
-            estimatedCostUsd += chunkCost
-          }
-        }
-
-        context.finalSynthesis.completed = true
-        logContextMutation(
-          context,
-          "[MessageAgents][FinalSynthesis] Marked final synthesis as completed",
-          {
-            streamedCharacters,
-            estimatedCostUsd,
-            imagesProvided: selected,
-          },
-        )
-        loggerWithChild({ email: context.user.email }).debug(
-          {
-            chatId: context.chat.externalId,
-            streamedCharacters,
-            estimatedCostUsd,
-            imagesProvided: selected,
-          },
-          "[MessageAgents][FinalSynthesis] LLM call completed",
-        )
-
-        // Auto-complete any remaining in-progress tasks since synthesis succeeded
-        autoCompleteRemainingTasks(context)
-
-        await context.runtime?.emitReasoning?.(
-          ReasoningSteps.synthesisCompleted(),
-        )
-
-        return ToolResponse.success(
-          {
-            result: "Final answer streamed to user.",
-            streamed: true,
-            metadata: {
-              textLength: streamedCharacters,
-              totalImagesAvailable: total,
-              imagesProvided: selected.length,
-            },
-          },
-          {
-            estimatedCostUsd,
-          },
-        )
-      } catch (error) {
-        context.finalSynthesis.suppressAssistantStreaming = false
-        context.finalSynthesis.requested = false
-        context.finalSynthesis.completed = false
-        logContextMutation(
-          context,
-          "[MessageAgents][FinalSynthesis] Reset final synthesis state after failure",
-          {
-            error: error instanceof Error ? error.message : String(error),
-          },
-        )
-        logger.error(
-          { err: error instanceof Error ? error.message : String(error) },
-          "Final synthesis tool failed.",
-        )
-        return ToolResponse.error(
-          "EXECUTION_FAILED",
-          `Failed to synthesize final answer: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        )
-      }
     },
   }
 }
@@ -4009,7 +4097,7 @@ Attachment handling:
 - Do NOT assume you have complete visibility of the document.
 - Many sections, context, and details may be missing.
 
-2. If the visible chunks alone are sufficient to fully and confidently answer the request → respond using citations.
+2. If the visible chunks alone are sufficient to fully and confidently answer the request, and you do NOT create a plan or call tools, you may answer directly using citations.
 
 3. If the request requires:
    - full document understanding
@@ -4017,20 +4105,22 @@ Attachment handling:
    - cross-section reasoning
    - missing context between chunks
 
-   → You MUST NOT answer directly.
+   → You MUST NOT answer directly from the visible chunks alone.
 
    → Instead:
      - create a plan using toDoWrite
      - use tools or delegate to an appropriate internal agent via "run_public_agent"
 
-4. Prefer delegating to an INTERNAL AGENT when:
+4. If you create a plan, call any non-\`toDoWrite\` tool, or delegate to another agent, the final user-facing answer MUST go through \`deliver_final_answer\`.
+
+5. Prefer delegating to an INTERNAL AGENT when:
    - the task requires full-document or long-context understanding
    - the answer depends on information not present in visible chunks
    - the query asks for "summary", "overview", or "complete explanation"
 
-5. Select the agent based on capabilities (e.g., document understanding, long-context analysis), NOT by name.
+6. Select the agent based on capabilities (e.g., document understanding, long-context analysis), NOT by name.
 
-6. Only state that information is unavailable AFTER:
+7. Only state that information is unavailable AFTER:
    - attempting deeper retrieval or delegation
    - and confirming the data cannot be found
 
@@ -4143,6 +4233,12 @@ function buildAgentInstructions(
     conversationContext,
     "</context>",
     "",
+    "# ANSWER DELIVERY POLICY",
+    "- You may answer directly only while this run stays non-agentic: no plan created, no non-`toDoWrite` tool calls, and no delegation.",
+    "- The initial prompt package counts as direct-answer-safe context: the user's message, visible conversation history, injected memory, and attachment fragments/images already provided at turn start.",
+    "- If you create a plan, call any non-`toDoWrite` tool, delegate to another agent, or gather new evidence beyond the initial prompt package, the final user-facing answer MUST go through `deliver_final_answer`.",
+    "- Do not output a direct final answer after the run becomes agentic, even if you believe the answer is already obvious.",
+    "",
   ]
 
   instructionLines.push(
@@ -4236,8 +4332,9 @@ function buildAgentInstructions(
     "- State the exact limitation and what manual follow-up the user must perform to finish.",
     "",
     "# FINAL SYNTHESIS",
-    "- When research is complete and evidence is locked, CALL `synthesize_final_answer` with optional `insightsUsefulForAnswering` guidance when it will help the final answer model emphasize the right conclusions or ordering. This tool composes and streams the response.",
-    "- Never output the final answer directly—always go through the tool and then acknowledge completion.",
+    "- Once the run is agentic and research is complete, CALL `deliver_final_answer` with optional `insightsUsefulForAnswering` guidance when it will help the final answer model emphasize the right conclusions or ordering. This tool composes and streams the response.",
+    "- If the run never became agentic, answer directly instead of calling `deliver_final_answer`.",
+    "- After calling `deliver_final_answer`, do not output another user-facing answer in the assistant turn.",
   )
 
   const finalInstructions = instructionLines.join("\n")
@@ -5592,6 +5689,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
         // Execute JAF run with streaming
         let currentTurn = MIN_TURN_NUMBER
         let answer = ""
+        let generatedText = ""
+        // TODO(final-synthesis): We only keep bufferedText for loop-local
+        // diagnostics right now. If we later want to analyze or compare skipped
+        // direct answers from weaker models, reuse this buffer for guarded
+        // metrics/debugging instead of logging or streaming it directly.
+        let bufferedText = ""
+        let responseFinalized = false
         const citations: Citation[] = []
         const imageCitations: ImageCitation[] = []
         const citationMap: Record<number, number> = {}
@@ -5649,6 +5753,16 @@ export async function MessageAgents(c: Context): Promise<Response> {
               }
             }
           }
+        }
+        const deliverGeneratedText = async (text: string) => {
+          if (!text) return
+          generatedText += text
+          await streamAnswerText(text)
+        }
+        const bufferGeneratedText = (text: string) => {
+          if (!text) return
+          generatedText += text
+          bufferedText += text
         }
         agentContext.runtime = {
           streamAnswerText,
@@ -5898,7 +6012,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               // so the frontend can close/stop waiting instead of waiting for
               // turn_end (which is delayed by onTurnEnd → runTurnEndPipeline).
               if (
-                evt.data.toolName === XyneTools.synthesizeFinalAnswer &&
+                evt.data.toolName === XyneTools.deliverFinalAnswer &&
                 !evt.data.error &&
                 agentContext.finalSynthesis.requested &&
                 agentContext.finalSynthesis.completed
@@ -5916,49 +6030,40 @@ export async function MessageAgents(c: Context): Promise<Response> {
                   },
                   "[MessageAgents][FinalSynthesis] Persist + End at tool_call_end",
                 )
-                try {
-                  const persisted = await persistAssistantMessage(
-                    db,
-                    {
-                      chatRecord,
-                      user,
-                      workspace: { externalId: workspace.externalId },
-                      agenticModelId,
-                      totalCost: agentContext.totalCost,
-                      tokenUsage: agentContext.tokenUsage,
-                      requestStartMs,
-                    },
-                    {
-                      answer,
-                      citations,
-                      imageCitations,
-                      citationMap,
-                      thinkingLog,
-                    },
-                    persistTrace,
-                  )
-                  assistantMessageId = persisted.assistantMessageId
-                  lastPersistedMessageId = persisted.msg.id as number
-                  lastPersistedMessageExternalId = persisted.assistantMessageId
-                } catch (error) {
-                  loggerWithChild({ email }).error(
-                    error,
-                    "Failed to persist assistant response (tool_call_end)",
-                  )
-                }
-                if (!stream.closed) {
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseMetadata,
-                    data: JSON.stringify({
-                      chatId: agentContext.chat.externalId,
-                      messageId: assistantMessageId || "temp-message-id",
-                      timeTakenMs: Date.now() - requestStartMs,
-                    }),
-                  })
-                  await stream.writeSSE({
-                    event: ChatSSEvents.End,
-                    data: "",
-                  })
+                const finalizedState = await finalizeMainRunResponse({
+                  db,
+                  persistContext: {
+                    chatRecord,
+                    user,
+                    workspace: { externalId: workspace.externalId },
+                    agenticModelId,
+                    totalCost: agentContext.totalCost,
+                    tokenUsage: agentContext.tokenUsage,
+                    requestStartMs,
+                  },
+                  persistData: {
+                    answer,
+                    citations,
+                    imageCitations,
+                    citationMap,
+                    thinkingLog,
+                  },
+                  persistTrace,
+                  stream,
+                  chatExternalId: agentContext.chat.externalId,
+                  state: {
+                    responseFinalized,
+                    assistantMessageId,
+                    lastPersistedMessageId,
+                    lastPersistedMessageExternalId,
+                  },
+                })
+                responseFinalized = finalizedState.responseFinalized
+                assistantMessageId = finalizedState.assistantMessageId
+                lastPersistedMessageId = finalizedState.lastPersistedMessageId
+                lastPersistedMessageExternalId =
+                  finalizedState.lastPersistedMessageExternalId
+                if (responseFinalized) {
                   Logger.debug(
                     { chatId: agentContext.chat.externalId },
                     "[MessageAgents] stream end emitted (after synthesis tool_call_end)",
@@ -6030,7 +6135,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               }
 
               if (agentContext.finalSynthesis.suppressAssistantStreaming) {
-                // Only emit synthesisCompleted here if the synthesizeFinalAnswer tool
+                // Only emit synthesisCompleted here if the deliverFinalAnswer tool
                 // hasn't already done so (it sets .completed = true before emitting).
                 if (content?.trim() && !agentContext.finalSynthesis.completed) {
                   agentContext.finalSynthesis.ackReceived = true
@@ -6044,7 +6149,11 @@ export async function MessageAgents(c: Context): Promise<Response> {
               }
 
               if (content) {
-                await streamAnswerText(content)
+                if (requiresFinalSynthesis(agentContext)) {
+                  bufferGeneratedText(content)
+                } else {
+                  await deliverGeneratedText(content)
+                }
               }
               assistantSpan?.end()
               break
@@ -6132,9 +6241,13 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 typeof output === "string" &&
                 output.length > 0
               ) {
-                const remaining = output.slice(answer.length)
+                const remaining = output.slice(generatedText.length)
                 if (remaining) {
-                  await streamAnswerText(remaining)
+                  if (requiresFinalSynthesis(agentContext)) {
+                    bufferGeneratedText(remaining)
+                  } else {
+                    await deliverGeneratedText(remaining)
+                  }
                 }
               }
               finalOutputSpan.setAttribute(
@@ -6202,57 +6315,106 @@ export async function MessageAgents(c: Context): Promise<Response> {
                 )
                 await persistTraceForLastMessage()
               } else {
-                // Success path: if we never sent End (e.g. direct answer without
-                // synthesize_final_answer), persist and send End here so the
-                // frontend can close the stream.
-                const alreadySentEnd =
-                  agentContext.finalSynthesis.requested &&
-                  agentContext.finalSynthesis.completed
-                if (!alreadySentEnd && answer && !stream.closed) {
-                  try {
-                    const persisted = await persistAssistantMessage(
-                      db,
-                      {
-                        chatRecord,
-                        user,
-                        workspace: { externalId: workspace.externalId },
-                        agenticModelId,
-                        totalCost: agentContext.totalCost,
-                        tokenUsage: agentContext.tokenUsage,
-                        requestStartMs,
-                      },
-                      {
-                        answer,
-                        citations,
-                        imageCitations,
-                        citationMap,
-                        thinkingLog,
-                      },
-                      persistTrace,
-                    )
-                    assistantMessageId = persisted.assistantMessageId
-                    lastPersistedMessageId = persisted.msg.id as number
-                    lastPersistedMessageExternalId = persisted.assistantMessageId
-                  } catch (error) {
+                if (
+                  !responseFinalized &&
+                  requiresFinalSynthesis(agentContext) &&
+                  !agentContext.finalSynthesis.requested
+                ) {
+                  Logger.warn(
+                    {
+                      chatId: agentContext.chat.externalId,
+                      bufferedTextLength: bufferedText.length,
+                      generatedTextLength: generatedText.length,
+                    },
+                    "[MessageAgents][FinalSynthesis] Repairing skipped synthesis call at run_end",
+                  )
+                  const repairResult = await runFinalSynthesisCall(agentContext)
+                  if (
+                    (repairResult as { status?: string }).status === "error"
+                  ) {
+                    const repairError =
+                      (repairResult as { error?: { message?: string } }).error
+                        ?.message || "Final synthesis tool failed."
                     loggerWithChild({ email }).error(
-                      error,
-                      "Failed to persist assistant response (run_end direct-answer path)",
-                    )
-                  }
-                  if (!stream.closed) {
-                    await stream.writeSSE({
-                      event: ChatSSEvents.ResponseMetadata,
-                      data: JSON.stringify({
+                      {
                         chatId: agentContext.chat.externalId,
-                        messageId: assistantMessageId || "temp-message-id",
-                        timeTakenMs: Date.now() - requestStartMs,
-                      }),
-                    })
-                    await stream.writeSSE({
-                      event: ChatSSEvents.End,
-                      data: "",
-                    })
+                        error: repairError,
+                      },
+                      "[MessageAgents][FinalSynthesis] Repair call failed at run_end",
+                    )
+                    if (!stream.closed) {
+                      await stream.writeSSE({
+                        event: ChatSSEvents.Error,
+                        data: JSON.stringify({
+                          error: "final_synthesis_repair_failed",
+                          message: repairError,
+                        }),
+                      })
+                      await stream.writeSSE({
+                        event: ChatSSEvents.End,
+                        data: "",
+                      })
+                    }
+                    responseFinalized = true
+                    await persistErrorToUserMessage(
+                      db,
+                      userMessageExternalId,
+                      repairError,
+                      email,
+                      "run_end_repair",
+                    )
+                    await persistTraceForLastMessage()
+                    runEndSpan.end()
+                    endJafSpan()
+                    break
                   }
+                }
+
+                const finalizedState = await finalizeMainRunResponse({
+                  db,
+                  persistContext: {
+                    chatRecord,
+                    user,
+                    workspace: { externalId: workspace.externalId },
+                    agenticModelId,
+                    totalCost: agentContext.totalCost,
+                    tokenUsage: agentContext.tokenUsage,
+                    requestStartMs,
+                  },
+                  persistData: {
+                    answer,
+                    citations,
+                    imageCitations,
+                    citationMap,
+                    thinkingLog,
+                  },
+                  persistTrace,
+                  stream,
+                  chatExternalId: agentContext.chat.externalId,
+                  state: {
+                    responseFinalized,
+                    assistantMessageId,
+                    lastPersistedMessageId,
+                    lastPersistedMessageExternalId,
+                  },
+                })
+                responseFinalized = finalizedState.responseFinalized
+                assistantMessageId = finalizedState.assistantMessageId
+                lastPersistedMessageId = finalizedState.lastPersistedMessageId
+                lastPersistedMessageExternalId =
+                  finalizedState.lastPersistedMessageExternalId
+                if (
+                  !responseFinalized &&
+                  bufferedText &&
+                  !agentContext.finalSynthesis.requested
+                ) {
+                  Logger.warn(
+                    {
+                      chatId: agentContext.chat.externalId,
+                      bufferedTextLength: bufferedText.length,
+                    },
+                    "[MessageAgents][FinalSynthesis] Buffered direct answer was discarded without finalization",
+                  )
                 }
               }
               runEndSpan.end()
@@ -7207,10 +7369,27 @@ async function runDelegatedAgentWithMessageAgents(
     }
 
     let answer = ""
+    let generatedText = ""
+    // TODO(final-synthesis): We only keep bufferedText for loop-local
+    // diagnostics right now. If we later want to analyze or compare skipped
+    // direct answers from weaker models, reuse this buffer for guarded
+    // metrics/debugging instead of logging or returning it directly.
+    let bufferedText = ""
+    let responseFinalized = false
     const streamAnswerText = async (text: string) => {
       if (!text) return
       throwIfStopRequested(params.stopSignal)
       answer += text
+    }
+    const deliverGeneratedText = async (text: string) => {
+      if (!text) return
+      generatedText += text
+      await streamAnswerText(text)
+    }
+    const bufferGeneratedText = (text: string) => {
+      if (!text) return
+      generatedText += text
+      bufferedText += text
     }
     agentContext.runtime = {
       streamAnswerText,
@@ -7372,7 +7551,7 @@ async function runDelegatedAgentWithMessageAgents(
             }
 
             if (agentContext.finalSynthesis.suppressAssistantStreaming) {
-              // Only emit synthesisCompleted here if the synthesizeFinalAnswer tool
+              // Only emit synthesisCompleted here if the deliverFinalAnswer tool
               // hasn't already done so (it sets .completed = true before emitting).
               if (content?.trim() && !agentContext.finalSynthesis.completed) {
                 agentContext.finalSynthesis.ackReceived = true
@@ -7385,7 +7564,11 @@ async function runDelegatedAgentWithMessageAgents(
             }
 
             if (content) {
-              await agentContext.runtime?.streamAnswerText?.(content)
+              if (requiresFinalSynthesis(agentContext)) {
+                bufferGeneratedText(content)
+              } else {
+                await deliverGeneratedText(content)
+              }
             }
             break
           }
@@ -7397,9 +7580,13 @@ async function runDelegatedAgentWithMessageAgents(
               typeof output === "string" &&
               output.length > 0
             ) {
-              const remaining = output.slice(answer.length)
+              const remaining = output.slice(generatedText.length)
               if (remaining) {
-                await agentContext.runtime?.streamAnswerText?.(remaining)
+                if (requiresFinalSynthesis(agentContext)) {
+                  bufferGeneratedText(remaining)
+                } else {
+                  await deliverGeneratedText(remaining)
+                }
               }
             }
             break
@@ -7409,6 +7596,35 @@ async function runDelegatedAgentWithMessageAgents(
             if (outcome?.status === "completed") {
               // Review is handled by runTurnEndPipeline (final-turn logic).
               // No duplicate run_end review here.
+              if (
+                !responseFinalized &&
+                requiresFinalSynthesis(agentContext) &&
+                !agentContext.finalSynthesis.requested
+              ) {
+                Logger.warn(
+                  {
+                    chatId: agentContext.chat.externalId,
+                    bufferedTextLength: bufferedText.length,
+                    generatedTextLength: generatedText.length,
+                  },
+                  "[DelegatedAgenticRun][FinalSynthesis] Repairing skipped synthesis call at run_end",
+                )
+                const repairResult = await runFinalSynthesisCall(agentContext)
+                if (
+                  (repairResult as { status?: string }).status === "error"
+                ) {
+                  runFailedMessage =
+                    (repairResult as { error?: { message?: string } }).error
+                      ?.message || "Final synthesis tool failed."
+                  break
+                }
+                responseFinalized = true
+              } else if (
+                agentContext.finalSynthesis.requested &&
+                agentContext.finalSynthesis.completed
+              ) {
+                responseFinalized = true
+              }
               runCompleted = true
               break
             }

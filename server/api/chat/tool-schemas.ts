@@ -223,7 +223,7 @@ export const SynthesizeFinalAnswerInputSchema = z
       ),
   })
   .describe(
-    "Invoke only when you are fully ready to deliver the final answer. The final answer model receives prior compacted conversation history, the current user question, agent system prompt context, workspace context, episodic memories, retrieved chat memory, fragments gathered across turns, selected images, and optional insightsUsefulForAnswering guidance from the agent.",
+    "Invoke only when the run has become agentic and you are fully ready to deliver the final answer. Skip this tool for direct-answer turns that stayed within the initial prompt package without creating a plan, calling non-toDoWrite tools, or delegating. The final answer model receives prior compacted conversation history, the current user question, agent system prompt context, workspace context, episodic memories, retrieved chat memory, fragments gathered across turns, selected images, and optional insightsUsefulForAnswering guidance from the agent.",
   )
 
 export const SynthesizeFinalAnswerOutputSchema = z.object({
@@ -983,13 +983,14 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   },
 
   // Finalization Tool
-  synthesize_final_answer: {
-    name: XyneTools.synthesizeFinalAnswer,
+  deliver_final_answer: {
+    name: XyneTools.deliverFinalAnswer,
     description: [
-      "MANDATORY FINAL STEP.",
-      "Call this tool exactly once when you have gathered all required context and are ready to deliver the final answer.",
+      "Terminal delivery tool for agentic runs.",
+      "Call this tool exactly once when the run has already become agentic, you have gathered all required context, and you are ready to deliver the final answer.",
       "It streams the final response to the user using prior compacted conversation history, the current question, agent system prompt context, plan snapshot, clarifications, workspace context, episodic memories, retrieved chat memory, fragments gathered across turns, selected images, and optional insightsUsefulForAnswering guidance.",
-      "After calling this tool, do NOT call any other tools—simply acknowledge completion in your next assistant turn.",
+      "Skip this tool only when answering directly from the initial prompt package without creating a plan, calling non-toDoWrite tools, or delegating.",
+      "After calling this tool, do NOT call any other tools or emit another user-facing answer in the assistant turn.",
     ].join(" "),
     category: ToolCategory.Finalization,
     inputSchema: SynthesizeFinalAnswerInputSchema,

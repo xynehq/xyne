@@ -57,7 +57,7 @@ const TOOL_DISPLAY: Record<string, ToolDisplay> = {
   [XyneTools.runPublicAgent]:      { executing: "Consulting a specialized agent.", completed: "Specialist returned results." },
   [XyneTools.fallBack]:            { executing: "Trying fallback search.", completed: "Fallback search complete." },
   [XyneTools.toDoWrite]:           { executing: "Planning next steps.", completed: "Plan created." },
-  [XyneTools.synthesizeFinalAnswer]:{ executing: "Composing your answer.", completed: "Answer ready." },
+  [XyneTools.deliverFinalAnswer]:{ executing: "Composing your answer.", completed: "Answer ready." },
   [XyneTools.readDocument]:        { executing: "Reading sections of the document.", completed: "Document reading complete." },
 }
 
