@@ -101,6 +101,7 @@ export const TOOL_BLOCK_NAMES: Record<string, string> = {
   getSlackUserProfile: "Look up Slack profile",
   list_custom_agents: "Search for agents",
   fall_back: "Fallback search",
+  deliver_final_answer: "Compose answer",
   synthesize_final_answer: "Compose answer",
 }
 
@@ -796,7 +797,8 @@ export const ReasoningProvider: React.FC<{
       case XyneTools.runPublicAgent:
         return <Bot className="w-4 h-4" />
       case XyneTools.fallBack:
-      case XyneTools.synthesizeFinalAnswer:
+      case XyneTools.deliverFinalAnswer:
+      case "synthesize_final_answer":
         return <XyneIcon className="w-4 h-4" />
       default:
         return <McpIcon className="w-4 h-4" />

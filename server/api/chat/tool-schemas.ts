@@ -983,8 +983,8 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
   },
 
   // Finalization Tool
-  synthesize_final_answer: {
-    name: XyneTools.synthesizeFinalAnswer,
+  deliver_final_answer: {
+    name: XyneTools.deliverFinalAnswer,
     description: [
       "Terminal delivery tool for agentic runs.",
       "Call this tool exactly once when the run has already become agentic, you have gathered all required context, and you are ready to deliver the final answer.",

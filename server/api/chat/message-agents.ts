@@ -754,7 +754,7 @@ function initializePlanState(plan: PlanState): string | null {
 /**
  * Extract a human-readable query string from tool arguments to surface in the
  * reasoning UI alongside each tool call.  Returns undefined for tools that have
- * no meaningful search term (e.g. synthesizeFinalAnswer, toDoWrite).
+ * no meaningful search term (e.g. deliverFinalAnswer, toDoWrite).
  */
 function extractToolQuery(
   toolName: string,
@@ -845,7 +845,7 @@ type MainRunSSEStream = {
 
 /**
  * Inserts an assistant message and persists trace. Shared by tool_call_end
- * (synthesizeFinalAnswer) and run_end (direct-answer path). Caller is responsible
+ * (deliverFinalAnswer) and run_end (direct-answer path). Caller is responsible
  * for updating lastPersistedMessageId, lastPersistedMessageExternalId, and
  * assistantMessageId, and for sending SSE (ResponseMetadata, End) if needed.
  */
@@ -4051,16 +4051,16 @@ async function runFinalSynthesisCall(
 function createFinalSynthesisTool(): Tool<unknown, AgentRunContext> {
   return {
     schema: {
-      name: XyneTools.synthesizeFinalAnswer,
-      description: TOOL_SCHEMAS.synthesize_final_answer.description,
+      name: XyneTools.deliverFinalAnswer,
+      description: TOOL_SCHEMAS.deliver_final_answer.description,
       parameters: toToolParameters(
-        TOOL_SCHEMAS.synthesize_final_answer.inputSchema,
+        TOOL_SCHEMAS.deliver_final_answer.inputSchema,
       ),
     },
     async execute(args, context) {
       const validation = validateToolInput<{
         insightsUsefulForAnswering?: string
-      }>(XyneTools.synthesizeFinalAnswer, args)
+      }>(XyneTools.deliverFinalAnswer, args)
       if (!validation.success) {
         return ToolResponse.error("INVALID_INPUT", validation.error.message)
       }
@@ -4111,7 +4111,7 @@ Attachment handling:
      - create a plan using toDoWrite
      - use tools or delegate to an appropriate internal agent via "run_public_agent"
 
-4. If you create a plan, call any non-\`toDoWrite\` tool, or delegate to another agent, the final user-facing answer MUST go through \`synthesize_final_answer\`.
+4. If you create a plan, call any non-\`toDoWrite\` tool, or delegate to another agent, the final user-facing answer MUST go through \`deliver_final_answer\`.
 
 5. Prefer delegating to an INTERNAL AGENT when:
    - the task requires full-document or long-context understanding
@@ -4236,7 +4236,7 @@ function buildAgentInstructions(
     "# ANSWER DELIVERY POLICY",
     "- You may answer directly only while this run stays non-agentic: no plan created, no non-`toDoWrite` tool calls, and no delegation.",
     "- The initial prompt package counts as direct-answer-safe context: the user's message, visible conversation history, injected memory, and attachment fragments/images already provided at turn start.",
-    "- If you create a plan, call any non-`toDoWrite` tool, delegate to another agent, or gather new evidence beyond the initial prompt package, the final user-facing answer MUST go through `synthesize_final_answer`.",
+    "- If you create a plan, call any non-`toDoWrite` tool, delegate to another agent, or gather new evidence beyond the initial prompt package, the final user-facing answer MUST go through `deliver_final_answer`.",
     "- Do not output a direct final answer after the run becomes agentic, even if you believe the answer is already obvious.",
     "",
   ]
@@ -4332,9 +4332,9 @@ function buildAgentInstructions(
     "- State the exact limitation and what manual follow-up the user must perform to finish.",
     "",
     "# FINAL SYNTHESIS",
-    "- Once the run is agentic and research is complete, CALL `synthesize_final_answer` with optional `insightsUsefulForAnswering` guidance when it will help the final answer model emphasize the right conclusions or ordering. This tool composes and streams the response.",
-    "- If the run never became agentic, answer directly instead of calling `synthesize_final_answer`.",
-    "- After calling `synthesize_final_answer`, do not output another user-facing answer in the assistant turn.",
+    "- Once the run is agentic and research is complete, CALL `deliver_final_answer` with optional `insightsUsefulForAnswering` guidance when it will help the final answer model emphasize the right conclusions or ordering. This tool composes and streams the response.",
+    "- If the run never became agentic, answer directly instead of calling `deliver_final_answer`.",
+    "- After calling `deliver_final_answer`, do not output another user-facing answer in the assistant turn.",
   )
 
   const finalInstructions = instructionLines.join("\n")
@@ -6012,7 +6012,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               // so the frontend can close/stop waiting instead of waiting for
               // turn_end (which is delayed by onTurnEnd → runTurnEndPipeline).
               if (
-                evt.data.toolName === XyneTools.synthesizeFinalAnswer &&
+                evt.data.toolName === XyneTools.deliverFinalAnswer &&
                 !evt.data.error &&
                 agentContext.finalSynthesis.requested &&
                 agentContext.finalSynthesis.completed
@@ -6135,7 +6135,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
               }
 
               if (agentContext.finalSynthesis.suppressAssistantStreaming) {
-                // Only emit synthesisCompleted here if the synthesizeFinalAnswer tool
+                // Only emit synthesisCompleted here if the deliverFinalAnswer tool
                 // hasn't already done so (it sets .completed = true before emitting).
                 if (content?.trim() && !agentContext.finalSynthesis.completed) {
                   agentContext.finalSynthesis.ackReceived = true
@@ -7551,7 +7551,7 @@ async function runDelegatedAgentWithMessageAgents(
             }
 
             if (agentContext.finalSynthesis.suppressAssistantStreaming) {
-              // Only emit synthesisCompleted here if the synthesizeFinalAnswer tool
+              // Only emit synthesisCompleted here if the deliverFinalAnswer tool
               // hasn't already done so (it sets .completed = true before emitting).
               if (content?.trim() && !agentContext.finalSynthesis.completed) {
                 agentContext.finalSynthesis.ackReceived = true
