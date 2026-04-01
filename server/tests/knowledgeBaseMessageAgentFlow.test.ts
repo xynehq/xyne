@@ -232,6 +232,7 @@ function createAgentRunContext(options: {
       todoWriteCalled: false,
       turnStartedAt: Date.now(),
     },
+    imageMemory: new Map(),
     turnCount: 1,
     totalLatency: 0,
     totalCost: 0,
