@@ -44,7 +44,8 @@
     "format": "bunx biome format --write ../",
     "prepare": "cd .. && husky .husky",
     "commit": "cz",
-    "release": "semantic-release"
+    "release": "semantic-release",
+    "clear:file-queue": "bun run scripts/clear-file-processor-queue.ts"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^3.0.23",
