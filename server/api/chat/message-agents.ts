@@ -480,6 +480,7 @@ export const __messageAgentsPromptInternals = {
 
 export const __messageAgentsRunInternals = {
   finalizeMainRunResponse,
+  runFinalSynthesisCall,
 }
 
 function normalizeExcludedIdsForLogging(excludedIds: unknown): string[] {
@@ -3794,35 +3795,6 @@ async function runFinalSynthesisCall(
     options?.insightsUsefulForAnswering,
   )
   const mutableContext = mutableAgentContext(context)
-  if (!mutableContext.review.lockedByFinalSynthesis) {
-    mutableContext.review.lockedByFinalSynthesis = true
-    mutableContext.review.lockedAtTurn =
-      mutableContext.turnCount ?? MIN_TURN_NUMBER
-    logContextMutation(
-      mutableContext,
-      "[MessageAgents][FinalSynthesis] Locked review state for synthesis",
-      {
-        lockedAtTurn: mutableContext.review.lockedAtTurn,
-      },
-    )
-    loggerWithChild({ email: context.user.email }).info(
-      {
-        chatId: context.chat.externalId,
-        turn: mutableContext.review.lockedAtTurn,
-      },
-      "[MessageAgents][FinalSynthesis] Review lock activated after synthesis tool call.",
-    )
-  }
-  if (
-    mutableContext.finalSynthesis.requested &&
-    mutableContext.finalSynthesis.completed
-  ) {
-    return ToolResponse.error(
-      "EXECUTION_FAILED",
-      "Final synthesis already completed for this run.",
-    )
-  }
-
   const textSink = options?.textSink ?? mutableContext.runtime?.streamAnswerText
   if (!textSink) {
     return ToolResponse.error(
@@ -3830,149 +3802,182 @@ async function runFinalSynthesisCall(
       "Streaming channel unavailable. Cannot deliver final answer.",
     )
   }
+  if (mutableContext.finalSynthesis.completed) {
+    return ToolResponse.error(
+      "EXECUTION_FAILED",
+      "Final synthesis already completed for this run.",
+    )
+  }
+  if (
+    mutableContext.review.lockedByFinalSynthesis ||
+    mutableContext.finalSynthesis.requested
+  ) {
+    return ToolResponse.error(
+      "EXECUTION_FAILED",
+      "Final synthesis already in progress for this run.",
+    )
+  }
 
-  const synthesisRequest = await buildFinalSynthesisRequest(context, {
-    insightsUsefulForAnswering,
-  })
-  const { systemPrompt, userMessage, messages } = synthesisRequest
-  const fragments = await getFragmentsForSynthesis(context.documentMemory, {
-    email: context.user.email,
-    userId: context.user.numericId ?? undefined,
-    workspaceId: context.user.workspaceNumericId ?? undefined,
-  })
-  const docOrder = fragments.map((f) => f.id)
-  const {
-    imageFileNamesForModel: selected,
-    total,
-    dropped,
-  } = IMAGE_CONTEXT_CONFIG.enabled
-    ? getImageFileNamesForLlmFromStores(
-        context.imageMemory,
-        {
-          docOrder,
-          maxImages: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
-        },
-      )
-    : { imageFileNamesForModel: [], total: 0, dropped: 0 }
-
-  const attachmentImageCount = [...context.imageMemory.values()].filter(
-    (entry) => entry.isUserAttachment,
-  ).length
-
-  loggerWithChild({ email: context.user.email }).debug(
-    {
-      chatId: context.chat.externalId,
-      selectedImages: selected,
-      totalImages: total,
-      droppedImages: dropped,
-      attachmentImageCount,
-    },
-    "[MessageAgents][FinalSynthesis] Image payload",
-  )
-  const fragmentsCount = fragments.length
-  const hasEpisodicMemories = !!context.episodicMemoriesText?.trim()
-  const hasChatMemory = !!sanitizeChatMemoryForLLMContext(
-    context.chatMemoryText,
-  )
-  loggerWithChild({ email: context.user.email }).debug(
-    {
-      chatId: context.chat.externalId,
-      finalSynthesisSystemPrompt: systemPrompt,
-      finalSynthesisUserMessage: userMessage,
-      conversationHistoryCount: context.conversationHistoryMessages.length,
-      hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
-      hasEpisodicMemories,
-      hasChatMemory,
-    },
-    "[MessageAgents][FinalSynthesis] Full context payload",
-  )
-
-  mutableContext.finalSynthesis.requested = true
+  const logger = loggerWithChild({ email: context.user.email })
+  mutableContext.review.lockedByFinalSynthesis = true
+  mutableContext.review.lockedAtTurn =
+    mutableContext.turnCount ?? MIN_TURN_NUMBER
   mutableContext.finalSynthesis.suppressAssistantStreaming = true
+  mutableContext.finalSynthesis.requested = true
   mutableContext.finalSynthesis.completed = false
   mutableContext.finalSynthesis.streamedText = ""
   logContextMutation(
     mutableContext,
-    "[MessageAgents][FinalSynthesis] Updated final synthesis state to requested",
+    "[MessageAgents][FinalSynthesis] Locked review state and marked synthesis requested",
     {
-      fragmentsCount,
-      selectedImages: selected,
-      totalImages: total,
-      droppedImages: dropped,
-      conversationHistoryCount: context.conversationHistoryMessages.length,
-      hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
-      hasEpisodicMemories,
-      hasChatMemory,
+      lockedAtTurn: mutableContext.review.lockedAtTurn,
     },
   )
-
-  await mutableContext.runtime?.emitReasoning?.(
-    ReasoningSteps.synthesisStarted(fragmentsCount),
-  )
-
-  const logger = loggerWithChild({ email: context.user.email })
-  if (dropped > 0) {
-    logger.info(
-      {
-        droppedCount: dropped,
-        limit: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
-        totalImages: total,
-      },
-      "Final synthesis image limit enforced; dropped oldest references.",
-    )
-  }
-
-  const modelId =
-    (context.modelId as Models) ||
-    (defaultBestModel as Models) ||
-    Models.Gpt_4o
-  const modelParams: ModelParams = {
-    modelId,
-    systemPrompt,
-    stream: true,
-    temperature: 0.2,
-    max_new_tokens: context.maxOutputTokens ?? 8192,
-    imageFileNames: selected,
-  }
-
-  Logger.debug(
+  logger.info(
     {
-      email: context.user.email,
       chatId: context.chat.externalId,
-      fragmentsCount: fragments.length,
-      planPresent: !!context.plan,
-      clarificationsCount: context.clarifications.length,
-      toolOutputsThisTurn: context.currentTurnArtifacts.toolOutputs.length,
-      imageNames: selected,
-      conversationHistoryCount: context.conversationHistoryMessages.length,
-      hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
-      hasEpisodicMemories,
-      hasChatMemory,
+      turn: mutableContext.review.lockedAtTurn,
     },
-    "[MessageAgents][FinalSynthesis] Context summary for synthesis call",
+    "[MessageAgents][FinalSynthesis] Review lock activated after synthesis tool call.",
   )
 
-  Logger.debug(
-    {
-      email: context.user.email,
-      chatId: context.chat.externalId,
-      modelId,
-      systemPrompt,
-      messagesCount: messages.length,
-      imagesProvided: selected.length,
-      conversationHistoryCount: context.conversationHistoryMessages.length,
-      hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
-      hasEpisodicMemories,
-      hasChatMemory,
-    },
-    "[MessageAgents][FinalSynthesis] LLM call parameters",
-  )
-
-  const provider = getProviderByModel(modelId)
   let streamedCharacters = 0
   let estimatedCostUsd = 0
 
   try {
+    const synthesisRequest = await buildFinalSynthesisRequest(context, {
+      insightsUsefulForAnswering,
+    })
+    const { systemPrompt, userMessage, messages } = synthesisRequest
+    const fragments = await getFragmentsForSynthesis(context.documentMemory, {
+      email: context.user.email,
+      userId: context.user.numericId ?? undefined,
+      workspaceId: context.user.workspaceNumericId ?? undefined,
+    })
+    const docOrder = fragments.map((f) => f.id)
+    const {
+      imageFileNamesForModel: selected,
+      total,
+      dropped,
+    } = IMAGE_CONTEXT_CONFIG.enabled
+      ? getImageFileNamesForLlmFromStores(
+          context.imageMemory,
+          {
+            docOrder,
+            maxImages: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
+          },
+        )
+      : { imageFileNamesForModel: [], total: 0, dropped: 0 }
+
+    const attachmentImageCount = [...context.imageMemory.values()].filter(
+      (entry) => entry.isUserAttachment,
+    ).length
+
+    logger.debug(
+      {
+        chatId: context.chat.externalId,
+        selectedImages: selected,
+        totalImages: total,
+        droppedImages: dropped,
+        attachmentImageCount,
+      },
+      "[MessageAgents][FinalSynthesis] Image payload",
+    )
+    const fragmentsCount = fragments.length
+    const hasEpisodicMemories = !!context.episodicMemoriesText?.trim()
+    const hasChatMemory = !!sanitizeChatMemoryForLLMContext(
+      context.chatMemoryText,
+    )
+    logger.debug(
+      {
+        chatId: context.chat.externalId,
+        finalSynthesisSystemPrompt: systemPrompt,
+        finalSynthesisUserMessage: userMessage,
+        conversationHistoryCount: context.conversationHistoryMessages.length,
+        hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+        hasEpisodicMemories,
+        hasChatMemory,
+      },
+      "[MessageAgents][FinalSynthesis] Full context payload",
+    )
+
+    logContextMutation(
+      mutableContext,
+      "[MessageAgents][FinalSynthesis] Updated final synthesis state to requested",
+      {
+        fragmentsCount,
+        selectedImages: selected,
+        totalImages: total,
+        droppedImages: dropped,
+        conversationHistoryCount: context.conversationHistoryMessages.length,
+        hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+        hasEpisodicMemories,
+        hasChatMemory,
+      },
+    )
+
+    await mutableContext.runtime?.emitReasoning?.(
+      ReasoningSteps.synthesisStarted(fragmentsCount),
+    )
+
+    if (dropped > 0) {
+      logger.info(
+        {
+          droppedCount: dropped,
+          limit: IMAGE_CONTEXT_CONFIG.maxImagesPerCall,
+          totalImages: total,
+        },
+        "Final synthesis image limit enforced; dropped oldest references.",
+      )
+    }
+
+    const modelId =
+      (context.modelId as Models) ||
+      (defaultBestModel as Models) ||
+      Models.Gpt_4o
+    const modelParams: ModelParams = {
+      modelId,
+      systemPrompt,
+      stream: true,
+      temperature: 0.2,
+      max_new_tokens: context.maxOutputTokens ?? 8192,
+      imageFileNames: selected,
+    }
+
+    Logger.debug(
+      {
+        email: context.user.email,
+        chatId: context.chat.externalId,
+        fragmentsCount: fragments.length,
+        planPresent: !!context.plan,
+        clarificationsCount: context.clarifications.length,
+        toolOutputsThisTurn: context.currentTurnArtifacts.toolOutputs.length,
+        imageNames: selected,
+        conversationHistoryCount: context.conversationHistoryMessages.length,
+        hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+        hasEpisodicMemories,
+        hasChatMemory,
+      },
+      "[MessageAgents][FinalSynthesis] Context summary for synthesis call",
+    )
+
+    Logger.debug(
+      {
+        email: context.user.email,
+        chatId: context.chat.externalId,
+        modelId,
+        systemPrompt,
+        messagesCount: messages.length,
+        imagesProvided: selected.length,
+        conversationHistoryCount: context.conversationHistoryMessages.length,
+        hasInsightsUsefulForAnswering: !!insightsUsefulForAnswering,
+        hasEpisodicMemories,
+        hasChatMemory,
+      },
+      "[MessageAgents][FinalSynthesis] LLM call parameters",
+    )
+
+    const provider = getProviderByModel(modelId)
     const iterator = provider.converseStream(messages, modelParams)
     for await (const chunk of iterator) {
       if (chunk.text) {
@@ -4008,19 +4013,31 @@ async function runFinalSynthesisCall(
 
     autoCompleteRemainingTasks(context)
 
-    await context.runtime?.emitReasoning?.(
-      ReasoningSteps.synthesisCompleted(),
-    )
-    if (context.plan) {
+    try {
       await context.runtime?.emitReasoning?.(
-        ReasoningSteps.planCreated(
-          context.plan.goal || "Goal not specified",
-          context.plan.subTasks.map((task) => ({
-            id: task.id,
-            description: task.description,
-            status: task.status,
-          })),
-        ),
+        ReasoningSteps.synthesisCompleted(),
+      )
+      if (context.plan) {
+        await context.runtime?.emitReasoning?.(
+          ReasoningSteps.planCreated(
+            context.plan.goal || "Goal not specified",
+            context.plan.subTasks.map((task) => ({
+              id: task.id,
+              description: task.description,
+              status: task.status,
+            })),
+          ),
+        )
+      }
+    } catch (postSuccessError) {
+      logger.warn(
+        {
+          err:
+            postSuccessError instanceof Error
+              ? postSuccessError.message
+              : String(postSuccessError),
+        },
+        "[MessageAgents][FinalSynthesis] Post-stream bookkeeping failed after synthesis completed.",
       )
     }
 
@@ -4039,11 +4056,11 @@ async function runFinalSynthesisCall(
       },
     )
   } catch (error) {
-    context.finalSynthesis.suppressAssistantStreaming = false
-    context.finalSynthesis.requested = false
-    context.finalSynthesis.completed = false
+    mutableContext.finalSynthesis.suppressAssistantStreaming = false
+    mutableContext.finalSynthesis.requested = false
+    mutableContext.finalSynthesis.completed = false
     logContextMutation(
-      context,
+      mutableContext,
       "[MessageAgents][FinalSynthesis] Reset final synthesis state after failure",
       {
         error: error instanceof Error ? error.message : String(error),
@@ -4059,6 +4076,15 @@ async function runFinalSynthesisCall(
         error instanceof Error ? error.message : String(error)
       }`,
     )
+  } finally {
+    if (!mutableContext.finalSynthesis.completed) {
+      mutableContext.review.lockedByFinalSynthesis = false
+      mutableContext.review.lockedAtTurn = null
+      logContextMutation(
+        mutableContext,
+        "[MessageAgents][FinalSynthesis] Released review lock after incomplete synthesis",
+      )
+    }
   }
 }
 
