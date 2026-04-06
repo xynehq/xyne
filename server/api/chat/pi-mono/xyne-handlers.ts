@@ -286,10 +286,8 @@ export function createXyneEventHandlers(config: XyneHandlerConfig) {
           const fragments = result.details.fragments
           extractedDocIds = fragments
             .map((f: any) => {
-              // Extract docId from fragment.source.docId or fragment.id
               const sourceDocId = f?.source?.docId
               const fragmentId = f?.id
-              // Prefer source.docId (the actual document ID), fallback to fragment id
               return sourceDocId || fragmentId
             })
             .filter(
@@ -297,27 +295,8 @@ export function createXyneEventHandlers(config: XyneHandlerConfig) {
                 typeof id === "string" && id.length > 0,
             )
 
-          // Add extracted document IDs to seenDocuments for deduplication
-          if (extractedDocIds.length > 0 && state.seenDocuments) {
-            const beforeCount = state.seenDocuments.size
-            for (const docId of extractedDocIds) {
-              state.seenDocuments.add(docId)
-            }
-            const addedCount = state.seenDocuments.size - beforeCount
-
-            if (addedCount > 0) {
-              logContextMutation(
-                state,
-                `[afterToolExecutionHook] Added document IDs to seenDocuments`,
-                {
-                  toolName,
-                  addedCount,
-                  totalSeen: state.seenDocuments.size,
-                  sampleIds: extractedDocIds.slice(0, 5),
-                },
-              )
-            }
-          }
+          // NOTE: seenDocuments update is handled by setAfterToolCall in message-agents.ts
+          // to avoid double-counting. We only extract IDs here for logging.
         }
 
         logContextMutation(
@@ -339,18 +318,9 @@ export function createXyneEventHandlers(config: XyneHandlerConfig) {
           },
         )
 
-        // Add to tool execution history
-        state.toolCallHistory.push({
-          toolName,
-          connectorId: null,
-          agentName: "pi-mono",
-          arguments: (event as any).args || {},
-          turnNumber: currentTurn.value,
-          startedAt: new Date(),
-          durationMs: 0,
-          estimatedCostUsd: 0,
-          status: isError ? "error" : "success",
-        })
+        // NOTE: toolCallHistory push is handled by setAfterToolCall in message-agents.ts
+        // to avoid triple-counting (setAfterToolCall + here + extension turn_end).
+        // Keeping only setAfterToolCall since it's a synchronous SDK hook.
 
         // Record in expectation history
         if (state.pendingExpectations.length > 0) {

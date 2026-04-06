@@ -17,6 +17,7 @@ import { searchSlackMessages, SearchVespaThreads } from "@/search/vespa"
 import { parseAgentAppIntegrations } from "../../tools/utils"
 import { searchToCitation } from "@/api/chat/utils"
 import { answerContextMap } from "@/ai/context"
+import { mergeFragmentLists } from "../fragment-utils"
 import type { SearchSlackParams } from "@xyne/vespa-ts"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getLogger, Subsystem } from "@/logger"
@@ -251,6 +252,10 @@ export const getSlackRelatedMessagesTool = createXyneTool(
         }
       }
 
+      // NOTE: Do NOT auto-inject seenDocuments into excludeDocIds here.
+      // excludeDocIds operates at the DOCUMENT level — excluding it blocks ALL chunks.
+      // The ranking pipeline deduplicates post-retrieval instead.
+
       const searchParams: SearchSlackParams = {
         email,
         user: params.user || undefined,
@@ -261,7 +266,7 @@ export const getSlackRelatedMessagesTool = createXyneTool(
         offset: params.offset || 0,
         timestampRange: normalizedTimestampRange,
         agentChannelIds: channelIds.length > 0 ? channelIds : undefined,
-        excludeDocIds: params.excludedIds || [],
+        excludeDocIds: params.excludedIds,
         mentions:
           params.mentions && params.mentions.length > 0
             ? params.mentions
@@ -278,13 +283,6 @@ export const getSlackRelatedMessagesTool = createXyneTool(
       )
 
       if (!items.length) {
-        // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
-        const toolKey = `getSlackRelatedMessages:${params.query || "default"}`
-        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
-          query: params.query || "",
-          fragments: [],
-        })
-
         await persistState()
         return {
           content: [{ type: "text", text: "Found 0 Slack messages" }],
@@ -337,9 +335,10 @@ export const getSlackRelatedMessagesTool = createXyneTool(
         }
       }
 
-      // Filter excluded IDs
-      const excludedDocIds = new Set(params.excludedIds || [])
-      if (excludedDocIds.size > 0) {
+      // Filter only agent-explicitly-excluded IDs (not seenDocuments — see note above)
+      const agentExcludedIds = params.excludedIds
+      if (agentExcludedIds && agentExcludedIds.length > 0) {
+        const excludedDocIds = new Set(agentExcludedIds)
         allItems = allItems.filter((item) => {
           const citation = searchToCitation(item)
           return !excludedDocIds.has(citation.docId)
@@ -369,19 +368,13 @@ export const getSlackRelatedMessagesTool = createXyneTool(
         }),
       )
 
-      xyneState.allFragments.push(...fragments)
-
-      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
-      const toolKey = `getSlackRelatedMessages:${params.query || "default"}`
-      const existing =
-        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
-      const mergedFragments = existing
-        ? [...existing.fragments, ...fragments]
-        : fragments
-      xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
-        query: params.query || "",
-        fragments: mergedFragments,
-      })
+      // Push fragments directly to allFragments so synthesis always has context.
+      // The extension's ranking pipeline may also add/reorder via tool_execution_end;
+      // mergeFragmentLists deduplicates by vespaDocId so double-adds are safe.
+      xyneState.allFragments = mergeFragmentLists(
+        xyneState.allFragments,
+        fragments,
+      )
 
       await persistState()
 

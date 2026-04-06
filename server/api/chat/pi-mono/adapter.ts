@@ -120,6 +120,10 @@ export interface XyneAgentState {
     lockedByFinalSynthesis: boolean
     lockedAtTurn: number | null
     pendingReview?: Promise<void>
+    // Tracks which turns have had review steering injected (prevents re-injection)
+    _steeringInjectedForTurn?: Set<number>
+    // Tracks consecutive gather_more recommendations to prevent infinite search loops
+    consecutiveGatherMore: number
   }
 
   // Expectation tracking
@@ -141,10 +145,6 @@ export interface XyneAgentState {
   // Turn artifacts
   currentTurnArtifacts: {
     fragments: MinimalAgentFragment[]
-    unrankedFragmentsByTool: Map<
-      string,
-      { query: string; fragments: MinimalAgentFragment[] }
-    >
     expectations: ToolExpectationAssignment[]
     toolOutputs: any[]
     images: FragmentImageReference[]
@@ -221,6 +221,9 @@ export interface XyneAgentState {
 
   // Thinking log for fallback synthesis
   thinkingLog?: string
+
+  // Track which turn's fragments have been ranked (for retrieval-driven context)
+  lastRankedTurn: number
 }
 
 /**
@@ -435,6 +438,7 @@ export function createInitialXyneState(
       lastReviewResult: null,
       lockedByFinalSynthesis: false,
       lockedAtTurn: null,
+      consecutiveGatherMore: 0,
     },
     pendingExpectations: [],
     expectationHistory: new Map(),
@@ -449,7 +453,6 @@ export function createInitialXyneState(
     mcpAgents: [],
     currentTurnArtifacts: {
       fragments: [],
-      unrankedFragmentsByTool: new Map(),
       expectations: [],
       toolOutputs: [],
       images: [],
@@ -489,5 +492,6 @@ export function createInitialXyneState(
     seenDocuments: new Set(),
     citationDocIdMapping: new Map(),
     stopRequested: false,
+    lastRankedTurn: -1, // Initialize to -1 so turn 0 gets ranked
   }
 }

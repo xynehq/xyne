@@ -149,6 +149,8 @@ import {
   synthesizeFinalAnswerTool,
   listCustomAgentsTool,
   runPublicAgentTool,
+  getDocumentOutlineTool,
+  getPageContentTool,
 } from "./tools"
 
 import {
@@ -195,6 +197,7 @@ import {
 import { buildPiMonoSystemPrompt } from "./prompts/xyne-prompts"
 import { createEventRouter, createXyneAgentSession } from "./core"
 import { createXyneEventHandlers } from "./xyne-handlers"
+import { convertToAgentMessages } from "./core/runtime"
 
 const { defaultBestModel, defaultBestModelAgenticMode, JwtPayloadKey } = config
 
@@ -841,6 +844,8 @@ function buildXyneTools(delegationEnabled = true): unknown[] {
     getSlackRelatedMessagesTool,
     lsKnowledgeBaseTool,
     searchKnowledgeBaseTool,
+    getDocumentOutlineTool,
+    getPageContentTool,
     searchChatHistoryTool,
     toDoWriteTool,
     fallBackTool,
@@ -1820,6 +1825,19 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           delegationEnabled,
         )
 
+        // Convert conversation history to pi-mono format and pass to session
+        // This ensures the agent has context from previous turns
+        const initialMessages = convertToAgentMessages(
+          previousConversationHistory.slice(-20), // Last 20 messages
+        )
+        loggerWithChild({ email }).info(
+          {
+            initialMessageCount: initialMessages.length,
+            historyLength: previousConversationHistory.length,
+          },
+          "[Pi-Mono] Injecting conversation history into session",
+        )
+
         const session = await createXyneAgentSession({
           model: agenticModelId,
           systemPrompt,
@@ -1827,13 +1845,107 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           state: xyneState,
           baseUrl,
           apiKey: config.LiteLLMApiKey,
+          initialMessages, // Pass conversation history to pi-mono
         })
         const piSession = session.getUnderlyingSession() as PiMonoAgentSession
         // Store Xyne state in adapter for tools to access
         // Use the session's internal context as the key
         setXyneState(piSession as any, xyneState)
 
-        // Set extension state for turn-end processing
+        // NOTE: setBeforeToolCall CANNOT modify args in pi-mono SDK — the return
+        // value is ignored for arg modification (it can only block via {block: true}).
+        // We do NOT auto-inject seenDocuments into excludedIds because excludedIds
+        // operates at the DOCUMENT level (Vespa's docId), not chunk level. Excluding
+        // a docId blocks ALL chunks from that document, losing access to chunks that
+        // are relevant to different queries. The ranking pipeline deduplicates post-retrieval.
+        // seenDocuments is still tracked below for debug/analytics purposes.
+
+        // Set up afterToolCall hook to process results synchronously BEFORE agent continues
+        // This prevents race conditions that can happen with event handlers
+        if (piSession.agent?.setAfterToolCall) {
+          piSession.agent.setAfterToolCall(
+            async ({ toolCall, args, result, isError }) => {
+              const toolName = toolCall.name
+
+              // CRITICAL: Extract and track seen document IDs from search results for deduplication
+              // This MUST run synchronously before the next tool call to prevent duplicate results
+              if (
+                !isError &&
+                result &&
+                typeof result === "object" &&
+                (result as any)?.details?.fragments &&
+                Array.isArray((result as any).details.fragments)
+              ) {
+                const fragments = (result as any).details.fragments
+                const extractedDocIds: string[] = fragments
+                  .map((f: any) => {
+                    const sourceDocId = f?.source?.docId
+                    const fragmentId = f?.id
+                    return sourceDocId || fragmentId
+                  })
+                  .filter(
+                    (id: any): id is string =>
+                      typeof id === "string" && id.length > 0,
+                  )
+
+                // Add extracted document IDs to seenDocuments for deduplication
+                if (extractedDocIds.length > 0 && xyneState.seenDocuments) {
+                  const beforeCount = xyneState.seenDocuments.size
+                  for (const docId of extractedDocIds) {
+                    xyneState.seenDocuments.add(docId)
+                  }
+                  const addedCount = xyneState.seenDocuments.size - beforeCount
+
+                  if (addedCount > 0) {
+                    loggerWithChild({ email }).debug(
+                      {
+                        toolName,
+                        addedCount,
+                        totalSeen: xyneState.seenDocuments.size,
+                        sampleIds: extractedDocIds.slice(0, 5),
+                      },
+                      "[setAfterToolCall] Added document IDs to seenDocuments",
+                    )
+                  }
+                }
+              }
+
+              // Add to tool execution history
+              xyneState.toolCallHistory.push({
+                toolName,
+                connectorId: null,
+                agentName: "pi-mono",
+                arguments: (args || {}) as Record<string, unknown>,
+                turnNumber: currentTurn.value,
+                startedAt: new Date(),
+                durationMs: 0,
+                estimatedCostUsd: 0,
+                status: isError ? "error" : "success",
+              })
+
+              // Record in expectation history
+              if (xyneState.pendingExpectations.length > 0) {
+                const matchedIndex = xyneState.pendingExpectations.findIndex(
+                  (e: ToolExpectationAssignment) => e.toolName === toolName,
+                )
+                if (matchedIndex !== -1) {
+                  const matchedExpectation =
+                    xyneState.pendingExpectations[matchedIndex]
+                  xyneState.expectedResultsByCallId.set(
+                    `tool-${currentTurn.value}-${toolName}`,
+                    matchedExpectation.expectation,
+                  )
+                  // Remove from pending expectations to prevent double-processing
+                  xyneState.pendingExpectations.splice(matchedIndex, 1)
+                }
+              }
+
+              return undefined // Don't modify result
+            },
+          )
+        }
+
+        // Set extension state for turn-end processing and context hooks
         setExtensionState({
           xyneState,
           currentTurn,
@@ -1841,6 +1953,11 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
           message,
           email,
           emitReasoningStep,
+          setSystemPrompt: (prompt: string) => {
+            if (piSession.agent?.setSystemPrompt) {
+              piSession.agent.setSystemPrompt(prompt)
+            }
+          },
         })
 
         // Log the full system prompt for debugging
@@ -2128,6 +2245,20 @@ export async function MessageAgentsPiMono(c: Context): Promise<Response> {
               ReasoningSteps.synthesisCompleted(),
             )
           }
+        }
+
+        // Save debug data to file
+        try {
+          const debugFilePath = session.saveToFile()
+          loggerWithChild({ email }).info(
+            { debugFilePath },
+            "[Pi-Mono] Debug session data saved",
+          )
+        } catch (debugErr) {
+          loggerWithChild({ email }).warn(
+            debugErr,
+            "[Pi-Mono] Failed to save debug data",
+          )
         }
 
         // Persist final message

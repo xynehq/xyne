@@ -33,6 +33,80 @@ const Logger = getLogger(Subsystem.Chat)
 
 const { defaultBestModel, defaultFastModel } = config
 
+/**
+ * Build a steering message from review result to inject into conversation
+ * This makes review feedback more prominent in the agent's context
+ */
+export function buildReviewSteeringMessage(reviewResult: ReviewResult): string {
+  const parts: string[] = ["<review_feedback>"]
+
+  parts.push(`Status: ${reviewResult.status}`)
+  parts.push(`Recommendation: ${reviewResult.recommendation || "proceed"}`)
+
+  if (reviewResult.notes) {
+    parts.push(`Notes: ${reviewResult.notes}`)
+  }
+
+  if (reviewResult.planChangeNeeded && reviewResult.planChangeReason) {
+    parts.push(`Plan Change Required: ${reviewResult.planChangeReason}`)
+  }
+
+  if (reviewResult.anomalies && reviewResult.anomalies.length > 0) {
+    parts.push("Anomalies Detected:")
+    reviewResult.anomalies.forEach((anomaly) => {
+      parts.push(`  - ${anomaly}`)
+    })
+  }
+
+  if (
+    reviewResult.clarificationQuestions &&
+    reviewResult.clarificationQuestions.length > 0
+  ) {
+    parts.push("Clarifications Needed:")
+    reviewResult.clarificationQuestions.forEach((q) => {
+      parts.push(`  - ${q}`)
+    })
+  }
+
+  if (
+    reviewResult.unmetExpectations &&
+    reviewResult.unmetExpectations.length > 0
+  ) {
+    parts.push("Unmet Expectations:")
+    reviewResult.unmetExpectations.forEach((exp) => {
+      parts.push(`  - ${exp}`)
+    })
+  }
+
+  parts.push("</review_feedback>")
+  parts.push("")
+
+  // Tailor the instruction based on the recommendation
+  const rec = reviewResult.recommendation || "proceed"
+  if (rec === "proceed" || rec === "replan") {
+    parts.push(
+      "The review recommends proceeding. Call synthesizeFinalAnswer NOW to deliver the final answer using the evidence gathered so far. For analytical questions, reason from the available facts — do not search for explicit rationale that may not exist in the documents.",
+    )
+  } else if (rec === "gather_more") {
+    parts.push(
+      [
+        "Please address the above review feedback.",
+        "SEARCH HARDER — do not repeat the same queries. Try these strategies:",
+        "1. Use DIFFERENT keywords: synonyms, related terms, broader/narrower concepts.",
+        "2. Use `limit=15` (maximum) if you haven't already.",
+        "3. Use `offset` to paginate deeper into results from a productive query.",
+        "4. If fragments mention related sections, chapters, or cross-references, search for those directly.",
+        "5. Try extracting key phrases from partial results to form new queries.",
+        "Do NOT call synthesizeFinalAnswer until you have exhausted diverse search strategies.",
+      ].join("\n"),
+    )
+  } else {
+    parts.push("Please address the above review feedback before proceeding.")
+  }
+
+  return parts.join("\n")
+}
+
 // ============================================================================
 // EXPECTATION EXTRACTION
 // ============================================================================
@@ -111,6 +185,65 @@ function safeJsonParse(text: string): unknown {
 }
 
 /**
+ * Extract a JSON object from text using balanced-brace matching.
+ * Handles cases where the LLM wraps valid JSON in prose commentary.
+ * Finds the FIRST top-level `{...}` with balanced braces and attempts to parse it.
+ */
+function extractBalancedJson(text: string): Record<string, any> | null {
+  const startIdx = text.indexOf("{")
+  if (startIdx === -1) return null
+
+  let depth = 0
+  let inString = false
+  let escape = false
+
+  for (let i = startIdx; i < text.length; i++) {
+    const ch = text[i]
+
+    if (escape) {
+      escape = false
+      continue
+    }
+
+    if (ch === "\\") {
+      escape = true
+      continue
+    }
+
+    if (ch === '"') {
+      inString = !inString
+      continue
+    }
+
+    if (inString) continue
+
+    if (ch === "{") depth++
+    else if (ch === "}") {
+      depth--
+      if (depth === 0) {
+        const candidate = text.slice(startIdx, i + 1)
+        try {
+          const parsed = JSON.parse(candidate)
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return parsed
+          }
+        } catch {
+          // Not valid JSON at this boundary; keep searching
+        }
+        // If parse failed, try the next `{`
+        const nextStart = text.indexOf("{", i + 1)
+        if (nextStart === -1) return null
+        i = nextStart - 1 // will be incremented by loop
+        depth = 0
+        continue
+      }
+    }
+  }
+
+  return null
+}
+
+/**
  * Consume a pending expectation for a tool
  * Matches by tool name (case-insensitive)
  */
@@ -172,7 +305,11 @@ function buildReviewSystemPrompt(options: {
     "- Detect anomalies (unexpected behaviors, contradictory data, missing outputs, or unresolved ambiguities) and call them out explicitly. If intent remains unclear, set ambiguityResolved=false and include the ambiguity notes inside the anomalies array.",
     options.delegationNote,
     `- When the available context is already relevant and sufficient and it meets all the requirement of user's ask , set planChangeNeeded=true and use planChangeReason to state that the plan should pivot toward final synthesis because the evidence is complete.`,
-    '- Set recommendation to "gather_more" when required evidence or data is missing, "clarify_query" when ambiguity remains unresolved, and "replan" only when the current plan is no longer viable.',
+    '- Set recommendation to "gather_more" when the gathered evidence is insufficient to fully answer the user\'s question AND there are still untried query strategies. In your notes, suggest concrete alternative queries or angles the agent should try next (e.g., different keywords, synonyms, broader/narrower terms, related concepts, or using offset to paginate deeper into results).',
+    '- Do NOT recommend "proceed" just because 2 searches were done. Recommend "proceed" ONLY when: (a) the evidence already gathered is sufficient to answer comprehensively, OR (b) at least 4-5 diverse search strategies have been exhausted (different keywords, synonyms, broader terms, offset pagination) and no new relevant results are appearing.',
+    '- For analytical or "why" questions: the factual data (the "what") must be found first. If factual data is found but explicit rationale is missing after 4+ diverse searches, recommend "proceed" with a note to reason from available evidence. But if even the factual data is sparse, keep recommending "gather_more" with specific query suggestions.',
+    "- If the same query or very similar queries have been repeated, call this out as an anomaly and suggest genuinely different terms (synonyms, related regulatory concepts, broader category terms, specific clause/section numbers if known).",
+    '- Set recommendation to "clarify_query" when ambiguity remains unresolved, and "replan" only when the current plan is no longer viable.',
     "- If the user asked multiple questions or sub-questions, verify that the plan or gathered evidence addresses each; report incomplete coverage in anomalies and set recommendation or planChangeNeeded as appropriate.",
     "- Always set ambiguityResolved=false whenever outstanding clarifications exist or anomalies highlight missing/contradictory information; otherwise leave it true.",
   ].join("\n")
@@ -229,6 +366,7 @@ function formatToolCallHistoryByTurn(
 
 /**
  * Build default review payload
+ * Defaults to gather_more so parse failures don't prematurely stop searching.
  */
 export function buildDefaultReviewPayload(notes?: string): ReviewResult {
   return {
@@ -240,7 +378,7 @@ export function buildDefaultReviewPayload(notes?: string): ReviewResult {
     planChangeReason: undefined,
     anomaliesDetected: false,
     anomalies: [],
-    recommendation: "proceed",
+    recommendation: "gather_more",
     ambiguityResolved: true,
     clarificationQuestions: [],
   }
@@ -315,39 +453,52 @@ export async function performAutomaticReview(
     isFirstReview,
     delegationNote,
   })}
-Respond strictly in JSON matching this schema: ${JSON.stringify({
-    status: "ok",
-    notes: "Summary of overall findings",
-    toolFeedback: [
-      {
-        toolName: "Tool that ran",
-        outcome: "met|missed|error",
-        summary: "What happened and whether expectation was satisfied",
-        expectationGoal: "Expectation or success criteria that applies",
-        followUp: "Specific follow-up if needed",
-      },
-    ],
-    unmetExpectations: ["List of expectation goals still open"],
-    planChangeNeeded: false,
-    planChangeReason: "Why plan needs updating if true",
-    anomaliesDetected: false,
-    anomalies: ["Description of anomalies or ambiguities"],
-    recommendation: "proceed",
-    ambiguityResolved: true,
-  })}
+
+CRITICAL OUTPUT FORMAT REQUIREMENT:
+Your response MUST be a single JSON object and NOTHING else.
+Do NOT include any text, commentary, markdown, or explanation before or after the JSON.
+Do NOT wrap the JSON in code fences or backticks.
+Do NOT include thinking tags.
+Output ONLY the JSON object matching this schema:
+${JSON.stringify({
+  status: "ok",
+  notes: "Summary of overall findings",
+  toolFeedback: [
+    {
+      toolName: "Tool that ran",
+      outcome: "met|partial|missed|error",
+      summary: "What happened and whether expectation was satisfied",
+      expectationGoal: "Expectation or success criteria that applies",
+      followUp: "Specific follow-up if needed",
+    },
+  ],
+  unmetExpectations: ["List of expectation goals still open"],
+  planChangeNeeded: false,
+  planChangeReason: "Why plan needs updating if true",
+  anomaliesDetected: false,
+  anomalies: ["Description of anomalies or ambiguities"],
+  recommendation: "proceed",
+  ambiguityResolved: true,
+})}
 - Use native JSON booleans (true/false) for every yes/no field.
-- Only emit keys defined in the schema; do not add prose outside the JSON object.`
+- Only emit keys defined in the schema; do not add prose outside the JSON object.
+- Your ENTIRE response must be parseable by JSON.parse().`
 
   const toolOutputsSection = formatToolCallHistoryByTurn(input.toolCallHistory)
   const expectationsSection = formatExpectationsForReview(input.expectedResults)
 
-  // Build context from gathered fragments
+  // Build context from gathered fragments — cap to most recent 30 to avoid token explosion
+  const MAX_REVIEW_FRAGMENTS = 30
+  const fragmentsForReview =
+    state.allFragments?.length > MAX_REVIEW_FRAGMENTS
+      ? state.allFragments.slice(-MAX_REVIEW_FRAGMENTS)
+      : state.allFragments || []
   const fragmentsSection =
-    state.allFragments?.length > 0
-      ? `Retrieved Context Fragments:\n${state.allFragments
+    fragmentsForReview.length > 0
+      ? `Retrieved Context Fragments (showing ${fragmentsForReview.length} of ${state.allFragments?.length || 0} total):\n${fragmentsForReview
           .map(
             (f: any, i: number) =>
-              `[${i}] ${f.source?.title || "Unknown"} (${f.source?.app || "Unknown"})\n${f.content?.substring(0, 500) || "No content"}...`,
+              `[${i}] ${f.source?.title || "Unknown"} (${f.source?.app || "Unknown"})\n${f.content?.substring(0, 300) || "No content"}...`,
           )
           .join("\n\n")}`
       : "No context fragments retrieved yet."
@@ -380,7 +531,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     json: true,
     stream: false,
     temperature: 0,
-    max_new_tokens: 800,
+    max_new_tokens: 1200,
     systemPrompt,
   }
 
@@ -403,29 +554,45 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
       "[Pi-Mono Review] Raw LLM response received",
     )
 
-    // Try to extract JSON from the response (handles prose-wrapped JSON)
-    let parsed = jsonParseLLMOutput(text)
+    // Step 1: Strip thinking tags (some models wrap output in <thinking>...</thinking>)
+    let cleanedText = text
+      .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+      .replace(/<\/?thinking>/gi, "")
+      .trim()
 
-    // If parsing failed or returned non-object, try to extract JSON from prose
+    // Step 2: Try direct parse first
+    let parsed = jsonParseLLMOutput(cleanedText)
+
+    // Step 3: If parsing failed, try balanced-brace JSON extraction
     if (!parsed || typeof parsed !== "object") {
       Logger.warn(
-        { originalText: text.substring(0, 500) },
-        "[Pi-Mono Review] Initial parse failed, attempting JSON extraction from prose",
+        { originalText: cleanedText.substring(0, 500) },
+        "[Pi-Mono Review] Initial parse failed, attempting balanced-brace JSON extraction",
       )
 
-      // Try to find JSON object/array in the text
-      const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/)
+      parsed = extractBalancedJson(cleanedText)
+
+      if (parsed) {
+        Logger.info(
+          "[Pi-Mono Review] Extracted JSON via balanced-brace extraction",
+        )
+      }
+    }
+
+    // Step 4: Fallback — greedy regex match for any JSON-like block
+    if (!parsed || typeof parsed !== "object") {
+      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
         try {
           parsed = JSON.parse(jsonMatch[0])
           Logger.info(
             { extractedJson: jsonMatch[0].substring(0, 200) },
-            "[Pi-Mono Review] Extracted JSON from prose",
+            "[Pi-Mono Review] Extracted JSON from prose via regex",
           )
         } catch (extractErr) {
           Logger.warn(
             { error: extractErr },
-            "[Pi-Mono Review] JSON extraction from prose failed",
+            "[Pi-Mono Review] Regex JSON extraction failed",
           )
         }
       }
@@ -444,13 +611,62 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
     )
 
     if (!parsed || typeof parsed !== "object") {
+      // Step 5: Retry — send the LLM's prose back and demand JSON
+      Logger.warn(
+        {
+          originalTextLength: text.length,
+        },
+        "[Pi-Mono Review] All parse attempts failed, retrying with JSON enforcement",
+      )
+      try {
+        const retryMessages: Message[] = [
+          ...messages,
+          { role: ConversationRole.ASSISTANT, content: [{ text }] },
+          {
+            role: ConversationRole.USER,
+            content: [
+              {
+                text: "Your response above was not valid JSON. Output ONLY a single JSON object with these fields: status, notes, recommendation (one of: proceed, gather_more, clarify_query, replan), planChangeNeeded, planChangeReason, anomalies, ambiguityResolved. No other text.",
+              },
+            ],
+          },
+        ]
+        const retryResult = await getProviderByModel(
+          effectiveModelId as Models,
+        ).converse(retryMessages, { ...params, max_new_tokens: 600 })
+
+        if (retryResult.text) {
+          const retryClean = retryResult.text
+            .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+            .replace(/<\/?thinking>/gi, "")
+            .trim()
+          parsed = jsonParseLLMOutput(retryClean)
+          if (!parsed) parsed = extractBalancedJson(retryClean)
+          if (!parsed) {
+            const retryMatch = retryClean.match(/\{[\s\S]*\}/)
+            if (retryMatch) {
+              try {
+                parsed = JSON.parse(retryMatch[0])
+              } catch {}
+            }
+          }
+          if (parsed && typeof parsed === "object") {
+            Logger.info("[Pi-Mono Review] Retry parse succeeded")
+          }
+        }
+      } catch (retryErr) {
+        Logger.warn({ error: retryErr }, "[Pi-Mono Review] Retry failed")
+      }
+    }
+
+    if (!parsed || typeof parsed !== "object") {
       Logger.error(
         {
           raw: parsed,
-          originalText: text.substring(0, 1000), // First 1000 chars
+          originalText: text.substring(0, 1000),
           originalTextLength: text.length,
         },
-        "[Pi-Mono Review] Invalid review payload - parsing failed",
+        "[Pi-Mono Review] Invalid review payload - all parsing attempts failed",
       )
       return buildDefaultReviewPayload(
         `Review model returned invalid payload for turn ${input.turnNumber}`,
@@ -485,7 +701,7 @@ Respond strictly in JSON matching this schema: ${JSON.stringify({
         .array(
           z.object({
             toolName: z.string(),
-            outcome: z.enum(["met", "missed", "error", "unknown"]),
+            outcome: z.enum(["met", "partial", "missed", "error", "unknown"]),
             summary: z.string(),
             expectationGoal: z.string().optional(),
             followUp: z.string().optional(),

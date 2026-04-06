@@ -60,6 +60,10 @@ schema kb_items {
       index { enable-bm25 }
     }
     
+    field documentOutline type string {
+      indexing: summary
+    }
+    
     field storagePath type string {
       indexing: attribute | summary
     }
@@ -193,9 +197,19 @@ schema kb_items {
     }
 
     function combined_nativeRank() {
-      expression: (nativeRank(fileName) + nativeRank(chunks) + nativeRank(image_chunks) + nativeRank(description)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+      expression: (nativeRank(fileName) + nativeProximity(chunks) + nativeRank(chunks) + nativeRank(image_chunks) + nativeRank(description)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
-
+    rank-properties {
+        # Keeps early match for fileName, but kills it for the long text fields
+        nativeFieldMatch.firstOccurrenceTable.chunks: "linear(0,0)"
+        nativeFieldMatch.firstOccurrenceTable.image_chunks: "linear(0,0)"
+        nativeFieldMatch.firstOccurrenceTable.description: "linear(0,0)"
+    }
+    rank-properties {
+        nativeFieldMatch.occurrenceCountTable.chunks: "linear(0,1)"
+        nativeFieldMatch.occurrenceCountTable.image_chunks: "linear(0,1)"
+        nativeFieldMatch.occurrenceCountTable.description: "linear(0,1)"
+    }
     function chunk_scores() {
       expression: elementwise(bm25(chunks), x, double)
     }

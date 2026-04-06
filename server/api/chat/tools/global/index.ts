@@ -132,7 +132,7 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         ? Math.min(params.limit, config.maxUserRequestCount) + (offset ?? 0)
         : undefined
 
-      const fragments = await executeVespaSearch({
+      const { fragments, totalCount } = await executeVespaSearch({
         email,
         query: queryToUse,
         limit,
@@ -149,7 +149,16 @@ export const searchGlobalTool: Tool<SearchGlobalToolParams, Ctx> = {
         workspaceId: context.user.workspaceNumericId,
       })
 
-      return ToolResponse.success(fragments)
+      return ToolResponse.success({
+        fragments,
+        totalCount,
+        pagination: {
+          returned: fragments.length,
+          totalAvailable: totalCount,
+          hasMore: (params.offset || 0) + fragments.length < totalCount,
+          nextOffset: (params.offset || 0) + fragments.length,
+        },
+      })
     } catch (error) {
       const errMsg = getErrorMessage(error)
       return ToolResponse.error(
@@ -246,16 +255,22 @@ interface UnifiedSearchOptions {
   /** When set with query, KB schema-only docs get precomputed DB context (live SQL results). */
   userId?: number | null
   workspaceId?: number | null
+  mainQuery?: string
 }
 
-export async function executeVespaSearch(options: UnifiedSearchOptions): Promise<MinimalAgentFragment[]> {
+export interface VespaSearchResult {
+  fragments: MinimalAgentFragment[]
+  totalCount: number
+}
+
+export async function executeVespaSearch(options: UnifiedSearchOptions): Promise<VespaSearchResult> {
   const {
     email,
     query,
     app,
     entity,
     timestampRange,
-    limit = 10,
+    limit = 20,
     offset = 0,
     orderDirection = "desc",
     excludedIds,
@@ -274,6 +289,7 @@ export async function executeVespaSearch(options: UnifiedSearchOptions): Promise
     eventAttendees,
     userId,
     workspaceId,
+    mainQuery
   } = options
 
   if (!query || query.trim() === "") {
@@ -360,21 +376,33 @@ export async function executeVespaSearch(options: UnifiedSearchOptions): Promise
     )
   }
 
-  const fragments = await formatSearchToolResponse(searchResults, {
-    query,
-    app: Array.isArray(app) ? app.join(", ") : app ?? undefined,
-    timeRange:
-      fromTimestamp && toTimestamp
-        ? { startTime: fromTimestamp, endTime: toTimestamp }
-        : undefined,
-    offset,
-    limit,
-    searchType: "Global search result",
-    userId: userId ?? undefined,
-    workspaceId: workspaceId ?? undefined,
-  })
+  let fragments: MinimalAgentFragment[]
 
-  return fragments
+  // Use chunk-level reranking if enabled
+ 
+    // Use existing fragment formatting
+    fragments = await formatSearchToolResponse(searchResults, {
+      query,
+      app: Array.isArray(app) ? app.join(", ") : app ?? undefined,
+      timeRange:
+        fromTimestamp && toTimestamp
+          ? { startTime: fromTimestamp, endTime: toTimestamp }
+          : undefined,
+      offset,
+      limit,
+      searchType: "Global search result",
+      userId: userId ?? undefined,
+      workspaceId: workspaceId ?? undefined,
+    })
+  
+
+  // Extract totalCount from Vespa response (root.fields.totalCount)
+  const totalCount = (searchResults?.root?.fields as any)?.totalCount || fragments.length
+
+  return {
+    fragments,
+    totalCount,
+  }
 }
 
 function buildCollectionSelectionsFromIds(

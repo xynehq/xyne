@@ -239,8 +239,6 @@ function processTextParagraphs(
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
-    text_chunks.push(chunk)
-    text_chunk_pos.push(globalSeq.value)
     
     // Determine page numbers for this chunk
     let page_numbers: number[]
@@ -251,6 +249,13 @@ function processTextParagraphs(
       // Regular chunk on current page
       page_numbers = [pageNum - 1]
     }
+
+    // Prepend page label to chunk text (1-based page numbers for display)
+    const pageLabel = page_numbers.length > 1
+      ? `[Page ${page_numbers[0] + 1}-${page_numbers[page_numbers.length - 1] + 1}]`
+      : `[Page ${page_numbers[0] + 1}]`
+    text_chunks.push(`${pageLabel} ${chunk}`)
+    text_chunk_pos.push(globalSeq.value)
     
     // Add chunk metadata
     text_chunks_map.push({
@@ -302,6 +307,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
   image_chunk_pos: number[]
   text_chunks_map: ChunkMetadata[]
   image_chunks_map: ChunkMetadata[]
+  documentOutline?: string
 }> {
   Logger.debug("Starting processing with parameters", {
     docid,
@@ -1352,6 +1358,70 @@ export async function extractTextAndImagesWithChunksFromPDF(
     )
 
     Logger.debug("PDF processing completed for document", { docid })
+
+    let documentOutline: string | undefined = undefined;
+    try {
+      const outline = await pdfDocument.getOutline();
+      if (outline && outline.length > 0) {
+        // Resolve a single outline item's destination to a 1-based page number
+        const resolvePageNumber = async (item: any): Promise<number | undefined> => {
+          try {
+            let dest = item.dest;
+            if (!dest) return undefined;
+            // Named destination (string) → resolve to explicit destination array
+            if (typeof dest === "string") {
+              dest = await pdfDocument.getDestination(dest);
+            }
+            if (Array.isArray(dest) && dest.length > 0) {
+              const pageRef = dest[0];
+              if (pageRef && typeof pageRef === "object" && "num" in pageRef) {
+                const pageIndex = await pdfDocument.getPageIndex(pageRef);
+                return pageIndex + 1; // 0-indexed → 1-based
+              }
+            }
+          } catch {
+            // Silently ignore resolution failures for individual items
+          }
+          return undefined;
+        };
+
+        const formatOutline = async (items: any[], depth = 0): Promise<string> => {
+          let result = "";
+          for (const item of items) {
+            const pageNum = await resolvePageNumber(item);
+            const pageSuffix = pageNum != null ? ` (Page ${pageNum})` : "";
+            result += "  ".repeat(depth) + "- " + item.title + pageSuffix + "\n";
+            if (item.items && item.items.length > 0) {
+              result += await formatOutline(item.items, depth + 1);
+            }
+          }
+          return result;
+        };
+        documentOutline = await formatOutline(outline);
+        Logger.debug("Successfully extracted document outline natively.");
+      }
+    } catch(err) {
+      Logger.warn(`Failed to extract document outline natively: ${(err as Error).message}`);
+    }
+
+    if (!documentOutline && text_chunks.length > 0) {
+      try {
+        Logger.info("Attempting to extract outline via LLM fallback...");
+        const { extractOutlineWithllm } = await import("./lib/extractOutlineWithllm");
+        const joinedFrontMatter = text_chunks.slice(0, Math.min(50, text_chunks.length)).join("\n\n");
+        Logger.info(`Passing ${joinedFrontMatter.slice(0, 50000).length} characters to extractOutlineWithllm`);
+        const llmOutline = await extractOutlineWithllm(joinedFrontMatter.slice(0, 50000));
+        if (llmOutline) {
+          documentOutline = llmOutline;
+          Logger.info("Successfully extracted outline via LLM.");
+        } else {
+          Logger.info("extractOutlineWithllm returned undefined or empty");
+        }
+      } catch (err) {
+        Logger.warn(`Failed to extract outline via LLM: ${(err as Error).message}`);
+      }
+    }
+
     Logger.debug("Processing summary", {
       totalTextChunks: text_chunks.length,
       totalImageChunks: image_chunks.length,
@@ -1373,6 +1443,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
       image_chunk_pos,
       text_chunks_map,
       image_chunks_map,
+      documentOutline,
     }
   } finally {
     Logger.debug("Calling PDF document destroy")

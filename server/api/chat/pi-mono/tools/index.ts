@@ -14,6 +14,8 @@ export { getSlackRelatedMessagesTool } from "./get-slack-related-messages"
 export { lsKnowledgeBaseTool } from "./ls-knowledge-base"
 export { searchKnowledgeBaseTool } from "./search-knowledge-base"
 export { searchChatHistoryTool } from "./search-chat-history"
+export { getDocumentOutlineTool } from "./get-document-outline"
+export { getPageContentTool } from "./get-page-content"
 
 // Agent delegation tools
 export { listCustomAgentsTool } from "./list-custom-agents"

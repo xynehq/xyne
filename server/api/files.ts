@@ -372,6 +372,7 @@ export const handleAttachmentUpload = async (c: Context) => {
               image_chunks_map: processingResult.image_chunks_map,
               permissions: [email],
               mimeType: getBaseMimeType(file.type || "text/plain"),
+              documentOutline: processingResult.documentOutline,
               metadata: JSON.stringify({
                 originalFileName: file.name,
                 uploadedBy: email,

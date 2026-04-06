@@ -15,6 +15,76 @@ import {
 } from "@/api/chat/knowledgeBaseSelections"
 import { getChannelIdsFromAgentPrompt } from "@/api/chat/utils"
 import config from "@/config"
+import type { MinimalAgentFragment } from "@/api/chat/types"
+import { mergeFragmentLists } from "../fragment-utils"
+import {
+  rankFragmentsByRelevance,
+  buildRankedContextBlock,
+} from "../fragment-ranking"
+
+/**
+ * Pagination metadata for search results
+ */
+interface PaginationMetadata {
+  returned: number
+  totalAvailable: number
+  limit: number
+  offset: number
+  hasMore: boolean
+  nextOffset: number
+}
+
+/**
+ * Format search fragments as lightweight summary for LLM.
+ * Full content is available via the ranked context block.
+ */
+function formatFragmentsForLLM(
+  fragments: MinimalAgentFragment[],
+  query: string | undefined,
+  pagination?: PaginationMetadata,
+): string {
+  if (fragments.length === 0) {
+    return `<search_results query="${query || "unknown"}">\n  <message>No results found.</message>\n</search_results>`
+  }
+
+  let output = `<search_results query="${query || "unknown"}">\n`
+
+  // 1. Clear Pagination Metadata
+  if (pagination) {
+    output += `  <metadata>\n`
+    output += `    <total_available>${pagination.totalAvailable}</total_available>\n`
+    output += `    <returned>${pagination.returned}</returned>\n`
+    output += `    <current_offset>${pagination.offset}</current_offset>\n`
+    output += `    <has_more>${pagination.hasMore}</has_more>\n`
+    output += `  </metadata>\n`
+  }
+
+  // 2. The Documents (combining metadata and content)
+  output += `  <documents>\n`
+  fragments.forEach((f, i) => {
+    const title = f.source?.title || "Unknown"
+    const docId = f.source?.docId || f.id || "unknown"
+    const app = f.source?.app || "Unknown"
+    const relevance = f.confidence ? (f.confidence * 100).toFixed(1) : "N/A"
+
+    // Assuming f.content holds the raw text snippet.
+    const content = f.content || "Content unavailable."
+
+    output += `    <document index="${i + 1}" doc_id="${docId}" relevance="${relevance}%" source_app="${app}">\n`
+    output += `      <title>${title}</title>\n`
+    output += `      <content>\n${content}\n      </content>\n`
+    output += `    </document>\n`
+  })
+  output += `  </documents>\n`
+
+  // 3. Explicit Actionable Instruction for the Agent
+  if (pagination?.hasMore) {
+    output += `\n  <system_instruction>\n    More results are available. If you have not found the answer, you MUST call the searchGlobal tool again using \`offset: ${pagination.nextOffset}\`.\n  </system_instruction>\n`
+  }
+
+  output += `</search_results>`
+  return output
+}
 
 const retrievalQueryDescription = `
 Create SHORT, targeted search terms optimized for retrieval systems. Focus on 1-3 key terms rather than long descriptive phrases.
@@ -147,8 +217,13 @@ export const searchGlobalTool = createXyneTool(
         ? Math.min(params.limit, config.maxUserRequestCount) + offset
         : undefined
 
+      // NOTE: Do NOT auto-inject seenDocuments into excludedIds here.
+      // excludedIds operates at the DOCUMENT level (Vespa's docId field), not chunk level.
+      // A single document contains many chunks — excluding it blocks ALL chunks, even ones
+      // relevant to different queries. The ranking pipeline deduplicates post-retrieval instead.
+
       // Call the actual JAF implementation
-      const fragments = await executeVespaSearch({
+      const { fragments, totalCount } = await executeVespaSearch({
         email,
         query: params.query,
         limit,
@@ -165,34 +240,51 @@ export const searchGlobalTool = createXyneTool(
         workspaceId: xyneState.user.workspaceNumericId ?? null,
       })
 
-      // Store fragments in Xyne state
-      xyneState.allFragments.push(...fragments)
+      // Rank fragments internally and build context block
+      const scoredFragments = await rankFragmentsByRelevance(
+        fragments,
+        xyneState.message.text,
+        xyneState.modelId,
+      )
 
-      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
-      const toolKey = `searchGlobal:${params.query || "default"}`
-      const existing =
-        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
-      const mergedFragments = existing
-        ? [...existing.fragments, ...fragments]
-        : fragments
-      xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
-        query: params.query || "",
-        fragments: mergedFragments,
-      })
+      // Build ranked context block for LLM
+      const rankedContext = buildRankedContextBlock(
+        scoredFragments,
+        scoredFragments.length,
+      )
+
+      // Merge fragments into currentTurnArtifacts.fragments (will be moved to allFragments at context time)
+      const rankedFragments = scoredFragments.map((s) => s.fragment)
+      xyneState.currentTurnArtifacts.fragments = mergeFragmentLists(
+        xyneState.currentTurnArtifacts.fragments,
+        rankedFragments,
+      )
 
       await persistState()
 
+      // Build pagination metadata
+      const pagination = {
+        returned: fragments.length,
+        totalAvailable: totalCount,
+        limit: params.limit || 20,
+        offset: params.offset || 0,
+        hasMore: (params.offset || 0) + fragments.length < totalCount,
+        nextOffset: (params.offset || 0) + fragments.length,
+      }
+
+      // Format lightweight summary for LLM
+      const formattedResults = formatFragmentsForLLM(
+        rankedFragments,
+        params.query,
+        pagination,
+      )
+
       return {
-        content: [
-          {
-            type: "text",
-            text: `Found ${fragments.length} results for "${params.query}"`,
-          },
-        ],
+        content: [{ type: "text", text: formattedResults }],
         details: {
-          fragments,
           query: params.query,
           toolName: "searchGlobal",
+          pagination,
         },
       }
     } catch (error) {

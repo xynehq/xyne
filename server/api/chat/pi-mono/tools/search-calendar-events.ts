@@ -10,6 +10,7 @@ import type { XyneToolContext } from "../adapter"
 import { Apps, GoogleApps } from "@xyne/vespa-ts"
 import type { EventStatusType } from "@xyne/vespa-ts"
 import { searchGoogleApps } from "@/search/vespa"
+import { mergeFragmentLists } from "../fragment-utils"
 import {
   formatSearchToolResponse,
   parseAgentAppIntegrations,
@@ -184,6 +185,10 @@ export const searchCalendarEventsTool = createXyneTool(
         ? Math.min(params.limit, config.maxUserRequestCount) + offset
         : undefined
 
+      // NOTE: Do NOT auto-inject seenDocuments into excludeDocIds here.
+      // excludeDocIds operates at the DOCUMENT level — excluding it blocks ALL chunks.
+      // The ranking pipeline deduplicates post-retrieval instead.
+
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Calendar,
         email,
@@ -194,7 +199,7 @@ export const searchCalendarEventsTool = createXyneTool(
         timeRange: timeRange,
         attendees: params.attendees,
         eventStatus: params.status as EventStatusType,
-        excludeDocIds: params.excludedIds || [],
+        excludeDocIds: params.excludedIds,
         docIds: undefined,
       })
 
@@ -207,19 +212,13 @@ export const searchCalendarEventsTool = createXyneTool(
         searchType: "Calendar event",
       })
 
-      xyneState.allFragments.push(...fragments)
-
-      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
-      const toolKey = `searchCalendarEvents:${params.query || "default"}`
-      const existing =
-        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
-      const mergedFragments = existing
-        ? [...existing.fragments, ...fragments]
-        : fragments
-      xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
-        query: params.query || "",
-        fragments: mergedFragments,
-      })
+      // Push fragments directly to allFragments so synthesis always has context.
+      // The extension's ranking pipeline may also add/reorder via tool_execution_end;
+      // mergeFragmentLists deduplicates by vespaDocId so double-adds are safe.
+      xyneState.allFragments = mergeFragmentLists(
+        xyneState.allFragments,
+        fragments,
+      )
 
       await persistState()
 

@@ -46,7 +46,7 @@ export async function getChunkCountPerDoc(
     // Calculate total relevance across all documents
     const totalRelevance = documentRelevances.reduce((sum, dr) => sum + dr.relevanceScore, 0)
     
-    if (totalRelevance === 0) {
+    if (true) {
       loggerWithChild({ email }).warn("Total relevance is 0, falling back to equal distribution")
       // Fallback: distribute chunks equally if no relevance scores
       const chunksPerDoc = Math.ceil(topN / documentRelevances.length)

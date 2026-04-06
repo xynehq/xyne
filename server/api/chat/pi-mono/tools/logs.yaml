@@ -1,0 +1,1633 @@
+
+    processedCollectionSelections: {
+      "collectionFolderIds": [
+        "87205f9f-ae53-4abd-a088-765d70ad2674"
+      ]
+    }
+    hasCollectionIds: false
+    hasFolderIds: true
+    hasFileIds: false
+    selectedItemApps: [
+      "KnowledgeBase"
+    ]
+[00:19:58.847] INFO (Integrations): DatabaseContext: no DB schema docs in search results (mimeType not application/x-database-schema)
+    module: "databaseContext"
+    totalResults: 5
+[00:19:58.884] INFO (Integrations): DatabaseContext: no DB schema docs in search results (mimeType not application/x-database-schema)
+    module: "databaseContext"
+    totalResults: 5
+[00:19:58.849] INFO (Chat): Round 1 complete: totalAssigned=48, stillRemaining=2
+    email: ""
+[00:19:58.884] INFO (Chat): Round 1 complete: totalAssigned=47, stillRemaining=3
+    email: ""
+[00:20:05.358] INFO (Chat): [Pi-Mono][FinalSynthesis] Making synthesis LLM call with fragments
+    email: "nasim.sheikh@juspay.in"
+    fragmentsCount: 35
+    hasInsights: true
+    systemPromptLength: 5482
+    userMessageLength: 178563
+[00:20:30.097] INFO (Chat): [Pi-Mono Extension] Fragments ranked and added
+    rankedCount: 2
+[00:20:30.096] INFO (AI): "Extracted best document indexes" : indexes: 2,7, cost: 0.013497113999999998
+[00:20:30.097] INFO (Chat): [Pi-Mono Extension] Review check
+    turn: 2
+    reviewFreq: 5
+    shouldReview: true
+    failureTrigger: false
+    timeTrigger: true
+    stagnationTrigger: false
+    toolExecutions: 3
+[00:20:33.866] INFO (Server):
+    requestId: "4fa7d49b-a052-439a-872e-f357f4bbc1d2"
+    method: "GET"
+    path: "/api/v1/chat/history"
+    query: null
+    message: "Incoming request"
+    email: "nasim.sheikh@juspay.in"
+[00:20:33.939] INFO (Server): Request completed
+    requestId: "4fa7d49b-a052-439a-872e-f357f4bbc1d2"
+    status: 200
+    elapsed: "73ms"
+    email: "nasim.sheikh@juspay.in"
+[00:20:33.963] INFO (Chat): [Pi-Mono][FinalSynthesis] LLM synthesis call completed
+    email: "nasim.sheikh@juspay.in"
+    streamedCharacters: 2986
+    fragmentsCount: 35
+[00:20:43.517] INFO (Chat): Pi-mono turn ended (extension handles ranking/review/cleanup)
+    email: "nasim.sheikh@juspay.in"
+    turn: 2
+[00:20:43.517] INFO (Chat): [turn_end] Turn ended
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 37
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 18
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    turnIndex: 2
+    finalFragmentsCount: 37
+    pendingExpectationsCount: 0
+[00:20:43.517] INFO (Chat): [turn_start] Final synthesis already complete - stopping turn
+    email: "nasim.sheikh@juspay.in"
+    turn: 3
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+[00:20:43.522] INFO (Chat): [tool_execution_start] Tool execution started
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 37
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 18
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "toDoWrite"
+    args: {
+      "goal": "Find SEBI regulations on QIP allottee disclosure (5%+ group), RTA registration (major shareholders 5%+), and independence requirements for RTA shareholders in QIP",
+      "subTasks": [
+        {
+          "id": "task_1",
+          "description": "Search KB for QIP issuer disclosure requirements for allottees from same group (>5% equity)",
+          "status": "completed",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ],
+          "result": "Found SEBI ICDR Regulations QIP provisions on allottee disclosure"
+        },
+        {
+          "id": "task_2",
+          "description": "Search KB for RTA registration mandate on disclosing major shareholders (>5% voting rights)",
+          "status": "completed",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ],
+          "result": "Found SEBI RTA Regulations on major shareholder disclosure"
+        },
+        {
+          "id": "task_3",
+          "description": "Search KB for independence requirements when RTA's major shareholder participates in QIP",
+          "status": "in_progress",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ]
+        },
+        {
+          "id": "task_4",
+          "description": "Synthesize findings into comprehensive regulatory explanation",
+          "status": "pending",
+          "toolsRequired": [
+            "synthesizeFinalAnswer"
+          ]
+        }
+      ]
+    }
+    incomingExcludedIds: []
+    incomingExcludedIdsCount: 0
+[00:20:43.522] INFO (Chat): 🔧 TOOL EXECUTION STARTED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "toDoWrite"
+    args: {
+      "goal": "Find SEBI regulations on QIP allottee disclosure (5%+ group), RTA registration (major shareholders 5%+), and independence requirements for RTA shareholders in QIP",
+      "subTasks": [
+        {
+          "id": "task_1",
+          "description": "Search KB for QIP issuer disclosure requirements for allottees from same group (>5% equity)",
+          "status": "completed",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ],
+          "result": "Found SEBI ICDR Regulations QIP provisions on allottee disclosure"
+        },
+        {
+          "id": "task_2",
+          "description": "Search KB for RTA registration mandate on disclosing major shareholders (>5% voting rights)",
+          "status": "completed",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ],
+          "result": "Found SEBI RTA Regulations on major shareholder disclosure"
+        },
+        {
+          "id": "task_3",
+          "description": "Search KB for independence requirements when RTA's major shareholder participates in QIP",
+          "status": "in_progress",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ]
+        },
+        {
+          "id": "task_4",
+          "description": "Synthesize findings into comprehensive regulatory explanation",
+          "status": "pending",
+          "toolsRequired": [
+            "synthesizeFinalAnswer"
+          ]
+        }
+      ]
+    }
+[00:20:43.523] INFO (Chat): [tool_execution_start] Tool execution started
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 37
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 18
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    args: {
+      "query": "QIP placement agent RTA conflict interest independence",
+      "limit": 5
+    }
+    incomingExcludedIds: []
+    incomingExcludedIdsCount: 0
+[00:20:43.523] INFO (Chat): 🔧 TOOL EXECUTION STARTED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "searchKnowledgeBase"
+    args: {
+      "query": "QIP placement agent RTA conflict interest independence",
+      "limit": 5
+    }
+[00:20:43.523] INFO (Chat): [tool_execution_start] Tool execution started
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 37
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 18
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    args: {
+      "query": "ICDR regulations QIP 5% disclosure allottee group",
+      "limit": 5
+    }
+    incomingExcludedIds: []
+    incomingExcludedIdsCount: 0
+[00:20:43.523] INFO (Chat): 🔧 TOOL EXECUTION STARTED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "searchKnowledgeBase"
+    args: {
+      "query": "ICDR regulations QIP 5% disclosure allottee group",
+      "limit": 5
+    }
+[00:20:43.523] INFO (Chat): [afterToolExecutionHook] Processing tool result
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 37
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 18
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "toDoWrite"
+    turnNumber: 3
+    status: "success"
+    executionTime: 0
+    hasResult: true
+    resultType: "object"
+    resultStatus: "success"
+    resultExcludedIds: []
+    seenDocumentIds: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty",
+      "clf-xigcjdt4duj1lgt2zo64nlu5",
+      "clf-wu7mie11dllhqj8thubrivzb",
+      "clf-j00f8bq4iiimvggxmrpxvnwn",
+      "clf-hr7uoh5ddd9r9mbwsdlwcqen",
+      "clf-secmmbkf6sjcdbv316yravqt",
+      "clf-fghg63eh5v6ti15jsubjwsb2",
+      "clf-nlnaexavk7yakye21c69b4jo",
+      "clf-l05xzga63g9govu06jf3vb98"
+    ]
+[00:20:43.523] INFO (Chat): [afterToolExecutionHook] Recorded tool output for current turn
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 37
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 19
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "toDoWrite"
+    turnNumber: 3
+    toolFragmentsCount: 0
+    toolFragmentIds: []
+    resultSummary: "{\"content\":[{\"type\":\"text\",\"text\":\"Plan created with 4 tasks for goal: Find SEBI regulations on QIP allottee disclosure (5%+ group), RTA registration (major shareholders 5%+), and independence requir…"
+[00:20:43.523] INFO (Chat): 🔧 TOOL EXECUTION ENDED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "toDoWrite"
+    isError: false
+    hasResult: true
+[00:20:43.524] INFO (Chat): [afterToolExecutionHook] Processing tool result
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 37
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 19
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    turnNumber: 3
+    status: "success"
+    executionTime: 0
+    hasResult: true
+    resultType: "object"
+    resultStatus: "success"
+    resultExcludedIds: [
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-hr7uoh5ddd9r9mbwsdlwcqen",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-h4tw4yae8bp91ctapl5thhe6"
+    ]
+    seenDocumentIds: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty",
+      "clf-xigcjdt4duj1lgt2zo64nlu5",
+      "clf-wu7mie11dllhqj8thubrivzb",
+      "clf-j00f8bq4iiimvggxmrpxvnwn",
+      "clf-hr7uoh5ddd9r9mbwsdlwcqen",
+      "clf-secmmbkf6sjcdbv316yravqt",
+      "clf-fghg63eh5v6ti15jsubjwsb2",
+      "clf-nlnaexavk7yakye21c69b4jo",
+      "clf-l05xzga63g9govu06jf3vb98"
+    ]
+[00:20:43.524] INFO (Chat): [afterToolExecutionHook] Recorded tool output for current turn
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 37
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 20
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    turnNumber: 3
+    toolFragmentsCount: 5
+    toolFragmentIds: [
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-hr7uoh5ddd9r9mbwsdlwcqen",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-h4tw4yae8bp91ctapl5thhe6"
+    ]
+    resultSummary: "{\"content\":[{\"type\":\"text\",\"text\":\"Found 5 KB results\"}],\"details\":{\"fragments\":[{\"id\":\"clf-rxm7fcb36lxlealhydkbqywa\",\"content\":\"Source: Knowledge Base\nFile: testing/Master_Circulars/jul-2023 - Mast…"
+[00:20:43.524] INFO (Chat): 🔧 TOOL EXECUTION ENDED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "searchKnowledgeBase"
+    isError: false
+    hasResult: true
+[00:20:43.524] INFO (Chat): [afterToolExecutionHook] Processing tool result
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 37
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 20
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    turnNumber: 3
+    status: "success"
+    executionTime: 0
+    hasResult: true
+    resultType: "object"
+    resultStatus: "success"
+    resultExcludedIds: [
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-secmmbkf6sjcdbv316yravqt",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-fghg63eh5v6ti15jsubjwsb2",
+      "clf-nlnaexavk7yakye21c69b4jo"
+    ]
+    seenDocumentIds: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty",
+      "clf-xigcjdt4duj1lgt2zo64nlu5",
+      "clf-wu7mie11dllhqj8thubrivzb",
+      "clf-j00f8bq4iiimvggxmrpxvnwn",
+      "clf-hr7uoh5ddd9r9mbwsdlwcqen",
+      "clf-secmmbkf6sjcdbv316yravqt",
+      "clf-fghg63eh5v6ti15jsubjwsb2",
+      "clf-nlnaexavk7yakye21c69b4jo",
+      "clf-l05xzga63g9govu06jf3vb98"
+    ]
+[00:20:43.524] INFO (Chat): [afterToolExecutionHook] Recorded tool output for current turn
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 37
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 21
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    turnNumber: 3
+    toolFragmentsCount: 5
+    toolFragmentIds: [
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-secmmbkf6sjcdbv316yravqt",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-fghg63eh5v6ti15jsubjwsb2",
+      "clf-nlnaexavk7yakye21c69b4jo"
+    ]
+    resultSummary: "{\"content\":[{\"type\":\"text\",\"text\":\"Found 5 KB results\"}],\"details\":{\"fragments\":[{\"id\":\"clf-u0agflzfchv7ahlgfxt6a0ym\",\"content\":\"Source: Knowledge Base\nFile: testing/Master_Circulars/sep-2023 - Mast…"
+[00:20:43.524] INFO (Chat): 🔧 TOOL EXECUTION ENDED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "searchKnowledgeBase"
+    isError: false
+    hasResult: true
+[00:20:43.516] INFO (Chat): [Pi-Mono Extension] Review completed
+    turn: 2
+    recommendation: "proceed"
+    status: "ok"
+[00:20:43.516] INFO (Chat): [Pi-Mono Extension] turn_end completed - next turn can proceed
+    turn: 2
+[00:20:43.524] INFO (Chat): [Pi-Mono Extension] turn_end started - processing will block next turn
+    turn: 3
+    pendingFragments: 10
+    executionToolsCalled: 2
+    todoWriteCalled: true
+[00:20:43.524] INFO (Chat): [Pi-Mono Extension] Ranking fragments with LLM
+    fragmentCount: 10
+[00:21:04.908] INFO (Chat): [Pi-Mono Extension] Fragments ranked and added
+    rankedCount: 3
+[00:21:04.909] INFO (Chat): [Pi-Mono Extension] Review check
+    turn: 3
+    reviewFreq: 5
+    shouldReview: false
+    failureTrigger: false
+    timeTrigger: false
+    stagnationTrigger: false
+    toolExecutions: 3
+[00:21:04.909] INFO (Chat): [Pi-Mono Extension] turn_end completed - next turn can proceed
+    turn: 3
+[00:21:04.914] INFO (Chat): [Pi-Mono Extension] turn_end started - processing will block next turn
+    turn: 4
+    pendingFragments: 10
+    executionToolsCalled: 2
+    todoWriteCalled: false
+[00:21:04.914] INFO (Chat): [Pi-Mono Extension] Ranking fragments with LLM
+    fragmentCount: 10
+[00:21:04.905] INFO (AI): "Extracted best document indexes" : indexes: 6,5,2, cost: 0.008763047999999999
+[00:21:04.910] INFO (Chat): Pi-mono turn ended (extension handles ranking/review/cleanup)
+    email: "nasim.sheikh@juspay.in"
+    turn: 3
+[00:21:04.911] INFO (Chat): [turn_end] Turn ended
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 40
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 24
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    turnIndex: 3
+    finalFragmentsCount: 40
+    pendingExpectationsCount: 0
+[00:21:04.911] INFO (Chat): [turn_start] Final synthesis already complete - stopping turn
+    email: "nasim.sheikh@juspay.in"
+    turn: 4
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+[00:21:04.912] INFO (Chat): [tool_execution_start] Tool execution started
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 40
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 24
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    args: {
+      "query": "RTA SEBI registration 5% substantial shareholder voting rights",
+      "limit": 5
+    }
+    incomingExcludedIds: []
+    incomingExcludedIdsCount: 0
+[00:21:04.912] INFO (Chat): 🔧 TOOL EXECUTION STARTED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "searchKnowledgeBase"
+    args: {
+      "query": "RTA SEBI registration 5% substantial shareholder voting rights",
+      "limit": 5
+    }
+[00:21:04.912] INFO (Chat): [tool_execution_start] Tool execution started
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 40
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 24
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    args: {
+      "query": "QIP related party allotment arm's length pricing",
+      "limit": 5
+    }
+    incomingExcludedIds: []
+    incomingExcludedIdsCount: 0
+[00:21:04.912] INFO (Chat): 🔧 TOOL EXECUTION STARTED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "searchKnowledgeBase"
+    args: {
+      "query": "QIP related party allotment arm's length pricing",
+      "limit": 5
+    }
+[00:21:04.913] INFO (Chat): [afterToolExecutionHook] Processing tool result
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 40
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 24
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    turnNumber: 4
+    status: "success"
+    executionTime: 0
+    hasResult: true
+    resultType: "object"
+    resultStatus: "success"
+    resultExcludedIds: [
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-tj77ne6xdsiowavsgfe8ixty",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-l05xzga63g9govu06jf3vb98"
+    ]
+    seenDocumentIds: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty",
+      "clf-xigcjdt4duj1lgt2zo64nlu5",
+      "clf-wu7mie11dllhqj8thubrivzb",
+      "clf-j00f8bq4iiimvggxmrpxvnwn",
+      "clf-hr7uoh5ddd9r9mbwsdlwcqen",
+      "clf-secmmbkf6sjcdbv316yravqt",
+      "clf-fghg63eh5v6ti15jsubjwsb2",
+      "clf-nlnaexavk7yakye21c69b4jo",
+      "clf-l05xzga63g9govu06jf3vb98"
+    ]
+[00:21:04.913] INFO (Chat): [afterToolExecutionHook] Recorded tool output for current turn
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 40
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 25
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    turnNumber: 4
+    toolFragmentsCount: 5
+    toolFragmentIds: [
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-tj77ne6xdsiowavsgfe8ixty",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-l05xzga63g9govu06jf3vb98"
+    ]
+    resultSummary: "{\"content\":[{\"type\":\"text\",\"text\":\"Found 5 KB results\"}],\"details\":{\"fragments\":[{\"id\":\"clf-xhqvn0xda6av3dvi0cgb14nq\",\"content\":\"Source: Knowledge Base\nFile: testing/Master_Circulars/jun-2025 - Mast…"
+[00:21:04.913] INFO (Chat): 🔧 TOOL EXECUTION ENDED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "searchKnowledgeBase"
+    isError: false
+    hasResult: true
+[00:21:04.914] INFO (Chat): [afterToolExecutionHook] Processing tool result
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 40
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 25
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    turnNumber: 4
+    status: "success"
+    executionTime: 0
+    hasResult: true
+    resultType: "object"
+    resultStatus: "success"
+    resultExcludedIds: [
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    seenDocumentIds: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty",
+      "clf-xigcjdt4duj1lgt2zo64nlu5",
+      "clf-wu7mie11dllhqj8thubrivzb",
+      "clf-j00f8bq4iiimvggxmrpxvnwn",
+      "clf-hr7uoh5ddd9r9mbwsdlwcqen",
+      "clf-secmmbkf6sjcdbv316yravqt",
+      "clf-fghg63eh5v6ti15jsubjwsb2",
+      "clf-nlnaexavk7yakye21c69b4jo",
+      "clf-l05xzga63g9govu06jf3vb98"
+    ]
+[00:21:04.914] INFO (Chat): [afterToolExecutionHook] Recorded tool output for current turn
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 40
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 26
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "searchKnowledgeBase"
+    turnNumber: 4
+    toolFragmentsCount: 5
+    toolFragmentIds: [
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    resultSummary: "{\"content\":[{\"type\":\"text\",\"text\":\"Found 5 KB results\"}],\"details\":{\"fragments\":[{\"id\":\"clf-jlacv154q7y2yi5uiuhxiuiv\",\"content\":\"Source: Knowledge Base\nFile: testing/Master_Circulars/Master Circular…"
+[00:21:04.914] INFO (Chat): 🔧 TOOL EXECUTION ENDED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "searchKnowledgeBase"
+    isError: false
+    hasResult: true
+[00:21:21.523] INFO (Server):
+    requestId: "f24f8098-953e-4d37-8959-4db906340f21"
+    method: "GET"
+    path: "/api/v1/chat/history"
+    query: null
+    message: "Incoming request"
+    email: "nasim.sheikh@juspay.in"
+[00:21:21.624] INFO (Server): Request completed
+    requestId: "f24f8098-953e-4d37-8959-4db906340f21"
+    status: 200
+    elapsed: "101ms"
+    email: "nasim.sheikh@juspay.in"
+[DEBUG] Session data saved to: /tmp/xyne-debug/debug-session-2026-03-27T18-51-27-261Z.json
+[00:21:27.441] INFO (Chat): Generating title for chat e5oqxvapzu466hehyfvr2umt with message: How does the regulatory requirement for QIP issuers to disclose allottees from the same group receiv...
+    email: "nasim.sheikh@juspay.in"
+[00:21:27.229] INFO (Chat): Pi-mono turn ended (extension handles ranking/review/cleanup)
+    email: "nasim.sheikh@juspay.in"
+    turn: 4
+[00:21:27.230] INFO (Chat): [turn_end] Turn ended
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 44
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 28
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    turnIndex: 4
+    finalFragmentsCount: 44
+    pendingExpectationsCount: 0
+[00:21:27.230] INFO (Chat): [turn_start] Final synthesis already complete - stopping turn
+    email: "nasim.sheikh@juspay.in"
+    turn: 5
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+[00:21:27.235] INFO (Chat): [tool_execution_start] Tool execution started
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 44
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 28
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "toDoWrite"
+    args: {
+      "goal": "Find SEBI regulations on QIP allottee disclosure (5%+ group), RTA registration (major shareholders 5%+), and independence requirements for RTA shareholders in QIP",
+      "subTasks": [
+        {
+          "id": "task_1",
+          "description": "Search KB for QIP issuer disclosure requirements for allottees from same group (>5% equity)",
+          "status": "completed",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ],
+          "result": "Found SEBI ICDR Regulations QIP provisions on allottee disclosure"
+        },
+        {
+          "id": "task_2",
+          "description": "Search KB for RTA registration mandate on disclosing major shareholders (>5% voting rights)",
+          "status": "completed",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ],
+          "result": "Found SEBI RTA Regulations on major shareholder disclosure"
+        },
+        {
+          "id": "task_3",
+          "description": "Search KB for independence requirements when RTA's major shareholder participates in QIP",
+          "status": "completed",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ],
+          "result": "Found conflict of interest and independence provisions"
+        },
+        {
+          "id": "task_4",
+          "description": "Synthesize findings into comprehensive regulatory explanation",
+          "status": "in_progress",
+          "toolsRequired": [
+            "synthesizeFinalAnswer"
+          ]
+        }
+      ]
+    }
+    incomingExcludedIds: []
+    incomingExcludedIdsCount: 0
+[00:21:27.235] INFO (Chat): 🔧 TOOL EXECUTION STARTED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "toDoWrite"
+    args: {
+      "goal": "Find SEBI regulations on QIP allottee disclosure (5%+ group), RTA registration (major shareholders 5%+), and independence requirements for RTA shareholders in QIP",
+      "subTasks": [
+        {
+          "id": "task_1",
+          "description": "Search KB for QIP issuer disclosure requirements for allottees from same group (>5% equity)",
+          "status": "completed",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ],
+          "result": "Found SEBI ICDR Regulations QIP provisions on allottee disclosure"
+        },
+        {
+          "id": "task_2",
+          "description": "Search KB for RTA registration mandate on disclosing major shareholders (>5% voting rights)",
+          "status": "completed",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ],
+          "result": "Found SEBI RTA Regulations on major shareholder disclosure"
+        },
+        {
+          "id": "task_3",
+          "description": "Search KB for independence requirements when RTA's major shareholder participates in QIP",
+          "status": "completed",
+          "toolsRequired": [
+            "searchKnowledgeBase"
+          ],
+          "result": "Found conflict of interest and independence provisions"
+        },
+        {
+          "id": "task_4",
+          "description": "Synthesize findings into comprehensive regulatory explanation",
+          "status": "in_progress",
+          "toolsRequired": [
+            "synthesizeFinalAnswer"
+          ]
+        }
+      ]
+    }
+[00:21:27.236] INFO (Chat): [tool_execution_start] Tool execution started
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 44
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 28
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "synthesizeFinalAnswer"
+    args: {
+      "insightsUsefulForAnswering": "Explain the interconnection between SEBI ICDR Regulations (QIP allottee disclosure) and SEBI RTA Regulations (major shareholder disclosure). Highlight the 5% threshold commonality and how these regulations work together. Clarify the independence requirements when an RTA's major shareholder is also a QIP allottee, including conflict of interest provisions and arm's length pricing requirements."
+    }
+    incomingExcludedIds: []
+    incomingExcludedIdsCount: 0
+[00:21:27.236] INFO (Chat): 🔧 TOOL EXECUTION STARTED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "synthesizeFinalAnswer"
+    args: {
+      "insightsUsefulForAnswering": "Explain the interconnection between SEBI ICDR Regulations (QIP allottee disclosure) and SEBI RTA Regulations (major shareholder disclosure). Highlight the 5% threshold commonality and how these regulations work together. Clarify the independence requirements when an RTA's major shareholder is also a QIP allottee, including conflict of interest provisions and arm's length pricing requirements."
+    }
+[00:21:27.237] INFO (Chat): [afterToolExecutionHook] Processing tool result
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 44
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 28
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "toDoWrite"
+    turnNumber: 5
+    status: "success"
+    executionTime: 0
+    hasResult: true
+    resultType: "object"
+    resultStatus: "success"
+    resultExcludedIds: []
+    seenDocumentIds: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty",
+      "clf-xigcjdt4duj1lgt2zo64nlu5",
+      "clf-wu7mie11dllhqj8thubrivzb",
+      "clf-j00f8bq4iiimvggxmrpxvnwn",
+      "clf-hr7uoh5ddd9r9mbwsdlwcqen",
+      "clf-secmmbkf6sjcdbv316yravqt",
+      "clf-fghg63eh5v6ti15jsubjwsb2",
+      "clf-nlnaexavk7yakye21c69b4jo",
+      "clf-l05xzga63g9govu06jf3vb98"
+    ]
+[00:21:27.237] INFO (Chat): [afterToolExecutionHook] Recorded tool output for current turn
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 44
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 29
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "toDoWrite"
+    turnNumber: 5
+    toolFragmentsCount: 0
+    toolFragmentIds: []
+    resultSummary: "{\"content\":[{\"type\":\"text\",\"text\":\"Plan created with 4 tasks for goal: Find SEBI regulations on QIP allottee disclosure (5%+ group), RTA registration (major shareholders 5%+), and independence requir…"
+[00:21:27.237] INFO (Chat): 🔧 TOOL EXECUTION ENDED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "toDoWrite"
+    isError: false
+    hasResult: true
+[00:21:27.237] INFO (Chat): [afterToolExecutionHook] Processing tool result
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 44
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 29
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "synthesizeFinalAnswer"
+    turnNumber: 5
+    status: "success"
+    executionTime: 0
+    hasResult: true
+    resultType: "object"
+    resultStatus: "success"
+    resultExcludedIds: []
+    seenDocumentIds: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty",
+      "clf-xigcjdt4duj1lgt2zo64nlu5",
+      "clf-wu7mie11dllhqj8thubrivzb",
+      "clf-j00f8bq4iiimvggxmrpxvnwn",
+      "clf-hr7uoh5ddd9r9mbwsdlwcqen",
+      "clf-secmmbkf6sjcdbv316yravqt",
+      "clf-fghg63eh5v6ti15jsubjwsb2",
+      "clf-nlnaexavk7yakye21c69b4jo",
+      "clf-l05xzga63g9govu06jf3vb98"
+    ]
+[00:21:27.237] INFO (Chat): [afterToolExecutionHook] Recorded tool output for current turn
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 44
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 30
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    toolName: "synthesizeFinalAnswer"
+    turnNumber: 5
+    toolFragmentsCount: 0
+    toolFragmentIds: []
+    resultSummary: "{\"content\":[{\"type\":\"text\",\"text\":\"Final answer streamed to user.\"}],\"details\":{\"toolName\":\"synthesizeFinalAnswer\",\"streamed\":true,\"metadata\":{\"fragmentsCount\":35,\"textLength\":2986,\"hasInsights\":true…"
+[00:21:27.237] INFO (Chat): 🔧 TOOL EXECUTION ENDED
+    email: "nasim.sheikh@juspay.in"
+    toolName: "synthesizeFinalAnswer"
+    isError: false
+    hasResult: true
+[00:21:27.237] INFO (Chat): Pi-mono turn ended (extension handles ranking/review/cleanup)
+    email: "nasim.sheikh@juspay.in"
+    turn: 5
+[00:21:27.237] INFO (Chat): [turn_end] Turn ended
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 44
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 32
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    turnIndex: 5
+    finalFragmentsCount: 44
+    pendingExpectationsCount: 0
+[00:21:27.238] INFO (Chat): [turn_start] Final synthesis already complete - stopping turn
+    email: "nasim.sheikh@juspay.in"
+    turn: 6
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+[00:21:27.256] INFO (Chat): Pi-mono turn ended (extension handles ranking/review/cleanup)
+    email: "nasim.sheikh@juspay.in"
+    turn: 6
+[00:21:27.256] INFO (Chat): [turn_end] Turn ended
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 44
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 32
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    turnIndex: 6
+    finalFragmentsCount: 44
+    pendingExpectationsCount: 0
+[00:21:27.257] INFO (Chat): Pi-mono agent ended
+    email: "nasim.sheikh@juspay.in"
+[00:21:27.257] INFO (Chat): [agent_end] Agent session ended
+    email: "nasim.sheikh@juspay.in"
+    chatId: "e5oqxvapzu466hehyfvr2umt"
+    turnCount: 2
+    currentSubTask: "task_4"
+    seenDocumentsCount: 18
+    seenDocumentsSample: [
+      "clf-tx4mshnq92vw8vskcx4lp5gu",
+      "clf-u0agflzfchv7ahlgfxt6a0ym",
+      "clf-jlacv154q7y2yi5uiuhxiuiv",
+      "clf-rxm7fcb36lxlealhydkbqywa",
+      "clf-xz34xit34w4a0whedkd14uwb",
+      "clf-h4tw4yae8bp91ctapl5thhe6",
+      "clf-xhqvn0xda6av3dvi0cgb14nq",
+      "clf-k3ncdn8lkx92h8zewhjkxo4h",
+      "clf-xxlxnw0qo14o3l5reqd2v88u",
+      "clf-tj77ne6xdsiowavsgfe8ixty"
+    ]
+    allFragmentsCount: 44
+    allImagesCount: 0
+    recentImagesCount: 0
+    currentTurnFragmentCount: 0
+    currentTurnImageCount: 0
+    currentTurnToolOutputCount: 0
+    currentTurnExpectationCount: 0
+    toolCallHistoryCount: 32
+    failedToolsCount: 0
+    availableAgentsCount: 0
+    usedAgentsCount: 0
+    ambiguityResolved: true
+    finalSynthesisRequested: true
+    finalSynthesisCompleted: true
+    finalTurnCount: 2
+    totalFragments: 44
+    totalToolCalls: 32
+[00:21:27.228] INFO (Chat): [Pi-Mono Extension] Fragments ranked and added
+    rankedCount: 4
+[00:21:27.229] INFO (Chat): [Pi-Mono Extension] Review check
+    turn: 4
+    reviewFreq: 5
+    shouldReview: false
+    failureTrigger: false
+    timeTrigger: false
+    stagnationTrigger: false
+    toolExecutions: 2
+[00:21:27.229] INFO (Chat): [Pi-Mono Extension] turn_end completed - next turn can proceed
+    turn: 4
+[00:21:27.237] INFO (Chat): [Pi-Mono Extension] turn_end started - processing will block next turn
+    turn: 5
+    pendingFragments: 0
+    executionToolsCalled: 1
+    todoWriteCalled: true
+[00:21:27.237] INFO (Chat): [Pi-Mono Extension] Review check
+    turn: 5
+    reviewFreq: 5
+    shouldReview: false
+    failureTrigger: false
+    timeTrigger: false
+    stagnationTrigger: false
+    toolExecutions: 2
+[00:21:27.237] INFO (Chat): [Pi-Mono Extension] turn_end completed - next turn can proceed
+    turn: 5
+[00:21:27.256] INFO (Chat): [Pi-Mono Extension] turn_end started - processing will block next turn
+    turn: 6
+    pendingFragments: 0
+    executionToolsCalled: 0
+    todoWriteCalled: false
+[00:21:27.226] INFO (AI): "Extracted best document indexes" : indexes: 7,1,10,6, cost: 0.009064403999999998
+[00:21:27.441] INFO (AI): inside generateTitleUsingQuery
+[00:21:27.441] INFO (AI): inside generateTitleUsingQuery
+[00:21:27.261] INFO (Chat): Agent completed successfully
+    email: "nasim.sheikh@juspay.in"
+[00:21:27.265] INFO (Chat): [Pi-Mono] Debug session data saved
+    email: "nasim.sheikh@juspay.in"
+    debugFilePath: "/tmp/xyne-debug/debug-session-2026-03-27T18-51-27-261Z.json"
+[00:21:27.410] INFO (Server):
+    requestId: "ffd310b1-ecf1-4413-887d-6e9fac30b6f4"
+    method: "POST"
+    path: "/api/v1/chat/generateTitle"
+    query: null
+    message: "Incoming request"
+    email: "nasim.sheikh@juspay.in"
+[00:21:28.691] INFO (Server):
+    requestId: "b06b6726-13ab-4a03-8f7e-6592493bfe84"
+    method: "POST"
+    path: "/api/v1/chat/followup-questions"
+    query: null
+    message: "Incoming request"
+    email: "nasim.sheikh@juspay.in"
+[00:21:31.140] INFO (AI): after getProvider generateTitleUsingQuery
+[00:21:31.141] INFO (Chat): Generated title: SEBI QIP and RTA Disclosure Requirements: 5% Threshold and Independence Rules
+    email: "nasim.sheikh@juspay.in"
+[00:21:31.188] INFO (Server): Request completed
+    requestId: "ffd310b1-ecf1-4413-887d-6e9fac30b6f4"
+    status: 200
+    elapsed: "4s"
+    email: "nasim.sheikh@juspay.in"
+[00:21:34.576] INFO (Chat): Generated follow-up questions for message mhwajoikhl1yzrbsg809jlrj in chat e5oqxvapzu466hehyfvr2umt with agent SEBI Chat Bot 

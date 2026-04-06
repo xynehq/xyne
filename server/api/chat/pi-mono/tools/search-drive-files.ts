@@ -13,8 +13,49 @@ import {
   formatSearchToolResponse,
   parseAgentAppIntegrations,
 } from "../../tools/utils"
+import { mergeFragmentLists } from "../fragment-utils"
 import { extractDriveIds } from "@/search/utils"
 import config from "@/config"
+import type { MinimalAgentFragment } from "@/api/chat/types"
+
+/**
+ * Format search fragments as metadata-only for tool results.
+ * Full content is available in the ranked context block injected by the context handler.
+ */
+function formatFragmentsForLLM(
+  fragments: MinimalAgentFragment[],
+  query: string | undefined,
+): string {
+  if (fragments.length === 0) {
+    return `No Drive files found for "${query || "the query"}".`
+  }
+
+  const lines: string[] = [
+    `Found ${fragments.length} Drive file${fragments.length === 1 ? "" : "s"} for "${query || "the query"}":`,
+    "",
+  ]
+
+  for (let i = 0; i < fragments.length; i++) {
+    const f = fragments[i]
+    const source = f.source
+    const title = source?.title || "Unknown"
+    const app = source?.app || "GoogleDrive"
+    const entity = source?.entity || "file"
+    const relevance = f.confidence
+      ? `${(f.confidence * 100).toFixed(1)}%`
+      : "N/A"
+    lines.push(
+      `[${i + 1}] ${title} (${app} ${entity}) | DocID: ${source?.docId || f.id || "unknown"} | Relevance: ${relevance}`,
+    )
+  }
+
+  lines.push("")
+  lines.push(
+    "Full content is available in the RANKED SEARCH RESULTS context block.",
+  )
+
+  return lines.join("\n")
+}
 
 const retrievalQueryDescription = `
 Create SHORT, targeted search terms optimized for retrieval systems. Focus on 1-3 key terms rather than long descriptive phrases.
@@ -189,6 +230,10 @@ export const searchDriveFilesTool = createXyneTool(
         ? Math.min(params.limit, config.maxUserRequestCount) + offset
         : undefined
 
+      // NOTE: Do NOT auto-inject seenDocuments into excludeDocIds here.
+      // excludeDocIds operates at the DOCUMENT level — excluding it blocks ALL chunks.
+      // The ranking pipeline deduplicates post-retrieval instead.
+
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Drive,
         email,
@@ -199,7 +244,7 @@ export const searchDriveFilesTool = createXyneTool(
         timeRange: timeRange,
         owner: params.owner,
         driveEntity: params.filetype as DriveEntity[],
-        excludeDocIds: params.excludedIds || [],
+        excludeDocIds: params.excludedIds,
         docIds: driveSourceIds,
       })
 
@@ -212,26 +257,21 @@ export const searchDriveFilesTool = createXyneTool(
         searchType: "Drive file",
       })
 
-      xyneState.allFragments.push(...fragments)
-
-      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
-      const toolKey = `searchDriveFiles:${params.query || "default"}`
-      const existing =
-        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
-      const mergedFragments = existing
-        ? [...existing.fragments, ...fragments]
-        : fragments
-      xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
-        query: params.query || "",
-        fragments: mergedFragments,
-      })
+      // Push fragments directly to allFragments so synthesis always has context.
+      // The extension's ranking pipeline may also add/reorder via tool_execution_end;
+      // mergeFragmentLists deduplicates by vespaDocId so double-adds are safe.
+      xyneState.allFragments = mergeFragmentLists(
+        xyneState.allFragments,
+        fragments,
+      )
 
       await persistState()
 
+      // Format fragments for LLM visibility - include actual content, not just summary
+      const formattedResults = formatFragmentsForLLM(fragments, params.query)
+
       return {
-        content: [
-          { type: "text", text: `Found ${fragments.length} Drive files` },
-        ],
+        content: [{ type: "text", text: formattedResults }],
         details: {
           fragments,
           query: params.query,

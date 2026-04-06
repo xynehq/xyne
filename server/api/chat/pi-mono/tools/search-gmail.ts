@@ -10,11 +10,52 @@ import type { XyneToolContext } from "../adapter"
 import { Apps, GoogleApps } from "@xyne/vespa-ts"
 import { searchGoogleApps } from "@/search/vespa"
 import { expandEmailThreadsInResults } from "@/api/chat/utils"
+import { mergeFragmentLists } from "../fragment-utils"
 import {
   formatSearchToolResponse,
   parseAgentAppIntegrations,
 } from "../../tools/utils"
 import config from "@/config"
+import type { MinimalAgentFragment } from "@/api/chat/types"
+
+/**
+ * Format search fragments as metadata-only for tool results.
+ * Full content is available in the ranked context block injected by the context handler.
+ */
+function formatFragmentsForLLM(
+  fragments: MinimalAgentFragment[],
+  query: string | undefined,
+): string {
+  if (fragments.length === 0) {
+    return `No Gmail messages found for "${query || "the query"}".`
+  }
+
+  const lines: string[] = [
+    `Found ${fragments.length} Gmail message${fragments.length === 1 ? "" : "s"} for "${query || "the query"}":`,
+    "",
+  ]
+
+  for (let i = 0; i < fragments.length; i++) {
+    const f = fragments[i]
+    const source = f.source
+    const title = source?.title || "Unknown"
+    const app = source?.app || "Gmail"
+    const entity = source?.entity || "email"
+    const relevance = f.confidence
+      ? `${(f.confidence * 100).toFixed(1)}%`
+      : "N/A"
+    lines.push(
+      `[${i + 1}] ${title} (${app} ${entity}) | DocID: ${source?.docId || f.id || "unknown"} | Relevance: ${relevance}`,
+    )
+  }
+
+  lines.push("")
+  lines.push(
+    "Full content is available in the RANKED SEARCH RESULTS context block.",
+  )
+
+  return lines.join("\n")
+}
 
 const participantsSchema = Type.Object(
   {
@@ -177,6 +218,10 @@ export const searchGmailTool = createXyneTool(
         ? Math.min(params.limit, config.maxUserRequestCount) + offset
         : undefined
 
+      // NOTE: Do NOT auto-inject seenDocuments into excludeDocIds here.
+      // excludeDocIds operates at the DOCUMENT level — excluding it blocks ALL chunks.
+      // The ranking pipeline deduplicates post-retrieval instead.
+
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Gmail,
         email,
@@ -187,7 +232,7 @@ export const searchGmailTool = createXyneTool(
         labels: params.labels,
         timeRange: timeRange,
         participants: params.participants || {},
-        excludeDocIds: params.excludedIds || [],
+        excludeDocIds: params.excludedIds,
         docIds: undefined,
       })
 
@@ -208,26 +253,21 @@ export const searchGmailTool = createXyneTool(
         searchType: "Gmail message",
       })
 
-      xyneState.allFragments.push(...fragments)
-
-      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
-      const toolKey = `searchGmail:${params.query || "default"}`
-      const existing =
-        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
-      const mergedFragments = existing
-        ? [...existing.fragments, ...fragments]
-        : fragments
-      xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
-        query: params.query || "",
-        fragments: mergedFragments,
-      })
+      // Push fragments directly to allFragments so synthesis always has context.
+      // The extension's ranking pipeline may also add/reorder via tool_execution_end;
+      // mergeFragmentLists deduplicates by vespaDocId so double-adds are safe.
+      xyneState.allFragments = mergeFragmentLists(
+        xyneState.allFragments,
+        fragments,
+      )
 
       await persistState()
 
+      // Format fragments for LLM visibility - include actual content, not just summary
+      const formattedResults = formatFragmentsForLLM(fragments, params.query)
+
       return {
-        content: [
-          { type: "text", text: `Found ${fragments.length} Gmail messages` },
-        ],
+        content: [{ type: "text", text: formattedResults }],
         details: { fragments, query: params.query, toolName: "searchGmail" },
       }
     } catch (error) {

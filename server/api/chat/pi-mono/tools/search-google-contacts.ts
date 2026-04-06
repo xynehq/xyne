@@ -10,6 +10,7 @@ import type { XyneToolContext } from "../adapter"
 import { GoogleApps } from "@xyne/vespa-ts"
 import { searchGoogleApps } from "@/search/vespa"
 import { formatSearchToolResponse } from "../../tools/utils"
+import { mergeFragmentLists } from "../fragment-utils"
 import config from "@/config"
 
 const retrievalQueryDescription = `
@@ -99,13 +100,17 @@ export const searchGoogleContactsTool = createXyneTool(
         ? Math.min(params.limit, config.maxUserRequestCount) + offset
         : undefined
 
+      // NOTE: Do NOT auto-inject seenDocuments into excludeDocIds here.
+      // excludeDocIds operates at the DOCUMENT level — excluding it blocks ALL chunks.
+      // The ranking pipeline deduplicates post-retrieval instead.
+
       const searchResults = await searchGoogleApps({
         app: GoogleApps.Contacts,
         email,
         query: params.query,
         limit,
         sortBy: "desc",
-        excludeDocIds: params.excludedIds || [],
+        excludeDocIds: params.excludedIds,
         offset,
       })
 
@@ -117,19 +122,13 @@ export const searchGoogleContactsTool = createXyneTool(
         searchType: "Contact",
       })
 
-      xyneState.allFragments.push(...fragments)
-
-      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
-      const toolKey = `searchGoogleContacts:${params.query || "default"}`
-      const existing =
-        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
-      const mergedFragments = existing
-        ? [...existing.fragments, ...fragments]
-        : fragments
-      xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
-        query: params.query || "",
-        fragments: mergedFragments,
-      })
+      // Push fragments directly to allFragments so synthesis always has context.
+      // The extension's ranking pipeline may also add/reorder via tool_execution_end;
+      // mergeFragmentLists deduplicates by vespaDocId so double-adds are safe.
+      xyneState.allFragments = mergeFragmentLists(
+        xyneState.allFragments,
+        fragments,
+      )
 
       await persistState()
 

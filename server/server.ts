@@ -2540,20 +2540,20 @@ const errorHandler = (error: Error) => {
 
 const server = Bun.serve({
   fetch: app.fetch,
-  port: config.port,
+  port: Number(config.port),
   websocket,
   idleTimeout: 180,
   development: true,
   error: errorHandler,
 })
 
-const metricServer = Bun.serve({
-  fetch: internalMetricRouter.fetch,
-  port: config.metricsPort, // new port from config
-  idleTimeout: 180,
-  development: true,
-  error: errorHandler,
-})
+// const metricServer = Bun.serve({
+//   fetch: internalMetricRouter.fetch,
+//   port: config.metricsPort, // new port from config
+//   idleTimeout: 180,
+//   development: true,
+//   error: errorHandler,
+// })
 
 Logger.info(`listening on port: ${config.port}`)
 Logger.info(`metrics server started on port: ${config.metricsPort}`)

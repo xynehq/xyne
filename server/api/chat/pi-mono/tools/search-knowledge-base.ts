@@ -8,6 +8,87 @@ import { Type } from "@sinclair/typebox"
 import { createXyneTool } from "../adapter"
 import type { XyneToolContext } from "../adapter"
 import { executeSearchKnowledgeBase } from "../../tools/knowledgeBaseFlow"
+import type { MinimalAgentFragment } from "@/api/chat/types"
+import { mergeFragmentLists } from "../fragment-utils"
+import {
+  rankFragmentsWithReranker,
+  buildRankedContextBlock,
+} from "../fragment-ranking"
+
+/**
+ * Pagination metadata for knowledge base search results
+ */
+interface PaginationMetadata {
+  returned: number
+  totalAvailable: number
+  limit: number
+  offset: number
+  hasMore: boolean
+  nextOffset: number
+}
+
+/**
+ * Format search fragments as lightweight summary for LLM.
+ * Full content is available via the ranked context block.
+ */
+function formatFragmentsForLLM(
+  fragments: MinimalAgentFragment[],
+  query: string | undefined,
+  pagination?: PaginationMetadata,
+  requestedLimit?: number,
+): string {
+  if (fragments.length === 0) {
+    return `<search_results query="${query || "unknown"}">\n  <message>No results found in knowledge base.</message>\n</search_results>`
+  }
+
+  let output = `<search_results query="${query || "unknown"}">\n`
+
+  // 1. Clear Pagination Metadata
+  if (pagination) {
+    output += `  <metadata>\n`
+    output += `    <total_available>${pagination.totalAvailable}</total_available>\n`
+    output += `    <requested>${pagination.limit}</requested>\n`
+    output += `    <returned>${pagination.returned}</returned>\n`
+    output += `    <current_offset>${pagination.offset}</current_offset>\n`
+    output += `    <has_more>${pagination.hasMore}</has_more>\n`
+    output += `  </metadata>\n`
+  }
+
+  // 2. The Documents (combining metadata and content)
+  output += `  <documents>\n`
+  fragments.forEach((f, i) => {
+    const title = f.source?.title || "Unknown"
+    const docId = f.source?.docId || f.id || "unknown"
+    const app = f.source?.app || "KnowledgeBase"
+    const relevance = f.confidence ? (f.confidence * 100).toFixed(1) : "N/A"
+
+    // Assuming f.content holds the raw text snippet.
+    const content = f.content || "Content unavailable."
+
+    output += `    <document index="${i + 1}" doc_id="${docId}" relevance="${relevance}%" source_app="${app}">\n`
+    output += `      <title>${title}</title>\n`
+    output += `      <content>\n${content}\n      </content>\n`
+    output += `    </document>\n`
+  })
+  output += `  </documents>\n`
+
+  // 3. Relevance Warning: If reranker filtered out most results
+  if (requestedLimit && fragments.length > 0) {
+    const returnRatio = fragments.length / requestedLimit
+    // If less than 40% of requested results were returned, warn about low relevance
+    if (returnRatio < 0.4) {
+      output += `\n  <relevance_warning>\n    The query only returned ${fragments.length} document chunk${fragments.length === 1 ? "" : "s"} out of ${requestedLimit} requested.\n    The reranker filtered out ${requestedLimit - fragments.length} chunks as irrelevant to your query.\n    The documents shown may not contain the answer you need.\n    To improve results:\n    1. Try \`getDocumentOutline\` with the same query to discover document structure and find relevant sections.\n    2. Try a different \`offset\` to explore more results from this query.\n    3. Rephrase your query using different semantic terms that may appear in the source documents.\n  </relevance_warning>\n`
+    }
+  }
+
+  // 4. Explicit Actionable Instruction for the Agent
+  if (pagination?.hasMore) {
+    output += `\n  <system_instruction>\n    More results are available. If you have not found the answer, you MUST call the searchKnowledgeBase tool again using \`offset: ${pagination.nextOffset}\`.\n  </system_instruction>\n`
+  }
+
+  output += `</search_results>`
+  return output
+}
 
 const KNOWLEDGE_BASE_TARGET_DESCRIPTION =
   "A discriminated knowledge-base target object for browse/search. Set `type` to one of `collection`, `folder`, `file`, or `path`, then provide only the matching ID/path fields for that variant."
@@ -24,6 +105,8 @@ const SEARCH_KNOWLEDGE_BASE_TOOL_DESCRIPTION = [
   "Pair it with `ls` when you need structural scoping, canonical-path confirmation, or file preselection such as searching only .txt files from a folder.",
   "If the collection, folder, file, or path is known, pass it in `filters.targets`; file targets can come from prior `ls` output.",
   "`filters.targets` narrows search by location, while `excludedIds` should contain previously seen document/result IDs to avoid rereading the same hits.",
+  "",
+  "**ID REFERENCE**: When using `filters.targets.fileId`, use the `id` field (UUID like 'b9680544-b86b-4af3-b9e7-5f1667526425') from `lsKnowledgeBase` output. Do NOT use `vespaDocId` here - that causes errors.",
 ].join(" ")
 
 const searchKnowledgeBaseParams = Type.Object({
@@ -92,9 +175,9 @@ const searchKnowledgeBaseParams = Type.Object({
   limit: Type.Optional(
     Type.Number({
       minimum: 1,
-      maximum: 15,
+      maximum: 20,
       description:
-        "Maximum number of KB fragments to return (up to 15). Keep this tight for precision-first retrieval; raise it only when the user needs broader coverage.",
+        "Maximum number of KB fragments to return (up to 30). Use 15-20 for most searches to ensure good recall; increase to 30 when broader coverage is needed.",
     }),
   ),
   offset: Type.Optional(
@@ -142,18 +225,24 @@ export const searchKnowledgeBaseTool = createXyneTool(
         })
       }
 
+      // NOTE: Do NOT auto-inject seenDocuments into excludedIds here.
+      // excludedIds operates at the DOCUMENT level (Vespa's docId field), not chunk level.
+      // A single document contains many chunks — excluding it blocks ALL chunks, even ones
+      // relevant to different queries. The ranking pipeline deduplicates post-retrieval instead.
+      // The LLM agent can still explicitly pass excludedIds via the tool parameter.
+
       const result = await executeSearchKnowledgeBase(
         {
           query: params.query,
           filters: targets ? { targets } : undefined,
-          limit: params.limit,
+          limit: params.limit || 15,
           offset: params.offset,
           excludedIds: params.excludedIds,
         },
         xyneState as any,
       )
 
-      if (result.error) {
+      if (!result.success) {
         return {
           content: [
             { type: "text", text: result.error.message || "KB search failed" },
@@ -163,31 +252,53 @@ export const searchKnowledgeBaseTool = createXyneTool(
         }
       }
 
-      const fragments = result.data || []
-      xyneState.allFragments.push(...fragments)
+      const { fragments, totalCount, offset, limit } = result.data
 
-      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
-      const toolKey = `searchKnowledgeBase:${params.query || "default"}`
-      const existing =
-        xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
-      const mergedFragments = existing
-        ? [...existing.fragments, ...fragments]
-        : fragments
-      xyneState.currentTurnArtifacts.unrankedFragmentsByTool.set(toolKey, {
-        query: params.query || "",
-        fragments: mergedFragments,
-      })
+      // Rank fragments internally using the configured reranker (Jina, LLM, or Cross-Encoder)
+      const scoredFragments = await rankFragmentsWithReranker(
+        fragments,
+        xyneState.message.text,
+        params.limit || 15,
+      )
+
+      // Merge fragments into currentTurnArtifacts.fragments (will be moved to allFragments at context time)
+      const rankedFragments = scoredFragments.map(
+        (s: { fragment: MinimalAgentFragment }) => s.fragment,
+      )
+      xyneState.currentTurnArtifacts.fragments = mergeFragmentLists(
+        xyneState.currentTurnArtifacts.fragments,
+        rankedFragments,
+      )
 
       await persistState()
 
+      // Build pagination metadata
+      const pagination = {
+        returned: fragments.length,
+        totalAvailable: totalCount,
+        limit,
+        offset,
+        hasMore: offset + fragments.length < totalCount,
+        nextOffset: offset + fragments.length,
+      }
+
+      // Format lightweight summary for LLM
+      const formattedResults = formatFragmentsForLLM(
+        rankedFragments,
+        params.query,
+        pagination,
+        15,
+      )
+
+      // Return combined: lightweight summary + ranked context
+      // const fullContent = `${formattedResults}\n\n${rankedContext}`
+
       return {
-        content: [
-          { type: "text", text: `Found ${fragments.length} KB results` },
-        ],
+        content: [{ type: "text", text: formattedResults }],
         details: {
-          fragments,
           query: params.query,
           toolName: "searchKnowledgeBase",
+          pagination,
         },
       }
     } catch (error) {

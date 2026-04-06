@@ -30,6 +30,7 @@ import { getErrorMessage } from "@/utils"
 import { executeVespaSearch } from "./global"
 import type { Ctx } from "./types"
 import { parseAgentAppIntegrations } from "./utils"
+import type { MinimalAgentFragment } from "../types"
 
 const Logger = getLogger(Subsystem.Chat)
 
@@ -208,7 +209,7 @@ export type SearchKnowledgeBaseToolParams = z.infer<
 >
 
 // Reuses the global Vespa search implementation shape for dependency injection in tests.
-type SearchExecutor = typeof executeVespaSearch
+type SearchExecutor = (options: any) => Promise<{ fragments: MinimalAgentFragment[]; totalCount: number }>
 
 // Carries the resolved KB scope and selection state for the current tool execution.
 type KnowledgeBaseScopeState = {
@@ -321,6 +322,7 @@ type LsEntry = {
   parent_id?: string | null
   depth: number
   details?: Record<string, unknown>
+  vespaDocId?: string
 }
 
 // Captures a traversed node before optional live metadata hydration.
@@ -1030,6 +1032,7 @@ function createCollectionLsEntry(
     name: collection.name,
     path: "/",
     depth: 0,
+    vespaDocId: collection.vespaDocId
   }
 
   if (includeMetadata) {
@@ -1077,6 +1080,7 @@ function createItemLsEntry(
     collection_id: seed.collection_id,
     parent_id: seed.parent_id,
     depth: seed.depth,
+    vespaDocId: item?.vespaDocId ?? undefined,
   }
 
   if (includeMetadata && item) {
@@ -1361,6 +1365,14 @@ export async function executeLsKnowledgeBase(
   }
 }
 
+// Search result with pagination metadata
+export interface SearchKnowledgeBaseResult {
+  fragments: MinimalAgentFragment[]
+  totalCount: number
+  offset: number
+  limit: number
+}
+
 // Executes the internal KB search tool after resolving scoped target filters. Main function entry point for serachKB tool.
 export async function executeSearchKnowledgeBase(
   params: SearchKnowledgeBaseToolParams,
@@ -1369,23 +1381,31 @@ export async function executeSearchKnowledgeBase(
     repo?: KnowledgeBaseRepository
     searchExecutor?: SearchExecutor
   } = {},
-) {
+): Promise<
+  | { success: true; data: SearchKnowledgeBaseResult; error?: undefined }
+  | { success: false; data?: undefined; error: { message: string; code?: string } }
+> {
   const email = context.user.email
-  if (!email) {
-    return ToolResponse.error(
-      ToolErrorCodes.MISSING_REQUIRED_FIELD,
-      "User email not found while executing searchKnowledgeBase",
-      { toolName: "searchKnowledgeBase" },
-    )
+  const mainQuery = context.message.text
+    if (!email) {
+    return {
+      success: false as const,
+      error: {
+        message: "User email not found while executing searchKnowledgeBase",
+        code: ToolErrorCodes.MISSING_REQUIRED_FIELD,
+      },
+    }
   }
 
   const query = params.query?.trim()
   if (!query) {
-    return ToolResponse.error(
-      ToolErrorCodes.MISSING_REQUIRED_FIELD,
-      "Query cannot be empty for knowledge base search",
-      { toolName: "searchKnowledgeBase" },
-    )
+    return {
+      success: false as const,
+      error: {
+        message: "Query cannot be empty for knowledge base search",
+        code: ToolErrorCodes.MISSING_REQUIRED_FIELD,
+      },
+    }
   }
 
   const repo = options.repo ?? defaultKnowledgeBaseRepository
@@ -1412,11 +1432,13 @@ export async function executeSearchKnowledgeBase(
       repo,
     )
     if (!selections.length) {
-      return ToolResponse.error(
-        ToolErrorCodes.EXECUTION_FAILED,
-        "No accessible knowledge base collections found for this user",
-        { toolName: "searchKnowledgeBase" },
-      )
+      return {
+        success: false as const,
+        error: {
+          message: "No accessible knowledge base collections found for this user",
+          code: ToolErrorCodes.EXECUTION_FAILED,
+        },
+      }
     }
 
     Logger.info(
@@ -1434,35 +1456,51 @@ export async function executeSearchKnowledgeBase(
       "[KnowledgeBase][search] Resolved KB targets into collection selections for Vespa",
     )
 
-    const fragments = await searchExecutor({
+    const offset = params.offset ?? 0
+    const limit = params.limit ?? 20
+    
+    const { fragments, totalCount } = await searchExecutor({
       email,
       query,
       app: Apps.KnowledgeBase,
       agentAppEnums: [Apps.KnowledgeBase],
-      limit: params.limit,
-      offset: params.offset ?? 0,
+      limit,
+      offset,
       excludedIds: params.excludedIds,
       collectionSelections: selections,
       selectedItems: scopeState.selectedItems,
       userId: context.user.numericId ?? undefined,
       workspaceId: context.user.workspaceNumericId ?? undefined,
+      mainQuery
     })
 
     if (!fragments.length) {
-      return ToolResponse.error(
-        ToolErrorCodes.EXECUTION_FAILED,
-        "No knowledge base results found for the query.",
-        { toolName: "searchKnowledgeBase" },
-      )
+      return {
+        success: false as const,
+        error: {
+          message: "No knowledge base results found for the query.",
+          code: ToolErrorCodes.EXECUTION_FAILED,
+        },
+      }
     }
 
-    return ToolResponse.success(fragments)
+    return {
+      success: true as const,
+      data: {
+        fragments,
+        totalCount,
+        offset,
+        limit,
+      },
+    }
   } catch (error) {
-    return ToolResponse.error(
-      ToolErrorCodes.EXECUTION_FAILED,
-      `Knowledge base search failed: ${getErrorMessage(error)}`,
-      { toolName: "searchKnowledgeBase" },
-    )
+    return {
+      success: false as const,
+      error: {
+        message: `Knowledge base search failed: ${getErrorMessage(error)}`,
+        code: ToolErrorCodes.EXECUTION_FAILED,
+      },
+    }
   }
 }
 export const lsKnowledgeBaseTool: Tool<LsKnowledgeBaseToolParams, Ctx> = {
@@ -1473,6 +1511,7 @@ export const lsKnowledgeBaseTool: Tool<LsKnowledgeBaseToolParams, Ctx> = {
   },
   execute: executeLsKnowledgeBase,
 }
+// Note: This tool is exported for JAF-based flows. The pi-mono version uses createXyneTool.
 export const searchKnowledgeBaseTool: Tool<SearchKnowledgeBaseToolParams, Ctx> =
   {
     schema: {
@@ -1482,7 +1521,19 @@ export const searchKnowledgeBaseTool: Tool<SearchKnowledgeBaseToolParams, Ctx> =
         SearchKnowledgeBaseInputSchema,
       ),
     },
-    execute: executeSearchKnowledgeBase,
+    execute: async (params, context) => {
+      const result = await executeSearchKnowledgeBase(params, context)
+      if (result.success) {
+        return ToolResponse.success(result.data.fragments)
+      } else {
+        const errorCode = (result.error.code || ToolErrorCodes.EXECUTION_FAILED) as typeof ToolErrorCodes.EXECUTION_FAILED
+        return ToolResponse.error(
+          errorCode,
+          result.error.message,
+          { toolName: "searchKnowledgeBase" },
+        )
+      }
+    },
   }
 
 export const __knowledgeBaseFlowInternals = {

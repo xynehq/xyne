@@ -186,7 +186,7 @@ vespa-data
 vespa-logs
 server/vespa-data
 server/xyne-data
-
+server/xyne-evals
 # storage directories
 server/storage/kb_files
 

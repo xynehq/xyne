@@ -24,6 +24,16 @@ import {
   default as piMonoTurnProcessor,
 } from "../pi-mono-extension"
 import type { ReasoningEmitter } from "@/api/chat/reasoning-steps"
+import type { SelectMessage } from "@/db/schema"
+import { MessageRole } from "@/types"
+import * as fs from "fs"
+import * as path from "path"
+
+// Define AgentMessage type locally based on pi-mono SDK structure
+type AgentMessage =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string }
+  | { role: "toolResult"; toolCallId: string; content: unknown }
 
 /**
  * SDK Tool type using pi-coding-agent's ToolDefinition
@@ -44,6 +54,31 @@ export interface AgentSessionWrapperConfig
   message?: string
   email?: string
   emitReasoningStep?: ReasoningEmitter
+  // Initial conversation history to inject into the session
+  initialMessages?: AgentMessage[]
+}
+
+/**
+ * Convert SelectMessage array to pi-mono AgentMessage format
+ * This enables conversation history to be injected into the session
+ */
+export function convertToAgentMessages(
+  messages: SelectMessage[],
+): AgentMessage[] {
+  return messages
+    .filter((msg) => !msg?.errorMessage)
+    .filter(
+      (msg) =>
+        msg.messageRole === MessageRole.User ||
+        msg.messageRole === MessageRole.Assistant,
+    )
+    .map((msg) => ({
+      role:
+        msg.messageRole === MessageRole.User
+          ? ("user" as const)
+          : ("assistant" as const),
+      content: msg.message || "",
+    }))
 }
 
 /**
@@ -81,6 +116,18 @@ export async function createAgentSessionWrapper(
     piSession.agent.setSystemPrompt(config.systemPrompt)
   }
 
+  // Inject initial conversation history if provided
+  // This is critical for multi-turn conversations to have context
+  if (
+    config.initialMessages &&
+    config.initialMessages.length > 0 &&
+    piSession.agent?.state?.messages
+  ) {
+    ;(piSession.agent.state.messages as AgentMessage[]) = [
+      ...config.initialMessages,
+    ]
+  }
+
   return wrapSession(piSession, config.state)
 }
 
@@ -115,13 +162,33 @@ function wrapSession(
   piSession: PiMonoAgentSession,
   userState?: XyneAgentState,
 ): AgentSession {
+  // Store all events for debugging
+  const eventHistory: Array<{
+    type: string
+    timestamp: number
+    data: unknown
+  }> = []
+
   return {
     async start(message: string) {
       await piSession.prompt(message)
     },
 
     subscribe(handler) {
-      return piSession.subscribe(handler)
+      // Wrap handler to capture events for debugging
+      const wrappedHandler = (event: any) => {
+        eventHistory.push({
+          type: event.type,
+          timestamp: Date.now(),
+          data: event,
+        })
+        // Keep last 1000 events to prevent memory bloat
+        if (eventHistory.length > 1000) {
+          eventHistory.shift()
+        }
+        return handler(event)
+      }
+      return piSession.subscribe(wrappedHandler)
     },
 
     stop() {
@@ -144,6 +211,111 @@ function wrapSession(
 
     getState() {
       return userState
+    },
+
+    // Debug methods
+    getEventHistory() {
+      return [...eventHistory]
+    },
+
+    getSessionStats() {
+      const stats = (piSession as any).getSessionStats?.()
+      return (
+        stats || {
+          userMessages: eventHistory.filter((e) => e.type === "user_message")
+            .length,
+          assistantMessages: eventHistory.filter(
+            (e) => e.type === "assistant_message",
+          ).length,
+          toolCalls: eventHistory.filter(
+            (e) => e.type === "tool_execution_start",
+          ).length,
+          turns: eventHistory.filter((e) => e.type === "turn_start").length,
+        }
+      )
+    },
+
+    getAgentState() {
+      return {
+        messages: (piSession.agent.state as any)?.messages,
+        model: (piSession.agent.state as any)?.model,
+        thinkingLevel: (piSession.agent.state as any)?.thinkingLevel,
+        pendingToolCalls: (piSession.agent.state as any)?.pendingToolCalls,
+      }
+    },
+
+    getContextUsage() {
+      return (
+        (piSession as any).getContextUsage?.() || {
+          tokens: 0,
+          contextWindow: 128000,
+          percent: 0,
+        }
+      )
+    },
+
+    exportToJson(): string {
+      // Get pi-mono agent state
+      const piMonoAgentState = {
+        messages: (piSession.agent.state as any)?.messages,
+        model: (piSession.agent.state as any)?.model,
+        thinkingLevel: (piSession.agent.state as any)?.thinkingLevel,
+        pendingToolCalls: (piSession.agent.state as any)?.pendingToolCalls,
+        systemPrompt: (piSession.agent.state as any)?.systemPrompt,
+      }
+
+      // Get pi-mono session stats if available
+      const piMonoSessionStats = (piSession as any).getSessionStats?.() || null
+
+      // Custom replacer to handle Set and Map serialization
+      // JSON.stringify(new Set()) → "{}" which loses all data
+      const replacer = (_key: string, value: any) => {
+        if (value instanceof Set) {
+          return { __type: "Set", values: Array.from(value) }
+        }
+        if (value instanceof Map) {
+          return { __type: "Map", entries: Array.from(value.entries()) }
+        }
+        return value
+      }
+
+      return JSON.stringify(
+        {
+          events: eventHistory,
+          xyneState: userState,
+          piMonoAgentState,
+          piMonoSessionStats,
+          timestamp: new Date().toISOString(),
+        },
+        replacer,
+        2,
+      )
+    },
+
+    saveToFile(filePath?: string): string {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+
+      // Default to /tmp/xyne-debug/ for easy access and cleanup
+      const debugDir = process.env.XYNE_DEBUG_DIR || "/tmp/xyne-debug"
+      const defaultPath = path.join(debugDir, `debug-session-${timestamp}.json`)
+      const targetPath = filePath || defaultPath
+
+      const data = this.exportToJson()
+
+      try {
+        // Ensure directory exists
+        const dir = path.dirname(targetPath)
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true })
+        }
+
+        fs.writeFileSync(targetPath, data, "utf-8")
+        console.log(`[DEBUG] Session data saved to: ${targetPath}`)
+        return targetPath
+      } catch (error) {
+        console.error(`[DEBUG] Failed to save session data:`, error)
+        throw error
+      }
     },
   }
 }

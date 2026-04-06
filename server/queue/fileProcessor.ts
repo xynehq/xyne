@@ -342,6 +342,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         chunks_map: processingResult.chunks_map,
         image_chunks_map: processingResult.image_chunks_map,
         pageTitle: pageTitle,
+        documentOutline: processingResult.documentOutline,
         metadata: JSON.stringify(
           mergeCollectionItemMetadata(file.metadata, {
             originalFileName: file.originalName || file.fileName,

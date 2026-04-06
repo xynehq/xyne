@@ -15,6 +15,7 @@ import {
 import { ReasoningSteps, emitReasoningEvent } from "@/api/chat/reasoning-steps"
 import { getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
+import { mergeFragmentLists } from "../fragment-utils"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
@@ -189,22 +190,29 @@ export const runPublicAgentTool = createXyneTool(
       // Persist state changes
       await persistState()
 
-      // Add returned fragments to parent state for citation
+      // Collect returned fragments for citation via extension's ranking pipeline
+      // NOTE: Do NOT filter by seenDocuments here — seenDocuments tracks document-level IDs,
+      // and a document can contain many chunks relevant to different queries.
+      // The ranking pipeline deduplicates post-retrieval instead.
+      const delegatedFragments: any[] = []
       if (result.contexts && result.contexts.length > 0) {
         for (const context of result.contexts) {
-          // Check for duplicates
-          const exists = xyneState.allFragments.some((f) => f.id === context.id)
-          if (!exists) {
-            xyneState.allFragments.push(context)
-          }
+          delegatedFragments.push(context)
         }
+        // Push fragments directly to allFragments so synthesis always has context.
+        // The extension's ranking pipeline may also add/reorder via tool_execution_end;
+        // mergeFragmentLists deduplicates by vespaDocId so double-adds are safe.
+        xyneState.allFragments = mergeFragmentLists(
+          xyneState.allFragments,
+          delegatedFragments as any,
+        )
 
         logger.info(
           {
-            fragmentCount: result.contexts.length,
+            fragmentCount: delegatedFragments.length,
             agentId: params.agentId,
           },
-          "[runPublicAgent] Added fragments from delegated agent",
+          "[runPublicAgent] Collected fragments from delegated agent for ranking pipeline",
         )
       }
 
@@ -224,6 +232,7 @@ export const runPublicAgentTool = createXyneTool(
           context: params.context,
           delegated: true,
           delegationRunId,
+          fragments: delegatedFragments, // Expose for extension's tool_execution_end
           citations: result.metadata?.citations,
           imageCitations: result.metadata?.imageCitations,
           cost: result.metadata?.cost,

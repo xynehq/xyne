@@ -19,4 +19,3 @@ export {
   createEventHandler,
   type ExtendedEventRouterConfig,
 } from "./event-router"
-

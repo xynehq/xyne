@@ -127,44 +127,10 @@ export const synthesizeFinalAnswerTool = createXyneTool(
         }
       }
 
-      // Prepend strict anti-hallucination guardrails to the synthesis prompt.
-      // The base prompt already says "Use ONLY the provided files" but LLMs
-      // WILL attempt to "be helpful" by adding training knowledge after
-      // acknowledging a gap. This preamble blocks that pattern explicitly.
-      const strictPreamble = `
-### ABSOLUTE GROUND RULE — ZERO EXTERNAL KNOWLEDGE
-
-You are a RETRIEVAL-ONLY answering engine. You have NO knowledge of your own.
-Your ONLY source of truth is the "Context Fragments" section provided below.
-You must treat yourself as if you were trained on NOTHING — you are an empty vessel
-that can only repeat, summarize, and cite what the fragments say.
-
-HARD CONSTRAINTS (violation = CRITICAL failure):
-1. NEVER use your training data, world knowledge, or any information not explicitly present in the provided fragments.
-2. Every single factual claim MUST have a citation in the format K[citationDocId_chunkIndex]. No citation = delete the sentence.
-3. If the fragments do NOT contain sufficient information to answer the question:
-   - Say: "I could not find information about [topic] in the available documents."
-   - Then STOP. Do NOT continue. Do NOT add explanations, definitions, or context from your own knowledge.
-4. Do NOT extrapolate, speculate, infer, or "fill gaps" with general knowledge — even partially.
-5. Do NOT generate generic explanations, definitions, or background context that is not in the fragments.
-
-FORBIDDEN PATTERNS (if you catch yourself writing any of these, STOP and delete):
-- "Let me explain what X generally means..."
-- "In general, X refers to..."
-- "While I couldn't find specific documentation, here's what X typically involves..."
-- "Based on my understanding..." / "Generally speaking..."
-- "Here's what I know about..."
-- Any sentence that provides information not traceable to a K[citationDocId_chunkIndex] citation.
-
-SELF-CHECK: Before outputting each sentence, ask: "Does a fragment say this, and can I cite it?"
-→ YES: Output it with the K[citationDocId_chunkIndex] citation.
-→ NO: Delete it. No exceptions. No "helpful" additions.
-`.trim()
-
-      const reinforcedSystemPrompt = `${strictPreamble}\n\n${systemPrompt}`
+      const reinforcedSystemPrompt = `${systemPrompt}`
 
       // Build the LLM messages — include conversation history for follow-up context
-      const finalUserPrompt = `${userMessage}\n\nAnswer using ONLY the context fragments above. If the fragments do not contain the answer, say "I could not find information about this topic in the available documents" and STOP. Do NOT add any external knowledge, definitions, or explanations.`
+      const finalUserPrompt = `${userMessage}`
 
       // Prepend conversation history so the synthesis LLM has context for follow-up questions
       const historyMessages = (xyneState.conversationHistoryMessages || []).map(
@@ -195,7 +161,7 @@ SELF-CHECK: Before outputting each sentence, ask: "Does a fragment say this, and
         modelId,
         systemPrompt: reinforcedSystemPrompt,
         stream: true,
-        temperature: 0.1, // Low temperature for stricter grounding
+        temperature: 0.2, // Low temperature for stricter grounding
         max_new_tokens: 8192,
       }
 

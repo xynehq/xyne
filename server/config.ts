@@ -77,6 +77,14 @@ const allowHaiku45 = process.env.ALLOW_HAIKU_4_5 === "true"
 const useAgenticFiltering = process.env.USE_AGENTIC_FILTERING === "true"
 const modelList = process.env.MODELS_LIST
 const enableImages = process.env.ENABLE_IMAGES === "true"
+
+// Reranking configuration
+const rerankingEnabled = process.env.RERANKING_ENABLED === "true"
+const rerankingProvider = process.env.RERANKING_PROVIDER || "llm" // "llm" | "jina" | "cohere" | "cross-encoder"
+const rerankingModel = process.env.RERANKING_MODEL || "" // For LLM provider
+const rerankingApiKey = process.env.RERANKING_API_KEY || "" // For external APIs
+const rerankingApiUrl = process.env.RERANKING_API_URL || "" // Custom endpoint
+const rerankingTopK = parseInt(process.env.RERANKING_TOP_K || "50", 10)
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
   process.env.FILE_PROCESSING_WORKER_THREADS || "4",
@@ -345,7 +353,7 @@ export default {
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
   maxDefaultSummary: 10,
-  maxChunksPerTool: 50,
+  maxChunksPerTool: 80,
   maxChunksPerPage: 200,
   chatPageSize: 20, // default page size for ai search
   VespaPageSize: 20, // default page size for vespa search
@@ -396,4 +404,13 @@ export default {
   ZohoOrgId,
   useAgenticFiltering,
   modelList,
+  // Reranking configuration
+  reranking: {
+    enabled: rerankingEnabled,
+    provider: rerankingProvider as "llm" | "jina" | "cohere" | "cross-encoder",
+    model: rerankingModel,
+    apiKey: rerankingApiKey,
+    apiUrl: rerankingApiUrl,
+    topK: rerankingTopK,
+  },
 }

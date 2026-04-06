@@ -38,6 +38,7 @@ export interface ProcessingResult {
   chunks_map: ChunkMetadata[]
   image_chunks_map: ChunkMetadata[]
   processingMethod?: PdfProcessingMethod
+  documentOutline?: string
 }
 
 export interface SheetProcessingResult extends ProcessingResult {

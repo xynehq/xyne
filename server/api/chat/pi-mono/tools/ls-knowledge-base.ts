@@ -21,6 +21,11 @@ const LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION = [
   "It is especially useful when the user wants answers constrained by structure or metadata such as a specific folder, collection, file set, or file type like PDFs.",
   "Skip `ls` only when the exact KB scope is already known and browsing will not improve the answer.",
   "Start shallow with `depth: 1` and `metadata: false` if unsure; but you are always free to enable metadata or deepen traversal only when the task truly needs row details or more hierarchy.",
+  "",
+  "**ID USAGE GUIDE**: Each file entry shows TWO IDs:",
+  "- `id` (UUID like 'b9680544-b86b-4af3-b9e7-5f1667526425') → Use this for `searchKnowledgeBase.filters.targets.fileId`",
+  "- `vespaDocId` (short like 'clf-qnmwwj88mzojwz9qvlk0yeot') → Use this for `getDocumentOutline.fileIds`",
+  "**CRITICAL**: Do NOT confuse these IDs - using `vespaDocId` in `searchKnowledgeBase` will cause errors.",
 ].join(" ")
 
 const KnowledgeBaseTargetSchema = Type.Union(
@@ -211,8 +216,24 @@ export const lsKnowledgeBaseTool = createXyneTool(
 
       const entries = result.data?.entries || []
 
+      // Format entries for display
+      const formattedEntries = entries
+        .map((e: any) => {
+          const type = e.type || "unknown"
+          const name = e.name || e.title || "Unnamed"
+          const id = e.id ? ` (id: ${e.id})` : ""
+          const vespaId = e.vespaDocId ? ` (vespaDocId: ${e.vespaDocId})` : ""
+          return `[${type}] ${name}${id}${vespaId}`
+        })
+        .join("\n")
+
+      const summaryText =
+        entries.length > 0
+          ? `Found ${entries.length} entries:\n\n${formattedEntries}`
+          : "No entries found."
+
       return {
-        content: [{ type: "text", text: `Found ${entries.length} KB items` }],
+        content: [{ type: "text", text: summaryText }],
         details: {
           entries,
           total: result.data?.total || 0,
