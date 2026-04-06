@@ -1,3 +1,10 @@
+## [3.47.2](https://github.com/xynehq/xyne/compare/v3.47.1...v3.47.2) (2026-04-06)
+
+
+### Bug Fixes
+
+* compulsion for finalSynthesis Tool call in runend ([#1303](https://github.com/xynehq/xyne/issues/1303)) ([6f36f1c](https://github.com/xynehq/xyne/commit/6f36f1c19be29e027238ac6380bbfacd25d9ad38))
+
 ## [3.47.1](https://github.com/xynehq/xyne/compare/v3.47.0...v3.47.1) (2026-03-31)
 
 
