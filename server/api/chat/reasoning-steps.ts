@@ -15,14 +15,14 @@
  *   await emitReasoningEvent(emitter, ReasoningSteps.turnStarted(1))
  */
 
-import {
-  ReasoningEventType,
-  XyneTools,
-  type ReasoningEventPayload,
-  type ReasoningStage,
-  type PlanSubTask,
-} from "@/shared/types"
 import { getLogger } from "@/logger"
+import {
+  type PlanSubTask,
+  type ReasoningEventPayload,
+  ReasoningEventType,
+  type ReasoningStage,
+  XyneTools,
+} from "@/shared/types"
 import { Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Chat)
@@ -229,6 +229,22 @@ export const ReasoningSteps = {
     }
   },
 
+  toolSkippedDuplicateSearch(
+    query: string,
+    similarQuery: string,
+    overlapPercentage: number,
+  ): ReasoningEventPayload {
+    return {
+      type: ReasoningEventType.ToolSkippedDuplicate,
+      displayText: `Skipping duplicate search: "${query}" is ${overlapPercentage}% similar to previous search "${similarQuery}". Using existing results.`,
+      stage: "gathering",
+      toolName: "searchKnowledgeBase",
+      toolQuery: query,
+      detail: `Keyword overlap: ${overlapPercentage}% with "${similarQuery}"`,
+      timestamp: Date.now(),
+    }
+  },
+
   toolSkippedCooldown(
     toolName: string,
     turnsLeft: number,
@@ -334,17 +350,12 @@ export const ReasoningSteps = {
   searchCompleted(
     query: string,
     fragmentCount: number,
-    topFragments: Array<{ title: string; source?: string }>,
+    topFragmentSummary: string,
     toolName: string,
   ): ReasoningEventPayload {
-    const fragmentList = topFragments
-      .slice(0, 3)
-      .map((f, i) => `${i + 1}. ${f.title}${f.source ? ` (${f.source})` : ""}`)
-      .join("\n")
-
     return {
       type: ReasoningEventType.ToolCompleted,
-      displayText: `Searched for: "${query}"\nFound ${fragmentCount} relevant ${plural(fragmentCount, "document")}.\n\nTop results:\n${fragmentList}`,
+      displayText: `Searched for: "${query}"\nFound ${fragmentCount} relevant ${plural(fragmentCount, "document")}.\n\nTop results:\n${topFragmentSummary}`,
       stage: "gathering",
       toolName,
       toolQuery: query,

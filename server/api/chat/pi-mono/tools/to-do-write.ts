@@ -157,29 +157,25 @@ const toDoWriteParams = Type.Object({
 
 export const toDoWriteTool = createXyneTool(
   "toDoWrite",
-  `Create or update an execution plan with sequential tasks. MUST be called first before any other tool.
+  `Create or update an execution plan. Returns the FULL current plan state so you can track progress and evolve the plan.
 
-**For complex queries, use this structured approach:**
-1. First analyze the user query and populate userQueryAnalysis with:
-   - mainQuestion: Core question being asked
-   - subQuestions: Break down into 3-6 specific questions
-   - keyTerms: List terms that need definition
-   - apparentContradictions: Note any tensions in the query
+**Creating a plan:**
+1. Break the query into subTasks (understand → identify/investigate → analyze → synthesize)
+2. Include searchQueries on each task (3-4 keyword-focused queries)
+3. Set dependencies using dependsOn when order matters
 
-2. Then create subTasks following this pattern:
-   - Task 1 (type: "understand"): Define key terms and concepts
-   - Tasks 2-N (type: "identify" | "investigate"): Gather specific information
-   - Task N+1 (type: "analyze"): Analyze relationships/patterns
-   - Task N+2 (type: "reconcile"): Resolve any contradictions
-   - Final task (type: "synthesize"): Compose the final answer
+**Evolving the plan (CRITICAL):**
+- After completing tasks, call toDoWrite AGAIN with the full task list
+- Mark completed tasks as status: "completed" with a result summary
+- ADD NEW TASKS if gaps are discovered — the initial plan is rarely sufficient
+- The tool returns the full plan state every time so you can assess progress
+- When all tasks show completed, the tool will prompt you to self-assess before answering
 
-3. Use searchQueries on each task with 3-4 keyword-focused queries
-4. Set dependencies so tasks flow logically
-5. Update the plan iteratively as you discover information gaps`,
+**Task lifecycle:** pending → in_progress → completed/failed
+**Task types:** understand, identify, investigate, analyze, reconcile, synthesize, verify`,
   toDoWriteParams,
   async (toolCallId, params, signal, onUpdate, ctx: XyneToolContext) => {
     const { xyneState, persistState } = ctx
-    console.log("toDoWrite called with params:", params)
     try {
       // Validate dependencies
       const taskIds = new Set(params.subTasks.map((t) => t.id))
@@ -243,7 +239,76 @@ export const toDoWriteTool = createXyneTool(
 
       await persistState()
 
-      // Build summary
+      // Build full plan state rendering so the LLM can see and evolve it
+      const completed = params.subTasks.filter((t) => t.status === "completed")
+      const pending = params.subTasks.filter(
+        (t) => t.status === "pending" || t.status === "in_progress",
+      )
+      const failed = params.subTasks.filter((t) => t.status === "failed")
+      const blocked = params.subTasks.filter((t) => t.status === "blocked")
+
+      const lines: string[] = []
+      lines.push(`## Plan: ${params.goal}`)
+      lines.push(
+        `Progress: ${completed.length}/${params.subTasks.length} tasks completed`,
+      )
+      if (failed.length > 0) lines.push(`⚠ ${failed.length} task(s) failed`)
+      if (blocked.length > 0) lines.push(`⏸ ${blocked.length} task(s) blocked`)
+      lines.push("")
+
+      for (const task of params.subTasks) {
+        const statusIcon =
+          task.status === "completed"
+            ? "✅"
+            : task.status === "in_progress"
+              ? "🔄"
+              : task.status === "failed"
+                ? "❌"
+                : task.status === "blocked"
+                  ? "⏸"
+                  : "⬜"
+        const typeTag = task.type ? ` [${task.type}]` : ""
+        const deps =
+          task.dependsOn && task.dependsOn.length > 0
+            ? ` (depends on: ${task.dependsOn.join(", ")})`
+            : ""
+        lines.push(
+          `${statusIcon} ${task.id}${typeTag}: ${task.description}${deps}`,
+        )
+        if (task.result) lines.push(`   Result: ${task.result}`)
+        if (task.error) lines.push(`   Error: ${task.error}`)
+        if (task.searchQueries && task.searchQueries.length > 0) {
+          lines.push(`   Queries: ${task.searchQueries.join(", ")}`)
+        }
+      }
+
+      // Self-assessment nudge when all tasks are complete
+      if (pending.length === 0 && failed.length === 0) {
+        lines.push("")
+        lines.push("---")
+        lines.push(
+          `All ${completed.length} tasks complete. Before answering, perform these checks:`,
+        )
+        lines.push(
+          `1. COVERAGE: Does the gathered context fully address: "${params.goal}"?`,
+        )
+        lines.push(
+          `2. GROUNDING: For every specific number, duration, percentage, date, and regulation name you plan to mention — can you point to a specific fragment? If not, you MUST search again or state the gap explicitly.`,
+        )
+        lines.push(
+          `3. NO FABRICATION: Do NOT fill gaps with guesses. If a detail is missing from fragments, say so.`,
+        )
+        lines.push(
+          `If gaps remain, call toDoWrite again with NEW tasks added (keep completed tasks as-is).`,
+        )
+        lines.push(
+          `If grounded and sufficient, proceed to write the final answer with citations.`,
+        )
+      } else if (pending.length > 0) {
+        lines.push("")
+        lines.push(`Next: Execute the ${pending.length} pending task(s).`)
+      }
+
       const taskTypes = params.subTasks.reduce(
         (acc, t) => {
           const type = t.type || "unknown"
@@ -253,15 +318,11 @@ export const toDoWriteTool = createXyneTool(
         {} as Record<string, number>,
       )
 
-      const typeSummary = Object.entries(taskTypes)
-        .map(([type, count]) => `${count} ${type}`)
-        .join(", ")
-
       return {
         content: [
           {
             type: "text",
-            text: `Plan created: ${params.subTasks.length} tasks (${typeSummary}) for goal: ${params.goal}`,
+            text: lines.join("\n"),
           },
         ],
         details: {

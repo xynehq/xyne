@@ -502,8 +502,7 @@ const constructFileContext = (
       fields.docId,
     )
   } else {
-    const imageChunksPos =
-      (fields.image_chunks_pos_summary as number[]) || []
+    const imageChunksPos = (fields.image_chunks_pos_summary as number[]) || []
 
     imageChunks =
       fields.image_chunks_summary?.map((chunk, idx) => {
@@ -902,8 +901,7 @@ const constructDataSourceFileContext = (
       fields.docId,
     )
   } else {
-    const imageChunksPos =
-      (fields.image_chunks_pos_summary as number[]) || []
+    const imageChunksPos = (fields.image_chunks_pos_summary as number[]) || []
     imageChunks =
       fields.image_chunks_summary?.map((chunk, idx) => ({
         chunk: `${fields.docId}_${imageChunksPos[idx]}`,
@@ -1026,8 +1024,7 @@ const constructCollectionFileContext = (
       fields.docId,
     )
   } else {
-    const imageChunksPos =
-      (fields.image_chunks_pos_summary as number[]) || []
+    const imageChunksPos = (fields.image_chunks_pos_summary as number[]) || []
 
     imageChunks =
       fields.image_chunks_summary?.map((chunk, idx) => {
@@ -1117,7 +1114,7 @@ export const answerContextMap = async (
       sheetName = searchResult.fields.filename
     } else {
       mimeType = searchResult.fields.mimeType
-      if(searchResult.fields.sddocname === fileSchema) {
+      if (searchResult.fields.sddocname === fileSchema) {
         sheetName = searchResult.fields.title
       } else {
         sheetName = searchResult.fields.fileName
@@ -1228,7 +1225,10 @@ export const answerContextMap = async (
     ) {
       let connectorId: string | undefined
       try {
-        const meta = typeof kbFields.metadata === "string" ? JSON.parse(kbFields.metadata) : kbFields.metadata
+        const meta =
+          typeof kbFields.metadata === "string"
+            ? JSON.parse(kbFields.metadata)
+            : kbFields.metadata
         connectorId = meta?.connectorId
       } catch {
         // ignore
@@ -1264,12 +1264,11 @@ export const answerContextMapFromFragments = (
   if (!fragments || fragments.length === 0) {
     return ""
   }
-
   return fragments
     .slice(0, maxSummaryChunks)
     .map((fragment, index) => {
       const citationIndex = startIndex + index
-      return `Index ${citationIndex} \n ${fragment.content}`
+      return `Index [${citationIndex}] \n ${fragment.content}`
     })
     .join("\n\n")
 }

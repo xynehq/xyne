@@ -1,5 +1,5 @@
-import { isURLValid } from "@/validate"
 import { Models } from "@/ai/types"
+import { isURLValid } from "@/validate"
 import { AuthType } from "./shared/types"
 let vespaBaseHost = "0.0.0.0"
 let vespaFeedPort = parseInt(process.env.VESPA_FEED_PORT || "8080", 10)
@@ -77,6 +77,10 @@ const allowHaiku45 = process.env.ALLOW_HAIKU_4_5 === "true"
 const useAgenticFiltering = process.env.USE_AGENTIC_FILTERING === "true"
 const modelList = process.env.MODELS_LIST
 const enableImages = process.env.ENABLE_IMAGES === "true"
+
+// Pi-mono sessions directory
+const piMonoSessionsDir =
+  process.env.PI_MONO_SESSIONS_DIR || "./data/pi-mono-sessions"
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(
   process.env.FILE_PROCESSING_WORKER_THREADS || "4",
@@ -344,7 +348,7 @@ export default {
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000, // 1 sec
   chatHistoryPageSize: 21,
-  maxDefaultSummary: 10,
+  maxDefaultSummary: 15,
   maxChunksPerTool: 50,
   maxChunksPerPage: 200,
   chatPageSize: 20, // default page size for ai search
@@ -396,4 +400,5 @@ export default {
   ZohoOrgId,
   useAgenticFiltering,
   modelList,
+  piMonoSessionsDir,
 }

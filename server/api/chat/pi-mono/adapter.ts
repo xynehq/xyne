@@ -170,10 +170,17 @@ export interface XyneAgentState {
   seenChunks: Set<string> // Tracks seen docId_chunkIndex pairs for chunk-level deduplication
   seenDocIds: Set<string> // Tracks seen document IDs for fallback deduplication when chunk tracking unavailable
   citationDocIdMapping: Map<number, string>
+  searchQueryHistory: Array<{
+    query: string
+    keywords: string[]
+    filters: string
+    timestamp: number
+  }>
   stopController?: AbortController
   stopSignal?: AbortSignal
   stopRequested: boolean
   thinkingLog?: string
+  reviewCount: number
 }
 
 /**
@@ -204,22 +211,14 @@ interface SessionContext {
 /** Single Map for session storage keyed by sessionId */
 const sessionStore = new Map<string, SessionContext>()
 
-/** Reverse mapping from pi-mono sessionId to our sessionId (chatExternalId) */
-const piMonoSessionMapping = new Map<string, string>()
-
 export function registerSession(
   sessionId: string,
   state: XyneAgentState,
   persistFn: PersistXyneStateFn,
   runtime?: XyneToolContext["runtime"],
-  piMonoSessionId?: string,
 ): void {
   state.sessionId = sessionId
   sessionStore.set(sessionId, { state, runtime, persistFn })
-  // Also register pi-mono sessionId mapping if provided
-  if (piMonoSessionId) {
-    piMonoSessionMapping.set(piMonoSessionId, sessionId)
-  }
 }
 
 export function setSessionRuntime(
@@ -232,38 +231,15 @@ export function setSessionRuntime(
 
 export function unregisterSession(sessionId: string): void {
   sessionStore.delete(sessionId)
-  // Also clean up any pi-mono mappings pointing to this session
-  for (const [piMonoId, mappedId] of piMonoSessionMapping) {
-    if (mappedId === sessionId) {
-      piMonoSessionMapping.delete(piMonoId)
-      break
-    }
-  }
 }
 
 /**
  * Get Xyne state from extension context
  */
 export function getXyneState(ctx: any): XyneAgentState {
-  // First try pi-mono sessionId mapping
   const piMonoSessionId = ctx?.sessionManager?.sessionId
-  if (piMonoSessionId && piMonoSessionMapping.has(piMonoSessionId)) {
-    const sessionId = piMonoSessionMapping.get(piMonoSessionId)!
-    if (sessionStore.has(sessionId)) {
-      return sessionStore.get(sessionId)!.state
-    }
-  }
-
-  // Then try direct lookup with pi-mono sessionId
   if (piMonoSessionId && sessionStore.has(piMonoSessionId)) {
     return sessionStore.get(piMonoSessionId)!.state
-  }
-
-  // Fallback: search by chat.externalId in state
-  for (const [, session] of sessionStore) {
-    if (session.state.chat?.externalId === piMonoSessionId) {
-      return session.state
-    }
   }
 
   throw new Error(
@@ -410,6 +386,8 @@ export function createInitialXyneState(
     seenChunks: new Set(),
     seenDocIds: new Set(),
     citationDocIdMapping: new Map(),
+    searchQueryHistory: [],
     stopRequested: false,
+    reviewCount: 0,
   }
 }

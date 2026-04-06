@@ -8,6 +8,10 @@
  * - No attachments, no MCP, no delegation
  */
 
+import { randomUUID } from "node:crypto"
+import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
@@ -51,7 +55,6 @@ import {
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { maybeCompactAndIndex } from "@/services/chatMemoryIndexer"
 import { ChatSSEvents, type ReasoningEventPayload } from "@/shared/types"
 import { getTracer } from "@/tracer"
 import { Subsystem } from "@/types"
@@ -89,77 +92,119 @@ function buildKBSystemPrompt(
   context: XyneAgentState,
   dateForAI: string,
 ): string {
-  return `You are a Knowledge Base Search Assistant with agentic RAG capabilities.
-
-Current date: ${dateForAI}
+  return `You are a Knowledge Base Search Assistant with autonomous agentic RAG capabilities.
 
 <context>
-User: ${context.user.email}
-Workspace: ${context.user.workspaceId}
+  Current date: ${dateForAI}
+  User: ${context.user.email}
 </context>
 
-# IMPORTANT: DO NOT ANNOUNCE TOOL USAGE
+# CORE IDENTITY
+You are an autonomous research agent. You plan, search, assess your own progress, extend your plan when gaps are found, and only answer when you have sufficient evidence. You do NOT need external review — you assess completeness yourself.
 
-- Do NOT say "I'll search...", "Let me look up...", or similar phrases before calling tools
-- Do NOT explain your thought process or plans in the response
-- Call tools silently and directly provide the final answer
-- Start your response with the actual answer, not with what you plan to do
+# STRICT GROUNDING POLICY (MOST IMPORTANT RULE)
+- You have NO internal knowledge of documents in this Knowledge Base.
+- **EVERY factual claim MUST come from a retrieved fragment.** If it's not in a fragment, you do NOT know it.
+- If searches return no results, state: "The available documentation does not provide information regarding [X]."
+- **NEVER fabricate or guess:** numbers, durations, percentages, dates, regulation names, section numbers, or procedural details. These are the most dangerous hallucinations.
+- **When in doubt, quote the fragment.** Use the exact language from the retrieved text rather than paraphrasing from memory.
+- If two fragments give different numbers for the same concept, cite both and note the discrepancy — do NOT pick one from your own knowledge.
+- Pre-trained knowledge may ONLY be used for: general vocabulary, grammar, logical connectives, and structuring the answer. NEVER for domain-specific facts.
 
-# CRITICAL: COMPLETE YOUR RESEARCH BEFORE ANSWERING
+# AUTONOMOUS RESEARCH LOOP
 
-1. **Do NOT provide partial answers** - If you need more information, continue searching with additional queries
-2. **Do NOT say "I need to look for more information"** - Just make another tool call silently
-3. **Only provide the final answer when you have gathered sufficient information** from the knowledge base
-4. **Continue searching** with different queries or broader terms if initial searches don't yield enough relevant information
-5. **You can make multiple tool calls** in sequence to gather comprehensive information before answering
+For any non-trivial query, follow this loop:
+
+## 1. PLAN (toDoWrite)
+- Call toDoWrite to decompose the query into tasks
+- Every plan MUST include at least one "investigate" or "identify" task before a "synthesize" task
+- The tool returns your FULL plan state — use it to track progress
+
+## 2. DISCOVER (lsKnowledgeBase)
+- Call lsKnowledgeBase to list accessible collections
+- Identify relevant files/folders by name, path, or metadata
+
+## 3. EXECUTE (searchKnowledgeBase)
+- For each pending task, run targeted searches using filters.targets for specific files/folders
+- Only use broad search (no filters) when no relevant files were found or the query is very general
+- After each search, update your plan: call toDoWrite again marking completed tasks with results
+
+## 4. ASSESS & EXTEND (toDoWrite again)
+- After completing all initial tasks, read the plan state returned by toDoWrite
+- The tool will prompt you to self-assess: does the gathered context fully address the goal?
+- **If gaps remain: ADD NEW TASKS** to the plan and continue searching
+- **If sufficient: proceed to write the final answer**
+- Your initial plan is rarely perfect — discovering new information often reveals new questions
+- There is no limit on how many times you can update the plan
+
+## 5. ANSWER
+- Only generate the final response when YOU judge all tasks are complete with sufficient evidence
+- If you realize mid-answer that something is missing, stop and go back to searching
+
+# PLAN EVOLUTION EXAMPLES
+
+Good pattern:
+1. Create plan with 3 tasks -> execute searches -> mark tasks completed
+2. Call toDoWrite again -> see "All 3 tasks complete" -> realize the answer needs pricing info not yet gathered
+3. Add task-4 (type: "investigate", description: "Find pricing details") -> search -> mark completed
+4. Call toDoWrite again -> all 4 tasks complete -> context is sufficient -> write answer
+
+Bad pattern:
+1. Create plan with 3 tasks -> execute searches -> immediately write answer without checking completeness
 
 # CITATION FORMAT (CRITICAL)
 
 When tools return context fragments:
-- Each document has a header: index {citationDocId: N} {content...}
+- Each document has a header: {citationDocId: N} {content...}
 - Chunks are marked with bracketed indices: [0], [1], [2]
 
 Citation rules (STRICT - NO EXCEPTIONS):
-- The ONLY valid citation format is: K[citationDocId_chunkIndex]
+- The ONLY valid citation format is: K[citationDocId_Index]
 - CORRECT examples: K[2_3], K[0_1], K[5_12]
-- INCORRECT examples (NEVER USE): [Indices1,2,3], [1,2,3], K[2], K[3_4_5], Index4, [Index4_5], [doc1_chunk2], Document 1, Chunk 2
-- Step-by-step: Look at the document header "index {citationDocId: N}" and chunk "[X]" → Use K[N_X]
+- INCORRECT examples (NEVER USE): [Indices1,2,3], [1,2,3], K[2], K[3_4_5], Index4, [Index4_5]
+- Step-by-step: Look at the document header "citationDocId: N" and chunk "[X]" -> Use K[N_X]
 - Place citations immediately after claims
-- Maximum 1-2 citations per sentence
-- STRICT RULE: Never use long citation lists like [Indices1,2,3,4,5,6,7,8...]. Maximum 2-3 citations per claim.
-- If multiple sources support the same point, pick the most relevant 1-2 and ignore the rest
+- Maximum 1-2 citations per sentence, max 2-3 per claim
 - Only cite information that appears in the fragment
-- ANY citation not in K[X_Y] format will be rejected
 
 # RESPONSE GUIDELINES
+1. **NO CITATION, NO CLAIM:** Every factual sentence MUST have a K[citationDocId_Index] citation. If you cannot cite it, do not state it as fact.
+2. **PRE-ANSWER GROUNDING CHECK:** Before writing your answer, mentally verify: "Can I point to a specific fragment for every number, duration, percentage, and regulation I'm about to mention?" If not, search again or state the gap.
+3. If you cannot find a source, state: "The available documentation does not provide information regarding [X]."
+4. **QUOTE CRITICAL DETAILS:** For numbers, durations, thresholds, and regulation references, prefer quoting the exact fragment language rather than paraphrasing. This prevents subtle distortions.
+5. Use well-organized markdown with bullet points, numbered lists, and sections for readability.
+6. For summaries, synthesize concisely while still citing sources.
 
-1. Lead with the answer, then provide supporting details
-2. Every factual statement must have a citation
-3. If information is not in the fragments, say so clearly
-4. Keep responses concise and well-organized
-5. Use markdown formatting for readability
+# SEARCH BEST PRACTICES
+- Prefer targeted searches (with filters.targets) over broad searches
+- If multiple relevant files are found via ls, target them all in one search call
+- If targeted search yields insufficient results, expand to folder or collection level
+- Use varied query phrasings — if one query finds nothing, try synonyms or broader terms
 
-# PLANNING WITH TODOWRITE
+# HANDLING INFORMATION GAPS
 
-For complex queries with multiple aspects, contradictions, or requiring investigation:
-1. **ALWAYS call toDoWrite FIRST** before any search tools
-2. Break down the query into sub-tasks with specific types:
-   - understand: Define key terms
-   - identify/investigate: Find specific rules/conditions
-   - analyze: Find relationships/patterns
-   - reconcile: Resolve contradictions
-   - synthesize: Compose final answer
-3. Include 1-3 searchQueries per task
-4. Set dependencies using dependsOn
-5. Update the plan iteratively as you discover information
+When search results don't fully answer a question:
+1. **Search more first.** Try different queries, broader terms, or different target files before concluding information is missing.
+2. **State what you DID find** from fragments, with citations.
+3. **Explicitly state what is NOT covered:** "The retrieved documents do not specify [X]."
+4. **Inference is allowed ONLY for "why" questions** and ONLY when:
+   - You have FIRST stated all relevant facts from fragments with citations
+   - You clearly label the inference: "Based on the provisions above, this likely reflects..." or "This suggests..."
+   - The inference does NOT introduce any new numbers, durations, dates, percentages, regulation names, or procedural details not found in fragments
+   - The inference is purely logical reasoning over cited facts
+5. **NEVER fill a factual gap with your own knowledge.** If the TFT duration isn't in the fragments, do NOT guess "6 months" or "10 days" — say the specific duration is not stated in the retrieved documents.
 
-For simple queries, you may skip toDoWrite and search directly.
+# WHEN TO USE toDoWrite
 
-# CONVERSATIONAL QUERIES
+**Use for:**
+- Queries requiring multiple searches or combining information from different sources
+- Multi-part questions, comparisons, or complex investigations
+- Any time information seems incomplete or contradictory
 
-For greetings or questions about your capabilities:
-- Respond naturally without using tools
-- Explain that you can search the knowledge base
+**Skip for:**
+- Simple greetings or capability questions (respond directly)
+- Single-fact lookups that need only one search
+
 `
 }
 
@@ -231,16 +276,6 @@ async function bootstrapChat(params: {
       params.chatId,
       params.email,
     )
-    const conversationHistory = await maybeCompactAndIndex({
-      trx: tx,
-      chatId: params.chatId,
-      email: params.email,
-      workspaceId: workspaceExternalId,
-      allMessages,
-      chatIdInternal: chat.id,
-      userId,
-      modelId: (params.modelId as Models) || defaultBestModel,
-    })
 
     const messageInsert = {
       chatId: chat.id,
@@ -256,26 +291,13 @@ async function bootstrapChat(params: {
     } as unknown as Omit<InsertMessage, "externalId">
     const userMessage = await insertMessage(tx, messageInsert)
 
-    return { chat, userMessage, conversationHistory, isNewChat: false }
+    return {
+      chat,
+      userMessage,
+      conversationHistory: allMessages,
+      isNewChat: false,
+    }
   })
-}
-
-/**
- * Convert Xyne conversation history to pi-mono Message format
- * This allows the agent to have context from previous messages
- */
-function convertHistoryToPiMonoMessages(history: SelectMessage[]): Message[] {
-  return history
-    .filter(
-      (msg) =>
-        msg.messageRole === MessageRole.User ||
-        msg.messageRole === MessageRole.Assistant,
-    )
-    .filter((msg) => msg.message && msg.message.trim().length > 0)
-    .map((msg) => ({
-      role: msg.messageRole === MessageRole.User ? "user" : "assistant",
-      content: [{ type: "text" as const, text: msg.message }],
-    })) as Message[]
 }
 
 /**
@@ -379,7 +401,6 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
     if (!message) {
       throw new HTTPException(400, { message: "Message is required" })
     }
-    console.log("selectedModelConfig:", selectedModelConfig)
     message = safeDecodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
@@ -513,7 +534,6 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
         xyneState.modelId = modelId
         xyneState.delegationEnabled = false
         xyneState.sessionId = String(chatRecord.externalId)
-        console.log("Initialized Xyne state:", chatRecord.externalId)
         // Send start event
         await stream.writeSSE({
           event: ChatSSEvents.Start,
@@ -568,6 +588,37 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
         })
         await resourceLoader.reload()
 
+        // Set up persistent session storage for pi-mono
+        const sessionsDir = config.piMonoSessionsDir
+        if (!existsSync(sessionsDir)) {
+          mkdirSync(sessionsDir, { recursive: true })
+        }
+
+        // Use chatId as session file path for deterministic lookup
+        const sessionFilePath = join(
+          sessionsDir,
+          `${chatRecord.externalId}.jsonl`,
+        )
+
+        // If session file doesn't exist, create it with a valid header first
+        // This ensures we can open it with SessionManager.open()
+        if (!existsSync(sessionFilePath)) {
+          const sessionHeader = {
+            type: "session",
+            version: 3,
+            id: randomUUID(),
+            timestamp: new Date().toISOString(),
+            cwd: process.cwd(),
+          }
+          const sessionDir = dirname(sessionFilePath)
+          if (!existsSync(sessionDir)) {
+            mkdirSync(sessionDir, { recursive: true })
+          }
+          writeFileSync(sessionFilePath, JSON.stringify(sessionHeader) + "\n")
+        }
+
+        const sessionManager = SessionManager.open(sessionFilePath)
+
         const model = buildModel(modelId, baseUrl)
         const { session: piSession } = await createAgentSession({
           model,
@@ -575,39 +626,19 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
           tools: [],
           resourceLoader,
           authStorage,
-          sessionManager: SessionManager.inMemory(),
+          sessionManager,
           settingsManager: SettingsManager.inMemory({
-            // Disable compaction - we restore conversation history via replaceMessages()
-            // which doesn't include token usage metadata required by compaction
-            compaction: { enabled: false },
+            compaction: { enabled: true },
             retry: { enabled: true, maxRetries: 2 },
           }),
         })
 
         piSession.agent.setSystemPrompt(systemPrompt)
-        // Restore conversation history if this is a continuing chat
-        if (!isNewChat && conversationHistory.length > 0) {
-          const piMonoMessages =
-            convertHistoryToPiMonoMessages(conversationHistory)
-          if (piMonoMessages.length > 0) {
-            piSession.agent.replaceMessages(piMonoMessages)
-            loggerWithChild({ email }).info(
-              { messageCount: piMonoMessages.length },
-              "Restored conversation history to pi-mono agent",
-            )
-          }
-        }
-
-        const sessionId = String(chatRecord.externalId)
         const piMonoSessionId = piSession.sessionManager.getSessionId()
-
-        registerSession(
-          sessionId,
-          xyneState,
-          async () => {},
-          undefined,
-          piMonoSessionId,
+        console.log(
+          `[KBAgenticRAG] Pi-Mono session created with ID: ${piMonoSessionId} for chatId: ${chatRecord.externalId}`,
         )
+        registerSession(piMonoSessionId, xyneState, async () => {}, undefined)
 
         // Response tracking
         let answer = ""
@@ -658,17 +689,12 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
                 if (toolName === "searchKnowledgeBase" && !event.isError) {
                   const details = event.result.details
                   const query = details?.query || "unknown query"
-                  const fragments = details?.fragments || []
-                  const topFragments = fragments.slice(0, 3).map((f: any) => ({
-                    title: f.source?.title || f.source?.fileName || "Untitled",
-                    source: f.source?.fileName || f.source?.docId,
-                  }))
                   await emitReasoningEvent(
                     emitReasoningStep,
                     ReasoningSteps.searchCompleted(
                       query,
-                      fragments.length,
-                      topFragments,
+                      details?.fragments?.length || 0,
+                      details?.topFragmentSummary,
                       toolName,
                     ),
                   )
@@ -683,7 +709,6 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
                     )
                   }
                 } else {
-                  // For other tools, use standard completion message
                   await emitReasoningEvent(
                     emitReasoningStep,
                     ReasoningSteps.toolCompleted(toolName, event.isError),
@@ -705,35 +730,37 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
                     })
                   }
 
-                  for await (const citationEvent of checkAndYieldCitationsForAgent(
-                    answer,
-                    yieldedCitations,
-                    xyneState.allFragments,
-                    yieldedImageCitations,
-                    email,
-                    xyneState.citationDocIdMapping,
-                  )) {
-                    if (stream.closed) break
-                    if (citationEvent.citation) {
-                      const { index, item } = citationEvent.citation
-                      const docId = item.docId || String(index)
+                  if (answer.trim()) {
+                    for await (const citationEvent of checkAndYieldCitationsForAgent(
+                      answer,
+                      yieldedCitations,
+                      xyneState.allFragments,
+                      yieldedImageCitations,
+                      email,
+                      xyneState.citationDocIdMapping,
+                    )) {
+                      if (stream.closed) break
+                      if (citationEvent.citation) {
+                        const { index, item } = citationEvent.citation
+                        const docId = item.docId || String(index)
 
-                      if (citationsByDocId.has(docId)) {
-                        citationMap[index] = citationsByDocId.get(docId)!
-                      } else {
-                        citations.push(item)
-                        const citationIndex = citations.length - 1
-                        citationsByDocId.set(docId, citationIndex)
-                        citationMap[index] = citationIndex
+                        if (citationsByDocId.has(docId)) {
+                          citationMap[index] = citationsByDocId.get(docId)!
+                        } else {
+                          citations.push(item)
+                          const citationIndex = citations.length - 1
+                          citationsByDocId.set(docId, citationIndex)
+                          citationMap[index] = citationIndex
+                        }
+
+                        await stream.writeSSE({
+                          event: ChatSSEvents.CitationsUpdate,
+                          data: JSON.stringify({
+                            contextChunks: citations,
+                            citationMap,
+                          }),
+                        })
                       }
-
-                      await stream.writeSSE({
-                        event: ChatSSEvents.CitationsUpdate,
-                        data: JSON.stringify({
-                          contextChunks: citations,
-                          citationMap,
-                        }),
-                      })
                     }
                   }
                 }
@@ -827,7 +854,6 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
           ReasoningSteps.synthesisCompleted(),
         )
 
-        // Persist message
         try {
           const persisted = await persistAssistantMessage(
             chatRecord,

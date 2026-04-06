@@ -52,4 +52,3 @@ export {
 } from "./pi-mono-extension"
 
 // KB Agentic RAG (simplified knowledge base focused RAG)
-export { KBAgenticRAG } from "./kb-agentic-rag"

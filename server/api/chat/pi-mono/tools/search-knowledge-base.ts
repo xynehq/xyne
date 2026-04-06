@@ -4,12 +4,12 @@
  * Fully wired to existing JAF implementation
  */
 
-import { answerContextMapFromFragments } from "@/ai/context"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { Type } from "@sinclair/typebox"
 import { executeSearchKnowledgeBase } from "../../tools/knowledgeBaseFlow"
 import { createXyneTool } from "../adapter"
 import type { XyneToolContext } from "../adapter"
+import config from "@/config"
 
 const KNOWLEDGE_BASE_TARGET_DESCRIPTION =
   "A discriminated knowledge-base target object for browse/search. Set `type` to one of `collection`, `folder`, `file`, or `path`, then provide only the matching ID/path fields for that variant."
@@ -119,7 +119,6 @@ export const searchKnowledgeBaseTool = createXyneTool(
   searchKnowledgeBaseParams,
   async (toolCallId, params, signal, onUpdate, ctx: XyneToolContext) => {
     const { xyneState, persistState } = ctx
-
     try {
       // Build targets from params based on type
       let targets: any[] | undefined = undefined
@@ -154,7 +153,6 @@ export const searchKnowledgeBaseTool = createXyneTool(
         },
         xyneState as any,
       )
-
       if (result.error) {
         return {
           content: [
@@ -166,7 +164,7 @@ export const searchKnowledgeBaseTool = createXyneTool(
       }
 
       const allFragments = result.data || []
-      const fragments = allFragments.filter(
+      const fragments: MinimalAgentFragment[] = allFragments.filter(
         (fragment: MinimalAgentFragment) => {
           const docId = fragment.source?.docId
           const returnedChunkIndices = fragment.source?.returnedChunkIndices
@@ -184,8 +182,6 @@ export const searchKnowledgeBaseTool = createXyneTool(
 
       const startIndex = xyneState.allFragments.length + 1
 
-      xyneState.allFragments.push(...fragments)
-      // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
       const toolKey = `searchKnowledgeBase:${params.query || "default"}`
       const existing =
         xyneState.currentTurnArtifacts.unrankedFragmentsByTool.get(toolKey)
@@ -198,18 +194,28 @@ export const searchKnowledgeBaseTool = createXyneTool(
       })
 
       await persistState()
-      const context = answerContextMapFromFragments(
-        fragments,
-        undefined,
-        startIndex,
-      )
+      const context = fragments
+        .slice(0, config.maxDefaultSummary)
+        .map((fragment, index) => {
+          const citationIndex = startIndex + index
+          return `citationDocId: ${citationIndex} \n ${fragment.content}`
+        })
+        .join("\n\n")
+
       return {
         content: [{ type: "text", text: context }],
         details: {
-          fragments,
+          fragments: fragments,
+          topFragmentSummary: fragments
+            .slice(0, 3)
+            .map((f) => {
+              const title = f.source?.title || "Untitled"
+              return `${title}`
+            })
+            .join("\n\n"),
           query: params.query,
           toolName: "searchKnowledgeBase",
-          startIndex, // Used by pi-mono-extension for citation mapping
+          startIndex,
         },
       }
     } catch (error) {

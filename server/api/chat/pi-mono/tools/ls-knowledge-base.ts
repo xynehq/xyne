@@ -122,11 +122,11 @@ const lsKnowledgeBaseParams = Type.Object({
   ),
   depth: Type.Optional(
     Type.Number({
-      minimum: 1,
-      maximum: 5,
-      default: 1,
+      minimum: 5,
+      maximum: 50,
+      default: 5,
       description:
-        "Traversal depth from the target. `1` lists immediate children only. Start shallow and increase depth only when the task truly needs more hierarchy.",
+        "Traversal depth from the target. `5` lists immediate children only. Start shallow and increase depth only when the task truly needs more hierarchy.",
     }),
   ),
   limit: Type.Optional(
@@ -208,7 +208,6 @@ export const lsKnowledgeBaseTool = createXyneTool(
           details: { toolName: "lsKnowledgeBase", error: result.error },
         }
       }
-
       const entries = result.data?.entries || []
 
       return {

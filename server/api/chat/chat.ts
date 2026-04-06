@@ -5087,11 +5087,6 @@ export const MessageApi = async (c: Context) => {
     const shouldUseMessageAgents =
       isAgentic && !enableWebSearch && !deepResearchEnabled
 
-    if (shouldUseMessageAgents) {
-      Logger.info(`Routing to MessageAgentsPiMono (pi-mono agentic flow)`)
-      return KBAgenticRAG(c)
-    }
-
     let attachmentMetadata = parseAttachmentMetadata(c)
     let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
