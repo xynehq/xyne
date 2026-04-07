@@ -1,17 +1,17 @@
+import type { Model } from "@mariozechner/pi-ai"
 import {
-  createAgentSession,
+  type AgentSessionEvent,
   AuthStorage,
+  type CreateAgentSessionOptions,
   DefaultResourceLoader,
   ModelRegistry,
+  type AgentSession as PiMonoAgentSession,
   SessionManager,
   SettingsManager,
-  type CreateAgentSessionOptions,
-  type AgentSession as PiMonoAgentSession,
-  type AgentSessionEvent,
+  createAgentSession,
 } from "@mariozechner/pi-coding-agent"
-import type { Model } from "@mariozechner/pi-ai"
 
-import type { RAGAgentConfig, RAGAgent, RAGEvent, RunOptions } from "./types"
+import type { RAGAgent, RAGAgentConfig, RAGEvent, RunOptions } from "./types"
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -36,7 +36,7 @@ export function resolveModel(
     provider: "litellm",
     baseUrl: baseUrl ?? "",
     reasoning: false,
-    input: ["text"],
+    input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128000,
     maxTokens: 4096,
@@ -133,7 +133,6 @@ export async function createRAGAgent<TState = unknown>(
 
   const model = resolveModel(config.model, config.baseUrl)
 
-  // --- Resource loader ---
   let resourceLoader = config.resourceLoader
   if (!resourceLoader) {
     resourceLoader = new DefaultResourceLoader({
@@ -162,7 +161,7 @@ export async function createRAGAgent<TState = unknown>(
 
   // --- Create pi-mono session ---
   const sessionOptions: CreateAgentSessionOptions = {
-    model: model as any,
+    model: model,
     tools: [],
     customTools: config.tools,
     resourceLoader,
@@ -217,11 +216,12 @@ export async function createRAGAgent<TState = unknown>(
           }
         })
 
-        // Start the prompt (non-blocking)
         const promptPromise = piSession
           .prompt(
             message,
-            options?.images ? { images: options.images as any } : undefined,
+            options?.images && options.images.length > 0
+              ? { images: options.images }
+              : undefined,
           )
           .catch((err: any) => {
             push({

@@ -14,6 +14,7 @@ import type {
   ToolExecutionRecord,
 } from "../agent-schemas"
 import type { MinimalAgentFragment } from "../types"
+import type { AttachmentContext } from "./attachments"
 
 /**
  * MCP Virtual Agent Runtime
@@ -176,6 +177,7 @@ export interface XyneAgentState {
   stopRequested: boolean
   thinkingLog?: string
   reviewCount: number
+  attachmentContext?: AttachmentContext
 }
 
 /**

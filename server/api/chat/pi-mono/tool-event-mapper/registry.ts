@@ -50,10 +50,8 @@ export class ToolHandlerRegistry {
     event: ToolCallEvent,
     context: ToolCallContext,
   ): Promise<ToolCallEventResult | undefined> {
-    // Common event: always emitted for every tool call
     await this.emitToolSelected(event, context)
 
-    // Tool-specific pre-execution logic (if registered)
     const handler = this.handlers.get(event.toolName)
     if (handler?.onToolCall) {
       return handler.onToolCall(event, context)
@@ -76,7 +74,6 @@ export class ToolHandlerRegistry {
       }
     }
 
-    // Common event: always emitted for every tool result
     await this.emitToolCompleted(event.toolName, event.isError, context)
   }
 

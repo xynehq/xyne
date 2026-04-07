@@ -1,5 +1,6 @@
 import {
   SearchModes,
+  type VespaSearchResponse,
   type VespaSearchResult,
   type VespaSearchResults,
 } from "@xyne/vespa-ts/types"

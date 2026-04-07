@@ -62,6 +62,7 @@ import {
   registerSession,
   unregisterSession,
 } from "./adapter"
+import { processAttachments, getImagesForAgent } from "./attachments"
 import { type RAGAgent, type RAGEvent, createRAGAgent } from "./core"
 import { prepareInitialAttachmentContext } from "./helpers"
 import {
@@ -79,11 +80,6 @@ import { getPageContentTool } from "./tools/get-page-content"
 
 const { defaultBestModel, JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Chat)
-const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
-
-// ============================================================================
-// SYSTEM PROMPT FOR KB AGENTIC RAG
-// ============================================================================
 
 function buildKBSystemPrompt(
   context: XyneAgentState,
@@ -345,10 +341,7 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
   const { sub: email, workspaceId } = c.get(JwtPayloadKey)
 
   try {
-    loggerWithChild({ email }).info("KBAgenticRAG starting")
-    rootSpan.setAttribute("email", email)
-    rootSpan.setAttribute("workspaceId", workspaceId)
-
+    Logger.info("KBAgenticRAG starting")
     // @ts-ignore
     const body = c.req.valid("query")
     let {
@@ -408,27 +401,18 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
       : { totalValidFileIdsFromLinkCount: 0, fileIds: [], threadIds: [] }
-    let attachmentsForContext = (extractedInfo?.fileIds ?? []).map(
-      (fileId) => ({ fileId, isImage: false }),
+
+    // Separate document file IDs and image file IDs
+    const documentFileIds = (extractedInfo?.fileIds ?? []).concat(
+      parseAttachmentMetadata(c)
+        .filter((m) => !m.isImage)
+        .map((m) => m.fileId),
     )
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    attachmentsForContext = attachmentsForContext.concat(
-      attachmentMetadata.map((m) => ({ fileId: m.fileId, isImage: m.isImage })),
-    )
-    const threadIds = extractedInfo?.threadIds || []
-    const referencedFileIds = Array.from(
-      new Set(
-        attachmentsForContext
-          .filter((m) => !m.isImage)
-          .flatMap((m) => expandSheetIds(m.fileId)),
-      ),
-    )
-    const imageAttachmentFileIds = Array.from(
-      new Set(
-        attachmentsForContext.filter((m) => m.isImage).map((m) => m.fileId),
-      ),
-    )
-    const isMstWithAttachments = attachmentMetadata.length > 0
+    const imageAttachmentFileIds = parseAttachmentMetadata(c)
+      .filter((m) => m.isImage)
+      .map((m) => m.fileId)
+    const threadIds = extractedInfo?.threadIds ?? []
+
     const userTimezone = user.timeZone || "UTC"
     const dateForAI = getDateForAI({ userTimeZone: userTimezone })
 
@@ -478,50 +462,28 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
         xyneState.modelId = modelId
         xyneState.delegationEnabled = false
 
-        if (referencedFileIds.length > 0) {
+        // Process document and thread attachments
+        if (documentFileIds.length > 0 || threadIds.length > 0) {
           await emitReasoningEvent(
             emitReasoningStep,
             ReasoningSteps.attachmentAnalyzing(),
           )
-          const ctx = await prepareInitialAttachmentContext(
-            referencedFileIds,
+
+          const { fragments, summary } = await processAttachments({
+            fileIds: documentFileIds,
             threadIds,
-            {
-              userId: user.id,
-              workspaceId: workspace.id,
-              userTimezone,
-              dateForAI,
-            },
             message,
             email,
-            isMstWithAttachments,
-          )
-          if (ctx) {
-            xyneState.allFragments.push(...ctx.fragments)
-            await emitReasoningEvent(
-              emitReasoningStep,
-              ReasoningSteps.attachmentExtracted(ctx.fragments.length),
-            )
-          }
+            userTimezone,
+            dateForAI,
+            userId: user.id,
+            workspaceId: workspace.id,
+          })
+          xyneState.attachmentContext = { fragments, summary }
         }
-        if (imageAttachmentFileIds.length > 0) {
-          for (const [i, fileId] of imageAttachmentFileIds.entries()) {
-            xyneState.allFragments.push({
-              id: `user_attachment_image:${fileId}:${i}`,
-              content: `User provided image attachment ${i + 1}.`,
-              source: {
-                docId: fileId,
-                title: `Attachment image ${i + 1}`,
-                url: "",
-                app: Apps.Attachment,
-                entity: AttachmentEntity.Image,
-              } as Citation,
-              confidence: 0.9,
-              visibleChunkIndices: [],
-              imageFileNames: [`${i}_${fileId}_0`],
-            } as MinimalAgentFragment)
-          }
-        }
+
+        // Load images for the agent
+        const images = await getImagesForAgent(imageAttachmentFileIds, email)
 
         // ── Prepare session persistence ──────────────────────────────
         const sessionsDir = config.piMonoSessionsDir
@@ -605,13 +567,13 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
         const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
 
-        loggerWithChild({ email }).info(
+        Logger.info(
           { message: message.substring(0, 100), modelId, baseUrl },
           "Starting KB agentic RAG via core SDK...",
         )
 
         // ── Consume event stream ─────────────────────────────────────
-        for await (const event of agent.run(message)) {
+        for await (const event of agent.run(message, { images })) {
           if (stream.closed) break
 
           switch (event.type) {
@@ -711,7 +673,7 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
           }
         }
 
-        loggerWithChild({ email }).info("KB agentic RAG completed")
+        Logger.info("KB agentic RAG completed")
         await emitReasoningEvent(
           emitReasoningStep,
           ReasoningSteps.synthesisCompleted(),
@@ -739,10 +701,7 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
             traceJson: tracer.serializeToJson(),
           })
         } catch (persistErr) {
-          loggerWithChild({ email }).error(
-            persistErr,
-            "Failed to persist message",
-          )
+          Logger.error(persistErr, "Failed to persist message")
         }
 
         // ── Send final metadata ──────────────────────────────────────
@@ -759,7 +718,7 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
         }
         rootSpan.end()
       } catch (error) {
-        loggerWithChild({ email }).error(error, "KBAgenticRAG stream error")
+        Logger.error(error, "KBAgenticRAG stream error")
         if (!stream.closed) {
           try {
             await stream.writeSSE({
@@ -791,7 +750,7 @@ export async function KBAgenticRAG(c: Context): Promise<Response> {
       }
     })
   } catch (error) {
-    loggerWithChild({ email }).error(error, "KBAgenticRAG failed")
+    Logger.error(error, "KBAgenticRAG failed")
     rootSpan.end()
     throw error
   }

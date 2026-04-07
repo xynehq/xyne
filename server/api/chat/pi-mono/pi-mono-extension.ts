@@ -1,8 +1,10 @@
 import type { ReasoningEmitter } from "@/api/chat/reasoning-steps"
+import { ReasoningSteps } from "@/api/chat/reasoning-steps"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import type {
+  BeforeAgentStartEvent,
   ExtensionAPI,
   ToolCallEvent,
   ToolCallEventResult,
@@ -41,6 +43,54 @@ export function clearExtensionState(): void {
 }
 
 export default function xyneExtension(pi: ExtensionAPI) {
+  pi.on("before_agent_start", async (event: BeforeAgentStartEvent) => {
+    const state = extensionStateRef
+    if (!state) return undefined
+
+    const { xyneState, emitReasoningStep } = state
+    const attachmentContext = xyneState.attachmentContext
+
+    // If no attachment context or no fragments, return undefined (no-op)
+    if (!attachmentContext || attachmentContext.fragments.length === 0) {
+      return undefined
+    }
+
+    // Push fragments into allFragments for citation tracking
+    xyneState.allFragments.push(...attachmentContext.fragments)
+
+    // Emit reasoning event for attachment extraction
+    await emitReasoningStep(
+      ReasoningSteps.attachmentExtracted(attachmentContext.fragments.length),
+    )
+    const startIndex = xyneState.allFragments.length + 1
+    const fragmentCount = attachmentContext.fragments.length
+
+    const textFragments = attachmentContext.fragments
+      .map((fragment: { content: string }, index: number) => {
+        const citationIndex = startIndex + index
+        return `citationDocId: ${citationIndex} \n ${fragment.content}`
+      })
+      .join("\n\n")
+
+    attachmentContext.fragments.forEach(
+      (fragment: { id: string }, idx: number) => {
+        const citationDocId = startIndex + idx
+        xyneState.citationDocIdMapping.set(citationDocId, fragment.id)
+      },
+    )
+
+    xyneState.attachmentContext = undefined
+
+    return {
+      message: {
+        customType: "attachment_context",
+        content: textFragments,
+        display: false,
+        details: { fragmentCount },
+      },
+    }
+  })
+
   pi.on(
     "tool_call",
     async (event: ToolCallEvent): Promise<ToolCallEventResult | undefined> => {

@@ -1,12 +1,12 @@
+import type { ImageContent, Model, ThinkingLevel } from "@mariozechner/pi-ai"
 import type {
-  CreateAgentSessionOptions,
-  ToolDefinition,
-  ExtensionFactory,
-  AgentSessionEvent,
   AgentSession,
+  AgentSessionEvent,
+  CreateAgentSessionOptions,
+  ExtensionFactory,
+  ToolDefinition,
 } from "@mariozechner/pi-coding-agent"
-import type { Model, ThinkingLevel } from "@mariozechner/pi-ai"
-import type { TSchema, Static } from "@sinclair/typebox"
+import type { Static, TSchema } from "@sinclair/typebox"
 
 export interface RAGAgentConfig<TState = unknown> {
   // --- Model ---
@@ -96,8 +96,8 @@ export interface RAGAgent<TState = unknown> {
 }
 
 export interface RunOptions {
-  /** Image attachments */
-  images?: Array<{ type: "image"; source: any }>
+  /** Image attachments to include with the user message */
+  images?: ImageContent[]
   /** Timeout override for this run (ms) */
   timeoutMs?: number
 }
