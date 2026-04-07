@@ -436,6 +436,7 @@ import {
   type HealthStatusResponse,
 } from "@/health/type"
 import WebhookHandler from "@/services/WebhookHandler"
+import { preloadModelInfoCache } from "./ai/fetchModels"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -2490,12 +2491,7 @@ export const init = async () => {
 
   // Preload LiteLLM model info cache if configured
   if (config.LiteLLMApiKey && config.LiteLLMBaseUrl) {
-    if (!config.LiteLLMModelInfoUrl) {
-      console.error("LiteLLM model info URL not configured. Server cannot start without this configuration.")
-      process.exit(1)
-    }
     try {
-      const { preloadModelInfoCache } = await import("@/ai/fetchModels")
       await preloadModelInfoCache()
     } catch (error) {
       Logger.warn("Failed to preload LiteLLM model info cache", {

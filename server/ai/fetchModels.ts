@@ -218,6 +218,21 @@ export const fetchModelConfigs = async (): Promise<
         .filter((id) => id.length > 0)
     : null
 
+  const modelAllowlist = {
+    [Models.LiteLLM_Claude_Sonnet_4_6]: {
+      enabled: config.allowSonnet46,
+      name: "Claude Sonnet 4.6",
+    },
+    [Models.LiteLLM_Claude_Opus_4_6]: {
+      enabled: config.allowOpus46,
+      name: "Claude Opus 4.6",
+    },
+    [Models.LiteLLM_Claude_Haiku_4_5]: {
+      enabled: config.allowHaiku45,
+      name: "Claude Haiku 4.5",
+    },
+  } as const
+
   // Filter models with litellm_provider === "hosted_vllm" and return in expected format
   for (const modelInfo of data) {
     // Only process models with litellm_provider === "hosted_vllm"
@@ -225,22 +240,8 @@ export const fetchModelConfigs = async (): Promise<
     const modelId = modelInfo.model_name
     const actualName = modelInfo.litellm_params?.model || modelId
     if (modelInfo.model_info?.litellm_provider !== "hosted_vllm") {
-      const allowlist = {
-        [Models.LiteLLM_Claude_Sonnet_4_6]: {
-          enabled: config.allowSonnet46,
-          name: "Claude Sonnet 4.6",
-        },
-        [Models.LiteLLM_Claude_Opus_4_6]: {
-          enabled: config.allowOpus46,
-          name: "Claude Opus 4.6",
-        },
-        [Models.LiteLLM_Claude_Haiku_4_5]: {
-          enabled: config.allowHaiku45,
-          name: "Claude Haiku 4.5",
-        },
-      }
-
-      const modelAllowlistInfo = allowlist[modelId as keyof typeof allowlist]
+      const modelAllowlistInfo =
+        modelAllowlist[modelId as keyof typeof modelAllowlist]
 
       if (modelAllowlistInfo) {
         if (modelAllowlistInfo.enabled) {
@@ -305,8 +306,45 @@ export const fetchModelConfigs = async (): Promise<
       })
     }
   }
-
   Logger.info(`Processed ${availableModels.length} hosted_vllm models from API`)
+
+  if (availableModels.length === 0) {
+    Logger.warn(
+      "No models returned from LiteLLM model info API, falling back to static LiteLLM model configurations",
+    )
+
+    Object.entries(MODEL_CONFIGURATIONS)
+      .filter(([, model]) => model.provider === AIProviders.LiteLLM)
+      .forEach(([modelId, model]) => {
+        const id = modelId as Models
+
+        if (allowedModelIds && !allowedModelIds.includes(id)) {
+          return
+        }
+
+        const modelAllowlistInfo =
+          modelAllowlist[id as keyof typeof modelAllowlist]
+        if (modelAllowlistInfo) {
+          if (!modelAllowlistInfo.enabled) {
+            return
+          }
+          Logger.info(
+            `Allowing ${modelAllowlistInfo.name} model despite litellm_provider not being 'hosted_vllm'`,
+          )
+        }
+
+        availableModels.push({
+          actualName: model.actualName ?? id,
+          labelName: model.labelName,
+          provider: "LiteLLM",
+          reasoning: model.reasoning,
+          websearch: model.websearch,
+          deepResearch: model.deepResearch,
+          description: model.description,
+        })
+      })
+  }
+
   return availableModels
 }
 

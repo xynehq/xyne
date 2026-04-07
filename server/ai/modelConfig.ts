@@ -672,6 +672,15 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     deepResearch: false,
     description: "The Open Fast, a general-purpose AI model.",
   },
+  [Models.NEMOTRON]: {
+    actualName: "nemotron",
+    labelName: ModelDisplayNames.LITELLM_NEMOTRON,
+    provider: AIProviders.LiteLLM,
+    reasoning: true,
+    websearch: false,
+    deepResearch: false,
+    description: "The Nemotron, a general-purpose AI model.",
+  },
 }
 
 // Model display name mappings - using the new enum-based approach
