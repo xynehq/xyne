@@ -702,6 +702,7 @@ export type ChunkMetadata = {
   chunk_index: number
   page_numbers: number[]
   block_labels: string[]
+  section_path: string[]
 }
 
 // DuckDB related types

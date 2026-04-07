@@ -258,6 +258,7 @@ function processTextParagraphs(
       chunk_index: globalSeq.value,
       page_numbers: page_numbers,
       block_labels: ["text"], // Default label for PDF text chunks
+      section_path: [],
     })
     
     // console.log('TEXT DEBUG: Added chunk at position', globalSeq.value, 'content:', chunk)
@@ -405,6 +406,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
         chunk_index: globalSeq.value,
         page_numbers: [pageNum - 1],
         block_labels: ["image"],
+        section_path: [],
       })
       Logger.debug("Added image chunk at position", {
         position: globalSeq.value,

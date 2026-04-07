@@ -1,0 +1,26 @@
+services:
+  doc-ingestion:
+    image: xyne-doc-ingestion
+    build:
+      context: ../../doc-ingestion-service
+      dockerfile: Dockerfile
+    container_name: xyne-doc-ingestion
+    # No host port binding - only accessible internally via Docker network
+    # Port 8000 is used internally within the xyne network
+    environment:
+      - PORT=8000
+      - LOG_LEVEL=info
+    networks:
+      - xyne
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"

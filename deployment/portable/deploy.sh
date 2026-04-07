@@ -275,13 +275,16 @@ start_app() {
         $DOCKER_COMPOSE $COMPOSE_FILES build app
         echo -e "${BLUE}Building sync server locally (no pull)...${NC}"
         $DOCKER_COMPOSE $COMPOSE_FILES build app-sync
+        echo -e "${BLUE}Building doc-ingestion service locally (no pull)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES build doc-ingestion
 
         echo -e "${BLUE}Starting services with locally built images...${NC}"
-        $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app app-sync
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app app-sync doc-ingestion
     else
         echo -e "${BLUE}Using prebuilt image (version mode, may pull from registry)...${NC}"
         $DOCKER_COMPOSE $COMPOSE_FILES up -d app
         $DOCKER_COMPOSE $COMPOSE_FILES up -d app-sync
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d doc-ingestion
     fi
 
     echo -e "${GREEN}Application services started${NC}"
@@ -307,6 +310,9 @@ get_compose_files() {
     # Add sync compose file
     files="$files -f docker-compose.sync.yml"
 
+    # Add doc-ingestion compose file
+    files="$files -f docker-compose.doc-ingestion.yml"
+
     echo "$files"
 }
 
@@ -315,6 +321,7 @@ get_app_compose_files() {
     local infra_compose=$(get_infrastructure_compose)
     files="$files -f $infra_compose"
     files="$files -f docker-compose.app.yml"
+    files="$files -f docker-compose.doc-ingestion.yml"
     echo "$files"
 }
 
@@ -409,6 +416,7 @@ show_status() {
     echo -e "${YELLOW} Access URLs:${NC}"
     echo "  • Xyne Application: http://localhost:3000"
     echo "  • Xyne Sync Server: http://localhost:3010"
+    echo "  • Doc Ingestion Service: http://localhost:8000 (internal)"
     echo "  • Grafana: http://localhost:3002"
     echo "  • Prometheus: http://localhost:9090"
     echo "  • Loki: http://localhost:3100"
@@ -636,14 +644,16 @@ case $COMMAND in
 
         if [ "$user_choice" = "2" ]; then
             APP_DEPLOY_MODE="version"
-            echo -e "${BLUE}Using docker-compose.app-version.yml and docker-compose.sync-version.yml${NC}"
+            echo -e "${BLUE}Using docker-compose.app-version.yml, docker-compose.sync-version.yml, and docker-compose.doc-ingestion-version.yml${NC}"
             cp docker-compose.app-version.yml docker-compose.app.yml
             cp docker-compose.sync-version.yml docker-compose.sync.yml
+            cp docker-compose.doc-ingestion-version.yml docker-compose.doc-ingestion.yml
         else
             APP_DEPLOY_MODE="build"
-            echo -e "${BLUE}Using docker-compose.app-build.yml and docker-compose.sync-build.yml${NC}"
+            echo -e "${BLUE}Using docker-compose.app-build.yml, docker-compose.sync-build.yml, and docker-compose.doc-ingestion-build.yml${NC}"
             cp docker-compose.app-build.yml docker-compose.app.yml
             cp docker-compose.sync-build.yml docker-compose.sync.yml
+            cp docker-compose.doc-ingestion-build.yml docker-compose.doc-ingestion.yml
         fi
 
         start_app
