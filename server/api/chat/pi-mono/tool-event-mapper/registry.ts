@@ -1,15 +1,3 @@
-/**
- * Tool Event Mapper — Handler Registry
- *
- * Central registry that dispatches tool_call and tool_result events
- * to the appropriate {@link ToolHandler}. Provides sensible default
- * behaviour for tools without a dedicated handler.
- *
- * To add support for a new tool:
- *  1. Create a handler file in `handlers/` implementing {@link ToolHandler}.
- *  2. Register it in `handlers/index.ts` via `registry.register(handler)`.
- */
-
 import { ReasoningSteps, emitReasoningEvent } from "@/api/chat/reasoning-steps"
 import type {
   ToolCallEvent,

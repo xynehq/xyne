@@ -295,7 +295,6 @@ export function createInitialXyneState(
   email: string,
   workspaceId: string,
   userId: string,
-  numericId: number,
   chatExternalId: string,
   messageText: string,
   messageTimestamp: string,
@@ -349,7 +348,7 @@ export function createInitialXyneState(
     retryCount: 0,
     maxRetries: 3,
     decisions: [],
-    user: { email, workspaceId, id: userId, numericId },
+    user: { email, workspaceId, id: userId },
     chat: { externalId: chatExternalId, metadata: {} },
     message: {
       text: messageText,

@@ -44,6 +44,11 @@ import {
   unregisterSession,
 } from "./adapter"
 import { processAttachments, getImagesForAgent } from "./attachments"
+import {
+  buildCitationSnapshot,
+  restoreCitationState,
+  CITATION_ENTRY_TYPE,
+} from "./citation-state"
 import { type RAGAgent, type RAGEvent, createRAGAgent } from "./core"
 import {
   clearExtensionState,
@@ -186,7 +191,6 @@ export async function AgenticRAG(c: Context): Promise<Response> {
           email,
           String(workspace.externalId),
           String(user.id),
-          user.id,
           String(chatRecord.externalId),
           message,
           new Date().toISOString(),
@@ -277,6 +281,9 @@ export async function AgenticRAG(c: Context): Promise<Response> {
         const piMonoSessionId = piSession.sessionManager?.getSessionId()
         registerSession(piMonoSessionId, xyneState)
 
+        // Restore citation state from prior turns
+        restoreCitationState(piSession.sessionManager.getEntries(), xyneState)
+
         // ── Send start events ────────────────────────────────────────
         await stream.writeSSE({ event: ChatSSEvents.Start, data: "" })
         await stream.writeSSE({
@@ -309,7 +316,6 @@ export async function AgenticRAG(c: Context): Promise<Response> {
           { message: message.substring(0, 100), modelId, baseUrl },
           "Starting KB agentic RAG via core SDK...",
         )
-
         // ── Consume event stream ─────────────────────────────────────
         for await (const event of agent.run(message, { images })) {
           if (stream.closed) break
@@ -416,6 +422,16 @@ export async function AgenticRAG(c: Context): Promise<Response> {
           emitReasoningStep,
           ReasoningSteps.synthesisCompleted(),
         )
+
+        // Persist citation state for future turns
+        try {
+          piSession.sessionManager.appendCustomEntry(
+            CITATION_ENTRY_TYPE,
+            buildCitationSnapshot(xyneState),
+          )
+        } catch (citErr) {
+          Logger.error(citErr, "Failed to persist citation state")
+        }
 
         // ── Persist assistant message ────────────────────────────────
         try {

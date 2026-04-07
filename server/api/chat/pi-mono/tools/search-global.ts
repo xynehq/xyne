@@ -165,8 +165,7 @@ export const searchGlobalTool = createXyneTool(
         workspaceId: xyneState.user.workspaceNumericId ?? null,
       })
 
-      // Store fragments in Xyne state
-      xyneState.allFragments.push(...res.fragments)
+      const startIndex = xyneState.allFragments.length + 1
 
       // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
       const toolKey = `searchGlobal:${params.query || "default"}`
@@ -191,6 +190,7 @@ export const searchGlobalTool = createXyneTool(
           fragments: res.fragments,
           query: params.query,
           toolName: "searchGlobal",
+          startIndex,
         },
       }
     } catch (error) {

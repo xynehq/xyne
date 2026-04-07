@@ -11,6 +11,7 @@ import type {
   ToolResultEvent,
 } from "@mariozechner/pi-coding-agent"
 import type { XyneAgentState } from "./adapter"
+import { trackFragments } from "./citation-state"
 import { toolEventRegistry } from "./tool-event-mapper/index"
 
 const Logger = getLogger(Subsystem.Chat)
@@ -119,24 +120,8 @@ export default function xyneExtension(pi: ExtensionAPI) {
 
     if (details?.fragments && Array.isArray(details.fragments)) {
       const fragments = details.fragments as MinimalAgentFragment[]
-      state.xyneState.allFragments.push(...fragments)
-
       const startIndex = (details.startIndex as number) || 1
-      fragments.forEach((fragment, idx) => {
-        const docId = fragment.source?.docId
-        const returnedChunks = fragment.source?.returnedChunkIndices
-
-        if (docId && returnedChunks && returnedChunks.length > 0) {
-          // Track the specific chunks that were actually returned in the content
-          returnedChunks.forEach((chunkIdx) => {
-            const chunkKey = `${docId}_${chunkIdx}`
-            state.xyneState.seenChunks.add(chunkKey)
-          })
-        }
-
-        const citationDocId = startIndex + idx
-        state.xyneState.citationDocIdMapping.set(citationDocId, fragment.id)
-      })
+      trackFragments(fragments, startIndex, state.xyneState)
     }
 
     return {

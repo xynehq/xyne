@@ -212,7 +212,7 @@ export const searchDriveFilesTool = createXyneTool(
         searchType: "Drive file",
       })
 
-      xyneState.allFragments.push(...fragments)
+      const startIndex = xyneState.allFragments.length + 1
 
       // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
       const toolKey = `searchDriveFiles:${params.query || "default"}`
@@ -234,6 +234,7 @@ export const searchDriveFilesTool = createXyneTool(
           fragments,
           query: params.query,
           toolName: "searchDriveFiles",
+          startIndex,
         },
       }
     } catch (error) {

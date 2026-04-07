@@ -117,7 +117,7 @@ export const searchGoogleContactsTool = createXyneTool(
         searchType: "Contact",
       })
 
-      xyneState.allFragments.push(...fragments)
+      const startIndex = xyneState.allFragments.length + 1
 
       // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
       const toolKey = `searchGoogleContacts:${params.query || "default"}`
@@ -137,6 +137,7 @@ export const searchGoogleContactsTool = createXyneTool(
           fragments,
           query: params.query,
           toolName: "searchGoogleContacts",
+          startIndex,
         },
       }
     } catch (error) {

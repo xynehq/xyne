@@ -368,7 +368,7 @@ export const getSlackRelatedMessagesTool = createXyneTool(
         }),
       )
 
-      xyneState.allFragments.push(...fragments)
+      const startIndex = xyneState.allFragments.length + 1
 
       // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
       const toolKey = `getSlackRelatedMessages:${params.query || "default"}`
@@ -394,6 +394,7 @@ export const getSlackRelatedMessagesTool = createXyneTool(
           fragments,
           query: params.query,
           toolName: "getSlackRelatedMessages",
+          startIndex,
         },
       }
     } catch (error) {

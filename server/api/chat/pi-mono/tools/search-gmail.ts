@@ -208,7 +208,7 @@ export const searchGmailTool = createXyneTool(
         searchType: "Gmail message",
       })
 
-      xyneState.allFragments.push(...fragments)
+      const startIndex = xyneState.allFragments.length + 1
 
       // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
       const toolKey = `searchGmail:${params.query || "default"}`
@@ -226,7 +226,12 @@ export const searchGmailTool = createXyneTool(
         content: [
           { type: "text", text: `Found ${fragments.length} Gmail messages` },
         ],
-        details: { fragments, query: params.query, toolName: "searchGmail" },
+        details: {
+          fragments,
+          query: params.query,
+          toolName: "searchGmail",
+          startIndex,
+        },
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error)

@@ -207,7 +207,7 @@ export const searchCalendarEventsTool = createXyneTool(
         searchType: "Calendar event",
       })
 
-      xyneState.allFragments.push(...fragments)
+      const startIndex = xyneState.allFragments.length + 1
 
       // Store in unrankedFragmentsByTool for turn-end batch ranking (mirrors JAF behavior)
       const toolKey = `searchCalendarEvents:${params.query || "default"}`
@@ -229,6 +229,7 @@ export const searchCalendarEventsTool = createXyneTool(
           fragments,
           query: params.query,
           toolName: "searchCalendarEvents",
+          startIndex,
         },
       }
     } catch (error) {
