@@ -16,6 +16,7 @@ import {
 import { searchSlackMessages, SearchVespaThreads } from "@/search/vespa"
 import { parseAgentAppIntegrations } from "../../tools/utils"
 import { searchToCitation } from "@/api/chat/utils"
+import { formatFragmentsForLLM } from "./tool-utils"
 import { answerContextMap } from "@/ai/context"
 import type { SearchSlackParams } from "@xyne/vespa-ts"
 import type { MinimalAgentFragment } from "@/api/chat/types"
@@ -386,10 +387,10 @@ export const getSlackRelatedMessagesTool = createXyneTool(
         `[getSlackRelatedMessages] retrieved ${fragments.length} messages for user ${email}`,
       )
 
+      const context = formatFragmentsForLLM(fragments, startIndex)
+
       return {
-        content: [
-          { type: "text", text: `Found ${fragments.length} Slack messages` },
-        ],
+        content: [{ type: "text", text: context }],
         details: {
           fragments,
           query: params.query,

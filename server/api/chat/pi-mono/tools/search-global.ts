@@ -8,6 +8,7 @@ import { Type } from "@sinclair/typebox"
 import { createXyneTool } from "../adapter"
 import { executeVespaSearch } from "../../tools/global"
 import type { XyneToolContext } from "../adapter"
+import { formatFragmentsForLLM } from "./tool-utils"
 import { parseAgentAppIntegrations } from "../../tools/utils"
 import {
   buildKnowledgeBaseCollectionSelections,
@@ -179,13 +180,10 @@ export const searchGlobalTool = createXyneTool(
         fragments: mergedFragments,
       })
 
+      const context = formatFragmentsForLLM(res.fragments, startIndex)
+
       return {
-        content: [
-          {
-            type: "text",
-            text: `Found ${res.fragments.length} results for "${params.query}"`,
-          },
-        ],
+        content: [{ type: "text", text: context }],
         details: {
           fragments: res.fragments,
           query: params.query,

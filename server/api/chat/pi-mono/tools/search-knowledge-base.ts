@@ -10,6 +10,7 @@ import { executeSearchKnowledgeBase } from "../../tools/knowledgeBaseFlow"
 import { createXyneTool } from "../adapter"
 import type { XyneToolContext } from "../adapter"
 import config from "@/config"
+import { formatFragmentsForLLM } from "./tool-utils"
 
 const KNOWLEDGE_BASE_TARGET_DESCRIPTION =
   "A discriminated knowledge-base target object for browse/search. Set `type` to one of `collection`, `folder`, `file`, or `path`, then provide only the matching ID/path fields for that variant."
@@ -192,13 +193,7 @@ export const searchKnowledgeBaseTool = createXyneTool(
         query: params.query || "",
         fragments: mergedFragments,
       })
-      const context = fragments
-        .slice(0, config.maxDefaultSummary)
-        .map((fragment, index) => {
-          const citationIndex = startIndex + index
-          return `citationDocId: ${citationIndex} \n ${fragment.content}`
-        })
-        .join("\n\n")
+      const context = formatFragmentsForLLM(fragments, startIndex)
 
       return {
         content: [{ type: "text", text: context }],

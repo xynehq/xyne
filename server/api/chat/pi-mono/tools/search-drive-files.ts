@@ -15,6 +15,7 @@ import {
 } from "../../tools/utils"
 import { extractDriveIds } from "@/search/utils"
 import config from "@/config"
+import { formatFragmentsForLLM } from "./tool-utils"
 
 const retrievalQueryDescription = `
 Create SHORT, targeted search terms optimized for retrieval systems. Focus on 1-3 key terms rather than long descriptive phrases.
@@ -226,10 +227,10 @@ export const searchDriveFilesTool = createXyneTool(
         fragments: mergedFragments,
       })
 
+      const context = formatFragmentsForLLM(fragments, startIndex)
+
       return {
-        content: [
-          { type: "text", text: `Found ${fragments.length} Drive files` },
-        ],
+        content: [{ type: "text", text: context }],
         details: {
           fragments,
           query: params.query,

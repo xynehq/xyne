@@ -66,96 +66,108 @@ export const SEARCH_KNOWLEDGE_BASE_TOOL_DESCRIPTION = [
   "`filters.targets` narrows search by location, while `excludedIds` should contain previously seen document/result IDs to avoid rereading the same hits.",
 ].join(" ")
 
-export const KnowledgeBaseTargetSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("collection"),
-    collectionId: z
-      .string()
+export const KnowledgeBaseTargetSchema = z
+  .discriminatedUnion("type", [
+    z
+      .object({
+        type: z.literal("collection"),
+        collectionId: z
+          .string()
+          .describe(
+            'Knowledge-base collection row ID as a string, typically a UUID. Reuse `ls` output directly here only when the row itself has `type: "collection"`: for a collection row, pass `entries[i].id`; for a previously targeted `ls` response, pass `target.collection_id`. A folder or file row does not imply collection-root access. This stays a collection DB ID through KB search and is translated downstream into Vespa `clId` filtering. Do not pass a folder ID, file ID, or path here.',
+          ),
+      })
       .describe(
-        "Knowledge-base collection row ID as a string, typically a UUID. Reuse `ls` output directly here only when the row itself has `type: \"collection\"`: for a collection row, pass `entries[i].id`; for a previously targeted `ls` response, pass `target.collection_id`. A folder or file row does not imply collection-root access. This stays a collection DB ID through KB search and is translated downstream into Vespa `clId` filtering. Do not pass a folder ID, file ID, or path here.",
+        'Object shape: `{ type: "collection", collectionId: string }`. Targets an entire collection root. Best when the user names a known collection or you want to browse/search everything inside it.',
       ),
-  }).describe(
-    "Object shape: `{ type: \"collection\", collectionId: string }`. Targets an entire collection root. Best when the user names a known collection or you want to browse/search everything inside it.",
-  ),
-  z.object({
-    type: z.literal("folder"),
-    folderId: z
-      .string()
+    z
+      .object({
+        type: z.literal("folder"),
+        folderId: z
+          .string()
+          .describe(
+            'Knowledge-base folder row ID as a string, typically a UUID. Reuse `ls` output directly here: when an `ls` entry has `type: "folder"`, pass that row\'s `id` as `folderId`. This is later translated into KB folder selections and then Vespa `clFd` filtering. Do not pass a collection ID, file ID, or path here.',
+          ),
+      })
       .describe(
-        "Knowledge-base folder row ID as a string, typically a UUID. Reuse `ls` output directly here: when an `ls` entry has `type: \"folder\"`, pass that row's `id` as `folderId`. This is later translated into KB folder selections and then Vespa `clFd` filtering. Do not pass a collection ID, file ID, or path here.",
+        'Object shape: `{ type: "folder", folderId: string }`. Targets a folder subtree inside a collection. Useful after `ls` returns a folder ID or the folder is already known.',
       ),
-  }).describe(
-    "Object shape: `{ type: \"folder\", folderId: string }`. Targets a folder subtree inside a collection. Useful after `ls` returns a folder ID or the folder is already known.",
-  ),
-  z.object({
-    type: z.literal("file"),
-    fileId: z
-      .string()
+    z
+      .object({
+        type: z.literal("file"),
+        fileId: z
+          .string()
+          .describe(
+            "Knowledge-base file row ID as a string, typically a UUID. Reuse `ls` output directly here: when an `ls` entry has `type: \"file\"`, pass that row's `id` as `fileId`. This is later translated into the file's Vespa document `docId` filtering downstream. Do not pass a collection ID, folder ID, or path here.",
+          ),
+      })
       .describe(
-        "Knowledge-base file row ID as a string, typically a UUID. Reuse `ls` output directly here: when an `ls` entry has `type: \"file\"`, pass that row's `id` as `fileId`. This is later translated into the file's Vespa document `docId` filtering downstream. Do not pass a collection ID, folder ID, or path here.",
+        'Object shape: `{ type: "file", fileId: string }`. Targets one exact file. Use for pinpointed browsing/search when the relevant document is already known.',
       ),
-  }).describe(
-    "Object shape: `{ type: \"file\", fileId: string }`. Targets one exact file. Use for pinpointed browsing/search when the relevant document is already known.",
-  ),
-  z.object({
-    type: z.literal("path"),
-    collectionId: z
-      .string()
+    z
+      .object({
+        type: z.literal("path"),
+        collectionId: z
+          .string()
+          .describe(
+            'Knowledge-base collection row ID as a string, typically a UUID. Required with `type: "path"` so the path is resolved inside the correct collection. For folder/file `ls` rows, reuse `entries[i].collection_id`; for a collection row, reuse `entries[i].id`; for a previously targeted `ls` response, reuse `target.collection_id`.',
+          ),
+        path: z
+          .string()
+          .describe(
+            'Collection-relative path string such as `/`, `/Policies`, `/Policies/Security`, or `/Policies/Security.md`. For folder/file `ls` rows, reuse `entries[i].path`; for a collection row, use `/`; for a previously targeted `ls` response, reuse `target.path`. A missing leading slash is accepted and will be canonicalized. `path: "/"` means the collection root. `.` and `..` path segments are invalid. The resolved path is then translated into collection, folder, or file search scope before Vespa filtering.',
+          ),
+      })
       .describe(
-        "Knowledge-base collection row ID as a string, typically a UUID. Required with `type: \"path\"` so the path is resolved inside the correct collection. For folder/file `ls` rows, reuse `entries[i].collection_id`; for a collection row, reuse `entries[i].id`; for a previously targeted `ls` response, reuse `target.collection_id`.",
+        'Object shape: `{ type: "path", collectionId: string, path: string }`. Targets a collection-relative path when the location is known or easier to express than raw folder/file IDs.',
       ),
-    path: z
-      .string()
-      .describe(
-        "Collection-relative path string such as `/`, `/Policies`, `/Policies/Security`, or `/Policies/Security.md`. For folder/file `ls` rows, reuse `entries[i].path`; for a collection row, use `/`; for a previously targeted `ls` response, reuse `target.path`. A missing leading slash is accepted and will be canonicalized. `path: \"/\"` means the collection root. `.` and `..` path segments are invalid. The resolved path is then translated into collection, folder, or file search scope before Vespa filtering.",
-      ),
-  }).describe(
-    "Object shape: `{ type: \"path\", collectionId: string, path: string }`. Targets a collection-relative path when the location is known or easier to express than raw folder/file IDs.",
-  ),
-]).describe(KNOWLEDGE_BASE_TARGET_DESCRIPTION)
+  ])
+  .describe(KNOWLEDGE_BASE_TARGET_DESCRIPTION)
 
 export type KnowledgeBaseTarget = z.infer<typeof KnowledgeBaseTargetSchema>
 
-export const LsKnowledgeBaseInputSchema = z.object({
-  target: KnowledgeBaseTargetSchema.optional().describe(
-    "Optional KB location to browse. Omit it to list the current KB roots. In user-owned or full-collection scope this returns collection rows; in partial agent-scoped access it may return folder/file roots instead. Provide a collection, folder, file, or path target when you already know where to inspect or when the user asked about a specific location. `target` itself must be an object, not a quoted JSON string.",
-  ),
-  depth: z
-    .number()
-    .int()
-    .min(1)
-    .max(5)
-    .optional()
-    .default(1)
-    .describe(
-      "Traversal depth from the target when `target` is provided. `1` lists immediate children only. When `target` is omitted, `ls` stays in root-discovery mode and `depth` has no effect.",
+export const LsKnowledgeBaseInputSchema = z
+  .object({
+    target: KnowledgeBaseTargetSchema.optional().describe(
+      "Optional KB location to browse. Omit it to list the current KB roots. In user-owned or full-collection scope this returns collection rows; in partial agent-scoped access it may return folder/file roots instead. Provide a collection, folder, file, or path target when you already know where to inspect or when the user asked about a specific location. `target` itself must be an object, not a quoted JSON string.",
     ),
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .optional()
-    .describe(
-      "Maximum number of browse rows to return from the flattened listing. Keep this small for discovery and page with `offset` when needed.",
-    ),
-  offset: z
-    .number()
-    .int()
-    .min(0)
-    .optional()
-    .default(0)
-    .describe(KNOWLEDGE_BASE_OFFSET_DESCRIPTION),
-  metadata: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      "Return persisted row metadata when true. Leave false for normal navigation; enable when you need details like description, mime type for filtering PDFs or other file types, timestamps, or collection metadata.",
-    ),
-}).describe(
-  "Browse the current knowledge-base scope. Untargeted calls discover roots; targeted calls navigate inside a known collection, folder, file, or path.",
-)
+    depth: z
+      .number()
+      .int()
+      .min(1)
+      .max(5)
+      .optional()
+      .default(1)
+      .describe(
+        "Traversal depth from the target when `target` is provided. `1` lists immediate children only. When `target` is omitted, `ls` stays in root-discovery mode and `depth` has no effect.",
+      ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe(
+        "Maximum number of browse rows to return from the flattened listing. Keep this small for discovery and page with `offset` when needed.",
+      ),
+    offset: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .default(0)
+      .describe(KNOWLEDGE_BASE_OFFSET_DESCRIPTION),
+    metadata: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe(
+        "Return persisted row metadata when true. Leave false for normal navigation; enable when you need details like description, mime type for filtering PDFs or other file types, timestamps, or collection metadata.",
+      ),
+  })
+  .describe(
+    "Browse the current knowledge-base scope. Untargeted calls discover roots; targeted calls navigate inside a known collection, folder, file, or path.",
+  )
 
 export const LsKnowledgeBaseOutputSchema = z.object({
   target: z
@@ -186,49 +198,51 @@ export const LsKnowledgeBaseOutputSchema = z.object({
 export type LsKnowledgeBaseToolParams = z.infer<
   typeof LsKnowledgeBaseInputSchema
 >
-export const SearchKnowledgeBaseInputSchema = z.object({
-  query: z
-    .string()
-    .min(1)
-    .describe(
-      "Short, content-focused KB retrieval query. Use the semantic terms you expect inside documents, not navigation instructions. If the scope is known, narrow with `filters.targets` instead of stuffing paths or folder names into the query.",
-    ),
-  filters: z
-    .object({
-      targets: z
-        .array(KnowledgeBaseTargetSchema)
-        .min(1)
-        .optional()
-        .describe(
-          "Optional union of KB locations to search inside the current allowed scope. Each target may be a collection root, folder subtree, exact file, or collection-relative path. Use this when the user query or prior `ls` output tells you where to search; file targets are especially useful after `ls` identifies a subset such as PDFs. Each `filters.targets[]` entry must be an object, not a quoted JSON string.",
-        ),
-    })
-    .optional()
-    .describe(
-      "Optional structural scope for KB search. Omit it when a broad search across the caller's allowed KB scope is appropriate.",
-    ),
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(15)
-    .optional()
-    .describe(
-      "Maximum number of KB fragments to return (up to 15). Keep this tight for precision-first retrieval; raise it only when the user needs broader coverage.",
-    ),
-  offset: z
-    .number()
-    .int()
-    .min(0)
-    .optional()
-    .describe(KNOWLEDGE_BASE_OFFSET_DESCRIPTION),
-  excludedIds: z
-    .array(z.string())
-    .optional()
-    .describe(KNOWLEDGE_BASE_EXCLUDED_IDS_DESCRIPTION),
-}).describe(
-  "Full-text search over document content in the caller's accessible knowledge-base scope.",
-)
+export const SearchKnowledgeBaseInputSchema = z
+  .object({
+    query: z
+      .string()
+      .min(1)
+      .describe(
+        "Short, content-focused KB retrieval query. Use the semantic terms you expect inside documents, not navigation instructions. If the scope is known, narrow with `filters.targets` instead of stuffing paths or folder names into the query.",
+      ),
+    filters: z
+      .object({
+        targets: z
+          .array(KnowledgeBaseTargetSchema)
+          .min(1)
+          .optional()
+          .describe(
+            "Optional union of KB locations to search inside the current allowed scope. Each target may be a collection root, folder subtree, exact file, or collection-relative path. Use this when the user query or prior `ls` output tells you where to search; file targets are especially useful after `ls` identifies a subset such as PDFs. Each `filters.targets[]` entry must be an object, not a quoted JSON string.",
+          ),
+      })
+      .optional()
+      .describe(
+        "Optional structural scope for KB search. Omit it when a broad search across the caller's allowed KB scope is appropriate.",
+      ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(15)
+      .optional()
+      .describe(
+        "Maximum number of KB fragments to return (up to 15). Keep this tight for precision-first retrieval; raise it only when the user needs broader coverage.",
+      ),
+    offset: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe(KNOWLEDGE_BASE_OFFSET_DESCRIPTION),
+    excludedIds: z
+      .array(z.string())
+      .optional()
+      .describe(KNOWLEDGE_BASE_EXCLUDED_IDS_DESCRIPTION),
+  })
+  .describe(
+    "Full-text search over document content in the caller's accessible knowledge-base scope.",
+  )
 
 export type SearchKnowledgeBaseToolParams = z.infer<
   typeof SearchKnowledgeBaseInputSchema
@@ -780,7 +794,10 @@ async function loadProjectionNavigationSnapshot(
 
       const errorMessage = getErrorMessage(error)
       try {
-        await repo.recordCollectionLsProjectionError?.(collectionId, errorMessage)
+        await repo.recordCollectionLsProjectionError?.(
+          collectionId,
+          errorMessage,
+        )
       } catch {}
 
       return loadDirectNavigationSnapshot(collectionId, repo, cache)
@@ -924,7 +941,7 @@ function mergeSelections(
   return Object.keys(merged).length ? [merged] : []
 }
 
-// Resolves a target contract into a collection root or concrete node snapshot. Translation 
+// Resolves a target contract into a collection root or concrete node snapshot. Translation
 async function resolveKnowledgeBaseTarget(
   target: KnowledgeBaseTarget,
   repo: KnowledgeBaseRepository,
@@ -1158,7 +1175,10 @@ function createTopLevelItemLsEntry(
   return createItemLsEntry(seed, includeMetadata ? item : null, includeMetadata)
 }
 
-function compareUntargetedPartialLsEntries(left: LsEntry, right: LsEntry): number {
+function compareUntargetedPartialLsEntries(
+  left: LsEntry,
+  right: LsEntry,
+): number {
   if (left.type !== right.type) {
     return left.type === "folder" ? -1 : 1
   }
@@ -1200,8 +1220,9 @@ async function buildUntargetedLsEntries(
       })),
     ].map(async ({ itemId, expectedType }) => {
       const item = await repo.getCollectionItemById(itemId)
-      const candidateItem =
-        item as (CollectionItem & { deleted_at?: Date | null }) | null
+      const candidateItem = item as
+        | (CollectionItem & { deleted_at?: Date | null })
+        | null
       if (!item || candidateItem?.deletedAt || candidateItem?.deleted_at) {
         return null
       }

@@ -15,6 +15,7 @@ import {
   parseAgentAppIntegrations,
 } from "../../tools/utils"
 import config from "@/config"
+import { formatFragmentsForLLM } from "./tool-utils"
 
 const participantsSchema = Type.Object(
   {
@@ -222,10 +223,10 @@ export const searchGmailTool = createXyneTool(
         fragments: mergedFragments,
       })
 
+      const context = formatFragmentsForLLM(fragments, startIndex)
+
       return {
-        content: [
-          { type: "text", text: `Found ${fragments.length} Gmail messages` },
-        ],
+        content: [{ type: "text", text: context }],
         details: {
           fragments,
           query: params.query,
