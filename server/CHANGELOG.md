@@ -1,3 +1,10 @@
+## [3.47.3](https://github.com/xynehq/xyne/compare/v3.47.2...v3.47.3) (2026-04-07)
+
+
+### Bug Fixes
+
+* Update model configuration ([#1308](https://github.com/xynehq/xyne/issues/1308)) ([68730ea](https://github.com/xynehq/xyne/commit/68730eab3a9e917424f04221a28cff7c23fd81b6))
+
 ## [3.47.2](https://github.com/xynehq/xyne/compare/v3.47.1...v3.47.2) (2026-04-06)
 
 
