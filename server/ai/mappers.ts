@@ -508,6 +508,15 @@ export const modelDetailsMap: Record<
       }
     }
   },
+  [getActualModelName(Models.NEMOTRON)]:{
+    name:"nemotron",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.0006,
+        pricePerThousandOutputTokens:0.000003,
+      }
+    }
+  },
 }
 
 export const ModelToProviderMap: Record<Models, AIProviders> = {
@@ -592,6 +601,7 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.MINIMAX_2_5]: AIProviders.LiteLLM,
   [Models.MINIMAX_M2]: AIProviders.LiteLLM,
   [Models.OPEN_FAST]: AIProviders.LiteLLM,
+  [Models.NEMOTRON]: AIProviders.LiteLLM,
 }
 
 export const isDeepResearchModel = (modelId: Models): boolean => {

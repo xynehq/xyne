@@ -87,6 +87,9 @@ export enum LiteLLMModels {
 
   // Minmax Models
   MINIMAX_2_5 = "minimaxai/minimax-2-5",
+
+  // Non chinese open source models
+  NEMOTRON = "nemotron",
 }
 
 export enum VertexAIModels {
@@ -222,6 +225,9 @@ export enum Models {
   // OpenAI Models
   OPEN_FAST = LiteLLMModels.OPEN_FAST,
   MINIMAX_M2 = LiteLLMModels.MINIMAX_M2,
+
+  // Non chinese open source models
+  NEMOTRON = LiteLLMModels.NEMOTRON,
 }
 
 // Model availability mapping - which providers support which models
@@ -354,6 +360,9 @@ export enum ModelDisplayNames {
   // OpenAI Models
   LITELLM_OPEN_FAST = "Open Fast",
   LITELLM_MINIMAX_M2 = "Minmax M2",
+
+  // Non chinese open source models
+  LITELLM_NEMOTRON = "Nemotron",
 }
 
 export enum QueryCategory {
