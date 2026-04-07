@@ -95,7 +95,7 @@ export const searchKBHandler: ToolHandler = {
     }
     await context.emitReasoningStep(
       ReasoningSteps.searchCompleted(
-        query || "unknown",
+        query || JSON.stringify(filters) || "unknown",
         details?.fragments?.length || 0,
         details?.topFragmentSummary || "",
         event.toolName,

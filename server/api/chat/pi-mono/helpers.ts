@@ -11,7 +11,7 @@ import { db } from "@/db/client"
 import { answerContextMap } from "@/ai/context"
 import { parseMessageText } from "@/api/chat/chat"
 import { getChunkCountPerDoc } from "@/api/chat/chunk-selection"
-import type { MinimalAgentFragment } from "@/api/chat/types"
+import type { Citation, MinimalAgentFragment } from "@/api/chat/types"
 import { processThreadResults } from "@/api/chat/utils"
 import { processMessage, searchToCitation } from "@/api/chat/utils"
 import { getUserPersonalizationByEmail } from "@/db/personalization"
@@ -23,8 +23,24 @@ import {
   searchVespaInFiles,
 } from "@/search/vespa"
 import { getTracer } from "@/tracer"
-import { Subsystem, type UserMetadataType } from "@/types"
+import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import { getErrorMessage } from "@/utils"
+import type { AttachmentMetadata } from "@/shared/types"
+import {
+  ChatType,
+  type InsertChat,
+  type InsertMessage,
+  type SelectChat,
+  type SelectMessage,
+} from "@/db/schema"
+import { insertChat, updateChatByExternalIdWithAuth } from "@/db/chat"
+import type { Models } from "@/ai/types"
+import {
+  getChatMessagesWithAuth,
+  getMessageByExternalId,
+  insertMessage,
+} from "@/db/message"
+import { storeAttachmentMetadata } from "@/db/attachment"
 
 const Logger = getLogger(Subsystem.Chat)
 const { defaultBestModel, defaultBestModelAgenticMode } = config
@@ -243,5 +259,176 @@ export async function vespaResultToAttachmentFragment(
     source: searchToCitation(child as VespaSearchResults),
     confidence: 1,
     visibleChunkIndices: [],
+  }
+}
+
+export async function bootstrapChat(params: {
+  chatId?: string
+  email: string
+  user: { id: number; email: string }
+  workspace: { id: number; externalId: string }
+  message: string
+  modelId?: string
+  attachmentMetadata: AttachmentMetadata[]
+}): Promise<{
+  chat: SelectChat
+  userMessage: SelectMessage
+  conversationHistory: SelectMessage[]
+  isNewChat: boolean
+  attachmentError?: Error
+}> {
+  const workspaceId = Number(params.workspace.id)
+  const workspaceExternalId = String(params.workspace.externalId)
+  const userId = Number(params.user.id)
+  const userEmail = String(params.user.email)
+
+  return await db.transaction(async (tx) => {
+    let attachmentError: Error | undefined
+
+    if (!params.chatId) {
+      // Create new chat
+      const chatInsert = {
+        workspaceId,
+        workspaceExternalId,
+        userId,
+        email: userEmail,
+        title: "Untitled",
+        attachments: [],
+        chatType: ChatType.Default,
+      } as unknown as Omit<InsertChat, "externalId">
+      const chat = await insertChat(tx, chatInsert)
+
+      const messageInsert = {
+        chatId: chat.id,
+        userId,
+        workspaceExternalId,
+        chatExternalId: chat.externalId,
+        messageRole: MessageRole.User,
+        email: userEmail,
+        sources: [],
+        message: params.message,
+        modelId: (params.modelId as Models) || defaultBestModel,
+        fileIds: [],
+      } as unknown as Omit<InsertMessage, "externalId">
+      let userMessage = await insertMessage(tx, messageInsert)
+
+      // Store attachment metadata if present
+      if (params.attachmentMetadata.length > 0) {
+        try {
+          await storeAttachmentMetadata(
+            tx,
+            String(userMessage.externalId),
+            params.attachmentMetadata,
+            userEmail,
+          )
+        } catch (err) {
+          attachmentError = err as Error
+          Logger.error(
+            err,
+            `Failed to store attachment metadata for message ${userMessage.externalId}`,
+          )
+        }
+      }
+
+      return {
+        chat,
+        userMessage,
+        conversationHistory: [],
+        isNewChat: true,
+        attachmentError,
+      }
+    }
+
+    // Existing chat - get conversation history
+    const chat = await updateChatByExternalIdWithAuth(
+      tx,
+      params.chatId,
+      params.email,
+      {},
+    )
+    const allMessages = await getChatMessagesWithAuth(
+      tx,
+      params.chatId,
+      params.email,
+    )
+
+    const messageInsert = {
+      chatId: chat.id,
+      userId,
+      workspaceExternalId,
+      chatExternalId: chat.externalId,
+      messageRole: MessageRole.User,
+      email: userEmail,
+      sources: [],
+      message: params.message,
+      modelId: (params.modelId as Models) || defaultBestModel,
+      fileIds: [],
+    } as unknown as Omit<InsertMessage, "externalId">
+    let userMessage = await insertMessage(tx, messageInsert)
+
+    // Store attachment metadata if present
+    if (params.attachmentMetadata.length > 0) {
+      try {
+        await storeAttachmentMetadata(
+          tx,
+          String(userMessage.externalId),
+          params.attachmentMetadata,
+          userEmail,
+        )
+      } catch (err) {
+        attachmentError = err as Error
+        Logger.error(
+          err,
+          `Failed to store attachment metadata for message ${userMessage.externalId}`,
+        )
+      }
+    }
+
+    return {
+      chat,
+      userMessage,
+      conversationHistory: allMessages,
+      isNewChat: false,
+      attachmentError,
+    }
+  })
+}
+
+export async function persistAssistantMessage(
+  chatRecord: SelectChat,
+  user: { id: number; email: string },
+  workspace: { externalId: string },
+  modelId: string,
+  requestStartMs: number,
+  data: {
+    answer: string
+    citations: Citation[]
+    citationMap: Record<number, number>
+    thinkingLog: string
+  },
+): Promise<{ msg: SelectMessage; assistantMessageId: string }> {
+  const timeTakenMs = Date.now() - requestStartMs
+
+  const assistantInsert = {
+    chatId: chatRecord.id,
+    userId: user.id,
+    workspaceExternalId: String(workspace.externalId),
+    chatExternalId: String(chatRecord.externalId),
+    messageRole: MessageRole.Assistant,
+    email: user.email,
+    sources: data.citations,
+    message: data.answer,
+    thinking: data.thinkingLog,
+    modelId,
+    cost: "0",
+    tokensUsed: 0,
+    timeTakenMs,
+  } as unknown as Omit<InsertMessage, "externalId">
+
+  const msg = await insertMessage(db, assistantInsert)
+
+  return {
+    msg,
+    assistantMessageId: String(msg.externalId),
   }
 }

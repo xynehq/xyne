@@ -187,7 +187,6 @@ export const lsKnowledgeBaseTool = createXyneTool(
             break
         }
       }
-
       const result = await executeLsKnowledgeBase(
         {
           target,
