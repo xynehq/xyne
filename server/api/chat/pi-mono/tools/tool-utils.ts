@@ -17,11 +17,12 @@ export function formatFragmentsForLLM(
 ): string {
   if (fragments.length === 0) return "No results found."
 
+  // TODO: citation format should take from config based on the document
   return fragments
     .slice(0, maxFragments)
     .map((fragment, index) => {
       const citationIndex = startIndex + index
-      return `citationDocId: ${citationIndex}\n${fragment.content}`
+      return `citationDocId: ${citationIndex} — cite as K[${citationIndex}_N] where N is the chunk number\n${fragment.content}`
     })
     .join("\n\n")
 }

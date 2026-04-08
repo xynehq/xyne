@@ -1,34 +1,34 @@
 import {
-  VespaFileSchema,
-  VespaUserSchema,
   Apps,
-  mailSchema,
-  userSchema,
-  fileSchema,
-  eventSchema,
+  AttachmentEntity,
+  CalendarEntity,
+  DataSourceEntity,
+  DriveEntity,
+  GooglePeopleEntity,
+  KbItemsSchema,
+  KnowledgeBaseEntity,
+  MailAttachmentEntity,
+  MailEntity,
+  MicrosoftPeopleEntity,
+  NotionEntity,
+  SlackEntity,
+  SystemEntity,
+  VespaChatContainerSchema,
   VespaEventSchema,
-  userQuerySchema,
-  mailAttachmentSchema,
+  VespaFileSchema,
+  VespaKbFileSchemaBase,
+  VespaUserSchema,
+  WebSearchEntity,
+  ZohoEntity,
+  chatContainerSchema,
   chatUserSchema,
   dataSourceFileSchema,
-  chatContainerSchema,
-  VespaChatContainerSchema,
-  KbItemsSchema,
-  VespaKbFileSchemaBase,
-  DriveEntity,
-  MailEntity,
-  MailAttachmentEntity,
-  CalendarEntity,
-  SystemEntity,
-  DataSourceEntity,
-  WebSearchEntity,
-  KnowledgeBaseEntity,
-  NotionEntity,
-  GooglePeopleEntity,
-  SlackEntity,
-  MicrosoftPeopleEntity,
-  AttachmentEntity,
-  ZohoEntity,
+  eventSchema,
+  fileSchema,
+  mailAttachmentSchema,
+  mailSchema,
+  userQuerySchema,
+  userSchema,
 } from "@xyne/vespa-ts/types"
 export {
   GooglePeopleEntity,
@@ -624,52 +624,57 @@ export type ReasoningStage =
 
 export enum ReasoningEventType {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
-  TurnStarted           = "turn_started",
-  TurnCompleted         = "turn_completed",
-  PlanCreated           = "plan_created",
-  SynthesisStarted      = "synthesis_started",
-  SynthesisCompleted    = "synthesis_completed",
+  TurnStarted = "turn_started",
+  TurnCompleted = "turn_completed",
+  PlanCreated = "plan_created",
+  SynthesisStarted = "synthesis_started",
+  SynthesisCompleted = "synthesis_completed",
 
   // ── Tool lifecycle ─────────────────────────────────────────────────────────
-  ToolExecuting         = "tool_executing",
-  ToolCompleted         = "tool_completed",
-  ToolSkippedDuplicate  = "tool_skipped_duplicate",
-  ToolSkippedCooldown   = "tool_skipped_cooldown",
-  ToolValidationError   = "tool_validation_error",
-  ToolCooldownApplied   = "tool_cooldown_applied",
-  ToolRecovered         = "tool_recovered",
+  ToolExecuting = "tool_executing",
+  ToolCompleted = "tool_completed",
+  ToolSkippedDuplicate = "tool_skipped_duplicate",
+  ToolSkippedCooldown = "tool_skipped_cooldown",
+  ToolValidationError = "tool_validation_error",
+  ToolCooldownApplied = "tool_cooldown_applied",
+  ToolRecovered = "tool_recovered",
 
   // ── Document pipeline ──────────────────────────────────────────────────────
-  DocumentsFound            = "documents_found",
-  DocumentsFilteringStarted  = "documents_filtering_started",
-  DocumentsFiltered         = "documents_filtered",
-  DocumentsRanking          = "documents_ranking",
+  DocumentsFound = "documents_found",
+  DocumentsFilteringStarted = "documents_filtering_started",
+  DocumentsFiltered = "documents_filtered",
+  DocumentsRanking = "documents_ranking",
   MetadataFilterApplied = "metadata_filter_applied",
-  MetadataNoMatch       = "metadata_no_match",
-  RankingFailed         = "ranking_failed",
+  MetadataNoMatch = "metadata_no_match",
+  RankingFailed = "ranking_failed",
 
   // ── Agent delegation ───────────────────────────────────────────────────────
-  AgentSearching        = "agent_searching",
-  AgentsFound           = "agents_found",
-  AgentNoMatch          = "agent_no_match",
-  AgentDelegated        = "agent_delegated",
-  AgentCompleted        = "agent_completed",
+  AgentSearching = "agent_searching",
+  AgentsFound = "agents_found",
+  AgentNoMatch = "agent_no_match",
+  AgentDelegated = "agent_delegated",
+  AgentCompleted = "agent_completed",
 
   // ── Attachments ────────────────────────────────────────────────────────────
-  AttachmentAnalyzing   = "attachment_analyzing",
-  AttachmentExtracted   = "attachment_extracted",
+  AttachmentAnalyzing = "attachment_analyzing",
+  AttachmentExtracted = "attachment_extracted",
 
   // ── Review ─────────────────────────────────────────────────────────────────
-  ReviewStarted         = "review_started",
-  ReviewCompleted       = "review_completed",
-  AnomaliesDetected     = "anomalies_detected",
+  ReviewStarted = "review_started",
+  ReviewCompleted = "review_completed",
+  AnomaliesDetected = "anomalies_detected",
 
   // ── Fallback / recovery ────────────────────────────────────────────────────
-  FallbackActivated     = "fallback_activated",
-  FallbackCompleted     = "fallback_completed",
+  FallbackActivated = "fallback_activated",
+  FallbackCompleted = "fallback_completed",
+
+  // ── Agent Raw Thinking (from models like Claude 3.7, o3-mini) ─────────────
+  AgentThinkingStart = "thinking_start",
+  AgentThinkingDelta = "thinking_delta",
+  AgentThinkingEnd = "thinking_end",
 
   // ── Generic (escape hatch — use sparingly) ─────────────────────────────────
-  LogMessage            = "log_message",
+  LogMessage = "log_message",
 }
 
 /**
@@ -697,7 +702,7 @@ export interface ReasoningEventPayload {
   stage: ReasoningStage
 
   // ── Optional structured fields (type-specific) ─────────────────────────────
-  toolName?: string  // plain string — tool names come from JAF at runtime
+  toolName?: string // plain string — tool names come from JAF at runtime
   count?: number
   agentName?: string
   turnNumber?: number

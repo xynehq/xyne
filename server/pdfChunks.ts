@@ -238,8 +238,6 @@ function processTextParagraphs(
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
-    text_chunks.push(chunk)
-    text_chunk_pos.push(globalSeq.value)
 
     // Determine page numbers for this chunk
     let page_numbers: number[]

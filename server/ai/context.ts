@@ -491,7 +491,7 @@ const constructFileContext = (
     content = chunks
       .map((v) => {
         const originalIndex = fields.chunks_pos_summary?.[v.index] ?? v.index
-        return `[${originalIndex}] ${v.chunk}`
+        return `[chunk:${originalIndex}] ${v.chunk}`
       })
       .slice(0, maxSummaryChunks)
       .join("\n")
@@ -516,7 +516,8 @@ const constructFileContext = (
     let imageChunks: ScoredChunk[] = []
     const maxImageChunks =
       fields.image_chunks_summary?.length &&
-      fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
+      fields.image_chunks_summary?.length <=
+        IMAGE_CONTEXT_CONFIG.maxImagesPerFile
         ? fields.image_chunks_summary?.length
         : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
 
@@ -533,8 +534,7 @@ const constructFileContext = (
         fields.docId,
       )
     } else {
-      const imageChunksPos =
-        (fields.image_chunks_pos_summary as number[]) || []
+      const imageChunksPos = (fields.image_chunks_pos_summary as number[]) || []
 
       imageChunks =
         fields.image_chunks_summary?.map((chunk, idx) => {
@@ -925,7 +925,8 @@ const constructDataSourceFileContext = (
     let imageChunks: ScoredChunk[] = []
     const maxImageChunks =
       fields.image_chunks_summary?.length &&
-      fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
+      fields.image_chunks_summary?.length <=
+        IMAGE_CONTEXT_CONFIG.maxImagesPerFile
         ? fields.image_chunks_summary?.length
         : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
     if (fields.matchfeatures) {
@@ -936,8 +937,7 @@ const constructDataSourceFileContext = (
         fields.docId,
       )
     } else {
-      const imageChunksPos =
-        (fields.image_chunks_pos_summary as number[]) || []
+      const imageChunksPos = (fields.image_chunks_pos_summary as number[]) || []
       imageChunks =
         fields.image_chunks_summary?.map((chunk, idx) => ({
           chunk: `${fields.docId}_${imageChunksPos[idx]}`,
@@ -1026,7 +1026,7 @@ const constructCollectionFileContext = (
     content = chunks
       .map((v) => {
         const originalIndex = fields.chunks_pos_summary?.[v.index] ?? v.index
-        return `[${originalIndex}] ${v.chunk}`
+        return `[chunk:${originalIndex}] ${v.chunk}`
       })
       .slice(0, maxSummaryChunks)
       .join("\n")
@@ -1053,7 +1053,8 @@ const constructCollectionFileContext = (
     let imageChunks: ScoredChunk[] = []
     const maxImageChunks =
       fields.image_chunks_summary?.length &&
-      fields.image_chunks_summary?.length <= IMAGE_CONTEXT_CONFIG.maxImagesPerFile
+      fields.image_chunks_summary?.length <=
+        IMAGE_CONTEXT_CONFIG.maxImagesPerFile
         ? fields.image_chunks_summary?.length
         : IMAGE_CONTEXT_CONFIG.maxImagesPerFile
 
@@ -1070,8 +1071,7 @@ const constructCollectionFileContext = (
         fields.docId,
       )
     } else {
-      const imageChunksPos =
-        (fields.image_chunks_pos_summary as number[]) || []
+      const imageChunksPos = (fields.image_chunks_pos_summary as number[]) || []
 
       imageChunks =
         fields.image_chunks_summary?.map((chunk, idx) => {
@@ -1151,11 +1151,11 @@ export const answerContextMap = async (
   includeImageBlock?: boolean,
 ): Promise<AiContext> => {
   if (
-    query && 
+    query &&
     (searchResult.fields.sddocname === fileSchema ||
-    searchResult.fields.sddocname === dataSourceFileSchema ||
-    searchResult.fields.sddocname === KbItemsSchema ||
-    searchResult.fields.sddocname === mailAttachmentSchema)
+      searchResult.fields.sddocname === dataSourceFileSchema ||
+      searchResult.fields.sddocname === KbItemsSchema ||
+      searchResult.fields.sddocname === mailAttachmentSchema)
   ) {
     let mimeType
     let sheetName
@@ -1164,7 +1164,7 @@ export const answerContextMap = async (
       sheetName = searchResult.fields.filename
     } else {
       mimeType = searchResult.fields.mimeType
-      if(searchResult.fields.sddocname === fileSchema) {
+      if (searchResult.fields.sddocname === fileSchema) {
         sheetName = searchResult.fields.title
       } else {
         sheetName = searchResult.fields.fileName
@@ -1275,7 +1275,10 @@ export const answerContextMap = async (
     ) {
       let connectorId: string | undefined
       try {
-        const meta = typeof kbFields.metadata === "string" ? JSON.parse(kbFields.metadata) : kbFields.metadata
+        const meta =
+          typeof kbFields.metadata === "string"
+            ? JSON.parse(kbFields.metadata)
+            : kbFields.metadata
         connectorId = meta?.connectorId
       } catch {
         // ignore

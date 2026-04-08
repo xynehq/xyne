@@ -130,6 +130,9 @@ export type RAGEvent =
       isError: boolean
     }
   | { type: "text_delta"; delta: string }
+  | { type: "thinking_start"; contentIndex: number }
+  | { type: "thinking_delta"; delta: string; contentIndex: number }
+  | { type: "thinking_end"; contentIndex: number; contentSignature?: string }
   | {
       type: "message_end"
       message: { role: string; content?: string; stopReason?: string }

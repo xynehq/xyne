@@ -42,11 +42,11 @@ import {
   registerSession,
   unregisterSession,
 } from "./adapter"
-import { processAttachments, getImagesForAgent } from "./attachments"
+import { getImagesForAgent, processAttachments } from "./attachments"
 import {
+  CITATION_ENTRY_TYPE,
   buildCitationSnapshot,
   restoreCitationState,
-  CITATION_ENTRY_TYPE,
 } from "./citation-state"
 import { type RAGAgent, type RAGEvent, createRAGAgent } from "./core"
 import {
@@ -311,11 +311,6 @@ export async function AgenticRAG(c: Context): Promise<Response> {
         const yieldedCitations = new Set<number>()
         const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
-
-        Logger.info(
-          { message: message.substring(0, 100), modelId, baseUrl },
-          "Starting KB agentic RAG via core SDK...",
-        )
         // ── Consume event stream ─────────────────────────────────────
         for await (const event of agent.run(message, { images })) {
           if (stream.closed) break
@@ -362,6 +357,44 @@ export async function AgenticRAG(c: Context): Promise<Response> {
                   })
                 }
               }
+              break
+            }
+
+            case "thinking_start": {
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: JSON.stringify({
+                  type: "thinking_start",
+                  contentIndex: event.contentIndex,
+                  timestamp: Date.now(),
+                }),
+              })
+              break
+            }
+
+            case "thinking_delta": {
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: JSON.stringify({
+                  type: "thinking_delta",
+                  delta: event.delta,
+                  contentIndex: event.contentIndex,
+                  timestamp: Date.now(),
+                }),
+              })
+              break
+            }
+
+            case "thinking_end": {
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: JSON.stringify({
+                  type: "thinking_end",
+                  contentIndex: event.contentIndex,
+                  contentSignature: event.contentSignature,
+                  timestamp: Date.now(),
+                }),
+              })
               break
             }
 

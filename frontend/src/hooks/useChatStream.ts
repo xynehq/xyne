@@ -1,13 +1,13 @@
-import { useRef, useState, useEffect, useCallback } from "react"
+import { api } from "@/api"
 import { useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "@tanstack/react-router"
-import { api } from "@/api"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   AttachmentMetadata,
   ChatSSEvents,
   Citation,
-  SelectPublicMessage,
   ImageCitation,
+  SelectPublicMessage,
 } from "shared/types"
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
@@ -50,6 +50,7 @@ interface StreamState {
   es: EventSource
   partial: string
   thinking: string
+  agentThinking: string // Raw thinking content from the agent/LLM
   deepResearchSteps: DeepResearchStep[]
   sources: Citation[]
   imageCitations: ImageCitation[]
@@ -75,6 +76,7 @@ interface StreamState {
 interface StreamInfo {
   partial: string
   thinking: string
+  agentThinking: string // Raw thinking content from the agent/LLM
   deepResearchSteps: DeepResearchStep[]
   sources: Citation[]
   imageCitations: ImageCitation[]
@@ -464,6 +466,7 @@ export const startStream = async (
     es: eventSource,
     partial: "",
     thinking: "",
+    agentThinking: "",
     deepResearchSteps: [],
     sources: [],
     imageCitations: [],
@@ -500,6 +503,21 @@ export const startStream = async (
 
   streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
     appendReasoningData(streamState, event.data)
+
+    // Check if this is an agent thinking event
+    try {
+      const data = JSON.parse(event.data)
+      if (data.type === "thinking_delta" && data.delta) {
+        streamState.agentThinking += data.delta
+      } else if (data.type === "thinking_start") {
+        streamState.agentThinking += "\n--- Agent Thinking ---\n"
+      } else if (data.type === "thinking_end") {
+        streamState.agentThinking += "\n--- End Thinking ---\n"
+      }
+    } catch {
+      // Not JSON, ignore
+    }
+
     notifySubscribers(streamKey)
   })
 
@@ -859,6 +877,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     return {
       partial: "",
       thinking: "",
+      agentThinking: "",
       deepResearchSteps: [],
       sources: [],
       imageCitations: [],
@@ -875,6 +894,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
   return {
     partial: stream.partial,
     thinking: stream.thinking,
+    agentThinking: stream.agentThinking,
     deepResearchSteps: stream.deepResearchSteps,
     sources: stream.sources,
     imageCitations: stream.imageCitations,
@@ -1163,6 +1183,7 @@ export const useChatStream = (
         es: eventSource,
         partial: "",
         thinking: "",
+        agentThinking: "",
         deepResearchSteps: [],
         sources: [],
         imageCitations: [],
@@ -1340,7 +1361,8 @@ export const useChatStream = (
       eventSource.addEventListener(ChatSSEvents.ResponseMetadata, (event) => {
         const { messageId: newMessageId, timeTakenMs } = JSON.parse(event.data)
         streamState.messageId = newMessageId
-        if (typeof timeTakenMs === "number") streamState.timeTakenMs = timeTakenMs
+        if (typeof timeTakenMs === "number")
+          streamState.timeTakenMs = timeTakenMs
       })
 
       eventSource.addEventListener(ChatSSEvents.End, async () => {

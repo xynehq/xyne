@@ -1,10 +1,3 @@
-/**
- * Pi-Mono Adapter for Xyne
- *
- * Bridges JAF-style tools to pi-mono ToolDefinition format.
- * Simplified session storage using single Map keyed by chatExternalId.
- */
-
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent"
 import type { Static, TSchema } from "@sinclair/typebox"

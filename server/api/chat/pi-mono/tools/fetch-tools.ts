@@ -4,19 +4,17 @@ import { db } from "@/db/client"
 import config from "@/config"
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent"
 
-import {
-  getSlackRelatedMessagesTool,
-  lsKnowledgeBaseTool,
-  searchKnowledgeBaseTool,
-  toDoWriteTool,
-  getDocumentOutlineTool,
-  getPageContentTool,
-  searchGlobalTool,
-  searchGmailTool,
-  searchDriveFilesTool,
-  searchCalendarEventsTool,
-  searchGoogleContactsTool,
-} from "./"
+import { searchGlobalTool } from "./search-global"
+import { searchGmailTool } from "./search-gmail"
+import { searchDriveFilesTool } from "./search-drive-files"
+import { searchCalendarEventsTool } from "./search-calendar-events"
+import { searchGoogleContactsTool } from "./search-google-contacts"
+import { getSlackRelatedMessagesTool } from "./get-slack-related-messages"
+import { lsKnowledgeBaseTool } from "./ls-knowledge-base"
+import { searchKnowledgeBaseTool } from "./search-knowledge-base"
+import { toDoWriteTool } from "./to-do-write"
+import { getDocumentOutlineTool } from "./get-document-outline"
+import { getPageContentTool } from "./get-page-content"
 
 export interface ConnectionStatus {
   isDriveConnected: boolean

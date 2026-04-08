@@ -15,14 +15,6 @@ import type { RAGAgent, RAGAgentConfig, RAGEvent, RunOptions } from "./types"
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 
-// ============================================================================
-// MODEL RESOLUTION
-// ============================================================================
-
-/**
- * Resolve a model string ID into a pi-mono Model object for LiteLLM.
- * If already a Model object, pass through unchanged.
- */
 export function resolveModel(
   modelInput: string | Model<any>,
   baseUrl?: string,
@@ -93,8 +85,30 @@ function mapEvent(event: AgentSessionEvent): RAGEvent[] {
       if (assistantEvent?.type === "text_delta" && assistantEvent.delta) {
         events.push({ type: "text_delta", delta: assistantEvent.delta })
       }
+      if (assistantEvent?.type === "thinking_delta" && assistantEvent.delta) {
+        events.push({
+          type: "thinking_delta",
+          delta: assistantEvent.delta,
+          contentIndex: assistantEvent.contentIndex,
+        })
+      }
       break
     }
+
+    case "thinking_start":
+      events.push({
+        type: "thinking_start",
+        contentIndex: e.contentIndex,
+      })
+      break
+
+    case "thinking_end":
+      events.push({
+        type: "thinking_end",
+        contentIndex: e.contentIndex,
+        contentSignature: e.contentSignature,
+      })
+      break
 
     case "message_end":
       events.push({

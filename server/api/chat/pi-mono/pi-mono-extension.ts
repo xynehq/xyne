@@ -13,12 +13,19 @@ import type {
 import type { XyneAgentState } from "./adapter"
 import { trackFragments } from "./citation-state"
 import { toolEventRegistry } from "./tool-event-mapper/index"
+import { formatFragmentsForLLM } from "./tools/tool-utils"
 
-const Logger = getLogger(Subsystem.Chat)
+const CITATION_STEER_THRESHOLD = 40
 
-/**
- * State passed from the main session to the extension
- */
+const CITATION_FORMAT_STEER_MESSAGE = [
+  "IMPORTANT CITATION REMINDER: You have gathered many fragments.",
+  "Each fragment has a citationDocId (e.g. 5) and chunks labeled [chunk:N] (e.g. [chunk:20]).",
+  "To cite, combine them: K[5_20]. CORRECT: K[2_3], K[5_0], K[41_50].",
+  "WRONG: K[5_chunkIndex], (citation5), (citations26-35), [citation16].",
+  "NEVER write the literal word 'chunkIndex' — always use the actual number from [chunk:N].",
+  "STRICT LIMIT: Maximum 1–2 citations per sentence or bullet. Pick the best 1–2 sources only. Do NOT list every matching fragment.",
+].join(" ")
+
 interface ExtensionState {
   xyneState: XyneAgentState
   currentTurn: { value: number }
@@ -30,9 +37,11 @@ interface ExtensionState {
 
 // Global state ref - required because extensions are factory functions
 let extensionStateRef: ExtensionState | null = null
+let citationReminderSent = false
 
 export function setExtensionState(state: ExtensionState): void {
   extensionStateRef = state
+  citationReminderSent = false
 }
 
 export function getExtensionState(): ExtensionState | null {
@@ -41,6 +50,7 @@ export function getExtensionState(): ExtensionState | null {
 
 export function clearExtensionState(): void {
   extensionStateRef = null
+  citationReminderSent = false
 }
 
 export default function xyneExtension(pi: ExtensionAPI) {
@@ -66,12 +76,10 @@ export default function xyneExtension(pi: ExtensionAPI) {
     const startIndex = xyneState.allFragments.length + 1
     const fragmentCount = attachmentContext.fragments.length
 
-    const textFragments = attachmentContext.fragments
-      .map((fragment: { content: string }, index: number) => {
-        const citationIndex = startIndex + index
-        return `citationDocId: ${citationIndex} \n ${fragment.content}`
-      })
-      .join("\n\n")
+    const textFragments = formatFragmentsForLLM(
+      attachmentContext.fragments,
+      startIndex,
+    )
 
     attachmentContext.fragments.forEach(
       (fragment: { id: string }, idx: number) => {
@@ -102,7 +110,10 @@ export default function xyneExtension(pi: ExtensionAPI) {
         emitReasoningStep: state.emitReasoningStep,
         xyneState: state.xyneState,
         sendSteerMessage: (msg: string) =>
-          pi.sendUserMessage(msg, { deliverAs: "steer" }),
+          pi.sendMessage(
+            { customType: "steer_message", content: msg, display: false },
+            { deliverAs: "steer" },
+          ),
       })
     },
   )
@@ -120,8 +131,22 @@ export default function xyneExtension(pi: ExtensionAPI) {
 
     if (details?.fragments && Array.isArray(details.fragments)) {
       const fragments = details.fragments as MinimalAgentFragment[]
-      const startIndex = (details.startIndex as number) || 1
+      const startIndex = state.xyneState.allFragments.length + 1
+
       trackFragments(fragments, startIndex, state.xyneState)
+
+      const totalFragments = state.xyneState.allFragments.length
+      if (totalFragments >= CITATION_STEER_THRESHOLD && !citationReminderSent) {
+        citationReminderSent = true
+        pi.sendMessage(
+          {
+            customType: "citation_format_reminder",
+            content: CITATION_FORMAT_STEER_MESSAGE,
+            display: false,
+          },
+          { deliverAs: "steer" },
+        )
+      }
     }
 
     return {
