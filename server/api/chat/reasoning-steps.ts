@@ -98,6 +98,14 @@ const TOOL_DISPLAY: Record<string, ToolDisplay> = {
     executing: "Composing your answer.",
     completed: "Answer ready.",
   },
+  [XyneTools.getDocumentOutline]: {
+    executing: "Retrieving document structure.",
+    completed: "Document outline retrieved.",
+  },
+  [XyneTools.getPageContent]: {
+    executing: "Fetching specific page content.",
+    completed: "Page content retrieved.",
+  },
 }
 
 function toolExecutingText(toolName: string): string {

@@ -17,7 +17,6 @@ import {
 import { activeStreams } from "@/api/chat/stream"
 import type { Citation } from "@/api/chat/types"
 import {
-  checkAndYieldCitationsForAgent,
   extractFileIdsFromMessage,
   isMessageWithContext,
   safeDecodeURIComponent,
@@ -62,6 +61,7 @@ const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.Chat)
 
 import { bootstrapChat, persistAssistantMessage } from "./helpers"
+import { checkAndYieldCitationsForAgent } from "./tools/tool-utils"
 
 export async function AgenticRAG(c: Context): Promise<Response> {
   const tracer = getTracer("chat")

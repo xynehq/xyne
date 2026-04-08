@@ -743,6 +743,8 @@ export enum XyneTools {
   synthesizeFinalAnswer = "synthesize_final_answer",
   MetadataRetrieval = "metadata_retrieval",
   readDocument = "read_document",
+  getDocumentOutline = "getDocumentOutline",
+  getPageContent = "getPageContent",
 }
 
 export enum IngestionType {
