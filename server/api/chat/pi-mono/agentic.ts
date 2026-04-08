@@ -25,16 +25,13 @@ import config from "@/config"
 import { insertChatTrace } from "@/db/chatTrace"
 import { db } from "@/db/client"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
-import { getLogger, getLoggerWithChild } from "@/logger"
-import { expandSheetIds } from "@/search/utils"
+import { getLogger } from "@/logger"
 import { ChatSSEvents, type ReasoningEventPayload } from "@/shared/types"
 import { getTracer } from "@/tracer"
 import { Subsystem, type UserMetadataType } from "@/types"
-import { MessageRole } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { getDateForAI } from "@/utils/index"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
-import { Apps, AttachmentEntity } from "@xyne/vespa-ts/types"
 
 import {
   type XyneAgentState,

@@ -417,7 +417,7 @@ export async function persistAssistantMessage(
     messageRole: MessageRole.Assistant,
     email: user.email,
     sources: data.citations,
-    message: data.answer,
+    message: processMessage(data.answer, data.citationMap, user.email),
     thinking: data.thinkingLog,
     modelId,
     cost: "0",
