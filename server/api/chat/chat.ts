@@ -5189,15 +5189,6 @@ export const MessageApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("query")
     const isAgentic = c.req.query("agentic") === "true"
-    if (isAgentic) {
-      Logger.info(
-        `Routing to ${config.enableJaf ? "MessageAgents (JAF)" : "AgenticRAG (pi-mono)"} (pi-mono agentic flow)`,
-      )
-      if (config.enableJaf) {
-        return MessageAgents(c)
-      }
-      return AgenticRAG(c)
-    }
 
     let { message, chatId, selectedModelConfig, agentId }: MessageReqType = body
 
@@ -5282,6 +5273,15 @@ export const MessageApi = async (c: Context) => {
     const shouldUseMessageAgents =
       isAgentic && !enableWebSearch && !deepResearchEnabled
 
+    if (shouldUseMessageAgents) {
+      Logger.info(
+        `Routing to ${config.enableJaf ? "MessageAgents (JAF)" : "AgenticRAG (pi-mono)"} (pi-mono agentic flow)`,
+      )
+      if (config.enableJaf) {
+        return MessageAgents(c)
+      }
+      return AgenticRAG(c)
+    }
     let attachmentMetadata = parseAttachmentMetadata(c)
     let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
