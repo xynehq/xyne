@@ -1,9 +1,15 @@
 """Utility functions for the ingestion service."""
 
 import logging
-from typing import Optional
+import os
+from typing import Optional, List
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+# OCR Configuration from environment variables
+OCR_ENABLED = os.getenv("OCR_ENABLED", "true").lower() == "true"
+IMAGE_EXTRACTION_ENABLED = os.getenv("IMAGE_EXTRACTION_ENABLED", "true").lower() == "true"
+IMAGE_SCALE = float(os.getenv("IMAGE_SCALE", "2.0"))
 
 ALLOWED_EXTENSIONS = {
     '.pdf', '.docx', '.doc', '.pptx', '.ppt', 

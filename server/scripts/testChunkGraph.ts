@@ -1,65 +1,30 @@
 #!/usr/bin/env bun
 /**
- * Test script for semantic chunking
+ * Test script for semantic chunking with image processing
  *
  * Usage: bun run scripts/testChunkGraph.ts <pdf-path>
  *
  * This script:
  * 1. Reads a PDF file
  * 2. Sends it to Docling service (localhost:8000/parse)
- * 3. Processes Docling output with new semantic chunking pipeline
- * 4. Outputs enriched chunks for manual inspection
+ * 3. Processes Docling output with sync semantic iterator
+ * 4. Processes images and builds chunk arrays
+ * 5. Outputs enriched chunks with correct positional alignment
  */
 
 import { readFileSync } from "fs"
 import { resolve } from "path"
-import { processDoclingDocument } from "../lib"
+import { promises as fsPromises } from "fs"
+import crypto from "crypto"
+import { semanticIterator } from "../lib/semanticChunking/semantic"
+import { chunkSemanticStream } from "../lib/semanticChunking/chunking/chunker"
 import type { DoclingDocument } from "../lib/semanticChunking/docling/types"
 
 const API_URL = "http://localhost:8000/parse"
-const DEFAULT_TIMEOUT_MS = 300000 // 5 minutes for model loading on first run
+const DEFAULT_TIMEOUT_MS = 300000
 
 interface DoclingResponse {
-  document?: {
-    body?: {
-      children?: Array<{ $ref: string }>
-    }
-    texts?: Array<{
-      self_ref: string
-      label: string
-      text?: string
-      level?: number
-      prov?: Array<{ page_no?: number; bbox?: number[] }>
-    }>
-    tables?: Array<{
-      self_ref: string
-      data?: {
-        table_cells?: Array<{
-          text?: string
-          start_row_offset_idx?: number
-          start_col_offset_idx?: number
-          row?: number
-          col?: number
-          column_header?: boolean
-        }>
-      }
-      prov?: Array<{ page_no?: number }>
-    }>
-    pictures?: Array<{
-      self_ref: string
-      prov?: Array<{ page_no?: number }>
-    }>
-  }
-}
-
-interface EnrichedChunk {
-  index: number
-  text: string
-  tokens: number
-  charCount: number
-  pages: number[]
-  sectionPaths: string[][]
-  labels: string[]
+  document?: DoclingDocument
 }
 
 function estimateTokens(text: string): number {
@@ -72,37 +37,10 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function printChunk(chunk: EnrichedChunk, detailed: boolean = false): void {
-  console.log(`\n${"=".repeat(60)}`)
-  console.log(`CHUNK ${chunk.index}`)
-  console.log(`${"=".repeat(60)}`)
-  console.log(`Section: ${chunk.sectionPaths.map(sp => sp.join(" > ")).join(" | ") || "ROOT"}`)
-  console.log(`Pages: ${chunk.pages.join(", ") || "none"}`)
-  console.log(`Tokens: ${chunk.tokens} | Chars: ${chunk.charCount}`)
-  console.log(`Labels: ${chunk.labels.join(", ")}`)
-
-  if (detailed) {
-    console.log(`\nContent:`)
-    console.log("-".repeat(60))
-    // Show first 800 chars, or full text if shorter
-    const preview =
-      chunk.text.length > 800
-        ? chunk.text.substring(0, 800) + "\n... [truncated]"
-        : chunk.text
-    console.log(preview)
-  } else {
-    // Just show first line
-    const firstLine = chunk.text.split("\n")[0]
-    console.log(
-      `\nPreview: ${firstLine.substring(0, 100)}${firstLine.length > 100 ? "..." : ""}`,
-    )
-  }
-}
-
 async function testSemanticChunking(pdfPath: string): Promise<void> {
   const resolvedPath = resolve(pdfPath)
 
-  console.log(`\n📄 Testing Semantic Chunking`)
+  console.log(`\n📄 Testing Semantic Chunking with Image Processing`)
   console.log(`   File: ${resolvedPath}`)
 
   // Read PDF file
@@ -123,7 +61,7 @@ async function testSemanticChunking(pdfPath: string): Promise<void> {
   try {
     const formData = new FormData()
     const extension = resolvedPath.split(".").pop() || "pdf"
-    formData.append("file", new Blob([fileBuffer]), `document.${extension}`)
+    formData.append("file", new Blob([new Uint8Array(fileBuffer)]), `document.${extension}`)
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
@@ -143,28 +81,21 @@ async function testSemanticChunking(pdfPath: string): Promise<void> {
     doclingResponse = await response.json()
     console.log(`\n✅ Docling parsing complete`)
 
-    // Show document structure
     const doc = doclingResponse.document
     if (doc) {
-      console.log(`   Texts: ${doc.texts?.length || 0} items`)
-      console.log(`   Tables: ${doc.tables?.length || 0} items`)
-      console.log(`   Pictures: ${doc.pictures?.length || 0} items`)
+      const textCount = (doc as any).texts?.length || 0
+      const tableCount = (doc as any).tables?.length || 0
+      const pictureCount = (doc as any).pictures?.length || 0
+      console.log(`   Texts: ${textCount} items`)
+      console.log(`   Tables: ${tableCount} items`)
+      console.log(`   Pictures: ${pictureCount} items`)
     }
   } catch (error) {
     if (error instanceof Error) {
       if (error.name === "AbortError") {
-        console.error(
-          `\n❌ Request timed out after ${DEFAULT_TIMEOUT_MS / 1000}s`,
-        )
-        console.error(`   The Docling service may still be loading models.`)
-        console.error(`   Check server logs and try again in 2-3 minutes.`)
-      } else if (
-        error.message.includes("fetch failed") ||
-        error.message.includes("ECONNREFUSED")
-      ) {
+        console.error(`\n❌ Request timed out after ${DEFAULT_TIMEOUT_MS / 1000}s`)
+      } else if (error.message.includes("fetch failed")) {
         console.error(`\n❌ Cannot connect to Docling service at ${API_URL}`)
-        console.error(`   Is the server running?`)
-        console.error(`   Start it with: uvicorn app.main:app --reload`)
       } else {
         console.error(`\n❌ Error: ${error.message}`)
       }
@@ -172,164 +103,184 @@ async function testSemanticChunking(pdfPath: string): Promise<void> {
     process.exit(1)
   }
 
-  // Process with new semantic chunking pipeline
-  console.log(`\n⏳ Running semantic chunking pipeline...`)
-  const doc = doclingResponse.document as unknown as DoclingDocument
-  const chunks = processDoclingDocument(doc, { maxTokens: 400 })
-  console.log(`\n✅ Chunking complete: ${chunks.length} chunks generated`)
+  // Generate document ID
+  const docId = crypto.randomUUID()
 
-  // Count document structure
-  const sectionCount = doc.texts?.filter(t =>
-    t.label === "section_header" || t.label === "title"
-  ).length || 0
-  const paragraphCount = doc.texts?.filter(t =>
-    t.label === "text" || t.label === "paragraph"
-  ).length || 0
-  const tableCount = doc.tables?.length || 0
-  const imageCount = doc.pictures?.length || 0
+  // Process with sync semantic iterator
+  console.log(`\n⏳ Running sync semantic iterator...`)
+  console.log(`   Doc ID: ${docId}`)
 
-  console.log(`\n📊 Document structure:`)
-  console.log(`   Sections: ${sectionCount}`)
-  console.log(`   Paragraphs: ${paragraphCount}`)
-  console.log(`   Tables: ${tableCount}`)
-  console.log(`   Images: ${imageCount}`)
+  const doc = doclingResponse.document!
+  const nodes = [...semanticIterator(doc, { filterBodyOnly: true })]
+  
+  // Count images in nodes
+  const imageCount = nodes.filter((n: any) => n.type === "image").length
+  console.log(`\n✅ Iterator complete: ${nodes.length} nodes generated`)
+  console.log(`   Images found: ${imageCount}`)
 
-  // Enrich chunks
-  const enrichedChunks: EnrichedChunk[] = chunks.map((chunk, idx) => ({
-    index: idx,
-    text: chunk.text,
-    tokens: estimateTokens(chunk.text),
-    charCount: chunk.text.length,
-    pages: chunk.metadata.pageNumbers,
-    sectionPaths: chunk.metadata.sectionPaths,
-    labels: chunk.metadata.labels,
-  }))
+  // Process images and build chunks
+  console.log(`\n⏳ Processing images and building chunks...`)
+  const {
+    text_chunks,
+    image_chunks,
+    text_chunk_pos,
+    image_chunk_pos,
+    text_chunks_map,
+    image_chunks_map,
+  } = await chunkSemanticStream(nodes, {
+    docId,
+    describeImages: true,
+  })
 
-  // Source text totals (before semantic chunking)
-  const sourceTexts = (doc.texts || [])
-    .map((t) => t.text || "")
-    .filter((t) => t.trim().length > 0)
-  const sourceTextCharCount = sourceTexts.reduce((sum, t) => sum + t.length, 0)
-  const sourceTextTokenCount = sourceTexts.reduce((sum, t) => sum + estimateTokens(t), 0)
+  console.log(`✅ Image processing complete`)
+  console.log(`   Text chunks: ${text_chunks.length}`)
+  console.log(`   Image chunks: ${image_chunks.length}`)
 
   // Calculate statistics
-  const totalTokens = enrichedChunks.reduce((sum, c) => sum + c.tokens, 0)
-  const totalChars = enrichedChunks.reduce((sum, c) => sum + c.charCount, 0)
-  const avgTokens = Math.round(totalTokens / enrichedChunks.length)
-  const minTokens = Math.min(...enrichedChunks.map((c) => c.tokens))
-  const maxTokens = Math.max(...enrichedChunks.map((c) => c.tokens))
+  const totalTextTokens = text_chunks.reduce((sum, text) => sum + estimateTokens(text), 0)
+  const totalImageTokens = image_chunks.reduce((sum, desc) => sum + estimateTokens(desc), 0)
 
   console.log(`\n${"=".repeat(60)}`)
   console.log("STATISTICS")
   console.log(`${"=".repeat(60)}`)
-  console.log(`Total chunks: ${chunks.length}`)
-  console.log(`Total tokens: ${totalTokens}`)
-  console.log(`Average tokens/chunk: ${avgTokens}`)
-  console.log(`Min tokens: ${minTokens} | Max tokens: ${maxTokens}`)
-
-  // Show all chunks (summary view)
+  console.log(`Document ID: ${docId}`)
+  console.log(`Semantic nodes: ${nodes.length}`)
+  console.log(`Text chunks: ${text_chunks.length}`)
+  console.log(`Image chunks: ${image_chunks.length}`)
+  // Enhanced statistics and validation
   console.log(`\n${"=".repeat(60)}`)
-  console.log("ALL CHUNKS (Summary)")
+  console.log("VALIDATION")
   console.log(`${"=".repeat(60)}`)
-
-  for (const chunk of enrichedChunks) {
-    printChunk(chunk, false)
-  }
-
-  // Show first 3 chunks in detail
-  console.log(`\n${"=".repeat(60)}`)
-  console.log("DETAILED VIEW (First 3 chunks)")
-  console.log(`${"=".repeat(60)}`)
-
-  for (const chunk of enrichedChunks.slice(0, 3)) {
-    printChunk(chunk, true)
-  }
-
-  // Quality checks
-  console.log(`\n${"=".repeat(60)}`)
-  console.log("QUALITY CHECKS")
-  console.log(`${"=".repeat(60)}`)
-
-  let issues: string[] = []
-
-  // Check 1: Section context
-  const missingSectionContext = enrichedChunks.filter(
-    (c) => c.sectionPaths.length === 0 && !c.text.startsWith("ROOT"),
+  
+  // Validate sequence ordering
+  const allPositions = [...text_chunk_pos, ...image_chunk_pos].sort((a, b) => a - b)
+  const expectedPositions = Array.from({length: allPositions.length}, (_, i) => i)
+  const sequencesValid = JSON.stringify(allPositions) === JSON.stringify(expectedPositions)
+  console.log(`Sequence continuity: ${sequencesValid ? '✅ PASS' : '❌ FAIL'}`)
+  console.log(`  Positions: ${allPositions.slice(0, 10).join(", ")}${allPositions.length > 10 ? '...' : ''}`)
+  
+  // Check metadata completeness
+  const textMetaComplete = text_chunks_map.every(m => 
+    m.chunk_index !== undefined && 
+    m.page_numbers !== undefined && 
+    m.block_labels !== undefined
   )
-  if (missingSectionContext.length > 0) {
-    issues.push(
-      `⚠️  ${missingSectionContext.length} chunks missing section context`,
-    )
-  } else {
-    console.log(`✅ All chunks have section context`)
-  }
-
-  // Check 2: Chunk size distribution
-  const oversizedChunks = enrichedChunks.filter((c) => c.tokens > 500)
-  const undersizedChunks = enrichedChunks.filter((c) => c.tokens < 50)
-
-  if (oversizedChunks.length > 0) {
-    issues.push(`⚠️  ${oversizedChunks.length} oversized chunks (>500 tokens)`)
-  }
-  if (undersizedChunks.length > enrichedChunks.length * 0.3) {
-    issues.push(`⚠️  ${undersizedChunks.length} very small chunks (<50 tokens)`)
-  }
-  if (
-    oversizedChunks.length === 0 &&
-    undersizedChunks.length <= enrichedChunks.length * 0.3
-  ) {
-    console.log(`✅ Chunk sizes look healthy`)
-  }
-
-  // Check 3: Section isolation
-  const mixedSections = enrichedChunks.filter((c) => {
-    const lines = c.text.split("\n")
-    const sectionHeaders = lines.filter((l) => l.match(/^#+ /))
-    return sectionHeaders.length > 1
-  })
-  if (mixedSections.length > 0) {
-    issues.push(`⚠️  ${mixedSections.length} chunks may have mixed sections`)
-  } else {
-    console.log(`✅ No obvious section mixing detected`)
-  }
-
-  // Print issues
-  if (issues.length > 0) {
-    console.log(`\n⚠️  ISSUES FOUND:`)
-    for (const issue of issues) {
-      console.log(`   ${issue}`)
+  const imageMetaComplete = image_chunks_map.every(m => 
+    m.chunk_index !== undefined && 
+    m.page_numbers !== undefined && 
+    m.block_labels !== undefined &&
+    m.image_path !== undefined
+  )
+  console.log(`Text metadata: ${textMetaComplete ? '✅ Complete' : '❌ Incomplete'}`)
+  console.log(`Image metadata: ${imageMetaComplete ? '✅ Complete' : '❌ Incomplete'}`)
+  
+  // Bbox validation
+  const chunksWithBboxes = text_chunks_map.filter(m => m.bboxes && m.bboxes.length > 0).length
+  const chunksWithoutBboxes = text_chunks_map.length - chunksWithBboxes
+  console.log(`\nBounding Box Coverage:`)
+  console.log(`  With bboxes: ${chunksWithBboxes}/${text_chunks_map.length} chunks`)
+  console.log(`  Without bboxes: ${chunksWithoutBboxes}/${text_chunks_map.length} chunks`)
+  
+  // Show bbox samples
+  if (chunksWithBboxes > 0) {
+    const sampleWithBbox = text_chunks_map.find(m => m.bboxes && m.bboxes.length > 0)
+    if (sampleWithBbox) {
+      console.log(`  Sample bbox: ${JSON.stringify(sampleWithBbox.bboxes![0])}`)
     }
-  } else {
-    console.log(`\n✅ All quality checks passed!`)
+  }
+  
+  // Check which chunk types have bboxes
+  const sectionChunksWithBboxes = text_chunks_map.filter(m => 
+    m.block_labels?.includes('section') && m.bboxes?.length
+  ).length
+  const tableChunksWithBboxes = text_chunks_map.filter(m => 
+    m.block_labels?.includes('table') && m.bboxes?.length
+  ).length
+  const paragraphChunksWithBboxes = text_chunks_map.filter(m => 
+    m.block_labels?.includes('paragraph') && m.bboxes?.length
+  ).length
+  console.log(`\nBbox by type:`)
+  console.log(`  Sections: ${sectionChunksWithBboxes}`)
+  console.log(`  Tables: ${tableChunksWithBboxes}`)
+  console.log(`  Paragraphs: ${paragraphChunksWithBboxes}`)
+  
+  // Interleaving check
+  let textIdx = 0
+  let imageIdx = 0
+  const interleavePattern: string[] = []
+  for (let i = 0; i < allPositions.length; i++) {
+    if (textIdx < text_chunk_pos.length && text_chunk_pos[textIdx] === i) {
+      interleavePattern.push('T')
+      textIdx++
+    } else if (imageIdx < image_chunk_pos.length && image_chunk_pos[imageIdx] === i) {
+      interleavePattern.push('I')
+      imageIdx++
+    }
+  }
+  console.log(`Interleave pattern: ${interleavePattern.slice(0, 20).join('')}${interleavePattern.length > 20 ? '...' : ''}`)
+  console.log(`  (T=text, I=image)`)
+
+  // Show sample outputs
+  console.log(`\n${"=".repeat(60)}`)
+  console.log("SAMPLE TEXT CHUNKS")
+  console.log(`${"=".repeat(60)}`)
+
+  for (let i = 0; i < Math.min(3, text_chunks.length); i++) {
+    const text = text_chunks[i]
+    const preview = text.length > 200 
+      ? text.substring(0, 200) + "..." 
+      : text
+    console.log(`\n[${i}] Seq: ${text_chunk_pos[i]}, Pages: ${text_chunks_map[i]?.page_numbers?.join(", ") || "N/A"}`)
+    console.log(`    Labels: ${text_chunks_map[i]?.block_labels?.join(", ")}`)
+    console.log(`    ${preview}`)
   }
 
-  // Save full output to file
+  if (image_chunks.length > 0) {
+    console.log(`\n${"=".repeat(60)}`)
+    console.log("SAMPLE IMAGE DESCRIPTIONS")
+    console.log(`${"=".repeat(60)}`)
+
+    for (let i = 0; i < Math.min(3, image_chunks.length); i++) {
+      const preview = image_chunks[i].length > 200 
+        ? image_chunks[i].substring(0, 200) + "..." 
+        : image_chunks[i]
+      console.log(`\n[${i}] Seq: ${image_chunk_pos[i]}, Pages: ${image_chunks_map[i]?.page_numbers?.join(", ") || "N/A"}`)
+      console.log(`    Image: ${image_chunks_map[i]?.image_path?.split('/').pop()}`)
+      console.log(`    Dimensions: ${image_chunks_map[i]?.dimensions?.width}x${image_chunks_map[i]?.dimensions?.height}`)
+      console.log(`    ${preview}`)
+    }
+  }
+
+  // Save output
   const baseName = resolvedPath.split("/").pop()?.split(".")[0]
   const basePath = resolvedPath.slice(0, resolvedPath.lastIndexOf("/"))
   const outputPath = `${basePath}/${baseName}.chunks.json`
-  const fs = await import("fs")
-  fs.writeFileSync(
+
+  await fsPromises.writeFile(
     outputPath,
     JSON.stringify(
       {
         metadata: {
           sourceFile: resolvedPath,
-          totalChunks: chunks.length,
-          sourceTextTokenCount,
-          sourceTextCharCount,
-          chunkedTextTokenCount: totalTokens,
-          chunkedTextCharCount: totalChars,
-          totalTokens, // backward compatibility
-          avgTokens,
-          minTokens,
-          maxTokens,
+          docId,
+          totalNodes: nodes.length,
+          textChunks: text_chunks.length,
+          imageChunks: image_chunks.length,
+          totalTextTokens,
+          totalImageTokens,
         },
-        chunks: enrichedChunks,
+        text_chunks,
+        image_chunks,
+        text_chunk_pos,
+        image_chunk_pos,
+        text_chunks_map,
+        image_chunks_map,
       },
       null,
       2,
     ),
   )
+
   console.log(`\n💾 Full output saved to: ${outputPath}`)
   console.log(`\n✨ Test complete!`)
 }

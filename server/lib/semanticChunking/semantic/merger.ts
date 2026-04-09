@@ -3,6 +3,8 @@
  * Accumulates fragmented text and flushes complete paragraphs
  */
 
+import type { BBox } from "./types"
+
 /**
  * Text buffer state
  */
@@ -10,6 +12,7 @@ interface BufferState {
   text: string
   refs: string[]
   pages: number[]
+  bboxes: Map<number, BBox>  // Track bbox per page
 }
 
 /**
@@ -40,18 +43,33 @@ export function mergeText(buffer: string, newText: string): string {
  * Text buffer for accumulating document fragments
  */
 export class TextBuffer {
-  private state: BufferState = { text: "", refs: [], pages: [] }
+  private state: BufferState = { text: "", refs: [], pages: [], bboxes: new Map() }
 
   /**
    * Add text to buffer
    */
-  append(text: string, ref: string, pageNumbers: number[] = []): void {
+  append(text: string, ref: string, pageNumbers: number[] = [], bbox?: BBox): void {
     if (!text || text.trim().length === 0) return
 
     this.state.text = mergeText(this.state.text, text)
     this.state.refs.push(ref)
     if (pageNumbers.length > 0) {
       this.state.pages.push(...pageNumbers)
+    }
+    
+    // Track bbox per page
+    if (bbox && pageNumbers.length > 0) {
+      for (const page of pageNumbers) {
+        const existing = this.state.bboxes.get(page)
+        if (!existing) {
+          this.state.bboxes.set(page, { ...bbox })
+        } else {
+          existing.l = Math.min(existing.l, bbox.l)
+          existing.t = Math.min(existing.t, bbox.t)
+          existing.r = Math.max(existing.r, bbox.r)
+          existing.b = Math.max(existing.b, bbox.b)
+        }
+      }
     }
   }
 
@@ -72,13 +90,14 @@ export class TextBuffer {
   /**
    * Flush buffer and return accumulated content
    */
-  flush(): { text: string; refs: string[]; pageNumbers: number[] } | null {
+  flush(): { text: string; refs: string[]; pageNumbers: number[]; bboxes: Map<number, BBox> } | null {
     if (this.isEmpty()) return null
 
     const result = {
       text: this.state.text.trim(),
       refs: [...this.state.refs],
       pageNumbers: Array.from(new Set(this.state.pages)),
+      bboxes: new Map(this.state.bboxes),
     }
 
     this.clear()
@@ -89,17 +108,18 @@ export class TextBuffer {
    * Clear buffer without returning
    */
   clear(): void {
-    this.state = { text: "", refs: [], pages: [] }
+    this.state = { text: "", refs: [], pages: [], bboxes: new Map() }
   }
 
   /**
    * Peek at current buffer content without clearing
    */
-  peek(): { text: string; refs: string[]; pageNumbers: number[] } {
+  peek(): { text: string; refs: string[]; pageNumbers: number[]; bboxes: Map<number, BBox> } {
     return {
       text: this.state.text,
       refs: [...this.state.refs],
       pageNumbers: Array.from(new Set(this.state.pages)),
+      bboxes: new Map(this.state.bboxes),
     }
   }
 }

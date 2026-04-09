@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 
 from app.parser import parse_document
-from app.models import HealthResponse, ParseResponse, ErrorResponse
+from app.models import HealthResponse, ParseResponse, ErrorResponse, ExtractedImage
 from app.utils import validate_file_size, validate_file_type, setup_logging
 
 setup_logging()
@@ -59,11 +59,11 @@ async def parse(file: UploadFile = File(...)):
         # Parse document
         # TODO: Add timeout protection for production
         # This is a blocking call - may hang if Docling fails
-        parsed = parse_document(content, file.filename)
+        result = parse_document(content, file.filename)
         
         return ParseResponse(
             status="success",
-            document=parsed,
+            document=result,
             filename=file.filename,
             file_size=len(content)
         )

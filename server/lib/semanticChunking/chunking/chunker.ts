@@ -1,36 +1,50 @@
 /**
  * Main chunking implementation
  * Converts semantic node stream to token-aware chunks
- *
- * Follows the same rules as chunkGraph.ts:
- * - Every chunk starts with the section title
- * - Images are merged with content (not isolated)
- * - Tables get their own chunks but with section title prepended
- * - Section context is preserved via sectionPath and prepended title
- * - Full traceability: refs are propagated from source nodes
+ * Now with inline image processing
  */
 
 import type { SemanticNode, SemanticSectionNode, SemanticParagraphNode, SemanticTableNode, SemanticImageNode } from "../semantic/types"
-import type { Chunk, ChunkingOptions } from "./types"
+import type { Chunk, ChunkingOptions, ChunkingResult } from "./types"
 import { estimateTokens, splitIntoSentences, getUnique, generateChunkId, getOverlapText } from "./utils"
+import { processImageNode, type ProcessedImage } from "../docling/imageProcessor"
+import { DeferredImageDescriptionBatch } from "../../deferredImageDescription"
+import { randomUUID } from "crypto"
+import { type ChunkMetadata } from "@/types"
 
 interface AccumulatedChunk {
   text: string
   tokens: number
-  nodes: SemanticNode[]  // Source of truth - all other metadata derived from this
+  nodes: SemanticNode[]
+}
+
+interface PendingImage {
+  seq: number
+  node: SemanticImageNode
+}
+
+interface ImageProcessingState {
+  batch: DeferredImageDescriptionBatch
+  docId: string
+  describeImages: boolean
+  seqToHash: Map<number, string>
+  pendingImages: PendingImage[]
 }
 
 /**
  * Main chunking function - converts semantic stream to chunks
+ * Now async to handle inline image processing
  */
-export function chunkSemanticStream(
+export async function chunkSemanticStream(
   nodes: Iterable<SemanticNode>,
   options: ChunkingOptions = {}
-): Chunk[] {
+): Promise<ChunkingResult> {
   const {
     maxTokens = 512,
     minTokens = 50,
     targetTokens: userTargetTokens,
+    docId = randomUUID(),
+    describeImages = true,
   } = options
 
   const targetTokens = userTargetTokens ?? Math.floor((minTokens + maxTokens) / 2)
@@ -38,19 +52,24 @@ export function chunkSemanticStream(
   const maxOverlapTokens = Math.floor(maxTokens * 0.15)
 
   const chunks: Chunk[] = []
-  let chunkIndex = 0
+  
+  // Global sequence counter for chunks and images (like pdfChunks)
+  let globalSeq = 0
 
-  // Current section state (from iterator - trust it)
+  // Current section state
   let currentSectionPath: string[] = []
-
-  // Current accumulation state
   let currentAcc: AccumulatedChunk | null = null
-
-  // NEW: Track content since section boundary
   let hasContentSinceSection = false
-
-  // NEW: Track last original text for overlap (prevents pollution)
   let lastOriginalText = ""
+
+  // Image processing state
+  const imageState: ImageProcessingState = {
+    batch: new DeferredImageDescriptionBatch(),
+    docId,
+    describeImages,
+    seqToHash: new Map(),
+    pendingImages: [],
+  }
 
   /**
    * Get the current section title text (for prepending to chunks)
@@ -76,14 +95,6 @@ export function chunkSemanticStream(
     const prefix = base.trimEnd()
     if (!prefix) return line
     return `${prefix}\n${line}`
-  }
-
-  function isSameSectionPath(a: string[], b: string[]): boolean {
-    if (a.length !== b.length) return false
-    for (let i = 0; i < a.length; i++) {
-      if (a[i] !== b[i]) return false
-    }
-    return true
   }
 
   /**
@@ -114,36 +125,54 @@ export function chunkSemanticStream(
     return Array.from(pages).sort((a, b) => a - b)
   }
 
-  /**
-   * Derive section paths from nodes
-   */
-  function deriveSectionPaths(nodes: SemanticNode[]): string[][] {
-    const paths: string[][] = []
-    const seen = new Set<string>()
-    
-    for (const node of nodes) {
-      const pathKey = JSON.stringify(node.sectionPath)
-      if (!seen.has(pathKey)) {
-        seen.add(pathKey)
-        paths.push([...node.sectionPath])
-      }
-    }
-    
-    return paths
-  }
 
-  /**
-   * Derive refs from nodes
-   */
-  function deriveRefs(nodes: SemanticNode[]): string[] {
-    const refs = new Set<string>()
+  function derivePerPageBBoxes(nodes: SemanticNode[]): { page: number; l: number; t: number; r: number; b: number }[] | undefined {
+    const pageMap = new Map<number, { l: number; t: number; r: number; b: number }>()
+
     for (const node of nodes) {
-      refs.add(node.ref)
-      for (const ref of node.sourceRefs) {
-        refs.add(ref)
+      const nodeBboxes = (node as { bboxes?: { page: number; l: number; t: number; r: number; b: number }[] }).bboxes
+      if (nodeBboxes && nodeBboxes.length > 0) {
+        for (const { page, l, t, r, b } of nodeBboxes) {
+          const existing = pageMap.get(page)
+          if (!existing) {
+            pageMap.set(page, { l, t, r, b })
+          } else {
+            existing.l = Math.min(existing.l, l)
+            existing.t = Math.min(existing.t, t)
+            existing.r = Math.max(existing.r, r)
+            existing.b = Math.max(existing.b, b)
+          }
+        }
+        continue
+      }
+
+      if (!node.bbox) continue
+
+      const pages = node.pageNumbers?.length
+        ? node.pageNumbers
+        : node.pageNo !== undefined
+          ? [node.pageNo]
+          : []
+
+      for (const page of pages) {
+        const existing = pageMap.get(page)
+        if (!existing) {
+          pageMap.set(page, { ...node.bbox })
+        } else {
+          existing.l = Math.min(existing.l, node.bbox.l)
+          existing.t = Math.min(existing.t, node.bbox.t)
+          existing.r = Math.max(existing.r, node.bbox.r)
+          existing.b = Math.max(existing.b, node.bbox.b)
+        }
       }
     }
-    return Array.from(refs)
+
+    if (pageMap.size === 0) return undefined
+
+    return Array.from(pageMap.entries()).map(([page, bbox]) => ({
+      page,
+      ...bbox
+    }))
   }
 
   /**
@@ -152,52 +181,14 @@ export function chunkSemanticStream(
    */
   function buildChunk(acc: AccumulatedChunk): Chunk {
     return {
-      id: generateChunkId(chunkIndex),
+      id: generateChunkId(globalSeq),
       text: acc.text,
       metadata: {
-        index: chunkIndex++,
-        pageNumbers: derivePageNumbers(acc.nodes),
-        sectionPaths: deriveSectionPaths(acc.nodes),
-        labels: deriveLabels(acc.nodes),
-        tokenCount: acc.tokens,
-        charCount: acc.text.length,
+        chunk_index: globalSeq,
+        page_numbers: derivePageNumbers(acc.nodes),
+        block_labels: deriveLabels(acc.nodes),
+        bboxes: derivePerPageBBoxes(acc.nodes),
       },
-      refs: deriveRefs(acc.nodes),
-    }
-  }
-
-  /**
-   * Build a single table chunk with proper formatting
-   * Format: sectionTitle + header + rows (each row on new line)
-   */
-  function buildTableChunk(
-    sectionTitle: string,
-    headerText: string,
-    rows: string[][],
-    tablePages: number[],
-    tableRefs: string[],
-    idx: number
-  ): Chunk {
-    const lines: string[] = [sectionTitle, headerText]
-
-    for (const row of rows) {
-      lines.push(row.join(" | "))
-    }
-
-    const text = lines.join("\n")
-
-    return {
-      id: generateChunkId(idx),
-      text,
-      metadata: {
-        index: idx,
-        pageNumbers: tablePages,
-        sectionPaths: [[...currentSectionPath]],
-        labels: ["section", "table"],
-        tokenCount: estimateTokens(text),
-        charCount: text.length,
-      },
-      refs: getUnique(tableRefs),
     }
   }
 
@@ -229,12 +220,52 @@ export function chunkSemanticStream(
     }
 
     chunks.push(buildChunk(currentAcc))
+    globalSeq++  // Increment global sequence for text chunks
     
     // Store ORIGINAL text for next overlap (not the mutated version with overlap)
     lastOriginalText = originalText
     
     currentAcc = null
     hasContentSinceSection = false
+  }
+
+  /**
+   * Extract base64 data from data URI
+   */
+  function extractBase64FromUri(uri: string): { mime: string; data: Buffer } | null {
+    const match = uri.match(/^data:([^;]+);base64,(.+)$/)
+    if (!match) return null
+    const [, mime, base64] = match
+    return { mime, data: Buffer.from(base64, "base64") }
+  }
+
+  /**
+   * Process image inline - save to disk and register for description
+   */
+  async function processImageInline(imageNode: SemanticImageNode, seq: number): Promise<ProcessedImage | null> {
+    if (!imageNode.imageUri) {
+      return null
+    }
+
+    const extracted = extractBase64FromUri(imageNode.imageUri)
+    if (!extracted) {
+      return null
+    }
+
+    // Process and save image with metadata
+    const processedImage = await processImageNode({
+      seq: seq,
+      imageUri: imageNode.imageUri,
+      mimetype: imageNode.mimetype,
+      width: imageNode.width,
+      height: imageNode.height,
+    }, {
+      docId: imageState.docId,
+      describeImages: imageState.describeImages,
+      batch: imageState.batch,
+    })
+
+    return processedImage
   }
 
   /**
@@ -406,18 +437,21 @@ export function chunkSemanticStream(
           // Simple table (no structured data), create single chunk
           const tableText = tableNode.text
           const text = sectionTitle + "\n" + tableText
+          
+          const bboxes = tableNode?.bbox
+            ? tablePages.map(page => ({ page, ...tableNode.bbox! }))
+            : undefined
+          
+          const seq = globalSeq++
           chunks.push({
-            id: generateChunkId(chunkIndex++),
+            id: generateChunkId(seq),
             text,
             metadata: {
-              index: chunkIndex - 1,
-              pageNumbers: tablePages,
-              sectionPaths: [[...currentSectionPath]],
-              labels: ["section", "table"],
-              tokenCount: estimateTokens(text),
-              charCount: text.length,
+              chunk_index: seq,
+              page_numbers: tablePages,
+              block_labels: ["section", "table"],
+              bboxes,
             },
-            refs: getUnique(tableRefs),
           })
         } else {
           // Structured table with header - split if needed with header repetition
@@ -429,6 +463,10 @@ export function chunkSemanticStream(
           let currentRows: string[][] = []
           let currentTokens = baseTokens
 
+          const bboxes = tableNode?.bbox
+            ? tablePages.map(page => ({ page, ...tableNode.bbox! }))
+            : undefined
+
           for (const row of rows) {
             const rowText = row.join(" | ")
             const rowTokens = estimateTokens(rowText)
@@ -437,12 +475,32 @@ export function chunkSemanticStream(
             if (rowTokens > maxTokens - sectionTokens) {
               // Flush any accumulated rows first
               if (currentRows.length > 0) {
-                chunks.push(buildTableChunk(sectionTitle, headerText, currentRows, tablePages, tableRefs, chunkIndex++))
+                const chunkText = [sectionTitle, headerText, ...currentRows.map(r => r.join(" | "))].join("\n")
+                chunks.push({
+                  id: generateChunkId(globalSeq),
+                  text: chunkText,
+                  metadata: {
+                    chunk_index: globalSeq++,
+                    page_numbers: tablePages,
+                    block_labels: ["section", "table"],
+                    bboxes,
+                  },
+                })
                 currentRows = []
                 currentTokens = baseTokens
               }
               // Handle oversized row - put in its own chunk
-              chunks.push(buildTableChunk(sectionTitle, headerText, [row], tablePages, tableRefs, chunkIndex++))
+              const chunkText = [sectionTitle, headerText, row.join(" | ")].join("\n")
+              chunks.push({
+                id: generateChunkId(globalSeq),
+                text: chunkText,
+                metadata: {
+                  chunk_index: globalSeq++,
+                  page_numbers: tablePages,
+                  block_labels: ["section", "table"],
+                  bboxes,
+                },
+              })
               continue
             }
 
@@ -453,7 +511,17 @@ export function chunkSemanticStream(
             } else {
               // Flush current batch
               if (currentRows.length > 0) {
-                chunks.push(buildTableChunk(sectionTitle, headerText, currentRows, tablePages, tableRefs, chunkIndex++))
+                const chunkText = [sectionTitle, headerText, ...currentRows.map(r => r.join(" | "))].join("\n")
+                chunks.push({
+                  id: generateChunkId(globalSeq),
+                  text: chunkText,
+                  metadata: {
+                    chunk_index: globalSeq++,
+                    page_numbers: tablePages,
+                    block_labels: ["section", "table"],
+                    bboxes,
+                  },
+                })
               }
               // Start new batch with this row
               currentRows = [row]
@@ -463,7 +531,17 @@ export function chunkSemanticStream(
 
           // Flush remaining rows
           if (currentRows.length > 0) {
-            chunks.push(buildTableChunk(sectionTitle, headerText, currentRows, tablePages, tableRefs, chunkIndex++))
+            const chunkText = [sectionTitle, headerText, ...currentRows.map(r => r.join(" | "))].join("\n")
+            chunks.push({
+              id: generateChunkId(globalSeq),
+              text: chunkText,
+              metadata: {
+                chunk_index: globalSeq++,
+                page_numbers: tablePages,
+                block_labels: ["section", "table"],
+                bboxes,
+              },
+            })
           }
         }
 
@@ -476,38 +554,18 @@ export function chunkSemanticStream(
 
       case "image": {
         const imageNode = node as SemanticImageNode
+        const seq = globalSeq++
 
-        // Images are treated as atomic units and merged with content
-        const imageText = imageNode.description || "[image]"
-        const imageTokens = estimateTokens(imageText)
-        const imagePages = getUnique(
-          (imageNode.pageNumbers && imageNode.pageNumbers.length > 0)
-            ? imageNode.pageNumbers
-            : [imageNode.pageNo].filter((p): p is number => p !== undefined)
-        )
-        const imageRefs = imageNode.sourceRefs
+        // Process image inline - save to disk and register for description
+        const processed = await processImageInline(imageNode, seq)
 
-        // Initialize accumulator if needed
-        if (!currentAcc) {
-          currentAcc = resetAccumulatedChunk()
-        }
+        if (processed) {
+          imageState.seqToHash.set(seq, processed.imageHash)
 
-        const currentTokens = currentAcc.tokens
-
-        if (currentTokens + imageTokens <= maxTokens) {
-          // Add to current chunk
-          currentAcc.text = appendLine(currentAcc.text, imageText)
-          currentAcc.tokens += imageTokens
-          currentAcc.nodes.push(imageNode)  // Track the node
-          hasContentSinceSection = true
-        } else {
-          // Flush and start new chunk
-          flushChunk(hasContentSinceSection) // Add overlap if mid-section
-          currentAcc = resetAccumulatedChunk()
-          currentAcc.text = appendLine(currentAcc.text, imageText)
-          currentAcc.tokens += imageTokens
-          currentAcc.nodes.push(imageNode)  // Track the node
-          hasContentSinceSection = true
+          imageState.pendingImages.push({
+            seq,
+            node: imageNode,
+          })
         }
         break
       }
@@ -561,5 +619,61 @@ export function chunkSemanticStream(
     }
   }
 
-  return chunks
+  // Flush image descriptions at the end
+  if (imageState.describeImages && imageState.seqToHash.size > 0) {
+    await imageState.batch.flushDescribeQueue(true)
+    
+    // Build image chunks after LLM flush
+    const image_chunks: string[] = []
+    const image_chunk_pos: number[] = []
+    const image_chunks_map: ChunkMetadata[] = []
+    
+    for (const img of imageState.pendingImages) {
+      const hash = imageState.seqToHash.get(img.seq)
+      if (!hash) continue
+      
+      // Placeholder (will be replaced by applyResolvedDescriptions)
+      image_chunks.push(imageState.batch["placeholderText"] || "This is an image.")
+      image_chunk_pos.push(img.seq)
+      
+      image_chunks_map.push({
+        chunk_index: img.seq,
+        page_numbers: derivePageNumbers([img.node]),
+        block_labels: ["image"],
+        bboxes: derivePerPageBBoxes([img.node]),
+      })
+    }
+    
+    // Apply resolved descriptions
+    imageState.batch.applyResolvedDescriptions(image_chunks, image_chunk_pos, imageState.seqToHash)
+    
+    // Strip rejected image rows
+    imageState.batch.stripRejectedImageRows(image_chunks, image_chunk_pos, imageState.seqToHash, image_chunks_map)
+    
+    // Build text_chunks_map
+    const text_chunk_pos: number[] = chunks.map(c => c.metadata.chunk_index)
+    const text_chunks_map: ChunkMetadata[] = chunks.map(c => (c.metadata))
+    
+    return {
+      text_chunks: chunks.map(c => c.text),
+      image_chunks,
+      text_chunk_pos,
+      image_chunk_pos,
+      text_chunks_map,
+      image_chunks_map,
+    }
+  }
+  
+  // No images to process - return text chunks only
+  const text_chunk_pos: number[] = chunks.map(c => c.metadata.chunk_index)
+  const text_chunks_map = chunks.map(c => (c.metadata))
+  
+  return {
+    text_chunks: chunks.map(c => c.text),
+    image_chunks: [],
+    text_chunk_pos,
+    image_chunk_pos: [],
+    text_chunks_map,
+    image_chunks_map: [],
+  }
 }

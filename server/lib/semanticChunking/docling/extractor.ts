@@ -3,12 +3,10 @@
  */
 
 import type {
-  DoclingNode,
   DoclingTextItem,
   DoclingTableItem,
   TableCell,
 } from "./types"
-import { buildLookup, hasChildren, isTextItem } from "./lookup"
 
 /**
  * Extract text from a single node (NOT recursive)

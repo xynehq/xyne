@@ -37,6 +37,7 @@ export interface SemanticSectionNode extends SemanticNodeBase {
 export interface SemanticParagraphNode extends SemanticNodeBase {
   type: "paragraph"
   text: string
+  bboxes?: { page: number; l: number; t: number; r: number; b: number }[]  // Per-page bboxes
 }
 
 // Table cell structure
@@ -59,7 +60,11 @@ export interface SemanticTableNode extends SemanticNodeBase {
 // Image/picture node
 export interface SemanticImageNode extends SemanticNodeBase {
   type: "image"
-  description?: string
+  description: string
+  imageUri: string  // Base64 data URI from Docling
+  mimetype?: string  // e.g., "image/png"
+  width?: number
+  height?: number
 }
 
 // Comment/annotation node

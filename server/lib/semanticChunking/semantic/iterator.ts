@@ -6,6 +6,7 @@
  * FIXED: No 'as any' type assertions
  * ADDED: Caption extraction for tables/images
  * ADDED: Key-value item support
+ * ADDED: Image nodes with base64 URI (images processed later by chunker)
  */
 
 import type { DoclingDocument, DoclingNode, DoclingTableItem, DoclingPictureItem, DoclingRef, DoclingKeyValueItem, DoclingGroupItem } from "../docling/types"
@@ -108,6 +109,12 @@ export function* semanticIterator(
     if (isNoiseText(flushed.text)) return
 
     hasContentSinceLastSection = true
+    
+    // Convert bboxes Map to array format
+    const bboxes = flushed.bboxes.size > 0
+      ? Array.from(flushed.bboxes.entries()).map(([page, bbox]) => ({ page, ...bbox }))
+      : undefined
+    
     yield {
       type: "paragraph",
       ref: flushed.refs[0] || "",
@@ -116,7 +123,8 @@ export function* semanticIterator(
       sectionPath: getSectionPath(),
       sourceRefs: flushed.refs,
       text: flushed.text,
-      bbox: undefined,
+      bbox: bboxes?.[0],  // Keep first bbox for backward compatibility
+      bboxes,
     }
   }
 
@@ -345,7 +353,7 @@ export function* semanticIterator(
         sourceRefs: [section.ref],
         title: section.title,
         level: effectiveLevel,
-        bbox: undefined,
+        bbox: getBBox(node),
       }
       return
     }
@@ -374,7 +382,7 @@ export function* semanticIterator(
       return
     }
 
-    // Handle pictures/images
+    // Handle pictures/images - yield with base64 URI (processing happens in chunker)
     if (isPictureItem(node)) {
       yield* flushBuffer()
 
@@ -388,7 +396,11 @@ export function* semanticIterator(
         pageNumbers: getPageNumbers(node),
         sectionPath: getSectionPath(),
         sourceRefs: [node.self_ref],
-        description: captionText || "[image]",
+        description: captionText || "",
+        imageUri: node.image?.uri || "",
+        mimetype: node.image?.mimetype,
+        width: node.image?.size?.width,
+        height: node.image?.size?.height,
         bbox: getBBox(node),
       }
       return
@@ -398,7 +410,7 @@ export function* semanticIterator(
     if (isKeyValueItem(node)) {
       const kvText = extractKeyValueText(node)
       if (kvText && !isNoiseText(kvText)) {
-        buffer.append(kvText, node.self_ref, getPageNumbers(node))
+        buffer.append(kvText, node.self_ref, getPageNumbers(node), getBBox(node))
       }
       return
     }
@@ -428,7 +440,7 @@ export function* semanticIterator(
           sectionPath: getSectionPath(),
           sourceRefs: [node.self_ref],
           text: `[COMMENT: ${text}]`,
-          bbox: undefined,
+          bbox: getBBox(node),
         }
         return
       }
@@ -449,7 +461,7 @@ export function* semanticIterator(
           sectionPath: getSectionPath(),
           sourceRefs: [node.self_ref],
           text,
-          bbox: undefined,
+          bbox: getBBox(node),
         }
         return
       }
@@ -459,7 +471,7 @@ export function* semanticIterator(
         const text = extractNodeText(node)
         if (!text || isNoiseText(text)) return
 
-        buffer.append(text, node.self_ref, getPageNumbers(node))
+        buffer.append(text, node.self_ref, getPageNumbers(node), getBBox(node))
         return
       }
     }

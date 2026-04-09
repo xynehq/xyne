@@ -9,7 +9,7 @@
 import type { SemanticNode, SemanticTableNode, BBox } from "./types"
 
 /** IoU threshold for considering two nodes as representing the same content */
-const IOU_THRESHOLD = 0.9
+const IOU_THRESHOLD = 0.75
 
 /**
  * Calculate Intersection over Union (IoU) of two bounding boxes
@@ -34,17 +34,23 @@ export function calculateIoU(a: BBox, b: BBox): number {
 
 /**
  * Group nodes by page number for efficient comparison
+ * Handles multi-page nodes by adding them to all pages they span
  */
 function groupNodesByPage(nodes: SemanticNode[]): Map<number, SemanticNode[]> {
   const groups = new Map<number, SemanticNode[]>()
 
   for (const node of nodes) {
-    const pageNo = node.pageNo
-    if (pageNo === undefined) continue
+    const pages = node.pageNumbers?.length
+      ? node.pageNumbers
+      : node.pageNo !== undefined
+        ? [node.pageNo]
+        : []
 
-    const existing = groups.get(pageNo) || []
-    existing.push(node)
-    groups.set(pageNo, existing)
+    for (const page of pages) {
+      const existing = groups.get(page) || []
+      existing.push(node)
+      groups.set(page, existing)
+    }
   }
 
   return groups
@@ -52,28 +58,43 @@ function groupNodesByPage(nodes: SemanticNode[]): Map<number, SemanticNode[]> {
 
 /**
  * Check if a node has a valid bounding box
+ * Validates that bbox has positive area and valid coordinates
  */
 function hasValidBBox(node: SemanticNode): boolean {
-  return node.bbox !== undefined
+  const b = node.bbox
+  return !!b && b.r > b.l && b.b > b.t && b.r > 0 && b.b > 0
+}
+
+/**
+ * Append text only if not already present (prevents duplicate OCR)
+ */
+function appendUniqueText(base: string | undefined, incoming: string): string {
+  if (!incoming) return base || ""
+  if (!base) return incoming
+  if (base.includes(incoming)) return base
+  return `${base}\n${incoming}`
 }
 
 /**
  * Merge image node into table node
  * Attaches image description (OCR text) to table's rawText field
+ * Prevents duplicate text and safely merges sourceRefs
  */
 function mergeImageIntoTable(tableNode: SemanticTableNode, imageNode: SemanticNode): void {
   if (imageNode.type !== "image") return
 
   const imageDescription = (imageNode as { description?: string }).description || ""
 
-  if (!tableNode.rawText) {
-    tableNode.rawText = imageDescription
-  } else {
-    tableNode.rawText = `${tableNode.rawText}\n${imageDescription}`
-  }
+  // Merge OCR text with deduplication
+  tableNode.rawText = appendUniqueText(tableNode.rawText, imageDescription)
 
-  // Merge source refs to maintain traceability
-  tableNode.sourceRefs = [...new Set([...tableNode.sourceRefs, ...imageNode.sourceRefs])]
+  // Merge source refs safely (handle undefined)
+  tableNode.sourceRefs = [
+    ...new Set([
+      ...(tableNode.sourceRefs || []),
+      ...(imageNode.sourceRefs || [])
+    ])
+  ]
 }
 
 /**
@@ -108,12 +129,33 @@ function resolvePageConflicts(pageNodes: SemanticNode[]): SemanticNode[] {
       continue
     }
 
-    // Find overlapping nodes in result
-    const overlapping = result.filter(existing =>
-      existing.pageNo === node.pageNo &&
-      hasValidBBox(existing) &&
-      calculateIoU(existing.bbox!, node.bbox!) > IOU_THRESHOLD
+    // Get all pages this node appears on
+    const nodePages = new Set(
+      node.pageNumbers?.length
+        ? node.pageNumbers
+        : node.pageNo !== undefined
+          ? [node.pageNo]
+          : []
     )
+
+    // Find overlapping nodes in result that share at least one page
+    const overlapping = result.filter(existing => {
+      if (!hasValidBBox(existing)) return false
+      
+      // Check if nodes share any page
+      const existingPages = new Set(
+        existing.pageNumbers?.length
+          ? existing.pageNumbers
+          : existing.pageNo !== undefined
+            ? [existing.pageNo]
+            : []
+      )
+      
+      const sharesPage = [...nodePages].some(p => existingPages.has(p))
+      if (!sharesPage) return false
+      
+      return calculateIoU(existing.bbox!, node.bbox!) > IOU_THRESHOLD
+    })
 
     if (overlapping.length === 0) {
       // No overlap - keep node

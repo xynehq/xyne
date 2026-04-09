@@ -702,7 +702,13 @@ export type ChunkMetadata = {
   chunk_index: number
   page_numbers: number[]
   block_labels: string[]
-  section_path: string[]
+  bboxes?: Array<{
+    page: number
+    l: number
+    t: number
+    r: number
+    b: number
+  }>
 }
 
 // DuckDB related types

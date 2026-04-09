@@ -6,16 +6,22 @@ export interface Chunk {
   id: string
   text: string
   metadata: ChunkMetadata
-  refs: string[]  // Source refs for traceability
 }
 
-export interface ChunkMetadata {
-  index: number
-  pageNumbers: number[]
-  sectionPaths: string[][]  // All section paths this chunk spans
-  labels: string[]
-  tokenCount: number
-  charCount: number
+export interface PageBBox {
+  page: number
+  l: number
+  t: number
+  r: number
+  b: number
+}
+
+// ChunkMetadata type for OCR and file processing
+export type ChunkMetadata = {
+  chunk_index: number
+  page_numbers: number[]
+  block_labels: string[]
+  bboxes?: Array<PageBBox>
 }
 
 export interface ChunkingOptions {
@@ -29,4 +35,16 @@ export interface ChunkingOptions {
   respectBoundaries?: boolean
   /** Target tokens for balanced chunking (default: (minTokens + maxTokens) / 2) */
   targetTokens?: number
+  docId?: string
+  describeImages?: boolean
+}
+
+/** Structured chunking result matching pdfChunks architecture */
+export interface ChunkingResult {
+  text_chunks: string[]
+  image_chunks: string[]
+  text_chunk_pos: number[]
+  image_chunk_pos: number[]
+  text_chunks_map: ChunkMetadata[]
+  image_chunks_map: ChunkMetadata[]
 }

@@ -17,7 +17,29 @@ services:
   # networks:
   #   - xyne
   # restart: always
-  
+
+  # Uncomment to run doc-ingestion in Docker (or run locally with: uvicorn app.main:app --reload --port 8000)
+  doc-ingestion:
+    image: xyne-doc-ingestion
+    build:
+      context: ../doc-ingestion-service
+      dockerfile: Dockerfile
+    container_name: xyne-doc-ingestion
+    ports:
+      - "8000:8000"  # Exposed for local dev access
+    environment:
+      - PORT=8000
+      - LOG_LEVEL=debug
+    networks:
+      - xyne
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   prometheus:
     image: "prom/prometheus"
     container_name: xyne-prometheus

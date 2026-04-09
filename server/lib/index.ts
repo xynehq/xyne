@@ -48,8 +48,7 @@ import type { DoclingDocument } from "./semanticChunking/docling/types"
 import { semanticIterator } from "./semanticChunking/semantic/iterator"
 import { deduplicateNodes } from "./semanticChunking/semantic/deduplicator"
 import { chunkSemanticStream } from "./semanticChunking/chunking/chunker"
-import type { ChunkingOptions } from "./semanticChunking/chunking/types"
-import type { Chunk } from "./semanticChunking/chunking/types"
+import type { ChunkingOptions, ChunkingResult } from "./semanticChunking/chunking/types"
 
 /**
  * Process a Docling document end-to-end
@@ -58,10 +57,10 @@ import type { Chunk } from "./semanticChunking/chunking/types"
  * Deduplication resolves table/image conflicts using spatial overlap (IoU > 0.9)
  * Overlapping OCR images are merged into tables as rawText fallback
  */
-export function processDoclingDocument(
+export async function processDoclingDocument(
   doc: DoclingDocument,
   chunkingOptions?: ChunkingOptions
-): Chunk[] {
+): Promise<ChunkingResult> {
   const nodes = [...semanticIterator(doc)]
   const dedupedNodes = deduplicateNodes(nodes)
   return chunkSemanticStream(dedupedNodes, chunkingOptions)
