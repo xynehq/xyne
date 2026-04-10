@@ -36,7 +36,7 @@ export const searchChatHistoryTool = createXyneTool(
   "Search earlier parts of this conversation for relevant context. Only a limited recent window of messages is provided in context; use this when you need to recall what was said or decided in prior messages.",
   searchChatHistoryParams,
   async (toolCallId, params, signal, onUpdate, ctx: XyneToolContext) => {
-    const { xyneState, persistState } = ctx
+    const { xyneState } = ctx
 
     try {
       const email = xyneState.user.email
