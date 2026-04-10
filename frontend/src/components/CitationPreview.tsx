@@ -27,6 +27,8 @@ interface CitationPreviewProps {
   onDocumentLoaded?: () => void
   /** 0-based page/sheet index to open at (from chunk API). PDF uses as initialPage (1-based), Excel as initial sheet. */
   initialPageIndex?: number | null
+  /** Optional agent ID for accessing files through public agents */
+  agentId?: string | null
 }
 
 function isAgentDocumentCitation(c: Citation | null): boolean {
@@ -63,6 +65,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   documentOperationsRef,
   onDocumentLoaded,
   initialPageIndex,
+  agentId,
 }) => {
   const [documentContent, setDocumentContent] = useState<Blob | null>(null)
   const [agentDocument, setAgentDocument] = useState<AgentDocumentPayload | null>(
@@ -138,7 +141,9 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
           citation.clId
         ) {
           const response =
-            await api.cl[citation.clId].files[citation.itemId].content.$get()
+            await api.cl[citation.clId].files[citation.itemId].content.$get({
+              query: agentId ? { agentId } : undefined,
+            })
 
           if (signal.aborted) return
           if (!response.ok) {

@@ -1927,6 +1927,7 @@ export const ChatPage = ({
         documentOperationsRef={documentOperationsRef}
         onDocumentLoaded={handleDocumentLoaded}
         initialPageIndex={citationInitialPageIndex}
+        agentId={data?.chat?.agentId}
       />
     </div>
   )
