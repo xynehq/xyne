@@ -88,9 +88,6 @@ export interface RAGAgent<TState = unknown> {
   /** Get current user state */
   getState(): TState | undefined
 
-  /** Update the system prompt between turns */
-  setSystemPrompt(prompt: string): void
-
   /** Dispose the agent session — call when done */
   dispose(): void
 }

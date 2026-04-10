@@ -143,7 +143,8 @@ export async function createRAGAgent<TState = unknown>(
   if (config.apiKey && !config.authStorage) {
     authStorage.set("litellm", { type: "api_key", key: config.apiKey })
   }
-  const modelRegistry = config.modelRegistry ?? new ModelRegistry(authStorage)
+  const modelRegistry =
+    config.modelRegistry ?? ModelRegistry.inMemory(authStorage)
 
   const model = resolveModel(config.model, config.baseUrl)
 
@@ -188,10 +189,6 @@ export async function createRAGAgent<TState = unknown>(
   }
 
   const { session: piSession } = await createAgentSession(sessionOptions)
-
-  // Set system prompt on the agent (ensures it sticks across turns)
-  piSession.agent.setSystemPrompt(config.systemPrompt)
-
   // --- State ---
   let userState = config.state
 
@@ -298,10 +295,6 @@ export async function createRAGAgent<TState = unknown>(
 
     getState() {
       return userState
-    },
-
-    setSystemPrompt(prompt: string) {
-      piSession.agent.setSystemPrompt(prompt)
     },
 
     dispose() {
