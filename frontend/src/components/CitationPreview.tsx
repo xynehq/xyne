@@ -197,6 +197,9 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
         chunkIndex: number,
         pageIndex?: number,
         waitForTextLayer: boolean = false,
+        charOffsetStart?: number | null,
+        charOffsetEnd?: number | null,
+        exactChunkText?: string | null,
       ) => {
         if (!containerRef.current) {
           return false
@@ -208,6 +211,9 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
             chunkIndex,
             pageIndex,
             waitForTextLayer,
+            charOffsetStart,
+            charOffsetEnd,
+            exactChunkText,
           )
           return success
         } catch (error) {

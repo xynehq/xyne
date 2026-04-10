@@ -5,6 +5,8 @@ schema kb_items {
     field chunk_index type int {}
     field page_numbers type array<int> {}
     field block_labels type array<string> {}
+    field char_offset_start type int {}
+    field char_offset_end type int {}
   }
 
   document kb_items {

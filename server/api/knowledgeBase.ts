@@ -2140,9 +2140,17 @@ export const GetChunkContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Chunk content not found" })
     }
 
+    // Extract char offset metadata from chunks_map for precise highlighting
+    const chunkMeta = (resp.fields as any).chunks_map?.[index]
+    const charOffsetStart: number | undefined = chunkMeta?.char_offset_start
+    const charOffsetEnd: number | undefined = chunkMeta?.char_offset_end
+
     return c.json({
       chunkContent: chunkContent,
       pageIndex: pageIndex,
+      charOffsetStart: charOffsetStart ?? null,
+      charOffsetEnd: charOffsetEnd ?? null,
+      exactChunkText: chunksArray[index] ?? null,
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error

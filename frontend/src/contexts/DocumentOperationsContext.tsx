@@ -13,6 +13,9 @@ export interface DocumentOperations {
     chunkIndex: number,
     pageIndex?: number,
     waitForTextLayer?: boolean,
+    charOffsetStart?: number | null,
+    charOffsetEnd?: number | null,
+    exactChunkText?: string | null,
   ) => Promise<boolean>
   clearHighlights?: () => void
   scrollToMatch?: (index: number) => boolean
@@ -84,6 +87,9 @@ export const withDocumentOperations = <P extends object>(
           chunkIndex: number,
           pageIndex?: number,
           waitForTextLayer: boolean = false,
+          charOffsetStart?: number | null,
+          charOffsetEnd?: number | null,
+          exactChunkText?: string | null,
         ) => {
           if (documentOperationsRef.current?.highlightText) {
             return await documentOperationsRef.current.highlightText(
@@ -91,6 +97,9 @@ export const withDocumentOperations = <P extends object>(
               chunkIndex,
               pageIndex,
               waitForTextLayer,
+              charOffsetStart,
+              charOffsetEnd,
+              exactChunkText,
             )
           }
           return false

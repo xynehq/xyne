@@ -449,6 +449,9 @@ export const ChatPage = ({
     chunkIndex: number
     chunkContent: string
     pageIndex: number
+    charOffsetStart: number | null
+    charOffsetEnd: number | null
+    exactChunkText: string | null
   } | null>(null)
   /** Token to invalidate in-flight prefetch/chunk handlers so a slower call cannot overwrite newer citation state. */
   const latestPrefetchTokenRef = useRef<symbol>(Symbol())
@@ -1248,6 +1251,9 @@ export const ChatPage = ({
         try {
           let chunkContent: string
           let pageIndex: number
+          let charOffsetStart: number | null = null
+          let charOffsetEnd: number | null = null
+          let exactChunkText: string | null = null
 
           const prefetched = prefetchedChunkRef.current
           if (
@@ -1257,6 +1263,9 @@ export const ChatPage = ({
           ) {
             chunkContent = prefetched.chunkContent
             pageIndex = prefetched.pageIndex
+            charOffsetStart = prefetched.charOffsetStart
+            charOffsetEnd = prefetched.charOffsetEnd
+            exactChunkText = prefetched.exactChunkText
             prefetchedChunkRef.current = null
           } else {
             const chunkContentResponse = await api.chunk[":cId"].files[
@@ -1285,6 +1294,9 @@ export const ChatPage = ({
             chunkContent = data?.chunkContent ?? ""
             pageIndex =
               typeof data?.pageIndex === "number" ? data.pageIndex : -1
+            charOffsetStart = data?.charOffsetStart ?? null
+            charOffsetEnd = data?.charOffsetEnd ?? null
+            exactChunkText = data?.exactChunkText ?? null
           }
 
           if (latestPrefetchTokenRef.current !== chunkToken) return
@@ -1307,6 +1319,9 @@ export const ChatPage = ({
                   newChunkIndex,
                   pageIndex,
                   true,
+                  charOffsetStart,
+                  charOffsetEnd,
+                  exactChunkText,
                 )
               } catch (error) {
                 console.error(
@@ -1453,6 +1468,9 @@ export const ChatPage = ({
               chunkIndex,
               chunkContent: content,
               pageIndex: pageIndex ?? -1,
+              charOffsetStart: data?.charOffsetStart ?? null,
+              charOffsetEnd: data?.charOffsetEnd ?? null,
+              exactChunkText: data?.exactChunkText ?? null,
             }
           }
         } catch {

@@ -65,6 +65,7 @@ export class FileProcessorService {
     let chunks_pos: number[] = []
     let image_chunks: string[] = []
     let image_chunks_pos: number[] = []
+    let text_chunks_map: ChunkMetadata[] | null = null
 
     try {
       if (baseMimeType === "application/pdf") {
@@ -163,6 +164,13 @@ export class FileProcessorService {
         const processedChunks = chunkDocument(content.trim())
         chunks = processedChunks.map((v) => v.chunk)
         chunks_pos = chunks.map((_, idx) => idx)
+        text_chunks_map = processedChunks.map((v) => ({
+          chunk_index: v.chunkIndex,
+          page_numbers: [],
+          block_labels: ["text"],
+          char_offset_start: v.charOffsetStart,
+          char_offset_end: v.charOffsetEnd,
+        }))
       } else {
         // For unsupported types, try to extract text content
         try {
@@ -171,6 +179,13 @@ export class FileProcessorService {
             const processedChunks = chunkDocument(content.trim())
             chunks = processedChunks.map((v) => v.chunk)
             chunks_pos = chunks.map((_, idx) => idx)
+            text_chunks_map = processedChunks.map((v) => ({
+              chunk_index: v.chunkIndex,
+              page_numbers: [],
+              block_labels: ["text"],
+              char_offset_start: v.charOffsetStart,
+              char_offset_end: v.charOffsetEnd,
+            }))
           }
         } catch {
           chunks = [
@@ -186,11 +201,11 @@ export class FileProcessorService {
       throw new Error(`Failed to process file "${fileName}": ${getErrorMessage(error)}`)
     }
 
-    // For non-PDF files, create empty chunks_map and image_chunks_map for backward compatibility
-    const chunks_map: ChunkMetadata[] = chunks.map((_, index) => ({
+    // Use text_chunks_map if available (has char offsets), otherwise create default chunks_map
+    const chunks_map: ChunkMetadata[] = text_chunks_map ?? chunks.map((_, index) => ({
       chunk_index: index,
-      page_numbers: [], 
-      block_labels: ["text"], 
+      page_numbers: [],
+      block_labels: ["text"],
     }));
 
     const image_chunks_map: ChunkMetadata[] = image_chunks.map((_, index) => ({

@@ -119,15 +119,45 @@ interface Document {
 interface Chunk {
   chunk: string
   chunkIndex: number
+  charOffsetStart: number
+  charOffsetEnd: number
 }
 
 export const chunkDocument = (body: string): Chunk[] => {
   let out: Chunk[] = []
   let chunks = chunkTextByParagraph(body, 512, 0)
+
+  // Replicate the same cleaning that chunkTextByParagraph applies
+  const cleaned = body
+    .replace(/\r\n|\r/g, "\n")
+    .replace(
+      /[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F\uFDD0-\uFDEF\uFFFE\uFFFF]/g,
+      "",
+    )
+
+  let searchFrom = 0
   for (const [index, chunk] of chunks.entries()) {
+    // Chunks join paragraphs with "\n" but the cleaned text has "\n\n+" between them.
+    // Match the first paragraph's start and the last paragraph's end in the cleaned text.
+    const paragraphs = chunk.split("\n")
+    const firstPara = paragraphs[0]
+    const lastPara = paragraphs[paragraphs.length - 1]
+
+    const startPos = cleaned.indexOf(firstPara, searchFrom)
+    let endPos = -1
+    if (startPos !== -1) {
+      const lastParaStart = cleaned.indexOf(lastPara, startPos)
+      if (lastParaStart !== -1) {
+        endPos = lastParaStart + lastPara.length
+      }
+      searchFrom = endPos !== -1 ? endPos : startPos + 1
+    }
+
     out.push({
       chunk,
       chunkIndex: index,
+      charOffsetStart: startPos,
+      charOffsetEnd: endPos,
     })
   }
   return out

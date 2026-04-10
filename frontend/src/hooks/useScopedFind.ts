@@ -579,6 +579,9 @@ export function useScopedFind(
       chunkIndex: number,
       pageIndex?: number,
       waitForTextLayer: boolean = false,
+      charOffsetStart?: number | null,
+      charOffsetEnd?: number | null,
+      exactChunkText?: string | null,
     ): Promise<boolean> => {
       callTokenRef.current += 1
       const currentToken = callTokenRef.current
@@ -741,7 +744,7 @@ export function useScopedFind(
 
         // Check cache first (only if safe)
         const cachedEntry = canUseCache ? cacheRef.current[cacheKey] : undefined
-        let matches: ClientHighlightMatch[]
+        let matches: ClientHighlightMatch[] | undefined
 
         if (
           cachedEntry &&
@@ -772,24 +775,53 @@ export function useScopedFind(
             return false
           }
 
-          // Use client-side highlighting instead of API call
-          const result = findHighlightMatches(text, containerText, {
-            caseSensitive,
-          })
+          // Strategy 1: Use exactChunkText with indexOf for precise matching
+          const canUseExactChunk =
+            typeof exactChunkText === "string" && exactChunkText.length > 0
 
-          if (debug) {
-            console.log("Client-side highlighting result:", result)
+          if (canUseExactChunk) {
+            const start = containerText.indexOf(exactChunkText)
+            if (debug) {
+              console.log(
+                "Using exactChunkText indexOf:",
+                start,
+                "length:",
+                exactChunkText.length,
+              )
+            }
+            if (start !== -1) {
+              matches = [
+                {
+                  startIndex: start,
+                  endIndex: start + exactChunkText.length,
+                  length: exactChunkText.length,
+                },
+              ]
+            }
           }
 
-          if (
-            !result.success ||
-            !result.matches ||
-            result.matches.length === 0
-          ) {
+          // Strategy 2: Fallback to Aho-Corasick matching
+          if (!matches) {
+            const result = findHighlightMatches(text, containerText, {
+              caseSensitive,
+            })
+
             if (debug) {
-              console.log("No matches found:", result.message)
+              console.log("Client-side highlighting result:", result)
             }
-            return false
+
+            if (
+              !result.success ||
+              !result.matches ||
+              result.matches.length === 0
+            ) {
+              if (debug) {
+                console.log("No matches found:", result.message)
+              }
+              return false
+            }
+
+            matches = result.matches
           }
 
           // Check if this call is still the latest before processing results
@@ -799,8 +831,6 @@ export function useScopedFind(
             }
             return false
           }
-
-          matches = result.matches
 
           // Only cache successful responses and only when safe
           if (canUseCache) {
@@ -821,6 +851,13 @@ export function useScopedFind(
         if (currentToken !== callTokenRef.current) {
           if (debug) {
             console.log("Stale call detected before creating highlights, aborting")
+          }
+          return false
+        }
+
+        if (!matches || matches.length === 0) {
+          if (debug) {
+            console.log("No matches resolved after all strategies")
           }
           return false
         }

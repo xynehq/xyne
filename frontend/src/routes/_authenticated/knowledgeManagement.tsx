@@ -275,6 +275,10 @@ const DocumentViewerContainer = memo(
           text: string,
           chunkIndex: number,
           pageIndex?: number,
+          waitForTextLayer: boolean = false,
+          charOffsetStart?: number | null,
+          charOffsetEnd?: number | null,
+          exactChunkText?: string | null,
         ) => {
           if (!containerRef.current) {
             const container = document.querySelector(
@@ -288,7 +292,15 @@ const DocumentViewerContainer = memo(
           }
 
           try {
-            const success = await highlightText(text, chunkIndex, pageIndex)
+            const success = await highlightText(
+              text,
+              chunkIndex,
+              pageIndex,
+              waitForTextLayer,
+              charOffsetStart,
+              charOffsetEnd,
+              exactChunkText,
+            )
             return success
           } catch (error) {
             console.error("Error calling highlightText:", error)
@@ -1547,6 +1559,10 @@ function KnowledgeManagementContent() {
                 chunkContent.chunkContent,
                 newChunkIndex,
                 chunkContent.pageIndex,
+                false,
+                chunkContent.charOffsetStart ?? null,
+                chunkContent.charOffsetEnd ?? null,
+                chunkContent.exactChunkText ?? null,
               )
             } catch (error) {
               console.error(
