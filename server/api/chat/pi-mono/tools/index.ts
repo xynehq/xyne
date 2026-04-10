@@ -6,7 +6,6 @@ export { searchGoogleContactsTool } from "./search-google-contacts"
 export { getSlackRelatedMessagesTool } from "./get-slack-related-messages"
 export { lsKnowledgeBaseTool } from "./ls-knowledge-base"
 export { searchKnowledgeBaseTool } from "./search-knowledge-base"
-export { searchChatHistoryTool } from "./search-chat-history"
 
 // Control flow tools
 export { toDoWriteTool } from "./to-do-write"

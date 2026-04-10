@@ -1,12 +1,9 @@
 import type { Citation, MinimalAgentFragment } from "@/api/chat/types"
+import type { CustomEntry, SessionEntry } from "@mariozechner/pi-coding-agent"
 import type { XyneAgentState } from "./adapter"
-import type { SessionEntry, CustomEntry } from "@mariozechner/pi-coding-agent"
 
 export const CITATION_ENTRY_TYPE = "xyne_citation_state"
 
-// ── Persisted types ────────────────────────────────────────────────────
-
-/** Minimal source fields required for citation rendering. */
 export interface PersistedFragmentSource {
   docId: string
   title?: string
@@ -17,24 +14,22 @@ export interface PersistedFragmentSource {
   itemId?: string
 }
 
-/** Minimal fragment stored in the session entry. */
 export interface PersistedFragment {
   id: string
   source: PersistedFragmentSource
 }
 
-/** A single citationDocId → fragmentId mapping. */
 export interface CitationMapping {
   citationDocId: number
   fragmentId: string
 }
 
-/** Shape of the data persisted via appendCustomEntry. */
-export interface PersistedCitationState {
-  fragments: PersistedFragment[]
-  mappings: CitationMapping[]
-  seenChunks: string[]
-  seenDocIds: string[]
+export interface CitationDelta {
+  turnIndex: number
+  newFragments: PersistedFragment[]
+  newMappings: CitationMapping[]
+  newSeenChunks: string[]
+  newSeenDocIds: string[]
 }
 
 export function trackFragments(
@@ -80,30 +75,54 @@ function toPersistedFragment(f: MinimalAgentFragment): PersistedFragment {
   }
 }
 
-export function buildCitationSnapshot(
+export function buildCitationDelta(
   xyneState: XyneAgentState,
-): PersistedCitationState {
-  // Deduplicate fragments by id
-  const seen = new Set<string>()
-  const uniqueFragments: PersistedFragment[] = []
+  turnIndex: number,
+): CitationDelta {
+  // Get fragments from current turn only
+  const turnFragments = xyneState.allFragments ?? []
+  const newFragments: PersistedFragment[] =
+    turnFragments.map(toPersistedFragment)
+  console.log("turnFragments", turnFragments, "turnIndex", turnIndex)
+  const newMappings: CitationMapping[] = []
 
-  for (const f of xyneState.allFragments) {
-    if (!seen.has(f.id)) {
-      seen.add(f.id)
-      uniqueFragments.push(toPersistedFragment(f))
+  // Build mappings from the citationDocIdMapping for this turn's range
+  for (const [citationDocId, fragmentId] of xyneState.citationDocIdMapping) {
+    // A mapping is "new" if it maps to a fragment from this turn
+    const fragmentIndex = turnFragments.findIndex((f) => f.id === fragmentId)
+    if (fragmentIndex >= 0) {
+      newMappings.push({ citationDocId, fragmentId })
     }
   }
 
-  const mappings: CitationMapping[] = []
-  for (const [citationDocId, fragmentId] of xyneState.citationDocIdMapping) {
-    mappings.push({ citationDocId, fragmentId })
+  const newSeenChunks: string[] = []
+  const newSeenDocIds: string[] = []
+  const processedDocIds = new Set<string>()
+
+  for (const fragment of turnFragments) {
+    const docId = fragment.source?.docId
+    const returnedChunks = fragment.source?.returnedChunkIndices
+
+    if (docId) {
+      if (!processedDocIds.has(docId)) {
+        newSeenDocIds.push(docId)
+        processedDocIds.add(docId)
+      }
+
+      if (returnedChunks && returnedChunks.length > 0) {
+        for (const chunkIdx of returnedChunks) {
+          newSeenChunks.push(`${docId}_${chunkIdx}`)
+        }
+      }
+    }
   }
 
   return {
-    fragments: uniqueFragments,
-    mappings,
-    seenChunks: Array.from(xyneState.seenChunks),
-    seenDocIds: Array.from(xyneState.seenDocIds),
+    turnIndex,
+    newFragments,
+    newMappings,
+    newSeenChunks,
+    newSeenDocIds,
   }
 }
 
@@ -129,47 +148,39 @@ export function restoreCitationState(
   entries: SessionEntry[],
   xyneState: XyneAgentState,
 ): void {
-  // Collect all citation state entries (there may be one per prior turn)
   const citationEntries = entries.filter(
-    (e): e is CustomEntry<PersistedCitationState> =>
+    (e): e is CustomEntry<CitationDelta> =>
       e.type === "custom" && e.customType === CITATION_ENTRY_TYPE,
   )
 
   console.log(`Restoring citation state from ${citationEntries.length} entries`)
   if (citationEntries.length === 0) return
 
-  // Use a Map to deduplicate fragments across turns
-  const fragmentById = new Map<string, MinimalAgentFragment>()
-  const allMappings = new Map<number, string>()
+  // Track seen fragment IDs to avoid duplicates
+  const seenFragmentIds = new Set<string>()
 
   for (const entry of citationEntries) {
-    const data = entry.data
-    if (!data) continue
-
-    // Restore fragments
-    for (const pf of data.fragments) {
-      if (!fragmentById.has(pf.id)) {
-        fragmentById.set(pf.id, fromPersistedFragment(pf))
+    console.log("entry_ass", entry)
+    const delta = entry.data
+    if (!delta) continue
+    // Restore new fragments from this delta
+    for (const pf of delta.newFragments) {
+      if (!seenFragmentIds.has(pf.id)) {
+        seenFragmentIds.add(pf.id)
+        xyneState.allFragments.push(fromPersistedFragment(pf))
       }
     }
 
-    // Restore mappings — later entries win on conflicts
-    for (const m of data.mappings) {
-      allMappings.set(m.citationDocId, m.fragmentId)
+    for (const m of delta.newMappings) {
+      xyneState.citationDocIdMapping.set(m.citationDocId, m.fragmentId)
     }
 
     // Restore seen sets
-    for (const chunk of data.seenChunks) {
+    for (const chunk of delta.newSeenChunks) {
       xyneState.seenChunks.add(chunk)
     }
-    for (const docId of data.seenDocIds) {
+    for (const docId of delta.newSeenDocIds) {
       xyneState.seenDocIds.add(docId)
     }
-  }
-
-  // Merge into state
-  xyneState.allFragments.push(...fragmentById.values())
-  for (const [citationDocId, fragmentId] of allMappings) {
-    xyneState.citationDocIdMapping.set(citationDocId, fragmentId)
   }
 }

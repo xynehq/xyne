@@ -42,7 +42,7 @@ import {
 import { getImagesForAgent, processAttachments } from "./attachments"
 import {
   CITATION_ENTRY_TYPE,
-  buildCitationSnapshot,
+  buildCitationDelta,
   restoreCitationState,
 } from "./citation-state"
 import { type RAGAgent, type RAGEvent, createRAGAgent } from "./core"
@@ -453,11 +453,10 @@ export async function AgenticRAG(c: Context): Promise<Response> {
           ReasoningSteps.synthesisCompleted(),
         )
 
-        // Persist citation state for future turns
         try {
           piSession.sessionManager.appendCustomEntry(
             CITATION_ENTRY_TYPE,
-            buildCitationSnapshot(xyneState),
+            buildCitationDelta(xyneState, currentTurn.value),
           )
         } catch (citErr) {
           Logger.error(citErr, "Failed to persist citation state")
