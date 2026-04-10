@@ -288,6 +288,48 @@ function assertIsCollectionOwner(collection: Collection, userId: number): void {
 }
 
 /**
+ * Unified permission check for viewing collection content.
+ * Checks direct access first, then falls back to agent-based access if agentId is provided.
+ * Throws HTTPException 403 if neither check passes.
+ */
+async function assertCanViewCollectionWithAgentFallback(
+  collection: Collection,
+  userId: number,
+  userEmail: string,
+  workspaceId: number,
+  agentId: string | undefined,
+): Promise<void> {
+  // Check direct collection access first
+  const canViewDirectly = canViewCollection(collection, userId)
+
+  // If direct access granted, no need for further checks
+  if (canViewDirectly) {
+    return
+  }
+
+  // If no direct access, check if accessed through a public agent
+  if (agentId) {
+    const canViewViaAgent = await canViewCollectionViaAgent(
+      db,
+      agentId,
+      collection.id,
+      userId,
+      workspaceId,
+      userEmail,
+    )
+
+    if (canViewViaAgent) {
+      return
+    }
+  }
+
+  // Neither check passed - throw 403
+  throw new HTTPException(403, {
+    message: "You don't have access to this Collection",
+  })
+}
+
+/**
  * Check if user can view a collection through a public agent
  * Returns true if:
  * 1. Agent is public (or user has access to it)
@@ -299,6 +341,7 @@ async function canViewCollectionViaAgent(
   collectionId: string,
   userId: number,
   workspaceId: number,
+  userEmail: string,
 ): Promise<boolean> {
   // Check if user has access to the agent (handles public agents automatically)
   const permission = await checkUserAgentAccessByExternalId(
@@ -363,7 +406,10 @@ async function canViewCollectionViaAgent(
           return true
         }
       } catch (error) {
-        // Ignore errors and continue checking
+        // Log error for observability but continue checking other items
+        loggerWithChild({ email: userEmail }).warn(
+          `Failed to get collection item ${actualItemId} for agent access check: ${getErrorMessage(error)}`
+        )
       }
     }
   }
@@ -2134,26 +2180,14 @@ export const GetChunkContentApi = async (c: Context) => {
         throw new HTTPException(404, { message: "Collection not found" })
       }
 
-      // Check direct collection access first
-      const canViewDirectly = canViewCollection(collection, user.id)
-
-      // If no direct access, check if accessed through a public agent
-      let canViewViaAgent = false
-      if (!canViewDirectly && agentId) {
-        canViewViaAgent = await canViewCollectionViaAgent(
-          db,
-          agentId,
-          collectionId,
-          user.id,
-          user.workspaceId,
-        )
-      }
-
-      if (!canViewDirectly && !canViewViaAgent) {
-        throw new HTTPException(403, {
-          message: "You don't have access to this Collection",
-        })
-      }
+      // Unified permission check with agent fallback
+      await assertCanViewCollectionWithAgentFallback(
+        collection,
+        user.id,
+        userEmail,
+        user.workspaceId,
+        agentId,
+      )
     } else {
       const ownerId = Number((resp.fields as any).owner)
       const email = (resp.fields as any).ownerEmail
@@ -2284,26 +2318,14 @@ export const GetFileContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Check direct collection access first
-    const canViewDirectly = canViewCollection(collection, user.id)
-
-    // If no direct access, check if accessed through a public agent
-    let canViewViaAgent = false
-    if (!canViewDirectly && agentId) {
-      canViewViaAgent = await canViewCollectionViaAgent(
-        db,
-        agentId,
-        collectionId,
-        user.id,
-        user.workspaceId,
-      )
-    }
-
-    if (!canViewDirectly && !canViewViaAgent) {
-      throw new HTTPException(403, {
-        message: "You don't have access to this Collection",
-      })
-    }
+    // Unified permission check with agent fallback
+    await assertCanViewCollectionWithAgentFallback(
+      collection,
+      user.id,
+      userEmail,
+      user.workspaceId,
+      agentId,
+    )
 
     const collectionFile = await getCollectionFileByItemId(db, itemId)
     if (!collectionFile) {
