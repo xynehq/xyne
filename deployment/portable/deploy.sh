@@ -28,6 +28,7 @@ show_help() {
     echo "  update-app-version <version>  Update both app and sync to a specific Docker image tag"
     echo "  update-sync-version <version> Update sync server to a specific Docker image tag"
     echo "  update-infra       Update infrastructure services"
+    echo "  bootstrap-keycloak Bootstrap Keycloak realm/client and Xyne admin user"
     echo "  logs [service]     Show logs for all services or specific service"
     echo "  status             Show status of all services"
     echo "  cleanup            Clean up old containers and images"
@@ -51,6 +52,7 @@ show_help() {
     echo "  $0 start --force-cpu    # Force CPU-only mode"
     echo "  $0 update-app      # Quick main app update without touching other services"
     echo "  $0 update-sync     # Quick sync server update without touching other services"
+    echo "  $0 bootstrap-keycloak  # Run Keycloak bootstrap without starting the full app"
     echo "  $0 logs app        # Show app logs"
     echo "  $0 db-generate     # Generate migrations after schema changes"
     echo "  $0 db-migrate      # Apply pending migrations"
@@ -194,6 +196,9 @@ setup_environment() {
         echo "DOCKER_GROUP_ID=$DOCKER_GROUP_ID" >> .env
     fi
 
+    persist_env_if_missing "ENCRYPTION_KEY" "$(generate_secret)"
+    persist_env_if_missing "JWT_SECRET" "$(generate_secret)"
+    persist_env_if_missing "SERVICE_ACCOUNT_ENCRYPTION_KEY" "$(generate_secret)"
     
     # Create network if it doesn't exist
     docker network create xyne 2>/dev/null || echo "Network 'xyne' already exists"
@@ -268,6 +273,147 @@ wait_for_postgres() {
     echo -e "${GREEN} PostgreSQL is ready${NC}"
 }
 
+load_env_file() {
+    if [ -f .env ]; then
+        set -a
+        # shellcheck disable=SC1091
+        source .env
+        set +a
+    fi
+}
+
+is_keycloak_enabled() {
+    load_env_file
+    [ "${KEYCLOAK_WEB_ENABLED:-false}" = "true" ]
+}
+
+generate_secret() {
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -base64 32 | tr -d '\n'
+    else
+        dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | tr -d '\n'
+    fi
+}
+
+env_value_is_empty() {
+    local key=$1
+    local line
+    line=$(grep -E "^${key}=" .env 2>/dev/null | tail -n 1 || true)
+    if [ -z "$line" ]; then
+        return 0
+    fi
+
+    local value="${line#*=}"
+    value="${value%$'\r'}"
+    [ -z "$value" ] || [ "$value" = '""' ] || [ "$value" = "''" ]
+}
+
+is_local_url() {
+    case "$1" in
+        http://localhost*|https://localhost*|http://127.0.0.1*|https://127.0.0.1*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+persist_env_if_missing() {
+    local key=$1
+    local value=$2
+
+    touch .env
+    if env_value_is_empty "$key"; then
+        if grep -q -E "^${key}=" .env 2>/dev/null; then
+            awk -v key="$key" -v value="$value" '
+                BEGIN { updated = 0 }
+                $0 ~ "^" key "=" && updated == 0 {
+                    print key "=" value
+                    updated = 1
+                    next
+                }
+                { print }
+            ' .env > .env.tmp && mv .env.tmp .env
+        else
+            echo "${key}=${value}" >> .env
+        fi
+        echo " Persisted ${key} in .env"
+    fi
+}
+
+ensure_keycloak_bootstrap_env() {
+    if ! is_keycloak_enabled; then
+        return
+    fi
+
+    load_env_file
+    persist_env_if_missing "HOST" "http://localhost:3000"
+    persist_env_if_missing "KEYCLOAK_PUBLIC_BASE_URL" "http://localhost:${KEYCLOAK_PORT:-8082}"
+    persist_env_if_missing "KEYCLOAK_INTERNAL_BASE_URL" "http://keycloak:8080"
+    persist_env_if_missing "KEYCLOAK_REALM" "xyne-shared"
+    persist_env_if_missing "KEYCLOAK_CLIENT_ID" "xyne-web"
+    persist_env_if_missing "KEYCLOAK_LOGOUT_REDIRECT_URL" "/auth"
+    persist_env_if_missing "KEYCLOAK_WORKSPACE_EXTERNAL_ID" "xyne-shared-workspace"
+    persist_env_if_missing "XYNE_BOOTSTRAP_ADMIN_EMAIL" "admin@xyne.local"
+    persist_env_if_missing "XYNE_BOOTSTRAP_ADMIN_NAME" "\"Xyne Admin\""
+    persist_env_if_missing "XYNE_BOOTSTRAP_WORKSPACE_NAME" "\"Xyne Shared\""
+    persist_env_if_missing "XYNE_BOOTSTRAP_WORKSPACE_DOMAIN" "xyne.local"
+    persist_env_if_missing "KEYCLOAK_BOOTSTRAP_RESET_ADMIN_PASSWORD" "false"
+    persist_env_if_missing "KEYCLOAK_CLIENT_SECRET" "$(generate_secret)"
+    persist_env_if_missing "XYNE_BOOTSTRAP_ADMIN_PASSWORD" "$(generate_secret)"
+    load_env_file
+    validate_keycloak_bootstrap_env
+}
+
+validate_keycloak_bootstrap_env() {
+    load_env_file
+
+    if is_local_url "${KEYCLOAK_INTERNAL_BASE_URL:-}"; then
+        echo -e "${RED}ERROR: KEYCLOAK_INTERNAL_BASE_URL=${KEYCLOAK_INTERNAL_BASE_URL}${NC}"
+        echo -e "${RED}Portable bootstrap runs inside the app container, so localhost points at the app container, not Keycloak.${NC}"
+        echo -e "${RED}Use KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080 for the bundled Keycloak service.${NC}"
+        exit 1
+    fi
+
+    if is_local_url "${HOST:-}"; then
+        echo -e "${YELLOW}WARNING: HOST=${HOST}. For sbx/prod, set HOST to the public HTTPS Xyne origin before bootstrapping.${NC}"
+    fi
+
+    if is_local_url "${KEYCLOAK_PUBLIC_BASE_URL:-}"; then
+        echo -e "${YELLOW}WARNING: KEYCLOAK_PUBLIC_BASE_URL=${KEYCLOAK_PUBLIC_BASE_URL}. For sbx/prod, set it to the public HTTPS Keycloak origin before bootstrapping.${NC}"
+    fi
+
+    if [ "${KEYCLOAK_ADMIN:-}" = "admin" ] && [ "${KEYCLOAK_ADMIN_PASSWORD:-}" = "admin" ]; then
+        echo -e "${YELLOW}WARNING: Keycloak admin credentials are still admin/admin. Change KEYCLOAK_ADMIN_PASSWORD for sbx/prod before first Keycloak startup.${NC}"
+    fi
+}
+
+wait_for_keycloak() {
+    load_env_file
+    local attempts=0
+    local max_attempts=60
+    local keycloak_port="${KEYCLOAK_PORT:-8082}"
+    local endpoint="http://localhost:${keycloak_port}/realms/master"
+
+    if ! command -v curl >/dev/null 2>&1; then
+        echo -e "${RED}ERROR: curl is required to wait for Keycloak at ${endpoint}${NC}"
+        exit 1
+    fi
+
+    echo -e "${YELLOW} Waiting for Keycloak to become ready...${NC}"
+    until curl -fsS "$endpoint" >/dev/null 2>&1; do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge "$max_attempts" ]; then
+            echo -e "${RED}ERROR: Keycloak did not become ready in time at ${endpoint}${NC}"
+            exit 1
+        fi
+        sleep 2
+    done
+
+    echo -e "${GREEN} Keycloak is ready${NC}"
+}
+
 ensure_keycloak_database() {
     echo -e "${YELLOW} Ensuring Keycloak database exists...${NC}"
 
@@ -296,7 +442,27 @@ start_infrastructure() {
     wait_for_postgres
     ensure_keycloak_database
     $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --build
+    if is_keycloak_enabled; then
+        wait_for_keycloak
+    fi
     echo -e "${GREEN} Infrastructure services started${NC}"
+}
+
+prepare_app_images() {
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+
+    if [ "$APP_DEPLOY_MODE" = "build" ]; then
+        echo -e "${BLUE}Building app locally (no pull)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES build app
+        echo -e "${BLUE}Building sync server locally (no pull)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES build app-sync
+    elif [ "$APP_DEPLOY_MODE" = "version" ]; then
+        echo -e "${BLUE}Pulling prebuilt app images...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES pull app app-sync
+    fi
+
+    APP_IMAGES_PREPARED=true
 }
 
 start_app() {
@@ -306,15 +472,19 @@ start_app() {
     DOCKER_COMPOSE=$(get_docker_compose_cmd)
 
     if [ "$APP_DEPLOY_MODE" = "build" ]; then
-        echo -e "${BLUE}Building app locally (no pull)...${NC}"
-        $DOCKER_COMPOSE $COMPOSE_FILES build app
-        echo -e "${BLUE}Building sync server locally (no pull)...${NC}"
-        $DOCKER_COMPOSE $COMPOSE_FILES build app-sync
-
+        if [ "${APP_IMAGES_PREPARED:-false}" != "true" ]; then
+            prepare_app_images
+        fi
         echo -e "${BLUE}Starting services with locally built images...${NC}"
         $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app app-sync
+    elif [ "$APP_DEPLOY_MODE" = "version" ]; then
+        if [ "${APP_IMAGES_PREPARED:-false}" != "true" ]; then
+            prepare_app_images
+        fi
+        echo -e "${BLUE}Starting services with prebuilt images...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d app
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d app-sync
     else
-        echo -e "${BLUE}Using prebuilt image (version mode, may pull from registry)...${NC}"
         $DOCKER_COMPOSE $COMPOSE_FILES up -d app
         $DOCKER_COMPOSE $COMPOSE_FILES up -d app-sync
     fi
@@ -359,6 +529,86 @@ get_sync_compose_files() {
     files="$files -f $infra_compose"
     files="$files -f docker-compose.sync.yml"
     echo "$files"
+}
+
+ensure_app_compose_selected_for_bootstrap() {
+    if [ -f docker-compose.app.yml ]; then
+        return
+    fi
+
+    echo -e "${BLUE}No selected app compose file found; using build compose for bootstrap${NC}"
+    cp docker-compose.app-build.yml docker-compose.app.yml
+    if [ ! -f docker-compose.sync.yml ]; then
+        cp docker-compose.sync-build.yml docker-compose.sync.yml
+    fi
+    APP_DEPLOY_MODE="build"
+}
+
+app_image_available_for_bootstrap() {
+    if [ ! -f docker-compose.app.yml ]; then
+        return 1
+    fi
+
+    local image
+    image=$(awk '/^[[:space:]]*image:/ {print $2; exit}' docker-compose.app.yml)
+    image="${image:-xynehq/xyne}"
+    [ -n "$image" ] && docker image inspect "$image" >/dev/null 2>&1
+}
+
+prepare_keycloak_bootstrap_app_image() {
+    ensure_app_compose_selected_for_bootstrap
+
+    COMPOSE_FILES=$(get_app_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    if grep -q "build:" docker-compose.app.yml; then
+        echo -e "${BLUE}Building app image for Keycloak bootstrap...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES build app
+    elif ! app_image_available_for_bootstrap; then
+        echo -e "${BLUE}Pulling app image for Keycloak bootstrap...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES pull app
+    fi
+}
+
+run_app_migrations() {
+    COMPOSE_FILES=$(get_app_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    echo -e "${YELLOW} Running app database migrations...${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES run --rm --no-deps app bun run migrate
+    echo -e "${GREEN} App database migrations completed${NC}"
+}
+
+run_keycloak_bootstrap() {
+    if ! is_keycloak_enabled; then
+        echo "Skipping Keycloak bootstrap"
+        return
+    fi
+
+    ensure_keycloak_bootstrap_env
+    COMPOSE_FILES=$(get_app_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    echo -e "${YELLOW} Running Keycloak bootstrap...${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES run --rm --no-deps app bun run keycloak:bootstrap
+    echo -e "${GREEN} Keycloak bootstrap completed${NC}"
+}
+
+bootstrap_keycloak() {
+    setup_environment
+    if ! is_keycloak_enabled; then
+        echo "Skipping Keycloak bootstrap"
+        return
+    fi
+
+    INFRA_COMPOSE=$(get_infrastructure_compose)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d xyne-db
+    wait_for_postgres
+    ensure_keycloak_database
+    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d keycloak
+    wait_for_keycloak
+    ensure_keycloak_bootstrap_env
+    prepare_keycloak_bootstrap_app_image
+    run_app_migrations
+    run_keycloak_bootstrap
 }
 
 stop_all() {
@@ -423,6 +673,9 @@ update_infrastructure() {
 
     # Build and start all services (--build will handle custom images)
     $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build
+    if is_keycloak_enabled; then
+        wait_for_keycloak
+    fi
     echo -e "${GREEN} Infrastructure services updated${NC}"
 }
 
@@ -686,6 +939,14 @@ case $COMMAND in
             cp docker-compose.sync-build.yml docker-compose.sync.yml
         fi
 
+        prepare_app_images
+        if is_keycloak_enabled; then
+            ensure_keycloak_bootstrap_env
+            run_app_migrations
+            run_keycloak_bootstrap
+        else
+            echo "Skipping Keycloak bootstrap"
+        fi
         start_app
         show_status
         ;;
@@ -697,6 +958,11 @@ case $COMMAND in
         echo -e "${GREEN} Infrastructure services started successfully${NC}"
         echo -e "${BLUE} You can now run your application locally in development mode${NC}"
         echo -e "${BLUE} Infrastructure services: PostgreSQL, Keycloak, Vespa, Prometheus, Grafana, Loki${NC}"
+        if is_keycloak_enabled; then
+            echo -e "${BLUE} Keycloak web login is enabled. Bootstrap it with one of:${NC}"
+            echo "  cd ../../server && bun run keycloak:bootstrap"
+            echo "  ./deploy.sh bootstrap-keycloak"
+        fi
         ;;
     stop)
         stop_all
@@ -724,6 +990,17 @@ case $COMMAND in
     update-infra)
         setup_environment
         update_infrastructure
+        if is_keycloak_enabled; then
+            ensure_keycloak_bootstrap_env
+            if app_image_available_for_bootstrap; then
+                run_app_migrations
+                run_keycloak_bootstrap
+            else
+                echo -e "${YELLOW}App image is unavailable; run ./deploy.sh bootstrap-keycloak after building or pulling the app image.${NC}"
+            fi
+        else
+            echo "Skipping Keycloak bootstrap"
+        fi
         show_status
         ;;
     logs)
@@ -752,6 +1029,9 @@ case $COMMAND in
         ;;
     update-sync-version)
         update_sync_version $1
+        ;;
+    bootstrap-keycloak)
+        bootstrap_keycloak
         ;;
     help|--help|-h)
         show_help

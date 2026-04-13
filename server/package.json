@@ -32,6 +32,7 @@
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
     "migrate:kb": "bun run scripts/backfillclFd.ts",
+    "keycloak:bootstrap": "bun run scripts/bootstrapKeycloak.ts",
     "check-deps": "madge --circular --extensions ts,tsx ./",
     "dev": "bun run check-deps && bun run --watch server.ts",
     "dev:unsafe": "bun run --watch server.ts",

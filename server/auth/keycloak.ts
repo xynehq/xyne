@@ -297,6 +297,7 @@ export async function buildKeycloakLogoutUrl(
   config: KeycloakWebConfig,
   postLogoutRedirectUri: string,
   state: string,
+  idTokenHint?: string,
 ): Promise<string> {
   const discovery = await fetchKeycloakDiscoveryDocument(config)
   const endSessionEndpoint =
@@ -307,5 +308,8 @@ export async function buildKeycloakLogoutUrl(
   url.searchParams.set("client_id", config.clientId)
   url.searchParams.set("post_logout_redirect_uri", postLogoutRedirectUri)
   url.searchParams.set("state", state)
+  if (idTokenHint) {
+    url.searchParams.set("id_token_hint", idTokenHint)
+  }
   return url.toString()
 }

@@ -10,8 +10,26 @@ import {
   type ServiceHealthCheck,
 } from "./type"
 import config from "@/config"
+import {
+  getExpectedKeycloakIssuer,
+  getKeycloakWebConfig,
+} from "@/auth/keycloak"
 
 const Logger = getLogger(Subsystem.Server).child({ module: "health" })
+
+const keycloakRequiredEnvKeys = [
+  "KEYCLOAK_PUBLIC_BASE_URL",
+  "KEYCLOAK_REALM",
+  "KEYCLOAK_CLIENT_ID",
+  "KEYCLOAK_CLIENT_SECRET",
+  "KEYCLOAK_WORKSPACE_EXTERNAL_ID",
+] as const
+
+const isKeycloakExplicitlyEnabled = () =>
+  process.env.KEYCLOAK_WEB_ENABLED?.trim() === "true"
+
+const getMissingKeycloakEnvKeys = () =>
+  keycloakRequiredEnvKeys.filter((key) => !process.env[key]?.trim())
 
 // Check PostgreSQL Health
 export const checkPostgresHealth = async (): Promise<HealthStatusResponse> => {
@@ -358,22 +376,151 @@ export async function checkPaddleOCRHealth(): Promise<HealthStatusResponse> {
   }
 }
 
+export async function checkKeycloakHealth(): Promise<HealthStatusResponse> {
+  const start = Date.now()
+
+  if (!isKeycloakExplicitlyEnabled()) {
+    return {
+      status: HealthStatusType.Healthy,
+      serviceName: ServiceName.keycloak,
+      responseTime: Date.now() - start,
+      details: {
+        message: "Keycloak web login is not configured; health check skipped",
+        skipped: true,
+      },
+    }
+  }
+
+  const missingEnvKeys = getMissingKeycloakEnvKeys()
+  if (missingEnvKeys.length > 0) {
+    return {
+      status: HealthStatusType.Unhealthy,
+      serviceName: ServiceName.keycloak,
+      responseTime: Date.now() - start,
+      details: {
+        message: "Keycloak web login is enabled but configuration is incomplete",
+        missingEnvKeys,
+      },
+    }
+  }
+
+  const keycloakConfig = getKeycloakWebConfig()
+  if (!keycloakConfig) {
+    return {
+      status: HealthStatusType.Unhealthy,
+      serviceName: ServiceName.keycloak,
+      responseTime: Date.now() - start,
+      details: {
+        message: "Keycloak web login is enabled but configuration is invalid",
+      },
+    }
+  }
+
+  const discoveryUrl = `${keycloakConfig.internalBaseUrl}/realms/${keycloakConfig.realm}/.well-known/openid-configuration`
+  const expectedIssuer = getExpectedKeycloakIssuer(keycloakConfig)
+
+  try {
+    const response = await fetch(discoveryUrl, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000),
+    })
+    const responseTime = Date.now() - start
+
+    if (!response.ok) {
+      return {
+        status: HealthStatusType.Unhealthy,
+        serviceName: ServiceName.keycloak,
+        responseTime,
+        details: {
+          message: `Keycloak discovery endpoint returned ${response.status}`,
+          discoveryUrl,
+        },
+      }
+    }
+
+    let discovery: { issuer?: unknown }
+    try {
+      discovery = (await response.json()) as { issuer?: unknown }
+    } catch (error) {
+      return {
+        status: HealthStatusType.Unhealthy,
+        serviceName: ServiceName.keycloak,
+        responseTime,
+        details: {
+          message: "Keycloak discovery response was not valid JSON",
+          discoveryUrl,
+          error: error instanceof Error ? error.message : "Invalid JSON",
+        },
+      }
+    }
+
+    if (discovery.issuer !== expectedIssuer) {
+      return {
+        status: HealthStatusType.Unhealthy,
+        serviceName: ServiceName.keycloak,
+        responseTime,
+        details: {
+          message: "Keycloak issuer did not match expected public issuer",
+          discoveryUrl,
+          issuer: discovery.issuer,
+          expectedIssuer,
+        },
+      }
+    }
+
+    return {
+      status: HealthStatusType.Healthy,
+      serviceName: ServiceName.keycloak,
+      responseTime,
+      details: {
+        message: "Keycloak discovery endpoint is healthy",
+        issuer: discovery.issuer,
+      },
+    }
+  } catch (error) {
+    Logger.error(error, "Keycloak health check failed")
+    return {
+      status: HealthStatusType.Unhealthy,
+      serviceName: ServiceName.keycloak,
+      responseTime: Date.now() - start,
+      details: {
+        message: "Failed to connect to Keycloak discovery endpoint",
+        discoveryUrl,
+        error:
+          error instanceof Error
+            ? (error as Error).message
+            : "Unknown Keycloak Error",
+      },
+    }
+  }
+}
+
 // Check Overall System Health
 export const checkOverallSystemHealth =
   async (): Promise<OverallSystemHealthResponse> => {
     Logger.info("Starting overall system health check...")
     const startTime = Date.now()
+    const keycloakEnabled = isKeycloakExplicitlyEnabled()
 
-    const [postgresHealth, vespaHealth, paddleOCRHealth] = await Promise.all([
+    const baseHealthChecks = [
       checkPostgresHealth(),
       checkVespaHealth(),
       checkPaddleOCRHealth(),
-    ])
+    ]
+    const healthChecks = keycloakEnabled
+      ? [...baseHealthChecks, checkKeycloakHealth()]
+      : baseHealthChecks
+
+    const [postgresHealth, vespaHealth, paddleOCRHealth, keycloakHealth] =
+      await Promise.all(healthChecks)
 
     const services: ServiceHealthCheck = {
       postgres: postgresHealth,
       vespa: vespaHealth,
       paddleOCR: paddleOCRHealth,
+    }
+    if (keycloakHealth) {
+      services.keycloak = keycloakHealth
     }
 
     const serviceStatuses = Object.values(services).filter(Boolean)

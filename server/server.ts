@@ -443,6 +443,7 @@ import { emailService } from "./services/emailService"
 import { AgentMessageApi, ProvideClarificationApi } from "./api/chat/agents"
 import {
   checkOverallSystemHealth,
+  checkKeycloakHealth,
   checkPaddleOCRHealth,
   checkPostgresHealth,
   checkVespaHealth,
@@ -473,6 +474,7 @@ const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET!
 
 const AccessTokenCookieName = config.AccessTokenCookie
 const RefreshTokenCookieName = "refresh-token"
+const KeycloakIdTokenCookieName = "keycloak-id-token"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -557,6 +559,18 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
   }
 }
 
+const getAuthPageUrl = (errorCode?: string) => {
+  const baseUrl = config.postOauthRedirect.startsWith("http")
+    ? new URL("/auth", config.postOauthRedirect)
+    : new URL("/auth", config.host)
+
+  if (errorCode) {
+    baseUrl.searchParams.set("error", errorCode)
+  }
+
+  return baseUrl.toString()
+}
+
 // Middleware for frontend routes
 // Checks if there is token in cookie or not
 // If there is token, verify it is valid or not
@@ -568,7 +582,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
   if (!authToken) {
     Logger.warn("Redirected by server - No AuthToken")
     // Redirect to login page if no token found
-    return c.redirect(`/auth`)
+    return c.redirect(getAuthPageUrl())
   }
 
   try {
@@ -583,7 +597,7 @@ const AuthRedirect = async (c: Context, next: Next) => {
     )
     Logger.warn("Redirected by server - Error in AuthMW")
     // Redirect to auth page if token invalid
-    return c.redirect(`/auth`)
+    return c.redirect(getAuthPageUrl())
   }
 }
 
@@ -741,6 +755,7 @@ const clearCookies = (c: Context) => {
   }
   deleteCookieByEnv(c, AccessTokenCookieName, opts)
   deleteCookieByEnv(c, RefreshTokenCookieName, opts)
+  deleteCookieByEnv(c, KeycloakIdTokenCookieName, opts)
   Logger.info("Cookies deleted")
 }
 
@@ -755,29 +770,18 @@ const getVerifiedJwtPayload = async (token: string, secret: string) => {
   )
 }
 
-const getAuthPageUrl = (errorCode?: string) => {
-  const baseUrl = config.postOauthRedirect.startsWith("http")
-    ? new URL("/auth", config.postOauthRedirect)
-    : new URL("/auth", config.host)
-
-  if (errorCode) {
-    baseUrl.searchParams.set("error", errorCode)
-  }
-
-  return baseUrl.toString()
-}
-
 const getKeycloakCallbackRedirectUri = () =>
   new URL("/v1/auth/keycloak/callback", config.host).toString()
 
 const LogOut = async (c: Context) => {
   const accessToken = getCookie(c, AccessTokenCookieName)
   const refreshToken = getCookie(c, RefreshTokenCookieName)
+  let redirectTo = getAuthPageUrl()
 
   if (!accessToken || !refreshToken) {
     Logger.warn("No tokens found during logout")
     clearCookies(c)
-    return c.json({ redirectTo: "/auth" })
+    return c.json({ redirectTo })
   }
 
   try {
@@ -806,12 +810,12 @@ const LogOut = async (c: Context) => {
           keycloakConfig.logoutRedirectUrl,
           getAuthPageUrl(),
         ).toString()
-        const redirectTo = await buildKeycloakLogoutUrl(
+        redirectTo = await buildKeycloakLogoutUrl(
           keycloakConfig,
           postLogoutRedirectUri,
           crypto.randomUUID(),
+          getCookie(c, KeycloakIdTokenCookieName),
         )
-        return c.json({ redirectTo })
       }
     }
   } catch (err) {
@@ -821,7 +825,7 @@ const LogOut = async (c: Context) => {
     Logger.info("Logged out")
   }
 
-  return c.json({ redirectTo: "/auth" })
+  return c.json({ redirectTo })
 }
 
 // Update Metrics From Script
@@ -1308,7 +1312,7 @@ const getNewAccessRefreshToken = async (c: Context) => {
   const clearAndRedirect = () => {
     clearCookies(c)
     Logger.warn("Cleared tokens and redirecting to /auth")
-    return c.redirect(`/auth`)
+    return c.redirect(getAuthPageUrl())
   }
 
   if (!refreshToken) {
@@ -1596,6 +1600,7 @@ app.get("/v1/auth/keycloak/callback", async (c) => {
     }
     setCookieByEnv(c, AccessTokenCookieName, accessToken, sessionCookieOpts)
     setCookieByEnv(c, RefreshTokenCookieName, refreshToken, sessionCookieOpts)
+    setCookieByEnv(c, KeycloakIdTokenCookieName, idToken, sessionCookieOpts)
 
     return c.redirect(postOauthRedirect)
   } catch (error) {
@@ -2721,6 +2726,12 @@ app.get(
 app.get(
   "/health/paddle",
   createHealthCheckHandler(checkPaddleOCRHealth, ServiceName.paddleOCR),
+)
+
+// Keycloak health check endpoint
+app.get(
+  "/health/keycloak",
+  createHealthCheckHandler(checkKeycloakHealth, ServiceName.keycloak),
 )
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed

@@ -59,17 +59,24 @@ KEYCLOAK_INTERNAL_BASE_URL=http://localhost:8082
 KEYCLOAK_REALM=xyne-shared
 KEYCLOAK_CLIENT_ID=xyne-web
 KEYCLOAK_CLIENT_SECRET=<YOUR_KEYCLOAK_CLIENT_SECRET>
-KEYCLOAK_WORKSPACE_EXTERNAL_ID=<YOUR_WORKSPACE_EXTERNAL_ID>
+KEYCLOAK_WORKSPACE_EXTERNAL_ID=xyne-shared-workspace
 KEYCLOAK_LOGOUT_REDIRECT_URL=/auth
 KEYCLOAK_ADMIN=admin
 KEYCLOAK_ADMIN_PASSWORD=admin
+XYNE_BOOTSTRAP_ADMIN_EMAIL=admin@xyne.local
+XYNE_BOOTSTRAP_ADMIN_NAME="Xyne Admin"
+XYNE_BOOTSTRAP_ADMIN_PASSWORD=<YOUR_BOOTSTRAP_ADMIN_PASSWORD>
+XYNE_BOOTSTRAP_WORKSPACE_NAME="Xyne Shared"
+XYNE_BOOTSTRAP_WORKSPACE_DOMAIN=xyne.local
+KEYCLOAK_BOOTSTRAP_RESET_ADMIN_PASSWORD=false
 
 HOST=http://localhost:3000
+DATABASE_URL=postgresql://xyne:xyne@localhost:5432/xyne
 
 JWT_SECRET=<YOUR_JWT_SECRET>
 
-DATABASE_HOST=xyne-db
-VESPA_HOST=vespa
+DATABASE_HOST=localhost
+VESPA_HOST=localhost
 
 
 ## If using AWS Bedrock
@@ -108,8 +115,26 @@ Set up docker by running the follow command :
 ```javascript
 docker compose -f deployment/docker-compose.dev.yml up -d
 ```
-Running this command will host Vespa, PostgreSQL, and Keycloak containers inside Docker.
+Running this command will host PostgreSQL, Keycloak, Vespa, and the other local infrastructure containers inside Docker.
 Keycloak Admin Console will be available at `http://localhost:8082/admin/`.
+
+Bootstrap the Keycloak realm, client, default workspace, and local admin user:
+
+```javascript
+cd server
+bun run migrate
+bun run keycloak:bootstrap
+```
+
+Run the Keycloak Playwright e2e suite after bootstrapping:
+
+```javascript
+cd server
+bun run test:e2e:install
+bun run test:e2e:keycloak
+```
+
+The full login assertion uses `KEYCLOAK_E2E_EMAIL` and `KEYCLOAK_E2E_PASSWORD` when set. Otherwise it uses `XYNE_BOOTSTRAP_ADMIN_EMAIL` and `XYNE_BOOTSTRAP_ADMIN_PASSWORD`. If the frontend and server are already running, use `PLAYWRIGHT_START_SERVERS=false bun run test:e2e:keycloak`.
 
 If you want to stop the local infrastructure, use:
 

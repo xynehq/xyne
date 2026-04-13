@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import {
+  buildKeycloakLogoutUrl,
   createKeycloakLoginAttempt,
   getAuthProvidersConfig,
   getExpectedKeycloakIssuer,
@@ -82,5 +83,44 @@ describe("Keycloak auth helpers", () => {
     expect(attempt.nonce.length).toBeGreaterThan(0)
     expect(attempt.codeVerifier.length).toBeGreaterThan(0)
     expect(attempt.codeChallenge.length).toBeGreaterThan(0)
+  })
+
+  test("logout url includes id token hint when present", async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          end_session_endpoint:
+            "http://localhost:8082/realms/xyne-logout/protocol/openid-connect/logout",
+        }),
+        { status: 200 },
+      )) as typeof fetch
+
+    try {
+      const logoutUrl = await buildKeycloakLogoutUrl(
+        {
+          publicBaseUrl: "http://localhost:8082",
+          internalBaseUrl: "http://localhost:8082",
+          realm: "xyne-logout",
+          clientId: "xyne-web",
+          clientSecret: "secret",
+          workspaceExternalId: "workspace-123",
+          logoutRedirectUrl: "/auth",
+        },
+        "http://localhost:5173/auth",
+        "logout-state",
+        "id-token",
+      )
+
+      const url = new URL(logoutUrl)
+      expect(url.searchParams.get("client_id")).toBe("xyne-web")
+      expect(url.searchParams.get("post_logout_redirect_uri")).toBe(
+        "http://localhost:5173/auth",
+      )
+      expect(url.searchParams.get("state")).toBe("logout-state")
+      expect(url.searchParams.get("id_token_hint")).toBe("id-token")
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 })
