@@ -1,9 +1,7 @@
 import pLimit from "p-limit"
 
-const MAX_PARALLEL = parseInt(
-  process.env.IMAGE_DESCRIBE_GLOBAL_CONCURRENCY || "5",
-  10,
-)
+const fromEnv = parseInt(process.env.IMAGE_DESCRIBE_GLOBAL_CONCURRENCY || "5", 10)
+const MAX_PARALLEL = Number.isFinite(fromEnv) ? fromEnv : 5
 
 /**
  * Global limiter for image description LLM calls across the entire process.
