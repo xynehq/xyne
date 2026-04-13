@@ -1,21 +1,28 @@
-import { Type } from "@sinclair/typebox"
-import { createXyneTool } from "../adapter"
-import type { XyneToolContext } from "../adapter"
 import {
   GetDocument,
   GetDocumentsByDocIds,
   searchVespaKnowledgeBase,
 } from "@/search/vespa"
+import { Type } from "@sinclair/typebox"
 import { KbItemsSchema, SearchModes } from "@xyne/vespa-ts/types"
+import { createXyneTool } from "../adapter"
+import type { XyneToolContext } from "../adapter"
 
 const GET_DOCUMENT_OUTLINE_DESCRIPTION = [
-  "Retrieve document outlines (Table of Contents) to understand document structure and discover exact terminology.",
-  "Use this tool when you need to navigate a large document or when initial `searchKnowledgeBase` results miss the user's intent.",
-  "**Targeted Fetch**: If you already know the exact file ID (e.g., from `lsKnowledgeBase`), pass the `vespaDocId` (NOT the `id`) in the `fileIds` array to get the outline for that specific file directly.",
-  "**ID Clarification**: Use `lsKnowledgeBase` to find files. Each file entry shows two IDs: `id` (database row ID) and `vespaDocId` (Vespa document ID). For `getDocumentOutline.fileIds`, you MUST use `vespaDocId`.",
-  "**Search Strategy**: If you do not have a file ID, use a highly descriptive semantic `query`. DO NOT use generic 1-2 word queries (like 'sector' or 'limit') as they will return irrelevant outlines.",
-  "**Actionable Next Step**: Once you retrieve the outline, copy the EXACT chapter or section heading (e.g., 'CHAPTER 12: INVESTMENT LIMITS') and pass it as the `query` into your next `searchKnowledgeBase` call.",
-].join(" ")
+  "Retrieves the Table of Contents (TOC/outline) of documents to understand structure and locate specific sections. Essential first step for navigating large documents before reading specific pages.",
+  "**WHEN TO USE**:",
+  "1. User asks about specific topics in potentially long documents (reports, manuals, contracts)",
+  "2. Initial semantic search returns no results or misses the user's intent",
+  "3. You need to locate the exact page numbers for a specific section or chapter",
+  "**REQUIRED PRE-STEP**: Use `lsKnowledgeBase` first to find the target file and obtain its `vespaDocId`.",
+  "**INPUT OPTIONS**:",
+  "- `fileIds`: Array of vespaDocId values (preferred - direct lookup)",
+  "- `query`: Semantic search query to find relevant documents (fallback when you don't have fileIds)",
+  "**WHAT YOU GET**: Hierarchical outline showing sections/chapters with page numbers, e.g.:",
+  "```\n- Chapter 1: Introduction (Page 1)\n  - 1.1 Background (Page 3)\n  - 1.2 Objectives (Page 5)\n- Chapter 2: Methodology (Page 10)\n```",
+  "**NEXT STEP**: Identify the exact page number(s) containing relevant content, then call `getPageContent` with those specific page numbers to retrieve the full text.",
+  "**WORKFLOW**: lsKnowledgeBase → getDocumentOutline → getPageContent",
+].join("\n")
 
 const getDocumentOutlineParams = Type.Object({
   query: Type.Optional(
@@ -28,7 +35,7 @@ const getDocumentOutlineParams = Type.Object({
   fileIds: Type.Optional(
     Type.Array(Type.String(), {
       description:
-        "An array of Vespa document IDs (vespaDocId) to retrieve outlines for. Use the `vespaDocId` field from `lsKnowledgeBase` output (not the `id` field). If provided, `query` can be omitted.",
+        "An array of Vespa document IDs (vespa_doc_id) to retrieve outlines for. Use the `vespa_doc_id` field from `lsKnowledgeBase` output (not the `id` field). If provided, `query` can be omitted.",
       maxItems: 5,
     }),
   ),
@@ -64,7 +71,7 @@ export const getDocumentOutlineTool = createXyneTool(
         outline: string
       }> = []
       const discoveredDocIds = new Set<string>()
-
+      console.log("getDocumentOutline called with params", params)
       // If fileIds are provided, fetch documents directly by ID
       if (params.fileIds && params.fileIds.length > 0) {
         try {
@@ -79,7 +86,7 @@ export const getDocumentOutlineTool = createXyneTool(
             params.fileIds,
             mockSpan as any,
           )
-
+          console.log("Documents fetched by ID", documents)
           if (
             documents &&
             documents.root?.children &&
@@ -173,6 +180,10 @@ export const getDocumentOutlineTool = createXyneTool(
         }
       }
 
+      console.log("Discovered document outlines", {
+        discoveredDocIds: Array.from(discoveredDocIds),
+        discoveredOutlines,
+      })
       if (discoveredDocIds.size === 0) {
         const searchContext = params.fileIds
           ? `file IDs: ${params.fileIds.join(", ")}`

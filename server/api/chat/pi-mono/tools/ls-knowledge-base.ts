@@ -23,68 +23,6 @@ const LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION = [
   "Start shallow with `depth: 1` and `metadata: false` if unsure; but you are always free to enable metadata or deepen traversal only when the task truly needs row details or more hierarchy.",
 ].join(" ")
 
-const KnowledgeBaseTargetSchema = Type.Union(
-  [
-    Type.Object(
-      {
-        type: Type.Literal("collection"),
-        collectionId: Type.String({
-          description:
-            "Knowledge-base collection row ID as a string, typically a UUID. Reuse `ls` output directly here: for a collection row, pass `entries[i].id`; for a previously targeted `ls` response, pass `target.collection_id`. This stays a collection DB ID through KB search and is translated downstream into Vespa `clId` filtering. Do not pass a folder ID, file ID, or path here.",
-        }),
-      },
-      {
-        description:
-          'Object shape: `{ type: "collection", collectionId: string }`. Targets an entire collection root. Best when the user names a known collection or you want to browse/search everything inside it.',
-      },
-    ),
-    Type.Object(
-      {
-        type: Type.Literal("folder"),
-        folderId: Type.String({
-          description:
-            'Knowledge-base folder row ID as a string, typically a UUID. Reuse `ls` output directly here: when an `ls` entry has `type: "folder"`, pass that row\'s `id` as `folderId`. This is later translated into KB folder selections and then Vespa `clFd` filtering. Do not pass a collection ID, file ID, or path here.',
-        }),
-      },
-      {
-        description:
-          'Object shape: `{ type: "folder", folderId: string }`. Targets a folder subtree inside a collection. Useful after `ls` returns a folder ID or the folder is already known.',
-      },
-    ),
-    Type.Object(
-      {
-        type: Type.Literal("file"),
-        fileId: Type.String({
-          description:
-            "Knowledge-base file row ID as a string, typically a UUID. Reuse `ls` output directly here: when an `ls` entry has `type: \"file\"`, pass that row's `id` as `fileId`. This is later translated into the file's Vespa document `docId` filtering downstream. Do not pass a collection ID, folder ID, or path here.",
-        }),
-      },
-      {
-        description:
-          'Object shape: `{ type: "file", fileId: string }`. Targets one exact file. Use for pinpointed browsing/search when the relevant document is already known.',
-      },
-    ),
-    Type.Object(
-      {
-        type: Type.Literal("path"),
-        collectionId: Type.String({
-          description:
-            'Knowledge-base collection row ID as a string, typically a UUID. Required with `type: "path"` so the path is resolved inside the correct collection. Reuse `ls` output directly here with `entries[i].collection_id` or `target.collection_id` from a prior targeted `ls` response.',
-        }),
-        path: Type.String({
-          description:
-            'Collection-relative path string such as `/`, `/Policies`, `/Policies/Security`, or `/Policies/Security.md`. Reuse `ls` output directly here with `entries[i].path` or `target.path` from a prior targeted `ls` response. A missing leading slash is accepted and will be canonicalized. `path: "/"` means the collection root. `.` and `..` path segments are invalid. The resolved path is then translated into collection, folder, or file search scope before Vespa filtering.',
-        }),
-      },
-      {
-        description:
-          'Object shape: `{ type: "path", collectionId: string, path: string }`. Targets a collection-relative path when the location is known or easier to express than raw folder/file IDs.',
-      },
-    ),
-  ],
-  { description: KNOWLEDGE_BASE_TARGET_DESCRIPTION },
-)
-
 const lsKnowledgeBaseParams = Type.Object({
   target: Type.Optional(
     Type.Object(

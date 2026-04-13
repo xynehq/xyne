@@ -1,12 +1,7 @@
-import type { Tool } from "@juspay-xyne-jaf/jaf"
-import { ToolErrorCodes, ToolResponse } from "@juspay-xyne-jaf/jaf"
-import { Apps } from "@xyne/vespa-ts/types"
-import { and, eq, inArray, isNull } from "drizzle-orm"
-import { z, type ZodType } from "zod"
 import {
-  buildKnowledgeBaseCollectionSelections,
   KnowledgeBaseScope,
   type KnowledgeBaseSelection,
+  buildKnowledgeBaseCollectionSelections,
 } from "@/api/chat/knowledgeBaseSelections"
 import { db } from "@/db/client"
 import {
@@ -18,15 +13,20 @@ import {
   upsertCollectionLsProjection,
 } from "@/db/knowledgeBase"
 import {
-  collectionItems,
   type Collection,
   type CollectionItem,
   type CollectionLsProjection,
+  collectionItems,
 } from "@/db/schema"
 import { getUserByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
+import { Apps } from "@xyne/vespa-ts/types"
+import type { Tool } from "@xynehq/jaf"
+import { ToolErrorCodes, ToolResponse } from "@xynehq/jaf"
+import { and, eq, inArray, isNull } from "drizzle-orm"
+import { type ZodType, z } from "zod"
 import { executeVespaSearch } from "./global"
 import type { Ctx } from "./types"
 import { parseAgentAppIntegrations } from "./utils"
@@ -267,6 +267,7 @@ type KnowledgeBaseNavigationNode = {
   type: "folder" | "file"
   name: string
   path: string
+  vespa_doc_id: string | null
 }
 
 const CollectionLsProjectionPayloadSchema = z.object({
@@ -281,6 +282,7 @@ const CollectionLsProjectionPayloadSchema = z.object({
       type: z.enum(["folder", "file"]),
       name: z.string(),
       path: z.string(),
+      vespa_doc_id: z.string().nullable(),
     }),
   ),
   nodeIdByPath: z.record(z.string(), z.string()),
@@ -361,6 +363,7 @@ type LsEntry = {
   collection_id?: string
   parent_id?: string | null
   depth: number
+  vespa_doc_id: string | null
   details?: Record<string, unknown>
 }
 
@@ -373,6 +376,7 @@ type LsEntrySeed = {
   collection_id: string
   parent_id: string | null
   depth: number
+  vespa_doc_id: string | null
 }
 
 // Separates direct-scan and projection-backed snapshots within one request.
@@ -494,7 +498,7 @@ function buildItemCanonicalPath(
 function buildNavigationNode(
   item: Pick<
     CollectionItem,
-    "id" | "parentId" | "collectionId" | "type" | "name" | "path"
+    "id" | "parentId" | "collectionId" | "type" | "name" | "path" | "vespaDocId"
   >,
 ): KnowledgeBaseNavigationNode {
   return {
@@ -504,6 +508,7 @@ function buildNavigationNode(
     type: item.type,
     name: item.name,
     path: buildItemCanonicalPath(item),
+    vespa_doc_id: item.vespaDocId ?? null,
   }
 }
 
@@ -619,7 +624,15 @@ function buildSnapshotFromProjection(
     nodesById: new Map(
       Object.entries(projection.nodesById).map(([nodeId, node]) => [
         nodeId,
-        node,
+        {
+          id: node.id,
+          parent_id: node.parent_id ?? null,
+          collection_id: node.collection_id,
+          type: node.type,
+          name: node.name,
+          path: node.path,
+          vespa_doc_id: node.vespa_doc_id ?? null,
+        },
       ]),
     ),
     nodeIdByPath: new Map(
@@ -1100,6 +1113,7 @@ function createCollectionLsEntry(
     name: collection.name,
     path: "/",
     depth: 0,
+    vespa_doc_id: collection.vespaDocId ?? null,
   }
 
   if (includeMetadata) {
@@ -1130,6 +1144,7 @@ function createSeedEntry(
     collection_id: node.collection_id,
     parent_id: node.parent_id,
     depth,
+    vespa_doc_id: node.vespa_doc_id,
   }
 }
 
@@ -1147,6 +1162,7 @@ function createItemLsEntry(
     collection_id: seed.collection_id,
     parent_id: seed.parent_id,
     depth: seed.depth,
+    vespa_doc_id: seed.vespa_doc_id,
   }
 
   if (includeMetadata && item) {

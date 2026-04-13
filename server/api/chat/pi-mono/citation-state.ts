@@ -83,7 +83,6 @@ export function buildCitationDelta(
   const turnFragments = xyneState.allFragments ?? []
   const newFragments: PersistedFragment[] =
     turnFragments.map(toPersistedFragment)
-  console.log("turnFragments", turnFragments, "turnIndex", turnIndex)
   const newMappings: CitationMapping[] = []
 
   // Build mappings from the citationDocIdMapping for this turn's range

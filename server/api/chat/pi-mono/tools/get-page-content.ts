@@ -1,17 +1,27 @@
+import { GetDocumentsByDocIds } from "@/search/vespa"
 import { Type } from "@sinclair/typebox"
 import { createXyneTool } from "../adapter"
 import type { XyneToolContext } from "../adapter"
-import { GetDocumentsByDocIds } from "@/search/vespa"
 import { mergeFragmentLists } from "../fragment-utils"
 
 const GET_PAGE_CONTENT_DESCRIPTION = [
-  "Retrieve the exact text content of a specific page from a document.",
-  "Use this tool when you know exactly which page contains the answer (e.g., from reading the document outline with `getDocumentOutline`).",
-  "This is much more precise and exhaustive than keyword searching when you already know the page number.",
-  "**Parameters:**",
-  "- `vespaDocId`: The Vespa document ID (e.g. from `lsKnowledgeBase` or `getDocumentOutline`).",
-  "- `pageNos`: An array of 1-based page numbers to retrieve. Can be a single page `[5]` or multiple pages `[5, 6, 7]`.",
-].join(" ")
+  "Retrieves the exact full-text content of specific page(s) from a document. Use for precise reading when you know exactly which pages contain the answer.",
+  "**WHEN TO USE**:",
+  "1. You obtained page number(s) from `getDocumentOutline` and need to read that specific content",
+  "2. You know the exact page number from citations or references",
+  "3. Semantic search returned fragments but you need the complete context from surrounding pages",
+  "**WHY USE THIS OVER SEMANTIC SEARCH**:",
+  "- Guaranteed complete text: Gets 100% of content on specified pages (not snippets)",
+  "- No relevance filtering: Bypasses search ranking to access exact location",
+  "- Better for: Reading entire sections, verifying tables/charts, getting full context",
+  "**REQUIRED PRE-STEPS**:",
+  "1. Use `lsKnowledgeBase` to find the target file and get its `vespaDocId`",
+  "2. (Optional but recommended) Use `getDocumentOutline` to identify which pages contain the relevant sections",
+  "**INPUT**:",
+  "- `vespaDocId`: The Vespa document ID from `lsKnowledgeBase`",
+  "- `pageNos`: Array of 1-based page numbers (e.g., `[15]` or `[15, 16, 17]`). Max 20 pages per call.",
+  "**WORKFLOW**: lsKnowledgeBase → getDocumentOutline → getPageContent",
+].join("\n")
 
 const getPageContentParams = Type.Object({
   vespaDocId: Type.String({
@@ -171,7 +181,7 @@ export const getPageContentTool = createXyneTool(
             id: `${params.vespaDocId}_chunk_${idx}`,
             content: text,
             source: {
-              docId: `${params.vespaDocId}_chunk_${idx}`, // using chunk ID as docId to ensure uniqueness
+              docId: params.vespaDocId, // using chunk ID as docId to ensure uniqueness
               title: fields.title || "Unknown Document",
               app: "KnowledgeBase",
               pageNumber: params.pageNos.join(", "),
@@ -183,8 +193,8 @@ export const getPageContentTool = createXyneTool(
 
       // Merge fragments into current turn state so they are available for citations
       if (ctx.xyneState && newFragments.length > 0) {
-        ctx.xyneState.currentTurnArtifacts.fragments = mergeFragmentLists(
-          ctx.xyneState.currentTurnArtifacts.fragments || [],
+        ctx.xyneState.allFragments = mergeFragmentLists(
+          ctx.xyneState.allFragments || [],
           newFragments,
         )
       }
