@@ -1,11 +1,10 @@
 import type { ReasoningEmitter } from "@/api/chat/reasoning-steps"
-import { ReasoningSteps } from "@/api/chat/reasoning-steps"
+import { ReasoningSteps, emitReasoningEvent } from "@/api/chat/reasoning-steps"
 import type { MinimalAgentFragment } from "@/api/chat/types"
-import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
 import type {
   BeforeAgentStartEvent,
   ExtensionAPI,
+  SessionBeforeCompactEvent,
   ToolCallEvent,
   ToolCallEventResult,
   ToolResultEvent,
@@ -154,5 +153,22 @@ export default function xyneExtension(pi: ExtensionAPI) {
       details: event.details,
       isError: event.isError,
     }
+  })
+
+  pi.on("session_before_compact", async (event: SessionBeforeCompactEvent) => {
+    const state = extensionStateRef
+    if (state) {
+      const messagesSummarized =
+        event.preparation.messagesToSummarize.length +
+        event.preparation.turnPrefixMessages.length
+      emitReasoningEvent(
+        state.emitReasoningStep,
+        ReasoningSteps.contextCompacted(
+          event.preparation.tokensBefore,
+          messagesSummarized,
+        ),
+      )
+    }
+    return
   })
 }

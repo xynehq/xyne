@@ -71,7 +71,6 @@ export const getDocumentOutlineTool = createXyneTool(
         outline: string
       }> = []
       const discoveredDocIds = new Set<string>()
-      console.log("getDocumentOutline called with params", params)
       // If fileIds are provided, fetch documents directly by ID
       if (params.fileIds && params.fileIds.length > 0) {
         try {
@@ -86,7 +85,6 @@ export const getDocumentOutlineTool = createXyneTool(
             params.fileIds,
             mockSpan as any,
           )
-          console.log("Documents fetched by ID", documents)
           if (
             documents &&
             documents.root?.children &&
@@ -180,10 +178,6 @@ export const getDocumentOutlineTool = createXyneTool(
         }
       }
 
-      console.log("Discovered document outlines", {
-        discoveredDocIds: Array.from(discoveredDocIds),
-        discoveredOutlines,
-      })
       if (discoveredDocIds.size === 0) {
         const searchContext = params.fileIds
           ? `file IDs: ${params.fileIds.join(", ")}`

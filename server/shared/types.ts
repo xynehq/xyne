@@ -673,6 +673,9 @@ export enum ReasoningEventType {
   AgentThinkingDelta = "thinking_delta",
   AgentThinkingEnd = "thinking_end",
 
+  // ── Context management ────────────────────────────────────────────────────
+  ContextCompacted = "context_compacted",
+
   // ── Generic (escape hatch — use sparingly) ─────────────────────────────────
   LogMessage = "log_message",
 }

@@ -37,7 +37,7 @@ export function resolveModel(
       supportsStreaming: true,
       supportsToolStreaming: true,
     },
-  } as Model<any>
+  } as Model<"openai-completions">
 }
 
 function mapEvent(event: AgentSessionEvent): RAGEvent[] {

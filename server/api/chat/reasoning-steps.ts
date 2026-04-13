@@ -557,6 +557,19 @@ export const ReasoningSteps = {
     }
   },
 
+  contextCompacted(
+    tokensBefore: number,
+    messagesSummarized: number,
+  ): ReasoningEventPayload {
+    return {
+      type: ReasoningEventType.ContextCompacted,
+      displayText: `Optimizing conversation context (${tokensBefore.toLocaleString()} tokens → summarizing ${messagesSummarized} messages).`,
+      stage: "analyzing",
+      detail: `Summarized ${messagesSummarized} messages to stay within token limits`,
+      timestamp: Date.now(),
+    }
+  },
+
   // ── Generic escape hatch (use sparingly) ─────────────────────────────────
 
   /** Use only when no specific factory applies. Prefer adding a new factory. */
