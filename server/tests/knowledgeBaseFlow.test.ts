@@ -12,6 +12,78 @@ process.env.ENCRYPTION_KEY ??=
 process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY ??=
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
+const collectionAlphaId = "collection-alpha"
+const collectionBetaId = "collection-beta"
+
+mock.module("@/db/user", () => ({
+  getPublicUserAndWorkspaceByEmail: mock(async () => []),
+  getUserAndWorkspaceByEmail: mock(async () => []),
+  getUserAndWorkspaceByOnlyEmail: mock(async () => []),
+  getUserByEmail: mock(async () => [{ id: 1 }]),
+  createUser: mock(async () => null),
+  saveRefreshTokenToDB: mock(async () => undefined),
+  deleteRefreshTokenFromDB: mock(async () => undefined),
+  getUserById: mock(async () => null),
+  getUserMetaData: mock(async () => null),
+  getUsersByWorkspace: mock(async () => []),
+  getAllLoggedInUsers: mock(async () => []),
+  getAllIngestedUsers: mock(async () => []),
+  updateUser: mock(async () => null),
+  updateUserTimezone: mock(async () => null),
+  getUserFromJWT: mock(async () => null),
+  createUserApiKey: mock(async () => null),
+}))
+
+mock.module("@/db/knowledgeBase", () => ({
+  touchCollectionLsStructure: mock(async () => undefined),
+  touchCollectionLsStructures: mock(async () => undefined),
+  getCollectionById: mock(async () => null),
+  getCollectionItemById: mock(async () => null),
+  getCollectionLsProjection: mock(async () => null),
+  getCollectionsByOwner: mock(async () => [
+    { id: collectionAlphaId },
+    { id: collectionBetaId },
+  ]),
+  getAccessibleCollections: mock(async () => []),
+  recordCollectionLsProjectionError: mock(async () => undefined),
+  createCollection: mock(async () => null),
+  updateCollection: mock(async () => null),
+  softDeleteCollection: mock(async () => null),
+  createCollectionItem: mock(async () => null),
+  getCollectionItemsByParent: mock(async () => []),
+  getCollectionItemByPath: mock(async () => null),
+  updateCollectionItem: mock(async () => null),
+  softDeleteCollectionItem: mock(async () => null),
+  updateCollectionTotalCount: mock(async () => undefined),
+  updateFolderTotalCount: mock(async () => undefined),
+  updateParentFolderCounts: mock(async () => undefined),
+  createFolder: mock(async () => null),
+  createFileItem: mock(async () => null),
+  getAllCollectionItems: mock(async () => []),
+  getParentItems: mock(async () => []),
+  getAllFolderIds: mock(async () => []),
+  getCollectionFilesVespaIds: mock(async () => []),
+  getCollectionItemsStatusByCollections: mock(async () => []),
+  getAllCollectionAndFolderItems: mock(async () => ({
+    fileIds: [],
+    folderIds: [],
+  })),
+  getAllFolderItems: mock(async () => []),
+  getCollectionFoldersItemIds: mock(async () => []),
+  getCollectionFileByItemId: mock(async () => null),
+  createCollectionFile: mock(async () => null),
+  updateCollectionFile: mock(async () => null),
+  softDeleteCollectionFile: mock(async () => null),
+  generateStorageKey: mock(() => "storage-key"),
+  generateFileVespaDocId: mock(() => "file-vespa-id"),
+  generateFolderVespaDocId: mock(() => "folder-vespa-id"),
+  generateCollectionVespaDocId: mock(() => "collection-vespa-id"),
+  markParentAsProcessing: mock(async () => undefined),
+  updateParentStatus: mock(async () => undefined),
+  upsertCollectionLsProjection: mock(async () => null),
+  getRecordBypath: mock(async () => null),
+}))
+
 const {
   __knowledgeBaseFlowInternals,
   LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
@@ -85,7 +157,7 @@ const createItem = (overrides: Partial<CollectionItem>): CollectionItem => ({
 })
 
 const collectionAlpha = createCollection({
-  id: "collection-alpha",
+  id: collectionAlphaId,
   name: "Alpha",
   description: "Alpha docs",
   totalItems: 4,
@@ -93,7 +165,7 @@ const collectionAlpha = createCollection({
 })
 
 const collectionBeta = createCollection({
-  id: "collection-beta",
+  id: collectionBetaId,
   name: "Beta",
   description: "Beta docs",
   totalItems: 1,
