@@ -157,8 +157,8 @@ services:
     environment:
       - KC_DB=postgres
       - KC_DB_URL=jdbc:postgresql://xyne-db:5432/keycloak
-      - KC_DB_USERNAME=xyne
-      - KC_DB_PASSWORD=xyne
+      - KC_DB_USERNAME=${KC_DB_USERNAME:-xyne}
+      - KC_DB_PASSWORD=${KC_DB_PASSWORD:-xyne}
       - KC_HTTP_ENABLED=true
       - KC_HOSTNAME=${KEYCLOAK_PUBLIC_BASE_URL:-http://localhost:8082}
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
