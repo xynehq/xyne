@@ -188,6 +188,23 @@ export const ReasoningSteps = {
     }
   },
 
+  agentStopped(stopReason: string, detail?: string): ReasoningEventPayload {
+    const displayMap: Record<string, string> = {
+      length:
+        "Response was cut short — the model reached its maximum output token limit.",
+      aborted: "Response was interrupted — the request was cancelled.",
+      error: "Response stopped due to an error.",
+    }
+    return {
+      type: ReasoningEventType.AgentStopped,
+      displayText:
+        displayMap[stopReason] ?? `Agent stopped (reason: ${stopReason}).`,
+      stage: "preparing",
+      detail: detail ?? stopReason,
+      timestamp: Date.now(),
+    }
+  },
+
   // ── Tool lifecycle ───────────────────────────────────────────────────────
 
   toolExecuting(toolName: string, query?: string): ReasoningEventPayload {

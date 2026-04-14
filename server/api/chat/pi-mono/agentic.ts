@@ -313,6 +313,7 @@ export async function AgenticRAG(c: Context): Promise<Response> {
         const yieldedCitations = new Set<number>()
         const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
+        let lastStopReason: string | undefined
 
         // ── Thinking delta batching ──────────────────────────────────
         // Instead of sending every single thinking token as a separate
@@ -443,6 +444,9 @@ export async function AgenticRAG(c: Context): Promise<Response> {
 
             case "message_end": {
               const { message: msg } = event
+              if (msg.role === "assistant" && msg.stopReason) {
+                lastStopReason = msg.stopReason
+              }
               if (msg.role === "assistant" && msg.stopReason === "error") {
                 await stream.writeSSE({
                   event: ChatSSEvents.Error,
@@ -494,10 +498,21 @@ export async function AgenticRAG(c: Context): Promise<Response> {
         await flushThinkingBatch(0)
 
         Logger.info("KB agentic RAG completed")
-        await emitReasoningEvent(
-          emitReasoningStep,
-          ReasoningSteps.synthesisCompleted(),
-        )
+        if (
+          lastStopReason &&
+          lastStopReason !== "stop" &&
+          lastStopReason !== "toolUse"
+        ) {
+          await emitReasoningEvent(
+            emitReasoningStep,
+            ReasoningSteps.agentStopped(lastStopReason),
+          )
+        } else {
+          await emitReasoningEvent(
+            emitReasoningStep,
+            ReasoningSteps.synthesisCompleted(),
+          )
+        }
 
         try {
           piSession.sessionManager.appendCustomEntry(
