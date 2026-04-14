@@ -476,8 +476,33 @@ const AccessTokenCookieName = config.AccessTokenCookie
 const RefreshTokenCookieName = "refresh-token"
 const KeycloakIdTokenCookieName = "keycloak-id-token"
 const KeycloakIdTokenCookiePath = "/api/v1/auth/logout"
+const PostgresUniqueViolationCode = "23505"
+const EmailUniqueIndexName = "email_unique_index"
 
 const Logger = getLogger(Subsystem.Server)
+
+const isEmailUniqueIndexConflict = (error: unknown) => {
+  if (!error || typeof error !== "object") {
+    return false
+  }
+
+  const pgError = error as {
+    code?: unknown
+    constraint_name?: unknown
+    constraint?: unknown
+  }
+  const constraintName =
+    typeof pgError.constraint_name === "string"
+      ? pgError.constraint_name
+      : typeof pgError.constraint === "string"
+        ? pgError.constraint
+        : undefined
+
+  return (
+    pgError.code === PostgresUniqueViolationCode &&
+    constraintName === EmailUniqueIndexName
+  )
+}
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 
@@ -1572,16 +1597,38 @@ app.get("/v1/auth/keycloak/callback", async (c) => {
         })
       }
 
-      const [createdUser] = await createUser(
-        db,
-        workspace.id,
-        keycloakEmail,
-        name,
-        "",
-        UserRole.User,
-        workspace.externalId,
-      )
-      xyneUser = createdUser
+      try {
+        const [createdUser] = await createUser(
+          db,
+          workspace.id,
+          keycloakEmail,
+          name,
+          "",
+          UserRole.User,
+          workspace.externalId,
+        )
+        xyneUser = createdUser
+      } catch (error) {
+        if (!isEmailUniqueIndexConflict(error)) {
+          throw error
+        }
+
+        // A concurrent first-login can create the row after the initial lookup.
+        const [existingUser] = await getUserByEmailInsensitive(
+          db,
+          keycloakEmail,
+        )
+        if (!existingUser) {
+          throw error
+        }
+        if (
+          existingUser.workspaceExternalId !==
+          keycloakConfig.workspaceExternalId
+        ) {
+          return c.redirect(getAuthPageUrl("workspace_mismatch"))
+        }
+        xyneUser = existingUser
+      }
     }
 
     const accessToken = await generateTokens(
