@@ -40,7 +40,8 @@ if [ -f "$TOKENIZER_FILE" ]; then
     echo "Model tokenizer already exists"
 else
     echo "Downloading model tokenizer..."
-    curl -L -o "$TOKENIZER_FILE" "$TOKENIZER_URL"
+    export https_proxy="http://10.201.6.100:1080"
+    curl -kL -o "$TOKENIZER_FILE" "$TOKENIZER_URL"
 fi
 
 # Download the model if it doesn't exist
