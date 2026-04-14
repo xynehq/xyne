@@ -16,11 +16,6 @@ type AuthProvidersResponse = {
   keycloakWebEnabled: boolean
 }
 
-const defaultAuthProviders: AuthProvidersResponse = {
-  googleWebEnabled: false,
-  keycloakWebEnabled: false,
-}
-
 const XyneLogo = () => (
   <img
     src={xyneLogoSvg}
@@ -206,16 +201,11 @@ export const Route = createFileRoute("/auth")({
     }
   },
   loader: async (): Promise<AuthProvidersResponse> => {
-    try {
-      const res = await api.auth.providers.$get()
-      if (!res.ok) {
-        return defaultAuthProviders
-      }
-      return (await res.json()) as AuthProvidersResponse
-    } catch (error) {
-      console.error("Failed to load auth providers:", error)
-      return defaultAuthProviders
+    const res = await api.auth.providers.$get()
+    if (!res.ok) {
+      throw new Error("Failed to load auth providers")
     }
+    return (await res.json()) as AuthProvidersResponse
   },
   component: LoginForm,
   errorComponent: errorComponent,

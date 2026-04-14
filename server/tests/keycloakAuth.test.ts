@@ -1,14 +1,55 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import {
+  buildKeycloakAuthorizationUrl,
   buildKeycloakLogoutUrl,
   createKeycloakLoginAttempt,
+  exchangeKeycloakAuthorizationCode,
   getAuthProvidersConfig,
   getExpectedKeycloakIssuer,
   getKeycloakAttemptCookieNames,
   getKeycloakWebConfig,
 } from "@/auth/keycloak"
+import { HTTPException } from "hono/http-exception"
 
 const originalEnv = { ...process.env }
+
+const testKeycloakConfig = {
+  publicBaseUrl: "http://localhost:8082",
+  internalBaseUrl: "http://localhost:8082",
+  realm: "xyne-test",
+  clientId: "xyne-web",
+  clientSecret: "secret",
+  workspaceExternalId: "workspace-123",
+  logoutRedirectUrl: "/auth",
+}
+
+const createAbortingFetch = () =>
+  (async (_input, init) =>
+    new Promise<Response>((_resolve, reject) => {
+      const abort = () => {
+        const error = new Error("Aborted")
+        error.name = "AbortError"
+        reject(error)
+      }
+      if (init?.signal?.aborted) {
+        abort()
+        return
+      }
+      init?.signal?.addEventListener("abort", abort, { once: true })
+    })) as typeof fetch
+
+const expectHttpExceptionStatus = async (
+  promise: Promise<unknown>,
+  status: HTTPException["status"],
+) => {
+  try {
+    await promise
+    throw new Error("Expected HTTPException")
+  } catch (error) {
+    expect(error).toBeInstanceOf(HTTPException)
+    expect((error as HTTPException).status).toBe(status)
+  }
+}
 
 describe("Keycloak auth helpers", () => {
   beforeEach(() => {
@@ -20,6 +61,7 @@ describe("Keycloak auth helpers", () => {
     delete process.env.KEYCLOAK_CLIENT_ID
     delete process.env.KEYCLOAK_CLIENT_SECRET
     delete process.env.KEYCLOAK_WORKSPACE_EXTERNAL_ID
+    delete process.env.KEYCLOAK_HTTP_TIMEOUT_MS
     delete process.env.GOOGLE_WEB_LOGIN_ENABLED
     delete process.env.GOOGLE_CLIENT_ID
     delete process.env.GOOGLE_CLIENT_SECRET
@@ -118,6 +160,91 @@ describe("Keycloak auth helpers", () => {
       )
       expect(url.searchParams.get("state")).toBeNull()
       expect(url.searchParams.get("id_token_hint")).toBe("id-token")
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test("discovery fetch timeout surfaces 504", async () => {
+    const originalFetch = globalThis.fetch
+    process.env.KEYCLOAK_HTTP_TIMEOUT_MS = "1"
+    globalThis.fetch = createAbortingFetch()
+
+    try {
+      await expectHttpExceptionStatus(
+        buildKeycloakAuthorizationUrl(
+          testKeycloakConfig,
+          "http://localhost:3000/v1/auth/keycloak/callback",
+          createKeycloakLoginAttempt(),
+        ),
+        504,
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test("token exchange timeout surfaces 504", async () => {
+    const originalFetch = globalThis.fetch
+    process.env.KEYCLOAK_HTTP_TIMEOUT_MS = "1"
+    globalThis.fetch = createAbortingFetch()
+
+    try {
+      await expectHttpExceptionStatus(
+        exchangeKeycloakAuthorizationCode(
+          testKeycloakConfig,
+          "code",
+          "code-verifier",
+          "http://localhost:3000/v1/auth/keycloak/callback",
+        ),
+        504,
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test("discovery failure clears cached promise for retry", async () => {
+    const originalFetch = globalThis.fetch
+    const retryConfig = {
+      ...testKeycloakConfig,
+      realm: "xyne-cache-retry",
+    }
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls += 1
+      if (calls === 1) {
+        return new Response("unavailable", { status: 503 })
+      }
+      return new Response(
+        JSON.stringify({
+          authorization_endpoint:
+            "http://localhost:8082/realms/xyne-cache-retry/protocol/openid-connect/auth",
+        }),
+        { status: 200 },
+      )
+    }) as unknown as typeof fetch
+
+    try {
+      await expectHttpExceptionStatus(
+        buildKeycloakAuthorizationUrl(
+          retryConfig,
+          "http://localhost:3000/v1/auth/keycloak/callback",
+          createKeycloakLoginAttempt(),
+        ),
+        502,
+      )
+
+      const authUrl = await buildKeycloakAuthorizationUrl(
+        retryConfig,
+        "http://localhost:3000/v1/auth/keycloak/callback",
+        createKeycloakLoginAttempt(),
+      )
+
+      expect(calls).toBe(2)
+      expect(new URL(authUrl).pathname).toBe(
+        "/realms/xyne-cache-retry/protocol/openid-connect/auth",
+      )
     } finally {
       globalThis.fetch = originalFetch
     }

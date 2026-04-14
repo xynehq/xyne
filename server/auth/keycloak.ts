@@ -38,6 +38,7 @@ interface KeycloakDiscoveryDocument {
 
 const metadataCache = new Map<string, Promise<KeycloakDiscoveryDocument>>()
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
+const DEFAULT_KEYCLOAK_HTTP_TIMEOUT_MS = 10_000
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "")
 
@@ -59,6 +60,56 @@ function getBooleanEnv(name: string, defaultValue: boolean): boolean {
   const value = process.env[name]
   if (value === undefined) return defaultValue
   return value === "true"
+}
+
+function getKeycloakHttpTimeoutMs(): number {
+  const value = Number(process.env.KEYCLOAK_HTTP_TIMEOUT_MS)
+  if (Number.isFinite(value) && value > 0) {
+    return value
+  }
+  return DEFAULT_KEYCLOAK_HTTP_TIMEOUT_MS
+}
+
+const getFetchTarget = (input: string | URL | Request) => {
+  if (typeof input === "string") {
+    return input
+  }
+  return input instanceof URL ? input.toString() : input.url
+}
+
+const isAbortError = (error: unknown) =>
+  typeof error === "object" &&
+  error !== null &&
+  "name" in error &&
+  error.name === "AbortError"
+
+async function fetchKeycloakWithTimeout(
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutMs = getKeycloakHttpTimeoutMs()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (isAbortError(error)) {
+      Logger.error(
+        { target: getFetchTarget(input), timeoutMs },
+        "Keycloak request timed out",
+      )
+      throw new HTTPException(504, {
+        message: "Keycloak request timed out",
+      })
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 export function isGoogleWebLoginEnabled(): boolean {
@@ -148,7 +199,7 @@ async function fetchKeycloakDiscoveryDocument(
 
   const promise = (async () => {
     const discoveryUrl = `${buildRealmUrl(config.internalBaseUrl, config.realm)}/.well-known/openid-configuration`
-    const response = await fetch(discoveryUrl)
+    const response = await fetchKeycloakWithTimeout(discoveryUrl)
     if (!response.ok) {
       Logger.error(
         { status: response.status, discoveryUrl },
@@ -176,7 +227,9 @@ function getOrCreateInternalJwks(config: KeycloakWebConfig) {
   const jwksUrl = `${buildRealmUrl(config.internalBaseUrl, config.realm)}/protocol/openid-connect/certs`
   let jwks = jwksCache.get(jwksUrl)
   if (!jwks) {
-    jwks = createRemoteJWKSet(new URL(jwksUrl))
+    jwks = createRemoteJWKSet(new URL(jwksUrl), {
+      timeoutDuration: getKeycloakHttpTimeoutMs(),
+    })
     jwksCache.set(jwksUrl, jwks)
   }
   return jwks
@@ -221,7 +274,7 @@ export async function exchangeKeycloakAuthorizationCode(
 }> {
   const tokenEndpoint = `${buildRealmUrl(config.internalBaseUrl, config.realm)}/protocol/openid-connect/token`
 
-  const response = await fetch(tokenEndpoint, {
+  const response = await fetchKeycloakWithTimeout(tokenEndpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
