@@ -77,7 +77,7 @@ portable/
 ## Access URLs
 
 - **Xyne Application**: http://localhost:3000
-- **Keycloak**: http://localhost:8082
+- **Keycloak**: http://localhost:8082 (when `KEYCLOAK_WEB_ENABLED=true`)
 - **Grafana Dashboard**: http://localhost:3002  
 - **Prometheus Metrics**: http://localhost:9090
 - **Loki Logs**: http://localhost:3100
@@ -150,10 +150,11 @@ portable/
    When `KEYCLOAK_WEB_ENABLED=true`, `./deploy.sh start` generates and
    persists missing `KEYCLOAK_CLIENT_SECRET` and
    `XYNE_BOOTSTRAP_ADMIN_PASSWORD` in `.env`, runs database migrations, then
-   bootstraps Keycloak before starting the app. The bootstrap creates or
-   updates the `xyne-shared` realm, `xyne-web` confidential OIDC client, the
-   bootstrap Keycloak realm admin, the default Xyne workspace, and the
-   matching Xyne `SuperAdmin` user.
+   starts and bootstraps Keycloak before starting the app. When
+   `KEYCLOAK_WEB_ENABLED=false`, the bundled Keycloak container is not started.
+   The bootstrap creates or updates the `xyne-shared` realm, `xyne-web`
+   confidential OIDC client, the bootstrap Keycloak realm admin, the default
+   Xyne workspace, and the matching Xyne `SuperAdmin` user.
 
    To run only the bootstrap after infrastructure is up:
    ```bash

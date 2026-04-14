@@ -426,6 +426,16 @@ ensure_keycloak_database() {
     echo -e "${GREEN} Keycloak database created${NC}"
 }
 
+stop_keycloak_if_disabled() {
+    if is_keycloak_enabled; then
+        return
+    fi
+
+    INFRA_COMPOSE=${INFRA_COMPOSE:-$(get_infrastructure_compose)}
+    DOCKER_COMPOSE=${DOCKER_COMPOSE:-$(get_docker_compose_cmd)}
+    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" stop keycloak >/dev/null 2>&1 || true
+}
+
 start_infrastructure() {
     echo -e "${YELLOW}  Starting infrastructure services...${NC}"
 
@@ -440,10 +450,13 @@ start_infrastructure() {
     DOCKER_COMPOSE=$(get_docker_compose_cmd)
     $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d xyne-db
     wait_for_postgres
-    ensure_keycloak_database
-    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --build
     if is_keycloak_enabled; then
+        ensure_keycloak_database
+        $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" --profile keycloak up -d --build
         wait_for_keycloak
+    else
+        stop_keycloak_if_disabled
+        $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --build
     fi
     echo -e "${GREEN} Infrastructure services started${NC}"
 }
@@ -603,7 +616,7 @@ bootstrap_keycloak() {
     $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d xyne-db
     wait_for_postgres
     ensure_keycloak_database
-    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d keycloak
+    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" --profile keycloak up -d keycloak
     wait_for_keycloak
     ensure_keycloak_bootstrap_env
     prepare_keycloak_bootstrap_app_image
@@ -669,12 +682,15 @@ update_infrastructure() {
 
     $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d xyne-db
     wait_for_postgres
-    ensure_keycloak_database
 
     # Build and start all services (--build will handle custom images)
-    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build
     if is_keycloak_enabled; then
+        ensure_keycloak_database
+        $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" --profile keycloak up -d --force-recreate --build
         wait_for_keycloak
+    else
+        stop_keycloak_if_disabled
+        $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build
     fi
     echo -e "${GREEN} Infrastructure services updated${NC}"
 }
@@ -704,7 +720,9 @@ show_status() {
     echo "  • Grafana: http://localhost:3002"
     echo "  • Prometheus: http://localhost:9090"
     echo "  • Loki: http://localhost:3100"
-    echo "  • Keycloak: http://localhost:8082"
+    if is_keycloak_enabled; then
+        echo "  • Keycloak: http://localhost:8082"
+    fi
     echo "  • LiveKit Server: http://localhost:7880 (WebRTC: 7881, UDP: 7882)"
     echo -e "${GREEN}  • Application Mode: Production${NC}"
     # Show GPU/CPU mode
@@ -957,11 +975,13 @@ case $COMMAND in
         start_infrastructure
         echo -e "${GREEN} Infrastructure services started successfully${NC}"
         echo -e "${BLUE} You can now run your application locally in development mode${NC}"
-        echo -e "${BLUE} Infrastructure services: PostgreSQL, Keycloak, Vespa, Prometheus, Grafana, Loki${NC}"
         if is_keycloak_enabled; then
+            echo -e "${BLUE} Infrastructure services: PostgreSQL, Keycloak, Vespa, Prometheus, Grafana, Loki${NC}"
             echo -e "${BLUE} Keycloak web login is enabled. Bootstrap it with one of:${NC}"
             echo "  cd ../../server && bun run keycloak:bootstrap"
             echo "  ./deploy.sh bootstrap-keycloak"
+        else
+            echo -e "${BLUE} Infrastructure services: PostgreSQL, Vespa, Prometheus, Grafana, Loki${NC}"
         fi
         ;;
     stop)

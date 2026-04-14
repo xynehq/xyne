@@ -146,6 +146,8 @@ services:
         max-file: "6"
 
   keycloak:
+    profiles:
+      - keycloak
     image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0}
     container_name: xyne-keycloak
     hostname: keycloak
