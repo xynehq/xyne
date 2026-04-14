@@ -323,7 +323,7 @@ export async function AgenticRAG(c: Context): Promise<Response> {
               xyneState.turnCount = event.turnIndex
               break
             case "text_delta": {
-              if (!event.delta.trim()) break
+              if (!event.delta) break
               answer += event.delta
               await stream.writeSSE({
                 event: ChatSSEvents.ResponseUpdate,
@@ -436,7 +436,7 @@ export async function AgenticRAG(c: Context): Promise<Response> {
                             if (b?.type === "output_text") return b.text ?? ""
                             return b?.text ?? ""
                           })
-                          .join(" ")
+                          .join("\n\n")
                           .trim()
                       : ""
 
@@ -481,7 +481,16 @@ export async function AgenticRAG(c: Context): Promise<Response> {
             { externalId: workspace.externalId },
             modelId,
             requestStartMs,
-            { answer, citations, citationMap, thinkingLog: thinkingLog + (agentThinkingEvents.length > 0 ? agentThinkingEvents.join("\n") + "\n" : "") },
+            {
+              answer,
+              citations,
+              citationMap,
+              thinkingLog:
+                thinkingLog +
+                (agentThinkingEvents.length > 0
+                  ? agentThinkingEvents.join("\n") + "\n"
+                  : ""),
+            },
           )
           assistantMessageId = persisted.assistantMessageId
           await insertChatTrace({
