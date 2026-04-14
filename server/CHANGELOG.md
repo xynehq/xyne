@@ -1,3 +1,10 @@
+## [3.47.5](https://github.com/xynehq/xyne/compare/v3.47.4...v3.47.5) (2026-04-14)
+
+
+### Bug Fixes
+
+* adding proxy for sebi-demo ([#1314](https://github.com/xynehq/xyne/issues/1314)) ([8cefbf6](https://github.com/xynehq/xyne/commit/8cefbf6fb0374810628a28130ef79c6c6ab7a69d))
+
 ## [3.47.4](https://github.com/xynehq/xyne/compare/v3.47.3...v3.47.4) (2026-04-14)
 
 
