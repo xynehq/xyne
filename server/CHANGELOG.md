@@ -1,3 +1,10 @@
+## [3.47.4](https://github.com/xynehq/xyne/compare/v3.47.3...v3.47.4) (2026-04-14)
+
+
+### Bug Fixes
+
+* mocking DB for the test cases ([#1313](https://github.com/xynehq/xyne/issues/1313)) ([e485b02](https://github.com/xynehq/xyne/commit/e485b0251ec6c139f8acfc38781c1547c66980b6))
+
 ## [3.47.3](https://github.com/xynehq/xyne/compare/v3.47.2...v3.47.3) (2026-04-07)
 
 
