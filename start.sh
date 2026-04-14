@@ -50,16 +50,37 @@ if [ $ATTEMPTS -ge $MAX_ATTEMPTS ]; then
   exit 1
 fi
 
-# Wait for Vespa to be ready
+# Wait for Vespa to be ready. Vespa is optional by default so a model download
+# or search deployment issue does not prevent the app from starting.
+VESPA_REQUIRED="${VESPA_REQUIRED:-false}"
+VESPA_ATTEMPTS=0
+VESPA_MAX_ATTEMPTS="${VESPA_WAIT_MAX_ATTEMPTS:-30}"
+VESPA_READY=false
+
 echo "Waiting for Vespa config server..."
-until curl -f http://${VESPA_HOST:-vespa}:19071/state/v1/health 2>/dev/null; do
-  echo "Vespa config server is unavailable - sleeping"
+while [ $VESPA_ATTEMPTS -lt $VESPA_MAX_ATTEMPTS ]; do
+  if curl -f http://${VESPA_HOST:-vespa}:19071/state/v1/health 2>/dev/null; then
+    VESPA_READY=true
+    echo "Vespa config server is ready!"
+    break
+  fi
+
+  VESPA_ATTEMPTS=$((VESPA_ATTEMPTS + 1))
+  echo "Vespa config server is unavailable - sleeping (attempt $VESPA_ATTEMPTS/$VESPA_MAX_ATTEMPTS)"
   sleep 2
 done
-echo "Vespa config server is ready!"
+
+if [ "$VESPA_READY" != "true" ]; then
+  if [ "$VESPA_REQUIRED" = "true" ] || [ "$VESPA_REQUIRED" = "1" ]; then
+    echo "ERROR: Failed to connect to Vespa after $VESPA_MAX_ATTEMPTS attempts"
+    exit 1
+  fi
+  echo "WARNING: Vespa is unavailable after $VESPA_MAX_ATTEMPTS attempts; continuing without Vespa"
+fi
 
 # Check if this is the first run (no init marker exists)
 INIT_MARKER_FILE="/usr/src/app/server/storage/.xyne_initialized"
+VESPA_INIT_MARKER_FILE="/usr/src/app/server/storage/.xyne_vespa_initialized"
 if [ ! -f "$INIT_MARKER_FILE" ]; then
   echo "First run detected, performing initial setup..."
   
@@ -71,18 +92,37 @@ if [ ! -f "$INIT_MARKER_FILE" ]; then
   # Try to run migrations, but don't fail if none exist
   bun run migrate || true
   
-  # Deploy Vespa schema and models
-  echo "Deploying Vespa..."
-  cd /usr/src/app/server/vespa
-  EMBEDDING_MODEL=${EMBEDDING_MODEL:-bge-small-en-v1.5} ./deploy-docker.sh
-  cd /usr/src/app/server
-  
   # Create marker file to indicate initialization is complete
   mkdir -p /usr/src/app/server/storage
   touch "$INIT_MARKER_FILE"
   echo "Initial setup completed"
 else
-  echo "Existing installation detected, skipping migrations and Vespa deployment"
+  echo "Existing installation detected, skipping migrations"
+fi
+
+# Deploy Vespa schema and models when Vespa is available. Keep the app bootable
+# if Hugging Face/model download or Vespa deployment fails, and retry on later
+# starts until deployment succeeds.
+if [ ! -f "$VESPA_INIT_MARKER_FILE" ]; then
+  if [ "$VESPA_READY" = "true" ]; then
+    echo "Deploying Vespa..."
+    cd /usr/src/app/server/vespa
+    if EMBEDDING_MODEL=${EMBEDDING_MODEL:-bge-small-en-v1.5} ./deploy-docker.sh; then
+      mkdir -p /usr/src/app/server/storage
+      touch "$VESPA_INIT_MARKER_FILE"
+    else
+      if [ "$VESPA_REQUIRED" = "true" ] || [ "$VESPA_REQUIRED" = "1" ]; then
+        echo "ERROR: Vespa deployment failed"
+        exit 1
+      fi
+      echo "WARNING: Vespa deployment failed; continuing without Vespa"
+    fi
+    cd /usr/src/app/server
+  else
+    echo "Skipping Vespa deployment because Vespa is unavailable"
+  fi
+else
+  echo "Vespa already initialized, skipping Vespa deployment"
 fi
 
 # Start the server

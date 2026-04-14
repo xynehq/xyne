@@ -254,6 +254,8 @@ async function checkVespaContainerHealth(
 // Returns unhealthy if either container is unhealthy
 export async function checkVespaHealth(): Promise<HealthStatusResponse> {
   const startTime = Date.now()
+  const vespaRequired =
+    process.env.VESPA_REQUIRED === "true" || process.env.VESPA_REQUIRED === "1"
 
   try {
     const [feedHealth, queryHealth] = await Promise.all([
@@ -267,7 +269,9 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
       feedHealth.status === HealthStatusType.Unhealthy ||
       queryHealth.status === HealthStatusType.Unhealthy
     ) {
-      combinedStatus = HealthStatusType.Unhealthy
+      combinedStatus = vespaRequired
+        ? HealthStatusType.Unhealthy
+        : HealthStatusType.Degraded
     } else if (
       feedHealth.status === HealthStatusType.Degraded ||
       queryHealth.status === HealthStatusType.Degraded
@@ -284,6 +288,11 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
       serviceName: ServiceName.vespa,
       responseTime,
       details: {
+        optional: !vespaRequired,
+        message:
+          !vespaRequired && combinedStatus === HealthStatusType.Degraded
+            ? "Vespa is unavailable but optional; app remains healthy for deployment"
+            : undefined,
         feedContainer: {
           status: feedHealth.status,
           responseTime: feedHealth.responseTime,
@@ -299,10 +308,16 @@ export async function checkVespaHealth(): Promise<HealthStatusResponse> {
   } catch (error) {
     Logger.error(error, "Vespa health check failed")
     return {
-      status: HealthStatusType.Unhealthy,
+      status: vespaRequired
+        ? HealthStatusType.Unhealthy
+        : HealthStatusType.Degraded,
       serviceName: ServiceName.vespa,
       responseTime: Date.now() - startTime,
       details: {
+        optional: !vespaRequired,
+        message: vespaRequired
+          ? "Vespa health check failed"
+          : "Vespa health check failed, but Vespa is optional",
         error:
           error instanceof Error ? error.message : "Vespa health check failed",
       },
