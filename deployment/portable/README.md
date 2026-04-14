@@ -129,6 +129,8 @@ portable/
    KEYCLOAK_CLIENT_ID=xyne-web
    KEYCLOAK_CLIENT_SECRET=
    KEYCLOAK_WORKSPACE_EXTERNAL_ID=xyne-shared-workspace
+   KEYCLOAK_ADMIN=admin
+   KEYCLOAK_ADMIN_PASSWORD=
    XYNE_BOOTSTRAP_ADMIN_EMAIL=admin@xyne.local
    XYNE_BOOTSTRAP_ADMIN_NAME="Xyne Admin"
    XYNE_BOOTSTRAP_ADMIN_PASSWORD=
@@ -137,11 +139,12 @@ portable/
    KEYCLOAK_BOOTSTRAP_RESET_ADMIN_PASSWORD=false
    ```
 
-   For sbx/prod, set `HOST` to the public HTTPS Xyne origin and
-   `KEYCLOAK_PUBLIC_BASE_URL` to the public HTTPS Keycloak origin before
-   bootstrapping. Keep `KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080` when
-   using this portable compose deployment because bootstrap runs inside the app
-   container. `http://localhost:8082` is only correct when running
+   For sbx/prod, set `HOST` to the public HTTPS Xyne origin,
+   `KEYCLOAK_PUBLIC_BASE_URL` to the public HTTPS Keycloak origin, and
+   `KEYCLOAK_ADMIN_PASSWORD` to a non-default value before bootstrapping. Keep
+   `KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080` when using this portable
+   compose deployment because bootstrap runs inside the app container.
+   `http://localhost:8082` is only correct when running
    `bun run keycloak:bootstrap` from the host in local dev.
 
    When `KEYCLOAK_WEB_ENABLED=true`, `./deploy.sh start` generates and

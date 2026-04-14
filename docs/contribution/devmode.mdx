@@ -126,16 +126,6 @@ bun run migrate
 bun run keycloak:bootstrap
 ```
 
-Run the Keycloak Playwright e2e suite after bootstrapping:
-
-```javascript
-cd server
-bun run test:e2e:install
-bun run test:e2e:keycloak
-```
-
-The full login assertion uses `KEYCLOAK_E2E_EMAIL` and `KEYCLOAK_E2E_PASSWORD` when set. Otherwise it uses `XYNE_BOOTSTRAP_ADMIN_EMAIL` and `XYNE_BOOTSTRAP_ADMIN_PASSWORD`. If the frontend and server are already running, use `PLAYWRIGHT_START_SERVERS=false bun run test:e2e:keycloak`.
-
 If you want to stop the local infrastructure, use:
 
 ```javascript
