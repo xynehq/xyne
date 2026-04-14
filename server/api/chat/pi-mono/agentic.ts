@@ -272,7 +272,7 @@ export async function AgenticRAG(c: Context): Promise<Response> {
           }),
           modelOptions: {
             contextWindow: 250000,
-            maxTokens: 10000,
+            maxTokens: 32000,
           },
           extensions: [xyneExtension],
           state: xyneState,
@@ -313,9 +313,47 @@ export async function AgenticRAG(c: Context): Promise<Response> {
         const yieldedCitations = new Set<number>()
         const yieldedImageCitations = new Map<number, Set<number>>()
         let assistantMessageId: string | null = null
+
+        // ── Thinking delta batching ──────────────────────────────────
+        // Instead of sending every single thinking token as a separate
+        // SSE event (thousands of events crashing the browser), batch
+        // them and flush periodically.
+        const THINKING_BATCH_SIZE = 200 // chars
+        const THINKING_BATCH_INTERVAL_MS = 150 // ms
+        let thinkingBatch = ""
+        let lastThinkingFlushTime = Date.now()
+
+        const flushThinkingBatch = async (contentIndex: number) => {
+          if (!thinkingBatch || stream.closed) return
+          const batch = thinkingBatch
+          thinkingBatch = ""
+          lastThinkingFlushTime = Date.now()
+          const deltaEvent = {
+            type: "thinking_delta",
+            delta: batch,
+            contentIndex,
+            timestamp: Date.now(),
+          }
+          agentThinkingEvents.push(JSON.stringify(deltaEvent))
+          await stream.writeSSE({
+            event: ChatSSEvents.Reasoning,
+            data: JSON.stringify(deltaEvent),
+          })
+        }
+
         // ── Consume event stream ─────────────────────────────────────
         for await (const event of agent.run(message, { images })) {
           if (stream.closed) break
+
+          // Skip raw events early — they carry full accumulated content
+          // and are not used in the SSE output
+          if (event.type === "raw") continue
+
+          // Flush any pending thinking batch before processing
+          // non-thinking events to preserve ordering
+          if (event.type !== "thinking_delta" && thinkingBatch) {
+            await flushThinkingBatch((event as any).contentIndex ?? 0)
+          }
 
           switch (event.type) {
             case "turn_start":
@@ -377,17 +415,14 @@ export async function AgenticRAG(c: Context): Promise<Response> {
             }
 
             case "thinking_delta": {
-              const deltaEvent = {
-                type: "thinking_delta",
-                delta: event.delta,
-                contentIndex: event.contentIndex,
-                timestamp: Date.now(),
+              thinkingBatch += event.delta || ""
+              const now = Date.now()
+              if (
+                thinkingBatch.length >= THINKING_BATCH_SIZE ||
+                now - lastThinkingFlushTime >= THINKING_BATCH_INTERVAL_MS
+              ) {
+                await flushThinkingBatch(event.contentIndex)
               }
-              agentThinkingEvents.push(JSON.stringify(deltaEvent))
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify(deltaEvent),
-              })
               break
             }
 
@@ -451,12 +486,12 @@ export async function AgenticRAG(c: Context): Promise<Response> {
               }
               break
             }
-            case "raw":
-              break
             default:
               break
           }
         }
+
+        await flushThinkingBatch(0)
 
         Logger.info("KB agentic RAG completed")
         await emitReasoningEvent(

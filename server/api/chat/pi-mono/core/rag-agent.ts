@@ -96,11 +96,23 @@ function mapEvent(event: AgentSessionEvent): RAGEvent[] {
       const assistantEvent = e.assistantMessageEvent
       if (assistantEvent?.type === "text_delta" && assistantEvent.delta) {
         events.push({ type: "text_delta", delta: assistantEvent.delta })
-      }
-      if (assistantEvent?.type === "thinking_delta" && assistantEvent.delta) {
+      } else if (
+        assistantEvent?.type === "thinking_delta" &&
+        assistantEvent.delta
+      ) {
         events.push({
           type: "thinking_delta",
           delta: assistantEvent.delta,
+          contentIndex: assistantEvent.contentIndex,
+        })
+      } else if (assistantEvent?.type === "thinking_start") {
+        events.push({
+          type: "thinking_start",
+          contentIndex: assistantEvent.contentIndex,
+        })
+      } else if (assistantEvent?.type === "thinking_end") {
+        events.push({
+          type: "thinking_end",
           contentIndex: assistantEvent.contentIndex,
         })
       }
