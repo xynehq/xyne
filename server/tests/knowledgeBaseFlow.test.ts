@@ -12,6 +12,109 @@ process.env.ENCRYPTION_KEY ??=
 process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY ??=
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
+const KnowledgeBaseScope = {
+  UserOwned: "user_owned",
+  AgentScoped: "agent_scoped",
+  AllAccessible: "all_accessible",
+} as const
+
+function convertPrefixedIdsToSelections(prefixedIds: string[]) {
+  if (!prefixedIds.length) return []
+
+  const collectionIds = new Set<string>()
+  const collectionFolderIds = new Set<string>()
+  const collectionFileIds = new Set<string>()
+
+  prefixedIds.forEach((itemId) => {
+    if (itemId.startsWith("clfd-")) {
+      collectionFolderIds.add(itemId.replace(/^clfd[-_]/, ""))
+    } else if (itemId.startsWith("clf-")) {
+      collectionFileIds.add(itemId.replace(/^clf[-_]/, ""))
+    } else if (itemId.startsWith("cl-")) {
+      collectionIds.add(itemId.replace(/^cl[-_]/, ""))
+    }
+  })
+
+  const selection: {
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  } = {}
+  if (collectionIds.size) selection.collectionIds = Array.from(collectionIds)
+  if (collectionFolderIds.size) {
+    selection.collectionFolderIds = Array.from(collectionFolderIds)
+  }
+  if (collectionFileIds.size) {
+    selection.collectionFileIds = Array.from(collectionFileIds)
+  }
+
+  return Object.keys(selection).length ? [selection] : []
+}
+
+function resolveKnowledgeItemIds(
+  pathExtractedInfo?: {
+    collectionFileIds: string[]
+    collectionFolderIds: string[]
+    collectionIds: string[]
+  },
+  selectedItems?: Partial<Record<Apps, string[]>>,
+): string[] {
+  if (pathExtractedInfo) {
+    if (pathExtractedInfo.collectionFolderIds.length) {
+      return pathExtractedInfo.collectionFolderIds
+    }
+    if (pathExtractedInfo.collectionFileIds.length) {
+      return pathExtractedInfo.collectionFileIds
+    }
+    if (pathExtractedInfo.collectionIds.length) {
+      return pathExtractedInfo.collectionIds
+    }
+  }
+
+  return selectedItems?.[Apps.KnowledgeBase] ?? []
+}
+
+mock.module("@/api/chat/knowledgeBaseSelections", () => ({
+  KnowledgeBaseScope,
+  buildKnowledgeBaseCollectionSelections: mock(
+    async ({
+      scope,
+      selectedItems,
+      pathExtractedInfo,
+    }: {
+      scope: (typeof KnowledgeBaseScope)[keyof typeof KnowledgeBaseScope]
+      selectedItems?: Partial<Record<Apps, string[]>>
+      pathExtractedInfo?: {
+        collectionFileIds: string[]
+        collectionFolderIds: string[]
+        collectionIds: string[]
+      }
+    }) => {
+      const ids = resolveKnowledgeItemIds(pathExtractedInfo, selectedItems)
+
+      if (scope === KnowledgeBaseScope.UserOwned) {
+        return convertPrefixedIdsToSelections(
+          ids.length ? ids : ["cl-collection-alpha", "cl-collection-beta"],
+        )
+      }
+
+      if (scope === KnowledgeBaseScope.AgentScoped) {
+        return convertPrefixedIdsToSelections(ids)
+      }
+
+      if (scope === KnowledgeBaseScope.AllAccessible) {
+        return convertPrefixedIdsToSelections([
+          ...ids,
+          "cl-collection-alpha",
+          "cl-collection-beta",
+        ])
+      }
+
+      return []
+    },
+  ),
+}))
+
 const {
   __knowledgeBaseFlowInternals,
   LS_KNOWLEDGE_BASE_TOOL_DESCRIPTION,
