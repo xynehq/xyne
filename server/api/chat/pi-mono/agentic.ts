@@ -171,6 +171,7 @@ export async function AgenticRAG(c: Context): Promise<Response> {
 
       try {
         let thinkingLog = ""
+        let agentThinkingEvents: string[] = []
         const emitReasoningStep: ReasoningEmitter = async (payload) => {
           if (stream.closed) return
           const withMeta = {
@@ -269,9 +270,13 @@ export async function AgenticRAG(c: Context): Promise<Response> {
             compaction: { enabled: true },
             retry: { enabled: true, maxRetries: 2 },
           }),
+          modelOptions: {
+            contextWindow: 250000,
+            maxTokens: 10000,
+          },
           extensions: [xyneExtension],
           state: xyneState,
-          timeoutMs: 5 * 60 * 1000,
+          timeoutMs: 10 * 60 * 1000, // 10 minutes
         })
 
         const piSession = agent.getSession()
@@ -358,39 +363,45 @@ export async function AgenticRAG(c: Context): Promise<Response> {
             }
 
             case "thinking_start": {
+              const startEvent = {
+                type: "thinking_start",
+                contentIndex: event.contentIndex,
+                timestamp: Date.now(),
+              }
+              agentThinkingEvents.push(JSON.stringify(startEvent))
               await stream.writeSSE({
                 event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  type: "thinking_start",
-                  contentIndex: event.contentIndex,
-                  timestamp: Date.now(),
-                }),
+                data: JSON.stringify(startEvent),
               })
               break
             }
 
             case "thinking_delta": {
+              const deltaEvent = {
+                type: "thinking_delta",
+                delta: event.delta,
+                contentIndex: event.contentIndex,
+                timestamp: Date.now(),
+              }
+              agentThinkingEvents.push(JSON.stringify(deltaEvent))
               await stream.writeSSE({
                 event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  type: "thinking_delta",
-                  delta: event.delta,
-                  contentIndex: event.contentIndex,
-                  timestamp: Date.now(),
-                }),
+                data: JSON.stringify(deltaEvent),
               })
               break
             }
 
             case "thinking_end": {
+              const endEvent = {
+                type: "thinking_end",
+                contentIndex: event.contentIndex,
+                contentSignature: event.contentSignature,
+                timestamp: Date.now(),
+              }
+              agentThinkingEvents.push(JSON.stringify(endEvent))
               await stream.writeSSE({
                 event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  type: "thinking_end",
-                  contentIndex: event.contentIndex,
-                  contentSignature: event.contentSignature,
-                  timestamp: Date.now(),
-                }),
+                data: JSON.stringify(endEvent),
               })
               break
             }
@@ -470,7 +481,7 @@ export async function AgenticRAG(c: Context): Promise<Response> {
             { externalId: workspace.externalId },
             modelId,
             requestStartMs,
-            { answer, citations, citationMap, thinkingLog },
+            { answer, citations, citationMap, thinkingLog: thinkingLog + (agentThinkingEvents.length > 0 ? agentThinkingEvents.join("\n") + "\n" : "") },
           )
           assistantMessageId = persisted.assistantMessageId
           await insertChatTrace({

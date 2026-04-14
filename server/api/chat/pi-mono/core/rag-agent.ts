@@ -13,12 +13,24 @@ import {
 
 import type { RAGAgent, RAGAgentConfig, RAGEvent, RunOptions } from "./types"
 
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
 
 export function resolveModel(
   modelInput: string | Model<any>,
   baseUrl?: string,
-): Model<any> {
+  options?: {
+    maxTokens?: number
+    contextWindow?: number
+    reasoning?: boolean
+    input?: ("text" | "image")[]
+    cost?: {
+      input: number
+      output: number
+      cacheRead: number
+      cacheWrite: number
+    }
+  },
+): Model<"openai-completions"> {
   if (typeof modelInput !== "string") return modelInput
 
   return {
@@ -27,11 +39,11 @@ export function resolveModel(
     api: "openai-completions",
     provider: "litellm",
     baseUrl: baseUrl ?? "",
-    reasoning: false,
-    input: ["text", "image"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128000,
-    maxTokens: 4096,
+    reasoning: options?.reasoning ?? false,
+    input: options?.input ?? ["text", "image"],
+    cost: options?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: options?.contextWindow ?? 128000,
+    maxTokens: options?.maxTokens ?? 4096,
     compat: {
       supportsStore: false,
       supportsStreaming: true,
@@ -146,7 +158,7 @@ export async function createRAGAgent<TState = unknown>(
   const modelRegistry =
     config.modelRegistry ?? ModelRegistry.inMemory(authStorage)
 
-  const model = resolveModel(config.model, config.baseUrl)
+  const model = resolveModel(config.model, config.baseUrl, config.modelOptions)
 
   let resourceLoader = config.resourceLoader
   if (!resourceLoader) {

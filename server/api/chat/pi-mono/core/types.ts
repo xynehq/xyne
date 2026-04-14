@@ -45,6 +45,19 @@ export interface RAGAgentConfig<TState = unknown> {
   thinkingLevel?: ThinkingLevel
   /** Models available for cycling */
   scopedModels?: CreateAgentSessionOptions["scopedModels"]
+  /** Model configuration overrides (maxTokens, contextWindow, reasoning, etc.) */
+  modelOptions?: {
+    maxTokens?: number
+    contextWindow?: number
+    reasoning?: boolean
+    input?: ("text" | "image")[]
+    cost?: {
+      input: number
+      output: number
+      cacheRead: number
+      cacheWrite: number
+    }
+  }
 
   // --- Auth & Model Registry ---
   /** Auth storage for credentials */
