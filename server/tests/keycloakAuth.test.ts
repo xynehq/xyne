@@ -94,7 +94,7 @@ describe("Keycloak auth helpers", () => {
             "http://localhost:8082/realms/xyne-logout/protocol/openid-connect/logout",
         }),
         { status: 200 },
-      )) as typeof fetch
+      )) as unknown as typeof fetch
 
     try {
       const logoutUrl = await buildKeycloakLogoutUrl(

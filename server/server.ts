@@ -1540,7 +1540,12 @@ app.get("/v1/auth/keycloak/callback", async (c) => {
       storedNonce,
     )
 
-    const keycloakEmail = payload.email
+    const keycloakEmail = payload.email.trim().toLowerCase()
+    if (!keycloakEmail) {
+      throw new HTTPException(400, {
+        message: "Keycloak token did not include a usable email claim",
+      })
+    }
     const name =
       (typeof payload.name === "string" && payload.name) ||
       (typeof payload.preferred_username === "string" &&
