@@ -108,7 +108,6 @@ describe("Keycloak auth helpers", () => {
           logoutRedirectUrl: "/auth",
         },
         "http://localhost:5173/auth",
-        "logout-state",
         "id-token",
       )
 
@@ -117,7 +116,7 @@ describe("Keycloak auth helpers", () => {
       expect(url.searchParams.get("post_logout_redirect_uri")).toBe(
         "http://localhost:5173/auth",
       )
-      expect(url.searchParams.get("state")).toBe("logout-state")
+      expect(url.searchParams.get("state")).toBeNull()
       expect(url.searchParams.get("id_token_hint")).toBe("id-token")
     } finally {
       globalThis.fetch = originalFetch

@@ -475,6 +475,7 @@ const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET!
 const AccessTokenCookieName = config.AccessTokenCookie
 const RefreshTokenCookieName = "refresh-token"
 const KeycloakIdTokenCookieName = "keycloak-id-token"
+const KeycloakIdTokenCookiePath = "/api/v1/auth/logout"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -755,7 +756,10 @@ const clearCookies = (c: Context) => {
   }
   deleteCookieByEnv(c, AccessTokenCookieName, opts)
   deleteCookieByEnv(c, RefreshTokenCookieName, opts)
-  deleteCookieByEnv(c, KeycloakIdTokenCookieName, opts)
+  deleteCookieByEnv(c, KeycloakIdTokenCookieName, {
+    ...opts,
+    path: KeycloakIdTokenCookiePath,
+  })
   Logger.info("Cookies deleted")
 }
 
@@ -813,7 +817,6 @@ const LogOut = async (c: Context) => {
         redirectTo = await buildKeycloakLogoutUrl(
           keycloakConfig,
           postLogoutRedirectUri,
-          crypto.randomUUID(),
           getCookie(c, KeycloakIdTokenCookieName),
         )
       }
@@ -1600,7 +1603,10 @@ app.get("/v1/auth/keycloak/callback", async (c) => {
     }
     setCookieByEnv(c, AccessTokenCookieName, accessToken, sessionCookieOpts)
     setCookieByEnv(c, RefreshTokenCookieName, refreshToken, sessionCookieOpts)
-    setCookieByEnv(c, KeycloakIdTokenCookieName, idToken, sessionCookieOpts)
+    setCookieByEnv(c, KeycloakIdTokenCookieName, idToken, {
+      ...sessionCookieOpts,
+      path: KeycloakIdTokenCookiePath,
+    })
 
     return c.redirect(postOauthRedirect)
   } catch (error) {
