@@ -257,11 +257,16 @@ setup_permissions() {
 }
 
 wait_for_postgres() {
+    load_env_file
     local attempts=0
     local max_attempts=30
+    local postgres_user
+    postgres_user=$(get_postgres_probe_user)
+    local postgres_db
+    postgres_db=$(get_postgres_probe_database)
 
     echo -e "${YELLOW} Waiting for PostgreSQL to become healthy...${NC}"
-    until docker exec xyne-db pg_isready -U xyne -d xyne >/dev/null 2>&1; do
+    until docker exec xyne-db pg_isready -U "$postgres_user" -d "$postgres_db" >/dev/null 2>&1; do
         attempts=$((attempts + 1))
         if [ "$attempts" -ge "$max_attempts" ]; then
             echo -e "${RED}ERROR: PostgreSQL did not become ready in time${NC}"
@@ -280,6 +285,82 @@ load_env_file() {
         source .env
         set +a
     fi
+}
+
+require_env_value() {
+    local key=$1
+    if [ -z "${!key:-}" ]; then
+        echo -e "${RED}ERROR: ${key} must be set in .env or the environment${NC}" >&2
+        exit 1
+    fi
+}
+
+get_database_url_username() {
+    local database_url="${DATABASE_URL:-}"
+    if [ -z "$database_url" ]; then
+        return 1
+    fi
+
+    local credentials="${database_url#*://}"
+    local username="${credentials%%[:@]*}"
+    if [ -z "$username" ] || [ "$username" = "$credentials" ]; then
+        return 1
+    fi
+
+    printf "%s" "$username"
+}
+
+get_database_url_database() {
+    local database_url="${DATABASE_URL:-}"
+    if [ -z "$database_url" ]; then
+        return 1
+    fi
+
+    local database="${database_url##*/}"
+    database="${database%%[?]*}"
+    if [ -z "$database" ] || [ "$database" = "$database_url" ]; then
+        return 1
+    fi
+
+    printf "%s" "$database"
+}
+
+get_postgres_probe_user() {
+    if [ -n "${KC_DB_USERNAME:-}" ]; then
+        printf "%s" "$KC_DB_USERNAME"
+        return
+    fi
+    if [ -n "${POSTGRES_USER:-}" ]; then
+        printf "%s" "$POSTGRES_USER"
+        return
+    fi
+
+    local database_url_username
+    database_url_username=$(get_database_url_username || true)
+    if [ -n "$database_url_username" ]; then
+        printf "%s" "$database_url_username"
+        return
+    fi
+
+    echo -e "${RED}ERROR: Set KC_DB_USERNAME, POSTGRES_USER, or DATABASE_URL before starting PostgreSQL${NC}" >&2
+    exit 1
+}
+
+get_postgres_probe_database() {
+    if [ -n "${POSTGRES_DB:-}" ]; then
+        printf "%s" "$POSTGRES_DB"
+        return
+    fi
+
+    local database_url_database
+    database_url_database=$(get_database_url_database || true)
+    if [ -n "$database_url_database" ]; then
+        printf "%s" "$database_url_database"
+        return
+    fi
+
+    echo -e "${RED}ERROR: Set POSTGRES_DB or DATABASE_URL before starting PostgreSQL${NC}" >&2
+    exit 1
 }
 
 is_keycloak_enabled() {
@@ -415,14 +496,17 @@ wait_for_keycloak() {
 }
 
 ensure_keycloak_database() {
+    load_env_file
+    require_env_value "KC_DB_USERNAME"
+
     echo -e "${YELLOW} Ensuring Keycloak database exists...${NC}"
 
-    if docker exec xyne-db psql -U xyne -tAc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'" | grep -q "1"; then
+    if docker exec -e PGPASSWORD="${KC_DB_PASSWORD:-}" xyne-db psql -U "$KC_DB_USERNAME" -tAc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'" | grep -q "1"; then
         echo -e "${GREEN} Keycloak database already exists${NC}"
         return
     fi
 
-    docker exec xyne-db psql -U xyne -c "CREATE DATABASE keycloak;"
+    docker exec -e PGPASSWORD="${KC_DB_PASSWORD:-}" xyne-db psql -U "$KC_DB_USERNAME" -c "CREATE DATABASE keycloak;"
     echo -e "${GREEN} Keycloak database created${NC}"
 }
 

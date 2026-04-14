@@ -121,16 +121,17 @@ services:
       xyne-db:
         condition: service_healthy
     environment:
-      PGPASSWORD: xyne
+      PGUSER: ${KC_DB_USERNAME}
+      PGPASSWORD: ${KC_DB_PASSWORD}
     command:
       - sh
       - -c
       - |
-        until pg_isready -h xyne-db -U xyne -d xyne; do
+        until pg_isready -h xyne-db -d xyne; do
           sleep 2
         done
-        psql -h xyne-db -U xyne -tAc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'" | grep -q 1 || \
-        psql -h xyne-db -U xyne -c "CREATE DATABASE keycloak;"
+        psql -h xyne-db -tAc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'" | grep -q 1 || \
+        psql -h xyne-db -c "CREATE DATABASE keycloak;"
     networks:
       - xyne
     restart: "no"
@@ -145,8 +146,8 @@ services:
     environment:
       - KC_DB=postgres
       - KC_DB_URL=jdbc:postgresql://xyne-db:5432/keycloak
-      - KC_DB_USERNAME=${KC_DB_USERNAME:-xyne}
-      - KC_DB_PASSWORD=${KC_DB_PASSWORD:-xyne}
+      - KC_DB_USERNAME=${KC_DB_USERNAME}
+      - KC_DB_PASSWORD=${KC_DB_PASSWORD}
       - KC_HTTP_ENABLED=true
       - KC_HOSTNAME=${KEYCLOAK_PUBLIC_BASE_URL:-http://localhost:8082}
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
