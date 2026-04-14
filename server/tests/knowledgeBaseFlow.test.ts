@@ -12,107 +12,76 @@ process.env.ENCRYPTION_KEY ??=
 process.env.SERVICE_ACCOUNT_ENCRYPTION_KEY ??=
   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
-const KnowledgeBaseScope = {
-  UserOwned: "user_owned",
-  AgentScoped: "agent_scoped",
-  AllAccessible: "all_accessible",
-} as const
+const collectionAlphaId = "collection-alpha"
+const collectionBetaId = "collection-beta"
 
-function convertPrefixedIdsToSelections(prefixedIds: string[]) {
-  if (!prefixedIds.length) return []
+mock.module("@/db/user", () => ({
+  getPublicUserAndWorkspaceByEmail: mock(async () => []),
+  getUserAndWorkspaceByEmail: mock(async () => []),
+  getUserAndWorkspaceByOnlyEmail: mock(async () => []),
+  getUserByEmail: mock(async () => [{ id: 1 }]),
+  createUser: mock(async () => null),
+  saveRefreshTokenToDB: mock(async () => undefined),
+  deleteRefreshTokenFromDB: mock(async () => undefined),
+  getUserById: mock(async () => null),
+  getUserMetaData: mock(async () => null),
+  getUsersByWorkspace: mock(async () => []),
+  getAllLoggedInUsers: mock(async () => []),
+  getAllIngestedUsers: mock(async () => []),
+  updateUser: mock(async () => null),
+  updateUserTimezone: mock(async () => null),
+  getUserFromJWT: mock(async () => null),
+  createUserApiKey: mock(async () => null),
+}))
 
-  const collectionIds = new Set<string>()
-  const collectionFolderIds = new Set<string>()
-  const collectionFileIds = new Set<string>()
-
-  prefixedIds.forEach((itemId) => {
-    if (itemId.startsWith("clfd-")) {
-      collectionFolderIds.add(itemId.replace(/^clfd[-_]/, ""))
-    } else if (itemId.startsWith("clf-")) {
-      collectionFileIds.add(itemId.replace(/^clf[-_]/, ""))
-    } else if (itemId.startsWith("cl-")) {
-      collectionIds.add(itemId.replace(/^cl[-_]/, ""))
-    }
-  })
-
-  const selection: {
-    collectionIds?: string[]
-    collectionFolderIds?: string[]
-    collectionFileIds?: string[]
-  } = {}
-  if (collectionIds.size) selection.collectionIds = Array.from(collectionIds)
-  if (collectionFolderIds.size) {
-    selection.collectionFolderIds = Array.from(collectionFolderIds)
-  }
-  if (collectionFileIds.size) {
-    selection.collectionFileIds = Array.from(collectionFileIds)
-  }
-
-  return Object.keys(selection).length ? [selection] : []
-}
-
-function resolveKnowledgeItemIds(
-  pathExtractedInfo?: {
-    collectionFileIds: string[]
-    collectionFolderIds: string[]
-    collectionIds: string[]
-  },
-  selectedItems?: Partial<Record<Apps, string[]>>,
-): string[] {
-  if (pathExtractedInfo) {
-    if (pathExtractedInfo.collectionFolderIds.length) {
-      return pathExtractedInfo.collectionFolderIds
-    }
-    if (pathExtractedInfo.collectionFileIds.length) {
-      return pathExtractedInfo.collectionFileIds
-    }
-    if (pathExtractedInfo.collectionIds.length) {
-      return pathExtractedInfo.collectionIds
-    }
-  }
-
-  return selectedItems?.[Apps.KnowledgeBase] ?? []
-}
-
-mock.module("@/api/chat/knowledgeBaseSelections", () => ({
-  KnowledgeBaseScope,
-  buildKnowledgeBaseCollectionSelections: mock(
-    async ({
-      scope,
-      selectedItems,
-      pathExtractedInfo,
-    }: {
-      scope: (typeof KnowledgeBaseScope)[keyof typeof KnowledgeBaseScope]
-      selectedItems?: Partial<Record<Apps, string[]>>
-      pathExtractedInfo?: {
-        collectionFileIds: string[]
-        collectionFolderIds: string[]
-        collectionIds: string[]
-      }
-    }) => {
-      const ids = resolveKnowledgeItemIds(pathExtractedInfo, selectedItems)
-
-      if (scope === KnowledgeBaseScope.UserOwned) {
-        return convertPrefixedIdsToSelections(
-          ids.length ? ids : ["cl-collection-alpha", "cl-collection-beta"],
-        )
-      }
-
-      if (scope === KnowledgeBaseScope.AgentScoped) {
-        return convertPrefixedIdsToSelections(ids)
-      }
-
-      if (scope === KnowledgeBaseScope.AllAccessible) {
-        return convertPrefixedIdsToSelections([
-          ...ids,
-          "cl-collection-alpha",
-          "cl-collection-beta",
-        ])
-      }
-
-      return []
-    },
-  ),
+mock.module("@/db/knowledgeBase", () => ({
+  touchCollectionLsStructure: mock(async () => undefined),
+  touchCollectionLsStructures: mock(async () => undefined),
+  getCollectionById: mock(async () => null),
+  getCollectionItemById: mock(async () => null),
+  getCollectionLsProjection: mock(async () => null),
+  getCollectionsByOwner: mock(async () => [
+    { id: collectionAlphaId },
+    { id: collectionBetaId },
+  ]),
+  getAccessibleCollections: mock(async () => []),
+  recordCollectionLsProjectionError: mock(async () => undefined),
+  createCollection: mock(async () => null),
+  updateCollection: mock(async () => null),
+  softDeleteCollection: mock(async () => null),
+  createCollectionItem: mock(async () => null),
+  getCollectionItemsByParent: mock(async () => []),
+  getCollectionItemByPath: mock(async () => null),
+  updateCollectionItem: mock(async () => null),
+  softDeleteCollectionItem: mock(async () => null),
+  updateCollectionTotalCount: mock(async () => undefined),
+  updateFolderTotalCount: mock(async () => undefined),
+  updateParentFolderCounts: mock(async () => undefined),
+  createFolder: mock(async () => null),
+  createFileItem: mock(async () => null),
+  getAllCollectionItems: mock(async () => []),
+  getParentItems: mock(async () => []),
+  getAllFolderIds: mock(async () => []),
+  getCollectionFilesVespaIds: mock(async () => []),
+  getCollectionItemsStatusByCollections: mock(async () => []),
+  getAllCollectionAndFolderItems: mock(async () => ({
+    fileIds: [],
+    folderIds: [],
+  })),
+  getAllFolderItems: mock(async () => []),
+  getCollectionFoldersItemIds: mock(async () => []),
+  getCollectionFileByItemId: mock(async () => null),
+  createCollectionFile: mock(async () => null),
+  updateCollectionFile: mock(async () => null),
+  softDeleteCollectionFile: mock(async () => null),
+  generateStorageKey: mock(() => "storage-key"),
+  generateFileVespaDocId: mock(() => "file-vespa-id"),
+  generateFolderVespaDocId: mock(() => "folder-vespa-id"),
+  generateCollectionVespaDocId: mock(() => "collection-vespa-id"),
+  markParentAsProcessing: mock(async () => undefined),
+  updateParentStatus: mock(async () => undefined),
+  upsertCollectionLsProjection: mock(async () => null),
+  getRecordBypath: mock(async () => null),
 }))
 
 const {
@@ -188,7 +157,7 @@ const createItem = (overrides: Partial<CollectionItem>): CollectionItem => ({
 })
 
 const collectionAlpha = createCollection({
-  id: "collection-alpha",
+  id: collectionAlphaId,
   name: "Alpha",
   description: "Alpha docs",
   totalItems: 4,
@@ -196,7 +165,7 @@ const collectionAlpha = createCollection({
 })
 
 const collectionBeta = createCollection({
-  id: "collection-beta",
+  id: collectionBetaId,
   name: "Beta",
   description: "Beta docs",
   totalItems: 1,
