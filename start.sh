@@ -53,13 +53,14 @@ fi
 # Wait for Vespa to be ready. Vespa is optional by default so a model download
 # or search deployment issue does not prevent the app from starting.
 VESPA_REQUIRED="${VESPA_REQUIRED:-false}"
+VESPA_REQUIRED_NORMALIZED="$(printf '%s' "$VESPA_REQUIRED" | tr '[:upper:]' '[:lower:]')"
 VESPA_ATTEMPTS=0
 VESPA_MAX_ATTEMPTS="${VESPA_WAIT_MAX_ATTEMPTS:-30}"
 VESPA_READY=false
 
 echo "Waiting for Vespa config server..."
-while [ $VESPA_ATTEMPTS -lt $VESPA_MAX_ATTEMPTS ]; do
-  if curl -f http://${VESPA_HOST:-vespa}:19071/state/v1/health 2>/dev/null; then
+while [ "$VESPA_ATTEMPTS" -lt "$VESPA_MAX_ATTEMPTS" ]; do
+  if curl --connect-timeout 2 --max-time 5 -f "http://${VESPA_HOST:-vespa}:19071/state/v1/health" 2>/dev/null; then
     VESPA_READY=true
     echo "Vespa config server is ready!"
     break
@@ -71,7 +72,7 @@ while [ $VESPA_ATTEMPTS -lt $VESPA_MAX_ATTEMPTS ]; do
 done
 
 if [ "$VESPA_READY" != "true" ]; then
-  if [ "$VESPA_REQUIRED" = "true" ] || [ "$VESPA_REQUIRED" = "1" ]; then
+  if [ "$VESPA_REQUIRED_NORMALIZED" = "true" ] || [ "$VESPA_REQUIRED" = "1" ]; then
     echo "ERROR: Failed to connect to Vespa after $VESPA_MAX_ATTEMPTS attempts"
     exit 1
   fi
@@ -111,7 +112,7 @@ if [ ! -f "$VESPA_INIT_MARKER_FILE" ]; then
       mkdir -p /usr/src/app/server/storage
       touch "$VESPA_INIT_MARKER_FILE"
     else
-      if [ "$VESPA_REQUIRED" = "true" ] || [ "$VESPA_REQUIRED" = "1" ]; then
+      if [ "$VESPA_REQUIRED_NORMALIZED" = "true" ] || [ "$VESPA_REQUIRED" = "1" ]; then
         echo "ERROR: Vespa deployment failed"
         exit 1
       fi

@@ -255,7 +255,8 @@ async function checkVespaContainerHealth(
 export async function checkVespaHealth(): Promise<HealthStatusResponse> {
   const startTime = Date.now()
   const vespaRequired =
-    process.env.VESPA_REQUIRED === "true" || process.env.VESPA_REQUIRED === "1"
+    process.env.VESPA_REQUIRED?.toLowerCase() === "true" ||
+    process.env.VESPA_REQUIRED === "1"
 
   try {
     const [feedHealth, queryHealth] = await Promise.all([
