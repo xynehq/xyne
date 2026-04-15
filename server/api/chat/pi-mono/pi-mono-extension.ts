@@ -3,6 +3,7 @@ import { ReasoningSteps, emitReasoningEvent } from "@/api/chat/reasoning-steps"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import type {
   BeforeAgentStartEvent,
+  BeforeProviderRequestEvent,
   ExtensionAPI,
   SessionBeforeCompactEvent,
   ToolCallEvent,
@@ -154,6 +155,57 @@ export default function xyneExtension(pi: ExtensionAPI) {
       isError: event.isError,
     }
   })
+
+  const THINKING_BUDGETS: Record<string, number> = {
+    minimal: 1024,
+    low: 2048,
+    medium: 8192,
+    high: 16384,
+  }
+
+  pi.on(
+    "before_provider_request",
+    async (event: BeforeProviderRequestEvent) => {
+      const payload = event.payload as Record<string, unknown> | undefined
+      if (!payload || typeof payload !== "object") return payload
+
+      const { chat_template_kwargs, reasoning_effort, ...rest } = payload
+
+      const templateKwargs: Record<string, unknown> = {
+        ...(chat_template_kwargs as Record<string, unknown>),
+      }
+
+      const effortLevel = reasoning_effort as string | undefined
+      const enableThinking = !!effortLevel && effortLevel !== "off"
+
+      // Only apply reasoning_effort conversion if not already set
+      if (effortLevel !== undefined && !templateKwargs.enable_thinking) {
+        templateKwargs.enable_thinking = enableThinking
+
+        if (enableThinking) {
+          const budget =
+            THINKING_BUDGETS[effortLevel] ?? THINKING_BUDGETS.medium
+          templateKwargs.thinking_budget = budget
+
+          if (effortLevel === "minimal" || effortLevel === "low") {
+            templateKwargs.low_effort = true
+          }
+        }
+      } else if (effortLevel === undefined) {
+        templateKwargs.enable_thinking = false
+      }
+
+      if (Object.keys(templateKwargs).length === 0) return payload
+
+      return {
+        ...rest,
+        extra_body: {
+          ...(rest.extra_body as Record<string, unknown>),
+          chat_template_kwargs: templateKwargs,
+        },
+      }
+    },
+  )
 
   pi.on("session_before_compact", async (event: SessionBeforeCompactEvent) => {
     const state = extensionStateRef

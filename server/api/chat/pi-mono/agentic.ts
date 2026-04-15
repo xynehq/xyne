@@ -273,7 +273,9 @@ export async function AgenticRAG(c: Context): Promise<Response> {
           modelOptions: {
             contextWindow: 250000,
             maxTokens: 32000,
+            reasoning: true,
           },
+          thinkingLevel: "low",
           extensions: [xyneExtension],
           state: xyneState,
           timeoutMs: 10 * 60 * 1000, // 10 minutes

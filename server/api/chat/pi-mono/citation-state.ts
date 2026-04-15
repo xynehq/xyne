@@ -159,7 +159,6 @@ export function restoreCitationState(
   const seenFragmentIds = new Set<string>()
 
   for (const entry of citationEntries) {
-    console.log("entry_ass", entry)
     const delta = entry.data
     if (!delta) continue
     // Restore new fragments from this delta
