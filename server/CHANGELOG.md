@@ -1,3 +1,10 @@
+## [3.47.6](https://github.com/xynehq/xyne/compare/v3.47.5...v3.47.6) (2026-04-15)
+
+
+### Bug Fixes
+
+* keeping vespa optional in start/sh ([#1315](https://github.com/xynehq/xyne/issues/1315)) ([3beba51](https://github.com/xynehq/xyne/commit/3beba51ac4550a64806692b95af04dc72ca58108))
+
 ## [3.47.5](https://github.com/xynehq/xyne/compare/v3.47.4...v3.47.5) (2026-04-14)
 
 
