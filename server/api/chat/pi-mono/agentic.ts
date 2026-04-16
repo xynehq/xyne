@@ -262,7 +262,7 @@ export async function AgenticRAG(c: Context): Promise<Response> {
         agent = await createRAGAgent<XyneAgentState>({
           model: modelId,
           baseUrl,
-          apiKey: "sk-BPXuhdygZKbV3z2-qbz0rg",
+          apiKey: config.LiteLLMApiKey,
           tools: availableTools,
           systemPrompt,
           sessionManager: SessionManager.open(sessionFilePath),

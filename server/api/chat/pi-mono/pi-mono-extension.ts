@@ -23,7 +23,7 @@ const CITATION_FORMAT_STEER_MESSAGE = [
   "To cite, combine them: K[5_20]. CORRECT: K[2_3], K[5_0], K[41_50].",
   "WRONG: K[5_chunkIndex], (citation5), (citations26-35), [citation16].",
   "NEVER write the literal word 'chunkIndex' — always use the actual number from [chunk:N].",
-  "STRICT LIMIT: Maximum 1–2 citations per sentence or bullet. Pick the best 1–2 sources only. Do NOT list every matching fragment.",
+  "STRICT LIMIT: Maximum 1-2 citations per sentence or bullet. Pick the best 1-2 sources only. Do NOT list every matching fragment.",
 ].join(" ")
 
 interface ExtensionState {
@@ -136,6 +136,7 @@ export default function xyneExtension(pi: ExtensionAPI) {
       trackFragments(fragments, startIndex, state.xyneState)
 
       const totalFragments = state.xyneState.allFragments.length
+      // this steering we need for small models to prevent them from losing track of the citation format when many fragments are involved. For larger models it may not be necessary, but it doesn't hurt to have it.
       if (totalFragments >= CITATION_STEER_THRESHOLD && !citationReminderSent) {
         citationReminderSent = true
         pi.sendMessage(
