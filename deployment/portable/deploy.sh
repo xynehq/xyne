@@ -429,21 +429,27 @@ ensure_keycloak_bootstrap_env() {
     fi
 
     load_env_file
-    persist_env_if_missing "HOST" "http://localhost:3000"
-    persist_env_if_missing "KEYCLOAK_PUBLIC_BASE_URL" "http://localhost:${KEYCLOAK_PORT:-8082}"
-    persist_env_if_missing "KEYCLOAK_INTERNAL_BASE_URL" "http://keycloak:8080"
-    persist_env_if_missing "KEYCLOAK_REALM" "xyne-shared"
-    persist_env_if_missing "KEYCLOAK_CLIENT_ID" "xyne-web"
-    persist_env_if_missing "KEYCLOAK_LOGOUT_REDIRECT_URL" "/auth"
-    persist_env_if_missing "KEYCLOAK_WORKSPACE_EXTERNAL_ID" "xyne-shared-workspace"
-    persist_env_if_missing "XYNE_BOOTSTRAP_ADMIN_EMAIL" "admin@xyne.local"
-    persist_env_if_missing "XYNE_BOOTSTRAP_ADMIN_NAME" "\"Xyne Admin\""
-    persist_env_if_missing "XYNE_BOOTSTRAP_WORKSPACE_NAME" "\"Xyne Shared\""
-    persist_env_if_missing "XYNE_BOOTSTRAP_WORKSPACE_DOMAIN" "xyne.local"
-    persist_env_if_missing "KEYCLOAK_BOOTSTRAP_RESET_ADMIN_PASSWORD" "false"
-    persist_env_if_missing "KEYCLOAK_CLIENT_SECRET" "$(generate_secret)"
-    persist_env_if_missing "XYNE_BOOTSTRAP_ADMIN_PASSWORD" "$(generate_secret)"
-    load_env_file
+    local required_keys=(
+        "HOST"
+        "KEYCLOAK_PUBLIC_BASE_URL"
+        "KEYCLOAK_INTERNAL_BASE_URL"
+        "KEYCLOAK_REALM"
+        "KEYCLOAK_CLIENT_ID"
+        "KEYCLOAK_LOGOUT_REDIRECT_URL"
+        "KEYCLOAK_WORKSPACE_EXTERNAL_ID"
+        "XYNE_BOOTSTRAP_ADMIN_EMAIL"
+        "XYNE_BOOTSTRAP_ADMIN_NAME"
+        "XYNE_BOOTSTRAP_WORKSPACE_NAME"
+        "XYNE_BOOTSTRAP_WORKSPACE_DOMAIN"
+        "KEYCLOAK_BOOTSTRAP_RESET_ADMIN_PASSWORD"
+        "KEYCLOAK_CLIENT_SECRET"
+        "XYNE_BOOTSTRAP_ADMIN_PASSWORD"
+    )
+    local key
+    for key in "${required_keys[@]}"; do
+        require_env_value "$key"
+    done
+
     validate_keycloak_bootstrap_env
 }
 
@@ -716,7 +722,7 @@ stop_all() {
     echo -e "${YELLOW} Stopping all services...${NC}"
     COMPOSE_FILES=$(get_compose_files)
     DOCKER_COMPOSE=$(get_docker_compose_cmd)
-    $DOCKER_COMPOSE $COMPOSE_FILES down
+    $DOCKER_COMPOSE $COMPOSE_FILES --profile keycloak down
     echo -e "${GREEN} All services stopped${NC}"
 }
 
