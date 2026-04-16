@@ -475,7 +475,11 @@ wait_for_keycloak() {
     local attempts=0
     local max_attempts=60
     local keycloak_port="${KEYCLOAK_PORT:-8082}"
-    local endpoint="http://localhost:${keycloak_port}/realms/master"
+    local keycloak_path=""
+    if [[ "${KEYCLOAK_PUBLIC_BASE_URL:-}" == */keycloak* ]]; then
+        keycloak_path="/keycloak"
+    fi
+    local endpoint="http://localhost:${keycloak_port}${keycloak_path}/realms/master"
 
     if ! command -v curl >/dev/null 2>&1; then
         echo -e "${RED}ERROR: curl is required to wait for Keycloak at ${endpoint}${NC}"
