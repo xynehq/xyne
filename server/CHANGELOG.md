@@ -1,3 +1,10 @@
+# [3.48.0](https://github.com/xynehq/xyne/compare/v3.47.6...v3.48.0) (2026-04-17)
+
+
+### Features
+
+* keycloak initial changes ([#1286](https://github.com/xynehq/xyne/issues/1286)) ([f4e9ae3](https://github.com/xynehq/xyne/commit/f4e9ae3dfff21d82f8223ef36a599082fafa3d76))
+
 ## [3.47.6](https://github.com/xynehq/xyne/compare/v3.47.5...v3.47.6) (2026-04-15)
 
 
