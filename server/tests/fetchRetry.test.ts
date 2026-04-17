@@ -58,7 +58,7 @@ describe("VespaClient", () => {
   }))
 
   beforeAll(() => {
-    vespaClient = new VespaClient(undefined, {
+    vespaClient = new VespaClient(mockPinoLogger, {
       vespaMaxRetryAttempts: 3,
       vespaRetryDelay: 100,
       queryEndpoint: queryendpoint,

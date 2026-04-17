@@ -1,5 +1,5 @@
 import { api } from "@/api"
-import { Link, useLocation, useRouter } from "@tanstack/react-router"
+import { Link, useLocation } from "@tanstack/react-router"
 import {
   Bot,
   Plug,
@@ -56,12 +56,16 @@ export const Sidebar = ({
   const isDarkMode = theme === "dark"
   const { totalUnreadCount } = useUnreadCount()
 
-  const router = useRouter()
-
   const logout = async (): Promise<void> => {
     try {
       const res = await api.auth.logout.$post()
       if (res.ok) {
+        const { redirectTo } = (await res.json().catch(() => ({
+          redirectTo: "/auth",
+        }))) as {
+          redirectTo?: string
+        }
+
         // Clear document chat mappings from sessionStorage on logout
         try {
           sessionStorage.removeItem("documentToTempChatMap")
@@ -73,7 +77,7 @@ export const Sidebar = ({
           )
         }
 
-        router.navigate({ to: "/auth" })
+        window.location.assign(redirectTo || "/auth")
       } else {
         toast({
           title: "Error logging out",

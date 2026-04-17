@@ -42,6 +42,7 @@ portable/
 ./deploy.sh start          # Start all services (auto-detects GPU/CPU)
 ./deploy.sh start --force-cpu    # Force CPU-only mode
 ./deploy.sh start --force-gpu    # Force GPU mode (if available)
+./deploy.sh bootstrap-keycloak   # Run Keycloak bootstrap without starting the full app
 ./deploy.sh stop           # Stop all services  
 ./deploy.sh restart        # Restart everything
 ./deploy.sh status         # Show service status and GPU/CPU mode
@@ -76,6 +77,7 @@ portable/
 ## Access URLs
 
 - **Xyne Application**: http://localhost:3000
+- **Keycloak**: http://localhost:8082 (when `KEYCLOAK_WEB_ENABLED=true`)
 - **Grafana Dashboard**: http://localhost:3002  
 - **Prometheus Metrics**: http://localhost:9090
 - **Loki Logs**: http://localhost:3100
@@ -100,9 +102,63 @@ portable/
    cp .env.example .env
    ```
 
-2. Add your API keys:
+2. Configure login providers and secrets in `.env`:
    ```bash
    nano .env
+   ```
+
+   For Google web login:
+   ```bash
+   GOOGLE_WEB_LOGIN_ENABLED=true
+   GOOGLE_CLIENT_ID=<your-google-client-id>
+   GOOGLE_CLIENT_SECRET=<your-google-client-secret>
+   GOOGLE_PROD_REDIRECT_URI=http://localhost:3000/v1/auth/callback
+   ```
+
+   Keycloak web login is opt-in. It stays disabled by default:
+   ```bash
+   KEYCLOAK_WEB_ENABLED=false
+   ```
+
+   To enable Keycloak web login:
+   ```bash
+   KEYCLOAK_WEB_ENABLED=true
+   KEYCLOAK_PUBLIC_BASE_URL=http://localhost:8082
+   KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080
+   KEYCLOAK_REALM=xyne-shared
+   KEYCLOAK_CLIENT_ID=xyne-web
+   KEYCLOAK_CLIENT_SECRET=
+   KEYCLOAK_WORKSPACE_EXTERNAL_ID=xyne-shared-workspace
+   KEYCLOAK_ADMIN=admin
+   KEYCLOAK_ADMIN_PASSWORD=
+   XYNE_BOOTSTRAP_ADMIN_EMAIL=admin@xyne.local
+   XYNE_BOOTSTRAP_ADMIN_NAME="Xyne Admin"
+   XYNE_BOOTSTRAP_ADMIN_PASSWORD=
+   XYNE_BOOTSTRAP_WORKSPACE_NAME="Xyne Shared"
+   XYNE_BOOTSTRAP_WORKSPACE_DOMAIN=xyne.local
+   KEYCLOAK_BOOTSTRAP_RESET_ADMIN_PASSWORD=false
+   ```
+
+   For sbx/prod, set `HOST` to the public HTTPS Xyne origin,
+   `KEYCLOAK_PUBLIC_BASE_URL` to the public HTTPS Keycloak origin, and
+   `KEYCLOAK_ADMIN_PASSWORD` to a non-default value before bootstrapping. Keep
+   `KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080` when using this portable
+   compose deployment because bootstrap runs inside the app container.
+   `http://localhost:8082` is only correct when running
+   `bun run keycloak:bootstrap` from the host in local dev.
+
+   When `KEYCLOAK_WEB_ENABLED=true`, `./deploy.sh start` generates and
+   persists missing `KEYCLOAK_CLIENT_SECRET` and
+   `XYNE_BOOTSTRAP_ADMIN_PASSWORD` in `.env`, runs database migrations, then
+   starts and bootstraps Keycloak before starting the app. When
+   `KEYCLOAK_WEB_ENABLED=false`, the bundled Keycloak container is not started.
+   The bootstrap creates or updates the `xyne-shared` realm, `xyne-web`
+   confidential OIDC client, the bootstrap Keycloak realm admin, the default
+   Xyne workspace, and the matching Xyne `SuperAdmin` user.
+
+   To run only the bootstrap after infrastructure is up:
+   ```bash
+   ./deploy.sh bootstrap-keycloak
    ```
 
 3. Deploy:

@@ -158,6 +158,17 @@ export const getUserByEmail = async (
     .limit(1)
 }
 
+export const getUserByEmailInsensitive = async (
+  trx: TxnOrClient,
+  email: string,
+): Promise<SelectUser[]> => {
+  return await trx
+    .select()
+    .from(users)
+    .where(sql`LOWER(${users.email}) = LOWER(${email})`)
+    .limit(1)
+}
+
 export const createUser = async (
   trx: TxnOrClient,
   workspaceId: number,

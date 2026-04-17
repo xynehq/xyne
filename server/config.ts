@@ -24,6 +24,18 @@ function getDatabaseUrl(): string {
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
 let appleBundleId = process.env.APPLE_BUNDLE_ID || ""
+const googleWebLoginEnabled = process.env.GOOGLE_WEB_LOGIN_ENABLED !== "false"
+const keycloakWebLoginEnabled = process.env.KEYCLOAK_WEB_ENABLED === "true"
+const keycloakPublicBaseUrl = process.env.KEYCLOAK_PUBLIC_BASE_URL || ""
+const keycloakInternalBaseUrl =
+  process.env.KEYCLOAK_INTERNAL_BASE_URL || keycloakPublicBaseUrl
+const keycloakRealm = process.env.KEYCLOAK_REALM || ""
+const keycloakClientId = process.env.KEYCLOAK_CLIENT_ID || ""
+const keycloakClientSecret = process.env.KEYCLOAK_CLIENT_SECRET || ""
+const keycloakWorkspaceExternalId =
+  process.env.KEYCLOAK_WORKSPACE_EXTERNAL_ID || ""
+const keycloakLogoutRedirectUrl =
+  process.env.KEYCLOAK_LOGOUT_REDIRECT_URL || "/auth"
 
 // Vespa configuration constants
 export const NAMESPACE = "namespace"
@@ -325,6 +337,15 @@ export default {
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
+  googleWebLoginEnabled,
+  keycloakWebLoginEnabled,
+  keycloakPublicBaseUrl,
+  keycloakInternalBaseUrl,
+  keycloakRealm,
+  keycloakClientId,
+  keycloakClientSecret,
+  keycloakWorkspaceExternalId,
+  keycloakLogoutRedirectUrl,
   paddleStatusEndpoint,
   appleBundleId,
   // update user query session time
