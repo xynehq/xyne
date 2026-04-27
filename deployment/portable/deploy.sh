@@ -153,6 +153,7 @@ setup_environment() {
     # Create necessary directories with proper permissions
     echo " Creating data directories..."
     mkdir -p "$DATA_DIR"/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,app-downloads,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data,vespa-models}
+    mkdir -p config
 
     # Create Vespa tmp directory
     mkdir -p "$DATA_DIR"/vespa-data/tmp
@@ -199,6 +200,7 @@ setup_environment() {
     persist_env_if_missing "ENCRYPTION_KEY" "$(generate_secret)"
     persist_env_if_missing "JWT_SECRET" "$(generate_secret)"
     persist_env_if_missing "SERVICE_ACCOUNT_ENCRYPTION_KEY" "$(generate_secret)"
+    validate_litellm_model_catalog
     
     # Create network if it doesn't exist
     docker network create xyne 2>/dev/null || echo "Network 'xyne' already exists"
@@ -284,6 +286,16 @@ load_env_file() {
         # shellcheck disable=SC1091
         source .env
         set +a
+    fi
+}
+
+validate_litellm_model_catalog() {
+    load_env_file
+
+    if [ "${LITELLM_MODEL_CONFIG_PATH:-}" = "/usr/src/app/server/config/litellm-models.json" ] && [ ! -f "./config/litellm-models.json" ]; then
+        echo -e "${RED}ERROR: LITELLM_MODEL_CONFIG_PATH points to /usr/src/app/server/config/litellm-models.json, but ./config/litellm-models.json is missing.${NC}" >&2
+        echo -e "${RED}Create ./config/litellm-models.json or unset LITELLM_MODEL_CONFIG_PATH before starting app/app-sync.${NC}" >&2
+        exit 1
     fi
 }
 
