@@ -2,6 +2,7 @@ import { useRef, useLayoutEffect, useState, useCallback } from "react"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import type { Citation } from "@/components/CitationLink"
 
+
 // Helper function to generate UUID
 export const generateUUID = () => crypto.randomUUID()
 

@@ -2,8 +2,15 @@ import { useCallback, useEffect, useState, useRef } from "react"
 import { useDocumentOperations } from "@/contexts/DocumentOperationsContext"
 import {
   findHighlightMatches,
+  getHybridKeywordMatches,
   type HighlightMatch as ClientHighlightMatch,
 } from "@/utils/textHighlighting"
+
+type HighlightKind = "chunk" | "keyword"
+
+/** Global classes in index.css — chunk = soft context, keyword = strong signal + box-decoration-break */
+const CHUNK_MARK_CLASS = "scoped-find-chunk-highlight"
+const KEYWORD_MARK_CLASS = "scoped-find-keyword-highlight"
 
 type Options = {
   caseSensitive?: boolean
@@ -11,6 +18,10 @@ type Options = {
   activeClass?: string
   debug?: boolean // Enable debug logging
   documentId?: string // Document ID for caching
+  /** Vespa-derived keyword tokens; only applied when vespaChunkId matches `${documentId}_${chunkIndex}` */
+  vespaKeywordTokens?: string[]
+  /** Chunk id from Vespa highlight API (must align with citation chunk) */
+  vespaChunkId?: number | null
 }
 
 // Cache duration constant - defined at module scope to prevent re-declaration on each render
@@ -56,10 +67,25 @@ export function useScopedFind(
   const { documentOperationsRef } = useDocumentOperations()
   const {
     caseSensitive = true,
-    highlightClass = "bg-yellow-200/60 dark:bg-yellow-200/40 rounded-sm px-0.5 py-px",
+    highlightClass = CHUNK_MARK_CLASS,
     debug = false,
     documentId,
+    vespaKeywordTokens = [],
+    vespaChunkId = null,
   } = opts
+
+  const vespaKeywordTokensRef = useRef(vespaKeywordTokens)
+  const vespaChunkIdRef = useRef(vespaChunkId)
+  vespaKeywordTokensRef.current = vespaKeywordTokens
+  vespaChunkIdRef.current = vespaChunkId
+
+  /** Last successful highlightText args — used to re-run when Vespa tokens arrive */
+  const lastHighlightParamsRef = useRef<{
+    text: string
+    chunkIndex: number
+    pageIndex?: number
+    queryText?: string
+  } | null>(null)
 
   // Cache for API responses
   const cacheRef = useRef<HighlightCache>({})
@@ -143,8 +169,14 @@ export function useScopedFind(
 
   // Create highlight marks using <mark> elements (for non-PDF content)
   const createMarkHighlights = useCallback(
-    (container: HTMLElement, match: ClientHighlightMatch): HTMLElement[] => {
+    (
+      container: HTMLElement,
+      match: ClientHighlightMatch,
+      kind: HighlightKind,
+    ): HTMLElement[] => {
       const marks: HTMLElement[] = []
+      const markClass =
+        kind === "keyword" ? KEYWORD_MARK_CLASS : highlightClass
 
       try {
         // Find all text nodes and their positions
@@ -200,8 +232,9 @@ export function useScopedFind(
 
               // Create and insert the mark
               const mark = document.createElement("mark")
-              mark.className = `${highlightClass}`
+              mark.className = markClass
               mark.setAttribute("data-match-index", "0")
+              mark.setAttribute("data-highlight-type", kind)
 
               try {
                 range.surroundContents(mark)
@@ -227,8 +260,9 @@ export function useScopedFind(
 
                   // Create and insert the mark
                   const mark = document.createElement("mark")
-                  mark.className = `${highlightClass}`
+                  mark.className = markClass
                   mark.setAttribute("data-match-index", "0")
+                  mark.setAttribute("data-highlight-type", kind)
                   mark.textContent = matchText
 
                   // Insert mark after the text node
@@ -268,8 +302,16 @@ export function useScopedFind(
 
   // Create highlight overlays using positioned spans (for PDF content)
   const createOverlayHighlights = useCallback(
-    (container: HTMLElement, match: ClientHighlightMatch): HTMLElement[] => {
+    (
+      container: HTMLElement,
+      match: ClientHighlightMatch,
+      kind: HighlightKind,
+    ): HTMLElement[] => {
       const marks: HTMLElement[] = []
+      const pdfKindClass =
+        kind === "keyword"
+          ? "scoped-find-pdf-keyword"
+          : "scoped-find-pdf-chunk"
 
       try {
         // Find all text nodes and their positions
@@ -390,8 +432,9 @@ export function useScopedFind(
                 if (rect.width === 0 || rect.height === 0) continue
 
                 const overlay = document.createElement("span")
-                overlay.className = "pdf-highlight-overlay"
+                overlay.className = `pdf-highlight-overlay ${pdfKindClass}`
                 overlay.setAttribute("data-match-index", "0")
+                overlay.setAttribute("data-highlight-type", kind)
 
                 const left = rect.left - pageRect.left
                 const top = rect.top - pageRect.top
@@ -402,10 +445,6 @@ export function useScopedFind(
                   top: ${top}px;
                   width: ${rect.width}px;
                   height: ${rect.height}px;
-                  background-color: rgba(250, 204, 21, 0.4);
-                  pointer-events: none;
-                  z-index: 1000;
-                  border-radius: 2px;
                 `
 
                 overlayContainer.appendChild(overlay)
@@ -427,7 +466,11 @@ export function useScopedFind(
 
   // Main highlight creation function that chooses the right strategy
   const createHighlightMarks = useCallback(
-    (container: HTMLElement, match: ClientHighlightMatch): HTMLElement[] => {
+    (
+      container: HTMLElement,
+      match: ClientHighlightMatch,
+      kind: HighlightKind = "chunk",
+    ): HTMLElement[] => {
       const isPDF = isPDFContext(container)
 
       if (debug) {
@@ -435,8 +478,8 @@ export function useScopedFind(
       }
 
       return isPDF
-        ? createOverlayHighlights(container, match)
-        : createMarkHighlights(container, match)
+        ? createOverlayHighlights(container, match, kind)
+        : createMarkHighlights(container, match, kind)
     },
     [isPDFContext, createOverlayHighlights, createMarkHighlights, debug],
   )
@@ -476,6 +519,8 @@ export function useScopedFind(
 
     // Increment token to invalidate any pending async work
     callTokenRef.current += 1
+
+    lastHighlightParamsRef.current = null
 
     clearHighlightsFromDOM(root)
 
@@ -579,6 +624,7 @@ export function useScopedFind(
       chunkIndex: number,
       pageIndex?: number,
       waitForTextLayer: boolean = false,
+      queryText?: string,
     ): Promise<boolean> => {
       callTokenRef.current += 1
       const currentToken = callTokenRef.current
@@ -599,6 +645,13 @@ export function useScopedFind(
 
       clearHighlightsFromDOM(root)
       if (!text) return false
+
+      lastHighlightParamsRef.current = {
+        text,
+        chunkIndex,
+        pageIndex,
+        queryText,
+      }
 
       setIsLoading(true)
 
@@ -834,7 +887,7 @@ export function useScopedFind(
         let longestMatchLength = 0
 
         matches.forEach((match, matchIndex) => {
-          const marks = createHighlightMarks(highlightScope, match)
+          const marks = createHighlightMarks(highlightScope, match, "chunk")
 
           marks.forEach((mark) => {
             mark.setAttribute("data-match-index", matchIndex.toString())
@@ -848,9 +901,82 @@ export function useScopedFind(
           }
         })
 
+        const trimmedQuery = queryText?.trim()
+        const vespaId = vespaChunkIdRef.current
+        const vespaTokens = vespaKeywordTokensRef.current
+        const vespaAligned =
+          chunkIndex != null &&
+          vespaId != null &&
+          vespaId === chunkIndex &&
+          vespaTokens.length > 0
+
+        if (debug) {
+          console.log("Keyword pass check:", {
+            hasChunkMatches: matches.length > 0,
+            hasQuery: !!trimmedQuery,
+            vespaAligned,
+            vespaTokensCount: vespaTokens.length,
+            vespaChunkId: vespaId,
+            currentChunkIndex: chunkIndex,
+          })
+        }
+
+        const canDoKeywordPass =
+          matches.length > 0 && (!!trimmedQuery || vespaAligned)
+
+        if (canDoKeywordPass) {
+          if (currentToken !== callTokenRef.current) {
+            if (debug) {
+              console.log("Stale call before keyword highlights, aborting")
+            }
+            return false
+          }
+
+          // Use hybrid keyword matching: prefer Vespa tokens, fill gaps with query fallback
+          const keywordMatches = getHybridKeywordMatches(
+            vespaAligned ? vespaTokens : [],
+            trimmedQuery || "",
+            containerText,
+            matches,
+            5,
+            { caseSensitive },
+          )
+
+          if (debug) {
+            console.log(`Hybrid keyword matching: ${keywordMatches.length} matches found`, {
+              vespaAligned,
+              vespaTokenCount: vespaTokens.length,
+              hasQuery: !!trimmedQuery,
+            })
+          }
+
+          if (debug && keywordMatches.length > 0) {
+            console.log("Creating keyword highlight marks:", keywordMatches.map(km => ({
+              text: containerText.slice(km.startIndex, km.endIndex),
+              startIndex: km.startIndex,
+              endIndex: km.endIndex,
+            })))
+          }
+
+          keywordMatches.forEach((km, k) => {
+            const marks = createHighlightMarks(highlightScope, km, "keyword")
+            const globalIdx = matches.length + k
+            marks.forEach((mark) => {
+              mark.setAttribute("data-match-index", globalIdx.toString())
+            })
+            allMarks.push(...marks)
+          })
+
+          if (debug) {
+            console.log(`Total keyword highlight marks created: ${keywordMatches.length}`)
+          }
+        } else if (debug) {
+          console.log("Skipping keyword pass - no chunk matches or no query/vespa tokens")
+        }
+
         if (debug) {
           console.log(
-            `Created ${allMarks.length} highlight marks from ${matches.length} matches`,
+            `Created ${allMarks.length} highlight marks from ${matches.length} chunk matches`,
           )
           console.log(
             `Longest match index: ${longestMatchIndex} with length: ${longestMatchLength}`,
@@ -909,6 +1035,39 @@ export function useScopedFind(
       waitForTextLayerReady,
     ],
   )
+
+  const vespaTokensKey =
+    vespaKeywordTokens.length > 0
+      ? vespaKeywordTokens.join("\u0001")
+      : ""
+
+  useEffect(() => {
+    const last = lastHighlightParamsRef.current
+    if (!last) return
+    if (!vespaTokensKey || !vespaChunkId) return
+    const expected = last.chunkIndex
+    if (expected == null || vespaChunkId !== expected) {
+      if (
+        debug &&
+        vespaChunkId &&
+        expected &&
+        vespaChunkId !== expected
+      ) {
+        console.warn(
+          "[useScopedFind] Vespa chunk id mismatch; using query-based keyword fallback",
+          { vespaChunkId, expected },
+        )
+      }
+      return
+    }
+    void highlightText(
+      last.text,
+      last.chunkIndex,
+      last.pageIndex,
+      true,
+      last.queryText,
+    )
+  }, [vespaTokensKey, vespaChunkId, documentId, highlightText, debug])
 
   const scrollToMatch = useCallback(
     (matchIndex: number = 0) => {

@@ -26,6 +26,8 @@ import {
   GetDriveItem,
   GetDriveItemsByDocIds,
   handleAttachmentDeleteSchema,
+  HighlightSearchApi,
+  highlightSearchSchema,
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
 import {
@@ -1780,6 +1782,11 @@ export const AppRoutes = app
     EnhancedMessageFeedbackApi,
   )
   .get("/search", zValidator("query", searchSchema), SearchApi)
+  .post(
+    "/highlight/search",
+    zValidator("json", highlightSearchSchema),
+    HighlightSearchApi,
+  )
   .get(
     "/search/knowledge-base",
     zValidator("query", searchKnowledgeBaseFilesSchema),

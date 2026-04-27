@@ -19,10 +19,20 @@ export interface Citation {
   clId?: string
 }
 
+/** Ground truth for which marker was clicked (react-markdown HAST `position.start.offset`). */
+export type CitationLinkClickCtx = {
+  sourceOffset?: number
+}
+
 export const createCitationLink =
   (
     citations: Citation[] = [],
-    onCitationClick?: (citation: Citation, chunkIndex?: number) => void,
+    onCitationClick?: (
+      citation: Citation,
+      chunkIndex?: number,
+      fromSources?: boolean,
+      ctx?: CitationLinkClickCtx,
+    ) => void,
     showTooltip: boolean = true,
     globalChunkIndexMap: Map<string, number> = new Map(),
     globalCount: number = 0,
@@ -30,10 +40,12 @@ export const createCitationLink =
   ({
     href,
     children,
+    node,
     ...linkProps
   }: {
     href?: string
     children?: React.ReactNode
+    node?: { position?: { start?: { offset?: number } } }
     [key: string]: any
   }) => {
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)
@@ -58,12 +70,12 @@ export const createCitationLink =
         chunkIndex = Math.max(chunkIndex - 1, 0)
       }
 
-     /* 
-      * showTooltip is true meaning normal chat.tsx which needs citations of multiple docs ex: 1.1, 1.2, 2.1 etc. 
-      * If false, it means citation link is being rendered in a context where only one doc is being cited (ex: document chat) and 
-      * we can just show incremental numbers like 1, 2, 3 for chunks without the citation index prefix.
-      */
-      if(showTooltip) {
+      /*
+       * showTooltip is true meaning normal chat.tsx which needs citations of multiple docs ex: 1.1, 1.2, 2.1 etc.
+       * If false, it means citation link is being rendered in a context where only one doc is being cited (ex: document chat) and
+       * we can just show incremental numbers like 1, 2, 3 for chunks without the citation index prefix.
+       */
+      if (showTooltip) {
         if (!globalChunkIndexMap.has(`${citationIndex}_${-1}`)) {
           globalChunkIndexMap.set(`${citationIndex}_${-1}`, 0)
         }
@@ -73,18 +85,41 @@ export const createCitationLink =
           globalCount = globalCount + 1
           globalChunkIndexMap.set(`${citationIndex}_${-1}`, globalCount)
         }
-        const displayedIndex = globalChunkIndexMap.get(`${citationIndex}_${chunkIndex}`)!
+        const displayedIndex = globalChunkIndexMap.get(
+          `${citationIndex}_${chunkIndex}`,
+        )!
         children = `${citationIndex + 1}.${displayedIndex}`
       } else {
         if (!globalChunkIndexMap.has(`${citationIndex}_${chunkIndex}`)) {
           globalCount = globalCount + 1
           globalChunkIndexMap.set(`${citationIndex}_${chunkIndex}`, globalCount)
         }
-        children = globalChunkIndexMap.get(`${citationIndex}_${chunkIndex}`)!.toString()
+        children = globalChunkIndexMap
+          .get(`${citationIndex}_${chunkIndex}`)!
+          .toString()
       }
     }
 
     const isAttachmentLink = citation && citation.app === "attachment"
+
+    const isCitationPillTarget =
+      !!citation && !!((citation.clId && citation.itemId) || isAttachmentLink)
+    const sourceOffset = node?.position?.start?.offset
+
+    const emitCitationPillClick = () => {
+      if (!onCitationClick || !citation) return
+      const idx = citation.title.startsWith("Database:")
+        ? undefined
+        : chunkIndex
+      onCitationClick(citation, idx, false, {
+        sourceOffset:
+          isCitationPillTarget &&
+          chunkIndex !== undefined &&
+          typeof sourceOffset === "number"
+            ? sourceOffset
+            : undefined,
+      })
+    }
 
     // Delegated agent synthetic docs: open in-app viewer (authFetch), not a new tab to /api/...
     const isAgentDelegatedCitation =
@@ -181,9 +216,7 @@ export const createCitationLink =
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  if (onCitationClick) {
-                    onCitationClick(citation, citation.title.startsWith('Database:')? undefined: chunkIndex)
-                  }
+                  emitCitationPillClick()
                   setIsTooltipOpen(false)
                 }}
               >
@@ -205,9 +238,7 @@ export const createCitationLink =
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    if (onCitationClick) {
-                      onCitationClick(citation, citation.title.startsWith('Database:')? undefined: chunkIndex)
-                    }
+                    emitCitationPillClick()
                     setIsTooltipOpen(false)
                   }}
                 >
@@ -241,12 +272,13 @@ export const createCitationLink =
                   </div>
 
                   {/* Content */}
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="font-medium text-sm text-gray-900 dark:text-gray-100 leading-tight truncate">
                       {citation.title.split("/").pop() || "Untitled Document"}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-tight truncate">
-                      {citation.title.replace(/[^/]*$/, "") || (isAttachmentLink ? "attachment" : "No file name")}
+                      {citation.title.replace(/[^/]*$/, "") ||
+                        (isAttachmentLink ? "attachment" : "No file name")}
                     </div>
                   </div>
                 </div>

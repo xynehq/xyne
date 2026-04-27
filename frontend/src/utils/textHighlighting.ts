@@ -6,6 +6,10 @@ export interface HighlightMatch {
   length: number
 }
 
+export interface KeywordMatch extends HighlightMatch {
+  type: "keyword"
+}
+
 export interface HighlightResult {
   success: boolean
   matches?: HighlightMatch[]
@@ -13,7 +17,7 @@ export interface HighlightResult {
 }
 
 // Custom tokenization with regex and stopword removal using stopword library
-class TextTokenizer {
+export class TextTokenizer {
   public static tokenize(text: string, caseSensitive: boolean = false): string[] {
     const normalized = caseSensitive ? text : text.toLowerCase();
     
@@ -237,6 +241,112 @@ const mergeCloseMatches = (matches: Array<{
   return merged;
 };
 
+/** Collapses whitespace / markdown noise for chunk matching (same rules as server). */
+function normalizeTextForChunking(text: string): string {
+  return text
+    .replace(/[-*•]\s+/g, "") // strip list bullets
+    .replace(/^#+\s+/gm, "") // strip markdown headers
+    .replace(/^\s+/gm, "") // strip leading whitespace/indentation from each line
+    .replace(/\s+/g, " ") // collapse all whitespace to single spaces
+    .replace(/\t/g, " ") // convert tabs to spaces
+    .replace(/\n\s*\n/g, "\n") // remove empty lines with whitespace
+    .trim()
+}
+
+/**
+ * Text normalization with index mapping back to original string indices.
+ * Must stay in sync with findHighlightMatches / chunk highlighting.
+ */
+export function normalizeTextWithMap(s: string): { norm: string; map: number[] } {
+  const map: number[] = []
+  const out: string[] = []
+  let i = 0
+
+  while (i < s.length) {
+    const ch = s[i]
+
+    if (/\s/.test(ch)) {
+      let j = i + 1
+      while (j < s.length && /\s/.test(s[j])) j++
+
+      if (out.length > 0) {
+        out.push(" ")
+        map.push(j - 1)
+      }
+      i = j
+    } else if (ch === "-" || ch === "*" || ch === "•") {
+      let j = i + 1
+      while (j < s.length && /\s/.test(s[j])) j++
+      if (j > i + 1) {
+        i = j
+        continue
+      }
+      out.push(ch)
+      map.push(i)
+      i++
+    } else if (ch === "#") {
+      let j = i + 1
+      while (j < s.length && s[j] === "#") j++
+      if (i === 0 || s[i - 1] === "\n") {
+        while (j < s.length && /\s/.test(s[j])) j++
+        i = j
+        continue
+      }
+      out.push(ch)
+      map.push(i)
+      i++
+    } else if (ch === "\t") {
+      out.push(" ")
+      map.push(i)
+      i++
+    } else if (ch === "\n") {
+      let j = i + 1
+      while (j < s.length && /\s/.test(s[j])) j++
+      if (j < s.length && s[j] === "\n") {
+        i = j
+        continue
+      }
+      out.push(ch)
+      map.push(i)
+      i++
+    } else {
+      out.push(ch)
+      map.push(i)
+      i++
+    }
+  }
+
+  if (out.length && out[0] === " ") {
+    out.shift()
+    map.shift()
+  }
+  if (out.length && out[out.length - 1] === " ") {
+    out.pop()
+    map.pop()
+  }
+
+  return { norm: out.join(""), map }
+}
+
+/**
+ * Maps an original [origStart, origEnd) span to [lo, hi) indices in normalized space
+ * (same `map` as normalizeTextWithMap). `hi` is exclusive.
+ */
+function normalizedBoundsForOrigSpan(
+  map: number[],
+  origStart: number,
+  origEndExclusive: number,
+): { lo: number; hi: number } {
+  if (map.length === 0 || origStart >= origEndExclusive) {
+    return { lo: 0, hi: 0 }
+  }
+  let lo = 0
+  while (lo < map.length && map[lo] < origStart) lo++
+  let hi = lo
+  while (hi < map.length && map[hi] < origEndExclusive) hi++
+  return { lo, hi }
+}
+
 /**
  * Find highlight matches - exact port from server API
  */
@@ -248,115 +358,10 @@ export const findHighlightMatches = (
   try {
     const { caseSensitive = false } = options;
 
-    // Normalize text for matching
-    const normalizeText = (text: string) => {
-      return text
-        .replace(/[-*•]\s+/g, "")      // strip list bullets
-        .replace(/^#+\s+/gm, "")       // strip markdown headers
-        .replace(/^\s+/gm, "")         // strip leading whitespace/indentation from each line
-        .replace(/\s+/g, " ")          // collapse all whitespace to single spaces
-        .replace(/\t/g, " ")           // convert tabs to spaces
-        .replace(/\n\s*\n/g, "\n")     // remove empty lines with whitespace
-        .trim();
-    };
-
-    // Text normalization function with index mapping
-    const normalizeTextWithMap = (s: string) => {
-      const map: number[] = [];
-      const out: string[] = [];
-      let i = 0;
-      
-      while (i < s.length) {
-        const ch = s[i];
-        
-        // Handle whitespace sequences
-        if (/\s/.test(ch)) {
-          let j = i + 1;
-          while (j < s.length && /\s/.test(s[j])) j++;
-          
-          // Only add a single space if we have content before it
-          if (out.length > 0) {
-            out.push(" ");
-            map.push(j - 1);
-          }
-          i = j;
-        } 
-        // Handle list bullets and markdown headers
-        else if (ch === '-' || ch === '*' || ch === '•') {
-          // Check if this is a list bullet followed by whitespace
-          let j = i + 1;
-          while (j < s.length && /\s/.test(s[j])) j++;
-          if (j > i + 1) {
-            // Skip the bullet and whitespace
-            i = j;
-            continue;
-          }
-          // Not a list bullet, treat as normal character
-          out.push(ch);
-          map.push(i);
-          i++;
-        }
-        // Handle markdown headers (#)
-        else if (ch === '#') {
-          let j = i + 1;
-          while (j < s.length && s[j] === '#') j++;
-          // Check if this is at start of line and followed by whitespace
-          if (i === 0 || s[i-1] === '\n') {
-            while (j < s.length && /\s/.test(s[j])) j++;
-            // Skip the header markers and whitespace
-            i = j;
-            continue;
-          }
-          // Not a header, treat as normal character
-          out.push(ch);
-          map.push(i);
-          i++;
-        }
-        // Handle tabs
-        else if (ch === '\t') {
-          out.push(' ');
-          map.push(i);
-          i++;
-        }
-        // Handle empty lines with whitespace
-        else if (ch === '\n') {
-          let j = i + 1;
-          while (j < s.length && /\s/.test(s[j])) j++;
-          if (j < s.length && s[j] === '\n') {
-            // This is an empty line with whitespace, skip it
-            i = j;
-            continue;
-          }
-          // Normal newline
-          out.push(ch);
-          map.push(i);
-          i++;
-        }
-        // Normal character
-        else {
-          out.push(ch);
-          map.push(i);
-          i++;
-        }
-      }
-      
-      // Remove leading and trailing spaces
-      if (out.length && out[0] === " ") { 
-        out.shift(); 
-        map.shift(); 
-      }
-      if (out.length && out[out.length - 1] === " ") { 
-        out.pop(); 
-        map.pop(); 
-      }
-      
-      return { norm: out.join(""), map };
-    };
-
     const lowerCaseDoc = caseSensitive ? documentContent : documentContent.toLowerCase();
     const lowerCaseChunk = caseSensitive ? chunkText : chunkText.toLowerCase();
     const { norm: normalizedDoc, map: normalizedMap } = normalizeTextWithMap(lowerCaseDoc);
-    const normalizedChunk = normalizeText(lowerCaseChunk);
+    const normalizedChunk = normalizeTextForChunking(lowerCaseChunk);
 
     // Step 1: Tokenize query text (chunkText) with custom tokenizer
     const queryTokens = TextTokenizer.tokenize(normalizedChunk, caseSensitive);
@@ -447,3 +452,292 @@ export const findHighlightMatches = (
     };
   }
 };
+
+/**
+ * Client-side keyword highlights: tokenize query (stopwords stripped), find occurrences
+ * only inside each chunk span in normalized space, then map back to original indices
+ * (same normalization + map as findHighlightMatches).
+ */
+export function getKeywordMatches(
+  queryText: string,
+  documentText: string,
+  chunkMatches: HighlightMatch[],
+  maxKeywords: number = 5,
+  options: { caseSensitive?: boolean } = {},
+): KeywordMatch[] {
+  const { caseSensitive = false } = options
+  if (!queryText?.trim() || !chunkMatches.length || !documentText) {
+    return []
+  }
+
+  const queryForTokens = caseSensitive ? queryText : queryText.toLowerCase()
+  const tokens = TextTokenizer.tokenize(queryForTokens, caseSensitive)
+  if (tokens.length === 0) return []
+
+  return getKeywordMatchesFromTokens(
+    tokens,
+    documentText,
+    chunkMatches,
+    maxKeywords,
+    options,
+  )
+}
+
+/**
+ * Get top N longest unique tokens for better keyword matching
+ * Longer tokens are more specific and provide better highlights
+ * 
+ * @param tokens - Array of tokens to filter
+ * @param maxCount - Maximum number of tokens to return (default: 5)
+ * @returns Array of top tokens sorted by length
+ */
+export function getTopUniqueTokens(tokens: string[], maxCount: number = 5): string[] {
+  // Remove duplicates while preserving order
+  const unique = [...new Set(tokens)]
+
+  // Sort by length (longest first) - longer tokens = more specific
+  const sorted = unique.sort((a, b) => b.length - a.length)
+
+  // Return top N
+  return sorted.slice(0, maxCount)
+}
+
+/**
+ * Client-side keyword highlights using pre-tokenized keywords (from Vespa highlights)
+ * instead of extracting tokens from query text.
+ * 
+ * This is the core function for Vespa-driven keyword highlighting. It accepts
+ * pre-extracted and normalized tokens (e.g., from Vespa <hi> tags) and finds
+ * their occurrences within chunk spans.
+ * 
+ * Key differences from getKeywordMatches:
+ * - Accepts pre-tokenized keywords instead of raw query text
+ * - Skips the tokenization step
+ * - Ideal for using Vespa semantic highlights as keywords
+ * 
+ * @param tokens - Pre-extracted tokens to search for (already normalized)
+ * @param documentText - Full document text to search within
+ * @param chunkMatches - Chunk boundary matches to constrain search
+ * @param maxKeywords - Maximum number of keyword matches to return (default: 5)
+ * @param options - Configuration options
+ * @returns Array of keyword matches within chunk boundaries
+ * 
+ * @example
+ * ```ts
+ * // Using Vespa highlight tokens
+ * const vespaHighlights = ["authentication flow", "access token", "oauth"]
+ * const tokens = vespaHighlights.flatMap(h => TextTokenizer.tokenize(h))
+ * const topTokens = getTopUniqueTokens(tokens, 5)
+ * 
+ * const keywordMatches = getKeywordMatchesFromTokens(
+ *   topTokens,
+ *   documentText,
+ *   chunkMatches,
+ *   5,
+ *   { caseSensitive: false }
+ * )
+ * ```
+ */
+export function getKeywordMatchesFromTokens(
+  tokens: string[],
+  documentText: string,
+  chunkMatches: HighlightMatch[],
+  maxKeywords: number = 5,
+  options: { caseSensitive?: boolean } = {},
+): KeywordMatch[] {
+  const { caseSensitive = false } = options
+  
+  if (!tokens.length || !chunkMatches.length || !documentText) {
+    return []
+  }
+
+  const docForNorm = caseSensitive 
+    ? documentText 
+    : documentText.toLowerCase()
+  const { norm: normalizedDoc, map: normalizedMap } = normalizeTextWithMap(docForNorm)
+
+  // Use provided tokens directly - skip tokenization step
+  const ac = new AhoCorasick(tokens)
+  const candidates: { start: number; end: number; len: number }[] = []
+
+  for (const chunk of chunkMatches) {
+    const { lo, hi } = normalizedBoundsForOrigSpan(
+      normalizedMap,
+      chunk.startIndex,
+      chunk.endIndex,
+    )
+    if (lo >= hi) continue
+
+    const slice = normalizedDoc.slice(lo, hi)
+    if (slice.length === 0) continue
+
+    const searchResults = ac.search(slice)
+    
+    for (let ti = 0; ti < tokens.length; ti++) {
+      const token = tokens[ti]
+      if (token.length < 2) continue
+      const positions = searchResults.get(ti) || []
+      for (const localPos of positions) {
+        const globalNormStart = lo + localPos
+        const globalNormEnd = globalNormStart + token.length
+        if (globalNormEnd > hi) continue
+
+        const startOrig = normalizedMap[globalNormStart] ?? chunk.startIndex
+        const lastNorm = globalNormEnd - 1
+        const lastCharOrig = normalizedMap[lastNorm] ?? startOrig
+        const endOrig = lastCharOrig + 1
+
+        if (
+          startOrig >= chunk.startIndex &&
+          endOrig <= chunk.endIndex &&
+          startOrig < endOrig
+        ) {
+          candidates.push({
+            start: startOrig,
+            end: endOrig,
+            len: endOrig - startOrig,
+          })
+        }
+      }
+    }
+  }
+
+  candidates.sort((a, b) => b.len - a.len || a.start - b.start)
+
+  const overlaps = (
+    a: { start: number; end: number },
+    b: { start: number; end: number },
+  ) => !(a.end <= b.start || b.end <= a.start)
+
+  const selected: KeywordMatch[] = []
+  for (const c of candidates) {
+    if (selected.length >= maxKeywords) break
+    if (
+      selected.some((s) =>
+        overlaps(
+          { start: s.startIndex, end: s.endIndex },
+          c,
+        ),
+      )
+    )
+      continue
+    selected.push({
+      startIndex: c.start,
+      endIndex: c.end,
+      length: c.len,
+      type: "keyword",
+    })
+  }
+
+  selected.sort((a, b) => a.startIndex - b.startIndex)
+  return selected
+}
+
+/**
+ * Check if two keyword matches are approximately the same (within 5 characters)
+ * Used for deduplicating Vespa and fallback matches
+ */
+function areApproximatelySame(
+  a: KeywordMatch,
+  b: KeywordMatch,
+  threshold: number = 5,
+): boolean {
+  return (
+    Math.abs(a.startIndex - b.startIndex) < threshold &&
+    Math.abs(a.endIndex - b.endIndex) < threshold
+  )
+}
+
+/**
+ * Hybrid keyword matching: prefers Vespa tokens, fills gaps with fallback query matches
+ * 
+ * This function combines Vespa semantic highlights with fallback keyword matching:
+ * 1. Uses Vespa tokens as primary source (high-quality semantic matches)
+ * 2. Falls back to query tokens to fill remaining slots
+ * 3. Deduplicates matches that cover approximately the same region
+ * 4. Ensures non-overlapping, well-distributed highlights
+ * 
+ * @param vespaTokens - Vespa-derived tokens (semantic highlights)
+ * @param queryText - Original query text (for fallback matching)
+ * @param documentText - Full document text to search within
+ * @param chunkMatches - Chunk boundary matches to constrain search
+ * @param maxKeywords - Maximum number of keyword matches to return (default: 5)
+ * @param options - Configuration options
+ * @returns Array of combined keyword matches, sorted by position
+ */
+export function getHybridKeywordMatches(
+  vespaTokens: string[],
+  queryText: string,
+  documentText: string,
+  chunkMatches: HighlightMatch[],
+  maxKeywords: number = 5,
+  options: { caseSensitive?: boolean; minTokenLength?: number; dedupeThreshold?: number } = {},
+): KeywordMatch[] {
+  const { caseSensitive = false, minTokenLength = 3, dedupeThreshold = 5 } = options
+
+  // Edge case: no chunk matches
+  if (!chunkMatches.length || !documentText) {
+    return []
+  }
+
+  // Step 1: Filter Vespa tokens (remove short ones)
+  const filteredVespaTokens = vespaTokens.filter(
+    (token) => token.length >= minTokenLength,
+  )
+
+  // Step 2: Get Vespa matches (prioritized)
+  let vespaMatches: KeywordMatch[] = []
+  if (filteredVespaTokens.length > 0) {
+    vespaMatches = getKeywordMatchesFromTokens(
+      filteredVespaTokens,
+      documentText,
+      chunkMatches,
+      maxKeywords,
+      { caseSensitive },
+    )
+  }
+
+  // Step 3: If we have enough Vespa matches, return them
+  if (vespaMatches.length >= maxKeywords) {
+    return vespaMatches.slice(0, maxKeywords)
+  }
+
+  // Step 4: Get fallback matches from query text to fill remaining slots
+  let fallbackMatches: KeywordMatch[] = []
+  if (queryText?.trim()) {
+    fallbackMatches = getKeywordMatches(
+      queryText,
+      documentText,
+      chunkMatches,
+      maxKeywords,
+      { caseSensitive },
+    )
+  }
+
+  // Step 6: Combine Vespa + fallback, removing duplicates and overlaps
+  const combined = [...vespaMatches]
+
+  for (const fm of fallbackMatches) {
+    if (combined.length >= maxKeywords) break
+
+    // Skip if this fallback match is approximately the same as an existing match
+    const isDuplicate = combined.some((cm) =>
+      areApproximatelySame(cm, fm, dedupeThreshold),
+    )
+    if (isDuplicate) continue
+
+    // Skip if this fallback overlaps with an existing match
+    const hasOverlap = combined.some(
+      (cm) =>
+        !(fm.endIndex <= cm.startIndex || cm.endIndex <= fm.startIndex),
+    )
+    if (hasOverlap) continue
+
+    combined.push(fm)
+  }
+
+  // Step 7: Sort by position for consistent rendering
+  combined.sort((a, b) => a.startIndex - b.startIndex)
+
+  return combined
+}

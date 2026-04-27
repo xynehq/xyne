@@ -16,6 +16,7 @@ import { DocumentOperations } from "@/contexts/DocumentOperationsContext"
 import TxtViewer from "./TxtViewer"
 import { useScopedFind } from "@/hooks/useScopedFind"
 import JsonViewer from "./JsonViewer"
+import useVespaHighlight from "@/hooks/useVespaHighlight"
 
 interface CitationPreviewProps {
   citation: Citation | null
@@ -27,6 +28,10 @@ interface CitationPreviewProps {
   onDocumentLoaded?: () => void
   /** 0-based page/sheet index to open at (from chunk API). PDF uses as initialPage (1-based), Excel as initial sheet. */
   initialPageIndex?: number | null
+  /** Sentence-level query for Vespa highlight search (citation click) */
+  highlightQueryText?: string
+  /** Current chunk (0-based) aligned with Vespa chunk id `${docId}_${index}` */
+  selectedChunkIndex?: number | null
 }
 
 function isAgentDocumentCitation(c: Citation | null): boolean {
@@ -63,11 +68,12 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   documentOperationsRef,
   onDocumentLoaded,
   initialPageIndex,
+  highlightQueryText,
+  selectedChunkIndex: selectedChunkIndexProp,
 }) => {
   const [documentContent, setDocumentContent] = useState<Blob | null>(null)
-  const [agentDocument, setAgentDocument] = useState<AgentDocumentPayload | null>(
-    null,
-  )
+  const [agentDocument, setAgentDocument] =
+    useState<AgentDocumentPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -101,9 +107,13 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
           }
           const jsonData = await response.json()
           if (signal.aborted) return
-          const validationResult = AgentDocumentPayloadSchema.safeParse(jsonData)
+          const validationResult =
+            AgentDocumentPayloadSchema.safeParse(jsonData)
           if (!validationResult.success) {
-            console.error("API response validation error:", validationResult.error)
+            console.error(
+              "API response validation error:",
+              validationResult.error,
+            )
             throw new Error("Invalid document data received from server.")
           }
           if (signal.aborted) return
@@ -182,10 +192,34 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     }
   }, [citation, isOpen])
 
+  const docIdForHighlight = citation?.docId ?? ""
+  const vespaChunkKey: number | undefined =
+    highlightQueryText?.trim() &&
+    docIdForHighlight &&
+    selectedChunkIndexProp !== null &&
+    selectedChunkIndexProp !== undefined
+      ? selectedChunkIndexProp
+      : undefined
+
+  const vespaHighlight = useVespaHighlight({
+    query: highlightQueryText ?? "",
+    docId: docIdForHighlight,
+    chunkId: vespaChunkKey,
+    enabled:
+      isOpen &&
+      !!highlightQueryText?.trim() &&
+      !!docIdForHighlight &&
+      selectedChunkIndexProp !== null &&
+      selectedChunkIndexProp !== undefined,
+    caseSensitive: false,
+  })
+
   const { highlightText, clearHighlights, scrollToMatch } = useScopedFind(
     containerRef,
     {
       documentId: citation?.itemId ?? citation?.docId ?? "",
+      vespaKeywordTokens: vespaHighlight.tokens,
+      vespaChunkId: vespaHighlight.chunk?.id ?? null,
     },
   )
 
@@ -197,6 +231,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
         chunkIndex: number,
         pageIndex?: number,
         waitForTextLayer: boolean = false,
+        queryText?: string,
       ) => {
         if (!containerRef.current) {
           return false
@@ -208,6 +243,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
             chunkIndex,
             pageIndex,
             waitForTextLayer,
+            queryText,
           )
           return success
         } catch (error) {
@@ -293,9 +329,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     })
 
     const initialPageOrSheetIndex =
-      initialPageIndex != null && initialPageIndex >= 0
-        ? initialPageIndex
-        : 0
+      initialPageIndex != null && initialPageIndex >= 0 ? initialPageIndex : 0
 
     switch (extension) {
       case "pdf":
@@ -473,7 +507,9 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
                   ? agentDocument.agentName
                   : citation?.title?.split("/").pop() || "Document Preview"}
               </h3>
-              {citation && isAgentDocumentCitation(citation) && agentDocument ? (
+              {citation &&
+              isAgentDocumentCitation(citation) &&
+              agentDocument ? (
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                   {new Date(agentDocument.createdAt).toLocaleString()}
                 </p>

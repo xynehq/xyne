@@ -275,6 +275,7 @@ const DocumentViewerContainer = memo(
           text: string,
           chunkIndex: number,
           pageIndex?: number,
+          waitForTextLayer?: boolean,
         ) => {
           if (!containerRef.current) {
             const container = document.querySelector(
@@ -288,7 +289,12 @@ const DocumentViewerContainer = memo(
           }
 
           try {
-            const success = await highlightText(text, chunkIndex, pageIndex)
+            const success = await highlightText(
+              text,
+              chunkIndex,
+              pageIndex,
+              waitForTextLayer,
+            )
             return success
           } catch (error) {
             console.error("Error calling highlightText:", error)
@@ -1503,6 +1509,7 @@ function KnowledgeManagementContent() {
     newChunkIndex: number | null,
     documentId: string,
     docId: string,
+    highlightQueryText?: string,
   ) => {
     if (!documentId) {
       console.error("handleChunkIndexChange called without documentId")
@@ -1547,6 +1554,8 @@ function KnowledgeManagementContent() {
                 chunkContent.chunkContent,
                 newChunkIndex,
                 chunkContent.pageIndex,
+                undefined,
+                highlightQueryText,
               )
             } catch (error) {
               console.error(

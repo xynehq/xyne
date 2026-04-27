@@ -13,6 +13,7 @@ export interface DocumentOperations {
     chunkIndex: number,
     pageIndex?: number,
     waitForTextLayer?: boolean,
+    queryText?: string,
   ) => Promise<boolean>
   clearHighlights?: () => void
   scrollToMatch?: (index: number) => boolean
@@ -84,6 +85,7 @@ export const withDocumentOperations = <P extends object>(
           chunkIndex: number,
           pageIndex?: number,
           waitForTextLayer: boolean = false,
+          queryText?: string,
         ) => {
           if (documentOperationsRef.current?.highlightText) {
             return await documentOperationsRef.current.highlightText(
@@ -91,6 +93,7 @@ export const withDocumentOperations = <P extends object>(
               chunkIndex,
               pageIndex,
               waitForTextLayer,
+              queryText,
             )
           }
           return false

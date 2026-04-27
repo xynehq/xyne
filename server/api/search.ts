@@ -898,3 +898,6 @@ export const GetDriveItemsByDocIds = async (c: Context) => {
     })
   }
 }
+
+// Re-export highlight search from its own module
+export { HighlightSearchApi, highlightSearchSchema } from "./highlightSearch"

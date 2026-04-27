@@ -3,6 +3,7 @@ import React, {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
   Fragment,
 } from "react"
 import DOMPurify from "dompurify"
@@ -36,8 +37,13 @@ import {
   processMessage,
   createTableComponents,
 } from "@/utils/chatUtils.tsx"
+import { extractSentenceAroundCitation } from "@/utils/keywordHighlightQuery"
 import { ImageCitationComponent } from "../routes/_authenticated/chat"
-import { createCitationLink, Citation } from "@/components/CitationLink"
+import {
+  createCitationLink,
+  Citation,
+  type CitationLinkClickCtx,
+} from "@/components/CitationLink"
 import Retry from "@/assets/retry.svg"
 import { PersistentMap } from "@/utils/chatUtils.tsx"
 import { MermaidCodeWrapper } from "@/hooks/useMermaidRenderer"
@@ -54,7 +60,12 @@ interface DocumentChatProps {
   documentName: string
   initialChatId?: string | null
   onChatCreated?: (chatId: string) => void
-  onChunkIndexChange?: (chunkIndex: number | null, itemId: string, docId: string) => void
+  onChunkIndexChange?: (
+    chunkIndex: number | null,
+    itemId: string,
+    docId: string,
+    highlightQueryText?: string,
+  ) => void
   uploadStatus?: UploadStatus
   isKnowledgeBaseChat?: boolean 
 }
@@ -94,13 +105,48 @@ const ChatMessage = React.memo(
     attachments?: AttachmentMetadata[]
     citations?: Citation[]
     citationMap?: Record<number, number>
-    onCitationClick?: (citation: Citation, chunkIndex?: number) => void
+    onCitationClick?: (
+      citation: Citation,
+      chunkIndex?: number,
+      fromSources?: boolean,
+      ctx?: { highlightQueryText?: string },
+    ) => void
     disableRetry?: boolean
   }) => {
     const { theme } = useTheme()
     const [isCopied, setIsCopied] = useState(false)
 
     const citationUrls = citations?.map((c: Citation) => c.url)
+    const citationMdSource = useMemo(
+      () =>
+        processMessage(message, citationMap, citationUrls ?? [], citations),
+      [message, citationMap, citationUrls, citations],
+    )
+
+    const handleCitationWithContext = useCallback(
+      (
+        citation: Citation,
+        chunkIndex?: number,
+        fromSources?: boolean,
+        linkCtx?: CitationLinkClickCtx,
+      ) => {
+        if (!onCitationClick) return
+        const sentence = extractSentenceAroundCitation(
+          citationMdSource,
+          citation,
+          citations,
+          chunkIndex,
+          linkCtx?.sourceOffset,
+        )
+        const highlightQueryText =
+          sentence?.trim() ||
+          undefined
+        onCitationClick(citation, chunkIndex, fromSources, {
+          highlightQueryText,
+        })
+      },
+      [onCitationClick, citationMdSource, citations],
+    )
 
     return (
       <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">
@@ -151,12 +197,7 @@ const ChatMessage = React.memo(
                   ) : message !== "" ? (
                     <MarkdownPreview
                       key={`markdown-${messageId || "unknown"}`}
-                      source={processMessage(
-                        message,
-                        citationMap,
-                        citationUrls,
-                        citations,
-                      )}
+                      source={citationMdSource}
                       wrapperElement={{
                         "data-color-mode": theme,
                       }}
@@ -172,8 +213,10 @@ const ChatMessage = React.memo(
                       components={{
                         a: createCitationLink(
                           citations,
-                          onCitationClick,
+                          handleCitationWithContext,
                           false,
+                          new Map(),
+                          0,
                         ),
                         code: MermaidCodeWrapper,
                         img: ({ src, alt, ...props }: any) => {
@@ -361,7 +404,12 @@ const MessagesArea = React.memo(
     dots: string
     feedbackMap: Record<string, MessageFeedback | null>
     handleFeedback: (messageId: string, feedback: MessageFeedback) => void
-    handleCitationClick: (citation: Citation, chunkIndex?: number) => void
+    handleCitationClick: (
+      citation: Citation,
+      chunkIndex?: number,
+      fromSources?: boolean,
+      ctx?: { highlightQueryText?: string },
+    ) => void
     disableRetry: boolean
     isStreaming: boolean
   }) => (
@@ -800,8 +848,18 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
     }
   }
 
-  const handleCitationClick = (citation: Citation, chunkIndex?: number) => {
-    onChunkIndexChange?.(chunkIndex ?? null, citation.itemId ?? documentId, citation.docId)
+  const handleCitationClick = (
+    citation: Citation,
+    chunkIndex?: number,
+    _fromSources?: boolean,
+    ctx?: { highlightQueryText?: string },
+  ) => {
+    onChunkIndexChange?.(
+      chunkIndex ?? null,
+      citation.itemId ?? documentId,
+      citation.docId,
+      ctx?.highlightQueryText,
+    )
   }
 
   // Populate feedbackMap from loaded messages
