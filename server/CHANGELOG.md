@@ -1,3 +1,10 @@
+# [3.49.0](https://github.com/xynehq/xyne/compare/v3.48.0...v3.49.0) (2026-04-27)
+
+
+### Features
+
+* add LiteLLM model catalog config ([#1316](https://github.com/xynehq/xyne/issues/1316)) ([ab66014](https://github.com/xynehq/xyne/commit/ab6601445f9eac6fa3d667ac02d9901af955bf9f))
+
 # [3.48.0](https://github.com/xynehq/xyne/compare/v3.47.6...v3.48.0) (2026-04-17)
 
 
