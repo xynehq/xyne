@@ -102,6 +102,7 @@ if [ "$NO_EXPORT" = "false" ]; then
     cp promtail-config.yaml "$EXPORT_DIR/"
     cp deploy.sh "$EXPORT_DIR/"
     [[ -d "grafana" ]] && cp -r grafana "$EXPORT_DIR/"
+    [[ -d "config" ]] && cp -r config "$EXPORT_DIR/"
     [[ -f "../../server/.env" ]] && cp "../../server/.env" "$EXPORT_DIR/.env.example"
 
     # Create import script

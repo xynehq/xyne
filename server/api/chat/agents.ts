@@ -92,7 +92,11 @@ import {
   safeDecodeURIComponent,
 } from "./utils"
 import config from "@/config"
-import { getModelValueFromLabel, getActiveProvider, MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
+import {
+  getActiveProvider,
+  getModelConfiguration,
+  getModelValueFromLabel,
+} from "@/ai/modelConfig"
 import {
   buildUserQuery,
   isContextSelected,
@@ -113,6 +117,10 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
+const modelSupportsReasoning = (modelId: string | null | undefined) =>
+  (getModelConfiguration(modelId || config.defaultBestModel)?.reasoning ??
+    true) === true
 
 
 // Create mock agent from form data for testing
@@ -1159,6 +1167,12 @@ export const AgentMessageApi = async (c: Context) => {
           loggerWithChild({ email: email }).info(
             `Using consumer model ID "${modelId}" directly as it exists in Models enum`,
           )
+        } else if (getModelConfiguration(modelId)) {
+          actualModelId = modelId
+          isUsingUserPassedModel = true
+          loggerWithChild({ email: email }).info(
+            `Using configured consumer model ID "${modelId}" directly from model catalog`,
+          )
         } else {
           consumerSelectedModelId = config.consumerAgentDefaultModel
           actualModelId = consumerSelectedModelId
@@ -1612,7 +1626,7 @@ export const AgentMessageApi = async (c: Context) => {
               let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
-                userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[actualModelId as Models || config.defaultBestModel]?.reasoning ?? true) === true
+                userRequestsReasoningAndEnabled && modelSupportsReasoning(actualModelId)
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
@@ -1859,7 +1873,7 @@ export const AgentMessageApi = async (c: Context) => {
               let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
-                userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true
+                userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerGivenContextModelId)
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
@@ -2172,7 +2186,7 @@ export const AgentMessageApi = async (c: Context) => {
                     json: false,
                     agentPrompt: agentPromptForLLM,
                     reasoning:
-                      userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerAnswerOrSearchModelId as Models]?.reasoning ?? true) === true,
+                      userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerAnswerOrSearchModelId),
                     messages: limitedMessages,
                     agentWithNoIntegrations: true,
                   },
@@ -2188,7 +2202,7 @@ export const AgentMessageApi = async (c: Context) => {
                       stream: true,
                       json: true,
                       reasoning:
-                        userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerAnswerOrSearchModelId as Models]?.reasoning ?? true) === true,
+                        userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerAnswerOrSearchModelId),
                       messages: limitedMessages,
                       agentPrompt: agentPromptForLLM,
                     },
@@ -2231,7 +2245,7 @@ export const AgentMessageApi = async (c: Context) => {
 
               let thinking = ""
               let reasoning =
-                userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerAnswerOrSearchModelId as Models]?.reasoning ?? true) === true
+                userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerAnswerOrSearchModelId)
               let buffer = ""
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
@@ -2475,7 +2489,7 @@ export const AgentMessageApi = async (c: Context) => {
                       `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(fileIds)}`,
                     )
                     const allowedChunkCitations = fileIds.some((fileId) => fileId.startsWith("clf-")) || fileIds.some((fileId) => fileId.startsWith("attf_"))
-                    reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true
+                    reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerGivenContextModelId)
                     iterator = UnderstandMessageAndAnswerForGivenContext(
                       email,
                       ctx,
@@ -2502,7 +2516,7 @@ export const AgentMessageApi = async (c: Context) => {
 
                 // If no iterator was set above (non-file-context scenario), use the regular flow with the new classification
                 if (!iterator) {
-                  reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true
+                  reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerGivenContextModelId)
                   iterator = UnderstandMessageAndAnswer(
                     email,
                     ctx,
@@ -2963,7 +2977,7 @@ export const AgentMessageApi = async (c: Context) => {
             message,
             0.5,
             fileIds,
-            userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[consumerGivenContextModelId as Models]?.reasoning ?? true) === true,
+            userRequestsReasoningAndEnabled && modelSupportsReasoning(consumerGivenContextModelId),
             understandSpan,
             [],
             imageAttachmentFileIds,

@@ -1,7 +1,7 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import type { ConverseResponse, LLMProvider, ModelParams } from "@/ai/types"
-import { AIProviders, Models } from "@/ai/types"
-import { MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
+import { AIProviders } from "@/ai/types"
+import { getModelConfiguration } from "@/ai/modelConfig"
 import config from "@/config"
 import path from "path"
 import fs from "fs"
@@ -17,10 +17,10 @@ abstract class Provider implements LLMProvider {
   }
 
   getModelParams(params: ModelParams) {
-    // Look up the actual model name from MODEL_CONFIGURATIONS
+    // Look up the provider-facing model name from the merged model catalog.
     // This resolves enum values like "vertex-claude-sonnet-4" to actual API model names like "claude-sonnet-4@20250514"
     const modelConfig =
-      MODEL_CONFIGURATIONS[(params.modelId || defaultFastModel) as Models]
+      getModelConfiguration(params.modelId || defaultFastModel)
     const actualModelId = modelConfig?.actualName || params.modelId || defaultFastModel
     return {
       maxTokens: params.max_new_tokens || 1024 * 8,

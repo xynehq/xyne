@@ -1,6 +1,7 @@
 import { Models, AIProviders, ModelDisplayNames } from "@/ai/types"
 import config from "@/config"
 import type { ModelConfiguration } from "@/shared/types"
+import { getExternalModelConfigurations } from "@/ai/modelCatalog"
 
 export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   // AWS Bedrock - Claude Models
@@ -683,6 +684,40 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   },
 }
 
+let mergedModelConfigurationsCache: Record<string, ModelConfiguration> | null =
+  null
+let lastExternalConfigRef: Record<string, ModelConfiguration> | null = null
+
+export const getModelConfigurations = (): Record<
+  string,
+  ModelConfiguration
+> => {
+  const externalConfig = getExternalModelConfigurations()
+
+  if (
+    mergedModelConfigurationsCache &&
+    lastExternalConfigRef === externalConfig
+  ) {
+    return mergedModelConfigurationsCache
+  }
+
+  lastExternalConfigRef = externalConfig
+  mergedModelConfigurationsCache = {
+    ...MODEL_CONFIGURATIONS,
+    ...externalConfig,
+  }
+  return mergedModelConfigurationsCache
+}
+
+export const getModelConfiguration = (
+  modelId: string | null | undefined,
+): ModelConfiguration | null => {
+  if (!modelId) {
+    return null
+  }
+  return getModelConfigurations()[modelId] || null
+}
+
 // Model display name mappings - using the new enum-based approach
 export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   // Build from ModelDisplayNames enum
@@ -733,8 +768,8 @@ export const getModelValueFromLabel = (
     return null
   }
 
-  // First, try to find the model by matching labelName in MODEL_CONFIGURATIONS
-  const modelEntry = Object.entries(MODEL_CONFIGURATIONS).find(
+  // First, try to find the model by matching labelName in merged model configuration.
+  const modelEntry = Object.entries(getModelConfigurations()).find(
     ([modelKey, config]) => {
       const matches =
         config.labelName === label && (config.provider === activeProvider)
@@ -781,7 +816,7 @@ export const getModelValueFromLabel = (
 
 
 export const getActualNameFromEnum = (enumValue: string): string | null => {
-  const modelConfig = MODEL_CONFIGURATIONS[enumValue as Models]
+  const modelConfig = getModelConfiguration(enumValue)
   return modelConfig?.actualName || null
 }
 
