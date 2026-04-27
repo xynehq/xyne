@@ -364,8 +364,7 @@ const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
 const modelSupportsReasoning = (modelId: string | null | undefined) =>
-  (getModelConfiguration(modelId || config.defaultBestModel)?.reasoning ??
-    true) === true
+  getModelConfiguration(modelId || config.defaultBestModel)?.reasoning === true
 
 const logKnowledgeBaseScopeUsage = (
   email: string,

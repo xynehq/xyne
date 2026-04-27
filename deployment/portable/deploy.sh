@@ -292,7 +292,11 @@ load_env_file() {
 validate_litellm_model_catalog() {
     load_env_file
 
-    if [ "${LITELLM_MODEL_CONFIG_PATH:-}" = "/usr/src/app/server/config/litellm-models.json" ] && [ ! -f "./config/litellm-models.json" ]; then
+    local litellm_model_config_path_trimmed="${LITELLM_MODEL_CONFIG_PATH:-}"
+    litellm_model_config_path_trimmed="${litellm_model_config_path_trimmed#"${litellm_model_config_path_trimmed%%[![:space:]]*}"}"
+    litellm_model_config_path_trimmed="${litellm_model_config_path_trimmed%"${litellm_model_config_path_trimmed##*[![:space:]]}"}"
+
+    if [ "$litellm_model_config_path_trimmed" = "/usr/src/app/server/config/litellm-models.json" ] && [ ! -f "./config/litellm-models.json" ]; then
         echo -e "${RED}ERROR: LITELLM_MODEL_CONFIG_PATH points to /usr/src/app/server/config/litellm-models.json, but ./config/litellm-models.json is missing.${NC}" >&2
         echo -e "${RED}Create ./config/litellm-models.json or unset LITELLM_MODEL_CONFIG_PATH before starting app/app-sync.${NC}" >&2
         exit 1

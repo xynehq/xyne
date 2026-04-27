@@ -29,16 +29,26 @@ const normalizeProvider = (provider: unknown): AIProviders | null => {
 }
 
 const parseExternalModelConfig = (
-  entry: ExternalLiteLLMModelConfig,
+  entry: unknown,
   index: number,
 ): [string, ModelConfiguration] | null => {
+  if (!entry || typeof entry !== "object") {
+    Logger.warn(
+      { index },
+      "Skipping invalid LiteLLM model catalog entry: entry must be an object",
+    )
+    return null
+  }
+
+  const config = entry as ExternalLiteLLMModelConfig
+
   if (
-    typeof entry.id !== "string" ||
-    !entry.id.trim() ||
-    typeof entry.labelName !== "string" ||
-    !entry.labelName.trim() ||
-    typeof entry.actualName !== "string" ||
-    !entry.actualName.trim()
+    typeof config.id !== "string" ||
+    !config.id.trim() ||
+    typeof config.labelName !== "string" ||
+    !config.labelName.trim() ||
+    typeof config.actualName !== "string" ||
+    !config.actualName.trim()
   ) {
     Logger.warn(
       { index },
@@ -47,31 +57,31 @@ const parseExternalModelConfig = (
     return null
   }
 
-  const provider = normalizeProvider(entry.provider)
+  const provider = normalizeProvider(config.provider)
   if (!provider) {
     Logger.warn(
-      { index, id: entry.id, provider: entry.provider },
+      { index, id: config.id, provider: config.provider },
       "Skipping invalid LiteLLM model catalog entry: only LiteLLM provider is supported",
     )
     return null
   }
 
   return [
-    entry.id.trim(),
+    config.id.trim(),
     {
-      actualName: entry.actualName.trim(),
-      labelName: entry.labelName.trim(),
+      actualName: config.actualName.trim(),
+      labelName: config.labelName.trim(),
       provider,
       reasoning:
-        typeof entry.reasoning === "boolean" ? entry.reasoning : true,
+        typeof config.reasoning === "boolean" ? config.reasoning : true,
       websearch:
-        typeof entry.websearch === "boolean" ? entry.websearch : false,
+        typeof config.websearch === "boolean" ? config.websearch : false,
       deepResearch:
-        typeof entry.deepResearch === "boolean"
-          ? entry.deepResearch
+        typeof config.deepResearch === "boolean"
+          ? config.deepResearch
           : false,
       description:
-        typeof entry.description === "string" ? entry.description : "",
+        typeof config.description === "string" ? config.description : "",
     },
   ]
 }
@@ -95,14 +105,13 @@ export const getExternalModelConfigurations = (): Record<
     return externalModelConfigurationsCache
   }
 
-  externalModelConfigurationsPath = configuredPath
-
   if (!fs.existsSync(configuredPath)) {
     Logger.warn(
       { path: configuredPath },
       "LiteLLM model catalog file does not exist; continuing without external model catalog",
     )
     externalModelConfigurationsCache = {}
+    externalModelConfigurationsPath = undefined
     return externalModelConfigurationsCache
   }
 
@@ -114,18 +123,18 @@ export const getExternalModelConfigurations = (): Record<
         "LiteLLM model catalog must be a JSON array; continuing without external model catalog",
       )
       externalModelConfigurationsCache = {}
+      externalModelConfigurationsPath = undefined
       return externalModelConfigurationsCache
     }
 
     externalModelConfigurationsCache = Object.fromEntries(
       parsed
-        .map((entry, index) =>
-          parseExternalModelConfig(entry as ExternalLiteLLMModelConfig, index),
-        )
+        .map((entry, index) => parseExternalModelConfig(entry, index))
         .filter(
           (entry): entry is [string, ModelConfiguration] => entry !== null,
         ),
     )
+    externalModelConfigurationsPath = configuredPath
     return externalModelConfigurationsCache
   } catch (error) {
     Logger.warn(
@@ -136,6 +145,7 @@ export const getExternalModelConfigurations = (): Record<
       "Failed to load LiteLLM model catalog; continuing without external model catalog",
     )
     externalModelConfigurationsCache = {}
+    externalModelConfigurationsPath = undefined
     return externalModelConfigurationsCache
   }
 }

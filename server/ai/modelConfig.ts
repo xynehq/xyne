@@ -684,13 +684,30 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   },
 }
 
+let mergedModelConfigurationsCache: Record<string, ModelConfiguration> | null =
+  null
+let lastExternalConfigRef: Record<string, ModelConfiguration> | null = null
+
 export const getModelConfigurations = (): Record<
   string,
   ModelConfiguration
-> => ({
-  ...MODEL_CONFIGURATIONS,
-  ...getExternalModelConfigurations(),
-})
+> => {
+  const externalConfig = getExternalModelConfigurations()
+
+  if (
+    mergedModelConfigurationsCache &&
+    lastExternalConfigRef === externalConfig
+  ) {
+    return mergedModelConfigurationsCache
+  }
+
+  lastExternalConfigRef = externalConfig
+  mergedModelConfigurationsCache = {
+    ...MODEL_CONFIGURATIONS,
+    ...externalConfig,
+  }
+  return mergedModelConfigurationsCache
+}
 
 export const getModelConfiguration = (
   modelId: string | null | undefined,
