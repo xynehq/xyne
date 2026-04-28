@@ -8,6 +8,7 @@ import { JiraIcon } from './WorkflowIcons'
 import { Check } from 'lucide-react'
 import { MultiSelect } from '../ui/MultiSelect'
 import { Snackbar } from '../ui/Snackbar'
+import { generateUUID } from "@/utils/uuid"
 
 export interface JiraConfig {
   // Credentials
@@ -123,7 +124,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
   // Generate unique webhook ID if not present
   useEffect(() => {
     if (!config.webhookId && !initialConfig?.webhookId) {
-      const uniqueId = `jira-webhook-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+      const uniqueId = `jira-webhook-${Date.now()}-${generateUUID().slice(0, 8)}`
       setConfig((prev) => ({ ...prev, webhookId: uniqueId }))
     }
   }, [])
