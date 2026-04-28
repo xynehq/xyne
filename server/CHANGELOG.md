@@ -1,3 +1,10 @@
+# [3.50.0](https://github.com/xynehq/xyne/compare/v3.49.0...v3.50.0) (2026-04-28)
+
+
+### Features
+
+* adding fallback randomUUID Generator ([#1318](https://github.com/xynehq/xyne/issues/1318)) ([0d3792a](https://github.com/xynehq/xyne/commit/0d3792a44b24eebf166696f28926c9db99bdaf4b))
+
 # [3.49.0](https://github.com/xynehq/xyne/compare/v3.48.0...v3.49.0) (2026-04-27)
 
 
