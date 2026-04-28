@@ -124,7 +124,7 @@ export const JiraConfigurationUI: React.FC<JiraConfigurationUIProps> = ({
   // Generate unique webhook ID if not present
   useEffect(() => {
     if (!config.webhookId && !initialConfig?.webhookId) {
-      const uniqueId = `jira-webhook-${Date.now()}-${generateUUID().slice(0, 8)}`
+      const uniqueId = `jira-webhook-${Date.now()}-${generateUUID()}`
       setConfig((prev) => ({ ...prev, webhookId: uniqueId }))
     }
   }, [])
