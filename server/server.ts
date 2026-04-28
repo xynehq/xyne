@@ -446,6 +446,7 @@ import {
   checkKeycloakHealth,
   checkPaddleOCRHealth,
   checkPostgresHealth,
+  checkSystemReadiness,
   checkVespaHealth,
 } from "./health"
 import {
@@ -2762,6 +2763,31 @@ app.get("/health", async (c) => {
         status: HealthStatusType.Unhealthy,
         timestamp: new Date().toISOString(),
         error: "Health check failed",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      503,
+    )
+  }
+})
+
+app.get("/health/ready", async (c) => {
+  try {
+    const health = await checkSystemReadiness()
+    const statusCode =
+      health.status === HealthStatusType.Healthy
+        ? 200
+        : health.status === HealthStatusType.Degraded
+          ? 200
+          : 503
+
+    return c.json(health, statusCode)
+  } catch (error) {
+    Logger.error(error, "Readiness check endpoint failed")
+    return c.json(
+      {
+        status: HealthStatusType.Unhealthy,
+        timestamp: new Date().toISOString(),
+        error: "Readiness check failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       503,
