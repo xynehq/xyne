@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label"
 import { ChevronDown, Upload, File as FileIcon, X } from "lucide-react"
 import { BackArrowIcon } from "./WorkflowIcons"
 import { workflowToolsAPI } from "./api/ApiHandlers"
+import { generateUUID } from "@/utils/uuid"
 
 interface OnFormSubmissionUIProps {
   isVisible?: boolean 
@@ -53,7 +54,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   showBackButton = false,
   builder = true,
 }) => {
-  const initialFieldId = crypto.randomUUID()
+  const initialFieldId = generateUUID()
 
   
   const getInitialFormConfig = (): FormConfig => {
@@ -66,7 +67,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
     
     if (toolData?.value?.fields && Array.isArray(toolData.value.fields)) {
       convertedFields = toolData.value.fields.map((field: any) => ({
-        id: field.id || crypto.randomUUID(),
+        id: field.id || generateUUID(),
         name: field.name || field.label || field.id || "Field",
         placeholder: field.placeholder || "",
         type: "file", // Force all fields to be file type

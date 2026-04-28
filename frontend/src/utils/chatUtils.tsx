@@ -2,8 +2,7 @@ import { useRef, useLayoutEffect, useState, useCallback } from "react"
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import type { Citation } from "@/components/CitationLink"
 
-// Helper function to generate UUID
-export const generateUUID = () => crypto.randomUUID()
+export { generateUUID } from "@/utils/uuid"
 
 export const textToCitationIndex = /\[(\d+)\]/g
 export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
