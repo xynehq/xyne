@@ -1,3 +1,10 @@
+# [3.51.0](https://github.com/xynehq/xyne/compare/v3.50.0...v3.51.0) (2026-04-29)
+
+
+### Features
+
+* remove paddle dependency from health check ([#1320](https://github.com/xynehq/xyne/issues/1320)) ([06cab08](https://github.com/xynehq/xyne/commit/06cab088e4e01a9e46ce088bb136d31f1035a256))
+
 # [3.50.0](https://github.com/xynehq/xyne/compare/v3.49.0...v3.50.0) (2026-04-28)
 
 
