@@ -392,6 +392,51 @@ export async function checkPaddleOCRHealth(): Promise<HealthStatusResponse> {
   }
 }
 
+const getOCRProviderServiceKey = (provider: string) =>
+  provider === "paddle"
+    ? "paddleOCR"
+    : `ocr_${provider.replace(/[^a-z0-9]+/g, "_")}`
+
+const getUnsupportedOCRProviderHealth = (
+  provider: string,
+): HealthStatusResponse => ({
+  status: HealthStatusType.Unhealthy,
+  serviceName: `OCR provider: ${provider}`,
+  details: {
+    message: `Unsupported OCR provider '${provider}'`,
+  },
+})
+
+const checkOCRProviderHealth = async (
+  provider: string,
+): Promise<HealthStatusResponse> => {
+  switch (provider) {
+    case "paddle":
+      return checkPaddleOCRHealth()
+    default:
+      return getUnsupportedOCRProviderHealth(provider)
+  }
+}
+
+export const checkConfiguredOCRProvidersHealth = async (
+  providers = config.ocrProviders,
+): Promise<Record<string, HealthStatusResponse>> => {
+  const providerHealthEntries = await Promise.all(
+    providers.map(
+      async (provider) =>
+        [
+          getOCRProviderServiceKey(provider),
+          await checkOCRProviderHealth(provider),
+        ] as const,
+    ),
+  )
+
+  return Object.fromEntries(providerHealthEntries) as Record<
+    string,
+    HealthStatusResponse
+  >
+}
+
 export async function checkKeycloakHealth(): Promise<HealthStatusResponse> {
   const start = Date.now()
 
@@ -511,68 +556,79 @@ export async function checkKeycloakHealth(): Promise<HealthStatusResponse> {
   }
 }
 
-// Check Overall System Health
-export const checkOverallSystemHealth =
-  async (): Promise<OverallSystemHealthResponse> => {
-    Logger.info("Starting overall system health check...")
-    const startTime = Date.now()
-    const keycloakEnabled = isKeycloakExplicitlyEnabled()
+const buildSystemHealthResponse = (
+  services: ServiceHealthCheck,
+): OverallSystemHealthResponse => {
+  const serviceStatuses = Object.values(services).filter(
+    (service): service is HealthStatusResponse => Boolean(service),
+  )
+  const totalServices = serviceStatuses.length
+  const healthyServices = serviceStatuses.filter(
+    (s) => s.status === HealthStatusType.Healthy,
+  ).length
 
-    const baseHealthChecks = [
+  const degradedServices = serviceStatuses.filter(
+    (s) => s.status === HealthStatusType.Degraded,
+  ).length
+  const unhealthyServices = serviceStatuses.filter(
+    (s) => s.status === HealthStatusType.Unhealthy,
+  ).length
+
+  let overallStatus: HealthStatusType
+  if (unhealthyServices > 0) {
+    overallStatus = HealthStatusType.Unhealthy
+  } else if (degradedServices > 0) {
+    overallStatus = HealthStatusType.Degraded
+  } else {
+    overallStatus = HealthStatusType.Healthy
+  }
+
+  return {
+    status: overallStatus,
+    timestamp: new Date().toISOString(),
+    services,
+    summary: {
+      totalServices,
+      healthyServices,
+      unhealthyServices,
+      degradedServices,
+      lastChecked: new Date().toISOString(),
+    },
+  }
+}
+
+const checkConfiguredSystemHealth = async (
+  logMessage: string,
+): Promise<OverallSystemHealthResponse> => {
+  Logger.info(logMessage)
+  const keycloakEnabled = isKeycloakExplicitlyEnabled()
+
+  const [postgresHealth, vespaHealth, ocrProviderHealth, keycloakHealth] =
+    await Promise.all([
       checkPostgresHealth(),
       checkVespaHealth(),
-      checkPaddleOCRHealth(),
-    ]
-    const healthChecks = keycloakEnabled
-      ? [...baseHealthChecks, checkKeycloakHealth()]
-      : baseHealthChecks
+      checkConfiguredOCRProvidersHealth(),
+      keycloakEnabled ? checkKeycloakHealth() : Promise.resolve(undefined),
+    ])
 
-    const [postgresHealth, vespaHealth, paddleOCRHealth, keycloakHealth] =
-      await Promise.all(healthChecks)
-
-    const services: ServiceHealthCheck = {
-      postgres: postgresHealth,
-      vespa: vespaHealth,
-      paddleOCR: paddleOCRHealth,
-    }
-    if (keycloakHealth) {
-      services.keycloak = keycloakHealth
-    }
-
-    const serviceStatuses = Object.values(services).filter(Boolean)
-    const totalServices = serviceStatuses.length
-    const healthyServices = serviceStatuses.filter(
-      (s) => s.status === HealthStatusType.Healthy,
-    ).length
-
-    const degradedServices = serviceStatuses.filter(
-      (s) => s.status === HealthStatusType.Degraded,
-    ).length
-    const unhealthyServices = serviceStatuses.filter(
-      (s) => s.status === HealthStatusType.Unhealthy,
-    ).length
-
-    let overallStatus: HealthStatusType
-    if (unhealthyServices > 0) {
-      overallStatus = HealthStatusType.Unhealthy
-    } else if (degradedServices > 0) {
-      overallStatus = HealthStatusType.Degraded
-    } else {
-      overallStatus = HealthStatusType.Healthy
-    }
-
-    const totalTime = Date.now() - startTime
-
-    return {
-      status: overallStatus,
-      timestamp: new Date().toISOString(),
-      services,
-      summary: {
-        totalServices,
-        healthyServices,
-        unhealthyServices,
-        degradedServices,
-        lastChecked: new Date().toISOString(),
-      },
-    }
+  const services: ServiceHealthCheck = {
+    postgres: postgresHealth,
+    vespa: vespaHealth,
+    ...ocrProviderHealth,
   }
+  if (keycloakHealth) {
+    services.keycloak = keycloakHealth
+  }
+
+  return buildSystemHealthResponse(services)
+}
+
+// Check Overall System Health
+export const checkOverallSystemHealth =
+  async (): Promise<OverallSystemHealthResponse> =>
+    checkConfiguredSystemHealth("Starting overall system health check...")
+
+// Check app readiness for container orchestration
+export const checkSystemReadiness =
+  async (): Promise<OverallSystemHealthResponse> =>
+    checkConfiguredSystemHealth("Starting system readiness check...")

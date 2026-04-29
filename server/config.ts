@@ -13,6 +13,24 @@ let paddleStatusEndpoint =
   process.env.STATUS_ENDPOINT || "http://localhost:8000/instance_status"
 let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
+export const parseOCRProviders = (providers?: string): string[] => {
+  const seen = new Set<string>()
+
+  return (providers || "")
+    .split(",")
+    .map((provider) => provider.trim().toLowerCase())
+    .filter((provider) => {
+      if (!provider || seen.has(provider)) {
+        return false
+      }
+
+      seen.add(provider)
+      return true
+    })
+}
+
+const ocrProviders = parseOCRProviders(process.env.OCR_PROVIDERS)
+
 // Centralized database URL construction
 function getDatabaseUrl(): string {
   return (
@@ -349,6 +367,7 @@ export default {
   keycloakWorkspaceExternalId,
   keycloakLogoutRedirectUrl,
   paddleStatusEndpoint,
+  ocrProviders,
   appleBundleId,
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute
