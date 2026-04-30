@@ -449,6 +449,7 @@ export const ChatPage = ({
     chunkIndex: number
     chunkContent: string
     pageIndex: number
+    bbox: { l: number; t: number; r: number; b: number } | null
   } | null>(null)
   /** Token to invalidate in-flight prefetch/chunk handlers so a slower call cannot overwrite newer citation state. */
   const latestPrefetchTokenRef = useRef<symbol>(Symbol())
@@ -1232,7 +1233,6 @@ export const ChatPage = ({
       
       const expectedCitationId = selectedCitation?.docId ?? null
       if (!expectedCitationId) {
-        console.error("handleChunkIndexChange called without expectedCitationId");
         return;
       }
 
@@ -1248,6 +1248,7 @@ export const ChatPage = ({
         try {
           let chunkContent: string
           let pageIndex: number
+          let bbox: { l: number; t: number; r: number; b: number } | null = null
 
           const prefetched = prefetchedChunkRef.current
           if (
@@ -1257,6 +1258,7 @@ export const ChatPage = ({
           ) {
             chunkContent = prefetched.chunkContent
             pageIndex = prefetched.pageIndex
+            bbox = prefetched.bbox
             prefetchedChunkRef.current = null
           } else {
             const chunkContentResponse = await api.chunk[":cId"].files[
@@ -1285,6 +1287,7 @@ export const ChatPage = ({
             chunkContent = data?.chunkContent ?? ""
             pageIndex =
               typeof data?.pageIndex === "number" ? data.pageIndex : -1
+            bbox = (data as any)?.bbox ?? null
           }
 
           if (latestPrefetchTokenRef.current !== chunkToken) return
@@ -1295,11 +1298,32 @@ export const ChatPage = ({
             return
           }
 
-          if (chunkContent) {
-            if (documentOperationsRef?.current?.clearHighlights) {
-              documentOperationsRef.current.clearHighlights()
-            }
+          if (documentOperationsRef?.current?.clearHighlights) {
+            documentOperationsRef.current.clearHighlights()
+          }
 
+          // Use precise bbox highlighting when available (PDF only), fall back to text search
+          if (bbox && pageIndex >= 0 && documentOperationsRef?.current?.highlightBbox) {
+            try {
+              await documentOperationsRef.current.highlightBbox(bbox, pageIndex)
+            } catch (error) {
+              console.error("Error highlighting chunk bbox:", error)
+              // Fall back to text highlighting
+              if (chunkContent && documentOperationsRef?.current?.highlightText) {
+                try {
+                  await documentOperationsRef.current.highlightText(
+                    chunkContent,
+                    newChunkIndex,
+                    pageIndex,
+                    true,
+                  )
+                } catch (textError) {
+                  console.error("Error highlighting chunk text (fallback):", textError)
+                }
+              }
+            }
+            if (latestPrefetchTokenRef.current !== chunkToken) return
+          } else if (chunkContent) {
             if (documentOperationsRef?.current?.highlightText) {
               try {
                 await documentOperationsRef.current.highlightText(
@@ -1448,11 +1472,13 @@ export const ChatPage = ({
             const content = data?.chunkContent ?? ""
             pageIndex =
               typeof data.pageIndex === "number" ? data.pageIndex : null
+            const bboxPrefetch = (data as any)?.bbox ?? null
             prefetchedChunkRef.current = {
               documentId: docId,
               chunkIndex,
               chunkContent: content,
               pageIndex: pageIndex ?? -1,
+              bbox: bboxPrefetch,
             }
           }
         } catch {

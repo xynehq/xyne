@@ -310,7 +310,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
               showNavigation={true}
               displayMode="continuous"
               documentOperationsRef={documentOperationsRef}
-              initialPage={initialPageOrSheetIndex}
+              initialPage={initialPageOrSheetIndex >= 0 ? initialPageOrSheetIndex + 1 : 1}
             />
           </div>
         )

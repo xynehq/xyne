@@ -5,6 +5,13 @@ schema kb_items {
     field chunk_index type int {}
     field page_numbers type array<int> {}
     field block_labels type array<string> {}
+    field bbox_l type double {}
+    field bbox_t type double {}
+    field bbox_r type double {}
+    field bbox_b type double {}
+    field width type int {}
+    field height type int {}
+    field headings type array<string> {}
   }
 
   document kb_items {
@@ -64,6 +71,11 @@ schema kb_items {
       indexing: attribute | summary
     }
     
+    field toc_chunks type array<string> {
+      indexing: index | summary
+      index { enable-bm25 }
+    }
+    
     field chunks type array<string> {
       indexing: index | summary
       index { enable-bm25 }
@@ -87,11 +99,25 @@ schema kb_items {
     field chunks_map type array<chunk_meta> {
       indexing: summary
       struct-field chunk_index { indexing: attribute | summary }
+      struct-field bbox_l { indexing: attribute | summary }
+      struct-field bbox_t { indexing: attribute | summary }
+      struct-field bbox_r { indexing: attribute | summary }
+      struct-field bbox_b { indexing: attribute | summary }
+      struct-field width { indexing: attribute | summary }
+      struct-field height { indexing: attribute | summary }
     }
 
     field image_chunks_map type array<chunk_meta> {
       indexing: summary
       struct-field chunk_index { indexing: attribute | summary }
+      # Primitive fields can be attributes
+      struct-field bbox_l { indexing: attribute | summary }
+      struct-field bbox_t { indexing: attribute | summary }
+      struct-field bbox_r { indexing: attribute | summary }
+      struct-field bbox_b { indexing: attribute | summary }
+      struct-field width { indexing: attribute | summary }
+      struct-field height { indexing: attribute | summary }
+      # Array fields are stored in summary only (not as attributes)
     }
     
     field metadata type string {
@@ -144,9 +170,9 @@ schema kb_items {
     match { gram gram-size: 3 }
   }
 
-  fieldset default      { fields:  description, chunks, image_chunks, fileName, entity, createdBy, clFd }
+  fieldset default      { fields:  description, toc_chunks, chunks, image_chunks, fileName, entity, createdBy, clFd }
   fieldset autocomplete { fields:  fileName }
-  fieldset search       { fields:  description, chunks, image_chunks, fileName, entity, clFd }
+  fieldset search       { fields:  description, toc_chunks, chunks, image_chunks, fileName, entity, clFd }
 
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
@@ -411,11 +437,21 @@ schema kb_items {
       bolding: on
       source: image_chunks
     }
+    summary toc_chunks_summary {
+      bolding: on
+      source: toc_chunks
+    }
     summary chunks_pos_summary {
       source: chunks_pos
     }
     summary image_chunks_pos_summary {
       source: image_chunks_pos
+    }
+    summary chunks_map {
+      source: chunks_map
+    }
+    summary image_chunks_map {
+      source: image_chunks_map
     }
   }
 

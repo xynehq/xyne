@@ -571,15 +571,129 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           })
         }
       }
+
+      documentOperationsRef.current.highlightBbox = async (
+        bbox: { l: number; t: number; r: number; b: number },
+        pageIndex: number,
+      ): Promise<boolean> => {
+        if (!isMountedRef.current || pageIndex < 0) {
+          return false
+        }
+
+        const pageNum = pageIndex + 1
+
+        // Navigate to page — do NOT delete pageReadyRef here.
+        // Deleting it would invalidate already-rendered pages whose callbacks will
+        // never re-fire, causing the canvas-poll below to wait 300× unnecessarily.
+        goToPage(pageNum)
+        if (displayMode === "continuous") {
+          rowVirtualizer.measure()
+        }
+        // For bbox we only need the canvas element (not text/annotation layers).
+        // Poll until the canvas is present inside the target page element AND
+        // has sensible dimensions (> 200px tall). react-pdf may briefly create a
+        // small placeholder canvas before the real render completes.
+        const getCanvas = () => {
+          const c = containerRef.current?.querySelector<HTMLCanvasElement>(
+            `[data-page-number="${pageNum}"] canvas`,
+          )
+          // Reject canvas that still has placeholder dimensions
+          return c && c.offsetHeight > 200 ? c : null
+        }
+
+        let attempts = 0
+        const maxAttempts = 300
+        while (isMountedRef.current && attempts < maxAttempts) {
+          if (getCanvas()) break
+          await new Promise((r) => setTimeout(r, 16))
+          attempts++
+        }
+        if (!isMountedRef.current) return false
+
+        const canvas = getCanvas()
+        if (!canvas) return false
+
+        // Use closest() so the overlay's position: absolute is anchored to the
+        // exact element the canvas lives in, regardless of DOM nesting changes.
+        const pageEl = canvas.closest<HTMLElement>('[data-page-number]')
+        if (!pageEl) return false
+
+        // Clear any existing bbox overlays from the entire viewer
+        containerRef.current
+          ?.querySelectorAll("[data-bbox-overlay]")
+          .forEach((el) => el.remove())
+
+        // canvas.offsetHeight is the CSS pixel height = pageHeightPts * scale
+        // So pageHeightPts = canvas.offsetHeight / scale
+        const pageHeightPts = canvas.offsetHeight / scale
+
+        // Docling uses PDF coordinate system: origin (0,0) at bottom-left, y increases upward.
+        // bbox.t = top of box (larger y, farther from bottom in PDF space)
+        // bbox.b = bottom of box (smaller y, closer to bottom in PDF space)
+        // Convert to CSS (top-left origin, y increases downward):
+        //   css_top  = (pageHeightPts - bbox.t) * scale
+        //   css_left = bbox.l * scale
+        const cssLeft = bbox.l * scale
+        const cssTop = (pageHeightPts - bbox.t) * scale
+        const cssWidth = (bbox.r - bbox.l) * scale
+        const cssHeight = Math.max((bbox.t - bbox.b) * scale, 4)
+
+        // Ensure the page element is positioned so we can place an absolute child
+        const pageStyle = window.getComputedStyle(pageEl)
+        if (pageStyle.position === "static") {
+          pageEl.style.position = "relative"
+        }
+
+        const overlay = document.createElement("div")
+        overlay.setAttribute("data-bbox-overlay", "true")
+        overlay.style.cssText = `
+          position: absolute;
+          left: ${cssLeft}px;
+          top: ${cssTop}px;
+          width: ${cssWidth}px;
+          height: ${cssHeight}px;
+          background-color: rgba(250, 204, 21, 0.35);
+          border: 1px solid rgba(234, 179, 8, 0.85);
+          border-radius: 3px;
+          pointer-events: none;
+          z-index: 100;
+          box-sizing: border-box;
+        `
+        pageEl.appendChild(overlay)
+
+        // Scroll the overlay into view inside the scrollable container
+        const scrollEl = containerRef.current
+        if (scrollEl) {
+          const containerRect = scrollEl.getBoundingClientRect()
+          const overlayRect = overlay.getBoundingClientRect()
+          const targetScrollTop =
+            scrollEl.scrollTop +
+            (overlayRect.top - containerRect.top) -
+            scrollEl.clientHeight / 2 +
+            overlayRect.height / 2
+          scrollEl.scrollTo({ top: Math.max(0, targetScrollTop), behavior: "smooth" })
+        }
+
+        return true
+      }
+
+      documentOperationsRef.current.clearHighlights = () => {
+        if (!containerRef.current) return
+        containerRef.current
+          .querySelectorAll("[data-bbox-overlay]")
+          .forEach((el) => el.remove())
+      }
     }
 
     return () => {
       if (documentOperationsRef?.current) {
         documentOperationsRef.current.goToPage = undefined
         documentOperationsRef.current.waitForPageReady = undefined
+        documentOperationsRef.current.highlightBbox = undefined
+        documentOperationsRef.current.clearHighlights = undefined
       }
     }
-  }, [documentOperationsRef, goToPage, displayMode, rowVirtualizer])
+  }, [documentOperationsRef, goToPage, displayMode, rowVirtualizer, scale])
 
   const commitPageInput = useCallback(() => {
     if (pageInput === null) return

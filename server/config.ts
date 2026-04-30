@@ -11,6 +11,8 @@ let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
 let paddleStatusEndpoint =
   process.env.STATUS_ENDPOINT || "http://localhost:8000/instance_status"
+let doclingServiceUrl =
+  process.env.DOCLING_SERVICE_URL || "http://localhost:8000"
 let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
 // Centralized database URL construction
@@ -347,6 +349,7 @@ export default {
   keycloakWorkspaceExternalId,
   keycloakLogoutRedirectUrl,
   paddleStatusEndpoint,
+  doclingServiceUrl,
   appleBundleId,
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute
