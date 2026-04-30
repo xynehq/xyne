@@ -1,8 +1,8 @@
 import { AIProviders, Models, type Cost } from "@/ai/types"
-import { MODEL_CONFIGURATIONS } from "./modelConfig";
+import { getModelConfiguration } from "./modelConfig"
 
-const getActualModelName=(model:Models):string=>{
-  return MODEL_CONFIGURATIONS[model]?.actualName || model;
+const getActualModelName = (model: Models): string => {
+  return getModelConfiguration(model)?.actualName || model
 }
 export const modelDetailsMap: Record<
   string,

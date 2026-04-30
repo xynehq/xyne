@@ -1,7 +1,7 @@
 import fs from "fs"
 import path from "path"
 import { ModelToProviderMap } from "@/ai/mappers"
-import { MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
+import { getModelConfiguration } from "@/ai/modelConfig"
 import { getAISDKProviderByModel } from "@/ai/provider"
 import { findImageByName, regex } from "@/ai/provider/base"
 import { AIProviders, Models } from "@/ai/types"
@@ -212,11 +212,14 @@ export const makeXyneJAFProvider = <Ctx>(
         throw new Error(`Model not specified for agent ${agent.name}`)
       }
 
-      const modelConfig = MODEL_CONFIGURATIONS[model as Models]
+      const modelConfig = getModelConfiguration(model)
       const actualModelId = modelConfig?.actualName ?? model
 
       // Check if this is a LiteLLM model - use OpenAI client directly like JAF does
-      const providerType = ModelToProviderMap[model as Models] ?? AIProviders.LiteLLM
+      const providerType =
+        ModelToProviderMap[model as Models] ??
+        (modelConfig?.provider as AIProviders | undefined) ??
+        AIProviders.LiteLLM
       const runContext = state.context as unknown as AgentRunContext
       const stopSignal =
         runContext?.stopSignal ?? runContext?.stopController?.signal

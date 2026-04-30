@@ -1,4 +1,5 @@
 import {create} from 'zustand'; 
+import { generateUUID } from "@/utils/uuid"
 
 export interface UploadBatchProgress {
   total: number
@@ -52,7 +53,7 @@ export const useUploadProgress = create<UploadProgressStore>((set, get) => ({
   currentUpload: null,
 
   startUpload: (collectionName, files, totalBatches, isNewCollection, targetCollectionId) => {
-    const uploadId = `upload_${Date.now()}_${crypto.randomUUID()}`
+    const uploadId = `upload_${Date.now()}_${generateUUID()}`
     const abortController = new AbortController()
     
     const uploadFiles: UploadFileStatus[] = files.map((file) => ({

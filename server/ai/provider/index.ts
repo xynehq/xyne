@@ -38,6 +38,7 @@ import { parse } from "partial-json"
 import { Apps } from "@/shared/types"
 
 import { ModelToProviderMap } from "@/ai/mappers"
+import { getModelConfiguration } from "@/ai/modelConfig"
 import type {
   AnswerResponse,
   ChainBreakClassifications,
@@ -131,6 +132,25 @@ import type { ToolDefinition } from "@/api/chat/mapper"
 import { getDateForAI } from "@/utils/index"
 
 const Logger = getLogger(Subsystem.AI)
+
+const getConfiguredProviderType = (
+  modelId: RuntimeModelId,
+): AIProviders | null => {
+  const staticProvider = ModelToProviderMap[modelId as Models]
+  if (staticProvider) {
+    return staticProvider
+  }
+
+  const configuredProvider = getModelConfiguration(modelId)?.provider
+  if (
+    configuredProvider &&
+    Object.values(AIProviders).includes(configuredProvider as AIProviders)
+  ) {
+    return configuredProvider as AIProviders
+  }
+
+  return null
+}
 
 export interface AgentPromptData {
   name: string
@@ -390,14 +410,15 @@ const getProviderMap = (): Partial<Record<AIProviders, LLMProvider>> => {
 export const getProviderTypeByModel = (
   modelId: RuntimeModelId,
 ): AIProviders | null => {
-  return ModelToProviderMap[modelId as Models] ?? null
+  return getConfiguredProviderType(modelId)
 }
 
 export const getProviderByModel = (modelId: RuntimeModelId): LLMProvider => {
   const ProviderMap = getProviderMap()
 
-  const providerType = ModelToProviderMap[modelId as Models]
-    ? ModelToProviderMap[modelId as Models]
+  const configuredProviderType = getConfiguredProviderType(modelId)
+  const providerType = configuredProviderType
+    ? configuredProviderType
     : OllamaModel
       ? AIProviders.Ollama
       : TogetherAIModel
@@ -450,8 +471,9 @@ export const getProviderByModel = (modelId: RuntimeModelId): LLMProvider => {
 export const getAISDKProviderByModel = (
   modelId: RuntimeModelId,
 ): ProviderV2 => {
-  const providerType = ModelToProviderMap[modelId as Models]
-    ? ModelToProviderMap[modelId as Models]
+  const configuredProviderType = getConfiguredProviderType(modelId)
+  const providerType = configuredProviderType
+    ? configuredProviderType
     : OllamaModel
       ? AIProviders.Ollama
       : TogetherAIModel

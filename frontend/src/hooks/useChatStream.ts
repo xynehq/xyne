@@ -12,6 +12,7 @@ import {
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
 import { CharacterAnimationManager } from "@/utils/streamRenderer"
+import { generateUUID } from "@/utils/uuid"
 import { appendImageCitation } from "./imageCitationState"
 
 interface DeepResearchStep {
@@ -508,7 +509,7 @@ export const startStream = async (
       try {
         const stepData = JSON.parse(event.data)
         const newStep: DeepResearchStep = {
-          id: stepData.id || crypto.randomUUID(),
+          id: stepData.id || generateUUID(),
           type: stepData.type || "reasoning",
           title: stepData.title || "Processing...",
           content: stepData.content,
@@ -903,12 +904,12 @@ export const useChatStream = (
   const lastChatIdRef = useRef<string | null>(null)
 
   if (chatId !== lastChatIdRef.current) {
-    streamKeyRef.current = chatId ?? crypto.randomUUID()
+    streamKeyRef.current = chatId ?? generateUUID()
     lastChatIdRef.current = chatId
   }
 
   if (!streamKeyRef.current) {
-    streamKeyRef.current = chatId ?? crypto.randomUUID()
+    streamKeyRef.current = chatId ?? generateUUID()
   }
 
   const currentStreamKey = chatId ?? streamKeyRef.current
@@ -1068,7 +1069,7 @@ export const useChatStream = (
               (msg: any) => msg.externalId === messageId,
             )
 
-            targetMessageId = crypto.randomUUID()
+            targetMessageId = generateUUID()
             const assistantMessage = {
               ...JSON.parse(JSON.stringify(matched)),
               chatExternalId: chatId,

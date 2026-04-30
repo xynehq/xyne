@@ -15,9 +15,9 @@ export interface HealthStatusResponse {
 export interface ServiceHealthCheck {
   postgres: HealthStatusResponse
   vespa: HealthStatusResponse
-  paddleOCR: HealthStatusResponse
   docling: HealthStatusResponse
   keycloak?: HealthStatusResponse
+  [service: string]: HealthStatusResponse | undefined
 }
 
 export interface OverallSystemHealthResponse {

@@ -1,3 +1,24 @@
+# [3.51.0](https://github.com/xynehq/xyne/compare/v3.50.0...v3.51.0) (2026-04-29)
+
+
+### Features
+
+* remove paddle dependency from health check ([#1320](https://github.com/xynehq/xyne/issues/1320)) ([06cab08](https://github.com/xynehq/xyne/commit/06cab088e4e01a9e46ce088bb136d31f1035a256))
+
+# [3.50.0](https://github.com/xynehq/xyne/compare/v3.49.0...v3.50.0) (2026-04-28)
+
+
+### Features
+
+* adding fallback randomUUID Generator ([#1318](https://github.com/xynehq/xyne/issues/1318)) ([0d3792a](https://github.com/xynehq/xyne/commit/0d3792a44b24eebf166696f28926c9db99bdaf4b))
+
+# [3.49.0](https://github.com/xynehq/xyne/compare/v3.48.0...v3.49.0) (2026-04-27)
+
+
+### Features
+
+* add LiteLLM model catalog config ([#1316](https://github.com/xynehq/xyne/issues/1316)) ([ab66014](https://github.com/xynehq/xyne/commit/ab6601445f9eac6fa3d667ac02d9901af955bf9f))
+
 # [3.48.0](https://github.com/xynehq/xyne/compare/v3.47.6...v3.48.0) (2026-04-17)
 
 

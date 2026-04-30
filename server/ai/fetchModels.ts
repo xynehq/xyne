@@ -3,6 +3,7 @@ import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { MODEL_CONFIGURATIONS } from "./modelConfig"
+import { getExternalModelConfigurations } from "./modelCatalog"
 import { modelDetailsMap } from "./mappers"
 
 const Logger = getLogger(Subsystem.AI)
@@ -28,6 +29,57 @@ interface ModelInfoCache {
 
 let modelInfoCache: ModelInfoCache | null = null
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+type AvailableModelConfig = {
+  id: string
+  actualName: string
+  labelName: string
+  provider: string
+  reasoning: boolean
+  websearch: boolean
+  deepResearch: boolean
+  description: string
+}
+
+const getAllowedModelIds = (): string[] | null =>
+  config.modelList
+    ? config.modelList
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0)
+    : null
+
+const isModelAllowed = (
+  allowedModelIds: string[] | null,
+  modelId: string,
+  actualName?: string,
+): boolean =>
+  !allowedModelIds ||
+  allowedModelIds.includes(modelId) ||
+  Boolean(actualName && allowedModelIds.includes(actualName))
+
+const toAvailableModelConfig = (
+  modelId: string,
+  model: {
+    actualName?: string
+    labelName: string
+    provider?: string
+    reasoning: boolean
+    websearch: boolean
+    deepResearch: boolean
+    description: string
+  },
+): AvailableModelConfig => ({
+  id: modelId,
+  actualName: model.actualName ?? modelId,
+  labelName: model.labelName,
+  provider:
+    model.provider === AIProviders.LiteLLM ? "LiteLLM" : model.provider || "",
+  reasoning: model.reasoning,
+  websearch: model.websearch,
+  deepResearch: model.deepResearch,
+  description: model.description,
+})
 
 // Shared function to fetch model info from API with caching
 export async function fetchModelInfoFromAPI(
@@ -185,38 +237,12 @@ export const getCostConfigForModel = async (
 }
 
 export const fetchModelConfigs = async (): Promise<
-  Array<{
-    actualName: string
-    labelName: string
-    provider: string
-    reasoning: boolean
-    websearch: boolean
-    deepResearch: boolean
-    description: string
-  }>
+  Array<AvailableModelConfig>
 > => {
   const data = await fetchModelInfoFromAPI()
 
-  const availableModels: Array<{
-    actualName: string
-    labelName: string
-    provider: string
-    reasoning: boolean
-    websearch: boolean
-    deepResearch: boolean
-    description: string
-  }> = []
-
-  // Use Set to track seen model IDs to avoid duplicates
-  const seenModelIds = new Set<string>()
-
-  // Parse modelList from config (comma-separated model IDs)
-  const allowedModelIds = config.modelList
-    ? config.modelList
-        .split(",")
-        .map((id) => id.trim())
-        .filter((id) => id.length > 0)
-    : null
+  const allowedModelIds = getAllowedModelIds()
+  const modelRegistry: Record<string, AvailableModelConfig> = {}
 
   const modelAllowlist = {
     [Models.LiteLLM_Claude_Sonnet_4_6]: {
@@ -233,13 +259,30 @@ export const fetchModelConfigs = async (): Promise<
     },
   } as const
 
-  // Filter models with litellm_provider === "hosted_vllm" and return in expected format
+  const isStaticLiteLLMModelEnabled = (modelId: string) => {
+    const modelAllowlistInfo =
+      modelAllowlist[modelId as keyof typeof modelAllowlist]
+    return !modelAllowlistInfo || modelAllowlistInfo.enabled
+  }
+
+  Object.entries(MODEL_CONFIGURATIONS)
+    .filter(([, model]) => model.provider === AIProviders.LiteLLM)
+    .filter(([modelId]) => isStaticLiteLLMModelEnabled(modelId))
+    .forEach(([modelId, model]) => {
+      modelRegistry[modelId] = toAvailableModelConfig(modelId, model)
+    })
+
   for (const modelInfo of data) {
-    // Only process models with litellm_provider === "hosted_vllm"
-    // Check model_info.litellm_provider (from API response structure)
     const modelId = modelInfo.model_name
+    if (typeof modelId !== "string" || !modelId) {
+      continue
+    }
+
     const actualName = modelInfo.litellm_params?.model || modelId
-    if (modelInfo.model_info?.litellm_provider !== "hosted_vllm") {
+    const isHostedVllm =
+      modelInfo.model_info?.litellm_provider === "hosted_vllm"
+
+    if (!isHostedVllm) {
       const modelAllowlistInfo =
         modelAllowlist[modelId as keyof typeof modelAllowlist]
 
@@ -256,94 +299,36 @@ export const fetchModelConfigs = async (): Promise<
       }
     }
 
-    // Skip if we've already processed this model (deduplicate by model_name)
-    if (seenModelIds.has(modelId)) {
-      continue
-    }
-    seenModelIds.add(modelId)
-
-    // Filter by modelList if configured - only allow models in the list
-    if (allowedModelIds && !allowedModelIds.includes(modelId)) {
-      continue
-    }
-
-    // Find the corresponding enum key in Models
-    const modelEnumKey = Object.keys(Models).find(
-      (key) => Models[key as keyof typeof Models] === modelId,
-    ) as keyof typeof Models | undefined
-
-    // Get the enum value from the key (MODEL_CONFIGURATIONS is indexed by enum values, not keys)
-    const modelEnumValue = modelEnumKey
-      ? (Models[modelEnumKey] as Models)
-      : undefined
-
-    // Get model configuration from MODEL_CONFIGURATIONS if it exists
-    const modelConfig = modelEnumValue
-      ? MODEL_CONFIGURATIONS[modelEnumValue]
-      : null
-
-    if (modelConfig) {
-      // Use configuration from MODEL_CONFIGURATIONS
-      availableModels.push({
-        actualName: actualName,
-        labelName: modelConfig.labelName,
-        provider: "LiteLLM",
-        reasoning: modelConfig.reasoning,
-        websearch: modelConfig.websearch,
-        deepResearch: modelConfig.deepResearch,
-        description: modelConfig.description,
-      })
-    } else {
-      // For models not in MODEL_CONFIGURATIONS, use defaults
-      availableModels.push({
-        actualName: actualName,
-        labelName: modelId, // Use model_name as fallback label
-        provider: "LiteLLM",
-        reasoning: true,
-        websearch: false,
-        deepResearch: false,
-        description: "",
-      })
-    }
+    const staticModel = MODEL_CONFIGURATIONS[modelId as Models]
+    modelRegistry[modelId] = toAvailableModelConfig(modelId, {
+      actualName,
+      labelName: staticModel?.labelName || modelId,
+      provider: AIProviders.LiteLLM,
+      reasoning:
+        staticModel?.reasoning ?? modelInfo.model_info?.reasoning ?? true,
+      websearch:
+        staticModel?.websearch ?? modelInfo.model_info?.websearch ?? false,
+      deepResearch:
+        staticModel?.deepResearch ??
+        modelInfo.model_info?.deepResearch ??
+        modelInfo.model_info?.deep_research ??
+        false,
+      description:
+        staticModel?.description || modelInfo.model_info?.description || "",
+    })
   }
-  Logger.info(`Processed ${availableModels.length} hosted_vllm models from API`)
 
-  if (availableModels.length === 0) {
-    Logger.warn(
-      "No models returned from LiteLLM model info API, falling back to static LiteLLM model configurations",
-    )
+  Object.entries(getExternalModelConfigurations())
+    .filter(([, model]) => model.provider === AIProviders.LiteLLM)
+    .forEach(([modelId, model]) => {
+      modelRegistry[modelId] = toAvailableModelConfig(modelId, model)
+    })
 
-    Object.entries(MODEL_CONFIGURATIONS)
-      .filter(([, model]) => model.provider === AIProviders.LiteLLM)
-      .forEach(([modelId, model]) => {
-        const id = modelId as Models
+  const availableModels = Object.values(modelRegistry).filter((model) =>
+    isModelAllowed(allowedModelIds, model.id, model.actualName),
+  )
 
-        if (allowedModelIds && !allowedModelIds.includes(id)) {
-          return
-        }
-
-        const modelAllowlistInfo =
-          modelAllowlist[id as keyof typeof modelAllowlist]
-        if (modelAllowlistInfo) {
-          if (!modelAllowlistInfo.enabled) {
-            return
-          }
-          Logger.info(
-            `Allowing ${modelAllowlistInfo.name} model despite litellm_provider not being 'hosted_vllm'`,
-          )
-        }
-
-        availableModels.push({
-          actualName: model.actualName ?? id,
-          labelName: model.labelName,
-          provider: "LiteLLM",
-          reasoning: model.reasoning,
-          websearch: model.websearch,
-          deepResearch: model.deepResearch,
-          description: model.description,
-        })
-      })
-  }
+  Logger.info(`Processed ${availableModels.length} LiteLLM models`)
 
   return availableModels
 }
@@ -379,51 +364,9 @@ export const getAvailableModels = async (providerConfig: {
   // Priority (LiteLLM > AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex)
   // Using if-else logic to ensure only ONE provider is active at a time
   if (providerConfig.LiteLLMApiKey && providerConfig.LiteLLMBaseUrl) {
-    // Fetch models from API (hosted_vllm only)
+    // Fetch models from API and merge with local catalog overrides.
     const fetchedModels = await fetchModelConfigs()
-    if (fetchedModels.length > 0) {
-      // Use models fetched from API
-      availableModels.push(...fetchedModels)
-    } else {
-      // Fallback to static MODEL_CONFIGURATIONS if API call fails (with same allowlist gating as API path)
-      const isSonnet46 = (modelId: Models) =>
-        modelId === Models.LiteLLM_Claude_Sonnet_4_6
-      const isOpus46 = (modelId: Models) =>
-        modelId === Models.LiteLLM_Claude_Opus_4_6
-      const isHaiku45 = (modelId: Models) =>
-        modelId === Models.LiteLLM_Claude_Haiku_4_5
-      Object.entries(MODEL_CONFIGURATIONS)
-        .filter(([, model]) => model.provider === AIProviders.LiteLLM)
-        .filter(([modelId, model]) => {
-          const id = modelId as Models
-          if (isSonnet46(id)) return config.allowSonnet46
-          if (isOpus46(id)) return config.allowOpus46
-          if (isHaiku45(id)) return config.allowHaiku45
-          return true
-        })
-        .forEach(([modelId, model]) => {
-          const id = modelId as Models
-          if (isSonnet46(id) && config.allowSonnet46) {
-            Logger.info(
-              "Allowing Claude Sonnet 4.5 model despite litellm_provider not being 'hosted_vllm'",
-            )
-          }
-          if (isOpus46(id) && config.allowOpus46) {
-            Logger.info(
-              "Allowing Claude Opus 4.5 model despite litellm_provider not being 'hosted_vllm'",
-            )
-          }
-          availableModels.push({
-            actualName: model.actualName ?? "",
-            labelName: model.labelName,
-            provider: "LiteLLM",
-            reasoning: model.reasoning,
-            websearch: model.websearch,
-            deepResearch: model.deepResearch,
-            description: model.description,
-          })
-        })
-    }
+    availableModels.push(...fetchedModels)
   } else if (providerConfig.AwsAccessKey && providerConfig.AwsSecretKey) {
     // Add only AWS Bedrock models
     Object.values(MODEL_CONFIGURATIONS)

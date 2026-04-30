@@ -446,12 +446,14 @@ import {
   checkKeycloakHealth,
   checkPaddleOCRHealth,
   checkPostgresHealth,
+  checkSystemReadiness,
   checkVespaHealth,
 } from "./health"
 import {
   HealthStatusType,
   ServiceName,
   type HealthStatusResponse,
+  type OverallSystemHealthResponse,
 } from "@/health/type"
 import WebhookHandler from "@/services/WebhookHandler"
 import { preloadModelInfoCache } from "./ai/fetchModels"
@@ -2744,30 +2746,52 @@ const createHealthCheckHandler = (
   }
 }
 
-app.get("/health", async (c) => {
+const handleSystemHealthCheck = async (
+  c: Context,
+  checkFn: () => Promise<OverallSystemHealthResponse>,
+  logMessage: string,
+  responseError: string,
+) => {
   try {
-    const health = await checkOverallSystemHealth()
+    const health = await checkFn()
     const statusCode =
-      health.status === HealthStatusType.Healthy
+      health.status === HealthStatusType.Healthy ||
+      health.status === HealthStatusType.Degraded
         ? 200
-        : health.status === HealthStatusType.Degraded
-          ? 200
-          : 503
+        : 503
 
     return c.json(health, statusCode)
   } catch (error) {
-    Logger.error(error, "Health check endpoint failed")
+    Logger.error(error, logMessage)
     return c.json(
       {
         status: HealthStatusType.Unhealthy,
         timestamp: new Date().toISOString(),
-        error: "Health check failed",
+        error: responseError,
         details: error instanceof Error ? error.message : "Unknown error",
       },
       503,
     )
   }
-})
+}
+
+app.get("/health", (c) =>
+  handleSystemHealthCheck(
+    c,
+    checkOverallSystemHealth,
+    "Health check endpoint failed",
+    "Health check failed",
+  ),
+)
+
+app.get("/health/ready", (c) =>
+  handleSystemHealthCheck(
+    c,
+    checkSystemReadiness,
+    "Readiness check endpoint failed",
+    "Readiness check failed",
+  ),
+)
 
 // Postgres health check endpoint
 app.get(

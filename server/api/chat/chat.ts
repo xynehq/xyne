@@ -26,7 +26,10 @@ import {
   type WebSearchSource,
 } from "@/ai/types"
 import config from "@/config"
-import { getModelValueFromLabel, MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
+import {
+  getModelConfiguration,
+  getModelValueFromLabel,
+} from "@/ai/modelConfig"
 import { getAvailableModels } from "@/ai/fetchModels"
 import {
   deleteChatByExternalIdWithAuth,
@@ -359,6 +362,9 @@ const {
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
+const modelSupportsReasoning = (modelId: string | null | undefined) =>
+  getModelConfiguration(modelId || config.defaultBestModel)?.reasoning === true
 
 const logKnowledgeBaseScopeUsage = (
   email: string,
@@ -5585,7 +5591,7 @@ export const MessageApi = async (c: Context) => {
             let citationMap: Record<number, number> = {}
             let thinking = ""
             const reasoning =
-              userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[actualModelId as Models || config.defaultBestModel]?.reasoning ?? true) === true
+              userRequestsReasoningAndEnabled && modelSupportsReasoning(actualModelId)
 
             const understandSpan = streamSpan.startSpan("understand_message")
             understandSpan?.setAttribute(
@@ -5892,7 +5898,7 @@ export const MessageApi = async (c: Context) => {
               loggerWithChild({ email: email }).info(
                 "Using deep research for the question",
               )
-              reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[config.defaultDeepResearchModel]?.reasoning ?? true) === true
+              reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(config.defaultDeepResearchModel)
               searchOrAnswerIterator = getDeepResearchResponse(message, ctx, {
                 modelId: config.defaultDeepResearchModel,
                 stream: true,
@@ -5907,7 +5913,7 @@ export const MessageApi = async (c: Context) => {
               loggerWithChild({ email: email }).info(
                 "Using web search for the question",
               )
-              reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[config.defaultWebSearchModel]?.reasoning ?? true) === true
+              reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(config.defaultWebSearchModel)
               searchOrAnswerIterator = webSearchQuestion(
                 message,
                 ctx,
@@ -5925,7 +5931,7 @@ export const MessageApi = async (c: Context) => {
             } else {
               // Get connected apps for LLM prompt
               const connectedApps = await getConnectedApps(db, email)
-              reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[actualModelId as Models || config.defaultBestModel]?.reasoning ?? true) === true
+              reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(actualModelId)
 
               searchOrAnswerIterator =
                 generateSearchQueryOrAnswerFromConversation(
@@ -6342,7 +6348,7 @@ export const MessageApi = async (c: Context) => {
                     `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
                   )
                   const allowChunkCitations = fileIds.some((fileId) => fileId.startsWith("clf-")) || fileIds.some((fileId) => fileId.startsWith("attf_"))
-                  reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[actualModelId as Models || config.defaultBestModel]?.reasoning ?? true) === true
+                  reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(actualModelId)
                   iterator = UnderstandMessageAndAnswerForGivenContext(
                     email,
                     ctx,
@@ -6369,7 +6375,7 @@ export const MessageApi = async (c: Context) => {
 
               // If no iterator was set above (non-file-context scenario), use the regular flow with the new classification
               if (!iterator) {
-                reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[actualModelId as Models || config.defaultBestModel]?.reasoning ?? true) === true
+                reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(actualModelId)
                 iterator = UnderstandMessageAndAnswer(
                   email,
                   ctx,
@@ -7066,7 +7072,7 @@ export const MessageRetryApi = async (c: Context) => {
             let citationMap: Record<number, number> = {}
             let thinking = ""
             let reasoning =
-              userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[modelId as Models || config.defaultBestModel]?.reasoning ?? true) === true
+              userRequestsReasoningAndEnabled && modelSupportsReasoning(modelId)
 
             const understandSpan = streamSpan.startSpan("understand_message")
             understandSpan?.setAttribute(
@@ -7411,7 +7417,7 @@ export const MessageRetryApi = async (c: Context) => {
             const searchSpan = streamSpan.startSpan("conversation_search")
             // Get connected apps for LLM prompt
             const connectedApps = await getConnectedApps(db, email)
-            let reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[modelId as Models || config.defaultBestModel]?.reasoning ?? true) === true
+            let reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(modelId)
 
             const searchOrAnswerIterator =
               generateSearchQueryOrAnswerFromConversation(
@@ -7601,7 +7607,7 @@ export const MessageRetryApi = async (c: Context) => {
               )
 
               const understandSpan = ragSpan.startSpan("understand_message")
-              reasoning = userRequestsReasoningAndEnabled && (MODEL_CONFIGURATIONS[modelId as Models || config.defaultBestModel]?.reasoning ?? true) === true
+              reasoning = userRequestsReasoningAndEnabled && modelSupportsReasoning(modelId)
               const iterator = UnderstandMessageAndAnswer(
                 email,
                 ctx,
