@@ -392,6 +392,57 @@ export async function checkPaddleOCRHealth(): Promise<HealthStatusResponse> {
   }
 }
 
+export async function checkDoclingHealth(): Promise<HealthStatusResponse> {
+  const start = Date.now()
+
+  const baseURL = config.doclingServiceUrl || "http://localhost:8000"
+  try {
+    const response = await fetch(`${baseURL}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000), // 5 second timeout
+    })
+
+    const responseTime = Date.now() - start
+
+    if (!response.ok) {
+      return {
+        status: HealthStatusType.Unhealthy,
+        serviceName: ServiceName.docling,
+        responseTime,
+        details: {
+          message: `Docling service Unhealthy ${response.status}`,
+          responseTimeThreshold: "5000ms",
+        },
+      }
+    }
+
+    const data = await response.json().catch(() => ({}))
+    return {
+      status: HealthStatusType.Healthy,
+      serviceName: ServiceName.docling,
+      responseTime,
+      details: {
+        message: "Docling service is healthy",
+        modelsLoaded: data.models_loaded || false,
+      },
+    }
+  } catch (error) {
+    Logger.error(error, "Docling health check failed")
+    return {
+      status: HealthStatusType.Unhealthy,
+      serviceName: ServiceName.docling,
+      responseTime: Date.now() - start,
+      details: {
+        message: "Failed to connect to Docling service",
+        error:
+          error instanceof Error
+            ? (error as Error).message
+            : "Unknown Docling Service Error",
+      },
+    }
+  }
+}
+
 export async function checkKeycloakHealth(): Promise<HealthStatusResponse> {
   const start = Date.now()
 
@@ -522,18 +573,20 @@ export const checkOverallSystemHealth =
       checkPostgresHealth(),
       checkVespaHealth(),
       checkPaddleOCRHealth(),
+      checkDoclingHealth(),
     ]
     const healthChecks = keycloakEnabled
       ? [...baseHealthChecks, checkKeycloakHealth()]
       : baseHealthChecks
 
-    const [postgresHealth, vespaHealth, paddleOCRHealth, keycloakHealth] =
+    const [postgresHealth, vespaHealth, paddleOCRHealth, doclingHealth, keycloakHealth] =
       await Promise.all(healthChecks)
 
     const services: ServiceHealthCheck = {
       postgres: postgresHealth,
       vespa: vespaHealth,
       paddleOCR: paddleOCRHealth,
+      docling: doclingHealth,
     }
     if (keycloakHealth) {
       services.keycloak = keycloakHealth

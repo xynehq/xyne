@@ -16,6 +16,7 @@ export interface ServiceHealthCheck {
   postgres: HealthStatusResponse
   vespa: HealthStatusResponse
   paddleOCR: HealthStatusResponse
+  docling: HealthStatusResponse
   keycloak?: HealthStatusResponse
 }
 
@@ -39,5 +40,6 @@ export enum ServiceName {
   loki = "Loki",
   prometheus = "Prometheus",
   paddleOCR = "PaddleOCR",
+  docling = "Docling",
   keycloak = "Keycloak",
 }

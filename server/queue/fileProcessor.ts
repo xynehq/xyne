@@ -1,5 +1,5 @@
 import { getLogger } from "@/logger"
-import { Subsystem, ProcessingJobType } from "@/types"
+import { Subsystem, ProcessingJobType, type ChunkMetadata } from "@/types"
 import { getErrorMessage } from "@/utils"
 import {
   FileProcessorService,
@@ -180,6 +180,19 @@ export async function processJob(job: { data: ProcessingJob }) {
   }
 }
 
+const mapChunkMeta = (meta: ChunkMetadata, includeHeadings = false) => ({
+  chunk_index: meta.chunk_index,
+  page_numbers: meta.page_numbers || [],
+  block_labels: meta.block_labels || [],
+  bbox_l: meta.bbox?.l ?? 0,
+  bbox_t: meta.bbox?.t ?? 0,
+  bbox_r: meta.bbox?.r ?? 0,
+  bbox_b: meta.bbox?.b ?? 0,
+  width: meta.width ?? 0,
+  height: meta.height ?? 0,
+  ...(includeHeadings && { headings: meta.headings || [] }),
+})
+
 async function processFileJob(jobData: FileProcessingJob, startTime: number) {
   const { fileId } = jobData
 
@@ -326,7 +339,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         vespaFileName = `${vespaFileName} (${resultIndex + 1})`
         docId = `${file.vespaDocId}_${resultIndex}`
       }
-
+      
       const vespaDoc = {
         docId: docId,
         clId: file.collectionId,
@@ -340,8 +353,9 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         chunks_pos: processingResult.chunks_pos,
         image_chunks: processingResult.image_chunks,
         image_chunks_pos: processingResult.image_chunks_pos,
-        chunks_map: processingResult.chunks_map,
-        image_chunks_map: processingResult.image_chunks_map,
+        toc_chunks: processingResult.toc_chunks || [],
+        chunks_map: processingResult.chunks_map?.map(meta => mapChunkMeta(meta, true)),
+        image_chunks_map: processingResult.image_chunks_map?.map(meta => mapChunkMeta(meta, false)),
         pageTitle: pageTitle,
         metadata: JSON.stringify(
           mergeCollectionItemMetadata(file.metadata, {
@@ -351,6 +365,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
               processingResult.chunks.length +
               processingResult.image_chunks.length,
             imageChunksCount: processingResult.image_chunks.length,
+            tocChunksCount: (processingResult.toc_chunks || []).length,
             processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
             ...(processingResult.processingMethod && {
               pdfProcessingMethod: processingResult.processingMethod,

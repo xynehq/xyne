@@ -2130,9 +2130,12 @@ export const GetChunkContentApi = async (c: Context) => {
       }).join("\n")
     } else {
       const pageNums = (resp.fields as any).chunks_map?.[index]?.page_numbers
+      // docling prov.page_no is 1-based (first page = 1).
+      // The frontend treats pageIndex as 0-based throughout (all handlers add 1).
+      // Subtract 1 here so the rest of the pipeline is consistent.
       pageIndex =
         Array.isArray(pageNums) && typeof pageNums[0] === "number"
-          ? pageNums[0]
+          ? pageNums[0] - 1
           : -1
     }
 
@@ -2140,9 +2143,20 @@ export const GetChunkContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Chunk content not found" })
     }
 
+    // Get bbox from chunks_map if available
+    const chunkMeta = (resp.fields as any).chunks_map?.[index]
+    const bbox = chunkMeta?.bbox_l !== undefined ? {
+      l: chunkMeta.bbox_l,
+      t: chunkMeta.bbox_t,
+      r: chunkMeta.bbox_r,
+      b: chunkMeta.bbox_b,
+    } : null
+
     return c.json({
       chunkContent: chunkContent,
       pageIndex: pageIndex,
+      bbox: bbox,
+
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error
