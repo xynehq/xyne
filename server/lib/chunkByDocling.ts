@@ -404,9 +404,6 @@ function buildMetadata(
     // Processing stats
     chunksCount: chunks.length,
     imageChunksCount: image_chunks.length,
-    // Source information
-    processingMethod: "docling",
-    processingVersion: "1.0",
   }
 }
 

@@ -245,8 +245,7 @@ export class PdfProcessor {
          return doclingResult
        } catch (error) {
          Logger.warn(
-           error,
-           `Docling PDF processing failed for ${fileName}, attempting fallbacks`,
+           `Docling PDF processing failed for ${fileName}, attempting fallbacks.  error: ${JSON.stringify(error)}`,
          )
        }
      } else {
@@ -266,8 +265,7 @@ export class PdfProcessor {
          return result
        } catch (error) {
          Logger.warn(
-           error,
-           `Gemini PDF processing failed for ${fileName}, falling back to PDF.js`,
+           `Gemini PDF processing failed for ${fileName}, falling back to PDF.js.  error: ${JSON.stringify(error)}`,
          )
        }
      } else if (pageCount !== null) {
@@ -294,8 +292,7 @@ export class PdfProcessor {
        return result
      } catch (error) {
        Logger.error(
-         error,
-         `All PDF processing strategies failed for ${fileName}`,
+         `All PDF processing strategies failed for ${fileName}.  error: ${JSON.stringify(error)}`,
        )
        throw error
      }

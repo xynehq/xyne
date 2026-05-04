@@ -6,7 +6,6 @@ import { type ChunkMetadata } from "@/types"
 import { 
   PdfProcessor, 
   type PdfProcessingMethod,
-  type ProcessingResultDraft 
 } from "@/lib/pdfProcessor"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
 import * as XLSX from "xlsx"
