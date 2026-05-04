@@ -1,48 +1,57 @@
-import { Hono } from "hono"
-import { init as initQueue } from "@/queue"
-import config from "@/config"
-import { getLogger, LogMiddleware } from "@/logger"
+import path from "path"
 import {
-  startGoogleIngestionSchema,
-  startZohoDeskSyncSchema,
-  Subsystem,
-} from "@/types"
-import { InitialisationError } from "@/errors"
-import metricRegister from "@/metrics/sharedRegistry"
-import { isSlackEnabled, startSocketMode } from "@/integrations/slack/client"
-import { jwt } from "hono/jwt"
-import { zValidator } from "@hono/zod-validator"
-import {
-  IngestMoreChannelApi,
-  StartSlackIngestionApi,
-  ServiceAccountIngestMoreUsersApi,
-  HandlePerUserSlackSync,
   HandlePerUserGoogleWorkSpaceSync,
+  HandlePerUserSlackSync,
+  IngestMoreChannelApi,
+  ServiceAccountIngestMoreUsersApi,
   StartGoogleIngestionApi,
-  syncByMailSchema,
+  StartSlackIngestionApi,
   StartZohoDeskSyncApi,
+  syncByMailSchema,
 } from "@/api/admin"
 import {
-  GetIngestionStatusApi,
   CancelIngestionApi,
+  GetIngestionStatusApi,
   PauseIngestionApi,
   ResumeIngestionApi,
-  getIngestionStatusSchema,
   cancelIngestionSchema,
+  getIngestionStatusSchema,
   pauseIngestionSchema,
   resumeIngestionSchema,
 } from "@/api/ingestion"
-import {
-  ingestMoreChannelSchema,
-  startSlackIngestionSchema,
-  serviceAccountIngestMoreSchema,
-} from "@/types"
+import config from "@/config"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
-import type { JwtVariables } from "hono/jwt"
+import { InitialisationError } from "@/errors"
+import { isSlackEnabled, startSocketMode } from "@/integrations/slack/client"
+import { LogMiddleware, getLogger } from "@/logger"
+import metricRegister from "@/metrics/sharedRegistry"
+import { init as initQueue } from "@/queue"
+import { buildInternalSyncControlRoutes } from "@/sync-control/internalRoutes"
+import {
+  getWorkerState,
+  handleThreadWorkerMessage,
+  markThreadWorkerExited,
+  pauseWorkerGroup,
+  registerThreadWorker,
+  resumeWorkerGroup,
+} from "@/sync-control/workerControl"
+import {
+  Subsystem,
+  startGoogleIngestionSchema,
+  startZohoDeskSyncSchema,
+} from "@/types"
+import {
+  ingestMoreChannelSchema,
+  serviceAccountIngestMoreSchema,
+  startSlackIngestionSchema,
+} from "@/types"
+import { zValidator } from "@hono/zod-validator"
+import { Hono } from "hono"
 import type { Context, Next } from "hono"
+import { jwt } from "hono/jwt"
+import type { JwtVariables } from "hono/jwt"
 import { Worker } from "worker_threads"
-import path from "path"
 import WebSocket from "ws"
 
 const Logger = getLogger(Subsystem.SyncServer)
@@ -91,6 +100,15 @@ app.get("/status", (c) => {
     slack_enabled: isSlackEnabled(),
   })
 })
+
+app.route(
+  "/internal/sync-control",
+  buildInternalSyncControlRoutes({
+    getWorkerState,
+    pauseWorkerGroup,
+    resumeWorkerGroup,
+  }),
+)
 
 // // Protected ingestion API routes - require JWT authentication
 app.use("*", AuthMiddleware)
@@ -168,6 +186,7 @@ app.post(
 const startAndMonitorWorkers = (
   workerScript: string,
   workerType: string,
+  workerGroup: string,
   count: number,
   workerThreads: Worker[],
   arrayIndexOffset: number,
@@ -177,10 +196,15 @@ const startAndMonitorWorkers = (
   for (let i = 0; i < count; i++) {
     const workerIndexForLogging = i + 1
     const workerArrayIndex = arrayIndexOffset + i
-    const worker = new Worker(path.join(__dirname, workerScript))
+    const childId = `${workerGroup}:${workerIndexForLogging}`
+    const worker = new Worker(path.join(__dirname, workerScript), {
+      workerData: { childId, workerGroup },
+    })
     workerThreads.push(worker)
+    registerThreadWorker({ childId, workerGroup, thread: worker })
 
     worker.on("message", (message) => {
+      if (handleThreadWorkerMessage(message)) return
       if (message.status === "initialized") {
         Logger.info(
           `${workerType} processing worker thread ${workerIndexForLogging} initialized successfully`,
@@ -200,6 +224,7 @@ const startAndMonitorWorkers = (
     })
 
     worker.on("exit", (code) => {
+      markThreadWorkerExited(childId)
       if (code !== 0) {
         Logger.error(
           `${workerType} processing worker thread ${workerIndexForLogging} exited with code ${code}`,
@@ -208,11 +233,15 @@ const startAndMonitorWorkers = (
         Logger.info(
           `Restarting ${workerType} processing worker thread ${workerIndexForLogging}...`,
         )
-        const newWorker = new Worker(path.join(__dirname, workerScript))
+        const newWorker = new Worker(path.join(__dirname, workerScript), {
+          workerData: { childId, workerGroup },
+        })
         workerThreads[workerArrayIndex] = newWorker
+        registerThreadWorker({ childId, workerGroup, thread: newWorker })
 
         // Re-attach event listeners for the new worker
         newWorker.on("message", (message) => {
+          if (handleThreadWorkerMessage(message)) return
           if (message.status === "initialized") {
             Logger.info(
               `${workerType} processing worker thread ${workerIndexForLogging} restarted and initialized successfully`,
@@ -232,6 +261,7 @@ const startAndMonitorWorkers = (
         })
 
         newWorker.on("exit", (code) => {
+          markThreadWorkerExited(childId)
           if (code !== 0) {
             Logger.error(
               `${workerType} processing worker thread ${workerIndexForLogging} exited with code ${code}`,
@@ -255,6 +285,7 @@ export const initSyncServer = async () => {
   startAndMonitorWorkers(
     "fileProcessingWorker.ts",
     "File",
+    "file-processing",
     fileWorkerCount,
     workerThreads,
     0,
@@ -262,6 +293,7 @@ export const initSyncServer = async () => {
   startAndMonitorWorkers(
     "pdfFileProcessingWorker.ts",
     "PDF file",
+    "pdf-file-processing",
     pdfWorkerCount,
     workerThreads,
     fileWorkerCount,

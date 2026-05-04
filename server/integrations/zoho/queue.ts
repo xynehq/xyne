@@ -1,36 +1,39 @@
-import type PgBoss from "pg-boss"
 import { db } from "@/db/client"
-import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
-import { Apps } from "@/shared/types"
-import { eq } from "drizzle-orm"
-import { connectors, type SelectConnector } from "@/db/schema"
-import { ZohoDeskClient } from "./client"
 import {
-  transformZohoTicketToVespa,
-  enqueueSummaryJobs,
-  type VespaZohoTicket,
-  type VespaZohoTicketBase,
-  type VespaAttachmentType,
-} from "./transformer"
-import { insert, GetDocument, UpdateDocument } from "@/search/vespa"
-import type { ZohoTicket } from "./types"
-import { boss } from "@/queue/boss"
-import {
-  ProcessZohoDeskTicketQueue,
-  ProcessZohoDeskAttachmentQueue,
-} from "@/queue"
-import {
+  getIngestionById,
   updateIngestionMetadata,
   updateIngestionStatus,
-  getIngestionById,
 } from "@/db/ingestion"
+import { type SelectConnector, connectors } from "@/db/schema"
 import type { ZohoDeskIngestionMetadata } from "@/db/schema/ingestions"
 import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
-import * as XLSX from "xlsx"
+import { getLogger } from "@/logger"
+import {
+  ProcessZohoDeskAttachmentQueue,
+  ProcessZohoDeskTicketQueue,
+} from "@/queue"
+import { boss } from "@/queue/boss"
+import { GetDocument, UpdateDocument, insert } from "@/search/vespa"
+import { Apps, AuthType } from "@/shared/types"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
+import { checkSyncControl } from "@/sync-control/checkpoint"
+import { Subsystem } from "@/types"
+import { eq } from "drizzle-orm"
+import type PgBoss from "pg-boss"
+import * as XLSX from "xlsx"
+import { ZohoDeskClient } from "./client"
+import {
+  type VespaAttachmentType,
+  type VespaZohoTicket,
+  type VespaZohoTicketBase,
+  enqueueSummaryJobs,
+  transformZohoTicketToVespa,
+} from "./transformer"
+import type { ZohoTicket } from "./types"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "zoho-queue" })
+const ZOHO_TICKET_QUEUE = "process-zoho-desk-ticket"
+const ZOHO_ATTACHMENT_QUEUE = "process-zoho-desk-attachment"
 
 // Vespa schema constant for tickets (generic for all ticketing systems)
 const ticketSchema = "ticket" as const
@@ -109,7 +112,6 @@ async function parseSpreadsheetFile(
   filename: string,
 ): Promise<string> {
   try {
-
     // Parse with XLSX library (supports CSV, XLSX, XLS)
     const workbook = XLSX.read(buffer, {
       type: "buffer",
@@ -143,10 +145,8 @@ async function parseSpreadsheetFile(
 
     const combinedText = allChunks.join("\n\n")
 
-
     return combinedText
   } catch (error) {
-
     Logger.error("Failed to parse spreadsheet file", {
       filename,
       error: error instanceof Error ? error.message : String(error),
@@ -204,6 +204,20 @@ export async function processTicketJob(
       throw new Error(`Connector not found: ${connectorId}`)
     }
 
+    const decision = await checkSyncControl({
+      queueName: ZOHO_TICKET_QUEUE,
+      jobId: job.id,
+      jobData: {
+        connectorId,
+        ticketId,
+        workspaceId: connector.workspaceId,
+        app: Apps.ZohoDesk,
+        authType: AuthType.OAuth,
+      },
+      checkpoint: "loop_checkpoint",
+    })
+    if (decision !== "allowed") return
+
     // 2. Parse credentials (it's a JSON string from database)
     let credentials: any
     try {
@@ -238,10 +252,7 @@ export async function processTicketJob(
       fullTicket.modifiedTime &&
       fullTicket.modifiedTime <= lastModifiedTime
     ) {
-
-      Logger.info(
-        "⏭️  Skipping old ticket (early check)",
-      )
+      Logger.info("⏭️  Skipping old ticket (early check)")
       return
     }
 
@@ -251,7 +262,7 @@ export async function processTicketJob(
       const createdByAgent = await client.fetchAgentById(fullTicket.createdBy)
       if (createdByAgent) {
         fullTicket.createdBy = createdByAgent as any
-      } 
+      }
     }
 
     // Fetch modifiedBy agent info if it's just an ID
@@ -267,7 +278,7 @@ export async function processTicketJob(
       const account = await client.fetchAccountById(fullTicket.accountId)
       if (account) {
         fullTicket.account = account as any
-      } 
+      }
     }
 
     // Fetch product info if we only have productId
@@ -275,16 +286,15 @@ export async function processTicketJob(
       const product = await client.fetchProductById(fullTicket.productId)
       if (product) {
         fullTicket.product = product as any
-      } 
+      }
     }
 
     // Fetch team info if we only have teamId
     if (fullTicket.teamId && !fullTicket.team) {
-
       const team = await client.fetchTeamById(fullTicket.teamId)
       if (team) {
         fullTicket.team = team as any
-      } 
+      }
     }
 
     // 4. Fetch threads
@@ -576,6 +586,21 @@ export async function processAttachmentJob(
       throw new Error(`Connector not found: ${connectorId}`)
     }
 
+    const decision = await checkSyncControl({
+      queueName: ZOHO_ATTACHMENT_QUEUE,
+      jobId: job.id,
+      jobData: {
+        connectorId,
+        ticketId,
+        attachmentId,
+        workspaceId: connector.workspaceId,
+        app: Apps.ZohoDesk,
+        authType: AuthType.OAuth,
+      },
+      checkpoint: "loop_checkpoint",
+    })
+    if (decision !== "allowed") return
+
     // 2. Parse credentials (it's a JSON string from database)
     let credentials: any
     try {
@@ -622,14 +647,12 @@ export async function processAttachmentJob(
 
     // Check if file is a spreadsheet (CSV, XLSX, XLS)
     if (isSpreadsheetFile(attachmentName)) {
-
       Logger.info("📊 Parsing spreadsheet file", {
         attachmentId,
         attachmentName,
       })
       ocrText = await parseSpreadsheetFile(buffer, attachmentName)
     } else if (isPlainTextFile(attachmentName)) {
-
       Logger.info("📄 Reading plain text file directly", {
         attachmentId,
         attachmentName,
@@ -651,7 +674,6 @@ export async function processAttachmentJob(
         ocrText = ""
       }
     } else {
-
       Logger.info("🔍 Running OCR on attachment", {
         attachmentId,
         attachmentName,
@@ -667,7 +689,6 @@ export async function processAttachmentJob(
         // Extract text from chunks
         ocrText = ocrResult.chunks.join(" ")
       } catch (ocrError) {
-
         Logger.warn("OCR processing failed, continuing with empty text", {
           attachmentId,
           attachmentName,
@@ -734,13 +755,11 @@ export async function processAttachmentJob(
       attachmentId,
     })
   } catch (error) {
-
     Logger.error("Error processing attachment", {
       ticketId,
       attachmentId,
       error: error instanceof Error ? error.message : String(error),
     })
-
 
     try {
       const ticket = await fetchTicketWithRetry(ticketId, 3, 2000)
@@ -755,15 +774,11 @@ export async function processAttachmentJob(
         await UpdateDocument(ticketSchema as any, ticketId, ticketFields)
 
         // Success log - safe for production
-      
-
       } else {
         // Warning log - safe for production
-      
       }
     } catch (updateError) {
       // Failure log - safe for production
-
 
       Logger.error("Failed to mark attachment as failed", {
         ticketId,

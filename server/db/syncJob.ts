@@ -1,12 +1,12 @@
-import type { TxnOrClient } from "@/types"
 import {
-  selectSyncJobSchema,
-  syncJobs,
   type InsertSyncJob,
   type SelectSyncJob,
+  selectSyncJobSchema,
+  syncJobs,
 } from "@/db/schema"
-import { createId } from "@paralleldrive/cuid2"
 import { Apps, AuthType } from "@/shared/types"
+import type { TxnOrClient } from "@/types"
+import { createId } from "@paralleldrive/cuid2"
 import { and, eq, inArray } from "drizzle-orm"
 import { z } from "zod"
 
@@ -49,16 +49,21 @@ export const getAppSyncJobsByEmail = async (
   app: Apps,
   authType: AuthType,
   email: string,
+  workspaceId?: number,
 ): Promise<SelectSyncJob[]> => {
+  const conditions = [
+    eq(syncJobs.app, app),
+    eq(syncJobs.authType, authType),
+    eq(syncJobs.email, email),
+  ]
+  if (workspaceId !== undefined) {
+    conditions.push(eq(syncJobs.workspaceId, workspaceId))
+  }
+
   const jobs = await trx
     .select()
     .from(syncJobs)
-    .where(
-      and(
-        and(eq(syncJobs.app, app), eq(syncJobs.authType, authType)),
-        eq(syncJobs.email, email),
-      ),
-    )
+    .where(and(...conditions))
   return z.array(selectSyncJobSchema).parse(jobs)
 }
 

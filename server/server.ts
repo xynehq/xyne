@@ -155,6 +155,28 @@ import {
   pauseIngestionSchema,
   resumeIngestionSchema,
 } from "@/api/ingestion"
+import {
+  CancelSyncJobs,
+  ClearSyncQueues,
+  DeleteSyncJobs,
+  GetSyncServerQueues,
+  GetSyncServerStatus,
+  ListSyncQueueAuditLogs,
+  ListSyncServerJobs,
+  PauseSyncControl,
+  PauseSyncWorkers,
+  ResumeSyncControl,
+  ResumeSyncWorkers,
+  syncAuditLogsQuerySchema,
+  syncClearSchema,
+  syncJobsCancelSchema,
+  syncJobsDeleteSchema,
+  syncJobsQuerySchema,
+  syncPauseResumeSchema,
+  syncStatusQuerySchema,
+  syncWorkerCommandSchema,
+} from "@/api/syncControl"
+import { buildSyncServerProxyHeaders } from "@/api/syncServerProxy"
 import { SearchWorkspaceUsersApi, searchUsersSchema } from "@/api/users"
 import {
   InitiateCallApi,
@@ -2286,6 +2308,57 @@ export const AppRoutes = app
     zValidator("json", getDocumentSchema),
     GetKbVespaContent,
   )
+  .get(
+    "/sync-server/status",
+    zValidator("query", syncStatusQuerySchema),
+    GetSyncServerStatus,
+  )
+  .get("/sync-server/queues", GetSyncServerQueues)
+  .get(
+    "/sync-server/jobs",
+    zValidator("query", syncJobsQuerySchema),
+    ListSyncServerJobs,
+  )
+  .get(
+    "/sync-server/audit-logs",
+    zValidator("query", syncAuditLogsQuerySchema),
+    ListSyncQueueAuditLogs,
+  )
+  .post(
+    "/sync-server/pause",
+    zValidator("json", syncPauseResumeSchema),
+    PauseSyncControl,
+  )
+  .post(
+    "/sync-server/resume",
+    zValidator("json", syncPauseResumeSchema),
+    ResumeSyncControl,
+  )
+  .post(
+    "/sync-server/workers/pause",
+    zValidator("json", syncWorkerCommandSchema),
+    PauseSyncWorkers,
+  )
+  .post(
+    "/sync-server/workers/resume",
+    zValidator("json", syncWorkerCommandSchema),
+    ResumeSyncWorkers,
+  )
+  .post(
+    "/sync-server/jobs/cancel",
+    zValidator("json", syncJobsCancelSchema),
+    CancelSyncJobs,
+  )
+  .post(
+    "/sync-server/jobs/delete",
+    zValidator("json", syncJobsDeleteSchema),
+    DeleteSyncJobs,
+  )
+  .post(
+    "/sync-server/clear",
+    zValidator("json", syncClearSchema),
+    ClearSyncQueues,
+  )
 
   // Admin Dashboard Routes
   .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
@@ -2450,9 +2523,7 @@ const proxyToSyncServer = async (
   try {
     // Get JWT token from cookie
     const token = getCookie(c, AccessTokenCookieName)
-    if (!token) {
-      throw new HTTPException(401, { message: "No authentication token" })
-    }
+    const authorization = c.req.header("Authorization")
 
     // Prepare URL - for GET requests, add query parameters
     let url = `http://${config.syncServerHost}:${config.syncServerPort}${endpoint}`
@@ -2470,10 +2541,11 @@ const proxyToSyncServer = async (
     // Prepare request configuration
     const requestConfig: RequestInit = {
       method,
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: `${AccessTokenCookieName}=${token}`,
-      },
+      headers: buildSyncServerProxyHeaders({
+        token,
+        authorization,
+        accessTokenCookieName: AccessTokenCookieName,
+      }),
     }
 
     // Add body for non-GET requests

@@ -1,9 +1,9 @@
-import { drizzle } from "drizzle-orm/postgres-js"
-import postgres from "postgres"
 import config from "@/config"
+import * as schema from "@/db/schema"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import * as schema from "@/db/schema"
+import { drizzle } from "drizzle-orm/postgres-js"
+import postgres from "postgres"
 
 const Logger = getLogger(Subsystem.Db).child({ module: "client" })
 
@@ -14,3 +14,7 @@ const queryClient = postgres(url, {
 })
 // We will use the exported variable to query our db:
 export const db = drizzle(queryClient, { schema })
+
+export const closeDbClient = async () => {
+  await queryClient.end()
+}

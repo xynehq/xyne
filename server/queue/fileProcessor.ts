@@ -1,20 +1,21 @@
+import { readFile } from "node:fs/promises"
+import { IMAGE_CONTEXT_CONFIG } from "@/config"
+import { db } from "@/db/client"
+import { updateParentStatus } from "@/db/knowledgeBase"
+import { collectionItems, collections } from "@/db/schema"
+import { getBaseMimeType } from "@/integrations/dataSource/config"
 import { getLogger } from "@/logger"
-import { Subsystem, ProcessingJobType } from "@/types"
-import { getErrorMessage } from "@/utils"
+import { insert } from "@/search/vespa"
 import {
   FileProcessorService,
   type SheetProcessingResult,
 } from "@/services/fileProcessor"
-import { insert } from "@/search/vespa"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
-import { getBaseMimeType } from "@/integrations/dataSource/config"
-import { db } from "@/db/client"
-import { collectionItems, collections } from "@/db/schema"
-import { eq, and, isNull } from "drizzle-orm"
-import { readFile } from "node:fs/promises"
 import { UploadStatus } from "@/shared/types"
-import { updateParentStatus } from "@/db/knowledgeBase"
-import { IMAGE_CONTEXT_CONFIG } from "@/config"
+import { checkSyncControl } from "@/sync-control/checkpoint"
+import { ProcessingJobType, Subsystem } from "@/types"
+import { getErrorMessage } from "@/utils"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
+import { and, eq, isNull } from "drizzle-orm"
 
 const Logger = getLogger(Subsystem.Queue)
 
@@ -89,6 +90,25 @@ export type ProcessingJob =
   | CollectionProcessingJob
   | FolderProcessingJob
 
+type ProcessingContext = {
+  queueName: string
+  jobId?: string
+}
+
+const shouldStopProcessingJob = async (
+  context: ProcessingContext | undefined,
+  jobData: ProcessingJob,
+) => {
+  if (!context) return false
+  const decision = await checkSyncControl({
+    queueName: context.queueName,
+    jobId: context.jobId,
+    jobData,
+    checkpoint: "loop_checkpoint",
+  })
+  return decision !== "allowed"
+}
+
 // Common retry handling function
 async function handleRetryFailure(
   entityType: ProcessingJobType,
@@ -156,7 +176,10 @@ async function handleRetryFailure(
   }
 }
 
-export async function processJob(job: { data: ProcessingJob }) {
+export async function processJob(
+  job: { data: ProcessingJob },
+  context?: ProcessingContext,
+) {
   const startTime = Date.now()
 
   // Debug logging to see what we receive
@@ -167,20 +190,33 @@ export async function processJob(job: { data: ProcessingJob }) {
 
   switch (jobType) {
     case ProcessingJobType.FILE:
-      return await processFileJob(jobData as FileProcessingJob, startTime)
+      return await processFileJob(
+        jobData as FileProcessingJob,
+        startTime,
+        context,
+      )
     case ProcessingJobType.COLLECTION:
       return await processCollectionJob(
         jobData as CollectionProcessingJob,
         startTime,
+        context,
       )
     case ProcessingJobType.FOLDER:
-      return await processFolderJob(jobData as FolderProcessingJob, startTime)
+      return await processFolderJob(
+        jobData as FolderProcessingJob,
+        startTime,
+        context,
+      )
     default:
       throw new Error(`Unknown job type: ${jobType}`)
   }
 }
 
-async function processFileJob(jobData: FileProcessingJob, startTime: number) {
+async function processFileJob(
+  jobData: FileProcessingJob,
+  startTime: number,
+  context?: ProcessingContext,
+) {
   const { fileId } = jobData
 
   // Get file details for processing with collection info (outside try block for error handling access)
@@ -223,6 +259,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
   }
 
   try {
+    if (await shouldStopProcessingJob(context, jobData)) return
     Logger.info(`Processing file job: ${fileId}`)
 
     // Skip if already processed
@@ -298,6 +335,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       newVespaDocId = file.vespaDocId
     }
     for (const [resultIndex, processingResult] of processingResults.entries()) {
+      if (await shouldStopProcessingJob(context, jobData)) return
       // Create Vespa document with proper fileName (matching original logic)
       const targetPath = file.path
 
@@ -442,6 +480,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
 async function processCollectionJob(
   jobData: CollectionProcessingJob,
   startTime: number,
+  context?: ProcessingContext,
 ) {
   const { collectionId } = jobData
 
@@ -468,6 +507,7 @@ async function processCollectionJob(
   const col = collection[0]
 
   try {
+    if (await shouldStopProcessingJob(context, jobData)) return
     Logger.info(`Processing collection Vespa insertion: ${collectionId}`)
 
     // Update status to processing
@@ -545,6 +585,7 @@ async function processCollectionJob(
 async function processFolderJob(
   jobData: FolderProcessingJob,
   startTime: number,
+  context?: ProcessingContext,
 ) {
   const { folderId } = jobData
 
@@ -578,6 +619,7 @@ async function processFolderJob(
   }
 
   try {
+    if (await shouldStopProcessingJob(context, jobData)) return
     Logger.info(`Processing folder Vespa insertion: ${folderId}`)
 
     // Check required fields
