@@ -653,24 +653,29 @@ const checkConfiguredSystemHealth = async (
 ): Promise<OverallSystemHealthResponse> => {
   Logger.info(logMessage)
   const keycloakEnabled = isKeycloakExplicitlyEnabled()
+  const doclingEnabled = config.doclingEnabled
 
-  const [postgresHealth, vespaHealth, ocrProviderHealth, doclingHealth, keycloakHealth,] =
-    await Promise.all([
-      checkPostgresHealth(),
-      checkVespaHealth(),
-      checkConfiguredOCRProvidersHealth(),
-      checkDoclingHealth(),
-      keycloakEnabled ? checkKeycloakHealth() : Promise.resolve(undefined),
-    ])
+  // Run core health checks
+  const [postgresHealth, vespaHealth, ocrProviderHealth] = await Promise.all([
+    checkPostgresHealth(),
+    checkVespaHealth(),
+    checkConfiguredOCRProvidersHealth(),
+  ])
 
+  // Build services object
   const services: ServiceHealthCheck = {
     postgres: postgresHealth,
     vespa: vespaHealth,
-    docling: doclingHealth,
     ...ocrProviderHealth,
   }
-  if (keycloakHealth) {
-    services.keycloak = keycloakHealth
+
+  // Conditionally check optional services
+  if (doclingEnabled) {
+    services.docling = await checkDoclingHealth()
+  }
+
+  if (keycloakEnabled) {
+    services.keycloak = await checkKeycloakHealth()
   }
 
   return buildSystemHealthResponse(services)
