@@ -1,68 +1,13 @@
-import { calendar_v3, drive_v3, gmail_v1, google, people_v1 } from "googleapis"
-import {
-  Subsystem,
-  SyncCron,
-  type CalendarEventsChangeToken,
-  type ChangeToken,
-  type GmailChangeToken,
-  type GoogleChangeToken,
-  type GoogleClient,
-  type GoogleServiceAccount,
-  type OAuthCredentials,
-} from "@/types"
-import PgBoss from "pg-boss"
-import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
-import {
-  DeleteDocument,
-  GetDocument,
-  getDocumentOrNull,
-  insert,
-  insertDocument,
-  UpdateDocument,
-  UpdateDocumentPermissions,
-  UpdateEventCancelledInstances,
-  insertWithRetry,
-  IfMailDocExist,
-} from "@/search/vespa"
 import { db } from "@/db/client"
-import {
-  Apps,
-  AuthType,
-  SyncJobStatus,
-  DriveEntity,
-  GooglePeopleEntity,
-} from "@/shared/types"
+import { getConnector, getOAuthConnectorWithCredentials } from "@/db/connector"
+import { insertSyncHistory } from "@/db/syncHistory"
 import {
   getAppSyncJobs,
   getAppSyncJobsByEmail,
   updateSyncJob,
 } from "@/db/syncJob"
 import { getUserById } from "@/db/user"
-import { insertSyncHistory } from "@/db/syncHistory"
-import { getErrorMessage, retryWithBackoff } from "@/utils"
-import {
-  createJwtClient,
-  driveFileToIndexed,
-  DriveMime,
-  getFile,
-  getFileContent,
-  getPDFContent,
-  getSheetsFromSpreadSheet,
-  MimeMapForContent,
-  toPermissionsList,
-} from "./utils"
 import { SyncJobFailed } from "@/errors"
-import { getLogger } from "@/logger"
-import {
-  CalendarEntity,
-  eventSchema,
-  fileSchema,
-  mailSchema,
-  userSchema,
-  type VespaEvent,
-  type VespaFile,
-  type VespaMail,
-} from "@xyne/vespa-ts/types"
 import {
   eventFields,
   getAttachments,
@@ -76,8 +21,99 @@ import {
   insertContact,
   loggerWithChild,
 } from "@/integrations/google"
-import { parseMail } from "./gmail"
+import { getLogger } from "@/logger"
+import {
+  DeleteDocument,
+  GetDocument,
+  IfMailDocExist,
+  UpdateDocument,
+  UpdateDocumentPermissions,
+  UpdateEventCancelledInstances,
+  getDocumentOrNull,
+  insert,
+  insertDocument,
+  insertWithRetry,
+} from "@/search/vespa"
+import {
+  Apps,
+  AuthType,
+  DriveEntity,
+  GooglePeopleEntity,
+  SyncJobStatus,
+} from "@/shared/types"
+import { checkSyncControl } from "@/sync-control/checkpoint"
+import {
+  type CalendarEventsChangeToken,
+  type ChangeToken,
+  type GmailChangeToken,
+  type GoogleChangeToken,
+  type GoogleClient,
+  type GoogleServiceAccount,
+  type OAuthCredentials,
+  Subsystem,
+  SyncCron,
+} from "@/types"
+import { getErrorMessage, retryWithBackoff } from "@/utils"
+import {
+  CalendarEntity,
+  type VespaEvent,
+  type VespaFile,
+  type VespaMail,
+  eventSchema,
+  fileSchema,
+  mailSchema,
+  userSchema,
+} from "@xyne/vespa-ts/types"
 import { type VespaFileWithDrivePermission } from "@xyne/vespa-ts/types"
+import { calendar_v3, drive_v3, gmail_v1, google, people_v1 } from "googleapis"
+import PgBoss from "pg-boss"
+import { parseMail } from "./gmail"
+import {
+  DriveMime,
+  MimeMapForContent,
+  createJwtClient,
+  driveFileToIndexed,
+  getFile,
+  getFileContent,
+  getPDFContent,
+  getSheetsFromSpreadSheet,
+  toPermissionsList,
+} from "./utils"
+
+const GOOGLE_OAUTH_QUEUE = "sync-SaaS-oauth"
+const GOOGLE_SERVICE_ACCOUNT_QUEUE = "sync-SaaS-service_account"
+const GOOGLE_SERVICE_ACCOUNT_PER_USER_QUEUE =
+  "sync-SaaS-service_account-per-user"
+
+const shouldStopGoogleSyncJob = async ({
+  queueName,
+  pgBossJobId,
+  syncJob,
+}: {
+  queueName: string
+  pgBossJobId?: string
+  syncJob: {
+    email: string
+    workspaceId: number
+    connectorId: number
+    app: string
+    authType: string
+  }
+}) => {
+  const decision = await checkSyncControl({
+    queueName,
+    jobId: pgBossJobId,
+    jobData: {
+      email: syncJob.email,
+      workspaceId: syncJob.workspaceId,
+      connectorId: syncJob.connectorId,
+      app: syncJob.app,
+      authType: syncJob.authType,
+    },
+    checkpoint: "loop_checkpoint",
+  })
+  return decision !== "allowed"
+}
 import { GaxiosError } from "gaxios"
 import { skipMailExistCheck } from "./config"
 
@@ -502,18 +538,21 @@ export const handleGoogleOAuthChanges = async (
       Apps.GoogleDrive,
       AuthType.OAuth,
       data.email,
+      data.workspaceId,
     )
     gmailSyncJobs = await getAppSyncJobsByEmail(
       db,
       Apps.Gmail,
       AuthType.OAuth,
       data.email,
+      data.workspaceId,
     )
     gCalEventSyncJobs = await getAppSyncJobsByEmail(
       db,
       Apps.GoogleCalendar,
       AuthType.OAuth,
       data.email,
+      data.workspaceId,
     )
     loggerWithChild({ email: data.email ?? "" }).info(
       `Value of syncOnlyCurrentUser :${syncOnlyCurrentUser} `,
@@ -531,6 +570,15 @@ export const handleGoogleOAuthChanges = async (
   for (const syncJob of syncJobs) {
     let stats = newStats()
     try {
+      if (
+        await shouldStopGoogleSyncJob({
+          queueName: GOOGLE_OAUTH_QUEUE,
+          pgBossJobId: job.id,
+          syncJob,
+        })
+      ) {
+        continue
+      }
       // flag to know if there were any updates
       let changesExist = false
       const connector = await getOAuthConnectorWithCredentials(
@@ -778,6 +826,15 @@ export const handleGoogleOAuthChanges = async (
   let stats = newStats()
   for (const syncJob of gmailSyncJobs) {
     try {
+      if (
+        await shouldStopGoogleSyncJob({
+          queueName: GOOGLE_OAUTH_QUEUE,
+          pgBossJobId: job.id,
+          syncJob,
+        })
+      ) {
+        continue
+      }
       // flag to know if there were any updates
       const connector = await getOAuthConnectorWithCredentials(
         db,
@@ -882,6 +939,15 @@ export const handleGoogleOAuthChanges = async (
   for (const syncJob of gCalEventSyncJobs) {
     let stats = newStats()
     try {
+      if (
+        await shouldStopGoogleSyncJob({
+          queueName: GOOGLE_OAUTH_QUEUE,
+          pgBossJobId: job.id,
+          syncJob,
+        })
+      ) {
+        continue
+      }
       // flag to know if there were any updates
       const connector = await getOAuthConnectorWithCredentials(
         db,
@@ -1499,6 +1565,9 @@ export const handleGoogleServiceAccountChanges = async (
   Logger.info("handleGoogleServiceAccountChanges")
   const data = job.data
   const syncOnlyCurrentUser = job.data.syncOnlyCurrentUser || false
+  const queueName = syncOnlyCurrentUser
+    ? GOOGLE_SERVICE_ACCOUNT_PER_USER_QUEUE
+    : GOOGLE_SERVICE_ACCOUNT_QUEUE
   let syncJobs, gmailSyncJobs, gCalEventSyncJobs
 
   if (syncOnlyCurrentUser) {
@@ -1510,18 +1579,21 @@ export const handleGoogleServiceAccountChanges = async (
       Apps.GoogleDrive,
       AuthType.ServiceAccount,
       data.email,
+      data.workspaceId,
     )
     gmailSyncJobs = await getAppSyncJobsByEmail(
       db,
       Apps.Gmail,
       AuthType.ServiceAccount,
       data.email,
+      data.workspaceId,
     )
     gCalEventSyncJobs = await getAppSyncJobsByEmail(
       db,
       Apps.GoogleCalendar,
       AuthType.ServiceAccount,
       data.email,
+      data.workspaceId,
     )
     loggerWithChild({ email: data.email ?? "" }).info(
       `Value of syncOnlyCurrentUser :${syncOnlyCurrentUser} `,
@@ -1550,6 +1622,15 @@ export const handleGoogleServiceAccountChanges = async (
   for (const syncJob of syncJobs) {
     let stats = newStats()
     try {
+      if (
+        await shouldStopGoogleSyncJob({
+          queueName,
+          pgBossJobId: job.id,
+          syncJob,
+        })
+      ) {
+        continue
+      }
       // flag to know if there were any updates
       let changesExist = false
       const connector = await getConnector(db, syncJob.connectorId)
@@ -1837,6 +1918,15 @@ export const handleGoogleServiceAccountChanges = async (
   let stats = newStats()
   for (const syncJob of gmailSyncJobs) {
     try {
+      if (
+        await shouldStopGoogleSyncJob({
+          queueName,
+          pgBossJobId: job.id,
+          syncJob,
+        })
+      ) {
+        continue
+      }
       const connector = await getConnector(db, syncJob.connectorId)
       const serviceAccountKey: GoogleServiceAccount = JSON.parse(
         connector.credentials as string,
@@ -1922,6 +2012,15 @@ export const handleGoogleServiceAccountChanges = async (
 
   for (const syncJob of gCalEventSyncJobs) {
     try {
+      if (
+        await shouldStopGoogleSyncJob({
+          queueName,
+          pgBossJobId: job.id,
+          syncJob,
+        })
+      ) {
+        continue
+      }
       const connector = await getConnector(db, syncJob.connectorId)
       const serviceAccountKey: GoogleServiceAccount = JSON.parse(
         connector.credentials as string,

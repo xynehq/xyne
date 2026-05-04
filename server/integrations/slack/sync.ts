@@ -1,94 +1,126 @@
-import { calendar_v3, drive_v3, gmail_v1, google, people_v1 } from "googleapis"
-import type PgBoss from "pg-boss"
-import { getOAuthConnectorWithCredentials } from "@/db/connector"
 import { db } from "@/db/client"
-import { Apps, AuthType, SyncJobStatus } from "@/shared/types"
+import { getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
-  connectors,
   type SelectConnector,
   type SlackOAuthIngestionState,
+  connectors,
 } from "@/db/schema"
-import { Subsystem, type SlackConfig, SyncCron } from "@/types"
 import {
   getAppSyncJobs,
   getAppSyncJobsByEmail,
   updateSyncJob,
 } from "@/db/syncJob"
-import { WebClient } from "@slack/web-api"
 import {
-  getAllConversations,
-  insertConversation,
-  safeGetTeamInfo,
   extractUserIdsFromBlocks,
   fetchThreadMessages,
-  insertMember,
   formatSlackSpecialMentions,
+  getAllConversations,
+  insertConversation,
+  insertMember,
+  safeGetTeamInfo,
 } from "@/integrations/slack/index"
 import { getLogger, getLoggerWithChild } from "@/logger"
+import { Apps, AuthType, SyncJobStatus } from "@/shared/types"
+import { type SlackConfig, Subsystem, SyncCron } from "@/types"
+import { WebClient } from "@slack/web-api"
 import { GaxiosError } from "gaxios"
+import { calendar_v3, drive_v3, gmail_v1, google, people_v1 } from "googleapis"
+import type PgBoss from "pg-boss"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 
-import type { Channel } from "@slack/web-api/dist/types/response/ChannelsListResponse"
-import type { Member } from "@slack/web-api/dist/types/response/UsersListResponse"
-import type { Team } from "@slack/web-api/dist/types/response/TeamInfoResponse"
-import type { User } from "@slack/web-api/dist/types/response/UsersInfoResponse"
-import { count, eq } from "drizzle-orm"
-import { StatType, Tracker } from "@/integrations/tracker"
-import { sendWebsocketMessage } from "../metricStream"
-import { ConnectorStatus } from "@/shared/types"
-import pLimit from "p-limit"
-import { IngestionState } from "../ingestionState"
+import { insertSyncHistory } from "@/db/syncHistory"
 import { insertSyncJob } from "@/db/syncJob"
-import type { Reaction } from "@slack/web-api/dist/types/response/ChannelsHistoryResponse"
 import {
-  retryPolicies,
+  getAllUsers,
+  getConversationUsers,
+  getTeam,
+  insertChatMessage,
+  insertTeam,
+  safeConversationHistory,
+} from "@/integrations/slack/index"
+import { StatType, Tracker } from "@/integrations/tracker"
+import {
+  GetDocument,
+  UpdateDocument,
+  ifDocumentsExist,
+  ifDocumentsExistInChatContainer,
+  ifDocumentsExistInSchema,
+  insert,
+  insertDocument,
+  insertUser,
+} from "@/search/vespa"
+import { ConnectorStatus } from "@/shared/types"
+import { checkSyncControl } from "@/sync-control/checkpoint"
+import { getErrorMessage } from "@/utils"
+import {
   type ConversationsHistoryResponse,
   type ConversationsListResponse,
   type ConversationsRepliesResponse,
   type FilesListResponse,
   type TeamInfoResponse,
   type UsersListResponse,
+  retryPolicies,
 } from "@slack/web-api"
-import { insertSyncHistory } from "@/db/syncHistory"
+import type { Reaction } from "@slack/web-api/dist/types/response/ChannelsHistoryResponse"
+import type { Channel } from "@slack/web-api/dist/types/response/ChannelsListResponse"
+import type { Team } from "@slack/web-api/dist/types/response/TeamInfoResponse"
+import type { User } from "@slack/web-api/dist/types/response/UsersInfoResponse"
+import type { Member } from "@slack/web-api/dist/types/response/UsersListResponse"
 import {
-  chatContainerSchema,
-  chatMessageSchema,
-  chatTeamSchema,
-  chatUserSchema,
+  type ChatUserCore,
   SlackEntity,
   type VespaChatContainer,
   type VespaChatMessage,
   VespaChatUserSchema,
-  type ChatUserCore,
+  chatContainerSchema,
+  chatMessageSchema,
+  chatTeamSchema,
+  chatUserSchema,
 } from "@xyne/vespa-ts/types"
-import {
-  insert,
-  UpdateDocument,
-  insertDocument,
-  insertUser,
-  ifDocumentsExist,
-  ifDocumentsExistInSchema,
-  ifDocumentsExistInChatContainer,
-  GetDocument,
-} from "@/search/vespa"
-import {
-  getAllUsers,
-  getConversationUsers,
-  insertTeam,
-  safeConversationHistory,
-  insertChatMessage,
-  getTeam,
-} from "@/integrations/slack/index"
+import { count, eq } from "drizzle-orm"
 import { chat } from "googleapis/build/src/apis/chat"
 import { jobs } from "googleapis/build/src/apis/jobs"
-import { getErrorMessage } from "@/utils"
+import pLimit from "p-limit"
+import { IngestionState } from "../ingestionState"
+import { sendWebsocketMessage } from "../metricStream"
 type SlackMessage = NonNullable<
   ConversationsHistoryResponse["messages"]
 >[number]
 
 const concurrency = 5
+const SLACK_QUEUE = "sync-slack-oauth"
+const SLACK_PER_USER_QUEUE = "sync-slack-oauth-per-user"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Queue)
+const shouldStopSlackSyncJob = async ({
+  queueName,
+  pgBossJobId,
+  syncJob,
+}: {
+  queueName: string
+  pgBossJobId?: string
+  syncJob: {
+    email: string
+    workspaceId: number
+    connectorId: number
+    app: string
+    authType: string
+  }
+}) => {
+  const decision = await checkSyncControl({
+    queueName,
+    jobId: pgBossJobId,
+    jobData: {
+      email: syncJob.email,
+      workspaceId: syncJob.workspaceId,
+      connectorId: syncJob.connectorId,
+      app: syncJob.app,
+      authType: syncJob.authType,
+    },
+    checkpoint: "loop_checkpoint",
+  })
+  return decision !== "allowed"
+}
 type ChangeStats = {
   added: number
   removed: number
@@ -329,6 +361,7 @@ export const handleSlackChanges = async (
     "handleSlackChanges started",
   )
   const syncOnlyCurrentUser = job.data.syncOnlyCurrentUser || false
+  const queueName = syncOnlyCurrentUser ? SLACK_PER_USER_QUEUE : SLACK_QUEUE
 
   try {
     let syncJobs = await getAppSyncJobs(db, Apps.Slack, AuthType.OAuth)
@@ -341,6 +374,7 @@ export const handleSlackChanges = async (
         Apps.Slack,
         AuthType.OAuth,
         jobData.email,
+        jobData.workspaceId,
       )
     }
     loggerWithChild({ email: jobData.email ?? "" }).info(
@@ -367,6 +401,15 @@ export const handleSlackChanges = async (
       let config: SlackConfig = syncJob.config as SlackConfig
       const jobStartTime = new Date()
       try {
+        if (
+          await shouldStopSlackSyncJob({
+            queueName,
+            pgBossJobId: job.id,
+            syncJob,
+          })
+        ) {
+          continue
+        }
         Logger.info(`Processing sync job ID: ${syncJob.id}`)
         const { connectorId, email } = syncJob
         const connector = await getOAuthConnectorWithCredentials(
@@ -449,6 +492,15 @@ export const handleSlackChanges = async (
         const channelProcessingPromises = conversations.map((channel) =>
           limit(async () => {
             try {
+              if (
+                await shouldStopSlackSyncJob({
+                  queueName,
+                  pgBossJobId: job.id,
+                  syncJob,
+                })
+              ) {
+                return
+              }
               if (!channel.id) {
                 loggerWithChild({ email: jobData.email ?? "" }).warn(
                   "Skipping channel without ID",
