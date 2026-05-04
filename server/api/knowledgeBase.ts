@@ -2130,12 +2130,10 @@ export const GetChunkContentApi = async (c: Context) => {
       }).join("\n")
     } else {
       const pageNums = (resp.fields as any).chunks_map?.[index]?.page_numbers
-      // docling prov.page_no is 1-based (first page = 1).
-      // The frontend treats pageIndex as 0-based throughout (all handlers add 1).
-      // Subtract 1 here so the rest of the pipeline is consistent.
+      // All chunk sources (Docling, PDF.js, OCR) now use 0-based page numbers
       pageIndex =
         Array.isArray(pageNums) && typeof pageNums[0] === "number"
-          ? pageNums[0] - 1
+          ? pageNums[0]
           : -1
     }
 

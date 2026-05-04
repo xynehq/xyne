@@ -180,18 +180,49 @@ export async function processJob(job: { data: ProcessingJob }) {
   }
 }
 
-const mapChunkMeta = (meta: ChunkMetadata, includeHeadings = false) => ({
-  chunk_index: meta.chunk_index,
-  page_numbers: meta.page_numbers || [],
-  block_labels: meta.block_labels || [],
-  bbox_l: meta.bbox?.l ?? 0,
-  bbox_t: meta.bbox?.t ?? 0,
-  bbox_r: meta.bbox?.r ?? 0,
-  bbox_b: meta.bbox?.b ?? 0,
-  width: meta.width ?? 0,
-  height: meta.height ?? 0,
-  ...(includeHeadings && { headings: meta.headings || [] }),
-})
+type MappedChunkMeta = {
+  chunk_index: number
+  page_numbers: number[]
+  block_labels: string[]
+  width: number
+  height: number
+  bbox_l: number | null
+  bbox_t: number | null
+  bbox_r: number | null
+  bbox_b: number | null
+  headings?: string[]
+}
+
+const mapChunkMeta = (meta: ChunkMetadata, includeHeadings = false): MappedChunkMeta => {
+  const result: MappedChunkMeta = {
+    chunk_index: meta.chunk_index,
+    page_numbers: meta.page_numbers || [],
+    block_labels: meta.block_labels || [],
+    width: meta.width ?? 0,
+    height: meta.height ?? 0,
+    bbox_l: null,
+    bbox_t: null,
+    bbox_r: null,
+    bbox_b: null,
+  }
+
+  if (meta.bbox && 
+      typeof meta.bbox.l === 'number' && 
+      typeof meta.bbox.t === 'number' && 
+      typeof meta.bbox.r === 'number' && 
+      typeof meta.bbox.b === 'number') {
+    result.bbox_l = meta.bbox.l
+    result.bbox_t = meta.bbox.t
+    result.bbox_r = meta.bbox.r
+    result.bbox_b = meta.bbox.b
+  }
+
+  if (includeHeadings) {
+    result.headings = meta.headings || []
+  }
+
+  return result
+}
 
 async function processFileJob(jobData: FileProcessingJob, startTime: number) {
   const { fileId } = jobData

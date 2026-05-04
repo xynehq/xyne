@@ -326,9 +326,13 @@ function transformChunks(
       blockLabels.push(...chunk.headings.map((h) => `heading: ${h}`))
     }
 
+    // Docling returns 1-based page numbers (first page = 1)
+    // Normalize to 0-based to match PDF.js/OCR convention
+    const pageNumbers = (chunk.page_numbers || []).map(p => p - 1)
+
     chunks_map.push({
       chunk_index: index,
-      page_numbers: chunk.page_numbers || [],
+      page_numbers: pageNumbers,
       block_labels: blockLabels,
       bbox: chunk.bbox,
       headings: chunk.headings,
@@ -357,9 +361,12 @@ function transformImageChunks(
     const description = imgChunk.text?.trim() || ""
 
     image_chunks.push(description)
+    // Docling returns 1-based page numbers (first page = 1)
+    // Normalize to 0-based to match PDF.js/OCR convention
+    const pageNumber = imgChunk.page_number ? imgChunk.page_number - 1 : undefined
     image_chunks_map.push({
       chunk_index: index,
-      page_numbers: imgChunk.page_number ? [imgChunk.page_number] : [],
+      page_numbers: pageNumber !== undefined ? [pageNumber] : [],
       block_labels: ["image"],
       bbox: imgChunk.bbox,
       width: imgChunk.width,
