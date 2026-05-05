@@ -1,25 +1,7 @@
-type UUIDFallbackSource = "crypto.getRandomValues" | "Math.random"
-
-let hasLoggedUUIDFallback = false
-
-const logUUIDFallback = (source: UUIDFallbackSource) => {
-  if (hasLoggedUUIDFallback) {
-    return
-  }
-
-  hasLoggedUUIDFallback = true
-  console.info("[uuid] crypto.randomUUID unavailable; using UUID fallback", {
-    source,
-    isSecureContext: globalThis.isSecureContext,
-  })
-}
-
 const fallbackUUID = () => {
   const cryptoObj = globalThis.crypto
 
   if (cryptoObj?.getRandomValues) {
-    logUUIDFallback("crypto.getRandomValues")
-
     const bytes = new Uint8Array(16)
     cryptoObj.getRandomValues(bytes)
     bytes[6] = (bytes[6] & 0x0f) | 0x40
