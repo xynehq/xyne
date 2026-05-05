@@ -1,9 +1,8 @@
 import fs from "fs"
 import path from "path"
-import { ModelToProviderMap } from "@/ai/mappers"
 import { getModelConfiguration } from "@/ai/modelConfig"
 import { findImageByName, regex } from "@/ai/provider/base"
-import { AIProviders, Models } from "@/ai/types"
+import { AIProviders } from "@/ai/types"
 import config from "@/config"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
@@ -237,27 +236,6 @@ const getProviderConnection = (providerType: AIProviders) => {
 const isGenericCompatibleProvider = (providerType: AIProviders): boolean =>
   providerType === AIProviders.LiteLLM || providerType === AIProviders.OpenAI
 
-const getConfiguredProviderType = (
-  modelId: string,
-): AIProviders | null => {
-  const staticProvider = (
-    ModelToProviderMap as Partial<Record<Models, AIProviders>>
-  )[modelId as Models]
-  if (staticProvider) {
-    return staticProvider
-  }
-
-  const configuredProvider = getModelConfiguration(modelId)?.provider
-  if (
-    configuredProvider &&
-    Object.values(AIProviders).includes(configuredProvider as AIProviders)
-  ) {
-    return configuredProvider as AIProviders
-  }
-
-  return null
-}
-
 const attachImagesToLastUserMessage = async <Ctx>(
   state: Readonly<JAFRunState<Ctx>>,
 ): Promise<Readonly<JAFRunState<Ctx>>> => {
@@ -384,7 +362,8 @@ export const makeXyneGenericJAFProvider = <Ctx>(
         throw new Error(`Model not specified for agent ${agent.name}`)
       }
 
-      const providerType = getConfiguredProviderType(requestedModel)
+      const modelConfig = getModelConfiguration(requestedModel)
+      const providerType = modelConfig?.provider
       if (!providerType) {
         Logger.warn(
           { agentName: agent.name, requestedModel },
@@ -401,7 +380,6 @@ export const makeXyneGenericJAFProvider = <Ctx>(
       const stopSignal = getStopSignal(runContext)
       throwIfStopRequested(stopSignal)
 
-      const modelConfig = getModelConfiguration(requestedModel)
       const actualModelId = modelConfig?.actualName ?? requestedModel
       const { apiKey, baseURL } = getProviderConnection(providerType)
       const genericOptions: XyneGenericOpenAIProviderOptions<Ctx> = {
