@@ -8,19 +8,25 @@ import config from "@/config"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import {
-  getTextContent,
-  makeGenericOpenAIProvider,
+  type GenericOpenAIProviderOptions,
+  type GenericOpenAIRequestContext,
   type Agent as JAFAgent,
   type Message as JAFMessage,
-  type MessageContentPart,
   type ModelProvider as JAFModelProvider,
   type RunConfig as JAFRunConfig,
   type RunState as JAFRunState,
+  type MessageContentPart,
+  getTextContent,
+  makeGenericOpenAIProvider,
 } from "@xynehq/jaf"
+import type { ZodTypeAny } from "zod"
 import type { AgentRunContext } from "./agent-schemas"
 import { throwIfStopRequested } from "./agent-stop"
 import { getImageFileNamesForLlmFromStores } from "./document-memory"
-import { makeXyneJAFProvider, type MakeXyneJAFProviderOptions } from "./jaf-provider"
+import {
+  type MakeXyneJAFProviderOptions,
+  makeXyneJAFProvider,
+} from "./jaf-provider"
 import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
 
 const { IMAGE_CONTEXT_CONFIG } = config
@@ -46,6 +52,11 @@ const MIN_TURN_NUMBER = 1
 const normalizeTurnNumber = (turn?: number | null): number =>
   typeof turn === "number" && turn >= MIN_TURN_NUMBER ? turn : MIN_TURN_NUMBER
 
+const isPathInside = (basePath: string, targetPath: string): boolean => {
+  const relativePath = path.relative(basePath, targetPath)
+  return !relativePath.startsWith("..") && !path.isAbsolute(relativePath)
+}
+
 export type MakeXyneGenericJAFProviderOptions<Ctx> =
   MakeXyneJAFProviderOptions & {
     legacyProvider?: JAFModelProvider<Ctx>
@@ -56,6 +67,13 @@ type ImagePromptPart = {
   data: Buffer
   mediaType: string
   filename: string
+}
+
+type XyneGenericOpenAIProviderOptions<Ctx> = Omit<
+  GenericOpenAIProviderOptions<Ctx>,
+  "schemaConverter"
+> & {
+  readonly schemaConverter?: (schema: ZodTypeAny) => Record<string, unknown>
 }
 
 const parseImageFileName = (
@@ -104,10 +122,11 @@ const buildOpenAIImageParts = async (
 
       const { docIndex, docId, imageNumber } = parsed
       const imageDir = path.join(IMAGE_BASE_DIR, docId)
+      const baseResolved = path.resolve(IMAGE_BASE_DIR)
       const resolvedPath = path.resolve(imageDir)
-      if (!resolvedPath.startsWith(IMAGE_BASE_DIR)) {
+      if (!isPathInside(baseResolved, resolvedPath)) {
         Logger.warn(
-          { imageDir, imageName, resolvedPath },
+          { baseResolved, imageDir, imageName, resolvedPath },
           "Rejecting image path outside base dir",
         )
         loadStats.failed++
@@ -177,7 +196,9 @@ const getStopSignal = (context: unknown): AbortSignal | undefined => {
 const getProviderConnection = (providerType: AIProviders) => {
   if (providerType === AIProviders.OpenAI) {
     if (!config.OpenAIKey) {
-      throw new Error("OpenAI API key not configured. Cannot route generic JAF provider calls.")
+      throw new Error(
+        "OpenAI API key not configured. Cannot route generic JAF provider calls.",
+      )
     }
 
     return {
@@ -332,8 +353,17 @@ export const makeXyneGenericJAFProvider = <Ctx>(
         throw new Error(`Model not specified for agent ${agent.name}`)
       }
 
-      const providerType =
-        ModelToProviderMap[requestedModel as Models] ?? AIProviders.LiteLLM
+      const providerType = (
+        ModelToProviderMap as Partial<Record<Models, AIProviders>>
+      )[requestedModel as Models]
+      if (!providerType) {
+        Logger.warn(
+          { agentName: agent.name, requestedModel },
+          "Unknown requested model; falling back to legacy provider",
+        )
+        return legacy.getCompletion(state, agent, runCfg)
+      }
+
       if (!isGenericCompatibleProvider(providerType)) {
         return legacy.getCompletion(state, agent, runCfg)
       }
@@ -345,13 +375,21 @@ export const makeXyneGenericJAFProvider = <Ctx>(
       const modelConfig = MODEL_CONFIGURATIONS[requestedModel as Models]
       const actualModelId = modelConfig?.actualName ?? requestedModel
       const { apiKey, baseURL } = getProviderConnection(providerType)
-      const genericProvider = makeGenericOpenAIProvider<Ctx>(apiKey, {
+      const genericOptions: XyneGenericOpenAIProviderOptions<Ctx> = {
         baseURL,
-        schemaConverter: (schema) => zodSchemaToJsonSchema(schema as any) as any,
-        getAbortSignal: (providerState) => getStopSignal(providerState.context),
-        customizeRequestBody: (body, context) =>
-          addXyneRequestOptions(body, context.state),
-      })
+        schemaConverter: (schema: ZodTypeAny): Record<string, unknown> =>
+          zodSchemaToJsonSchema(schema) as Record<string, unknown>,
+        getAbortSignal: (providerState: Readonly<JAFRunState<Ctx>>) =>
+          getStopSignal(providerState.context),
+        customizeRequestBody: (
+          body: Record<string, unknown>,
+          context: GenericOpenAIRequestContext<Ctx>,
+        ) => addXyneRequestOptions(body, context.state),
+      }
+      const genericProvider = makeGenericOpenAIProvider<Ctx>(
+        apiKey,
+        genericOptions as GenericOpenAIProviderOptions<Ctx>,
+      )
 
       const stateWithImages = await attachImagesToLastUserMessage(state)
       throwIfStopRequested(stopSignal)
