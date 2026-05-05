@@ -11,6 +11,17 @@ const tempImageRoot = fs.mkdtempSync(
 )
 const imageDocId = "doc-local"
 const imageDir = path.join(tempImageRoot, imageDocId)
+const envKeysToRestore = [
+  "LITELLM_BASE_URL",
+  "LITELLM_API_KEY",
+  "ENABLE_IMAGES",
+  "IMAGE_DIR",
+  "ENCRYPTION_KEY",
+  "SERVICE_ACCOUNT_ENCRYPTION_KEY",
+] as const
+const originalEnv = Object.fromEntries(
+  envKeysToRestore.map((key) => [key, process.env[key]]),
+) as Record<(typeof envKeysToRestore)[number], string | undefined>
 
 process.env.LITELLM_BASE_URL = "https://litellm.test/v1"
 process.env.LITELLM_API_KEY = "test-litellm-key"
@@ -208,6 +219,14 @@ afterEach(() => {
 })
 
 afterAll(() => {
+  for (const key of envKeysToRestore) {
+    const originalValue = originalEnv[key]
+    if (originalValue === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = originalValue
+    }
+  }
   fs.rmSync(tempImageRoot, { recursive: true, force: true })
 })
 

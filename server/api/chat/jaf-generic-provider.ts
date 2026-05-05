@@ -139,7 +139,6 @@ const buildOpenAIImageParts = async (
 
       try {
         const absolutePath = findImageByName(imageDir, imageNumber)
-        await fs.promises.access(absolutePath, fs.constants.F_OK)
         const imageBytes = await fs.promises.readFile(absolutePath)
 
         if (imageBytes.length > MAX_IMAGE_BYTES) {

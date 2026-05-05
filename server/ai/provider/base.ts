@@ -84,7 +84,7 @@ export function findImageByName(directory: string, imageName: string) {
     throw new Error(`Image "${imageName}" points outside image directory`)
   }
 
-  return resolvedPath
+  return realPath
 }
 
 export default Provider
