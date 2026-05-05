@@ -136,7 +136,7 @@ import { normalizeKnowledgeBaseToolArgs } from "./knowledgeBaseToolArgs"
 import { getChunkCountPerDoc } from "./chunk-selection"
 import { type FinalToolsList, buildMCPJAFTools } from "./jaf-adapter"
 import { logJAFTraceEvent } from "./jaf-logging"
-import { makeXyneJAFProvider } from "./jaf-provider"
+import { makeXyneGenericJAFProvider } from "./jaf-generic-provider"
 import {
   buildAgentSystemPromptContextBlock,
   enforceMetadataConstraintsOnSelection,
@@ -5329,7 +5329,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
         }
 
         // Set up model provider
-        const modelProvider = makeXyneJAFProvider<AgentRunContext>()
+        const modelProvider = makeXyneGenericJAFProvider<AgentRunContext>()
 
         // Set up agent registry
         const agentRegistry = new Map<
@@ -7068,7 +7068,7 @@ async function runDelegatedAgentWithMessageAgents(
       modelConfig: { name: delegateModelId },
     }
 
-    const modelProvider = makeXyneJAFProvider<AgentRunContext>()
+    const modelProvider = makeXyneGenericJAFProvider<AgentRunContext>()
     const agentRegistry = new Map<string, JAFAgent<AgentRunContext, string>>([
       [jafAgent.name, jafAgent],
     ])
