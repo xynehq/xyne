@@ -6366,7 +6366,7 @@ export async function MessageAgents(c: Context): Promise<Response> {
                       bufferedTextLength: bufferedText.length,
                       generatedTextLength: generatedText.length,
                     },
-                    "[MessageAgents][FinalSynthesis] Repairing skipped synthesis call at run_end",
+                    "[MessageAgents][FinalSynthesis] Repairing  skipped synthesis call at run_end",
                   )
                   const repairResult = await runFinalSynthesisCall(agentContext)
                   if (
