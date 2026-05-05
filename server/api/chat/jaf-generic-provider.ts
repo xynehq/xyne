@@ -1,9 +1,8 @@
 import fs from "fs"
 import path from "path"
-import { ModelToProviderMap } from "@/ai/mappers"
-import { MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
+import { getModelConfiguration } from "@/ai/modelConfig"
 import { findImageByName, regex } from "@/ai/provider/base"
-import { AIProviders, Models } from "@/ai/types"
+import { AIProviders } from "@/ai/types"
 import config from "@/config"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
@@ -363,9 +362,8 @@ export const makeXyneGenericJAFProvider = <Ctx>(
         throw new Error(`Model not specified for agent ${agent.name}`)
       }
 
-      const providerType = (
-        ModelToProviderMap as Partial<Record<Models, AIProviders>>
-      )[requestedModel as Models]
+      const modelConfig = getModelConfiguration(requestedModel)
+      const providerType = modelConfig?.provider as AIProviders | undefined
       if (!providerType) {
         Logger.warn(
           { agentName: agent.name, requestedModel },
@@ -382,7 +380,6 @@ export const makeXyneGenericJAFProvider = <Ctx>(
       const stopSignal = getStopSignal(runContext)
       throwIfStopRequested(stopSignal)
 
-      const modelConfig = MODEL_CONFIGURATIONS[requestedModel as Models]
       const actualModelId = modelConfig?.actualName ?? requestedModel
       const { apiKey, baseURL } = getProviderConnection(providerType)
       const genericOptions: XyneGenericOpenAIProviderOptions<Ctx> = {

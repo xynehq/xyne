@@ -14,6 +14,7 @@ const imageDir = path.join(tempImageRoot, imageDocId)
 const envKeysToRestore = [
   "LITELLM_BASE_URL",
   "LITELLM_API_KEY",
+  "LITELLM_MODEL_CONFIG_PATH",
   "ENABLE_IMAGES",
   "IMAGE_DIR",
   "ENCRYPTION_KEY",
@@ -39,6 +40,9 @@ const {
 const { Models } = await import("@/ai/types")
 const { makeXyneGenericJAFProvider } = await import(
   "@/api/chat/jaf-generic-provider"
+)
+const { resetExternalModelConfigurationsForTests } = await import(
+  "@/ai/modelCatalog"
 )
 
 const originalFetch = global.fetch
@@ -216,6 +220,8 @@ beforeAll(() => {
 
 afterEach(() => {
   global.fetch = originalFetch
+  delete process.env.LITELLM_MODEL_CONFIG_PATH
+  resetExternalModelConfigurationsForTests()
 })
 
 afterAll(() => {
@@ -308,6 +314,61 @@ describe("makeXyneGenericJAFProvider", () => {
     expect(result.message?.content).toBe("legacy fallback")
     expect(legacyProvider.getCompletion).toHaveBeenCalledTimes(1)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test("routes external LiteLLM model catalog entries through generic provider", async () => {
+    const catalogPath = path.join(tempImageRoot, "litellm-models.json")
+    fs.writeFileSync(
+      catalogPath,
+      JSON.stringify([
+        {
+          id: "nemotron-120",
+          labelName: "nemotron-120",
+          actualName: "nemotron-3-120b-a12b-bf16",
+          provider: "LiteLLM",
+          reasoning: true,
+          websearch: false,
+          deepResearch: false,
+          description: "CDAC Airawat Nemotron model",
+        },
+      ]),
+    )
+    process.env.LITELLM_MODEL_CONFIG_PATH = catalogPath
+    resetExternalModelConfigurationsForTests()
+
+    const fetchMock = mock(async () =>
+      jsonResponse({
+        id: "chatcmpl-test",
+        model: "nemotron-3-120b-a12b-bf16",
+        choices: [{ message: { role: "assistant", content: "Done." } }],
+      }),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+    const legacyProvider = {
+      getCompletion: mock(async () => {
+        throw new Error("legacy provider should not be called")
+      }),
+    }
+    const provider = makeXyneGenericJAFProvider<any>({
+      legacyProvider,
+    })
+
+    const result = await provider.getCompletion(
+      createState("nemotron-120"),
+      createAgent("nemotron-120"),
+      {
+        agentRegistry: new Map(),
+        modelProvider: provider,
+        modelOverride: "nemotron-120",
+      },
+    )
+
+    expect(result.message?.content).toBe("Done.")
+    expect(legacyProvider.getCompletion).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const [body] = getRequestBodies(fetchMock)
+    expect(body.model).toBe("nemotron-3-120b-a12b-bf16")
   })
 
   test("preserves seeded synthetic tool context and handles a multi-turn XML tool loop like message-agents", async () => {
