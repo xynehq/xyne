@@ -437,6 +437,57 @@ export const checkConfiguredOCRProvidersHealth = async (
   >
 }
 
+export async function checkDoclingHealth(): Promise<HealthStatusResponse> {
+  const start = Date.now()
+
+  const baseURL = config.doclingServiceUrl || "http://localhost:8000"
+  try {
+    const response = await fetch(`${baseURL}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000), // 5 second timeout
+    })
+
+    const responseTime = Date.now() - start
+
+    if (!response.ok) {
+      return {
+        status: HealthStatusType.Unhealthy,
+        serviceName: ServiceName.docling,
+        responseTime,
+        details: {
+          message: `Docling service Unhealthy ${response.status}`,
+          responseTimeThreshold: "5000ms",
+        },
+      }
+    }
+
+    const data = await response.json().catch(() => ({}))
+    return {
+      status: HealthStatusType.Healthy,
+      serviceName: ServiceName.docling,
+      responseTime,
+      details: {
+        message: "Docling service is healthy",
+        modelsLoaded: data.models_loaded || false,
+      },
+    }
+  } catch (error) {
+    Logger.error(error, "Docling health check failed")
+    return {
+      status: HealthStatusType.Unhealthy,
+      serviceName: ServiceName.docling,
+      responseTime: Date.now() - start,
+      details: {
+        message: "Failed to connect to Docling service",
+        error:
+          error instanceof Error
+            ? (error as Error).message
+            : "Unknown Docling Service Error",
+      },
+    }
+  }
+}
+
 export async function checkKeycloakHealth(): Promise<HealthStatusResponse> {
   const start = Date.now()
 
@@ -602,22 +653,29 @@ const checkConfiguredSystemHealth = async (
 ): Promise<OverallSystemHealthResponse> => {
   Logger.info(logMessage)
   const keycloakEnabled = isKeycloakExplicitlyEnabled()
+  const doclingEnabled = config.doclingEnabled
 
-  const [postgresHealth, vespaHealth, ocrProviderHealth, keycloakHealth] =
-    await Promise.all([
-      checkPostgresHealth(),
-      checkVespaHealth(),
-      checkConfiguredOCRProvidersHealth(),
-      keycloakEnabled ? checkKeycloakHealth() : Promise.resolve(undefined),
-    ])
+  // Run core health checks
+  const [postgresHealth, vespaHealth, ocrProviderHealth] = await Promise.all([
+    checkPostgresHealth(),
+    checkVespaHealth(),
+    checkConfiguredOCRProvidersHealth(),
+  ])
 
+  // Build services object
   const services: ServiceHealthCheck = {
     postgres: postgresHealth,
     vespa: vespaHealth,
     ...ocrProviderHealth,
   }
-  if (keycloakHealth) {
-    services.keycloak = keycloakHealth
+
+  // Conditionally check optional services
+  if (doclingEnabled) {
+    services.docling = await checkDoclingHealth()
+  }
+
+  if (keycloakEnabled) {
+    services.keycloak = await checkKeycloakHealth()
   }
 
   return buildSystemHealthResponse(services)

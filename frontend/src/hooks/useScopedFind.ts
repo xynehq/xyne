@@ -467,6 +467,9 @@ export function useScopedFind(
     individualOverlays.forEach((overlay) => {
       overlay.remove()
     })
+
+    // Clear bbox-based highlights
+    root.querySelectorAll("[data-bbox-overlay]").forEach((el) => el.remove())
   }, [])
 
   // Exported function: increments token to cancel pending work, clears DOM, resets state
@@ -724,10 +727,6 @@ export function useScopedFind(
             console.log("No extractable text; skipping highlight and cache")
           }
           return false
-        }
-
-        if (debug) {
-          console.log("Container text extracted, length:", containerText.length)
         }
 
         // Clean expired cache entries

@@ -34,8 +34,6 @@ import {
   Apps,
 } from "@xyne/vespa-ts/types"
 
-const getLoggerForMapper = (emailSub: string) =>
-  getLoggerWithChild(Subsystem.Chat, { email: emailSub })
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
 export const mapGithubToolResponse = (

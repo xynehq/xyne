@@ -6,7 +6,6 @@ import { type ChunkMetadata } from "@/types"
 import { 
   PdfProcessor, 
   type PdfProcessingMethod,
-  type ProcessingResultDraft 
 } from "@/lib/pdfProcessor"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
 import * as XLSX from "xlsx"
@@ -37,6 +36,7 @@ export interface ProcessingResult {
   image_chunks_pos: number[]
   chunks_map: ChunkMetadata[]
   image_chunks_map: ChunkMetadata[]
+  toc_chunks?: string[]
   processingMethod?: PdfProcessingMethod
 }
 
@@ -205,6 +205,7 @@ export class FileProcessorService {
       chunks_pos,
       image_chunks,
       image_chunks_pos,
+      toc_chunks: [],
       chunks_map: chunks_map,
       image_chunks_map: image_chunks_map,
     }]

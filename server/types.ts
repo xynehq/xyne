@@ -702,6 +702,15 @@ export type ChunkMetadata = {
   chunk_index: number
   page_numbers: number[]
   block_labels: string[]
+  bbox?: {
+    l: number
+    t: number
+    r: number
+    b: number
+  }
+  width?: number
+  height?: number
+  headings?: string[]
 }
 
 // DuckDB related types

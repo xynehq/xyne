@@ -11,6 +11,9 @@ let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
 let paddleStatusEndpoint =
   process.env.STATUS_ENDPOINT || "http://localhost:8000/instance_status"
+let doclingServiceUrl =
+  process.env.DOCLING_SERVICE_URL || "http://localhost:8000"
+const doclingEnabled = process.env.DOCLING_ENABLED === "true"
 let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
 export const parseOCRProviders = (providers?: string): string[] => {
@@ -367,6 +370,8 @@ export default {
   keycloakWorkspaceExternalId,
   keycloakLogoutRedirectUrl,
   paddleStatusEndpoint,
+  doclingServiceUrl,
+  doclingEnabled,
   ocrProviders,
   appleBundleId,
   // update user query session time

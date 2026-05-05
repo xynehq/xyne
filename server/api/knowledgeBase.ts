@@ -2130,6 +2130,7 @@ export const GetChunkContentApi = async (c: Context) => {
       }).join("\n")
     } else {
       const pageNums = (resp.fields as any).chunks_map?.[index]?.page_numbers
+      // All chunk sources (Docling, PDF.js, OCR) now use 0-based page numbers
       pageIndex =
         Array.isArray(pageNums) && typeof pageNums[0] === "number"
           ? pageNums[0]
@@ -2140,9 +2141,20 @@ export const GetChunkContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Chunk content not found" })
     }
 
+    // Get bbox from chunks_map if available
+    const chunkMeta = (resp.fields as any).chunks_map?.[index]
+    const bbox = chunkMeta?.bbox_l !== undefined ? {
+      l: chunkMeta.bbox_l,
+      t: chunkMeta.bbox_t,
+      r: chunkMeta.bbox_r,
+      b: chunkMeta.bbox_b,
+    } : null
+
     return c.json({
       chunkContent: chunkContent,
       pageIndex: pageIndex,
+      bbox: bbox,
+
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error

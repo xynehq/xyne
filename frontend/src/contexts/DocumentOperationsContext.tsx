@@ -14,6 +14,11 @@ export interface DocumentOperations {
     pageIndex?: number,
     waitForTextLayer?: boolean,
   ) => Promise<boolean>
+  /** PDF viewer: highlight exact bbox coordinates with a yellow overlay box. */
+  highlightBbox?: (
+    bbox: { l: number; t: number; r: number; b: number },
+    pageIndex: number,
+  ) => Promise<boolean>
   clearHighlights?: () => void
   scrollToMatch?: (index: number) => boolean
   goToPage?: (pageIndex: number) => Promise<void>
@@ -91,6 +96,18 @@ export const withDocumentOperations = <P extends object>(
               chunkIndex,
               pageIndex,
               waitForTextLayer,
+            )
+          }
+          return false
+        },
+        highlightBbox: async (
+          bbox: { l: number; t: number; r: number; b: number },
+          pageIndex: number,
+        ) => {
+          if (documentOperationsRef.current?.highlightBbox) {
+            return await documentOperationsRef.current.highlightBbox(
+              bbox,
+              pageIndex,
             )
           }
           return false

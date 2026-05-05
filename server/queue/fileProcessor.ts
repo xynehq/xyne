@@ -1,5 +1,5 @@
 import { getLogger } from "@/logger"
-import { Subsystem, ProcessingJobType } from "@/types"
+import { Subsystem, ProcessingJobType, type ChunkMetadata } from "@/types"
 import { getErrorMessage } from "@/utils"
 import {
   FileProcessorService,
@@ -180,6 +180,50 @@ export async function processJob(job: { data: ProcessingJob }) {
   }
 }
 
+type MappedChunkMeta = {
+  chunk_index: number
+  page_numbers: number[]
+  block_labels: string[]
+  width: number
+  height: number
+  bbox_l: number | null
+  bbox_t: number | null
+  bbox_r: number | null
+  bbox_b: number | null
+  headings?: string[]
+}
+
+const mapChunkMeta = (meta: ChunkMetadata, includeHeadings = false): MappedChunkMeta => {
+  const result: MappedChunkMeta = {
+    chunk_index: meta.chunk_index,
+    page_numbers: meta.page_numbers || [],
+    block_labels: meta.block_labels || [],
+    width: meta.width ?? 0,
+    height: meta.height ?? 0,
+    bbox_l: null,
+    bbox_t: null,
+    bbox_r: null,
+    bbox_b: null,
+  }
+
+  if (meta.bbox && 
+      typeof meta.bbox.l === 'number' && 
+      typeof meta.bbox.t === 'number' && 
+      typeof meta.bbox.r === 'number' && 
+      typeof meta.bbox.b === 'number') {
+    result.bbox_l = meta.bbox.l
+    result.bbox_t = meta.bbox.t
+    result.bbox_r = meta.bbox.r
+    result.bbox_b = meta.bbox.b
+  }
+
+  if (includeHeadings) {
+    result.headings = meta.headings || []
+  }
+
+  return result
+}
+
 async function processFileJob(jobData: FileProcessingJob, startTime: number) {
   const { fileId } = jobData
 
@@ -326,7 +370,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         vespaFileName = `${vespaFileName} (${resultIndex + 1})`
         docId = `${file.vespaDocId}_${resultIndex}`
       }
-
+      
       const vespaDoc = {
         docId: docId,
         clId: file.collectionId,
@@ -340,8 +384,9 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         chunks_pos: processingResult.chunks_pos,
         image_chunks: processingResult.image_chunks,
         image_chunks_pos: processingResult.image_chunks_pos,
-        chunks_map: processingResult.chunks_map,
-        image_chunks_map: processingResult.image_chunks_map,
+        toc_chunks: processingResult.toc_chunks || [],
+        chunks_map: processingResult.chunks_map?.map(meta => mapChunkMeta(meta, true)),
+        image_chunks_map: processingResult.image_chunks_map?.map(meta => mapChunkMeta(meta, false)),
         pageTitle: pageTitle,
         metadata: JSON.stringify(
           mergeCollectionItemMetadata(file.metadata, {
@@ -351,6 +396,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
               processingResult.chunks.length +
               processingResult.image_chunks.length,
             imageChunksCount: processingResult.image_chunks.length,
+            tocChunksCount: (processingResult.toc_chunks || []).length,
             processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
             ...(processingResult.processingMethod && {
               pdfProcessingMethod: processingResult.processingMethod,
