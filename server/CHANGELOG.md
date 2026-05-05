@@ -1,3 +1,10 @@
+# [3.53.0](https://github.com/xynehq/xyne/compare/v3.52.0...v3.53.0) (2026-05-05)
+
+
+### Features
+
+* **docling:** Added docling pdf parsing and fix chunk citations ([#1321](https://github.com/xynehq/xyne/issues/1321)) ([f8c2301](https://github.com/xynehq/xyne/commit/f8c2301d8ae2622b2c1671ea30af9c0a6624206c))
+
 # [3.52.0](https://github.com/xynehq/xyne/compare/v3.51.0...v3.52.0) (2026-05-05)
 
 
