@@ -30,9 +30,12 @@ import {
 import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
 
 const { IMAGE_CONTEXT_CONFIG } = config
-const IMAGE_BASE_DIR = path.resolve(
-  process.env.IMAGE_DIR || "downloads/xyne_images_db",
-)
+const getImageBaseDir = (): string =>
+  path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db")
+const isImageContextEnabled = (): boolean =>
+  process.env.ENABLE_IMAGES !== undefined
+    ? process.env.ENABLE_IMAGES === "true"
+    : IMAGE_CONTEXT_CONFIG.enabled
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024
 const MIME_TYPE_MAP: Record<string, string> = {
   ".png": "image/png",
@@ -121,8 +124,9 @@ const buildOpenAIImageParts = async (
       }
 
       const { docIndex, docId, imageNumber } = parsed
-      const imageDir = path.join(IMAGE_BASE_DIR, docId)
-      const baseResolved = path.resolve(IMAGE_BASE_DIR)
+      const imageBaseDir = getImageBaseDir()
+      const imageDir = path.join(imageBaseDir, docId)
+      const baseResolved = path.resolve(imageBaseDir)
       const resolvedPath = path.resolve(imageDir)
       if (!isPathInside(baseResolved, resolvedPath)) {
         Logger.warn(
@@ -195,32 +199,39 @@ const getStopSignal = (context: unknown): AbortSignal | undefined => {
 
 const getProviderConnection = (providerType: AIProviders) => {
   if (providerType === AIProviders.OpenAI) {
-    if (!config.OpenAIKey) {
+    const apiKey = process.env.OPENAI_API_KEY || config.OpenAIKey
+    if (!apiKey) {
       throw new Error(
         "OpenAI API key not configured. Cannot route generic JAF provider calls.",
       )
     }
 
     return {
-      apiKey: config.OpenAIKey,
-      baseURL: config.aiProviderBaseUrl || "https://api.openai.com/v1",
+      apiKey,
+      baseURL:
+        process.env.BASE_URL ||
+        config.aiProviderBaseUrl ||
+        "https://api.openai.com/v1",
     }
   }
 
-  if (!config.LiteLLMBaseUrl) {
+  const baseURL = process.env.LITELLM_BASE_URL || config.LiteLLMBaseUrl
+  const apiKey = process.env.LITELLM_API_KEY || config.LiteLLMApiKey
+
+  if (!baseURL) {
     throw new Error(
       "LiteLLM base URL not configured. Cannot route generic JAF provider calls.",
     )
   }
-  if (!config.LiteLLMApiKey) {
+  if (!apiKey) {
     throw new Error(
       "LiteLLM API key not configured. Cannot route generic JAF provider calls.",
     )
   }
 
   return {
-    apiKey: config.LiteLLMApiKey,
-    baseURL: config.LiteLLMBaseUrl,
+    apiKey,
+    baseURL,
   }
 }
 
@@ -238,7 +249,7 @@ const attachImagesToLastUserMessage = async <Ctx>(
       : 5
 
   const { imageFileNamesForModel: selectedImages } =
-    IMAGE_CONTEXT_CONFIG.enabled && runContext?.imageMemory
+    isImageContextEnabled() && runContext?.imageMemory
       ? getImageFileNamesForLlmFromStores(runContext.imageMemory, {
           maxImages: imageBudget,
         })
@@ -266,7 +277,7 @@ const attachImagesToLastUserMessage = async <Ctx>(
       {
         selectedImagesCount: selectedImages.length,
         turn: normalizeTurnNumber(runContext?.turnCount),
-        imageBaseDir: IMAGE_BASE_DIR,
+        imageBaseDir: getImageBaseDir(),
         firstSelectedImageRedacted: true,
       },
       "No valid image parts built for selected images (generic provider path)",
