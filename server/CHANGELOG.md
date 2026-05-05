@@ -1,3 +1,10 @@
+## [3.53.1](https://github.com/xynehq/xyne/compare/v3.53.0...v3.53.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* comment fix ([#1325](https://github.com/xynehq/xyne/issues/1325)) ([3e227ad](https://github.com/xynehq/xyne/commit/3e227adfc61386c312333567a366bf4d6920a1f2))
+
 # [3.53.0](https://github.com/xynehq/xyne/compare/v3.52.0...v3.53.0) (2026-05-05)
 
 
