@@ -1,3 +1,10 @@
+# [3.52.0](https://github.com/xynehq/xyne/compare/v3.51.0...v3.52.0) (2026-05-05)
+
+
+### Features
+
+* generic provider Xyne changes ([#1323](https://github.com/xynehq/xyne/issues/1323)) ([bcc77dc](https://github.com/xynehq/xyne/commit/bcc77dcf3b49b9532eb6a1128aa4ee998a300063))
+
 # [3.51.0](https://github.com/xynehq/xyne/compare/v3.50.0...v3.51.0) (2026-04-29)
 
 
