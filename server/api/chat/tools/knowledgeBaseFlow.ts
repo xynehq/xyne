@@ -1,5 +1,5 @@
-import type { Tool } from "@xynehq/jaf"
-import { ToolErrorCodes, ToolResponse } from "@xynehq/jaf"
+import type { Tool } from "@juspay-xyne-jaf/jaf"
+import { ToolErrorCodes, ToolResponse } from "@juspay-xyne-jaf/jaf"
 import { Apps } from "@xyne/vespa-ts/types"
 import { and, eq, inArray, isNull } from "drizzle-orm"
 import { z, type ZodType } from "zod"

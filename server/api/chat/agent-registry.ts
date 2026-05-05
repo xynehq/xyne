@@ -10,7 +10,7 @@
  * - Single source of truth for agent metadata and capabilities
  */
 
-import type { Tool } from "@xynehq/jaf"
+import type { Tool } from "@juspay-xyne-jaf/jaf"
 import type {
   AgentCapability,
   AgentRunContext,

@@ -1,5 +1,5 @@
 import type { SSEStreamingApi } from "hono/streaming"
-import type { RunState, RunConfig } from "@xynehq/jaf"
+import type { RunState, RunConfig } from "@juspay-xyne-jaf/jaf"
 
 // Interface for active stream with JAF state preservation for HITL
 export interface ActiveStreamState {

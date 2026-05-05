@@ -28,8 +28,8 @@ import type {
   Agent as JAFAgent,
   Message as JAFMessage,
   ModelProvider as JAFModelProvider,
-} from "@xynehq/jaf"
-import { getTextContent } from "@xynehq/jaf"
+} from "@juspay-xyne-jaf/jaf"
+import { getTextContent } from "@juspay-xyne-jaf/jaf"
 import OpenAI from "openai"
 import type { AgentRunContext } from "./agent-schemas"
 import { raceWithStop, throwIfStopRequested } from "./agent-stop"

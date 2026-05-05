@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod"
-import type { Message as JAFMessage } from "@xynehq/jaf"
+import type { Message as JAFMessage } from "@juspay-xyne-jaf/jaf"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import type {
   Citation,
