@@ -1,7 +1,7 @@
 import { getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
-import { type TraceEvent, getTextContent } from "@xynehq/jaf"
+import { type TraceEvent, getTextContent } from "@juspay-xyne-jaf/jaf"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat, {
   module: "jaf-logging",

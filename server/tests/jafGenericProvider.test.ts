@@ -4,7 +4,7 @@ import os from "os"
 import path from "path"
 import { z } from "zod"
 import type { AgentRunContext, ImageMemoryEntry } from "@/api/chat/agent-schemas"
-import type { Message, RunState, TraceEvent } from "@xynehq/jaf"
+import type { Message, RunState, TraceEvent } from "@juspay-xyne-jaf/jaf"
 
 const tempImageRoot = fs.mkdtempSync(
   path.join(os.tmpdir(), "xyne-jaf-generic-provider-"),
@@ -24,7 +24,7 @@ const {
   createRunId,
   createTraceId,
   run,
-} = await import("@xynehq/jaf")
+} = await import("@juspay-xyne-jaf/jaf")
 const { Models } = await import("@/ai/types")
 const { makeXyneGenericJAFProvider } = await import(
   "@/api/chat/jaf-generic-provider"

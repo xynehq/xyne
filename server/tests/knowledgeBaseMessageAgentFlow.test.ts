@@ -15,7 +15,7 @@ import {
   type ModelProvider,
   type Tool,
   type ToolCall,
-} from "@xynehq/jaf"
+} from "@juspay-xyne-jaf/jaf"
 import type {
   AgentRunContext,
   DocumentState,

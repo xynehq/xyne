@@ -18,7 +18,7 @@ import {
   type MessageContentPart,
   getTextContent,
   makeGenericOpenAIProvider,
-} from "@xynehq/jaf"
+} from "@juspay-xyne-jaf/jaf"
 import type { ZodTypeAny } from "zod"
 import type { AgentRunContext } from "./agent-schemas"
 import { throwIfStopRequested } from "./agent-stop"

@@ -102,7 +102,7 @@ import {
   generateTraceId,
   getTextContent,
   runStream,
-} from "@xynehq/jaf"
+} from "@juspay-xyne-jaf/jaf"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"

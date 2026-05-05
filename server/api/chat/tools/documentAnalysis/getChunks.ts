@@ -1,5 +1,5 @@
-import { ToolResponse, ToolErrorCodes } from "@xynehq/jaf"
-import type { Tool } from "@xynehq/jaf"
+import { ToolResponse, ToolErrorCodes } from "@juspay-xyne-jaf/jaf"
+import type { Tool } from "@juspay-xyne-jaf/jaf"
 import { GetDocumentsByDocIds } from "@/search/vespa"
 import type { AgentRunContext } from "@/api/chat/agent-schemas"
 import { getTracer, type Span } from "@/tracer"
