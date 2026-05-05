@@ -363,7 +363,7 @@ export const makeXyneGenericJAFProvider = <Ctx>(
       }
 
       const modelConfig = getModelConfiguration(requestedModel)
-      const providerType = modelConfig?.provider
+      const providerType = modelConfig?.provider as AIProviders | undefined
       if (!providerType) {
         Logger.warn(
           { agentName: agent.name, requestedModel },
