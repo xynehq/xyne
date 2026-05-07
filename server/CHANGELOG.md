@@ -1,3 +1,10 @@
+# [3.54.0](https://github.com/xynehq/xyne/compare/v3.53.1...v3.54.0) (2026-05-07)
+
+
+### Features
+
+* added verbose loggers for JAF and enabled debug logs in prod ([#1326](https://github.com/xynehq/xyne/issues/1326)) ([d4c099e](https://github.com/xynehq/xyne/commit/d4c099e9e80ca8f6001cd4a496ff9339ec0021e1))
+
 ## [3.53.1](https://github.com/xynehq/xyne/compare/v3.53.0...v3.53.1) (2026-05-05)
 
 
