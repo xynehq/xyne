@@ -71,12 +71,24 @@ export function useScopedFind(
   const [index, setIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
 
-  // Generate cache key based on document ID, chunk index, page (PDF scope), and options
+  // Quick non-cryptographic hash so the search phrase fits in the cache key
+  const hashText = (s: string): string => {
+    let h = 5381
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
+    return (h >>> 0).toString(36)
+  }
+
+  // Generate cache key based on document ID, chunk index, page (PDF scope),
+  // and the search phrase.  The phrase MUST be in the key — the same
+  // chunk/page is now searched with multiple substrings (full chunk text vs.
+  // a Smith-Waterman matched span), and re-using cached match offsets across
+  // them would highlight the wrong text on layered citation clicks.
   const generateCacheKey = useCallback(
     (
       docId: string | undefined,
       chunkIdx: number | null | undefined,
-      pageIdx?: number,
+      pageIdx: number | undefined,
+      text: string,
     ): string => {
       const keyComponents = [
         docId || "no-doc-id",
@@ -84,6 +96,7 @@ export function useScopedFind(
           ? chunkIdx.toString()
           : "no-chunk-idx",
         pageIdx !== undefined && pageIdx >= 0 ? `p${pageIdx}` : "p-na",
+        `t${hashText(text || "")}`,
       ]
       return keyComponents.join("|")
     },
@@ -746,7 +759,7 @@ export function useScopedFind(
         // Generate cache key (include page so PDF page-scoped offsets stay valid)
         const canUseCache = !!documentId
         const cacheKey = canUseCache
-          ? generateCacheKey(documentId, chunkIndex, pageIndex)
+          ? generateCacheKey(documentId, chunkIndex, pageIndex, text)
           : ""
 
         // Check cache first (only if safe)

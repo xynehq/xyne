@@ -625,8 +625,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           rowVirtualizer.measure()
         }
 
+        // Look up canvas inside this viewer's containerRef only, never the
+        // whole document.  If multiple PdfViewer instances are mounted (e.g.
+        // chat panel + KM viewer), a global lookup could pick a canvas from a
+        // different viewer.  Returning null while the ref is still attaching
+        // is fine — the poll loop below retries.
         const getCanvas = (pageNum: number) => {
-          const root: ParentNode = containerRef.current ?? document
+          const root = containerRef.current
+          if (!root) return null
           const c = root.querySelector<HTMLCanvasElement>(
             `[data-page-number="${pageNum}"] canvas`,
           )
@@ -656,12 +662,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           return getCanvas(pageNum)
         }
 
-        // Clear any existing bbox overlays from the entire viewer (do this once,
-        // up front, not per-fragment, to avoid wiping our own overlays mid-loop)
-        const cleanupRoot: ParentNode = containerRef.current ?? document
-        cleanupRoot
-          .querySelectorAll("[data-bbox-overlay]")
-          .forEach((el) => el.remove())
+        // Clear any existing bbox overlays from THIS viewer only (do this once,
+        // up front, not per-fragment, to avoid wiping our own overlays mid-loop).
+        // Scoped to containerRef so other PdfViewer instances are untouched.
+        if (containerRef.current) {
+          containerRef.current
+            .querySelectorAll("[data-bbox-overlay]")
+            .forEach((el) => el.remove())
+        }
 
         let firstOverlay: HTMLDivElement | null = null
         let drewAny = false

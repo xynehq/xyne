@@ -114,7 +114,15 @@ export const withDocumentOperations = <P extends object>(
           return false
         },
         highlightBbox: async (
-          bbox: { l: number; t: number; r: number; b: number },
+          bbox:
+            | { l: number; t: number; r: number; b: number }
+            | Array<{
+                l: number
+                t: number
+                r: number
+                b: number
+                page_no?: number | null
+              }>,
           pageIndex: number,
         ) => {
           if (documentOperationsRef.current?.highlightBbox) {
