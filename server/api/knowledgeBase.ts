@@ -41,8 +41,9 @@ import {
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
 import { cleanUpAgentDb, getAgentByExternalId, getAgentCollections } from "@/db/agent"
+import { checkUserAgentAccessByExternalId } from "@/db/userAgentPermission"
 import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
-import { collectionItems, collections } from "@/db/schema"
+import { agents, collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { clearDatabaseConnectorKbCollectionId } from "@/db/connector"
 import { DeleteDocument, GetDocument } from "@/search/vespa"
@@ -284,6 +285,136 @@ function assertIsCollectionOwner(collection: Collection, userId: number): void {
       message: "You don't have access to this Collection",
     })
   }
+}
+
+/**
+ * Unified permission check for viewing collection content.
+ * Checks direct access first, then falls back to agent-based access if agentId is provided.
+ * Throws HTTPException 403 if neither check passes.
+ */
+async function assertCanViewCollectionWithAgentFallback(
+  collection: Collection,
+  userId: number,
+  userEmail: string,
+  workspaceId: number,
+  agentId: string | undefined,
+): Promise<void> {
+  // Check direct collection access first
+  const canViewDirectly = canViewCollection(collection, userId)
+
+  // If direct access granted, no need for further checks
+  if (canViewDirectly) {
+    return
+  }
+
+  // If no direct access, check if accessed through a public agent
+  if (agentId) {
+    const canViewViaAgent = await canViewCollectionViaAgent(
+      db,
+      agentId,
+      collection.id,
+      userId,
+      workspaceId,
+      userEmail,
+    )
+
+    if (canViewViaAgent) {
+      return
+    }
+  }
+
+  // Neither check passed - throw 403
+  throw new HTTPException(403, {
+    message: "You don't have access to this Collection",
+  })
+}
+
+/**
+ * Check if user can view a collection through a public agent
+ * Returns true if:
+ * 1. Agent is public (or user has access to it)
+ * 2. Collection is connected to the agent via knowledge_base integration
+ */
+async function canViewCollectionViaAgent(
+  trx: TxnOrClient,
+  agentExternalId: string,
+  collectionId: string,
+  userId: number,
+  workspaceId: number,
+  userEmail: string,
+): Promise<boolean> {
+  // Check if user has access to the agent (handles public agents automatically)
+  const permission = await checkUserAgentAccessByExternalId(
+    trx,
+    userId,
+    agentExternalId,
+    workspaceId,
+  )
+
+  if (!permission) {
+    return false
+  }
+
+  // Get the agent to access its appIntegrations
+  const agentArr = await trx
+    .select({
+      id: agents.id,
+      appIntegrations: agents.appIntegrations,
+    })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.externalId, agentExternalId),
+        eq(agents.workspaceId, workspaceId),
+        isNull(agents.deletedAt),
+      ),
+    )
+
+  if (!agentArr || agentArr.length === 0) {
+    return false
+  }
+
+  const agent = agentArr[0]
+
+  // Parse app integrations to find knowledge_base collections
+  const appIntegrations = agent.appIntegrations as Record<string, any>
+  if (
+    !appIntegrations ||
+    typeof appIntegrations !== "object" ||
+    !appIntegrations.knowledge_base
+  ) {
+    return false
+  }
+
+  const kbConfig = appIntegrations.knowledge_base
+  const itemIds = kbConfig.itemIds || []
+
+  // Check if the collection is part of the agent's knowledge base
+  for (const itemId of itemIds) {
+    if (itemId.startsWith("cl-")) {
+      // Direct collection ID
+      const directCollectionId = itemId.replace("cl-", "")
+      if (directCollectionId === collectionId) {
+        return true
+      }
+    } else if (itemId.startsWith("clfd-") || itemId.startsWith("clf-")) {
+      // Folder or file - get its collection
+      const actualItemId = itemId.replace(/^(clfd-|clf-)/, "")
+      try {
+        const item = await getCollectionItemById(trx, actualItemId)
+        if (item && item.collectionId === collectionId) {
+          return true
+        }
+      } catch (error) {
+        // Log error for observability but continue checking other items
+        loggerWithChild({ email: userEmail }).warn(
+          `Failed to get collection item ${actualItemId} for agent access check: ${getErrorMessage(error)}`
+        )
+      }
+    }
+  }
+
+  return false
 }
 
 // Enhanced MIME type detection with extension normalization and magic byte analysis
@@ -2011,14 +2142,16 @@ export const GetFilePreviewApi = async (c: Context) => {
   }
 }
 
-// Get chunk content for a file 
+// Get chunk content for a file
 // for collection items (all users in permissions including owner can get chunk content or if collection is public)
 // for attachments (only owner of the file can get chunk content)
+// Also accessible if file is viewed through a public agent's knowledge base
 export const GetChunkContentApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const chunkIndex = parseInt(c.req.param("cId"))
   const docId = c.req.param("docId")
   const isAttachment = docId.startsWith("att")
+  const agentId = c.req.query("agentId")
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -2047,8 +2180,14 @@ export const GetChunkContentApi = async (c: Context) => {
         throw new HTTPException(404, { message: "Collection not found" })
       }
 
-      // Owner can edit, permission users can view, and public collections are viewable by all.
-      assertCanViewCollection(collection, user.id)
+      // Unified permission check with agent fallback
+      await assertCanViewCollectionWithAgentFallback(
+        collection,
+        user.id,
+        userEmail,
+        user.workspaceId,
+        agentId,
+      )
     } else {
       const ownerId = Number((resp.fields as any).owner)
       const email = (resp.fields as any).ownerEmail
@@ -2171,10 +2310,12 @@ export const GetChunkContentApi = async (c: Context) => {
 }
 
 // Get file content for a file (all users in permissions including owner can get file content or if collection is public)
+// Also accessible if file is viewed through a public agent's knowledge base
 export const GetFileContentApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const collectionId = c.req.param("clId")
   const itemId = c.req.param("itemId")
+  const agentId = c.req.query("agentId")
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -2189,8 +2330,14 @@ export const GetFileContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Collection not found" })
     }
 
-    // Owner can edit, permission users can view, and public collections are viewable by all.
-    assertCanViewCollection(collection, user.id)
+    // Unified permission check with agent fallback
+    await assertCanViewCollectionWithAgentFallback(
+      collection,
+      user.id,
+      userEmail,
+      user.workspaceId,
+      agentId,
+    )
 
     const collectionFile = await getCollectionFileByItemId(db, itemId)
     if (!collectionFile) {
