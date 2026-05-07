@@ -8,6 +8,7 @@ import {
   appResponse,
   requestResponseLatency,
 } from "@/metrics/app/app-metrics"
+import { configureJAF } from "@juspay-xyne-jaf/jaf"
 import config from "@/config"
 import { object } from "zod"
 
@@ -15,6 +16,27 @@ import { object } from "zod"
 export { Subsystem }
 
 const { JwtPayloadKey } = config
+const isProduction = process.env.NODE_ENV === "production"
+const validPinoLevels = new Set(Object.keys(levels.values))
+const resolveLogLevel = (value: string | undefined): string => {
+  const normalized = value?.trim().toLowerCase()
+  if (!normalized) return "debug"
+  if (validPinoLevels.has(normalized)) return normalized
+
+  console.warn(
+    `[logger] Invalid LOG_LEVEL="${value}" detected. Falling back to "debug".`,
+  )
+  return "debug"
+}
+const defaultLogLevel = resolveLogLevel(process.env.LOG_LEVEL)
+const enableVerboseJAFLogging =
+  process.env.JAF_VERBOSE_LOGGING !== undefined
+    ? process.env.JAF_VERBOSE_LOGGING === "true"
+    : true
+
+configureJAF({
+  verbose: enableVerboseJAFLogging,
+})
 
 const humanize = (times: string[]) => {
   const [delimiter, separator] = [",", "."]
@@ -34,14 +56,13 @@ const time = (start: number) => {
 }
 
 export const getLogger = (loggerType: Subsystem) => {
-  const isProduction = process.env.NODE_ENV === "production"
-
   if (isProduction) {
     const destination = pino.destination(1) // stdout
 
     return pino(
       {
         name: loggerType,
+        level: defaultLogLevel,
         timestamp: false,
         formatters: {
           level: (label) => ({ level: label }),
@@ -75,6 +96,7 @@ export const getLogger = (loggerType: Subsystem) => {
   // Dev logger
   return pino({
     name: loggerType,
+    level: defaultLogLevel,
     transport: {
       target: "pino-pretty",
       options: {
