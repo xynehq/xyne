@@ -2,6 +2,7 @@ import MarkdownPreview from "@uiw/react-markdown-preview"
 import DOMPurify from "dompurify"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
+import { findBestMatchSpan } from "@/lib/textMatch"
 import {
   createFileRoute,
   useLoaderData,
@@ -450,6 +451,13 @@ export const ChatPage = ({
     chunkContent: string
     pageIndex: number
     bbox: { l: number; t: number; r: number; b: number } | null
+    bboxes: Array<{
+      l: number
+      t: number
+      r: number
+      b: number
+      page_no?: number | null
+    }> | null
   } | null>(null)
   /** Token to invalidate in-flight prefetch/chunk handlers so a slower call cannot overwrite newer citation state. */
   const latestPrefetchTokenRef = useRef<symbol>(Symbol())
@@ -1230,10 +1238,9 @@ export const ChatPage = ({
   // Handle chunk index changes from CitationPreview
   const handleChunkIndexChange = useCallback(
     async (newChunkIndex: number | null, docId: string) => {
-      
       const expectedCitationId = selectedCitation?.docId ?? null
       if (!expectedCitationId) {
-        return;
+        return
       }
 
       if (newChunkIndex === null) {
@@ -1249,6 +1256,13 @@ export const ChatPage = ({
           let chunkContent: string
           let pageIndex: number
           let bbox: { l: number; t: number; r: number; b: number } | null = null
+          let bboxes: Array<{
+            l: number
+            t: number
+            r: number
+            b: number
+            page_no?: number | null
+          }> | null = null
 
           const prefetched = prefetchedChunkRef.current
           if (
@@ -1259,6 +1273,7 @@ export const ChatPage = ({
             chunkContent = prefetched.chunkContent
             pageIndex = prefetched.pageIndex
             bbox = prefetched.bbox
+            bboxes = (prefetched as any).bboxes ?? null
             prefetchedChunkRef.current = null
           } else {
             const chunkContentResponse = await api.chunk[":cId"].files[
@@ -1288,6 +1303,7 @@ export const ChatPage = ({
             pageIndex =
               typeof data?.pageIndex === "number" ? data.pageIndex : -1
             bbox = (data as any)?.bbox ?? null
+            bboxes = (data as any)?.bboxes ?? null
           }
 
           if (latestPrefetchTokenRef.current !== chunkToken) return
@@ -1302,24 +1318,104 @@ export const ChatPage = ({
             documentOperationsRef.current.clearHighlights()
           }
 
-          // Use precise bbox highlighting when available (PDF only), fall back to text search
-          if (bbox && pageIndex >= 0 && documentOperationsRef?.current?.highlightBbox) {
+          // Resolve the answer text that owns this citation so we can darken
+          // the substring it actually came from.  Most-recent assistant message
+          // whose `sources` includes this docId/itemId wins; fall back to the
+          // most recent assistant message overall.
+          let answerText: string | undefined
+          for (let i = messages.length - 1; i >= 0; i--) {
+            const m = messages[i] as SelectPublicMessage
+            if (m.messageRole !== "assistant") continue
+            const sources = (m as any).sources as Citation[] | undefined
+            const matches = sources?.some(
+              (c) =>
+                c.docId === expectedCitationId ||
+                (c.itemId &&
+                  selectedCitation?.itemId &&
+                  c.itemId === selectedCitation.itemId),
+            )
+            if (matches) {
+              answerText = cleanCitationsFromResponse(m.message || "")
+              break
+            }
+          }
+          if (!answerText) {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              const m = messages[i] as SelectPublicMessage
+              if (m.messageRole === "assistant" && m.message) {
+                answerText = cleanCitationsFromResponse(m.message)
+                break
+              }
+            }
+          }
+
+          // Use precise bbox highlighting when available (PDF only), fall back to text search.
+          // Pass per-fragment bboxes when present (one rectangle per paragraph),
+          // else the union bbox.
+          const bboxArg =
+            Array.isArray(bboxes) && bboxes.length > 0 ? bboxes : bbox
+          if (
+            bboxArg &&
+            pageIndex >= 0 &&
+            documentOperationsRef?.current?.highlightBbox
+          ) {
+            let bboxOk = false
             try {
-              await documentOperationsRef.current.highlightBbox(bbox, pageIndex)
+              bboxOk = await documentOperationsRef.current.highlightBbox(
+                bboxArg,
+                pageIndex,
+              )
             } catch (error) {
               console.error("Error highlighting chunk bbox:", error)
-              // Fall back to text highlighting
-              if (chunkContent && documentOperationsRef?.current?.highlightText) {
-                try {
-                  await documentOperationsRef.current.highlightText(
-                    chunkContent,
-                    newChunkIndex,
-                    pageIndex,
-                    true,
-                  )
-                } catch (textError) {
-                  console.error("Error highlighting chunk text (fallback):", textError)
+              bboxOk = false
+            }
+            if (latestPrefetchTokenRef.current !== chunkToken) return
+            // Fall back to text highlighting if bbox draw failed (returned false or threw)
+            if (
+              !bboxOk &&
+              chunkContent &&
+              documentOperationsRef?.current?.highlightText
+            ) {
+              console.warn(
+                "highlightBbox failed; falling back to text highlight",
+              )
+              try {
+                await documentOperationsRef.current.highlightText(
+                  chunkContent,
+                  newChunkIndex,
+                  pageIndex,
+                  true,
+                )
+              } catch (textError) {
+                console.error(
+                  "Error highlighting chunk text (fallback):",
+                  textError,
+                )
+              }
+            }
+            // Layer 2: when bbox succeeded AND we have the answer text, darken
+            // the matched substring on top of the bbox using Smith-Waterman.
+            if (
+              bboxOk &&
+              answerText &&
+              chunkContent &&
+              documentOperationsRef?.current?.highlightText
+            ) {
+              try {
+                const span = findBestMatchSpan(answerText, chunkContent)
+                if (span) {
+                  const matched = chunkContent.slice(span.start, span.end)
+                  if (matched.trim().length > 0) {
+                    await documentOperationsRef.current.highlightText(
+                      matched,
+                      newChunkIndex,
+                      pageIndex,
+                      true,
+                    )
+                  }
                 }
+              } catch (error) {
+                console.error("Error layering substring highlight:", error)
               }
             }
             if (latestPrefetchTokenRef.current !== chunkToken) return
@@ -1352,15 +1448,12 @@ export const ChatPage = ({
         }
       }
     },
-    [selectedCitation, toast, documentOperationsRef],
+    [selectedCitation, toast, documentOperationsRef, messages],
   )
 
   useEffect(() => {
     if (selectedCitation && isDocumentLoaded) {
-      handleChunkIndexChange(
-        selectedChunkIndex,
-        selectedCitation?.docId ?? "",
-      )
+      handleChunkIndexChange(selectedChunkIndex, selectedCitation?.docId ?? "")
     }
   }, [
     selectedChunkIndex,
@@ -1377,14 +1470,12 @@ export const ChatPage = ({
       fromSources: boolean = false,
     ) => {
       const delegatedAgent =
-        citation.docId.startsWith("delegated_agent:") &&
-        citation.url
+        citation.docId.startsWith("delegated_agent:") && citation.url
 
       if (delegatedAgent && citation.url) {
         const sameDoc =
           selectedCitation && selectedCitation.docId === citation.docId
-        const previewAlreadyOpenWithSameDoc =
-          isCitationPreviewOpen && sameDoc
+        const previewAlreadyOpenWithSameDoc = isCitationPreviewOpen && sameDoc
         if (previewAlreadyOpenWithSameDoc) {
           setShowSources(false)
           if (!fromSources) {
@@ -1418,11 +1509,11 @@ export const ChatPage = ({
       }
 
       const sameDoc =
-      selectedCitation &&
-      citation &&
-      selectedCitation.docId === citation.docId
+        selectedCitation &&
+        citation &&
+        selectedCitation.docId === citation.docId
       const previewAlreadyOpenWithSameDoc = isCitationPreviewOpen && sameDoc
-      
+
       // Same document already open: only change chunk; handleChunkIndexChange will fetch and goToPage (no full reload)
       if (previewAlreadyOpenWithSameDoc) {
         if (delegatedAgent) {
@@ -1473,12 +1564,14 @@ export const ChatPage = ({
             pageIndex =
               typeof data.pageIndex === "number" ? data.pageIndex : null
             const bboxPrefetch = (data as any)?.bbox ?? null
+            const bboxesPrefetch = (data as any)?.bboxes ?? null
             prefetchedChunkRef.current = {
               documentId: docId,
               chunkIndex,
               chunkContent: content,
               pageIndex: pageIndex ?? -1,
               bbox: bboxPrefetch,
+              bboxes: bboxesPrefetch,
             }
           }
         } catch {
@@ -1620,10 +1713,7 @@ export const ChatPage = ({
   if ((data?.error || historyLoading) && !isSharedChat) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
-        <Sidebar 
-          isAgentMode={agentWhiteList}
-          isEmbedded={isEmbedded}
-        />
+        <Sidebar isAgentMode={agentWhiteList} isEmbedded={isEmbedded} />
         {/* <div className="ml-[120px]">Error: Could not get data</div> */}
       </div>
     )
@@ -2686,7 +2776,7 @@ const VirtualizedMessages = React.forwardRef<
                       timeTakenMs={
                         message.externalId === "current-resp"
                           ? streamTimeTakenMs
-                          : message.timeTakenMs ?? undefined
+                          : (message.timeTakenMs ?? undefined)
                       }
                     />
 
@@ -2950,7 +3040,12 @@ export const ChatMessage = ({
                 ) : message !== "" ? (
                   <MarkdownPreview
                     key={`markdown-${messageId || "unknown"}`}
-                      source={processMessage(message, citationMap, citationUrls, citations)}
+                    source={processMessage(
+                      message,
+                      citationMap,
+                      citationUrls,
+                      citations,
+                    )}
                     wrapperElement={{
                       "data-color-mode": theme,
                     }}

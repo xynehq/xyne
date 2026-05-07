@@ -13,6 +13,7 @@ import {
   ChevronDown,
 } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
+import { findBestMatchSpan } from "@/lib/textMatch"
 import { useState, useCallback, useEffect, memo, useRef, useMemo } from "react"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -1302,8 +1303,8 @@ function KnowledgeManagementContent() {
         !fileName.endsWith(".xls") &&
         !fileName.endsWith(".text") &&
         !fileName.endsWith(".txt") &&
-        !fileName.endsWith(".tsv")) &&
-        !fileName.endsWith(".json")
+        !fileName.endsWith(".tsv") &&
+        !fileName.endsWith(".json"))
     ) {
       toast.warning({
         title: "Preview Not Available",
@@ -1503,6 +1504,7 @@ function KnowledgeManagementContent() {
     newChunkIndex: number | null,
     documentId: string,
     docId: string,
+    answerText?: string,
   ) => {
     if (!documentId) {
       console.error("handleChunkIndexChange called without documentId")
@@ -1541,7 +1543,69 @@ function KnowledgeManagementContent() {
             documentOperationsRef.current.clearHighlights()
           }
 
-          if (documentOperationsRef?.current?.highlightText) {
+          const bboxes = (chunkContent as any)?.bboxes ?? null
+          const bbox = (chunkContent as any)?.bbox ?? null
+          const pageIdx =
+            typeof chunkContent.pageIndex === "number"
+              ? chunkContent.pageIndex
+              : -1
+
+          // Prefer precise bbox highlighting (PDF only); fall back to text search.
+          // Pass per-fragment bboxes when available (one rectangle per paragraph),
+          // else the union bbox.
+          let bboxOk = false
+          const bboxArg =
+            Array.isArray(bboxes) && bboxes.length > 0 ? bboxes : bbox
+          if (
+            bboxArg &&
+            pageIdx >= 0 &&
+            documentOperationsRef?.current?.highlightBbox
+          ) {
+            try {
+              bboxOk = await documentOperationsRef.current.highlightBbox(
+                bboxArg,
+                pageIdx,
+              )
+            } catch (error) {
+              console.error("Error highlighting chunk bbox:", error)
+              bboxOk = false
+            }
+          }
+
+          // Layer 2: when bbox succeeded AND we have the answer text, find the
+          // best matching span of the chunk (Smith-Waterman on tokens) and add
+          // a tighter text-layer highlight on top of the bbox.  The text-layer
+          // overlay paints on the existing yellow rectangle, producing a
+          // visibly darker band on the actual cited sentence(s).
+          if (
+            bboxOk &&
+            answerText &&
+            documentOperationsRef?.current?.highlightText
+          ) {
+            try {
+              const span = findBestMatchSpan(
+                answerText,
+                chunkContent.chunkContent,
+              )
+              if (span) {
+                const matched = chunkContent.chunkContent.slice(
+                  span.start,
+                  span.end,
+                )
+                if (matched.trim().length > 0) {
+                  await documentOperationsRef.current.highlightText(
+                    matched,
+                    newChunkIndex,
+                    chunkContent.pageIndex,
+                  )
+                }
+              }
+            } catch (error) {
+              console.error("Error layering substring highlight:", error)
+            }
+          }
+
+          if (!bboxOk && documentOperationsRef?.current?.highlightText) {
             try {
               await documentOperationsRef.current.highlightText(
                 chunkContent.chunkContent,
@@ -2418,7 +2482,8 @@ function KnowledgeManagementContent() {
                     />
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    When enabled, PDFs will be processed using OCR for better text extraction from scanned documents
+                    When enabled, PDFs will be processed using OCR for better
+                    text extraction from scanned documents
                   </p>
                 </div>
                 <CollectionFileUpload

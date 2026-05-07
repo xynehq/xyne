@@ -708,6 +708,15 @@ export type ChunkMetadata = {
     r: number
     b: number
   }
+  /** Per-fragment bboxes when a chunk merges multiple document items.
+   *  `bbox` above is the union; `bboxes` lists each underlying rectangle. */
+  bboxes?: Array<{
+    l: number
+    t: number
+    r: number
+    b: number
+    page_no?: number | null
+  }>
   width?: number
   height?: number
   headings?: string[]

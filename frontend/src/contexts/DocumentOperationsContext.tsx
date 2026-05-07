@@ -14,9 +14,22 @@ export interface DocumentOperations {
     pageIndex?: number,
     waitForTextLayer?: boolean,
   ) => Promise<boolean>
-  /** PDF viewer: highlight exact bbox coordinates with a yellow overlay box. */
+  /** PDF viewer: highlight exact bbox coordinates with a yellow overlay box.
+   *
+   *  Pass a single bbox to draw one rectangle, or a non-empty array to draw
+   *  one rectangle per fragment (e.g. one per paragraph in a multi-paragraph
+   *  chunk). Each fragment may carry its own `page_no` (1-based, Docling
+   *  convention); if absent, falls back to the `pageIndex` argument. */
   highlightBbox?: (
-    bbox: { l: number; t: number; r: number; b: number },
+    bbox:
+      | { l: number; t: number; r: number; b: number }
+      | Array<{
+          l: number
+          t: number
+          r: number
+          b: number
+          page_no?: number | null
+        }>,
     pageIndex: number,
   ) => Promise<boolean>
   clearHighlights?: () => void

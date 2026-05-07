@@ -9,6 +9,7 @@ schema kb_items {
     field bbox_t type double {}
     field bbox_r type double {}
     field bbox_b type double {}
+    field bboxes_json type string {}
     field width type int {}
     field height type int {}
     field headings type array<string> {}
@@ -103,6 +104,7 @@ schema kb_items {
       struct-field bbox_t { indexing: attribute | summary }
       struct-field bbox_r { indexing: attribute | summary }
       struct-field bbox_b { indexing: attribute | summary }
+      struct-field bboxes_json { indexing: summary }
       struct-field width { indexing: attribute | summary }
       struct-field height { indexing: attribute | summary }
     }
@@ -115,6 +117,7 @@ schema kb_items {
       struct-field bbox_t { indexing: attribute | summary }
       struct-field bbox_r { indexing: attribute | summary }
       struct-field bbox_b { indexing: attribute | summary }
+      struct-field bboxes_json { indexing: summary }
       struct-field width { indexing: attribute | summary }
       struct-field height { indexing: attribute | summary }
       # Array fields are stored in summary only (not as attributes)
@@ -153,12 +156,12 @@ schema kb_items {
   }
 
   # Vector embeddings
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[384]) {
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[768]) {
     indexing: input chunks | embed | attribute | index
     attribute { distance-metric: angular }
   }
 
-  field image_chunk_embeddings type tensor<bfloat16>(p{}, v[384]) {
+  field image_chunk_embeddings type tensor<bfloat16>(p{}, v[768]) {
     indexing: input image_chunks | embed | attribute | index
     attribute { distance-metric: angular }
   }
@@ -177,7 +180,7 @@ schema kb_items {
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
     inputs {
-      query(e) tensor<bfloat16>(v[384])  # Query embedding
+      query(e) tensor<bfloat16>(v[768])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
       query(recency_decay_rate) double
     }
