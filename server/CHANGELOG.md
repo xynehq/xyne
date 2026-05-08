@@ -1,3 +1,10 @@
+# [3.55.0](https://github.com/xynehq/xyne/compare/v3.54.0...v3.55.0) (2026-05-08)
+
+
+### Features
+
+* **citations:** precise per-paragraph + cited-substring PDF highlighting ([#1327](https://github.com/xynehq/xyne/issues/1327)) ([d36f7be](https://github.com/xynehq/xyne/commit/d36f7be504fb127e339a2b43b1561c9e51ee93af))
+
 # [3.54.0](https://github.com/xynehq/xyne/compare/v3.53.1...v3.54.0) (2026-05-07)
 
 
