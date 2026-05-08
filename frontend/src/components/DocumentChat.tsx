@@ -54,9 +54,14 @@ interface DocumentChatProps {
   documentName: string
   initialChatId?: string | null
   onChatCreated?: (chatId: string) => void
-  onChunkIndexChange?: (chunkIndex: number | null, itemId: string, docId: string) => void
+  onChunkIndexChange?: (
+    chunkIndex: number | null,
+    itemId: string,
+    docId: string,
+    answerText?: string,
+  ) => void
   uploadStatus?: UploadStatus
-  isKnowledgeBaseChat?: boolean 
+  isKnowledgeBaseChat?: boolean
 }
 
 const ChatMessage = React.memo(
@@ -801,7 +806,40 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
   }
 
   const handleCitationClick = (citation: Citation, chunkIndex?: number) => {
-    onChunkIndexChange?.(chunkIndex ?? null, citation.itemId ?? documentId, citation.docId)
+    // Resolve the answer text that owns this citation so the upstream
+    // handler can highlight the substring it actually came from.  The
+    // most-recent assistant message that lists this citation wins.
+    let answerText: string | undefined
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i] as SelectPublicMessage
+      if (m.messageRole !== "assistant") continue
+      const sources = (m as any).sources as Citation[] | undefined
+      const matches = sources?.some(
+        (c) =>
+          c.docId === citation.docId ||
+          (c.itemId && c.itemId === citation.itemId),
+      )
+      if (matches) {
+        answerText = cleanCitationsFromResponse(m.message || "")
+        break
+      }
+    }
+    // Fallback: use the latest assistant message if we couldn't match by source.
+    if (!answerText) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i] as SelectPublicMessage
+        if (m.messageRole === "assistant" && m.message) {
+          answerText = cleanCitationsFromResponse(m.message)
+          break
+        }
+      }
+    }
+    onChunkIndexChange?.(
+      chunkIndex ?? null,
+      citation.itemId ?? documentId,
+      citation.docId,
+      answerText,
+    )
   }
 
   // Populate feedbackMap from loaded messages

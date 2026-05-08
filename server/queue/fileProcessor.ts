@@ -190,10 +190,14 @@ type MappedChunkMeta = {
   bbox_t: number | null
   bbox_r: number | null
   bbox_b: number | null
+  bboxes_json: string | null
   headings?: string[]
 }
 
-const mapChunkMeta = (meta: ChunkMetadata, includeHeadings = false): MappedChunkMeta => {
+const mapChunkMeta = (
+  meta: ChunkMetadata,
+  includeHeadings = false,
+): MappedChunkMeta => {
   const result: MappedChunkMeta = {
     chunk_index: meta.chunk_index,
     page_numbers: meta.page_numbers || [],
@@ -204,17 +208,28 @@ const mapChunkMeta = (meta: ChunkMetadata, includeHeadings = false): MappedChunk
     bbox_t: null,
     bbox_r: null,
     bbox_b: null,
+    bboxes_json: null,
   }
 
-  if (meta.bbox && 
-      typeof meta.bbox.l === 'number' && 
-      typeof meta.bbox.t === 'number' && 
-      typeof meta.bbox.r === 'number' && 
-      typeof meta.bbox.b === 'number') {
+  if (
+    meta.bbox &&
+    typeof meta.bbox.l === "number" &&
+    typeof meta.bbox.t === "number" &&
+    typeof meta.bbox.r === "number" &&
+    typeof meta.bbox.b === "number"
+  ) {
     result.bbox_l = meta.bbox.l
     result.bbox_t = meta.bbox.t
     result.bbox_r = meta.bbox.r
     result.bbox_b = meta.bbox.b
+  }
+
+  if (Array.isArray((meta as any).bboxes) && (meta as any).bboxes.length > 0) {
+    try {
+      result.bboxes_json = JSON.stringify((meta as any).bboxes)
+    } catch {
+      result.bboxes_json = null
+    }
   }
 
   if (includeHeadings) {
@@ -370,7 +385,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         vespaFileName = `${vespaFileName} (${resultIndex + 1})`
         docId = `${file.vespaDocId}_${resultIndex}`
       }
-      
+
       const vespaDoc = {
         docId: docId,
         clId: file.collectionId,
@@ -385,8 +400,12 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         image_chunks: processingResult.image_chunks,
         image_chunks_pos: processingResult.image_chunks_pos,
         toc_chunks: processingResult.toc_chunks || [],
-        chunks_map: processingResult.chunks_map?.map(meta => mapChunkMeta(meta, true)),
-        image_chunks_map: processingResult.image_chunks_map?.map(meta => mapChunkMeta(meta, false)),
+        chunks_map: processingResult.chunks_map?.map((meta) =>
+          mapChunkMeta(meta, true),
+        ),
+        image_chunks_map: processingResult.image_chunks_map?.map((meta) =>
+          mapChunkMeta(meta, false),
+        ),
         pageTitle: pageTitle,
         metadata: JSON.stringify(
           mergeCollectionItemMetadata(file.metadata, {

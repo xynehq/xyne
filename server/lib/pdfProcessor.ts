@@ -17,7 +17,8 @@ export const PDF_PROCESSING_METHOD = {
   PDFJS: "pdfjs",
 } as const
 
-export type PdfProcessingMethod = typeof PDF_PROCESSING_METHOD[keyof typeof PDF_PROCESSING_METHOD]
+export type PdfProcessingMethod =
+  (typeof PDF_PROCESSING_METHOD)[keyof typeof PDF_PROCESSING_METHOD]
 
 const PDF_GEMINI_PAGE_THRESHOLD = 40
 
@@ -53,9 +54,10 @@ export class PdfProcessor {
     // not the position in this specific array
     if (Array.isArray(metadata) && metadata.length === totalCount) {
       return metadata.map((entry, index) => ({
-        chunk_index: typeof entry?.chunk_index === "number" && entry.chunk_index >= 0
-          ? entry.chunk_index
-          : index,
+        chunk_index:
+          typeof entry?.chunk_index === "number" && entry.chunk_index >= 0
+            ? entry.chunk_index
+            : index,
         page_numbers: Array.isArray(entry?.page_numbers)
           ? entry.page_numbers
           : [],
@@ -63,6 +65,7 @@ export class PdfProcessor {
           ? entry.block_labels
           : [],
         bbox: entry?.bbox,
+        bboxes: (entry as any)?.bboxes,
         width: entry?.width,
         height: entry?.height,
         headings: entry?.headings,
@@ -199,7 +202,11 @@ export class PdfProcessor {
     fileName: string,
     vespaDocId: string,
   ): Promise<ProcessingResult> {
-    const doclingResult = await chunkByDoclingFromBuffer(buffer, fileName, vespaDocId)
+    const doclingResult = await chunkByDoclingFromBuffer(
+      buffer,
+      fileName,
+      vespaDocId,
+    )
     return this.finalizeProcessingResult(
       {
         chunks: doclingResult.chunks,
@@ -214,113 +221,123 @@ export class PdfProcessor {
     )
   }
 
-    /**
-    * Processes a PDF using the fallback logic:
-    * 1. Try OCR first (if enabled via useOCR)
-    *    - If DOCLING_ENABLED is true, use Docling
-    *    - Otherwise, use Paddle OCR (if OCR_PROVIDERS configured)
-    * 2. If OCR fails and PDF < 40 pages, try Gemini
-    * 3. If all above fail or PDF >= 40 pages, use PDF.js
-    *
-    * @param buffer - PDF file buffer
-    * @param fileName - Name of the PDF file
-    * @param vespaDocId - Vespa document ID
-    * @param extractImages - Whether to extract images (only applies to the PDF.js fallback).
-    * @param describeImages - Whether to describe images (only applies to the PDF.js fallback).
-    * @param useOCR - Whether to use OCR for processing (default: true)
-    * @returns PDF processing result with method used
-    */
-   static async processWithFallback(
-     buffer: Buffer,
-     fileName: string,
-     vespaDocId: string,
-     extractImages: boolean = false,
-     describeImages: boolean = false,
-     useOCR: boolean = true,
-   ): Promise<ProcessingResult> {
-     // Step 1: Try OCR first (if enabled)
-     if (useOCR) {
-       try {
-         Logger.info(`Attempting OCR processing for ${fileName}`)
-         
-         // Check if Docling is enabled in config, otherwise use Paddle OCR
-         const doclingEnabled = process.env.DOCLING_ENABLED === "true"
-         
-         if (doclingEnabled) {
-           Logger.info(`Using Docling for OCR processing of ${fileName}`)
-           const doclingResult = await this.processWithDocling(buffer, fileName, vespaDocId)
-           Logger.info(`Docling processing successful for ${fileName}`)
-           return doclingResult
-         } else {
-           Logger.info(`Using Paddle OCR for processing of ${fileName}`)
-           const ocrResult = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
-           Logger.info(`OCR processing successful for ${fileName}`)
-           return this.finalizeProcessingResult(
-             {
-               chunks: ocrResult.chunks,
-               chunks_pos: ocrResult.chunks_pos,
-               image_chunks: ocrResult.image_chunks,
-               image_chunks_pos: ocrResult.image_chunks_pos,
-               chunks_map: ocrResult.chunks_map,
-               image_chunks_map: ocrResult.image_chunks_map,
-             },
-             PDF_PROCESSING_METHOD.OCR,
-           )
-         }
-       } catch (error) {
-         Logger.warn(
-           `OCR PDF processing failed for ${fileName}, attempting fallbacks. error: ${JSON.stringify(error)}`,
-         )
-       }
-     } else {
-       Logger.info(`OCR disabled for ${fileName}, skipping OCR processing`)
-     }
+  /**
+   * Processes a PDF using the fallback logic:
+   * 1. Try OCR first (if enabled via useOCR)
+   *    - If DOCLING_ENABLED is true, use Docling
+   *    - Otherwise, use Paddle OCR (if OCR_PROVIDERS configured)
+   * 2. If OCR fails and PDF < 40 pages, try Gemini
+   * 3. If all above fail or PDF >= 40 pages, use PDF.js
+   *
+   * @param buffer - PDF file buffer
+   * @param fileName - Name of the PDF file
+   * @param vespaDocId - Vespa document ID
+   * @param extractImages - Whether to extract images (only applies to the PDF.js fallback).
+   * @param describeImages - Whether to describe images (only applies to the PDF.js fallback).
+   * @param useOCR - Whether to use OCR for processing (default: true)
+   * @returns PDF processing result with method used
+   */
+  static async processWithFallback(
+    buffer: Buffer,
+    fileName: string,
+    vespaDocId: string,
+    extractImages: boolean = false,
+    describeImages: boolean = false,
+    useOCR: boolean = true,
+  ): Promise<ProcessingResult> {
+    // Step 1: Try OCR first (if enabled)
+    if (useOCR) {
+      try {
+        Logger.info(`Attempting OCR processing for ${fileName}`)
 
-     // Step 2: Determine if we should try Gemini based on page count
-     const pageCount = await this.getPdfPageCount(buffer)
-     const shouldTryGemini =
-       pageCount !== null && pageCount < PDF_GEMINI_PAGE_THRESHOLD
+        // Check if Docling is enabled in config, otherwise use Paddle OCR
+        const doclingEnabled = process.env.DOCLING_ENABLED === "true"
 
-     if (shouldTryGemini) {
-       try {
-         Logger.info(`Attempting Gemini processing for ${fileName} (${pageCount} pages)`)
-         const result = await this.processWithGemini(buffer, vespaDocId)
-         Logger.info(`Gemini processing successful for ${fileName}`)
-         return result
-       } catch (error) {
-         Logger.warn(
-           `Gemini PDF processing failed for ${fileName}, falling back to PDF.js. error: ${JSON.stringify(error)}`,
-         )
-       }
-     } else if (pageCount !== null) {
-       Logger.debug(
-         {
-           fileName,
-           pageCount,
-           threshold: PDF_GEMINI_PAGE_THRESHOLD,
-         },
-         "Skipping Gemini fallback due to page count threshold",
-       )
-     }
+        if (doclingEnabled) {
+          Logger.info(`Using Docling for OCR processing of ${fileName}`)
+          const doclingResult = await this.processWithDocling(
+            buffer,
+            fileName,
+            vespaDocId,
+          )
+          Logger.info(`Docling processing successful for ${fileName}`)
+          return doclingResult
+        } else {
+          Logger.info(`Using Paddle OCR for processing of ${fileName}`)
+          const ocrResult = await chunkByOCRFromBuffer(
+            buffer,
+            fileName,
+            vespaDocId,
+          )
+          Logger.info(`OCR processing successful for ${fileName}`)
+          return this.finalizeProcessingResult(
+            {
+              chunks: ocrResult.chunks,
+              chunks_pos: ocrResult.chunks_pos,
+              image_chunks: ocrResult.image_chunks,
+              image_chunks_pos: ocrResult.image_chunks_pos,
+              chunks_map: ocrResult.chunks_map,
+              image_chunks_map: ocrResult.image_chunks_map,
+            },
+            PDF_PROCESSING_METHOD.OCR,
+          )
+        }
+      } catch (error) {
+        Logger.warn(
+          `OCR PDF processing failed for ${fileName}, attempting fallbacks. error: ${JSON.stringify(error)}`,
+        )
+      }
+    } else {
+      Logger.info(`OCR disabled for ${fileName}, skipping OCR processing`)
+    }
 
-     // Step 3: Final fallback to PDF.js
-     try {
-       Logger.info(`Attempting PDF.js processing for ${fileName}`)
-       const result = await this.processWithPdfJs(
-         buffer,
-         vespaDocId,
-         extractImages,
-         describeImages,
-       )
-       Logger.info(`PDF.js processing successful for ${fileName}`)
-       return result
-     } catch (error) {
-       Logger.error(
-         `All PDF processing strategies failed for ${fileName}. error: ${JSON.stringify(error)}`,
-       )
-       throw error
-     }
-   }
+    // Step 2: Determine if we should try Gemini based on page count
+    const pageCount = await this.getPdfPageCount(buffer)
+    const shouldTryGemini =
+      pageCount !== null && pageCount < PDF_GEMINI_PAGE_THRESHOLD
+
+    if (shouldTryGemini) {
+      try {
+        Logger.info(
+          `Attempting Gemini processing for ${fileName} (${pageCount} pages)`,
+        )
+        const result = await this.processWithGemini(buffer, vespaDocId)
+        Logger.info(`Gemini processing successful for ${fileName}`)
+        return result
+      } catch (error) {
+        Logger.warn(
+          `Gemini PDF processing failed for ${fileName}, falling back to PDF.js. error: ${JSON.stringify(error)}`,
+        )
+      }
+    } else if (pageCount !== null) {
+      Logger.debug(
+        {
+          fileName,
+          pageCount,
+          threshold: PDF_GEMINI_PAGE_THRESHOLD,
+        },
+        "Skipping Gemini fallback due to page count threshold",
+      )
+    }
+
+    // Step 3: Final fallback to PDF.js
+    try {
+      Logger.info(`Attempting PDF.js processing for ${fileName}`)
+      const result = await this.processWithPdfJs(
+        buffer,
+        vespaDocId,
+        extractImages,
+        describeImages,
+      )
+      Logger.info(`PDF.js processing successful for ${fileName}`)
+      return result
+    } catch (error) {
+      Logger.error(
+        `All PDF processing strategies failed for ${fileName}. error: ${JSON.stringify(error)}`,
+      )
+      throw error
+    }
+  }
 
   /**
    * Get the page count of a PDF without processing it

@@ -40,7 +40,11 @@ import {
   markParentAsProcessing,
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
-import { cleanUpAgentDb, getAgentByExternalId, getAgentCollections } from "@/db/agent"
+import {
+  cleanUpAgentDb,
+  getAgentByExternalId,
+  getAgentCollections,
+} from "@/db/agent"
 import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
@@ -96,7 +100,7 @@ const EXTENSION_MIME_MAP: Record<string, string> = {
   ".webp": "image/webp",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
-  ".md": "text/markdown",     
+  ".md": "text/markdown",
   ".markdown": "text/markdown",
 }
 
@@ -167,27 +171,27 @@ function calculateChecksum(buffer: ArrayBuffer): string {
  */
 export function sanitizeFileName(fileName: string): string {
   // Handle empty or whitespace-only filenames
-  if (!fileName || typeof fileName !== 'string') {
-    return 'unnamed_file'
+  if (!fileName || typeof fileName !== "string") {
+    return "unnamed_file"
   }
 
   // Normalize unicode to NFC form
-  let sanitized = fileName.normalize('NFC')
+  let sanitized = fileName.normalize("NFC")
 
   // Remove any path separators (forward and backslash)
-  sanitized = sanitized.replace(/[/\\]/g, '_')
+  sanitized = sanitized.replace(/[/\\]/g, "_")
 
   // Remove control characters (0x00-0x1F)
-  sanitized = sanitized.replace(/[\x00-\x1F]/g, '')
+  sanitized = sanitized.replace(/[\x00-\x1F]/g, "")
 
   // Remove leading dots (hidden files) and spaces
-  sanitized = sanitized.replace(/^[\s.]+/, '')
+  sanitized = sanitized.replace(/^[\s.]+/, "")
 
   // Replace multiple consecutive dots with single dot (prevent .. traversal)
-  sanitized = sanitized.replace(/\.{2,}/g, '.')
+  sanitized = sanitized.replace(/\.{2,}/g, ".")
 
   // Remove trailing dots and spaces (Windows compatibility)
-  sanitized = sanitized.replace(/[\s.]+$/, '')
+  sanitized = sanitized.replace(/[\s.]+$/, "")
 
   // Limit filename length to 255 characters (preserve extension if possible)
   if (sanitized.length > 255) {
@@ -197,8 +201,8 @@ export function sanitizeFileName(fileName: string): string {
   }
 
   // If filename becomes empty after sanitization, use a default
-  if (!sanitized || sanitized.trim() === '') {
-    return 'unnamed_file'
+  if (!sanitized || sanitized.trim() === "") {
+    return "unnamed_file"
   }
 
   return sanitized
@@ -484,13 +488,19 @@ export const ListCollectionsApi = async (c: Context) => {
     let collections = showOnlyOwn
       ? await getCollectionsByOwner(db, user.id)
       : await getAccessibleCollections(db, user.id)
-    
+
     if (agentId) {
-      const agentCollections = await getAgentCollections(db, agentId, user.id, user.workspaceId)
+      const agentCollections = await getAgentCollections(
+        db,
+        agentId,
+        user.id,
+        user.workspaceId,
+      )
       // Merge and deduplicate based on collection id
       const allCollections = [...collections, ...agentCollections]
-      const uniqueCollections = allCollections.filter((collection, index, self) => 
-        index === self.findIndex(c => c.id === collection.id)
+      const uniqueCollections = allCollections.filter(
+        (collection, index, self) =>
+          index === self.findIndex((c) => c.id === collection.id),
       )
       collections = uniqueCollections
     }
@@ -726,7 +736,16 @@ export const UpdateCollectionApi = async (c: Context) => {
 }
 
 // Helper function to delete a Collection (only owner of the collection can delete it)
-export const deleteCollection = async (db: TxnOrClient, collectionId: string, userEmail: string): Promise<{ success: boolean, deletedCount: number, deletedFiles: number, deletedFolders: number }> => {
+export const deleteCollection = async (
+  db: TxnOrClient,
+  collectionId: string,
+  userEmail: string,
+): Promise<{
+  success: boolean
+  deletedCount: number
+  deletedFiles: number
+  deletedFolders: number
+}> => {
   if (!collectionId) {
     throw new HTTPException(400, { message: "Collection ID is required" })
   }
@@ -904,8 +923,8 @@ export const DeleteCollectionApi = async (c: Context) => {
   const collectionId = c.req.param("clId")
 
   try {
-
-    const { success, deletedCount, deletedFiles, deletedFolders } = await deleteCollection(db, collectionId, userEmail)
+    const { success, deletedCount, deletedFiles, deletedFolders } =
+      await deleteCollection(db, collectionId, userEmail)
     if (!success) {
       throw new HTTPException(500, {
         message: "Failed to delete Collection",
@@ -959,17 +978,22 @@ export const ListCollectionItemsApi = async (c: Context) => {
 
     // If agentId is provided, check if the collection belongs to that agent
     if (agentId) {
-      const agentCollections = await getAgentCollections(db, agentId, user.id, user.workspaceId)
-      const collectionBelongsToAgent = agentCollections.some(
-        (agentCollection) => agentCollection.id === collectionId
+      const agentCollections = await getAgentCollections(
+        db,
+        agentId,
+        user.id,
+        user.workspaceId,
       )
-      
+      const collectionBelongsToAgent = agentCollections.some(
+        (agentCollection) => agentCollection.id === collectionId,
+      )
+
       if (!collectionBelongsToAgent && collection.ownerId !== user.id) {
         throw new HTTPException(403, {
           message: "Collection does not belong to the specified agent",
         })
       }
-      
+
       // Skip the normal ownership/privacy check since the collection belongs to the agent
     } else {
       // Owner can edit, permission users can view, and public collections are viewable by all.
@@ -1661,8 +1685,8 @@ export const UploadFilesApi = async (c: Context) => {
             : FileProcessingQueue
         await boss.send(
           queueName,
-          { 
-            fileId: item.id, 
+          {
+            fileId: item.id,
             type: ProcessingJobType.FILE,
             useOCR: useOCR, // Pass OCR option to the processing job
           },
@@ -2011,7 +2035,7 @@ export const GetFilePreviewApi = async (c: Context) => {
   }
 }
 
-// Get chunk content for a file 
+// Get chunk content for a file
 // for collection items (all users in permissions including owner can get chunk content or if collection is public)
 // for attachments (only owner of the file can get chunk content)
 export const GetChunkContentApi = async (c: Context) => {
@@ -2028,7 +2052,10 @@ export const GetChunkContentApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    const resp = await GetDocument(isAttachment ? fileSchema : KbItemsSchema, docId)
+    const resp = await GetDocument(
+      isAttachment ? fileSchema : KbItemsSchema,
+      docId,
+    )
 
     if (!resp || !resp.fields) {
       throw new HTTPException(404, {
@@ -2040,7 +2067,7 @@ export const GetChunkContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Document missing chunk data" })
     }
 
-    if(!isAttachment) {
+    if (!isAttachment) {
       const collectionId = (resp.fields as any).clId
       const collection = await getCollectionById(db, collectionId)
       if (!collection) {
@@ -2052,7 +2079,7 @@ export const GetChunkContentApi = async (c: Context) => {
     } else {
       const ownerId = Number((resp.fields as any).owner)
       const email = (resp.fields as any).ownerEmail
-      if(ownerId !== user.id && email !== userEmail) {
+      if (ownerId !== user.id && email !== userEmail) {
         throw new HTTPException(403, {
           message: "You don't have access to this file",
         })
@@ -2087,28 +2114,28 @@ export const GetChunkContentApi = async (c: Context) => {
     // Build chunk content with bounds checking
     const chunksArray = resp.fields.chunks as string[]
     const chunkParts: string[] = []
-    
+
     // Add previous chunk if it exists (for context)
     if (index > 0 && chunksArray[index - 1]) {
       chunkParts.push(chunksArray[index - 1])
     }
-    
+
     // Add the main chunk (always required)
     if (chunksArray[index]) {
       chunkParts.push(chunksArray[index])
     }
-    
+
     // Add next chunk if it exists (for context)
     if (index < chunksArray.length - 1 && chunksArray[index + 1]) {
       chunkParts.push(chunksArray[index + 1])
     }
-    
+
     let chunkContent = chunkParts.join("")
     let pageIndex: number | undefined
     let fileName: string | undefined
-    if(("title" in resp.fields) && resp.fields.title) {
+    if ("title" in resp.fields && resp.fields.title) {
       fileName = resp.fields.title
-    } else if(("fileName" in resp.fields) && resp.fields.fileName) {
+    } else if ("fileName" in resp.fields && resp.fields.fileName) {
       fileName = resp.fields.fileName
     }
 
@@ -2125,9 +2152,13 @@ export const GetChunkContentApi = async (c: Context) => {
         pageIndex = 0
       }
       // Remove header row (first line) and column header (first tab-delimited value) from each remaining line
-      chunkContent = chunkContent.split("\n").slice(1).map((line) => {
-        return line.split("\t").slice(1).join("\t")
-      }).join("\n")
+      chunkContent = chunkContent
+        .split("\n")
+        .slice(1)
+        .map((line) => {
+          return line.split("\t").slice(1).join("\t")
+        })
+        .join("\n")
     } else {
       const pageNums = (resp.fields as any).chunks_map?.[index]?.page_numbers
       // All chunk sources (Docling, PDF.js, OCR) now use 0-based page numbers
@@ -2141,20 +2172,58 @@ export const GetChunkContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Chunk content not found" })
     }
 
-    // Get bbox from chunks_map if available
+    // Get bbox + per-fragment bboxes from chunks_map if available
     const chunkMeta = (resp.fields as any).chunks_map?.[index]
-    const bbox = chunkMeta?.bbox_l !== undefined ? {
-      l: chunkMeta.bbox_l,
-      t: chunkMeta.bbox_t,
-      r: chunkMeta.bbox_r,
-      b: chunkMeta.bbox_b,
-    } : null
+    const bbox =
+      chunkMeta?.bbox_l !== undefined
+        ? {
+            l: chunkMeta.bbox_l,
+            t: chunkMeta.bbox_t,
+            r: chunkMeta.bbox_r,
+            b: chunkMeta.bbox_b,
+          }
+        : null
+
+    let bboxes: Array<{
+      l: number
+      t: number
+      r: number
+      b: number
+      page_no?: number | null
+    }> | null = null
+    const bboxesJson = chunkMeta?.bboxes_json
+    if (typeof bboxesJson === "string" && bboxesJson.length > 0) {
+      try {
+        const parsed = JSON.parse(bboxesJson)
+        if (Array.isArray(parsed)) {
+          bboxes = parsed
+            .filter(
+              (b: any) =>
+                b &&
+                typeof b.l === "number" &&
+                typeof b.t === "number" &&
+                typeof b.r === "number" &&
+                typeof b.b === "number",
+            )
+            .map((b: any) => ({
+              l: b.l,
+              t: b.t,
+              r: b.r,
+              b: b.b,
+              page_no: typeof b.page_no === "number" ? b.page_no : null,
+            }))
+          if (bboxes.length === 0) bboxes = null
+        }
+      } catch {
+        bboxes = null
+      }
+    }
 
     return c.json({
       chunkContent: chunkContent,
       pageIndex: pageIndex,
       bbox: bbox,
-
+      bboxes: bboxes,
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error

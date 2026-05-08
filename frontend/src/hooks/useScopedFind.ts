@@ -28,9 +28,9 @@ type HighlightCache = {
 const isScrollable = (element: HTMLElement): boolean => {
   const style = window.getComputedStyle(element)
   return (
-    (style.overflowY === "auto" || 
-     style.overflowY === "scroll" || 
-     style.overflowY === "overlay") &&
+    (style.overflowY === "auto" ||
+      style.overflowY === "scroll" ||
+      style.overflowY === "overlay") &&
     element.scrollHeight > element.clientHeight
   )
 }
@@ -71,12 +71,24 @@ export function useScopedFind(
   const [index, setIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
 
-  // Generate cache key based on document ID, chunk index, page (PDF scope), and options
+  // Quick non-cryptographic hash so the search phrase fits in the cache key
+  const hashText = (s: string): string => {
+    let h = 5381
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
+    return (h >>> 0).toString(36)
+  }
+
+  // Generate cache key based on document ID, chunk index, page (PDF scope),
+  // and the search phrase.  The phrase MUST be in the key — the same
+  // chunk/page is now searched with multiple substrings (full chunk text vs.
+  // a Smith-Waterman matched span), and re-using cached match offsets across
+  // them would highlight the wrong text on layered citation clicks.
   const generateCacheKey = useCallback(
     (
       docId: string | undefined,
       chunkIdx: number | null | undefined,
-      pageIdx?: number,
+      pageIdx: number | undefined,
+      text: string,
     ): string => {
       const keyComponents = [
         docId || "no-doc-id",
@@ -84,6 +96,7 @@ export function useScopedFind(
           ? chunkIdx.toString()
           : "no-chunk-idx",
         pageIdx !== undefined && pageIdx >= 0 ? `p${pageIdx}` : "p-na",
+        `t${hashText(text || "")}`,
       ]
       return keyComponents.join("|")
     },
@@ -468,8 +481,11 @@ export function useScopedFind(
       overlay.remove()
     })
 
-    // Clear bbox-based highlights
-    root.querySelectorAll("[data-bbox-overlay]").forEach((el) => el.remove())
+    // NOTE: bbox-based highlights ([data-bbox-overlay]) are intentionally
+    // NOT cleared here.  They are managed by PdfViewer.highlightBbox, which
+    // clears its own previous overlays at the start of each draw.  Wiping
+    // them from this hook would erase a layered highlight added on top of
+    // the bbox (used to darken the cited substring).
   }, [])
 
   // Exported function: increments token to cancel pending work, clears DOM, resets state
@@ -632,7 +648,9 @@ export function useScopedFind(
 
             if (waitForPageReadyFn) {
               if (debug) {
-                console.log("Waiting for page ready (canvas + text + annotations)...")
+                console.log(
+                  "Waiting for page ready (canvas + text + annotations)...",
+                )
               }
               await waitForPageReadyFn(pageIndex)
             }
@@ -647,7 +665,9 @@ export function useScopedFind(
               const pageRoot = findPdfPageRoot(root, pageIndex)
               if (!pageRoot) {
                 if (debug) {
-                  console.log(`PDF page ${pageIndex} not found, skipping highlight`)
+                  console.log(
+                    `PDF page ${pageIndex} not found, skipping highlight`,
+                  )
                 }
                 return false
               }
@@ -666,10 +686,14 @@ export function useScopedFind(
               if (debug) {
                 console.log("Waiting for text layer (non-PDF readiness)...")
               }
-              containerText = await waitForTextLayerReady(highlightScope, 5000, {
-                searchPhrase: text,
-                caseSensitive,
-              })
+              containerText = await waitForTextLayerReady(
+                highlightScope,
+                5000,
+                {
+                  searchPhrase: text,
+                  caseSensitive,
+                },
+              )
               if (debug) {
                 console.log("Text layer ready, proceeding with highlighting")
               }
@@ -735,7 +759,7 @@ export function useScopedFind(
         // Generate cache key (include page so PDF page-scoped offsets stay valid)
         const canUseCache = !!documentId
         const cacheKey = canUseCache
-          ? generateCacheKey(documentId, chunkIndex, pageIndex)
+          ? generateCacheKey(documentId, chunkIndex, pageIndex, text)
           : ""
 
         // Check cache first (only if safe)
@@ -749,7 +773,7 @@ export function useScopedFind(
           if (debug) {
             console.log("Using cached result for key:", cacheKey)
           }
-          
+
           // Check if this call is still the latest before using cached results
           if (currentToken !== callTokenRef.current) {
             if (debug) {
@@ -757,7 +781,7 @@ export function useScopedFind(
             }
             return false
           }
-          
+
           matches = cachedEntry.matches
         } else {
           if (debug) {
@@ -794,7 +818,9 @@ export function useScopedFind(
           // Check if this call is still the latest before processing results
           if (currentToken !== callTokenRef.current) {
             if (debug) {
-              console.log("Stale call detected after computing matches, aborting")
+              console.log(
+                "Stale call detected after computing matches, aborting",
+              )
             }
             return false
           }
@@ -819,7 +845,9 @@ export function useScopedFind(
         // Check if this call is still the latest before creating DOM highlights
         if (currentToken !== callTokenRef.current) {
           if (debug) {
-            console.log("Stale call detected before creating highlights, aborting")
+            console.log(
+              "Stale call detected before creating highlights, aborting",
+            )
           }
           return false
         }
@@ -859,7 +887,9 @@ export function useScopedFind(
         // Final check before updating state
         if (currentToken !== callTokenRef.current) {
           if (debug) {
-            console.log("Stale call detected before state update, aborting and cleaning up DOM")
+            console.log(
+              "Stale call detected before state update, aborting and cleaning up DOM",
+            )
           }
           allMarks.forEach((mark) => {
             if (mark.parentNode) {
@@ -921,7 +951,7 @@ export function useScopedFind(
       // Check if container is scrollable, if not find the scrollable parent
 
       let scrollParent: HTMLElement = container
-      
+
       if (!isScrollable(container)) {
         // Container is not scrollable, find the scrollable parent
         let parent = container.parentElement
@@ -932,7 +962,7 @@ export function useScopedFind(
           }
           parent = parent.parentElement
         }
-        
+
         // If no scrollable parent found, use document element
         if (!parent) {
           scrollParent = document.documentElement
@@ -979,7 +1009,7 @@ export function useScopedFind(
       const timeoutId = setTimeout(() => {
         scrollToMatch(index)
       }, 50)
-      
+
       return () => clearTimeout(timeoutId)
     }
   }, [matches, index, scrollToMatch])

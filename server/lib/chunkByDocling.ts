@@ -38,11 +38,16 @@ interface DoclingTocEntry {
   parent_index?: number | null
 }
 
+interface DoclingBboxFragment extends DoclingBbox {
+  page_no?: number | null
+}
+
 interface DoclingChunk {
   text: string
   headings: string[]
   page_numbers: number[]
   bbox?: DoclingBbox
+  bboxes?: DoclingBboxFragment[]
 }
 
 interface DoclingImageChunk {
@@ -91,11 +96,11 @@ interface DoclingResponse {
 // Extended ChunkMetadata with docling-specific fields
 interface DoclingChunkMetadata extends ChunkMetadata {
   bbox?: DoclingBbox
+  bboxes?: DoclingBboxFragment[]
   width?: number
   height?: number
   headings?: string[]
 }
-
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -106,7 +111,10 @@ function sleep(ms: number): Promise<void> {
  */
 function detectImageExtension(base64Data: string): string {
   // Check for data URL prefix
-  if (base64Data.startsWith("data:image/jpeg") || base64Data.startsWith("data:image/jpg")) {
+  if (
+    base64Data.startsWith("data:image/jpeg") ||
+    base64Data.startsWith("data:image/jpg")
+  ) {
     return "jpg"
   }
   if (base64Data.startsWith("data:image/png")) {
@@ -168,7 +176,9 @@ async function callDoclingService(
 
   const formData = new FormData()
   // Create blob from buffer bytes - use type assertion to bypass strict typing
-  const blob = new Blob([buffer as unknown as BlobPart], { type: "application/pdf" })
+  const blob = new Blob([buffer as unknown as BlobPart], {
+    type: "application/pdf",
+  })
   formData.append("file", blob, fileName)
   formData.append("doc_id", docId)
 
@@ -179,12 +189,15 @@ async function callDoclingService(
     const timer = setTimeout(() => controller.abort(), DOCLING_TIMEOUT_MS)
 
     try {
-      Logger.info(`Calling docling service (attempt ${attempt}/${MAX_RETRIES})`, {
-        fileName,
-        docId,
-        fileSize: buffer.length,
-        url: apiUrl,
-      })
+      Logger.info(
+        `Calling docling service (attempt ${attempt}/${MAX_RETRIES})`,
+        {
+          fileName,
+          docId,
+          fileSize: buffer.length,
+          url: apiUrl,
+        },
+      )
 
       const response = await fetch(apiUrl, {
         method: "POST",
@@ -303,9 +316,7 @@ async function saveImages(
 /**
  * Transform docling chunks to xyne format
  */
-function transformChunks(
-  doclingChunks: DoclingChunk[],
-): {
+function transformChunks(doclingChunks: DoclingChunk[]): {
   chunks: string[]
   chunks_map: DoclingChunkMetadata[]
 } {
@@ -328,13 +339,14 @@ function transformChunks(
 
     // Docling returns 1-based page numbers (first page = 1)
     // Normalize to 0-based to match PDF.js/OCR convention
-    const pageNumbers = (chunk.page_numbers || []).map(p => p - 1)
+    const pageNumbers = (chunk.page_numbers || []).map((p) => p - 1)
 
     chunks_map.push({
       chunk_index: index,
       page_numbers: pageNumbers,
       block_labels: blockLabels,
       bbox: chunk.bbox,
+      bboxes: chunk.bboxes,
       headings: chunk.headings,
     })
   }
@@ -345,9 +357,7 @@ function transformChunks(
 /**
  * Transform docling image chunks to xyne format
  */
-function transformImageChunks(
-  doclingImageChunks: DoclingImageChunk[],
-): {
+function transformImageChunks(doclingImageChunks: DoclingImageChunk[]): {
   image_chunks: string[]
   image_chunks_map: DoclingChunkMetadata[]
 } {
@@ -363,7 +373,9 @@ function transformImageChunks(
     image_chunks.push(description)
     // Docling returns 1-based page numbers (first page = 1)
     // Normalize to 0-based to match PDF.js/OCR convention
-    const pageNumber = imgChunk.page_number ? imgChunk.page_number - 1 : undefined
+    const pageNumber = imgChunk.page_number
+      ? imgChunk.page_number - 1
+      : undefined
     image_chunks_map.push({
       chunk_index: index,
       page_numbers: pageNumber !== undefined ? [pageNumber] : [],
