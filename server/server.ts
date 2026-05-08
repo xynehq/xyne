@@ -2475,7 +2475,24 @@ app.get("/pdfjs/iccs/*", serveStatic({ root: "./dist" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
+/**
+ * Determines if this process should run as the "singleton" worker
+ * for background tasks. In a multi-instance PM2 setup with fork mode,
+ * only the first instance (NODE_APP_INSTANCE === "0") should run
+ * background workers like Slack Socket Mode, Gmail workers, etc.
+ */
+const isSingletonInstance = (): boolean => {
+  return process.env.NODE_APP_INSTANCE === "0"
+}
+
 export const init = async () => {
+  const isSingleton = isSingletonInstance()
+  const instanceId = process.env.NODE_APP_INSTANCE || "0"
+
+  Logger.info(
+    `Process initializing - Instance: ${instanceId}, Singleton: ${isSingleton}`
+  )
+
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
 
@@ -2495,22 +2512,29 @@ export const init = async () => {
     }
   }
 
-  if (isSlackEnabled()) {
-    Logger.info("Slack Web API client initialized and ready.")
-    try {
-      const socketStarted = await startSocketMode()
-      if (socketStarted) {
-        Logger.info("Slack Socket Mode connection initiated successfully.")
-      } else {
-        Logger.warn(
-          "Failed to start Slack Socket Mode - missing configuration.",
-        )
+  // Only run heavy background workers on the singleton instance (instance 0)
+  if (isSingleton) {
+    Logger.info("Singleton instance - initializing background workers")
+
+    if (isSlackEnabled()) {
+      Logger.info("Slack Web API client initialized and ready.")
+      try {
+        const socketStarted = await startSocketMode()
+        if (socketStarted) {
+          Logger.info("Slack Socket Mode connection initiated successfully.")
+        } else {
+          Logger.warn(
+            "Failed to start Slack Socket Mode - missing configuration.",
+          )
+        }
+      } catch (error) {
+        Logger.error(error, "Error starting Slack Socket Mode")
       }
-    } catch (error) {
-      Logger.error(error, "Error starting Slack Socket Mode")
+    } else {
+      Logger.info("Slack integration disabled - no BOT_TOKEN/APP_TOKEN provided.")
     }
   } else {
-    Logger.info("Slack integration disabled - no BOT_TOKEN/APP_TOKEN provided.")
+    Logger.info(`Instance ${instanceId} - skipping background worker initialization`)
   }
 }
 
@@ -2544,6 +2568,7 @@ const server = Bun.serve({
   websocket,
   idleTimeout: 180,
   development: true,
+  reusePort: true,
   error: errorHandler,
 })
 
@@ -2552,6 +2577,7 @@ const metricServer = Bun.serve({
   port: config.metricsPort, // new port from config
   idleTimeout: 180,
   development: true,
+  reusePort: true,
   error: errorHandler,
 })
 
