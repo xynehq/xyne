@@ -1,3 +1,10 @@
+## [3.55.1](https://github.com/xynehq/xyne/compare/v3.55.0...v3.55.1) (2026-05-08)
+
+
+### Bug Fixes
+
+* adding envs to db connections and docling retries ([#1328](https://github.com/xynehq/xyne/issues/1328)) ([4f83c05](https://github.com/xynehq/xyne/commit/4f83c05bcff6fab4b45ba2e1394fce6f1499efbf))
+
 # [3.55.0](https://github.com/xynehq/xyne/compare/v3.54.0...v3.55.0) (2026-05-08)
 
 
