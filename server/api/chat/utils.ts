@@ -1498,10 +1498,7 @@ export const checkAndYieldCitationsForAgent = async function* (
           Number.isNaN(citationIndex) ||
           citationIndex <= 0
         ) {
-          loggerWithChild({ email }).warn(
-            "[checkAndYieldCitationsForAgent] Found KB citation but could not resolve numeric index",
-            { rawChunkKey },
-          )
+    
           continue
         }
 
@@ -1509,16 +1506,11 @@ export const checkAndYieldCitationsForAgent = async function* (
           const item = results[citationIndex - 1]
 
           if (!item) {
-            loggerWithChild({ email: email }).warn(
-              `[checkAndYieldCitationsForAgent] Found a citation but could not map it to a search result: ${citationIndex}, ${results.length}`,
-            )
+ 
             continue
           }
 
           if (!item?.source?.docId && !item?.source?.url) {
-            loggerWithChild({ email: email }).info(
-              "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
-            )
             continue
           }
 
@@ -1564,10 +1556,7 @@ export const checkAndYieldCitationsForAgent = async function* (
                 )
                 if (imageData) {
                   if (!imageData.imagePath || !imageData.imageBuffer) {
-                    loggerWithChild({ email: email }).error(
-                      "Invalid imageData structure returned",
-                      { citationKey: imgMatch[1], imageData },
-                    )
+
                     imageProcessingSpan.setAttribute(
                       "processing_success",
                       false,
@@ -1610,22 +1599,13 @@ export const checkAndYieldCitationsForAgent = async function* (
                 imageProcessingSpan.setAttribute("processing_success", false)
                 imageProcessingSpan.end()
 
-                loggerWithChild({ email: email }).error(
-                  error,
-                  "Error processing image citation",
-                  { citationKey: imgMatch[1], error: getErrorMessage(error) },
-                )
               }
               if (!yieldedImageCitations.has(docIndex)) {
                 yieldedImageCitations.set(docIndex, new Set<number>())
               }
               yieldedImageCitations.get(docIndex)?.add(imageIndex)
             } else {
-              loggerWithChild({ email: email }).warn(
-                "Found a citation index but could not find it in the search result ",
-                imageIndex,
-                results.length,
-              )
+
               continue
             }
           }
