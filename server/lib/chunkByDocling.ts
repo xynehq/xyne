@@ -12,14 +12,20 @@ const Logger = getLogger(Subsystem.Integrations).child({
 
 const DEFAULT_IMAGE_DIR = "downloads/xyne_images_db"
 const DEFAULT_DOCLING_TIMEOUT_MS = 300000
-const MAX_RETRIES = 3
-const RETRY_DELAY_MS = 1000
+const DEFAULT_MAX_RETRIES = 3
+const DEFAULT_RETRY_DELAY_MS = 1000
 
 // Configuration from environment or config
 const DOCLING_BASE_URL = config.doclingServiceUrl || "http://localhost:8000"
 const DOCLING_TIMEOUT_MS = process.env.DOCLING_TIMEOUT_MS
   ? Number.parseInt(process.env.DOCLING_TIMEOUT_MS, 10)
   : DEFAULT_DOCLING_TIMEOUT_MS
+const MAX_RETRIES = process.env.DOCLING_MAX_RETRIES
+  ? Math.max(1, Number.parseInt(process.env.DOCLING_MAX_RETRIES, 10))
+  : DEFAULT_MAX_RETRIES
+const RETRY_DELAY_MS = process.env.DOCLING_RETRY_DELAY_MS
+  ? Math.max(0, Number.parseInt(process.env.DOCLING_RETRY_DELAY_MS, 10))
+  : DEFAULT_RETRY_DELAY_MS
 
 // Docling API response types
 interface DoclingBbox {
