@@ -1,6 +1,7 @@
 import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
 import { chunkByDoclingFromBuffer } from "@/lib/chunkByDocling"
 import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
+import { PdfPageCountExceededError } from "@/integrations/dataSource/errors"
 import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
 import { type ChunkMetadata } from "@/types"
 import { PDFDocument } from "pdf-lib"
@@ -21,6 +22,62 @@ export type PdfProcessingMethod =
   (typeof PDF_PROCESSING_METHOD)[keyof typeof PDF_PROCESSING_METHOD]
 
 const PDF_GEMINI_PAGE_THRESHOLD = 40
+const MAX_PDF_PAGE_COUNT = 1000
+const DEFAULT_DOCLING_TIMEOUT_FALLBACK_MS = 30 * 60 * 1000
+const DOCLING_TIMEOUT_PER_PAGE_MS = 15 * 1000
+const DOCLING_TIMEOUT_PER_100KB_MS = 10 * 1000
+const ONE_HUNDRED_KB_BYTES = 100 * 1024
+
+type DoclingPreflight = {
+  pageCount: number | null
+  timeoutMs: number
+  usedFallbackTimeout: boolean
+}
+
+function getConfiguredDoclingBaseTimeoutMs(): number {
+  const raw = process.env.DOCLING_TIMEOUT_MS
+  if (!raw) {
+    return DEFAULT_DOCLING_TIMEOUT_FALLBACK_MS
+  }
+
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_DOCLING_TIMEOUT_FALLBACK_MS
+  }
+
+  return parsed
+}
+
+export function calculateDoclingTimeoutMs(
+  fileSizeBytes: number,
+  pageCount: number | null,
+  baseTimeoutMs: number = getConfiguredDoclingBaseTimeoutMs(),
+): DoclingPreflight {
+  if (
+    !Number.isFinite(fileSizeBytes) ||
+    fileSizeBytes <= 0 ||
+    !Number.isFinite(pageCount) ||
+    (pageCount as number) <= 0
+  ) {
+    return {
+      pageCount: pageCount ?? null,
+      timeoutMs: DEFAULT_DOCLING_TIMEOUT_FALLBACK_MS,
+      usedFallbackTimeout: true,
+    }
+  }
+
+  const sizeUnits = Math.ceil(fileSizeBytes / ONE_HUNDRED_KB_BYTES)
+  const timeoutMs =
+    baseTimeoutMs +
+    (pageCount as number) * DOCLING_TIMEOUT_PER_PAGE_MS +
+    sizeUnits * DOCLING_TIMEOUT_PER_100KB_MS
+
+  return {
+    pageCount: pageCount as number,
+    timeoutMs,
+    usedFallbackTimeout: false,
+  }
+}
 
 export interface ProcessingResult {
   chunks: string[]
@@ -201,11 +258,24 @@ export class PdfProcessor {
     buffer: Buffer,
     fileName: string,
     vespaDocId: string,
+    preflight: DoclingPreflight,
   ): Promise<ProcessingResult> {
+    Logger.info(
+      {
+        fileName,
+        fileSizeBytes: buffer.length,
+        pageCount: preflight.pageCount,
+        computedTimeoutMs: preflight.timeoutMs,
+        usedFallbackTimeout: preflight.usedFallbackTimeout,
+      },
+      `Computed docling request preflight timeoutMs=${preflight.timeoutMs} pageCount=${preflight.pageCount ?? "unknown"} fallback=${preflight.usedFallbackTimeout} fileSizeBytes=${buffer.length}`,
+    )
+
     const doclingResult = await chunkByDoclingFromBuffer(
       buffer,
       fileName,
       vespaDocId,
+      { timeoutMs: preflight.timeoutMs },
     )
     return this.finalizeProcessingResult(
       {
@@ -245,6 +315,11 @@ export class PdfProcessor {
     describeImages: boolean = false,
     useOCR: boolean = true,
   ): Promise<ProcessingResult> {
+    const pageCount = await this.getPdfPageCount(buffer)
+    if (pageCount !== null && pageCount > MAX_PDF_PAGE_COUNT) {
+      throw new PdfPageCountExceededError(pageCount, MAX_PDF_PAGE_COUNT)
+    }
+
     // Step 1: Try OCR first (if enabled)
     if (useOCR) {
       try {
@@ -254,11 +329,16 @@ export class PdfProcessor {
         const doclingEnabled = process.env.DOCLING_ENABLED === "true"
 
         if (doclingEnabled) {
+          const doclingPreflight = calculateDoclingTimeoutMs(
+            buffer.length,
+            pageCount,
+          )
           Logger.info(`Using Docling for OCR processing of ${fileName}`)
           const doclingResult = await this.processWithDocling(
             buffer,
             fileName,
             vespaDocId,
+            doclingPreflight,
           )
           Logger.info(`Docling processing successful for ${fileName}`)
           return doclingResult
@@ -292,7 +372,6 @@ export class PdfProcessor {
     }
 
     // Step 2: Determine if we should try Gemini based on page count
-    const pageCount = await this.getPdfPageCount(buffer)
     const shouldTryGemini =
       pageCount !== null && pageCount < PDF_GEMINI_PAGE_THRESHOLD
 
@@ -344,6 +423,10 @@ export class PdfProcessor {
    */
   static async getPageCount(buffer: Buffer): Promise<number | null> {
     return this.getPdfPageCount(buffer)
+  }
+
+  static getMaxPdfPageCount(): number {
+    return MAX_PDF_PAGE_COUNT
   }
 
   /**

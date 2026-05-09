@@ -36,6 +36,14 @@ export class PdfPageTooLargeError extends FileValidationError {
   }
 }
 
+export class PdfPageCountExceededError extends FileValidationError {
+  constructor(actualPages: number, maxPages: number) {
+    const message = `PDF has ${actualPages} pages, which exceeds the maximum allowed limit of ${maxPages} pages`
+    const userMessage = `File not allowed. PDFs may contain at most ${maxPages} pages.`
+    super(message, userMessage)
+  }
+}
+
 export class UnsupportedFileTypeError extends FileValidationError {
   constructor(mimeType: string, supportedTypes: string[]) {
     const message = `Unsupported file type: ${mimeType}`

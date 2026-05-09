@@ -224,9 +224,9 @@ const mapChunkMeta = (
     result.bbox_b = meta.bbox.b
   }
 
-  if (Array.isArray((meta as any).bboxes) && (meta as any).bboxes.length > 0) {
+  if (Array.isArray(meta.bboxes) && meta.bboxes.length > 0) {
     try {
-      result.bboxes_json = JSON.stringify((meta as any).bboxes)
+      result.bboxes_json = JSON.stringify(meta.bboxes)
     } catch {
       result.bboxes_json = null
     }

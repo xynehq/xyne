@@ -13,6 +13,7 @@ import {
   MAX_ATTACHMENT_PPTX_SIZE,
   MAX_ATTACHMENT_SHEET_SIZE,
 } from "@/integrations/google/config"
+import { PdfPageCountExceededError } from "@/integrations/dataSource/errors"
 import * as XLSX from "xlsx"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
@@ -58,6 +59,13 @@ const processPdfFile = async (
     )
     return result.chunks.filter((v) => v.trim())
   } catch (error) {
+    if (error instanceof PdfPageCountExceededError) {
+      Logger.warn(
+        { error: error.message },
+        "Skipping PDF attachment due to page cap",
+      )
+      return []
+    }
     Logger.error(error, `Error processing PDF buffer`)
     return []
   }
