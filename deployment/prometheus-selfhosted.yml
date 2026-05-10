@@ -1,3 +1,7 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
 scrape_configs:
   - job_name: 'vespa-data-ingest'
     scrape_interval: 10s
@@ -10,8 +14,9 @@ scrape_configs:
     scrape_interval: 2s
     static_configs:
       - targets: ['host.docker.internal:3001'] #replace  with your application's service name e.g. 'xyne-app:3000' or the host-name:port where your server is hosted
-  # - job_name: 'pm2'
-  #   metrics_path: /
-  #   scrape_interval: 2s
-  #   static_configs:
-  #     - targets: ['host.docker.internal:9988']
+  - job_name: 'pm2-metrics'
+    metrics_path: /metrics
+    scrape_interval: 5s
+    fallback_scrape_protocol: "PrometheusText0.0.4"
+    static_configs:
+      - targets: ['host.docker.internal:9209']  # PM2 metrics exporter port

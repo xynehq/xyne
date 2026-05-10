@@ -1,25 +1,28 @@
 server:
   http_listen_port: 9080
+  grpc_listen_port: 0
 
 positions:
-  filename: /tmp/positions.yml
+  filename: /tmp/positions.yaml
 
 clients:
-  - url: http://localhost:3100/loki/api/v1/push
+  - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
-- job_name: pm2-logs
-  static_configs:
-  - targets:
-      - localhost
-    labels:
-      job: pm2
-      type: stdout
-      __path__: '/root/.pm2/logs/*-out.log'
+  - job_name: pm2-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pm2
+          service_name: xyne-server
+          __path__: /pm2-logs/xyne-server-*.log
 
-  - targets:
-      - localhost
-    labels:
-      job: pm2
-      type: stderr
-      __path__: '/root/.pm2/logs/*-error.log'
+  - job_name: app-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: xyne-app
+          service_name: xyne-server
+          __path__: /app-logs/*.log
