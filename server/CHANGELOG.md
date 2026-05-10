@@ -1,3 +1,10 @@
+# [3.57.0](https://github.com/xynehq/xyne/compare/v3.56.0...v3.57.0) (2026-05-10)
+
+
+### Features
+
+* dynamic timeout for docling ([#1331](https://github.com/xynehq/xyne/issues/1331)) ([d3c7562](https://github.com/xynehq/xyne/commit/d3c75623bd17cd60de894a736be360b1f35417de))
+
 # [3.56.0](https://github.com/xynehq/xyne/compare/v3.55.1...v3.56.0) (2026-05-10)
 
 
