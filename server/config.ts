@@ -1,5 +1,5 @@
-import { isURLValid } from "@/validate"
 import { Models } from "@/ai/types"
+import { isURLValid } from "@/validate"
 import { AuthType } from "./shared/types"
 let vespaBaseHost = "0.0.0.0"
 let vespaFeedPort = parseInt(process.env.VESPA_FEED_PORT || "8080", 10)
@@ -14,6 +14,8 @@ let paddleStatusEndpoint =
 let doclingServiceUrl =
   process.env.DOCLING_SERVICE_URL || "http://localhost:8000"
 const doclingEnabled = process.env.DOCLING_ENABLED === "true"
+const pdfProcessingDisableFallbacks =
+  process.env.PDF_PROCESSING_DISABLE_FALLBACKS === "true"
 let syncServerHost = process.env.SYNC_SERVER_HOST || "localhost"
 
 export const parseOCRProviders = (providers?: string): string[] => {
@@ -290,8 +292,8 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     ? (process.env["LITELLM_BEST_MODEL"] as Models)
     : Models.OPEN_LARGE // Default best model
   sqlInferenceModel = process.env["LITELLM_SQL_INFERENCE_MODEL"]
-  ? (process.env["LITELLM_SQL_INFERENCE_MODEL"] as Models)
-  : Models.OPEN_LARGE // Default sql inference model
+    ? (process.env["LITELLM_SQL_INFERENCE_MODEL"] as Models)
+    : Models.OPEN_LARGE // Default sql inference model
   if (defaultDeepResearchModel === ("" as Models)) {
     defaultDeepResearchModel = process.env["LITELLM_DEEP_RESEARCH_MODEL"]
       ? (process.env["LITELLM_DEEP_RESEARCH_MODEL"] as Models)
@@ -372,6 +374,7 @@ export default {
   paddleStatusEndpoint,
   doclingServiceUrl,
   doclingEnabled,
+  pdfProcessingDisableFallbacks,
   ocrProviders,
   appleBundleId,
   // update user query session time
