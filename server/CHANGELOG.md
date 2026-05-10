@@ -1,3 +1,10 @@
+# [3.56.0](https://github.com/xynehq/xyne/compare/v3.55.1...v3.56.0) (2026-05-10)
+
+
+### Features
+
+* changes for 429 vespa insertion error ([#1330](https://github.com/xynehq/xyne/issues/1330)) ([c0e72ef](https://github.com/xynehq/xyne/commit/c0e72eff011c515fd6d477520b979ba15f562f65))
+
 ## [3.55.1](https://github.com/xynehq/xyne/compare/v3.55.0...v3.55.1) (2026-05-08)
 
 
