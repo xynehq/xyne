@@ -382,8 +382,11 @@ export default {
   defaultFastModel,
   defaultDeepResearchModel,
   defaultWebSearchModel,
-  vespaMaxRetryAttempts: 3,
-  vespaRetryDelay: 1000, // 1 sec
+  vespaMaxRetryAttempts: parseInt(
+    process.env.VESPA_MAX_RETRY_ATTEMPTS || "8",
+    10,
+  ),
+  vespaRetryDelay: parseInt(process.env.VESPA_RETRY_DELAY_MS || "1000", 10),
   chatHistoryPageSize: 21,
   maxDefaultSummary: 10,
   maxChunksPerTool: 50,

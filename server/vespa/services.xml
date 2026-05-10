@@ -13,6 +13,14 @@
         <config name="container.handler.threadpool">  
             <maxthreads>8</maxthreads>  
         </config>  
+
+        <!-- Absorb short feed bursts before returning /document/v1 429 overload. -->
+        <config name="com.yahoo.document.restapi.document-operation-executor">
+            <resendDelayMillis>25</resendDelayMillis>
+            <maxThrottled>1024</maxThrottled>
+            <maxThrottledAge>10.0</maxThrottledAge>
+            <maxThrottledBytes>-0.4</maxThrottledBytes>
+        </config>
   
         <!-- All /document/v1 traffic and doc-processing lives here -->
         <document-api />  
