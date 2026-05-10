@@ -144,6 +144,11 @@ schema kb_items {
       indexing: attribute | summary
     }
 
+    field access_tags type array<string> {
+      indexing: attribute | summary
+      attribute: fast-search
+    }
+
     field createdAt type long {
       indexing: attribute | summary
       attribute: fast-search

@@ -457,6 +457,21 @@ import {
 } from "@/health/type"
 import WebhookHandler from "@/services/WebhookHandler"
 import { preloadModelInfoCache } from "./ai/fetchModels"
+import { IssueProviderTokenApi } from "@/api/provider/token"
+import {
+  ProviderTokenMiddleware,
+  ProviderCorsMiddleware,
+} from "@/api/provider/middleware"
+import { ProviderSearchApi } from "@/api/provider/search"
+import { ProviderChatApi, ProviderExplainApi } from "@/api/provider/chat"
+import { ProviderIngestApi } from "@/api/provider/documents"
+import {
+  issueTokenSchema,
+  providerSearchSchema,
+  providerChatSchema,
+  providerExplainSchema,
+  providerIngestSchema,
+} from "@/api/provider/types"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -2440,6 +2455,31 @@ app
   .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB (supports zip files)
   .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB by ID
   .post("/cl/poll-status", PollCollectionsStatusApi) // Poll collection items status
+
+// Provider token issuance (API key protected — provider's backend calls this)
+app
+  .basePath("/api/provider/auth")
+  .use("*", ApiKeyMiddleware)
+  .post("/token", zValidator("json", issueTokenSchema), IssueProviderTokenApi)
+
+// Provider user-facing endpoints (provider token protected — external user calls these)
+app
+  .basePath("/api/provider")
+  .use("*", ProviderTokenMiddleware)
+  .use("*", ProviderCorsMiddleware)
+  .post("/search", zValidator("json", providerSearchSchema), ProviderSearchApi)
+  .post("/chat", zValidator("json", providerChatSchema), ProviderChatApi)
+  .post("/explain", zValidator("json", providerExplainSchema), ProviderExplainApi)
+
+// Provider management (API key protected — provider's backend pushes docs)
+app
+  .basePath("/api/provider/manage")
+  .use("*", ApiKeyMiddleware)
+  .post(
+    "/documents",
+    zValidator("json", providerIngestSchema),
+    ProviderIngestApi,
+  )
 
 // Proxy function to forward ingestion API calls to sync server
 const proxyToSyncServer = async (
