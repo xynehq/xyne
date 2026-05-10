@@ -15,17 +15,40 @@ const DEFAULT_DOCLING_TIMEOUT_MS = 300000
 const DEFAULT_MAX_RETRIES = 3
 const DEFAULT_RETRY_DELAY_MS = 1000
 
+type DoclingCallOptions = {
+  timeoutMs?: number
+}
+
+function parsePositiveInteger(
+  value: string | undefined,
+  fallback: number,
+): number {
+  if (!value) {
+    return fallback
+  }
+
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 // Configuration from environment or config
 const DOCLING_BASE_URL = config.doclingServiceUrl || "http://localhost:8000"
-const DOCLING_TIMEOUT_MS = process.env.DOCLING_TIMEOUT_MS
-  ? Number.parseInt(process.env.DOCLING_TIMEOUT_MS, 10)
-  : DEFAULT_DOCLING_TIMEOUT_MS
+const DOCLING_TIMEOUT_MS = parsePositiveInteger(
+  process.env.DOCLING_TIMEOUT_MS,
+  DEFAULT_DOCLING_TIMEOUT_MS,
+)
 const MAX_RETRIES = process.env.DOCLING_MAX_RETRIES
   ? Math.max(1, Number.parseInt(process.env.DOCLING_MAX_RETRIES, 10))
   : DEFAULT_MAX_RETRIES
 const RETRY_DELAY_MS = process.env.DOCLING_RETRY_DELAY_MS
   ? Math.max(0, Number.parseInt(process.env.DOCLING_RETRY_DELAY_MS, 10))
   : DEFAULT_RETRY_DELAY_MS
+
+function getEffectiveDoclingTimeoutMs(timeoutMs?: number): number {
+  return Number.isFinite(timeoutMs) && (timeoutMs || 0) > 0
+    ? (timeoutMs as number)
+    : DOCLING_TIMEOUT_MS
+}
 
 // Docling API response types
 interface DoclingBbox {
@@ -176,9 +199,11 @@ async function callDoclingService(
   buffer: Buffer,
   fileName: string,
   docId: string,
+  options?: DoclingCallOptions,
 ): Promise<DoclingResponse> {
   const baseUrl = DOCLING_BASE_URL.replace(/\/+$/, "")
   const apiUrl = `${baseUrl}/process`
+  const timeoutMs = getEffectiveDoclingTimeoutMs(options?.timeoutMs)
 
   const formData = new FormData()
   // Create blob from buffer bytes - use type assertion to bypass strict typing
@@ -192,17 +217,18 @@ async function callDoclingService(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), DOCLING_TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
 
     try {
       Logger.info(
-        `Calling docling service (attempt ${attempt}/${MAX_RETRIES})`,
         {
           fileName,
           docId,
           fileSize: buffer.length,
+          timeoutMs,
           url: apiUrl,
         },
+        `Calling docling service (attempt ${attempt}/${MAX_RETRIES}) timeoutMs=${timeoutMs} fileSize=${buffer.length} docId=${docId}`,
       )
 
       const response = await fetch(apiUrl, {
@@ -444,15 +470,25 @@ export async function chunkByDoclingFromBuffer(
   buffer: Buffer,
   fileName: string,
   docId: string,
+  options?: DoclingCallOptions,
 ): Promise<ProcessingResult> {
-  Logger.info("Starting docling processing", {
-    fileName,
-    docId,
-    fileSize: buffer.length,
-  })
+  Logger.info(
+    {
+      fileName,
+      docId,
+      fileSize: buffer.length,
+      timeoutMs: options?.timeoutMs,
+    },
+    `Starting docling processing timeoutMs=${options?.timeoutMs ?? "default"} fileSize=${buffer.length} docId=${docId}`,
+  )
 
   // Step 1: Call docling service
-  const doclingResponse = await callDoclingService(buffer, fileName, docId)
+  const doclingResponse = await callDoclingService(
+    buffer,
+    fileName,
+    docId,
+    options,
+  )
 
   // Step 2: Save images to disk
   const savedImagePaths = await saveImages(doclingResponse.images, docId)
