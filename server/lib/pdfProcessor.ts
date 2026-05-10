@@ -1,11 +1,12 @@
-import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
-import { chunkByDoclingFromBuffer } from "@/lib/chunkByDocling"
-import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
+import config from "@/config"
 import { PdfPageCountExceededError } from "@/integrations/dataSource/errors"
+import { chunkByDoclingFromBuffer } from "@/lib/chunkByDocling"
+import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
+import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
+import { Subsystem, getLogger } from "@/logger"
 import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
 import { type ChunkMetadata } from "@/types"
 import { PDFDocument } from "pdf-lib"
-import { getLogger, Subsystem } from "@/logger"
 
 const Logger = getLogger(Subsystem.Ingest).child({
   module: "pdfProcessor",
@@ -300,6 +301,8 @@ export class PdfProcessor {
    *    - Otherwise, use Paddle OCR (if OCR_PROVIDERS configured)
    * 2. If OCR fails and PDF < 40 pages, try Gemini
    * 3. If all above fail or PDF >= 40 pages, use PDF.js
+   * Set PDF_PROCESSING_DISABLE_FALLBACKS=true to fail ingestion on the first
+   * selected processing strategy error instead of trying later strategies.
    *
    * @param buffer - PDF file buffer
    * @param fileName - Name of the PDF file
@@ -321,6 +324,7 @@ export class PdfProcessor {
     if (pageCount !== null && pageCount > MAX_PDF_PAGE_COUNT) {
       throw new PdfPageCountExceededError(pageCount, MAX_PDF_PAGE_COUNT)
     }
+    const disableFallbacks = config.pdfProcessingDisableFallbacks
 
     // Step 1: Try OCR first (if enabled)
     if (useOCR) {
@@ -365,6 +369,12 @@ export class PdfProcessor {
           )
         }
       } catch (error) {
+        if (disableFallbacks) {
+          Logger.error(
+            `OCR PDF processing failed for ${fileName}; PDF processing fallbacks are disabled. error: ${JSON.stringify(error)}`,
+          )
+          throw error
+        }
         Logger.warn(
           `OCR PDF processing failed for ${fileName}, attempting fallbacks. error: ${JSON.stringify(error)}`,
         )
@@ -386,6 +396,12 @@ export class PdfProcessor {
         Logger.info(`Gemini processing successful for ${fileName}`)
         return result
       } catch (error) {
+        if (disableFallbacks) {
+          Logger.error(
+            `Gemini PDF processing failed for ${fileName}; PDF processing fallbacks are disabled. error: ${JSON.stringify(error)}`,
+          )
+          throw error
+        }
         Logger.warn(
           `Gemini PDF processing failed for ${fileName}, falling back to PDF.js. error: ${JSON.stringify(error)}`,
         )
@@ -439,6 +455,7 @@ export class PdfProcessor {
       geminiPageThreshold: PDF_GEMINI_PAGE_THRESHOLD,
       supportedMethods: ["ocr", "docling", "gemini", "pdfjs"] as const,
       defaultFallbackOrder: ["ocr", "gemini", "pdfjs"] as const,
+      disableFallbacks: config.pdfProcessingDisableFallbacks,
     }
   }
 }
