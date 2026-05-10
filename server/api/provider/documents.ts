@@ -16,13 +16,14 @@ export const ProviderIngestApi = async (c: Context) => {
     const results: Array<{ docId: string; title: string; status: string }> = []
 
     for (const doc of documents as Array<{
+      doc_id?: string
       title: string
       content: string
       access_tags: string[]
       source_url?: string
       metadata?: Record<string, unknown>
     }>) {
-      const vespaDocId = `provider-${createId()}`
+      const vespaDocId = doc.doc_id ?? `provider-${createId()}`
 
       const vespaDoc = {
         docId: vespaDocId,

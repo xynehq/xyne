@@ -563,6 +563,7 @@ export enum UserRole {
   TeamLeader = "TeamLeader", // manage Users
   Admin = "Admin", // Service account related changes
   SuperAdmin = "SuperAdmin", // Admin level changes
+  Provider = "Provider", // external provider (email+password auth)
 }
 
 export enum UserAgentRole {

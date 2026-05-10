@@ -465,12 +465,28 @@ import {
 import { ProviderSearchApi } from "@/api/provider/search"
 import { ProviderChatApi, ProviderExplainApi } from "@/api/provider/chat"
 import { ProviderIngestApi } from "@/api/provider/documents"
+import { ProviderSignupApi, ProviderLoginApi } from "@/api/provider/auth"
+import {
+  ProviderMeApi,
+  GetProviderConfigApi,
+  UpdateProviderConfigApi,
+  ListProviderDocumentsApi,
+  DeleteProviderDocumentApi,
+  ListProviderDocumentsByApiKeyApi,
+  DeleteProviderDocumentByApiKeyApi,
+  ListProviderApiKeysApi,
+  CreateProviderApiKeyApi,
+  DeleteProviderApiKeyApi,
+} from "@/api/provider/manage"
 import {
   issueTokenSchema,
   providerSearchSchema,
   providerChatSchema,
   providerExplainSchema,
   providerIngestSchema,
+  providerSignupSchema,
+  providerLoginSchema,
+  updateProviderConfigSchema,
 } from "@/api/provider/types"
 
 // Define Zod schema for delete datasource file query parameters
@@ -2463,22 +2479,77 @@ app
   .post("/token", zValidator("json", issueTokenSchema), IssueProviderTokenApi)
 
 // Provider user-facing endpoints (provider token protected — external user calls these)
+// Middleware applied per-route to avoid catching /api/provider/dashboard/* and /api/provider/manage/*
 app
   .basePath("/api/provider")
-  .use("*", ProviderTokenMiddleware)
-  .use("*", ProviderCorsMiddleware)
-  .post("/search", zValidator("json", providerSearchSchema), ProviderSearchApi)
-  .post("/chat", zValidator("json", providerChatSchema), ProviderChatApi)
-  .post("/explain", zValidator("json", providerExplainSchema), ProviderExplainApi)
+  .post("/search", ProviderTokenMiddleware, ProviderCorsMiddleware, zValidator("json", providerSearchSchema), ProviderSearchApi)
+  .post("/chat", ProviderTokenMiddleware, ProviderCorsMiddleware, zValidator("json", providerChatSchema), ProviderChatApi)
+  .post("/explain", ProviderTokenMiddleware, ProviderCorsMiddleware, zValidator("json", providerExplainSchema), ProviderExplainApi)
 
 // Provider management (API key protected — provider's backend pushes docs)
 app
   .basePath("/api/provider/manage")
   .use("*", ApiKeyMiddleware)
+  .get("/documents", ListProviderDocumentsByApiKeyApi)
+  .delete("/documents/:docId", DeleteProviderDocumentByApiKeyApi)
   .post(
     "/documents",
     zValidator("json", providerIngestSchema),
     ProviderIngestApi,
+  )
+
+// Provider dashboard auth (public — no middleware)
+app
+  .basePath("/api/provider/dashboard/auth")
+  .post("/signup", zValidator("json", providerSignupSchema), ProviderSignupApi)
+  .post("/login", zValidator("json", providerLoginSchema), ProviderLoginApi)
+
+// Provider dashboard management (JWT auth via Bearer token + Provider role check)
+const ProviderDashboardAuthMiddleware = async (c: Context, next: Next) => {
+  const authHeader = c.req.header("Authorization")
+  if (!authHeader?.startsWith("Bearer ")) {
+    throw new HTTPException(401, { message: "Missing Bearer token" })
+  }
+  const token = authHeader.slice(7)
+  try {
+    const payload = await verify(token, accessTokenSecret)
+    c.set("jwtPayload", payload)
+  } catch {
+    throw new HTTPException(401, { message: "Invalid or expired token" })
+  }
+  await next()
+}
+
+const requireProvider = async (c: Context, next: Next) => {
+  const payload = c.get("jwtPayload")
+  if (payload?.role !== UserRole.Provider) {
+    throw new HTTPException(403, { message: "Provider access only" })
+  }
+  await next()
+}
+
+const providerDashboardAuth = [ProviderDashboardAuthMiddleware, requireProvider] as const
+
+app
+  .basePath("/api/provider/dashboard")
+  .get("/me", ...providerDashboardAuth, ProviderMeApi)
+  .get("/documents", ...providerDashboardAuth, ListProviderDocumentsApi)
+  .delete("/documents/:docId", ...providerDashboardAuth, DeleteProviderDocumentApi)
+  .post(
+    "/documents",
+    ...providerDashboardAuth,
+    zValidator("json", providerIngestSchema),
+    ProviderIngestApi,
+  )
+  .get("/api-keys", ...providerDashboardAuth, ListProviderApiKeysApi)
+  .post("/api-keys", ...providerDashboardAuth, CreateProviderApiKeyApi)
+  .delete("/api-keys/:id", ...providerDashboardAuth, DeleteProviderApiKeyApi)
+  .get("/config", ...providerDashboardAuth, GetProviderConfigApi)
+  .put(
+    "/config",
+    ...providerDashboardAuth,
+    zValidator("json", updateProviderConfigSchema),
+    UpdateProviderConfigApi,
   )
 
 // Proxy function to forward ingestion API calls to sync server

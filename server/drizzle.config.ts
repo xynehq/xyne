@@ -5,6 +5,8 @@ export default defineConfig({
   schema: "./db/schema.ts",
   out: "./migrations",
   dbCredentials: {
-    url: `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`,
+    url:
+      process.env.DATABASE_URL ||
+      `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`,
   },
 })

@@ -46,6 +46,7 @@ export const users = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     lastLogin: timestamp("last_login", { withTimezone: true }),
     role: userRoleEnum("role").notNull().default(UserRole.User),
+    passwordHash: text("password_hash"),
     refreshToken: encryptedText(refreshTokenEncryption)("refreshToken"),
     timeZone: text("time_zone").notNull().default("Asia/Kolkata"),
   },
