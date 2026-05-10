@@ -48,10 +48,12 @@ function getConfiguredDoclingBaseTimeoutMs(): number {
   return parsed
 }
 
+const DOCLING_BASE_TIMEOUT_MS = getConfiguredDoclingBaseTimeoutMs()
+
 export function calculateDoclingTimeoutMs(
   fileSizeBytes: number,
   pageCount: number | null,
-  baseTimeoutMs: number = getConfiguredDoclingBaseTimeoutMs(),
+  baseTimeoutMs: number = DOCLING_BASE_TIMEOUT_MS,
 ): DoclingPreflight {
   if (
     !Number.isFinite(fileSizeBytes) ||

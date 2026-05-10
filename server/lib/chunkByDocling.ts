@@ -19,17 +19,36 @@ type DoclingCallOptions = {
   timeoutMs?: number
 }
 
+function parsePositiveInteger(
+  value: string | undefined,
+  fallback: number,
+): number {
+  if (!value) {
+    return fallback
+  }
+
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 // Configuration from environment or config
 const DOCLING_BASE_URL = config.doclingServiceUrl || "http://localhost:8000"
-const DOCLING_TIMEOUT_MS = process.env.DOCLING_TIMEOUT_MS
-  ? Number.parseInt(process.env.DOCLING_TIMEOUT_MS, 10)
-  : DEFAULT_DOCLING_TIMEOUT_MS
+const DOCLING_TIMEOUT_MS = parsePositiveInteger(
+  process.env.DOCLING_TIMEOUT_MS,
+  DEFAULT_DOCLING_TIMEOUT_MS,
+)
 const MAX_RETRIES = process.env.DOCLING_MAX_RETRIES
   ? Math.max(1, Number.parseInt(process.env.DOCLING_MAX_RETRIES, 10))
   : DEFAULT_MAX_RETRIES
 const RETRY_DELAY_MS = process.env.DOCLING_RETRY_DELAY_MS
   ? Math.max(0, Number.parseInt(process.env.DOCLING_RETRY_DELAY_MS, 10))
   : DEFAULT_RETRY_DELAY_MS
+
+function getEffectiveDoclingTimeoutMs(timeoutMs?: number): number {
+  return Number.isFinite(timeoutMs) && (timeoutMs || 0) > 0
+    ? (timeoutMs as number)
+    : DOCLING_TIMEOUT_MS
+}
 
 // Docling API response types
 interface DoclingBbox {
@@ -184,10 +203,7 @@ async function callDoclingService(
 ): Promise<DoclingResponse> {
   const baseUrl = DOCLING_BASE_URL.replace(/\/+$/, "")
   const apiUrl = `${baseUrl}/process`
-  const timeoutMs =
-    Number.isFinite(options?.timeoutMs) && (options?.timeoutMs || 0) > 0
-      ? (options?.timeoutMs as number)
-      : DOCLING_TIMEOUT_MS
+  const timeoutMs = getEffectiveDoclingTimeoutMs(options?.timeoutMs)
 
   const formData = new FormData()
   // Create blob from buffer bytes - use type assertion to bypass strict typing

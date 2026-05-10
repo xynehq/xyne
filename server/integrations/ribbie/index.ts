@@ -20,11 +20,72 @@ import {
 } from '@/db/knowledgeBase';
 import { db } from '@/db/client';
 import { IMAGE_CONTEXT_CONFIG } from '@/config.js';
+import { type ChunkMetadata } from '@/types';
 
 
 // Knowledge Base storage path
 export const KB_STORAGE_ROOT = path.join(process.cwd(), "storage", "kb_files");
 const Logger = getLogger(Subsystem.Integrations)
+
+type MappedChunkMeta = {
+    chunk_index: number
+    page_numbers: number[]
+    block_labels: string[]
+    width: number
+    height: number
+    bbox_l: number | null
+    bbox_t: number | null
+    bbox_r: number | null
+    bbox_b: number | null
+    bboxes_json: string | null
+    headings?: string[]
+}
+
+const mapChunkMeta = (
+    meta: ChunkMetadata,
+    includeHeadings = false,
+): MappedChunkMeta => {
+    const result: MappedChunkMeta = {
+        chunk_index: meta.chunk_index,
+        page_numbers: meta.page_numbers || [],
+        block_labels: meta.block_labels || [],
+        width: meta.width ?? 0,
+        height: meta.height ?? 0,
+        bbox_l: null,
+        bbox_t: null,
+        bbox_r: null,
+        bbox_b: null,
+        bboxes_json: null,
+    };
+
+    if (
+        meta.bbox &&
+        typeof meta.bbox.l === "number" &&
+        typeof meta.bbox.t === "number" &&
+        typeof meta.bbox.r === "number" &&
+        typeof meta.bbox.b === "number"
+    ) {
+        result.bbox_l = meta.bbox.l;
+        result.bbox_t = meta.bbox.t;
+        result.bbox_r = meta.bbox.r;
+        result.bbox_b = meta.bbox.b;
+    }
+
+    if (Array.isArray(meta.bboxes) && meta.bboxes.length > 0) {
+        try {
+            result.bboxes_json = JSON.stringify(meta.bboxes);
+        } catch {
+            result.bboxes_json = null;
+        }
+    }
+
+    if (includeHeadings) {
+        result.headings = meta.headings || [];
+    }
+
+    return result;
+};
+
 class RIBBIECircularDownloader {
     private downloadedCircularIds = new Set<string>();
 
@@ -565,8 +626,13 @@ class RIBBIECircularDownloader {
                     chunks_pos: processingResult.chunks_pos,
                     image_chunks: processingResult.image_chunks || [],
                     image_chunks_pos: processingResult.image_chunks_pos || [],
-                    chunks_map: processingResult.chunks_map || [],
-                    image_chunks_map: processingResult.image_chunks_map || [],
+                    toc_chunks: processingResult.toc_chunks || [],
+                    chunks_map: (processingResult.chunks_map || []).map((meta) =>
+                        mapChunkMeta(meta, true),
+                    ),
+                    image_chunks_map: (processingResult.image_chunks_map || []).map((meta) =>
+                        mapChunkMeta(meta, false),
+                    ),
                     metadata: JSON.stringify({
                         source: 'RIBBIE-automation',
                         circularNumber: circular.id,
@@ -577,6 +643,7 @@ class RIBBIECircularDownloader {
                         downloadedAt: Date.now(),
                         chunksCount: processingResult.chunks.length,
                         imageChunksCount: processingResult.image_chunks.length,
+                        tocChunksCount: (processingResult.toc_chunks || []).length,
                         processingMethod: 'FileProcessorService',
                     }),
                     createdBy: userEmail,
