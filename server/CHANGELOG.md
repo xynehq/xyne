@@ -1,3 +1,10 @@
+# [3.58.0](https://github.com/xynehq/xyne/compare/v3.57.0...v3.58.0) (2026-05-10)
+
+
+### Features
+
+* adding env for disabling fallbacks ([#1332](https://github.com/xynehq/xyne/issues/1332)) ([3c7aa8e](https://github.com/xynehq/xyne/commit/3c7aa8e6e6e68b747789f4dd12f6fa84051655ab))
+
 # [3.57.0](https://github.com/xynehq/xyne/compare/v3.56.0...v3.57.0) (2026-05-10)
 
 
