@@ -1,3 +1,10 @@
+## [3.58.1](https://github.com/xynehq/xyne/compare/v3.58.0...v3.58.1) (2026-05-11)
+
+
+### Bug Fixes
+
+* **app_start:** add node cluster ([#1333](https://github.com/xynehq/xyne/issues/1333)) ([a21768a](https://github.com/xynehq/xyne/commit/a21768ab7f1a92fe37d09866a1e3d61242612f67))
+
 # [3.58.0](https://github.com/xynehq/xyne/compare/v3.57.0...v3.58.0) (2026-05-10)
 
 
