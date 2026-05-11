@@ -312,6 +312,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     }
 
     const fileBuffer = await readFile(file.storagePath)
+    const tReadDone = Date.now()
 
     // Process file to extract content
     // Get useOCR from job data (default to true for backward compatibility)
@@ -326,6 +327,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       IMAGE_CONTEXT_CONFIG.enabled, // describeImages
       useOCR, // useOCR option
     )
+    const tProcDone = Date.now()
 
     // Extract title for markdown files
     let pageTitle: string = ""
@@ -446,6 +448,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       totalChunksCount +=
         processingResult.chunks.length + processingResult.image_chunks.length
     }
+    const tVespaDone = Date.now()
 
     // Update status to completed with processing method metadata
     const chunksCount = totalChunksCount
@@ -474,6 +477,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         updatedAt: new Date(),
       })
       .where(eq(collectionItems.id, fileId))
+    const tDbDone = Date.now()
 
     // Trigger parent status update after file completion
     if (file.parentId) {
@@ -481,10 +485,24 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     } else {
       await updateParentStatus(db, file.collectionId, true)
     }
+    const tParentDone = Date.now()
 
-    const endTime = Date.now()
+    const endTime = tParentDone
     Logger.info(
-      `Successfully processed file: ${fileId} in ${endTime - startTime}ms`,
+      {
+        fileId,
+        fileName: file.fileName,
+        fileSize: file.fileSize || 0,
+        mimeType: file.mimeType,
+        chunksCount,
+        readMs: tReadDone - startTime,
+        procMs: tProcDone - tReadDone,
+        vespaMs: tVespaDone - tProcDone,
+        dbMs: tDbDone - tVespaDone,
+        parentMs: tParentDone - tDbDone,
+        totalMs: endTime - startTime,
+      },
+      `[timing] Successfully processed file: ${fileId} in ${endTime - startTime}ms`,
     )
   } catch (error) {
     const errorMessage = getErrorMessage(error)
