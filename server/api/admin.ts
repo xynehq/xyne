@@ -163,15 +163,19 @@ import { fetchUserQueriesForChat, fetchAgentQueryResponsePairs } from "@/db/mess
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
+const MAX_KB_FOLDER_ANCESTOR_DEPTH = 100
 
 const canViewKbCollection = (
   collection: {
     ownerId: number
+    workspaceId: number
     isPrivate: boolean
     permissions: unknown
   },
   userId: number,
+  userWorkspaceId: number,
 ) => {
+  if (collection.workspaceId !== userWorkspaceId) return false
   if (collection.ownerId === userId) return true
   if (!collection.isPrivate) return true
 
@@ -185,9 +189,15 @@ const getKbFolderAncestorIds = async (
   fileParentId: string | null,
 ): Promise<Set<string>> => {
   const ancestorIds = new Set<string>()
+  const visitedIds = new Set<string>()
   let currentParentId = fileParentId
+  let depth = 0
 
-  while (currentParentId) {
+  while (currentParentId && depth < MAX_KB_FOLDER_ANCESTOR_DEPTH) {
+    if (visitedIds.has(currentParentId)) break
+    visitedIds.add(currentParentId)
+    depth += 1
+
     const [parent] = await db
       .select({
         id: collectionItems.id,
@@ -2670,6 +2680,7 @@ export const GetKbVespaContent = async (c: Context) => {
         collectionId: collectionItems.collectionId,
         parentId: collectionItems.parentId,
         vespaDocId: collectionItems.vespaDocId,
+        collectionWorkspaceId: kbCollections.workspaceId,
         collectionOwnerId: kbCollections.ownerId,
         collectionIsPrivate: kbCollections.isPrivate,
         collectionPermissions: kbCollections.permissions,
@@ -2680,6 +2691,7 @@ export const GetKbVespaContent = async (c: Context) => {
         and(
           eq(collectionItems.id, docId),
           eq(collectionItems.type, "file"),
+          eq(kbCollections.workspaceId, user[0].workspaceId),
           isNull(collectionItems.deletedAt),
           isNull(kbCollections.deletedAt),
         ),
@@ -2718,10 +2730,12 @@ export const GetKbVespaContent = async (c: Context) => {
       canViewKbCollection(
         {
           ownerId: kbFile.collectionOwnerId,
+          workspaceId: kbFile.collectionWorkspaceId,
           isPrivate: kbFile.collectionIsPrivate,
           permissions: kbFile.collectionPermissions,
         },
         user[0].id,
+        user[0].workspaceId,
       )
     ) {
       authorizedBy = "collection_access"
