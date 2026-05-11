@@ -263,18 +263,6 @@ export async function extractCollectionVespaIds(
     }
   }
 
-  Logger.info(
-    {
-      collectionSelections: options.collectionSelections,
-      vespaFieldTranslation: {
-        clId: result.collectionIds ?? [],
-        clFd: result.collectionFolderIds ?? [],
-        docId: result.collectionFileIds ?? [],
-      },
-    },
-    "[extractCollectionVespaIds] Translated collection selections to Vespa field filters",
-  )
-
   return result
 }
 
