@@ -103,6 +103,8 @@ import {
   chats,
   messages,
   agents,
+  collections as kbCollections,
+  collectionItems,
   selectConnectorSchema,
 } from "@/db/schema" // Add database schema imports
 import {
@@ -156,12 +158,92 @@ import { handleMicrosoftServiceAccountIngestion } from "@/integrations/microsoft
 import { CustomServiceAuthProvider } from "@/integrations/microsoft/utils"
 import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
 import { GetDocument } from "@/search/vespa"
-import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 import { replaceSheetIndex } from "@/search/utils"
 import { fetchUserQueriesForChat, fetchAgentQueryResponsePairs } from "@/db/message"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
+
+const canViewKbCollection = (
+  collection: {
+    ownerId: number
+    isPrivate: boolean
+    permissions: unknown
+  },
+  userId: number,
+) => {
+  if (collection.ownerId === userId) return true
+  if (!collection.isPrivate) return true
+
+  const permissions = Array.isArray(collection.permissions)
+    ? (collection.permissions as number[])
+    : []
+  return permissions.includes(userId)
+}
+
+const getKbFolderAncestorIds = async (
+  fileParentId: string | null,
+): Promise<Set<string>> => {
+  const ancestorIds = new Set<string>()
+  let currentParentId = fileParentId
+
+  while (currentParentId) {
+    const [parent] = await db
+      .select({
+        id: collectionItems.id,
+        parentId: collectionItems.parentId,
+        type: collectionItems.type,
+      })
+      .from(collectionItems)
+      .where(
+        and(
+          eq(collectionItems.id, currentParentId),
+          isNull(collectionItems.deletedAt),
+        ),
+      )
+
+    if (!parent || parent.type !== "folder") break
+
+    ancestorIds.add(parent.id)
+    currentParentId = parent.parentId
+  }
+
+  return ancestorIds
+}
+
+const isKbFileSelectedByAgent = async (
+  appIntegrations: unknown,
+  file: { id: string; collectionId: string; parentId: string | null },
+) => {
+  if (
+    !appIntegrations ||
+    typeof appIntegrations !== "object" ||
+    Array.isArray(appIntegrations)
+  ) {
+    return false
+  }
+
+  const knowledgeBaseConfig = (
+    appIntegrations as Record<string, { itemIds?: unknown }>
+  ).knowledge_base
+  const itemIds = Array.isArray(knowledgeBaseConfig?.itemIds)
+    ? knowledgeBaseConfig.itemIds.filter(
+        (itemId): itemId is string => typeof itemId === "string",
+      )
+    : []
+
+  if (itemIds.includes(`cl-${file.collectionId}`)) return true
+  if (itemIds.includes(`clf-${file.id}`)) return true
+
+  const selectedFolderIds = itemIds
+    .filter((itemId) => itemId.startsWith("clfd-"))
+    .map((itemId) => itemId.slice("clfd-".length))
+
+  if (!selectedFolderIds.length) return false
+
+  const ancestorIds = await getKbFolderAncestorIds(file.parentId)
+  return selectedFolderIds.some((folderId) => ancestorIds.has(folderId))
+}
 
 // Schema for admin query validation
 export const adminQuerySchema = z.object({
@@ -2570,21 +2652,46 @@ export const GetKbVespaContent = async (c: Context) => {
 
     const rawData = await c.req.json()
     const validatedData = getDocumentSchema.parse(rawData)
-    const { docId, sheetIndex, schema: rawSchema } = validatedData
+    const { docId, sheetIndex, schema: rawSchema, agentId } = validatedData
     const validSchemas = [KbItemsSchema]
     if (!validSchemas.includes(rawSchema)) {
       throw new HTTPException(400, {
         message: `Invalid schema type. Expected 'kb_items', got '${rawSchema}'`,
       })
     }
-    const collectionFile = await getCollectionFilesVespaIds([docId], db)
-    if (!collectionFile[0]) {
+    const user = await getUserByEmail(db, userEmail)
+    if (!user.length) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
+
+    const [kbFile] = await db
+      .select({
+        id: collectionItems.id,
+        collectionId: collectionItems.collectionId,
+        parentId: collectionItems.parentId,
+        vespaDocId: collectionItems.vespaDocId,
+        collectionOwnerId: kbCollections.ownerId,
+        collectionIsPrivate: kbCollections.isPrivate,
+        collectionPermissions: kbCollections.permissions,
+      })
+      .from(collectionItems)
+      .innerJoin(kbCollections, eq(collectionItems.collectionId, kbCollections.id))
+      .where(
+        and(
+          eq(collectionItems.id, docId),
+          eq(collectionItems.type, "file"),
+          isNull(collectionItems.deletedAt),
+          isNull(kbCollections.deletedAt),
+        ),
+      )
+
+    if (!kbFile) {
       throw new HTTPException(404, {
         message: `Document with id ${docId} not found in the system.`,
       })
     }
 
-    const rawVespaDocId = collectionFile[0].vespaDocId
+    const rawVespaDocId = kbFile.vespaDocId
     if (!rawVespaDocId) {
       throw new HTTPException(500, {
         message: "Document Vespa ID is missing in the system.",
@@ -2604,22 +2711,47 @@ export const GetKbVespaContent = async (c: Context) => {
     }
 
     const fields = documentData.fields as Record<string, any>
-    let ownerEmail: string
+    const ownerEmail = fields.createdBy as string | undefined
+    let authorizedBy = ""
 
-    ownerEmail = fields.createdBy as string
-
-    if (!ownerEmail) {
-      loggerWithChild({ email: userEmail }).error(
-        `Ownership field (createdBy/uploadedBy) missing for document ${docId} of schema ${schema}. Cannot verify ownership for user ${userEmail}.`,
+    if (
+      canViewKbCollection(
+        {
+          ownerId: kbFile.collectionOwnerId,
+          isPrivate: kbFile.collectionIsPrivate,
+          permissions: kbFile.collectionPermissions,
+        },
+        user[0].id,
       )
-      throw new HTTPException(500, {
-        message:
-          "Internal server error: Cannot verify document ownership due to missing data.",
-      })
+    ) {
+      authorizedBy = "collection_access"
+    } else if (agentId) {
+      const agent = await getAgentByExternalIdWithPermissionCheck(
+        db,
+        agentId,
+        user[0].workspaceId,
+        user[0].id,
+      )
+
+      if (
+        agent &&
+        (await isKbFileSelectedByAgent(agent.appIntegrations, {
+          id: kbFile.id,
+          collectionId: kbFile.collectionId,
+          parentId: kbFile.parentId,
+        }))
+      ) {
+        authorizedBy = "agent_kb_access"
+      }
     }
-    if (ownerEmail !== userEmail) {
+
+    if (!authorizedBy && ownerEmail && ownerEmail === userEmail) {
+      authorizedBy = "vespa_created_by"
+    }
+
+    if (!authorizedBy) {
       loggerWithChild({ email: userEmail }).warn(
-        `User ${userEmail} attempt to access document ${docId} (schema: ${schema}) owned by ${ownerEmail}. Access denied.`,
+        `User ${userEmail} attempt to access document ${docId} (schema: ${schema}) owned by ${ownerEmail ?? "unknown"}. Access denied.`,
       )
       throw new HTTPException(403, {
         message:
@@ -2627,7 +2759,7 @@ export const GetKbVespaContent = async (c: Context) => {
       })
     }
     loggerWithChild({ email: userEmail }).info(
-      `User ${userEmail} authorized to access document ${docId} (schema: ${schema}) owned by ${ownerEmail}.`,
+      `User ${userEmail} authorized to access document ${docId} (schema: ${schema}) via ${authorizedBy}.`,
     )
     return c.json(
       {
@@ -2637,6 +2769,7 @@ export const GetKbVespaContent = async (c: Context) => {
       200,
     )
   } catch (error) {
+    if (error instanceof HTTPException) throw error
     Logger.error(error, "Error fetching Vespa data for KB document")
     throw new HTTPException(500, {
       message:

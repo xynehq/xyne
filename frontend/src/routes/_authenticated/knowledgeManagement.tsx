@@ -65,12 +65,16 @@ import { useUploadProgress } from "@/store/useUploadProgressStore"
 import { DebugDocModal } from "@/components/DebugDocModal"
 import kbEmptyStateIcon from "@/assets/emptystateIcons/kb.png"
 import JsonViewer from "@/components/JsonViewer"
+import { z } from "zod"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
 const documentToTempChatMap = new PersistentMap(DOCUMENT_CHAT_MAP_KEY)
 
 export const Route = createFileRoute("/_authenticated/knowledgeManagement")({
+  validateSearch: z.object({
+    agentId: z.string().optional(),
+  }),
   component: RouteComponent,
 })
 
@@ -359,6 +363,7 @@ function RouteComponent() {
 }
 
 function KnowledgeManagementContent() {
+  const { agentId } = Route.useSearch()
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const { toast } = useToast()
@@ -492,7 +497,9 @@ function KnowledgeManagementContent() {
       setLoadingCollections(true)
       try {
         const response = await api.cl.$get({
-          query: { includeItems: "true" },
+          query: agentId
+            ? { includeItems: "true", agentId }
+            : { includeItems: "true" },
         })
         if (response.ok) {
           const data = await response.json()
@@ -552,7 +559,7 @@ function KnowledgeManagementContent() {
     }
 
     fetchCollections()
-  }, [toast, user?.email])
+  }, [agentId, toast, user?.email])
 
   // Poll for upload status updates
   const [isPolling, setIsPolling] = useState(false)
@@ -2513,6 +2520,7 @@ function KnowledgeManagementContent() {
         isOpen={isVespaModalOpen}
         onClose={() => setIsVespaModalOpen(false)}
         currentSheetIndex={currentSheetIndex}
+        agentId={agentId}
       />
     </div>
   )
