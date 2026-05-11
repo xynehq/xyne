@@ -105,6 +105,7 @@ export const searchKnowledgeBaseFilesSchema = z.object({
     .optional()
     .transform((x) => (x ? parseInt(x, 10) : 0))
     .pipe(z.number().min(0)),
+  lastUpdated: z.string().optional(),
   /** When true, only run group count and return { groupCount }; no search (saves latency when filter is active). */
   onlyGroupCount: z
     .string()
@@ -305,6 +306,18 @@ export const handleAttachmentDeleteSchema = z.object({
 
 export type GeneratePromptPayload = z.infer<typeof generatePromptSchema>
 
+const AUTOCOMPLETE_KNOWN_SCHEMAS = new Set([
+  "file",
+  "user",
+  "mail",
+  "event",
+  "user_query",
+  "mail_attachment",
+  "chat_user",
+  "ticket",
+  "kb_items",
+])
+
 export const AutocompleteApi = async (c: Context) => {
   let email = ""
   try {
@@ -313,11 +326,26 @@ export const AutocompleteApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("json")
     const { query } = body
-    let results = await autocomplete(query, email, 5)
+    let results
+    try {
+      results = await autocomplete(query, email, 5)
+    } catch (vespaErr) {
+      // Vespa can 400 when an enabled source is missing the autocomplete rank-profile
+      // (e.g. ticket schema). Degrade to empty results so the UI keeps working.
+      loggerWithChild({ email }).warn(
+        `Autocomplete Vespa error (returning empty): ${getErrorMessage(vespaErr)}`,
+      )
+      return c.json({ results: [] })
+    }
     if (!results) {
-      return c.json({ children: [] })
+      return c.json({ results: [] })
     }
     results = deduplicateAutocomplete(results)
+    if (results?.root?.children) {
+      results.root.children = results.root.children.filter((child: any) =>
+        AUTOCOMPLETE_KNOWN_SCHEMAS.has(child?.fields?.sddocname),
+      )
+    }
     const newResults = VespaAutocompleteResponseToResult(results)
     return c.json(newResults)
   } catch (error) {
@@ -619,12 +647,7 @@ export const SearchKnowledgeBaseFilesApi = async (c: Context) => {
       rankProfile: SearchModes.NativeRank,
       timestampRange,
     }),
-    groupVespaSearchKnowledgeBase(
-      decodedQuery,
-      email,
-      page,
-      timestampRange,
-    ),
+    groupVespaSearchKnowledgeBase(decodedQuery, email, page, timestampRange),
   ])
   const newResults = VespaSearchResponseToSearchResult(vespaResponse, {
     chunkDocument: chunkDocument,

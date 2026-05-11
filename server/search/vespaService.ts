@@ -18,9 +18,6 @@ import {
   type VespaSchema,
 } from "@xyne/vespa-ts/types"
 
-// Generic ticket schema constant (supports Zoho Desk, Jira, Linear, etc.)
-const ticketSchema = "ticket" as const
-
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa-service" })
 
 const vespaConfig = createDefaultConfig({
@@ -35,6 +32,10 @@ const vespaConfig = createDefaultConfig({
   queryEndpoint: config.vespaEndpoint.queryEndpoint,
 })
 
+// NOTE: ticket schema is intentionally NOT included here because it is missing
+// a `rank-profile autocomplete` definition, which causes Vespa to 400 the
+// shared autocomplete query (used across all sources). Ticket search still
+// works via explicit app/entity filters.
 const AllSources = [
   fileSchema,
   userSchema,
@@ -44,7 +45,6 @@ const AllSources = [
   // chatUserSchema, // we mostly should not be searching for chat users
   chatMessageSchema,
   chatContainerSchema,
-  ticketSchema,
 ] as VespaSchema[]
 
 const dependencies: VespaDependencies = {

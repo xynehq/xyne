@@ -2414,7 +2414,7 @@ function KnowledgeManagementContent() {
         </div>
       )}
       {(showNewCollection || addingToCollection) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-end pt-24 pr-24 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl w-[90%] max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-2">
             <div className="pb-1">
               <div className="flex justify-between items-center">

@@ -34,7 +34,6 @@ import { Filter, Groups } from "@/types"
 import CitationPreview from "@/components/CitationPreview"
 import { SearchResult } from "@/components/SearchResult"
 import answerSparkle from "@/assets/answerSparkle.svg"
-import { GroupFilter } from "@/components/GroupFilter"
 import { SearchBar } from "@/components/SearchBar"
 import { Button } from "@/components/ui/button"
 import { z } from "zod"
@@ -117,7 +116,9 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
     select: (s) => s.location.state.isQueryTyped,
   })
 
-  const [searchTab, setSearchTab] = useState<"all" | "kb">("all")
+  const [searchTab, setSearchTab] = useState<"all" | "apps" | "kb">("all")
+  const [appsCount, setAppsCount] = useState(0)
+  const [kbCount, setKbCount] = useState(0)
   const [query, setQuery] = useState(decodeURIComponent(search.query || "")) // State to hold the search query
   const [offset, setOffset] = useState(0)
   const [results, setResults] = useState<SearchResultDiscriminatedUnion[]>([]) // State to hold the search results
@@ -136,7 +137,9 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
   ) // State for debug info visibility, initialized from env var
   const [traceData, setTraceData] = useState<any | null>(null) // State for trace data
   const [previewCitation, setPreviewCitation] = useState<Citation | null>(null)
-  const [previewChunkIndex, setPreviewChunkIndex] = useState<number | null>(null)
+  const [previewChunkIndex, setPreviewChunkIndex] = useState<number | null>(
+    null,
+  )
   const [previewPageIndex, setPreviewPageIndex] = useState<number | null>(null)
   const { documentOperationsRef } = useDocumentOperations()
   const prefetchedChunkRef = useRef<{
@@ -169,7 +172,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
 
   const tabJustSwitchedRef = useRef(false)
   const requestIdRef = useRef(0)
-  const handleTabChange = (tab: "all" | "kb") => {
+  const handleTabChange = (tab: "all" | "apps" | "kb") => {
     tabJustSwitchedRef.current = true
     setSearchTab(tab)
     setOffset(0)
@@ -276,6 +279,11 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
     if (search && search.query) {
       const decodedQuery = decodeURIComponent(search.query)
       setQuery(decodedQuery)
+      if (decodedQuery !== activeQuery) {
+        setActiveQuery(decodedQuery)
+        setOffset(0)
+        setResults([])
+      }
       setDebugInfo(
         import.meta.env.VITE_SHOW_DEBUG_INFO === "true" ||
           search.debug ||
@@ -283,6 +291,12 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
       )
     }
   }, [search])
+
+  useEffect(() => {
+    if (activeQuery) {
+      handleSearch(0)
+    }
+  }, [activeQuery])
 
   useEffect(() => {
     if (tabJustSwitchedRef.current) {
@@ -347,15 +361,18 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
     }
   }
 
-  const handleSearch = async (newOffset = offset, tabOverride?: "all" | "kb") => {
+  const handleSearch = async (
+    newOffset = offset,
+    tabOverride?: "all" | "apps" | "kb",
+  ) => {
     if (!activeQuery) return
     setAutocompleteResults([])
-    const effectiveTab =tabOverride ?? searchTab
-    
+    const effectiveTab = tabOverride ?? searchTab
+
     // Increment request ID to track this specific search request
     requestIdRef.current += 1
     const currentRequestId = requestIdRef.current
-    
+
     try {
       // TODO: figure out when lastUpdated changes and only
       // then make it true or when app,entity is not present
@@ -401,67 +418,101 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         resetScroll: false,
       })
 
-      let response: Response
-      if (effectiveTab === "kb") {
-        response = await api.search["knowledge-base"].$get({
+      // Always fan-out: fetch both apps (/search) and KB (/search/knowledge-base)
+      // in parallel so we know counts for both tabs even when a specific tab is
+      // selected. Render results based on the active tab (merged for "all").
+      const [appsResp, kbResp] = await Promise.all([
+        api.search.$get({ query: params }),
+        api.search["knowledge-base"].$get({
           query: {
             query: params.query,
             page: String(params.page ?? page),
             offset: String(newOffset),
+            lastUpdated: params.lastUpdated,
           },
-        })
-      } else {
-        response = await api.search.$get({ query: params })
+        }),
+      ])
+
+      // Only update state if this is still the most recent request
+      if (currentRequestId !== requestIdRef.current) {
+        return
       }
 
-      if (response.ok) {
-        const data: SearchResponse = await response.json()
-        
-        // Only update state if this is still the most recent request
-        if (currentRequestId !== requestIdRef.current) {
-          return
-        }
-        
-        const newResults = data.results ?? []
+      // Handle 401 from either endpoint
+      if (appsResp.status === 401 || kbResp.status === 401) {
+        navigate({ to: "/auth" })
+        throw new Error("Unauthorized")
+      }
 
-        if (newOffset > 0) {
-          setResults((prev) => [...prev, ...newResults])
-        } else {
-          setResults(newResults)
-        }
+      const appsData: SearchResponse = appsResp.ok
+        ? await appsResp.json()
+        : { results: [], count: 0, groupCount: undefined }
+      const kbData: SearchResponse = kbResp.ok
+        ? await kbResp.json()
+        : { results: [], count: 0, groupCount: undefined }
 
-        setAutocompleteResults([])
+      const appsResults = appsData.results ?? []
+      const kbResults = kbData.results ?? []
 
-        navigate({
-          to: "/search",
-          search: (prev: any) => ({ ...prev }),
-          state: { isQueryTyped: false },
-          replace: true,
-          resetScroll: false,
-        })
+      // Sum group counts for apps (covers the apps-side total),
+      // KB count comes directly from kbData.count.
+      const appsTotal =
+        sumGroupCounts(appsData.groupCount) > 0
+          ? sumGroupCounts(appsData.groupCount)
+          : (appsData.count ?? 0)
+      const kbTotal = kbData.count ?? 0
+      setAppsCount(appsTotal)
+      setKbCount(kbTotal)
 
-        setGroups(data.groupCount ?? null)
-        // "All" must match sum of groups so sidebar is consistent (API count can differ from groupCount sum)
-        const totalFromGroups = sumGroupCounts(data.groupCount)
-        setSearchMeta({
-          totalCount: totalFromGroups > 0 ? totalFromGroups : (data.count ?? 0),
-        })
-        setTraceData(data.trace ?? null)
-        loadingRef.current = false
-        setIsLoading(false)
+      // Pick which results to render based on the selected tab.
+      // For "all", merge by relevance score (descending). When score is missing,
+      // preserve apps-first ordering — both APIs return Vespa-sorted lists.
+      let newResults: SearchResultDiscriminatedUnion[]
+      let activeTotal: number
+      if (effectiveTab === "kb") {
+        newResults = kbResults
+        activeTotal = kbTotal
+      } else if (effectiveTab === "apps") {
+        newResults = appsResults
+        activeTotal = appsTotal
       } else {
-        const errorText = await response.text()
-        if (!response.ok) {
-          // If unauthorized or status code is 401, navigate to '/auth'
-          if (response.status === 401) {
-            navigate({ to: "/auth" })
-            throw new Error("Unauthorized")
-          }
-        }
-        throw new Error(
-          `Error fetching search results: ${response.status} ${response.statusText} - ${errorText}`,
+        const merged = [...appsResults, ...kbResults]
+        const hasScore = merged.some(
+          (r) => typeof (r as { relevance?: number }).relevance === "number",
         )
+        if (hasScore) {
+          merged.sort((a, b) => {
+            const ar = (a as { relevance?: number }).relevance ?? 0
+            const br = (b as { relevance?: number }).relevance ?? 0
+            return br - ar
+          })
+        }
+        newResults = merged
+        activeTotal = appsTotal + kbTotal
       }
+
+      if (newOffset > 0) {
+        setResults((prev) => [...prev, ...newResults])
+      } else {
+        setResults(newResults)
+      }
+
+      setAutocompleteResults([])
+
+      navigate({
+        to: "/search",
+        search: (prev: any) => ({ ...prev }),
+        state: { isQueryTyped: false },
+        replace: true,
+        resetScroll: false,
+      })
+
+      // Group sidebar is driven by apps-side groupCount; KB has no app/entity facets.
+      setGroups(appsData.groupCount ?? null)
+      setSearchMeta({ totalCount: activeTotal })
+      setTraceData(appsData.trace ?? kbData.trace ?? null)
+      loadingRef.current = false
+      setIsLoading(false)
     } catch (error) {
       logger.error(error, `Error fetching search results:', ${error}`)
       setResults([]) // Clear results on error
@@ -559,11 +610,7 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
         .catch((err) => logger.error("Highlight failed", err))
       prefetchedChunkRef.current = null
     }
-  }, [
-    previewCitation,
-    previewChunkIndex,
-    documentOperationsRef,
-  ])
+  }, [previewCitation, previewChunkIndex, documentOperationsRef])
 
   const handleCloseCitationPreview = useCallback(() => {
     setPreviewCitation(null)
@@ -631,36 +678,6 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
             setFilter(updatedFilter)
           }}
         />
-
-        {/* Search source tabs: one API per tab, no merging */}
-        {activeQuery && (
-          <div className="flex items-center gap-1 ml-[186px] mt-3 border-b border-[#E6EBF5] dark:border-gray-700">
-            <button
-              type="button"
-              onClick={() => handleTabChange("all")}
-              className={`px-4 py-2 text-sm font-medium rounded-t transition-colors ${
-                searchTab === "all"
-                  ? "bg-[#F0F4F7] dark:bg-slate-700 text-[#464B53] dark:text-gray-200 border-b-2 border-transparent -mb-[1px]"
-                  : "text-[#707F9F] dark:text-gray-400 hover:text-[#464B53] dark:hover:text-gray-200"
-              }`}
-            >
-              All Results
-              {searchTab === "all" && totalCount > 0 ? ` (${totalCount})` : ""}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleTabChange("kb")}
-              className={`px-4 py-2 text-sm font-medium rounded-t transition-colors ${
-                searchTab === "kb"
-                  ? "bg-[#F0F4F7] dark:bg-slate-700 text-[#464B53] dark:text-gray-200 border-b-2 border-transparent -mb-[1px]"
-                  : "text-[#707F9F] dark:text-gray-400 hover:text-[#464B53] dark:hover:text-gray-200"
-              }`}
-            >
-              Knowledge Base
-              {searchTab === "kb" && totalCount > 0 ? ` (${totalCount})` : ""}
-            </button>
-          </div>
-        )}
 
         <div className="flex flex-row ml-[186px] h-full">
           <div className="flex flex-col w-full max-w-3xl border-r-[1px] border-[#E6EBF5] dark:border-gray-700">
@@ -776,13 +793,81 @@ export const Search = ({ user, workspace, agentWhiteList }: IndexProps) => {
               </div>
             )}
           </div>
-          {groups && (
-            <GroupFilter
-              groups={groups}
-              handleFilterChange={handleFilterChange}
-              filter={filter}
-              total={totalCount}
-            />
+          {(groups || activeQuery) && (
+            <div className="flex flex-col">
+              {/* Source filter rows live in the right-pane list.
+                  Each row mirrors the GroupFilterItem style (icon-less, since
+                  these are aggregate sources). Rows only appear when their
+                  side has results, and clicking a row swaps the active tab. */}
+              {activeQuery && (appsCount > 0 || kbCount > 0) && (
+                <div className="flex flex-col mt-[24px]">
+                  <p className="text-[11.5px] font-medium text-[#97A6C4] dark:text-slate-400 ml-[40px] tracking-[0.08em]">
+                    SOURCES
+                  </p>
+                  <div
+                    className="rounded-md h-[32px] ml-[40px] mt-2"
+                    onClick={() => handleTabChange("all")}
+                  >
+                    <div
+                      className={`${
+                        searchTab === "all"
+                          ? "bg-[#F0F4F7] dark:bg-slate-700"
+                          : ""
+                      } flex flex-row rounded-[6px] items-center justify-between cursor-pointer pl-[12px] pr-[12px] pt-[4px] pb-[4px] w-[248px]`}
+                    >
+                      <p className="text-[#5D6878] dark:text-slate-300 text-[13px] font-medium">
+                        All Results
+                      </p>
+                      <p className="text-[#97A6C4] dark:text-slate-400 ml-7">
+                        {appsCount + kbCount}
+                      </p>
+                    </div>
+                  </div>
+                  {appsCount > 0 && (
+                    <div
+                      className="rounded-md h-[32px] ml-[40px]"
+                      onClick={() => handleTabChange("apps")}
+                    >
+                      <div
+                        className={`${
+                          searchTab === "apps"
+                            ? "bg-[#F0F4F7] dark:bg-slate-700"
+                            : ""
+                        } flex flex-row rounded-[6px] items-center justify-between cursor-pointer pl-[12px] pr-[12px] pt-[4px] pb-[4px] w-[248px]`}
+                      >
+                        <p className="text-[#5D6878] dark:text-slate-300 text-[13px] font-medium">
+                          Apps & Mail
+                        </p>
+                        <p className="text-[#97A6C4] dark:text-slate-400 ml-7">
+                          {appsCount}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {kbCount > 0 && (
+                    <div
+                      className="rounded-md h-[32px] ml-[40px]"
+                      onClick={() => handleTabChange("kb")}
+                    >
+                      <div
+                        className={`${
+                          searchTab === "kb"
+                            ? "bg-[#F0F4F7] dark:bg-slate-700"
+                            : ""
+                        } flex flex-row rounded-[6px] items-center justify-between cursor-pointer pl-[12px] pr-[12px] pt-[4px] pb-[4px] w-[248px]`}
+                      >
+                        <p className="text-[#5D6878] dark:text-slate-300 text-[13px] font-medium">
+                          Knowledge Base
+                        </p>
+                        <p className="text-[#97A6C4] dark:text-slate-400 ml-7">
+                          {kbCount}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -808,7 +893,6 @@ const searchParams = z
     lastUpdated: z.string().optional(),
     debug: z.boolean().optional(),
     embedded: z.coerce.boolean().optional(),
-
   })
   .refine((data) => (data.app && data.entity) || (!data.app && !data.entity), {
     message: "app and entity must be provided together",

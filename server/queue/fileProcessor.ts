@@ -312,6 +312,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     }
 
     const fileBuffer = await readFile(file.storagePath)
+    const tReadDone = Date.now()
 
     // Process file to extract content
     // Get useOCR from job data (default to true for backward compatibility)
@@ -326,6 +327,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       IMAGE_CONTEXT_CONFIG.enabled, // describeImages
       useOCR, // useOCR option
     )
+    const tProcDone = Date.now()
 
     // Extract title for markdown files
     let pageTitle: string = ""
