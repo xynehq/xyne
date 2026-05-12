@@ -17,6 +17,7 @@ interface MessageListProps {
 	suggestedPrompts?: string[] | undefined;
 	welcomeMessage?: string | undefined;
 	onSuggestedPromptClick?: ((prompt: string) => void) | undefined;
+	renderAvatar?: (() => React.ReactNode) | undefined;
 }
 
 function EmptyState({
@@ -90,6 +91,7 @@ export function MessageList({
 	suggestedPrompts,
 	welcomeMessage,
 	onSuggestedPromptClick,
+	renderAvatar,
 }: MessageListProps) {
 	const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -141,6 +143,7 @@ export function MessageList({
 						sourceListClassName={classNames?.sourceList}
 						sourceCardClassName={classNames?.sourceCard}
 						botAvatarClassName={classNames?.botAvatar}
+						renderAvatar={renderAvatar}
 					/>
 				);
 			})}
@@ -149,7 +152,7 @@ export function MessageList({
 				messages[messages.length - 1]?.role === "assistant" &&
 				messages[messages.length - 1]?.content === "" &&
 				messages[messages.length - 1]?.status !== "error" && (
-					<LoadingIndicator className={classNames?.loadingIndicator} botAvatarClassName={classNames?.botAvatar} dotClassName={classNames?.dot} />
+					<LoadingIndicator className={classNames?.loadingIndicator} botAvatarClassName={classNames?.botAvatar} dotClassName={classNames?.dot} renderAvatar={renderAvatar} />
 				)}
 			<div ref={bottomRef} />
 		</div>

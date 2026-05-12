@@ -8,9 +8,10 @@ export interface ChatPanelProps {
 	classNames?: ChatPanelClassNames;
 	suggestedPrompts?: string[];
 	welcomeMessage?: string;
+	renderAvatar?: () => React.ReactNode;
 }
 
-export function ChatPanel({ placeholder, classNames, suggestedPrompts, welcomeMessage }: ChatPanelProps) {
+export function ChatPanel({ placeholder, classNames, suggestedPrompts, welcomeMessage, renderAvatar }: ChatPanelProps) {
 	const { messages, isStreaming, error, sendMessage, stop } = useChat();
 
 	return (
@@ -22,6 +23,7 @@ export function ChatPanel({ placeholder, classNames, suggestedPrompts, welcomeMe
 				suggestedPrompts={suggestedPrompts}
 				welcomeMessage={welcomeMessage}
 				onSuggestedPromptClick={sendMessage}
+				renderAvatar={renderAvatar}
 			/>
 			<ChatInput
 				onSend={sendMessage}

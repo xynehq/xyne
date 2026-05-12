@@ -11,6 +11,7 @@ export interface XyneExplainProps {
 	minSelectionLength?: number;
 	triggerLabel?: string;
 	triggerIcon?: React.ReactNode;
+	headerIcon?: React.ReactNode;
 	classNames?: AIPopoverClassNames;
 }
 
@@ -22,6 +23,7 @@ export function XyneExplain({
 	minSelectionLength,
 	triggerLabel,
 	triggerIcon,
+	headerIcon,
 	classNames,
 }: XyneExplainProps) {
 	const [token, setToken] = useState<string | null>(null);
@@ -52,6 +54,7 @@ export function XyneExplain({
 				minSelectionLength={minSelectionLength}
 				triggerLabel={triggerLabel}
 				triggerIcon={triggerIcon}
+				headerIcon={headerIcon}
 				classNames={classNames}
 			>
 				{children}

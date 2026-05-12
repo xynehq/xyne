@@ -4,8 +4,6 @@ import { useAISummary } from "../../hooks/use-ai-summary";
 import { SourceList } from "../shared/source-list";
 import { MarkdownContent } from "../shared/markdown-content";
 import { ThinkingDots } from "../shared/thinking-dots";
-import { XyneLogomark } from "../branding/xyne-logo";
-import { PoweredByXyne } from "../branding/powered-by-xyne";
 import type { AIPopoverClassNames } from "../class-names";
 
 export interface AIPopoverProps {
@@ -13,6 +11,7 @@ export interface AIPopoverProps {
 	query: string;
 	isOpen: boolean;
 	onClose: () => void;
+	headerIcon?: React.ReactNode | undefined;
 	classNames?: AIPopoverClassNames | undefined;
 }
 
@@ -64,6 +63,7 @@ export function AIPopover({
 	query,
 	isOpen,
 	onClose,
+	headerIcon,
 	classNames,
 }: AIPopoverProps) {
 	const { content, sources, isStreaming, error, query: runQuery, stop, reset } = useAISummary();
@@ -153,7 +153,7 @@ export function AIPopover({
 				className={`flex items-center justify-between px-3.5 py-2.5 border-b border-gray-100 ${classNames?.popoverHeader ?? ""}`}
 			>
 				<div className="flex items-center gap-2">
-					<XyneLogomark width={18} color="#FF4F4F" />
+					{headerIcon}
 					<span className="text-sm font-medium text-gray-900">AI Explanation</span>
 				</div>
 				<button
@@ -205,8 +205,6 @@ export function AIPopover({
 				)}
 			</div>
 
-			{/* Footer */}
-			<PoweredByXyne />
 		</div>,
 		document.body,
 	);

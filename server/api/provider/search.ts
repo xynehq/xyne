@@ -17,23 +17,19 @@ export function buildVisibilityFilter(
   isAuthenticated: boolean,
   userTags: string[],
 ): string {
-  // Public docs are always visible
-  const clauses: string[] = [`visibility = "public"`]
+  // Public docs are always visible; docs without visibility field are also visible
+  const clauses: string[] = [
+    `visibility contains "public"`,
+  ]
 
   if (isAuthenticated) {
-    // Authenticated docs with no access_tags → visible to any authenticated user
-    // Vespa: access_tags is empty when its count is 0; we approximate with
-    // "NOT access_tags matches anything meaningful" — but Vespa doesn't support
-    // isEmpty natively on arrays. Instead we use a two-pronged approach:
-    //   1. Docs with empty access_tags: we tag them with a sentinel "__all_authenticated__" at ingestion
-    //   2. Docs with specific tags: match against user's tags
     const tagClauses = userTags
       .map((tag) => `access_tags contains "${tag}"`)
       .join(" OR ")
 
     const authenticatedFilter = tagClauses
-      ? `visibility = "authenticated" AND (access_tags contains "__all_authenticated__" OR ${tagClauses})`
-      : `visibility = "authenticated" AND access_tags contains "__all_authenticated__"`
+      ? `visibility contains "authenticated" AND (access_tags contains "__all_authenticated__" OR ${tagClauses})`
+      : `visibility contains "authenticated" AND access_tags contains "__all_authenticated__"`
 
     clauses.push(`(${authenticatedFilter})`)
   }

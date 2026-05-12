@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { XyneProvider } from "./xyne-provider";
 import { ChatPanel } from "./chat-panel/chat-panel";
-import { XyneLogomark } from "./branding/xyne-logo";
 import { PoweredByXyne } from "./branding/powered-by-xyne";
 import type { ChatPanelClassNames } from "./class-names";
 
@@ -13,7 +12,9 @@ export interface XyneChatProps {
 	suggestedPrompts?: string[];
 	welcomeMessage?: string;
 	title?: string;
+	titleIcon?: React.ReactNode;
 	onClose?: () => void;
+	renderAvatar?: () => React.ReactNode;
 	renderMessage?: (message: { role: "user" | "assistant"; content: string }) => React.ReactNode;
 }
 
@@ -25,7 +26,9 @@ export function XyneChat({
 	suggestedPrompts,
 	welcomeMessage,
 	title = "AI Assistant",
+	titleIcon,
 	onClose,
+	renderAvatar,
 }: XyneChatProps) {
 	const [token, setToken] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -54,7 +57,7 @@ export function XyneChat({
 			flexShrink: 0,
 		}}>
 			<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-				<XyneLogomark width={20} color="#FF4F4F" />
+				{titleIcon}
 				<span style={{ fontWeight: 600, fontSize: 15 }}>{title}</span>
 			</div>
 			{onClose && (
@@ -113,6 +116,7 @@ export function XyneChat({
 						classNames={classNames}
 						suggestedPrompts={suggestedPrompts}
 						welcomeMessage={welcomeMessage}
+						renderAvatar={renderAvatar}
 					/>
 				</XyneProvider>
 			</div>

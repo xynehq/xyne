@@ -10,6 +10,7 @@ interface MessageBubbleProps {
 	sourceListClassName?: string;
 	sourceCardClassName?: string;
 	botAvatarClassName?: string;
+	renderAvatar?: () => React.ReactNode;
 }
 
 export function MessageBubble({
@@ -19,6 +20,7 @@ export function MessageBubble({
 	sourceListClassName,
 	sourceCardClassName,
 	botAvatarClassName,
+	renderAvatar,
 }: MessageBubbleProps) {
 	const isUser = message.role === "user";
 	const isError = message.status === "error";
@@ -43,7 +45,7 @@ export function MessageBubble({
 
 	return (
 		<div className="flex items-start gap-2.5 max-w-[88%]">
-			<BotAvatar className={botAvatarClassName} />
+			<BotAvatar className={botAvatarClassName} renderAvatar={renderAvatar} />
 			<div className={`min-w-0 ${bubbleClass} ${className ?? ""}`}>
 				{isError && (
 					<div className="text-xs font-semibold text-red-500 mb-1">Error</div>

@@ -55,7 +55,7 @@ export const providerIngestSchema = z.object({
       visibility: visibilityEnum.default("public"),
       access_tags: z.array(z.string()).default([]),
       source_url: z.string().optional(),
-      metadata: z.record(z.unknown()).optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
     }),
   ),
 })

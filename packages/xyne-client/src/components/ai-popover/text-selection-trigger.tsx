@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AIPopoverClassNames } from "../class-names";
-import { XyneLogomark } from "../branding/xyne-logo";
 import { AIPopover } from "./ai-popover";
 
 export interface TextSelectionTriggerProps {
@@ -10,6 +9,7 @@ export interface TextSelectionTriggerProps {
 	minSelectionLength?: number | undefined;
 	triggerLabel?: string | undefined;
 	triggerIcon?: React.ReactNode | undefined;
+	headerIcon?: React.ReactNode | undefined;
 	classNames?: AIPopoverClassNames | undefined;
 }
 
@@ -52,7 +52,8 @@ export function TextSelectionTrigger({
 	disabled = false,
 	minSelectionLength = 3,
 	triggerLabel = "Explain with AI",
-	triggerIcon = <XyneLogomark width={14} color="#FF4F4F" />,
+	triggerIcon,
+	headerIcon,
 	classNames,
 }: TextSelectionTriggerProps) {
 	const wrapperRef = useRef<HTMLDivElement>(null);
@@ -147,6 +148,7 @@ export function TextSelectionTrigger({
 				query={popoverState?.query ?? ""}
 				isOpen={popoverState !== null}
 				onClose={handlePopoverClose}
+				headerIcon={headerIcon}
 				classNames={classNames}
 			/>
 		</div>

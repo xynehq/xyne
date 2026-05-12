@@ -2,9 +2,14 @@ import { XyneLogomark } from "../branding/xyne-logo";
 
 interface BotAvatarProps {
 	className?: string;
+	renderAvatar?: () => React.ReactNode;
 }
 
-export function BotAvatar({ className }: BotAvatarProps) {
+export function BotAvatar({ className, renderAvatar }: BotAvatarProps) {
+	if (renderAvatar) {
+		return <>{renderAvatar()}</>;
+	}
+
 	return (
 		<div className={`shrink-0 w-6 h-6 rounded-full bg-red-50 flex items-center justify-center mt-0.5 ${className ?? ""}`}>
 			<XyneLogomark width={14} color="#FF4F4F" />
